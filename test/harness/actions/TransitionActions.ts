@@ -1,6 +1,6 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
-import { Logger } from "@/utils";
+import { Logger, sleep } from "@/utils";
 import { MathStateMachine } from "@typechain-types/index";
 import { StateSnapshot } from "@/models";
 
@@ -10,6 +10,7 @@ export type TransitionOptions = {
     waitForSync?: boolean;
     waitForPeers?: number[];
     waitForTurn?: boolean;
+    delayMs?: number;
 };
 
 /**
@@ -167,6 +168,8 @@ export class TransitionActions {
         if (options.waitForTurn) {
             await this.waitForTurn(peer);
         }
+
+        if (options.delayMs) await sleep(options.delayMs);
 
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 

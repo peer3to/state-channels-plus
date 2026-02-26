@@ -161,19 +161,10 @@ export class StateQueryActions {
         toPeerIndex: number,
         timeoutMs: number = 5000
     ): Promise<ATransport> {
-        const fromPeer = this.harness.getPeer(fromPeerIndex);
-        const toPeer = this.harness.getPeer(toPeerIndex);
         let resolvedTransport: ATransport | undefined;
 
         const condition = () => {
-            const transport =
-                fromPeer.stateManager.p2pManager.openConnections.find((t) => {
-                    const profile =
-                        fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                            t
-                        );
-                    return profile?.evmAddress === toPeer.address;
-                });
+            const transport = this.getTransport(fromPeerIndex, toPeerIndex);
 
             if (transport) {
                 resolvedTransport = transport;
@@ -196,6 +187,25 @@ export class StateQueryActions {
     }
 
     /**
+     * Get the transport in fromPeerIndex p2pManager towards toPeerIndex
+     */
+    getTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number
+    ): ATransport | undefined {
+        const fromPeer = this.harness.getPeer(fromPeerIndex);
+        const toPeer = this.harness.getPeer(toPeerIndex);
+
+        return fromPeer.stateManager.p2pManager.openConnections.find((t) => {
+            const profile =
+                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                    t
+                );
+            return profile?.evmAddress === toPeer.address;
+        });
+    }
+
+    /**
      * Get the number of open connections for a peer
      */
     getConnectionCount(peerIndex: number): number {
@@ -208,12 +218,26 @@ export class StateQueryActions {
      */
     getProfile(
         peerIndex: number,
-        evmAddress: Address
+        options?: { evmAddress?: Address; transport?: ATransport }
     ): PeerProfile | undefined {
+        const { evmAddress, transport } = options || {};
         const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-            evmAddress
-        );
+        if (!evmAddress && !transport) {
+            throw new Error(
+                "Either evmAddress or transport must be provided to getProfile"
+            );
+        }
+        if (transport) {
+            return peer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                transport
+            );
+        }
+        if (evmAddress) {
+            return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
+                evmAddress
+            );
+        }
+        return undefined;
     }
 
     async getDisputeHashes(options?: {

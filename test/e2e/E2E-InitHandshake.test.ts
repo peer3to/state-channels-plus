@@ -1,3 +1,4 @@
+import { TransportType } from "@/transport/TransportType";
 import { TestSession, PeerTestHarness, sleep } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
@@ -28,18 +29,52 @@ describe("E2E: Init Handshake", function () {
             ]);
         });
 
-        it("should update existing profile transport on successful handshake", async function () {
+        it("should update existing profile transport on WebRTC upgrade", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0, { autoConnect: true });
             await h.event.waitUntilEventOccurs("onConnection", 5000);
             h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
-            await h.rpc.clearHandshakeChallenge({
-                peerIndex: 0,
-                targetPeer: 1
+            const transportToPeer1Before = h.query.getTransport(0, 1); // ensure transport exists
+            if (!transportToPeer1Before) {
+                throw new Error(
+                    "Expected transport from peer 0 to peer 1 to exist after handshake completion"
+                );
+            }
+            const peer1Profile = h.query.getProfile(0, {
+                transport: transportToPeer1Before
             });
-            await h.rpc.initiateHandshake({ fromPeer: 0, toPeer: 1 });
-            await h.rpc.sendValidHandshakeResponse({ fromPeer: 1, toPeer: 0 });
-            h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
+            if (!peer1Profile) {
+                throw new Error(
+                    "Expected to find profile for peer 1 in peer 0's profile manager using the transport after handshake completion"
+                );
+            }
+            if (peer1Profile.transport != transportToPeer1Before) {
+                throw new Error(
+                    "Expected profile transport to match the transport used for handshake completion"
+                );
+            }
+
+            if (
+                peer1Profile.transport.transportType !== TransportType.HOLEPUNCH
+            ) {
+                throw new Error(
+                    `Expected initial handshake to be completed using HOLEPUNCH transport, but was ${TransportType[peer1Profile.transport.transportType]}`
+                );
+            }
+            const peer0LocalRpc = h.rpc.getLocalRpc(0);
+            h.event.resetEventSpies();
+            await peer0LocalRpc.webRTCSetupService.initiateWebRTC(
+                transportToPeer1Before
+            );
+            await h.event.waitUntilEventOccurs("onConnection", 10000);
+
+            if (
+                peer1Profile.transport.transportType === TransportType.HOLEPUNCH
+            ) {
+                throw new Error(
+                    `Transport didn't upgrade to WebRTC - still HOLEPUNCH`
+                );
+            }
         });
     });
 

@@ -235,7 +235,7 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Partial Syncing via Dispute Validation", function () {
-        it.only("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
+        it("should sync missing state via validStateProofButNotSynced when peer receives dispute with blocks it doesn't have", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
             await h.assert.sync.peersInSyncWait();
@@ -285,6 +285,7 @@ describe("E2E: Dispute Manager", function () {
                 2,
                 "before_isolation"
             );
+            await h.assert.sync.peersInSyncWait();
             h.byzantine.restoreCalldataHandler(2);
         });
     });

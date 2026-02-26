@@ -6,6 +6,7 @@ import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeServ
 import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
 import { ethers } from "ethers";
+import ATransport from "@/transport/ATransport";
 
 /**
  * Actions for RPC service testing
@@ -17,6 +18,24 @@ export class RPCActions {
         private logger: Logger
     ) {}
 
+    getRemoteRpc(peerIndex: number) {
+        const peer = this.harness.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.remoteRpc;
+    }
+
+    getLocalRpc(peerIndex: number) {
+        const peer = this.harness.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.localRpc;
+    }
+    /**
+     * (alias) Get the transport in fromPeerIndex p2pManager towards toPeerIndex
+     */
+    getTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number
+    ): ATransport | undefined {
+        return this.harness.query.getTransport(fromPeerIndex, toPeerIndex);
+    }
     /**
      * Get IsForkDisputed RPC service for a peer
      */
@@ -40,10 +59,9 @@ export class RPCActions {
         peerIndex: number,
         otherPeerAddress: Address
     ): boolean {
-        const profile = this.harness.query.getProfile(
-            peerIndex,
-            otherPeerAddress
-        );
+        const profile = this.harness.query.getProfile(peerIndex, {
+            evmAddress: otherPeerAddress
+        });
         return profile?.getIsHandshakeCompleted() ?? false;
     }
 
