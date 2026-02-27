@@ -179,7 +179,9 @@ export class TransitionActions {
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
-            const peers = this.harness.getFilteredPeers(options.waitForPeers);
+            const peers = this.harness.getFilteredOrHonestPeers(
+                options.waitForPeers
+            );
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
                 forkId

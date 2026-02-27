@@ -261,6 +261,11 @@ export class PeerTestHarness<
         // If a channel is already known, connect the new peer to it.
         if (this.channelId) {
             await peer.p2pInstance.p2pSigner.connectToChannel(this.channelId);
+            await LocalDiscoveryServer.connectToPeers(
+                peer.stateManager.p2pManager.self,
+                this.channelId,
+                peer.address
+            );
         }
 
         return peer as TestPeer<TFactories>;

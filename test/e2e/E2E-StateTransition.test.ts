@@ -1,5 +1,4 @@
 import { TestSession, PeerTestHarness } from "@test/harness";
-import { expect } from "chai";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -40,65 +39,46 @@ describe("E2E: State Transitions", function () {
 
     describe("State Modifications", function () {
         it("should handle honest peer transitions after fork resolution", async function () {
-            this.timeout(90000);
             const h = TestSession.getHarness();
 
             await h.lifecycle.start(4, 2, {
                 timeConfig: {
-                    p2pTime: 30,
-                    agreementTime: 2,
+                    p2pTime: 1,
+                    agreementTime: 1,
                     chainFallbackTime: 2,
-                    evidenceTime: 3
+                    evidenceTime: 2
                 }
             });
             await h.assert.sync.peersInSyncWait();
 
             const maliciousPeerIndex = 2;
-            const honestPeerIndices = [0, 1, 3];
-            const originalForkId = h.activeForkId!;
-
-            h.context.maliciousPeerIndices = [maliciousPeerIndex];
 
             await h.dispute.createInvalidStateTransitionDispute(
                 maliciousPeerIndex,
                 {
-                    forkId: originalForkId,
                     resetEventSpies: true
                 }
             );
-
+            await h.assert.dispute.initiatedAndCommitedWait();
             const result = await h.dispute.resolveDisputeWait({
                 maliciousPeerIndex,
-                forkId: originalForkId,
-                honestPeerIndices,
                 assertMaliciousRemoved: false
             });
 
-            h.context.originalForkId = originalForkId;
-            // h.activeForkId = result.newForkId;
-
             await h.transition.submitNext((c) => c.add(1), {
                 waitForTurn: true,
-                waitForPeers: honestPeerIndices,
                 waitForSync: true
             });
             await h.transition.submitNext((c) => c.add(2), {
                 waitForTurn: true,
-                waitForPeers: honestPeerIndices,
                 waitForSync: true
             });
             await h.transition.submitNext((c) => c.add(3), {
                 waitForTurn: true,
-                waitForPeers: honestPeerIndices,
                 waitForSync: true
             });
 
-            await h.assert.sync.peersInSyncWait({
-                peerIndices: honestPeerIndices
-            });
-
-            const nextWriter = await h.query.getNextPeerToWrite();
-            expect(nextWriter.index).to.not.equal(maliciousPeerIndex);
+            await h.assert.sync.onlyHonestPeersInSync();
         });
     });
 });

@@ -117,13 +117,13 @@ export class AssertStorageActions {
     }
 
     storedTimeout(options: {
-        participant: number;
+        timedoutParticipantIndex: number;
         peerToCheck?: number;
         forkId?: ForkId;
         isForced?: boolean;
     }): void {
         const {
-            participant,
+            timedoutParticipantIndex,
             peerToCheck = 0,
             forkId = this.harness.activeForkId,
             isForced = false
@@ -145,9 +145,12 @@ export class AssertStorageActions {
             throw new Error(`Expected timeout to be forced, but it was not`);
         }
 
-        if (timeout.participant !== this.harness.peers[participant].address) {
+        if (
+            timeout.participant !==
+            this.harness.peers[timedoutParticipantIndex].address
+        ) {
             throw new Error(
-                `Expected timeout participant to be peer ${participant} (${this.harness.peers[participant].address}), ` +
+                `Expected timeout participant to be peer ${timedoutParticipantIndex} (${this.harness.peers[timedoutParticipantIndex].address}), ` +
                     `but was ${timeout.participant}`
             );
         }
