@@ -1,5 +1,5 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { Logger } from "@/utils";
+import { LocalDiscoveryServer, Logger } from "@/utils";
 import { ForkId, Address } from "@/types/types";
 import IsForkDisputedService from "@/rpc/services/isForkDisputedService/IsForkDisputedService";
 import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
@@ -108,6 +108,11 @@ export class RPCActions {
         const newPeer = this.harness.getPeer(newPeerIndex);
         await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
             this.harness.channelId!.toString()
+        );
+        await LocalDiscoveryServer.connectToPeers(
+            newPeer.stateManager.p2pManager.self,
+            this.harness.channelId!,
+            newPeer.address
         );
         await this.waitForHandshakeCompleted(
             observingPeerIndex,

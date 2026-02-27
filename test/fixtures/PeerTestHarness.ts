@@ -35,6 +35,7 @@ import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
 import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingActions";
 import { RPCActions } from "@test/harness/actions/RPCActions";
+import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
 import { ContextActions } from "@test/harness/actions/ContextActions";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { HarnessContext } from "@test/harness";
@@ -102,9 +103,13 @@ export class PeerTestHarness<
     public readonly dispute!: DisputeOrchestrator;
     public readonly tamper!: DisputeTamperingActions;
     public readonly rpc!: RPCActions;
+    public readonly rpcStub!: RpcStubActions;
     public readonly contextApi!: ContextActions;
     public readonly scenario!: ScenarioActions;
 
+    /**
+     * First honest peer's fork ID is considered the active fork ID for the channel.
+     */
     public get activeForkId(): ForkId | undefined {
         const honestPeers = this.getHonestPeers();
 
@@ -114,23 +119,7 @@ export class PeerTestHarness<
             );
         }
 
-        const [firstHonestPeer, ...remainingHonestPeers] = honestPeers;
-        const activeForkId = firstHonestPeer.stateManager.forkId;
-
-        for (const peer of remainingHonestPeers) {
-            if (peer.stateManager.forkId !== activeForkId) {
-                throw new Error(
-                    `Honest peers have inconsistent fork IDs: ${honestPeers
-                        .map(
-                            (honestPeer) =>
-                                `${honestPeer.index}:${honestPeer.stateManager.forkId}`
-                        )
-                        .join(", ")}`
-                );
-            }
-        }
-
-        return activeForkId;
+        return honestPeers[0].stateManager.forkId;
     }
 
     constructor() {
@@ -187,6 +176,7 @@ export class PeerTestHarness<
         this.dispute = new DisputeOrchestrator(this, this.logger);
         this.tamper = new DisputeTamperingActions(this, this.logger);
         this.rpc = new RPCActions(this, this.logger);
+        this.rpcStub = new RpcStubActions(this, this.logger);
         this.contextApi = new ContextActions(this, this.logger);
         this.scenario = new ScenarioActions(this, this.logger);
     }

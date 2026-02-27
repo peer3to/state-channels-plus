@@ -29,17 +29,17 @@ describe("E2E: State Snapshots", function () {
 
         await h.assert.sync.peersInSyncWait();
         h.event.resetEventSpies();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
         await h.contextApi.capturePrePostSnapshotContext();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.transition.postSnapshot();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
-        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
             10000,
             { mode: "atLeast" }
         );
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.snapshotMatchesLocal();
     });
 
@@ -55,11 +55,9 @@ describe("E2E: State Snapshots", function () {
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
 
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
         await h.contextApi.capturePrePostSnapshotContext();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.transition.postSnapshot();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
-        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
 
         const honest = h.getHonestPeers().map((p) => p.index);
         await h.event.waitForEventCounts(
@@ -68,7 +66,8 @@ describe("E2E: State Snapshots", function () {
             10000,
             { mode: "atLeast" }
         );
-
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.snapshotMatchesLocal();
         await h.assert.sync.maliciousPeerExcluded();
     });
@@ -85,11 +84,9 @@ describe("E2E: State Snapshots", function () {
 
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
         await h.contextApi.capturePrePostSnapshotContext();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.transition.postSnapshot();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
-        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
 
         const honest = h.getHonestPeers().map((p) => p.index);
         await h.event.waitForEventCounts(
@@ -98,8 +95,10 @@ describe("E2E: State Snapshots", function () {
             10000,
             { mode: "atLeast" }
         );
-        await h.assert.snapshot.onChainBalanceMatchesSnapshot();
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.onChainSnapshotOnFork();
+        await h.assert.snapshot.snapshotMatchesLocal();
         await h.assert.sync.maliciousPeerExcluded();
     });
 });

@@ -4,6 +4,8 @@ export * from "./core/types";
 import { DetachedPromises } from "@/utils";
 import { TestSession } from "./session/TestSession";
 
+Error.stackTraceLimit = Infinity;
+
 declare global {
     // eslint-disable-next-line no-var
     var __peer3SessionHooksRegistered__: boolean | undefined;
@@ -86,6 +88,7 @@ export {
 export { AssertActions } from "./actions/assert/AssertActions";
 export { ByzantineActions } from "./actions/ByzantineActions";
 export { RPCActions } from "./actions/RPCActions";
+export { RpcStubActions } from "./actions/rpcStubActions";
 export { ContextActions } from "./actions/ContextActions";
 export { ScenarioActions } from "./actions/ScenarioActions";
 

@@ -116,6 +116,7 @@ export class LifecycleActions {
                 this.logger
             );
             await networkController.connectAllPeers();
+            await this.harness.network.waitForP2PConnections();
         }
 
         this.logger.debug(

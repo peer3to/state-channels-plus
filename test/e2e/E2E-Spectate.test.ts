@@ -23,7 +23,7 @@ describe("E2E: Spectate Service", function () {
         // queuing logic for in-progress handshakes makes it difficult to reliably test
         // the exact failure path without introducing unacceptable complexity/fragility.
         // Guard functionality is better validated through integration behavior (normal flows work).
-        it.skip("should NOT allow spectate RPC before handshake completes", async function () {
+        it("should NOT allow spectate RPC before handshake completes", async function () {
             const harness = TestSession.getHarness();
             await harness.lifecycle.start(2, 0, {
                 autoConnect: false,
