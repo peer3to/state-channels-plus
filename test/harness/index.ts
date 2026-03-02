@@ -39,11 +39,15 @@ if (
     });
 
     afterEach(async function () {
-        await DetachedPromises.awaitAllAndClear();
-
+        if (this.currentTest?.state === "passed") {
+            console.trace(
+                `Test passed - awaiting any detached promises to surface before finishing test!`
+            );
+            await DetachedPromises.awaitAllAndClear();
+            console.trace(`All detached promises settled for passing test.`);
+        }
+        DetachedPromises.clear();
         const firstDetachedError = TestSession.getFirstDetachedError();
-
-        const loggerPromises: Promise<void>[] = [];
 
         if (this.currentTest?.state === "failed" || firstDetachedError) {
             console.trace(`Test failed - trying to upload logs!`);
@@ -56,7 +60,7 @@ if (
                         firstDetachedError: firstDetachedError || "N/A"
                     }
                 );
-                loggerPromises.push(promise);
+                DetachedPromises.collect(promise);
             });
             const promise = h.logger.uploadLogs(
                 `FAILED (Harness): ${this.currentTest?.title}`,
@@ -65,14 +69,16 @@ if (
                     firstDetachedError: firstDetachedError || "N/A"
                 }
             );
-            loggerPromises.push(promise);
+            DetachedPromises.collect(promise);
         }
-        await Promise.allSettled(loggerPromises);
+        // Await the logs with a default timeout
+        await DetachedPromises.awaitAllAndClear();
         console.trace(
             `Test afterEach completed - all detached promises settled`
         );
         await TestSession.clear();
         if (firstDetachedError) throw firstDetachedError;
+        console.trace(`Test afterEach DONE`);
     });
 }
 

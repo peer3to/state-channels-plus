@@ -82,13 +82,14 @@ describe("E2E: Dispute Manager", function () {
 
         it("should post updated state snapshot after fork resolution", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdate();
+            await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached();
 
             await h.transition.fromHonestPeersOnly((c) => c.add(1));
             await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
             await h.transition.fromHonestPeersOnly((c) => c.add(3));
 
             await h.assert.sync.onlyHonestPeersInSync();
+            await await h.assert.sync.onChainSnapshotAndPeersSameForkWait(); // await this to be sure that the post snapshot event bellow is not triggered by the detached update from above
             h.event.resetEventSpies();
             const expectedSnapshot2 = await h.transition.postSnapshot({
                 peerIndex: 0

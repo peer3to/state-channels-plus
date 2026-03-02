@@ -18,7 +18,8 @@ import {
     Mutex,
     difference,
     Logger,
-    tryDecodeCustomError
+    tryDecodeCustomError,
+    tryHandleEvmError
 } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -80,6 +81,7 @@ class DisputeManager {
     }
 
     public async dispute(forkId: ForkId): Promise<void> {
+        let txResponse;
         try {
             await this.mutex.lock();
             if (this.storage.disputes.didIDispute(forkId)) {
@@ -134,7 +136,7 @@ class DisputeManager {
                         )
                     ).data!;
                 }
-                await this.stateChannelManagerContract.multicall([
+                txResponse = await this.stateChannelManagerContract.multicall([
                     fraudProofCalldata,
                     uploadDisputeCalldata
                 ]);
@@ -142,15 +144,17 @@ class DisputeManager {
                 // no multicall - upload dispute separately
                 if (pendingParticipants.length > 0) {
                     // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
-                    await this.stateChannelManagerContract.uploadDisputeWithCalldata(
-                        disputeConfirmation,
-                        auditingData
-                    );
+                    txResponse =
+                        await this.stateChannelManagerContract.uploadDisputeWithCalldata(
+                            disputeConfirmation,
+                            auditingData
+                        );
                 } else {
-                    await this.stateChannelManagerContract.uploadDispute(
-                        disputeConfirmation,
-                        { gasLimit: DEFAULT_GAS_LIMIT }
-                    );
+                    txResponse =
+                        await this.stateChannelManagerContract.uploadDispute(
+                            disputeConfirmation,
+                            { gasLimit: DEFAULT_GAS_LIMIT }
+                        );
                 }
             }
 
@@ -159,13 +163,28 @@ class DisputeManager {
                 hash(Codec.encode(dispute, Type.Dispute)),
                 dispute
             );
+            await txResponse.wait();
         } catch (error) {
-            this.logger.error("Error uploading dispute", {
+            const success = tryHandleEvmError(error, {
+                tx: txResponse,
+                logger: this.logger,
                 forkId,
-                channelId: this.channelId,
-                signerAddress: this.signerAddress,
-                error: error instanceof Error ? error.message : String(error)
+                signer: this.signer,
+                handlers: {
+                    ErrorCantParticipateInDispute: () => {
+                        // No op -> malcious peer
+                    }
+                }
             });
+            if (!success)
+                this.logger.error("Error uploading dispute", {
+                    forkId,
+                    channelId: this.channelId,
+                    signerAddress: this.signerAddress,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    customErrorHandles: success
+                });
 
             this.storage.disputes.storeDisputedFork(forkId, false);
         } finally {

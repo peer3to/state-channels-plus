@@ -1,5 +1,11 @@
 export class DetachedPromises {
-    private static pending: Promise<any>[] = [];
+    private static readonly DEFAULT_AWAIT_TIMEOUT_MS = 30000;
+    private static nextId = 1;
+    private static pending: Array<{
+        id: number;
+        promise: Promise<any>;
+        collectedAtStack?: string;
+    }> = [];
     private static collectUntilTimestamp?: number;
 
     private constructor() {}
@@ -11,14 +17,23 @@ export class DetachedPromises {
         ) {
             return;
         }
-        DetachedPromises.pending.push(promise);
+
+        DetachedPromises.pending.push({
+            id: DetachedPromises.nextId++,
+            promise,
+            collectedAtStack: new Error("Detached promise collected at").stack
+        });
     }
 
     public static size(): number {
         return DetachedPromises.pending.length;
     }
 
-    public static getAndClear(): Promise<any>[] {
+    public static getAndClear(): Array<{
+        id: number;
+        promise: Promise<any>;
+        collectedAtStack?: string;
+    }> {
         const promises = DetachedPromises.pending;
         DetachedPromises.pending = [];
         return promises;
@@ -51,10 +66,64 @@ export class DetachedPromises {
     public static async awaitAllAndClear(): Promise<
         PromiseSettledResult<any>[]
     > {
-        if (DetachedPromises.pending.length === 0) {
+        const batch = DetachedPromises.getAndClear();
+        if (batch.length === 0) {
             return [];
         }
 
-        return Promise.allSettled(DetachedPromises.getAndClear());
+        const settledFlags = new Array<boolean>(batch.length).fill(false);
+        const trackedPromises = batch.map((entry, index) =>
+            Promise.resolve(entry.promise).finally(() => {
+                settledFlags[index] = true;
+            })
+        );
+
+        return new Promise<PromiseSettledResult<any>[]>((resolve, reject) => {
+            let timedOut = false;
+            const timeoutId = setTimeout(() => {
+                timedOut = true;
+
+                const unresolved = batch.filter(
+                    (_entry, index) => !settledFlags[index]
+                );
+
+                if (unresolved.length > 0) {
+                    DetachedPromises.pending.unshift(...unresolved);
+                }
+
+                const unresolvedStacks = unresolved
+                    .map((entry, index) => {
+                        const stack =
+                            entry.collectedAtStack ||
+                            "(no stack captured for this promise)";
+                        return `#${index + 1} (id=${entry.id})\n${stack}`;
+                    })
+                    .join("\n\n");
+
+                const message =
+                    `DetachedPromises.awaitAllAndClear timed out after ${DetachedPromises.DEFAULT_AWAIT_TIMEOUT_MS}ms while waiting for ${unresolved.length}/${batch.length} promise(s).` +
+                    (unresolvedStacks
+                        ? `\nUnresolved promise origins:\n${unresolvedStacks}`
+                        : "");
+
+                reject(new Error(message));
+            }, DetachedPromises.DEFAULT_AWAIT_TIMEOUT_MS);
+
+            Promise.allSettled(trackedPromises)
+                .then((results) => {
+                    if (timedOut) {
+                        return;
+                    }
+                    clearTimeout(timeoutId);
+                    resolve(results);
+                })
+                .catch((error) => {
+                    if (timedOut) {
+                        return;
+                    }
+                    clearTimeout(timeoutId);
+                    reject(error);
+                });
+        });
     }
 }

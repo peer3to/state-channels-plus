@@ -45,7 +45,7 @@ describe("E2E: State Snapshots", function () {
 
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdate({
+        await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached({
             timeConfig: forkTimeConfig
         });
 
@@ -55,8 +55,10 @@ describe("E2E: State Snapshots", function () {
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
 
+        await await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
+        h.event.resetEventSpies();
         await h.transition.postSnapshot();
 
         const honest = h.getHonestPeers().map((p) => p.index);

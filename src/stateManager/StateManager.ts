@@ -643,83 +643,90 @@ class StateManager {
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         await this.mutex.lock();
-        const normalizedGenesisTimestamp = Number(stateSnapshot.timestamp);
+        try {
+            const normalizedGenesisTimestamp = Number(stateSnapshot.timestamp);
 
-        // Persist state snapshot (as a model)
-        const latestSnapshot = StateSnapshot.from(stateSnapshot);
-        this.storage.stateSnapshots.storeStateSnapshot(latestSnapshot);
+            // Persist state snapshot (as a model)
+            const latestSnapshot = StateSnapshot.from(stateSnapshot);
+            this.storage.stateSnapshots.storeStateSnapshot(latestSnapshot);
 
-        // Persist outbound message block if provided
-        if (outboundMessageBlock) {
-            this.storage.outboundMessages.store(outboundMessageBlock);
-        }
+            // Persist outbound message block if provided
+            if (outboundMessageBlock) {
+                this.storage.outboundMessages.store(outboundMessageBlock);
+            }
 
-        // Persist state machine state (keyed by snapshot hash when available)
-        this.storage.stateMachineStates.storeStateMachineState(encodedState, {
-            hash: stateSnapshot.snapshotData.stateMachineStateHash
-        });
+            // Persist state machine state (keyed by snapshot hash when available)
+            this.storage.stateMachineStates.storeStateMachineState(
+                encodedState,
+                {
+                    hash: stateSnapshot.snapshotData.stateMachineStateHash
+                }
+            );
 
-        // Update local EVM/state machine
-        await this.diamondStateMachine.setState(encodedState);
+            // Update local EVM/state machine
+            await this.diamondStateMachine.setState(encodedState);
 
-        // Update the forkId to the new fork
-        const forkId = stateSnapshot.forkId;
-        this.forkId = forkId;
+            // Update the forkId to the new fork
+            const forkId = stateSnapshot.forkId;
+            this.forkId = forkId;
 
-        const participants = await this.diamondStateMachine.getParticipants();
-        const isParticipant = participants.includes(this.signerAddress);
-        if (isParticipant) {
-            this.setStatus(Status.PARTICIPATING);
-        } else {
-            this.setStatus(Status.SYNCED);
-        }
+            const participants =
+                await this.diamondStateMachine.getParticipants();
+            const isParticipant = participants.includes(this.signerAddress);
+            if (isParticipant) {
+                this.setStatus(Status.PARTICIPATING);
+            } else {
+                this.setStatus(Status.SYNCED);
+            }
 
-        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+            const nextToWrite = await this.diamondStateMachine.getNextToWrite();
 
-        const nextTransactionCnt = this.storage.blocks.getNextBlockHeight(
-            this.forkId
-        );
+            const nextTransactionCnt = this.storage.blocks.getNextBlockHeight(
+                this.forkId
+            );
 
-        const timeAdjustment =
-            normalizedGenesisTimestamp - Clock.getTimeInSeconds();
-        const turnTime = this.timeConfig.p2pTime;
-        const timeoutWaitTime =
-            this.getTimeoutWaitTimeSeconds() + timeAdjustment;
-        this.logger.info(
-            `setLatestState - schedule timeoutNext in (${timeoutWaitTime}s)`,
-            {
+            const timeAdjustment =
+                normalizedGenesisTimestamp - Clock.getTimeInSeconds();
+            const turnTime = this.timeConfig.p2pTime;
+            const timeoutWaitTime =
+                this.getTimeoutWaitTimeSeconds() + timeAdjustment;
+            this.logger.info(
+                `setLatestState - schedule timeoutNext in (${timeoutWaitTime}s)`,
+                {
+                    nextToWrite,
+                    turnTime,
+                    timeAdjustment,
+                    timeoutWaitTime,
+                    genesisTimestamp: normalizedGenesisTimestamp
+                }
+            );
+            this.timeoutManager.scheduleTask(
+                () =>
+                    this.tryTimeoutParticipant(
+                        forkId,
+                        nextTransactionCnt,
+                        nextToWrite
+                    ),
+                timeoutWaitTime * 1000,
+                `participantTimeout(setState) - fork ${forkId} - block ${nextTransactionCnt} - participant ${nextToWrite}`
+            );
+
+            this.timeoutManager.scheduleTask(
+                () => this.tryExecuteFromQueue(),
+                0,
+                "tryExecuteFromQueue"
+            );
+
+            this.p2pEventHooks.onSetState?.();
+            this.p2pEventHooks.onTurn?.(
                 nextToWrite,
                 turnTime,
-                timeAdjustment,
-                timeoutWaitTime,
-                genesisTimestamp: normalizedGenesisTimestamp
-            }
-        );
-        this.timeoutManager.scheduleTask(
-            () =>
-                this.tryTimeoutParticipant(
-                    forkId,
-                    nextTransactionCnt,
-                    nextToWrite
-                ),
-            timeoutWaitTime * 1000,
-            `participantTimeout(setState) - fork ${forkId} - block ${nextTransactionCnt} - participant ${nextToWrite}`
-        );
-
-        this.timeoutManager.scheduleTask(
-            () => this.tryExecuteFromQueue(),
-            0,
-            "tryExecuteFromQueue"
-        );
-
-        this.p2pEventHooks.onSetState?.();
-        this.p2pEventHooks.onTurn?.(
-            nextToWrite,
-            turnTime,
-            this.timeConfig.agreementTime,
-            this.timeConfig.chainFallbackTime
-        );
-        this.mutex.unlock();
+                this.timeConfig.agreementTime,
+                this.timeConfig.chainFallbackTime
+            );
+        } finally {
+            this.mutex.unlock();
+        }
     }
 
     public async setGenesisState(
@@ -2573,14 +2580,39 @@ class StateManager {
             };
             const timestamp = Number(logs[0].args.timestamp);
 
-            // this will also run BlockConfirmation pipeline which will also handle storage updates if needed
-            await this.eventHandler.onBlockCalldataPosted(
+            this.storage.blockCalldata.storeBlockCalldata({
+                signedBlock,
+                onChainTimestamp: timestamp
+            });
+            await this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
                 this.channelId,
                 blockCommitment,
                 blockAuthor,
                 signedBlock,
                 timestamp
             );
+
+            const existingBlock = this.storage.blocks.getBlock(
+                forkId,
+                blockHeight
+            );
+            if (existingBlock) {
+                this.storage.blocks.setOnChainTimestamp(
+                    existingBlock.hash,
+                    timestamp
+                );
+            }
+
+            // run the pipeline DETACHED to prevent deadlocks, but also treat it as it came from the subscribed event -> recheck the block
+            const rerunPipelinePromise =
+                this.eventHandler.onBlockCalldataPosted(
+                    this.channelId,
+                    blockCommitment,
+                    blockAuthor,
+                    signedBlock,
+                    timestamp
+                );
+            DetachedPromises.collect(rerunPipelinePromise);
 
             const updatedBlock = this.storage.blocks.getBlock(
                 forkId,

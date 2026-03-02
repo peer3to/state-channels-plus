@@ -27,8 +27,7 @@ export class AssertSnapshotActions {
             );
         }
     }
-
-    async onChainSnapshotChangedDetached(options?: {
+    async onChainSnapshotChangedWait(options?: {
         expectedForkId?: string;
         expectedSnapshot?: StateSnapshot;
         timeoutMs?: number;
@@ -78,7 +77,16 @@ export class AssertSnapshotActions {
                 )
             }
         });
-        DetachedPromises.collect(promise);
+        return promise;
+    }
+
+    async onChainSnapshotChangedDetached(options?: {
+        expectedForkId?: string;
+        expectedSnapshot?: StateSnapshot;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const detachedPromise = this.onChainSnapshotChangedWait(options);
+        DetachedPromises.collect(detachedPromise);
     }
 
     async snapshotMatchesLocal(options?: {
@@ -172,7 +180,7 @@ export class AssertSnapshotActions {
 
         if (!deltaMatches) {
             throw new Error(
-                "Actual withdrawal delta does not match expected delta from outbound messages"
+                `Actual withdrawal delta does not match expected delta from outbound messages. Expected: ${expectedWithdrawalsDelta.amount.toString()}, Actual: ${actualDelta.amount.toString()}`
             );
         }
     }

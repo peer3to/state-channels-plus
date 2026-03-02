@@ -3,6 +3,7 @@ import { ForkId } from "@/types";
 import type StateManager from "@/stateManager";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export class ContextActions {
     constructor(
@@ -52,7 +53,15 @@ export class ContextActions {
         if (!lastSnapshot) {
             throw new Error("No milestone snapshot available");
         }
-
+        this.harness.logger.debug(
+            "CapturePrePostSnapshotContext - Calculating expected withdrawals delta",
+            {
+                currentOnChainSnapshot: LoggerUtils.getSnapshotMetadata(
+                    onChainSnapshotBefore
+                ),
+                newSnapshot: LoggerUtils.getSnapshotMetadata(lastSnapshot)
+            }
+        );
         const expectedWithdrawalsDeltaBalance =
             await this.computeExpectedWithdrawalsDelta(
                 peer,

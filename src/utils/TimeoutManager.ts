@@ -1,6 +1,7 @@
 import { Logger } from "./logging";
 
 export class TimeoutManager {
+    private static readonly DISPOSE_WAIT_TIMEOUT_MS = 5000;
     private timeouts: Set<NodeJS.Timeout> = new Set();
     private runningTasks: Set<Promise<void>> = new Set();
     private isDisposed: boolean = false;
@@ -74,9 +75,28 @@ export class TimeoutManager {
         }
         this.timeouts.clear();
 
-        // Wait for all currently running tasks to complete
+        // Wait for currently running tasks to complete, but do not block disposal indefinitely.
         if (this.runningTasks.size > 0) {
-            await Promise.allSettled([...this.runningTasks]);
+            const tasks = [...this.runningTasks];
+            const timeoutMs = TimeoutManager.DISPOSE_WAIT_TIMEOUT_MS;
+
+            const completion = Promise.allSettled(tasks).then(() => true);
+            const timedOut = await Promise.race<boolean>([
+                completion,
+                new Promise<boolean>((resolve) =>
+                    setTimeout(() => resolve(false), timeoutMs)
+                )
+            ]);
+
+            if (!timedOut) {
+                this.logger.warn(
+                    `Dispose timed out waiting for running tasks; continuing cleanup`,
+                    {
+                        pendingTasks: this.runningTasks.size,
+                        timeoutMs
+                    }
+                );
+            }
         }
         this.runningTasks.clear();
     }

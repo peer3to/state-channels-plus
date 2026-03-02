@@ -2,6 +2,7 @@ import type { ForkId, Hash } from "@/types/types";
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { ZeroHash } from "ethers";
+import StateSnapshot from "@/models/StateSnapshot";
 
 export class AssertSyncActions {
     constructor(private readonly harness: PeerTestHarness) {}
@@ -151,11 +152,52 @@ export class AssertSyncActions {
 
         await this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs,
-            timeoutMessage: `Fork change not detected within ${timeoutMs}ms`,
             timeoutMessageFn: () => {
                 let errorMsg = `Fork change not detected within ${timeoutMs}ms`;
                 try {
                     this.forkChanged(options);
+                } catch (error) {
+                    errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
+                }
+                return errorMsg;
+            }
+        });
+    }
+
+    async onChainSnapshotAndPeersSameFork(): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active forkId");
+        }
+        const onChainSnapshot = StateSnapshot.from(
+            await this.harness.channelManager.getStateSnapshot(
+                this.harness.channelId
+            )
+        );
+        if (onChainSnapshot.forkID !== forkId) {
+            throw new Error(
+                `Expected on-chain snapshot to be on same fork as peers (${forkId}), but found ${onChainSnapshot.forkID}`
+            );
+        }
+    }
+
+    async onChainSnapshotAndPeersSameForkWait(options?: {
+        timeoutMs?: number;
+    }) {
+        const condition = async () => {
+            try {
+                await this.onChainSnapshotAndPeersSameFork();
+                return true;
+            } catch (error) {
+                return false;
+            }
+        };
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs: options?.timeoutMs,
+            timeoutMessageFn: () => {
+                let errorMsg = "";
+                try {
+                    this.onChainSnapshotAndPeersSameFork();
                 } catch (error) {
                     errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
                 }

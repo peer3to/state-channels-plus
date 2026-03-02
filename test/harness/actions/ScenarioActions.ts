@@ -23,7 +23,7 @@ export class ScenarioActions {
         await this.harness.assert.sync.forkChangedWait();
     }
 
-    async fourPeersDisputeResolutionAndSnapshotUpdate(options?: {
+    async fourPeersDisputeResolutionAndSnapshotUpdateDetached(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -36,6 +36,23 @@ export class ScenarioActions {
             peerIndex: 0
         });
         await this.harness.assert.snapshot.onChainSnapshotChangedDetached({
+            expectedSnapshot
+        });
+    }
+
+    async fourPeersDisputeResolutionAndSnapshotUpdateWait(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        await this.fourPeersDisputeResolution(options);
+        const expectedSnapshot = await this.harness.transition.postSnapshot({
+            peerIndex: 0
+        });
+        await this.harness.assert.snapshot.onChainSnapshotChangedWait({
             expectedSnapshot
         });
     }
