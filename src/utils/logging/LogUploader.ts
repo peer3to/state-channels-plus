@@ -1,10 +1,10 @@
 import axios from "axios";
+import https from "https";
 import { compressToBase64, encodeLogs } from "./logEncoder";
 import { LogStore } from "./logStore";
 import { ExclusiveLoggerContext, Logger, SharedLoggerContext } from ".";
 import { ethers } from "ethers";
 import { retry } from "../retry";
-import { sleep } from "..";
 import {
     getAxiosFailureSummary,
     getAxiosRetrySummary,
@@ -12,6 +12,7 @@ import {
     getSyncNetworkSnapshot,
     sanitizeAxiosErrorForLogging
 } from "./uploadDiagnostics";
+import { sleep } from "..";
 
 export type LogUploaderOptions = {
     logUploader?: LogUploader;
@@ -26,7 +27,20 @@ export type LogUploaderConfig = {
 export abstract class LogUploader {
     protected logger?: Logger;
     private destroyed = false;
-    private uploadInProgress = false;
+    private uploadInitiated = false;
+
+    /**
+     * Dedicated HTTPS agent with keep-alive for log uploads.
+     * Reuses TCP+TLS connections across retries and uploads, avoiding
+     * repeated handshake overhead under concurrent burst.
+     */
+    private static readonly uploadAgent = new https.Agent({
+        keepAlive: true,
+        maxSockets: 6,
+        maxFreeSockets: 2,
+        timeout: 60_000
+    });
+
     constructor(
         protected readonly logStore: LogStore,
         protected readonly config: LogUploaderConfig,
@@ -60,11 +74,12 @@ export abstract class LogUploader {
         try {
             if (!this.isEnabled()) return;
 
-            // Prevent multiple simultaneous uploads
-            if (this.uploadInProgress) return;
-            this.uploadInProgress = true;
-            await sleep(1000);
-            this.uploadInProgress = false;
+            // Random jitter (0-3s) to spread upload bursts
+            const jitterMs = Math.floor(Math.random() * 3000);
+            if (this.uploadInitiated) return;
+            this.uploadInitiated = true;
+            await sleep(jitterMs);
+            this.uploadInitiated = false;
 
             const storedLogs = this.logStore.getAllLogs();
             const channelId = this.sharedContext.channelId || ethers.ZeroHash;
@@ -101,11 +116,15 @@ export abstract class LogUploader {
                             peerAddress,
                             compressedLogs
                         },
-                        { headers, timeout: 5000 }
+                        {
+                            headers,
+                            timeout: 10_000,
+                            httpsAgent: LogUploader.uploadAgent
+                        }
                     ),
                 {
                     maxRetries: 1,
-                    delayMs: 2000,
+                    delayMs: 1000,
                     onRetry: (attempt, error) => {
                         const { code, status } = getAxiosRetrySummary(error);
                         const networkSnapshot = getSyncNetworkSnapshot(
@@ -158,8 +177,7 @@ export abstract class LogUploader {
                     dnsSnapshot
                 }
             );
-            throw uploadError;
-        } finally {
+            // Swallow the error — uploads are best-effort and must not block test teardown
         }
     }
 

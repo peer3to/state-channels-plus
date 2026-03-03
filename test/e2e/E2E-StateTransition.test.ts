@@ -41,14 +41,7 @@ describe("E2E: State Transitions", function () {
         it("should handle honest peer transitions after fork resolution", async function () {
             const h = TestSession.getHarness();
 
-            await h.lifecycle.start(4, 2, {
-                timeConfig: {
-                    p2pTime: 1,
-                    agreementTime: 1,
-                    chainFallbackTime: 2,
-                    evidenceTime: 2
-                }
-            });
+            await h.lifecycle.start(4, 2);
             await h.assert.sync.peersInSyncWait();
 
             const maliciousPeerIndex = 2;

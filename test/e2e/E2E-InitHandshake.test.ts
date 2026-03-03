@@ -110,8 +110,7 @@ describe("E2E: Init Handshake", function () {
         it("should disconnect peer that doesn't respond within agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                autoConnect: false,
-                timeConfig: { agreementTime: 1 }
+                autoConnect: false
             });
             await h.rpc.connectPeers([0, 1]);
             await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);

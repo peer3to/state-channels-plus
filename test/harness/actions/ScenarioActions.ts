@@ -89,35 +89,13 @@ export class ScenarioActions {
     }
 
     async readyForRedispute() {
-        await this.harness.lifecycle.start(4, 0, {
-            timeConfig: {
-                p2pTime: 2,
-                agreementTime: 1,
-                chainFallbackTime: 2,
-                evidenceTime: 4
-            }
-        });
+        await this.harness.lifecycle.start(4, 0);
 
         await this.harness.byzantine.disconnect(3);
         await this.harness.transition.advanceState({ txFn: (c) => c.add(1) });
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2]
         });
-        this.harness.event.resetEventSpies();
-    }
-
-    async peer2Isolated() {
-        await this.harness.lifecycle.start(3, 0, {
-            timeConfig: {
-                p2pTime: 1,
-                agreementTime: 1,
-                chainFallbackTime: 2
-            }
-        });
-
-        this.harness.byzantine.stubCalldataHandler(2);
-        this.harness.contextApi.storeSnapshotCount(2, "before_isolation");
-        await this.harness.byzantine.disconnect(2);
         this.harness.event.resetEventSpies();
     }
 

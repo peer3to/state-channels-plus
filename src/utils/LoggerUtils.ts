@@ -32,6 +32,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { LogLevel } from "./logging/Logger";
+import { TimeConfig } from "@/types";
 export class LoggerUtils {
     private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
         "0x9ce4e6bf06971600d59f74bebec9880ea91b2f4bdbfcc850572617eeaad2edc8":
@@ -116,7 +117,8 @@ export class LoggerUtils {
 
     static async logTimestamp(
         logger: Logger,
-        level: LogLevel = "info"
+        level: LogLevel = "info",
+        timeConfig?: TimeConfig
     ): Promise<void> {
         const virtualClockBefore = Clock.getTimeInSeconds();
         const localClockBefore = Math.floor(new Date().getTime() / 1000);
@@ -131,7 +133,8 @@ export class LoggerUtils {
             blockNumber,
             virtualClockAfter,
             localClockAfter,
-            network
+            network,
+            timeConfig
         });
     }
 

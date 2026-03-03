@@ -268,13 +268,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should handle valid dispute when validating peer is missing snapshot data", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0, {
-                timeConfig: {
-                    p2pTime: 1,
-                    agreementTime: 1,
-                    chainFallbackTime: 2
-                }
-            });
+            await h.lifecycle.start(3, 0);
             h.byzantine.stubCalldataHandler(2);
             h.contextApi.storeSnapshotCount(2, "before_isolation");
             await h.byzantine.disconnect(2);

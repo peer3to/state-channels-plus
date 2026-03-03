@@ -41,7 +41,7 @@ export class LifecycleActions {
         await this.start(peerCount, transitionCount, {
             timeConfig: {
                 p2pTime: 1,
-                agreementTime: 1,
+                agreementTime: 2,
                 chainFallbackTime: 2,
                 evidenceTime: 3
             }

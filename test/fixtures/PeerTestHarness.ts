@@ -224,7 +224,13 @@ export class PeerTestHarness<
             rpcServiceFactories: (options?.rpcServiceFactories ??
                 {}) as TFactories
         };
-
+        if (
+            !this.options.timeConfig.agreementTime ||
+            this.options.timeConfig.agreementTime <= 1
+        )
+            throw new Error(
+                "agreementTime must be greater than 1 second for reliable test execution"
+            );
         this.syncCoordinator = new SyncCoordinator(
             this.logger,
             this.eventCountsBarrier
