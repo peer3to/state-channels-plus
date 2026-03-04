@@ -1,185 +1,265 @@
 <mxfile host="65bd71144e">
     <diagram id="dispute-validation" name="Dispute Validation">
-        <mxGraphModel dx="833" dy="577" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="3483" dy="1991" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-                <mxCell id="dv-frame" value="validateDispute()&lt;br&gt;DisputeValidationService" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
-                    <mxGeometry x="10" y="40" width="2012" height="3020" as="geometry"/>
+                <mxCell id="dv-frame" value="validateDispute()&lt;br&gt;DisputeValidationService&lt;br&gt;NEW" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=170;fillColor=#ffe6cc;strokeColor=#d79b00;height=50;" parent="1" vertex="1">
+                    <mxGeometry x="10" y="40" width="2477" height="4170" as="geometry"/>
                 </mxCell>
                 <mxCell id="dv-start" value="validateDispute(dispute,onChainAuditngData?)" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.start_1;whiteSpace=wrap;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="271" y="40" width="290" height="65" as="geometry"/>
+                    <mxGeometry x="540" y="130" width="290" height="65" as="geometry"/>
                 </mxCell>
-                <mxCell id="dv-da-decision" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;onChainAuditngData&lt;/span&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="331" y="542" width="170" height="110" as="geometry"/>
+                <mxCell id="88" value="dispute.postedAuditingData?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="570.5" y="408" width="229" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="dv-reconstruct" value="Try reconstructing auditing data&lt;div&gt;&lt;br/&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="870" y="562" width="250" height="70" as="geometry"/>
+                <mxCell id="91" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="dv-frame" source="dv-start" target="88" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="dv-synced-decision" value="is validStateProof &lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;with&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;data integrity&lt;/font&gt;&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="141" y="752" width="170" height="120" as="geometry"/>
-                </mxCell>
-                <mxCell id="2" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;font style=&quot;&quot;&gt;&lt;b style=&quot;&quot;&gt;&lt;font&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;InvalidStateProof&lt;/font&gt;&lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;With&lt;/font&gt;&lt;/font&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;DataIntegrityVerified&lt;/font&gt;&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="391" y="774.5" width="300" height="75" as="geometry"/>
-                </mxCell>
-                <mxCell id="4" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="dv-da-decision" target="dv-reconstruct" edge="1">
+                <mxCell id="92" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="88" edge="1" target="455">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="381" y="942" as="sourcePoint"/>
-                        <mxPoint x="461" y="942" as="targetPoint"/>
+                        <mxPoint x="659" y="759" as="sourcePoint"/>
+                        <mxPoint x="685" y="771" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="5" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="4" vertex="1" connectable="0">
+                <mxCell id="93" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="92" vertex="1" connectable="0">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="6" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="dv-da-decision" target="dv-synced-decision" edge="1">
+                <mxCell id="97" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="88" target="437" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="381" y="942" as="sourcePoint"/>
-                        <mxPoint x="461" y="942" as="targetPoint"/>
+                        <mxPoint x="969" y="598" as="sourcePoint"/>
+                        <mxPoint x="889" y="463" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="98" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="97" vertex="1" connectable="0">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="437" value="verifyLastMilestoneSignedByEveryone" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="1233" y="408" width="229" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="438" value="Changes to Structs" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="90" y="110" width="399" height="250" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="439" value="struct Dispute{&lt;br&gt;...&lt;br&gt;(add) postedAuditingData: bool&lt;br&gt;(keep) auditingDataHash: Hash&lt;br&gt;}&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;struct DisputeAuditingData{&lt;/div&gt;&lt;div&gt;(change) latestStateEncoded -&amp;gt; latest&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;b&gt;Finalized&lt;/b&gt;&lt;/font&gt;StateEncoded&lt;/div&gt;&lt;div&gt;}&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="438">
+                    <mxGeometry y="30" width="399" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="441" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="1390" y="25.5" width="410" height="390" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="442" value="Takes into account &lt;b&gt;all the signatures&lt;/b&gt; from the &lt;b&gt;on-chain snapshot&lt;/b&gt; and &lt;b&gt;InboundMessages&lt;/b&gt; upto the target hash of the dispute (dispute.latestInboundMessageBlockHash) - the dispute at cration is forced to use the latest InboundMessageBlockHash or its on-chain commitment will be rejected -&amp;gt; it&#39;s aware of the signature set expected and only if that siganture set has finalized the latest milestone, can the dispute be commited without posting AuditingData, since everyone can derive it&lt;div&gt;&lt;br&gt;&lt;br&gt;We can allow the on-chain snapshot to be updated while the dispute game is ongoing and thus potentially expanding the siganture set and causing this proof to become VALID, but an honest peer would have to sign or has already signed such milestone, for the milestone to become final and used to update the snapshot on-chain&amp;nbsp; -&amp;gt; it&#39;s AWARE of the largest participant set -&amp;gt; so a malicous subset can not collude to substitute the snapshot to anything that the honest peer didn&#39;t take into account already.&lt;br&gt;&lt;br&gt;If the particpant set dynamically expands and contracts off-chain, the honest participant should do a &lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;multicall&lt;/font&gt; and &lt;b&gt;update the snaspshot&lt;/b&gt; to the latest milestone possible to checkpoint it on-chain and thus preventing a potential malicious set from presneting a &#39;&lt;b&gt;middle snapshot&lt;/b&gt;&#39; that may contain a larger (and outdated) participant set, which could cause this proof to be VALID and slash an honest commiter.&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="441">
+                    <mxGeometry y="30" width="410" height="360" as="geometry"/>
+                </mxCell>
+                <mxCell id="444" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;LastMilestoneNotFinalAndNoAuditingData&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="1541" y="425.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="445" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="437" target="444">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1473" y="560" as="sourcePoint"/>
+                        <mxPoint x="1553" y="560" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="446" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="445">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="460" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="dv-frame" source="447" target="458">
+                    <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="226" y="597"/>
+                            <mxPoint x="1347" y="830"/>
+                            <mxPoint x="986" y="830"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="7" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="6" vertex="1" connectable="0">
+                <mxCell id="447" value="last milestone in storage?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="1233" y="650" width="229" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="448" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="dv-frame" source="437" target="447">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1230" y="490" as="sourcePoint"/>
+                        <mxPoint x="1310" y="490" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="449" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="448">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="8" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="dv-synced-decision" target="2" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="381" y="942" as="sourcePoint"/>
-                        <mxPoint x="461" y="942" as="targetPoint"/>
+                <mxCell id="450" value="Request Data from peers and reschdeule auditing -&amp;gt; worst case -&amp;gt; skip and aboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="1610" y="667.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="451" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="1930" y="667.5" width="300" height="410" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="9" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="8" vertex="1" connectable="0">
+                <mxCell id="452" value="This can only happen when someone was injected directly into the particiapnt set off-chain as part of a normal state transition - e.g. a friend sends funds to a friend directly off-chain. The on-chain system is NOT AWARE of the expansion of the participant set, and allows a dispute to be commited without accouting the new participant.&lt;br&gt;&lt;br&gt;This isn&#39;t really a problem, since the participan that can&#39;t audit never commited funds and the funds are not actually theirs, but from the &#39;friend&#39; and the frend can audit and provide the peer data to audit retroactively, but in the worst case the peer can walk away without actually indoorig any financial loss since the funds where never theirs.&amp;nbsp;&lt;br&gt;&lt;br&gt;Once the off-chain transaction to update the participant set is final, the peer can update the snapshot on-chain -&amp;gt; which would include them in the particpant set and the chain would gurantee them DA going forward.&lt;br&gt;&lt;br&gt;If the funds were theirs and they came as a legitimate L1 deposit, the chain IS AWARE and enforces their siganture requirement OR data availability.guarantees." style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="451">
+                    <mxGeometry y="30" width="300" height="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="453" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="447" target="450">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="-10" as="offset"/>
+                        <mxPoint x="1620" y="740" as="sourcePoint"/>
+                        <mxPoint x="1700" y="740" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="10" value="is correct auditing data" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="141" y="912" width="170" height="120" as="geometry"/>
-                </mxCell>
-                <mxCell id="11" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;&lt;b&gt;IncorrectAuditingDataWithDataIntegrityVerified&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="401" y="934.5" width="300" height="75" as="geometry"/>
-                </mxCell>
-                <mxCell id="12" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="10" target="11" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="321" y="972" as="sourcePoint"/>
-                        <mxPoint x="471" y="1102" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="13" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="12" vertex="1" connectable="0">
+                <mxCell id="454" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="453">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="14" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="dv-synced-decision" target="10" edge="1">
+                <mxCell id="457" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="455" target="456">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="459" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="dv-frame" source="513" target="458">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="381" y="942" as="sourcePoint"/>
-                        <mxPoint x="461" y="942" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="685" y="830"/>
+                            <mxPoint x="986" y="830"/>
+                        </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="15" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="14" vertex="1" connectable="0">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="-10" as="offset"/>
+                <mxCell id="515" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="455" target="513">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="455" value="verifyStateProof" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="570.5" y="570" width="229" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="456" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;InvalidStateProof(withIntegrityVerified)&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="189" y="587.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="458" value="&lt;div&gt;run all stateProof blocks through the pipeline to try and catch fraud&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="861" y="977" width="250" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="461" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="1140" y="937" width="260" height="360" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="17" value="verify dispute input&lt;br&gt;&lt;div&gt;is onChainSlashes subest&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="1082" width="200" height="140" as="geometry"/>
+                <mxCell id="462" value="The pipeline should catch potential fraud - double sign, invalid state transition, blocks not linked in the stateProof and persist the fraudProofs in storage.&amp;nbsp;&lt;br&gt;&lt;br&gt;Also for dispute fraud proofs - but run the entire pipeline, not short circuti it, so we detect and punish all fraud.&amp;nbsp;&lt;br&gt;&lt;br&gt;After the pipeline we can short circut if there&#39;s a disptue fraud proof available to kill the dispute - all is done with a single transaction and a multicall under the hood&amp;nbsp;&lt;br&gt;&lt;br&gt;Persist only by HASH - unordered - so we don&#39;t alter our perception of the latest state, but we do keep the evidence and state, so we can catch more fraud and more importantly REDUCE later" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="461">
+                    <mxGeometry y="30" width="260" height="330" as="geometry"/>
                 </mxCell>
-                <mxCell id="19" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;onChainSlashesNotSubset&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="416" y="1114.5" width="300" height="75" as="geometry"/>
+                <mxCell id="463" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;&lt;b&gt;InvalidBlockInStateProofApplyFraudProof&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="440" y="1267" width="300" height="75" as="geometry"/>
                 </mxCell>
-                <mxCell id="20" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="17" target="19" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="326" y="1152" as="sourcePoint"/>
-                        <mxPoint x="486" y="1282" as="targetPoint"/>
+                <mxCell id="464" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="600" y="957" width="230" height="220" as="geometry">
+                        <mxRectangle x="120" y="500" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="21" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="20" vertex="1" connectable="0">
+                <mxCell id="465" value="Not sure does the pipeline account of consequtive blocks are not linked - since the OG pipeline goes block by block in isolation and when blocks are not linked it ignores - the stateProof is an atomic commitment on the structure -&amp;gt; so if blocks are not linked we can kill&amp;nbsp;&lt;br&gt;&lt;br&gt;Do we run on older milestones where we don&#39;t have the prior state? We don&#39;t gurantee DA for it -&amp;gt; think" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="464">
+                    <mxGeometry y="30" width="230" height="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="466" value="dispute fraud proof detected?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="886" y="1234.5" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="467" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="dv-frame" source="458" target="466">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="469" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="466" target="463">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="-10" as="offset"/>
+                        <mxPoint x="790" y="1377" as="sourcePoint"/>
+                        <mxPoint x="870" y="1377" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="22" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="10" target="17" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="1042" as="sourcePoint"/>
-                        <mxPoint x="551" y="1042" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="23" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="22" vertex="1" connectable="0">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="-10" as="offset"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="24" value="verify dispute balance invariant" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="1269" width="200" height="140" as="geometry"/>
-                </mxCell>
-                <mxCell id="25" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;invalidBalanceInvariant&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="416" y="1301.5" width="300" height="75" as="geometry"/>
-                </mxCell>
-                <mxCell id="26" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="24" target="25" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="306" y="1339" as="sourcePoint"/>
-                        <mxPoint x="486" y="1469" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="27" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="26" vertex="1" connectable="0">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="-10" as="offset"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="28" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="17" target="24" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="1532" as="sourcePoint"/>
-                        <mxPoint x="551" y="1532" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="29" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="28" vertex="1" connectable="0">
+                <mxCell id="470" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="469">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="30" value="verify dispute is latest state" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="1482" width="200" height="140" as="geometry"/>
+                <mxCell id="471" value="verifyLastMilestone finality takes into account inboundMessages correctly" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="824" y="1437" width="324" height="140" as="geometry"/>
                 </mxCell>
-                <mxCell id="31" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;NotLatestState&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="421" y="1514.5" width="300" height="75" as="geometry"/>
-                </mxCell>
-                <mxCell id="32" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="30" target="31" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="331" y="1552" as="sourcePoint"/>
-                        <mxPoint x="491" y="1682" as="targetPoint"/>
+                <mxCell id="472" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="1161" y="1352" width="380" height="530" as="geometry">
+                        <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="33" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="32" vertex="1" connectable="0">
+                <mxCell id="473" value="The protocol guarantee data availability on the last finalized state, from which newer states can be dervied, but it doesn&#39;t guarantee corectness of the finalized state, so a new joiner may not be able to prove correctness of the state given and as such may not be able to challenge it, at least the state transition. A poisoned state can be given.&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;That&#39;s fine, since from a perspective of a new participant, they don&#39;t care about the state before them, they only care that the money/value invariant is preserved (deposits = balances + withdrawals) regardless of the actuall distribution, which we make available as an O(1) check on the state given (made available). This gurantees to them that the money/value is correct before thier deposit is injected and they&#39;ll actually verify the state transition that injects their balance.&lt;br&gt;&lt;br&gt;So what&#39;s important to gurantee to the new users is the state transition when their deposit is injected into the state.&amp;nbsp;&lt;br&gt;&lt;br&gt;If a block consumes an inboundMessage and claims finality on itself, it not only has to prove finality of the threshold set of the state machine at that point, but it also has to prove that the issuer of the inbound message signed and confirmed the block to be conisdered final - this gurantees to new joiners that they could audit the state transition of their join.&lt;br&gt;&lt;br&gt;If a block consumes an inboundMessage, but does not reach finality (including from the issuer of the inboundMessage) it can NOT be used as a finality anchor for data availability and a prior block has to be used instead, so the user has prior data to derive and verify that the state transition that injected them into the state machine with their deposit is correct.&amp;nbsp;&lt;br&gt;&lt;br&gt;If the last milestone does not respect this requirement, this fraud proof will kill the dispute and slash the issuer.&lt;/font&gt;&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="472">
+                    <mxGeometry y="30" width="380" height="500" as="geometry"/>
+                </mxCell>
+                <mxCell id="474" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;LastMilestoneLacksInboundSignatures&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="440" y="1469.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="475" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="dv-frame" source="466" target="471">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="960" y="1477" as="sourcePoint"/>
+                        <mxPoint x="1040" y="1477" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="476" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="475">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="34" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="24" target="30" edge="1">
+                <mxCell id="479" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="471" target="474">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="1632" as="sourcePoint"/>
-                        <mxPoint x="551" y="1632" as="targetPoint"/>
+                        <mxPoint x="960" y="1477" as="sourcePoint"/>
+                        <mxPoint x="1040" y="1477" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="35" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="34" vertex="1" connectable="0">
+                <mxCell id="480" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="479">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="481" value="verify dispute input&lt;br&gt;&lt;div&gt;is onChainSlashes subest&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="886" y="1709" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="482" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;onChainSlashesNotSubset&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="440" y="1741.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="485" value="verify dispute balance invariant" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="886" y="1896" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="486" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;invalidBalanceInvariant&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="440" y="1928.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="489" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="dv-frame" source="481" target="485">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1231" y="2159" as="sourcePoint"/>
+                        <mxPoint x="1311" y="2159" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="490" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="489">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="491" value="verify dispute is latest state" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="886" y="2109" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="492" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;NotLatestState&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="440" y="2141.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="495" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="dv-frame" source="485" target="491">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1231" y="2259" as="sourcePoint"/>
+                        <mxPoint x="1311" y="2259" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="496" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="495">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="36" value="timouet?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="1692" width="200" height="140" as="geometry"/>
+                    <mxGeometry x="885" y="2336" width="200" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="41" value="isLinked to latest state" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="1932" width="200" height="140" as="geometry"/>
+                    <mxGeometry x="885" y="2576" width="200" height="140" as="geometry"/>
                 </mxCell>
-                <mxCell id="44" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="30" target="36" edge="1">
+                <mxCell id="44" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="491" target="36" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="1792" as="sourcePoint"/>
-                        <mxPoint x="551" y="1792" as="targetPoint"/>
+                        <mxPoint x="985" y="2266" as="sourcePoint"/>
+                        <mxPoint x="1310" y="2436" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="45" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="44" vertex="1" connectable="0">
@@ -189,8 +269,8 @@
                 </mxCell>
                 <mxCell id="46" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="36" target="41" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="1792" as="sourcePoint"/>
-                        <mxPoint x="551" y="1792" as="targetPoint"/>
+                        <mxPoint x="1230" y="2436" as="sourcePoint"/>
+                        <mxPoint x="1310" y="2436" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="47" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="46" vertex="1" connectable="0">
@@ -199,12 +279,12 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="49" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutNotLinkedToLatestState&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="401" y="1965" width="300" height="75" as="geometry"/>
+                    <mxGeometry x="1160" y="2609" width="300" height="75" as="geometry"/>
                 </mxCell>
                 <mxCell id="50" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="41" target="49" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="331" y="2002.5" as="sourcePoint"/>
-                        <mxPoint x="496" y="2132.5" as="targetPoint"/>
+                        <mxPoint x="1090" y="2646.5" as="sourcePoint"/>
+                        <mxPoint x="1255" y="2776.5" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="51" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="50" vertex="1" connectable="0">
@@ -213,15 +293,15 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="52" value="is next block author timedout" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="2122" width="200" height="140" as="geometry"/>
+                    <mxGeometry x="885" y="2766" width="200" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="53" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutParticipantNotNext&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="401" y="2154.5" width="300" height="75" as="geometry"/>
+                    <mxGeometry x="1160" y="2798.5" width="300" height="75" as="geometry"/>
                 </mxCell>
                 <mxCell id="54" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="52" target="53" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="335" y="2191.5" as="sourcePoint"/>
-                        <mxPoint x="505" y="2322" as="targetPoint"/>
+                        <mxPoint x="1094" y="2835.5" as="sourcePoint"/>
+                        <mxPoint x="1264" y="2966" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="55" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="54" vertex="1" connectable="0">
@@ -230,15 +310,15 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="56" value="is timeout too early?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="2312" width="200" height="140" as="geometry"/>
+                    <mxGeometry x="885" y="2956" width="200" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="57" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutTooEarly&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="401" y="2344.5" width="300" height="75" as="geometry"/>
+                    <mxGeometry x="1160" y="2988.5" width="300" height="75" as="geometry"/>
                 </mxCell>
                 <mxCell id="60" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="56" target="57" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="2212" as="sourcePoint"/>
-                        <mxPoint x="551" y="2212" as="targetPoint"/>
+                        <mxPoint x="1230" y="2856" as="sourcePoint"/>
+                        <mxPoint x="1310" y="2856" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="61" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="60" vertex="1" connectable="0">
@@ -248,8 +328,8 @@
                 </mxCell>
                 <mxCell id="62" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="41" target="52" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="2212" as="sourcePoint"/>
-                        <mxPoint x="551" y="2212" as="targetPoint"/>
+                        <mxPoint x="1230" y="2856" as="sourcePoint"/>
+                        <mxPoint x="1310" y="2856" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="63" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="62" vertex="1" connectable="0">
@@ -259,8 +339,8 @@
                 </mxCell>
                 <mxCell id="64" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="52" target="56" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="2212" as="sourcePoint"/>
-                        <mxPoint x="551" y="2212" as="targetPoint"/>
+                        <mxPoint x="1230" y="2856" as="sourcePoint"/>
+                        <mxPoint x="1310" y="2856" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="65" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="64" vertex="1" connectable="0">
@@ -269,12 +349,12 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="68" value="N/N threshold on timedout block?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="2502" width="200" height="140" as="geometry"/>
+                    <mxGeometry x="885" y="3146" width="200" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="66" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="56" target="68" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="2382" as="sourcePoint"/>
-                        <mxPoint x="551" y="2382" as="targetPoint"/>
+                        <mxPoint x="1230" y="3026" as="sourcePoint"/>
+                        <mxPoint x="1310" y="3026" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="67" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="66" vertex="1" connectable="0">
@@ -283,12 +363,12 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="69" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutThreshold&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="401" y="2534.5" width="300" height="75" as="geometry"/>
+                    <mxGeometry x="1160" y="3178.5" width="300" height="75" as="geometry"/>
                 </mxCell>
                 <mxCell id="70" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="68" target="69" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="346" y="2572" as="sourcePoint"/>
-                        <mxPoint x="571" y="2402" as="targetPoint"/>
+                        <mxPoint x="1105" y="3216" as="sourcePoint"/>
+                        <mxPoint x="1330" y="3046" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="71" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="70" vertex="1" connectable="0">
@@ -297,12 +377,12 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="72" value="is block posted on-chain?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="126" y="2702" width="200" height="140" as="geometry"/>
+                    <mxGeometry x="885" y="3346" width="200" height="140" as="geometry"/>
                 </mxCell>
                 <mxCell id="73" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="68" target="72" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="471" y="2632" as="sourcePoint"/>
-                        <mxPoint x="551" y="2632" as="targetPoint"/>
+                        <mxPoint x="1230" y="3276" as="sourcePoint"/>
+                        <mxPoint x="1310" y="3276" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="74" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="73" vertex="1" connectable="0">
@@ -311,12 +391,12 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="75" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutCalldataPosted&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="401" y="2734.5" width="300" height="75" as="geometry"/>
+                    <mxGeometry x="1160" y="3378.5" width="300" height="75" as="geometry"/>
                 </mxCell>
                 <mxCell id="76" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;" parent="dv-frame" source="72" target="75" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="331" y="2772" as="sourcePoint"/>
-                        <mxPoint x="576" y="2602" as="targetPoint"/>
+                        <mxPoint x="1090" y="3416" as="sourcePoint"/>
+                        <mxPoint x="1335" y="3246" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="77" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="76" vertex="1" connectable="0">
@@ -325,134 +405,603 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="79" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;VALID&lt;/span&gt;" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.terminator;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="dv-frame" vertex="1">
-                    <mxGeometry x="891" y="2151" width="140" height="60" as="geometry"/>
+                    <mxGeometry x="1650" y="2576" width="140" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="82" value="timeout" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="769" y="2336" width="791" height="1230" as="geometry"/>
+                </mxCell>
+                <mxCell id="37" value="is correct dispute output" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="1620" y="2336" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="38" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;InvalidOutputState&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
+                    <mxGeometry x="1901.5" y="2368.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="39" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="37" target="38" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1806.5" y="2406" as="sourcePoint"/>
+                        <mxPoint x="1971.5" y="2536" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="40" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="39" vertex="1" connectable="0">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="42" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="36" target="37" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1260" y="2436" as="sourcePoint"/>
+                        <mxPoint x="1340" y="2436" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="43" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="42" vertex="1" connectable="0">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="78" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" parent="dv-frame" source="72" target="37" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1015" y="3526"/>
+                            <mxPoint x="1509" y="3526"/>
+                            <mxPoint x="1509" y="2416"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="108" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="dv-frame" source="37" target="79" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1929" y="2564" as="sourcePoint"/>
+                        <mxPoint x="1720" y="2554" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="109" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="108" vertex="1" connectable="0">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="498" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="481" target="482">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1070" y="1917" as="sourcePoint"/>
+                        <mxPoint x="1150" y="1917" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="499" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="498">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="501" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="485" target="486">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="906" y="1896" as="sourcePoint"/>
+                        <mxPoint x="760" y="1896" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="502" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="501">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="507" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="491" target="492">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="876" y="2077" as="sourcePoint"/>
+                        <mxPoint x="730" y="2077" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="508" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="507">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="509" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="dv-frame" source="471" target="481">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1070" y="1677" as="sourcePoint"/>
+                        <mxPoint x="1150" y="1677" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="510" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="509">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="513" value="&lt;div&gt;persist decomposed AuditingData in storage - only by hash - doesn&#39;t affect local perception of latest state - just unorderd hash map&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="dv-frame">
+                    <mxGeometry x="560" y="730" width="250" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="160" value="is correct dispute output" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="4061" y="1792" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="161" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;InvalidOutputState&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+                    <mxGeometry x="4342.5" y="1824.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="162" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" source="160" target="161" parent="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="4247.5" y="1862" as="sourcePoint"/>
+                        <mxPoint x="4412.5" y="1992" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="163" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="162">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="164" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" source="205" target="160" parent="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="3701" y="1892" as="sourcePoint"/>
+                        <mxPoint x="3781" y="1892" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="165" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="164">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="166" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" source="232" target="160" parent="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="3456" y="2982"/>
+                            <mxPoint x="3950" y="2982"/>
+                            <mxPoint x="3950" y="1872"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="167" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" source="160" target="252" parent="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="4370" y="2020" as="sourcePoint"/>
+                        <mxPoint x="4450" y="2020" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="168" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="167">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="169" value="validateDispute()&lt;br&gt;DisputeValidationService&lt;br&gt;OLD" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=170;fillColor=#ffe6cc;strokeColor=#d79b00;height=50;" vertex="1" parent="1">
+                    <mxGeometry x="3200" y="100" width="2012" height="3020" as="geometry"/>
+                </mxCell>
+                <mxCell id="170" value="validateDispute(dispute,onChainAuditngData?)" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.start_1;whiteSpace=wrap;" vertex="1" parent="169">
+                    <mxGeometry x="271" y="40" width="290" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="171" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;onChainAuditngData&lt;/span&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="331" y="542" width="170" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="172" value="Try reconstructing auditing data&lt;div&gt;&lt;br/&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="870" y="562" width="250" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="173" value="is validStateProof &lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;with&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;data integrity&lt;/font&gt;&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="141" y="752" width="170" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="174" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;font style=&quot;&quot;&gt;&lt;b style=&quot;&quot;&gt;&lt;font&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;InvalidStateProof&lt;/font&gt;&lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;With&lt;/font&gt;&lt;/font&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;DataIntegrityVerified&lt;/font&gt;&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="391" y="774.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="175" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="171" target="172">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="381" y="942" as="sourcePoint"/>
+                        <mxPoint x="461" y="942" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="176" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="175">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="177" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="171" target="173">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="381" y="942" as="sourcePoint"/>
+                        <mxPoint x="461" y="942" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="226" y="597"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="178" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="177">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="179" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="173" target="174">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="381" y="942" as="sourcePoint"/>
+                        <mxPoint x="461" y="942" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="180" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="179">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="181" value="is correct auditing data" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="141" y="912" width="170" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="182" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;&lt;b&gt;IncorrectAuditingDataWithDataIntegrityVerified&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="401" y="934.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="183" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="181" target="182">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="321" y="972" as="sourcePoint"/>
+                        <mxPoint x="471" y="1102" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="184" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="183">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="185" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="173" target="181">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="381" y="942" as="sourcePoint"/>
+                        <mxPoint x="461" y="942" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="186" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="185">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="187" value="verify dispute input&lt;br&gt;&lt;div&gt;is onChainSlashes subest&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="1082" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="188" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;onChainSlashesNotSubset&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="416" y="1114.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="189" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="187" target="188">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="326" y="1152" as="sourcePoint"/>
+                        <mxPoint x="486" y="1282" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="190" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="189">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="191" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="181" target="187">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="1042" as="sourcePoint"/>
+                        <mxPoint x="551" y="1042" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="192" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="191">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="193" value="verify dispute balance invariant" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="1269" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="194" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;invalidBalanceInvariant&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="416" y="1301.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="195" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="193" target="194">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="306" y="1339" as="sourcePoint"/>
+                        <mxPoint x="486" y="1469" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="196" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="195">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="197" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="187" target="193">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="1532" as="sourcePoint"/>
+                        <mxPoint x="551" y="1532" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="198" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="197">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="199" value="verify dispute is latest state" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="1482" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="200" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;NotLatestState&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="421" y="1514.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="201" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="199" target="200">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="331" y="1552" as="sourcePoint"/>
+                        <mxPoint x="491" y="1682" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="202" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="201">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="203" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="193" target="199">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="1632" as="sourcePoint"/>
+                        <mxPoint x="551" y="1632" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="204" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="203">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="205" value="timouet?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="1692" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="206" value="isLinked to latest state" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="1932" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="207" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="199" target="205">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="1792" as="sourcePoint"/>
+                        <mxPoint x="551" y="1792" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="208" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="207">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="209" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="205" target="206">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="1792" as="sourcePoint"/>
+                        <mxPoint x="551" y="1792" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="210" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="209">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="211" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutNotLinkedToLatestState&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="401" y="1965" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="212" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="206" target="211">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="331" y="2002.5" as="sourcePoint"/>
+                        <mxPoint x="496" y="2132.5" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="213" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="212">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="214" value="is next block author timedout" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="2122" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="215" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutParticipantNotNext&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="401" y="2154.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="216" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="214" target="215">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="335" y="2191.5" as="sourcePoint"/>
+                        <mxPoint x="505" y="2322" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="217" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="216">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="218" value="is timeout too early?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="2312" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="219" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutTooEarly&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="401" y="2344.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="220" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="218" target="219">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="2212" as="sourcePoint"/>
+                        <mxPoint x="551" y="2212" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="221" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="220">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="222" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="206" target="214">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="2212" as="sourcePoint"/>
+                        <mxPoint x="551" y="2212" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="223" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="222">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="224" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="214" target="218">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="2212" as="sourcePoint"/>
+                        <mxPoint x="551" y="2212" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="225" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="224">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="226" value="N/N threshold on timedout block?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="2502" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="227" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="218" target="226">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="2382" as="sourcePoint"/>
+                        <mxPoint x="551" y="2382" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="228" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="227">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="229" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutThreshold&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="401" y="2534.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="230" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="226" target="229">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="346" y="2572" as="sourcePoint"/>
+                        <mxPoint x="571" y="2402" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="231" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="230">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="232" value="is block posted on-chain?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
+                    <mxGeometry x="126" y="2702" width="200" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="233" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="226" target="232">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="471" y="2632" as="sourcePoint"/>
+                        <mxPoint x="551" y="2632" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="234" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="233">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="235" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;TimeoutCalldataPosted&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
+                    <mxGeometry x="401" y="2734.5" width="300" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="236" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="169" source="232" target="235">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="331" y="2772" as="sourcePoint"/>
+                        <mxPoint x="576" y="2602" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="237" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="236">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint y="-10" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="238" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;VALID&lt;/span&gt;" style="strokeWidth=2;html=1;shape=mxgraph.flowchart.terminator;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="169">
+                    <mxGeometry x="891" y="2151" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="239" value="timeout" style="shape=umlFrame;whiteSpace=wrap;html=1;pointerEvents=0;recursiveResize=0;container=1;collapsible=0;width=160;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="169">
                     <mxGeometry x="10" y="1692" width="791" height="1230" as="geometry"/>
                 </mxCell>
-                <mxCell id="88" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;isSynced(dispute.stateProof)&lt;/span&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                <mxCell id="240" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;isSynced(dispute.stateProof)&lt;/span&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
                     <mxGeometry x="301.5" y="178" width="229" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="89" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="dv-frame" vertex="1" collapsed="1">
+                <mxCell id="241" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" collapsed="1" parent="169">
                     <mxGeometry x="150" y="199" width="70" height="30" as="geometry">
                         <mxRectangle x="150" y="170" width="140" height="80" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="90" value="is our local state synced to the dispute state proof&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="89" vertex="1">
+                <mxCell id="242" value="is our local state synced to the dispute state proof&amp;nbsp;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="241">
                     <mxGeometry y="30" width="140" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="91" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="dv-frame" source="dv-start" target="88" edge="1">
+                <mxCell id="243" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="169" source="170" target="240">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="92" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="88" edge="1">
+                <mxCell id="244" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="240">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="390" y="529" as="sourcePoint"/>
                         <mxPoint x="416" y="541" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="93" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="92" vertex="1" connectable="0">
+                <mxCell id="245" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="244">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="113" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="dv-frame" source="94" target="112" edge="1">
+                <mxCell id="246" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="169" source="247" target="262">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="94" value="&lt;div&gt;Check long range milestone attack&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="dv-frame" vertex="1">
+                <mxCell id="247" value="&lt;div&gt;Check long range milestone attack&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="169">
                     <mxGeometry x="620" y="198" width="250" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="95" value="TODO" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="dv-frame" vertex="1">
+                <mxCell id="248" value="TODO" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="169">
                     <mxGeometry x="630" y="278" width="140" height="90" as="geometry">
                         <mxRectangle x="630" y="250" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="96" value="TODO - need to implement this fraud proof - already designed" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="95" vertex="1">
+                <mxCell id="249" value="TODO - need to implement this fraud proof - already designed" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="248">
                     <mxGeometry y="30" width="140" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="97" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="88" target="94" edge="1">
+                <mxCell id="250" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="240" target="247">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="700" y="368" as="sourcePoint"/>
                         <mxPoint x="780" y="368" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="98" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="97" vertex="1" connectable="0">
+                <mxCell id="251" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="250">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="99" value="onChainAuditingData &amp;amp;&amp;amp; stateNotSynced" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                <mxCell id="252" value="onChainAuditingData &amp;amp;&amp;amp; stateNotSynced" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
                     <mxGeometry x="861" y="1910" width="200" height="140" as="geometry"/>
                 </mxCell>
-                <mxCell id="100" value="&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;persist latest (snapshot, state, messages?)&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="dv-frame" vertex="1">
+                <mxCell id="253" value="&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;persist latest (snapshot, state, messages?)&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="169">
                     <mxGeometry x="1140" y="1945" width="250" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="102" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="dv-frame" vertex="1">
+                <mxCell id="254" value="Think" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="169">
                     <mxGeometry x="1400" y="1949.5" width="220" height="280" as="geometry">
                         <mxRectangle x="120" y="500" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="103" value="We need to persist this, so we can do reduce if the fork choice rule picks this reality - but we need to do it in a way where our storage is consistent and does not change our OPINION on what&#39;s the latest state - we need it only for reduce -&amp;gt; maybe just persist the (snapshot, state, messages?)? - it doesn&#39;t change our opinion on blocks and we don&#39;t need the block for this case, since the reduce output will hold the block&amp;nbsp;&lt;br&gt;&lt;br&gt;This should hold since there is no ordering in snapshot and state storage - both are retrived by hash" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="102" vertex="1">
+                <mxCell id="255" value="We need to persist this, so we can do reduce if the fork choice rule picks this reality - but we need to do it in a way where our storage is consistent and does not change our OPINION on what&#39;s the latest state - we need it only for reduce -&amp;gt; maybe just persist the (snapshot, state, messages?)? - it doesn&#39;t change our opinion on blocks and we don&#39;t need the block for this case, since the reduce output will hold the block&amp;nbsp;&lt;br&gt;&lt;br&gt;This should hold since there is no ordering in snapshot and state storage - both are retrived by hash" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="254">
                     <mxGeometry y="30" width="220" height="250" as="geometry"/>
                 </mxCell>
-                <mxCell id="104" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="99" target="100" edge="1">
+                <mxCell id="256" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="252" target="253">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1170" y="1920" as="sourcePoint"/>
                         <mxPoint x="1250" y="1920" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="105" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="104" vertex="1" connectable="0">
+                <mxCell id="257" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="256">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="106" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" parent="dv-frame" source="100" target="79" edge="1">
+                <mxCell id="258" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="169" source="253" target="238">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="1265" y="2180"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="110" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="99" target="79" edge="1">
+                <mxCell id="259" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="252" target="238">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1170" y="1920" as="sourcePoint"/>
                         <mxPoint x="1250" y="1920" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="111" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="110" vertex="1" connectable="0">
+                <mxCell id="260" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="259">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="120" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="dv-frame" source="112" target="119" edge="1">
+                <mxCell id="261" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="169" source="262" target="264">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="112" value="&lt;div&gt;try sync from stateProof&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                <mxCell id="262" value="&lt;div&gt;try sync from stateProof&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="169">
                     <mxGeometry x="940" y="198" width="250" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="115" value="fraud detected and dispute killable?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                <mxCell id="263" value="fraud detected and dispute killable?" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
                     <mxGeometry x="1275.5" y="320" width="229" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="119" value="persist any fraud proofs that are detected - will be used later to slash" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="dv-frame" vertex="1">
+                <mxCell id="264" value="persist any fraud proofs that are detected - will be used later to slash" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="169">
                     <mxGeometry x="1240" y="196" width="300" height="75" as="geometry"/>
                 </mxCell>
-                <mxCell id="121" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="dv-frame" source="119" target="115" edge="1">
+                <mxCell id="265" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="169" source="264" target="263">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="122" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;&lt;b&gt;InvalidBlockInStateProofApplyFraudProof&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
+                <mxCell id="266" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;&lt;b&gt;InvalidBlockInStateProofApplyFraudProof&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
                     <mxGeometry x="915" y="337.5" width="300" height="75" as="geometry"/>
                 </mxCell>
-                <mxCell id="123" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="115" target="122" edge="1">
+                <mxCell id="267" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="263" target="266">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="930" y="630" as="sourcePoint"/>
                         <mxPoint x="1010" y="630" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="124" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="123" vertex="1" connectable="0">
+                <mxCell id="268" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="267">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="125" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="dv-frame" source="115" target="dv-da-decision" edge="1">
+                <mxCell id="269" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="169" source="263" target="171">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="930" y="630" as="sourcePoint"/>
                         <mxPoint x="1010" y="630" as="targetPoint"/>
@@ -461,23 +1010,23 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="126" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="125" vertex="1" connectable="0">
+                <mxCell id="270" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="269">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="127" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="dv-frame" vertex="1">
+                <mxCell id="271" value="Note" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="169">
                     <mxGeometry x="1490" y="412.5" width="250" height="240" as="geometry">
                         <mxRectangle x="50" y="140" width="70" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="128" value="Not all fraud proofs are applicable to kill a dispute - only if the dispute has invalid strucutre in isolation will it be killed, otherwise it will persist and be part of reduce.&lt;div&gt;E.g. if a Double Sign is detected while syncing the stateProof of a dispute, that doesn&#39;t break the strucuture of a valid dispute, it just leaks information that leads the author to be slashed normaly without killing the dispute. If a InvalidState transition is detected, that does break the structure of a valid dispute and as such that is enough to kill the dispute on-chain.&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" parent="127" vertex="1">
+                <mxCell id="272" value="Not all fraud proofs are applicable to kill a dispute - only if the dispute has invalid strucutre in isolation will it be killed, otherwise it will persist and be part of reduce.&lt;div&gt;E.g. if a Double Sign is detected while syncing the stateProof of a dispute, that doesn&#39;t break the strucuture of a valid dispute, it just leaks information that leads the author to be slashed normaly without killing the dispute. If a InvalidState transition is detected, that does break the structure of a valid dispute and as such that is enough to kill the dispute on-chain.&lt;/div&gt;" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="271">
                     <mxGeometry y="30" width="250" height="210" as="geometry"/>
                 </mxCell>
-                <mxCell id="129" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;isPartial Auditing Data&lt;/span&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                <mxCell id="273" value="&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;isPartial Auditing Data&lt;/span&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
                     <mxGeometry x="1186" y="774.5" width="170" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="130" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="dv-frame" source="dv-reconstruct" target="129" edge="1">
+                <mxCell id="274" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="169" source="172" target="273">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1285" y="750" as="targetPoint"/>
                         <Array as="points">
@@ -485,63 +1034,63 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="131" value="is validStateProof - &lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;without&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;data integrity&lt;/font&gt;&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                <mxCell id="275" value="is validStateProof - &lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;without&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;data integrity&lt;/font&gt;&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
                     <mxGeometry x="1428" y="769.5" width="192" height="120" as="geometry"/>
                 </mxCell>
-                <mxCell id="132" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;font style=&quot;&quot;&gt;&lt;b style=&quot;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;InvalidStateProof&lt;/font&gt;&lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;Without&lt;/font&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;DataIntegrityVerified&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
+                <mxCell id="276" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;font style=&quot;&quot;&gt;&lt;b style=&quot;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;InvalidStateProof&lt;/font&gt;&lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;Without&lt;/font&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;DataIntegrityVerified&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
                     <mxGeometry x="1678" y="792" width="300" height="75" as="geometry"/>
                 </mxCell>
-                <mxCell id="133" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="131" target="132" edge="1">
+                <mxCell id="277" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="275" target="276">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1668" y="959.5" as="sourcePoint"/>
                         <mxPoint x="1748" y="959.5" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="134" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="133" vertex="1" connectable="0">
+                <mxCell id="278" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="277">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="135" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="129" target="131" edge="1">
+                <mxCell id="279" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="273" target="275">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1430" y="930" as="sourcePoint"/>
                         <mxPoint x="1510" y="930" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="136" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="135" vertex="1" connectable="0">
+                <mxCell id="280" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="279">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="137" value="Error - DATA MISSING - valid stateProof, but not synced =&amp;gt; can not audit the dispute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;gradientColor=#ea6b66;" parent="dv-frame" vertex="1">
+                <mxCell id="281" value="Error - DATA MISSING - valid stateProof, but not synced =&amp;gt; can not audit the dispute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;gradientColor=#ea6b66;" vertex="1" parent="169">
                     <mxGeometry x="1410" y="950" width="226" height="75" as="geometry"/>
                 </mxCell>
-                <mxCell id="138" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="131" target="137" edge="1">
+                <mxCell id="282" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="275" target="281">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1630" y="990" as="sourcePoint"/>
                         <mxPoint x="1710" y="990" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="139" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="138" vertex="1" connectable="0">
+                <mxCell id="283" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="282">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="140" value="valid auditing data commitment" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                <mxCell id="284" value="valid auditing data commitment" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
                     <mxGeometry x="1164" y="1060" width="214" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="142" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="129" target="140" edge="1">
+                <mxCell id="285" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="273" target="284">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1150" y="1060" as="sourcePoint"/>
                         <mxPoint x="1230" y="1060" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="143" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="142" vertex="1" connectable="0">
+                <mxCell id="286" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="285">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="144" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="dv-frame" source="140" target="dv-synced-decision" edge="1">
+                <mxCell id="287" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" edge="1" parent="169" source="284" target="173">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="910" y="830" as="sourcePoint"/>
                         <mxPoint x="990" y="830" as="targetPoint"/>
@@ -551,97 +1100,49 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="145" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="144" vertex="1" connectable="0">
+                <mxCell id="288" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="287">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="260" y="302" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="148" value="is validStateProof - &lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;without&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;data integrity&lt;/font&gt;&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="dv-frame" vertex="1">
+                <mxCell id="289" value="is validStateProof - &lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;without&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;data integrity&lt;/font&gt;&lt;/div&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" vertex="1" parent="169">
                     <mxGeometry x="1457" y="1055" width="192" height="120" as="geometry"/>
                 </mxCell>
-                <mxCell id="149" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;font style=&quot;&quot;&gt;&lt;b style=&quot;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;InvalidStateProof&lt;/font&gt;&lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;Without&lt;/font&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;DataIntegrityVerified&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
+                <mxCell id="290" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;font style=&quot;&quot;&gt;&lt;b style=&quot;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;InvalidStateProof&lt;/font&gt;&lt;font style=&quot;color: rgb(255, 0, 255);&quot;&gt;Without&lt;/font&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;DataIntegrityVerified&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
                     <mxGeometry x="1707" y="1077.5" width="300" height="75" as="geometry"/>
                 </mxCell>
-                <mxCell id="150" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="148" target="149" edge="1">
+                <mxCell id="291" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="289" target="290">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1697" y="1244" as="sourcePoint"/>
                         <mxPoint x="1777" y="1244" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="151" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="150" vertex="1" connectable="0">
+                <mxCell id="292" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="291">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="155" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;" parent="dv-frame" source="148" target="157" edge="1">
+                <mxCell id="293" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitPerimeter=0;" edge="1" parent="169" source="289" target="295">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1659" y="1274.5" as="sourcePoint"/>
                         <mxPoint x="1552" y="1234.5" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="156" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="155" vertex="1" connectable="0">
+                <mxCell id="294" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="293">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="157" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;font style=&quot;&quot;&gt;&lt;b style=&quot;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;IncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="dv-frame" vertex="1">
+                <mxCell id="295" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;font style=&quot;&quot;&gt;&lt;b style=&quot;&quot;&gt;&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;IncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks&lt;/font&gt;&lt;/b&gt;&lt;/font&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="169">
                     <mxGeometry x="1259.5" y="1250" width="587" height="75" as="geometry"/>
                 </mxCell>
-                <mxCell id="158" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="dv-frame" source="140" target="148">
+                <mxCell id="296" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;" edge="1" parent="169" source="284" target="289">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="1350" y="890" as="sourcePoint"/>
                         <mxPoint x="1469" y="890" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="159" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="158">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="-10" as="offset"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="37" value="is correct dispute output" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;" parent="1" vertex="1">
-                    <mxGeometry x="871" y="1732" width="200" height="140" as="geometry"/>
-                </mxCell>
-                <mxCell id="38" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;&lt;font&gt;persist dispute fraud proof&lt;/font&gt;&lt;/font&gt;&lt;div&gt;&lt;b&gt;InvalidOutputState&lt;/b&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
-                    <mxGeometry x="1152.5" y="1764.5" width="300" height="75" as="geometry"/>
-                </mxCell>
-                <mxCell id="39" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;" parent="1" source="37" target="38" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="1057.5" y="1802" as="sourcePoint"/>
-                        <mxPoint x="1222.5" y="1932" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="40" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="39" vertex="1" connectable="0">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="-10" as="offset"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="42" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitPerimeter=0;entryPerimeter=0;" parent="1" source="36" target="37" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="511" y="1832" as="sourcePoint"/>
-                        <mxPoint x="591" y="1832" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="43" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="42" vertex="1" connectable="0">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="-10" as="offset"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="78" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="72" target="37" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <Array as="points">
-                            <mxPoint x="266" y="2922"/>
-                            <mxPoint x="760" y="2922"/>
-                            <mxPoint x="760" y="1812"/>
-                        </Array>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="108" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="37" target="99" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="1180" y="1960" as="sourcePoint"/>
-                        <mxPoint x="1260" y="1960" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="109" value="True" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="108" vertex="1" connectable="0">
+                <mxCell id="297" value="False" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="296">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint y="-10" as="offset"/>
                     </mxGeometry>
