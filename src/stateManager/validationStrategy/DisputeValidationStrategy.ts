@@ -1,6 +1,9 @@
 import { Block } from "@/models";
 import { BlockValidationResult } from "@/types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeAuditingDataStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 import AValidationStrategy from "./AValidationStrategy";
 import FraudProofService from "../utils/FraudProofService";
@@ -19,8 +22,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
 
     constructor(
         private readonly storage: Storage,
-        private readonly dispute: DisputeStruct,
+        protected readonly dispute: DisputeStruct,
         private readonly blockIndexInUnfinalizedPartOfStateProof: number,
+        protected readonly auditingData: DisputeAuditingDataStruct,
         logger: Logger
     ) {
         super();
@@ -66,7 +70,11 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
-        return BlockValidationResult.DISCONNECT;
+        this.disputeFraudProofService.createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
+            this.dispute,
+            this.auditingData
+        );
+        return BlockValidationResult.DISPUTE;
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;

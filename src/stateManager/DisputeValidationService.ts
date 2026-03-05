@@ -15,7 +15,9 @@ import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
 import type StateManager from "./StateManager";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
+import MilestoneValidationStrategy from "./validationStrategy/MilestoneValidationStrategy";
 import { StateSnapshot } from "@/models";
+import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class DisputeValidationService {
@@ -214,53 +216,103 @@ export default class DisputeValidationService {
         this.logger.debug("trySync", {
             dispute: LoggerUtils.getDisputeMetadata(dispute)
         });
+
+        // getAuditingData is pure/synchronous – compute once for both strategies.
+        const { auditingData } = this.disputeManager.getAuditingData(
+            dispute.input.forkId,
+            dispute.input.stateProof
+        );
+
+        const { milestones } = dispute.input.stateProof;
+
+        for (let mi = 0; mi < milestones.length; mi++) {
+            const isLast = mi === milestones.length - 1;
+            const bcs = isLast
+                ? milestones[mi].blockConfirmations.slice(0, 1)
+                : milestones[mi].blockConfirmations;
+
+            for (const bc of bcs) {
+                const strategy = new MilestoneValidationStrategy(
+                    this.storage,
+                    dispute,
+                    auditingData,
+                    this.logger
+                );
+                const isOk = await this.stateManager.onBlockConfirmation(bc, {
+                    validationStrategy: strategy
+                });
+                if (!isOk) {
+                    const shouldStop =
+                        await this.tryApplyDisputeFraudProof(dispute);
+                    if (shouldStop !== null)
+                        return { shouldContinueVerification: !shouldStop };
+                }
+            }
+        }
+
         const unfinalizedBlocks =
             await this.diamondStateMachine.localDiamondContract.getUnfinalizedBlockConfirmationsFromStateProof(
                 dispute.input.stateProof
             );
         let index = 0;
         for (const bc of unfinalizedBlocks) {
-            const disputeStrategy = new DisputeValidationStrategy(
+            const strategy = new DisputeValidationStrategy(
                 this.storage,
                 dispute,
                 index,
+                auditingData,
                 this.logger
             );
             const isOk = await this.stateManager.onBlockConfirmation(bc, {
-                validationStrategy: disputeStrategy
+                validationStrategy: strategy
             });
             if (!isOk) {
-                const disputeFraudProof =
-                    this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                        dispute
-                    );
-                if (!disputeFraudProof) {
-                    this.logger.warn(
-                        "No dispute fraud proof found after failed validation during trySync"
-                    );
-                    return { shouldContinueVerification: true }; // couldn't deduct a dispute fraud proof to kill the dispute => continue with verification pipeline
-                }
-                try {
-                    const txResponse =
-                        await this.stateChannelManagerContract.applyDisputeFraudProofs(
-                            [disputeFraudProof]
-                        );
-                    await txResponse.wait();
-                } catch (e) {
-                    const custom = tryDecodeCustomError(e);
-                    this.logger.error("Error applying dispute fraud proof:", {
-                        error: e,
-                        custom
-                    });
-                }
-                return { shouldContinueVerification: false };
+                const shouldStop =
+                    await this.tryApplyDisputeFraudProof(dispute);
+                if (shouldStop !== null)
+                    return { shouldContinueVerification: !shouldStop };
             }
             index++;
         }
+
         this.logger.debug("trySync completed - synced", {
             dispute: LoggerUtils.getDisputeMetadata(dispute)
         });
         return { shouldContinueVerification: true };
+    }
+
+    private async tryApplyDisputeFraudProof(
+        dispute: DisputeStruct
+    ): Promise<boolean | null> {
+        const disputeFraudProof =
+            this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                dispute
+            );
+        if (!disputeFraudProof) {
+            this.logger.warn(
+                "No dispute fraud proof after failed block validation in trySync"
+            );
+            return null;
+        }
+        await this.submitDisputeFraudProof(disputeFraudProof);
+        return true;
+    }
+
+    private async submitDisputeFraudProof(
+        disputeFraudProof: DisputeFraudProofStruct
+    ): Promise<void> {
+        try {
+            const txResponse =
+                await this.stateChannelManagerContract.applyDisputeFraudProofs([
+                    disputeFraudProof
+                ]);
+            await txResponse.wait();
+        } catch (e) {
+            this.logger.error("Error applying dispute fraud proof:", {
+                error: e,
+                custom: tryDecodeCustomError(e)
+            });
+        }
     }
 
     private async stateProofAndAuditingDataAreValid(
