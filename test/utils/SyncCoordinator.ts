@@ -76,12 +76,10 @@ export class SyncCoordinator {
                 }
 
                 for (const block of blocks) {
-                    const actualSignatures = block!.allSignatures.size;
-
-                    if (actualSignatures < totalParticipants) return false;
+                    if (block!.allSignatures.size < totalParticipants)
+                        return false;
                 }
             }
-
             return true;
         };
 
