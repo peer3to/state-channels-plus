@@ -18,6 +18,7 @@ export class SyncCoordinator {
 
     /**
      * Wait for all peers (or specific peer indices) to have the same latest block (same hash and height)
+     * Optionally wait for N/N signatures (finalization) as well
      */
     public async waitForPeersToSync(
         peers: TestPeer[],
@@ -25,9 +26,10 @@ export class SyncCoordinator {
         options?: {
             timeoutMs?: number;
             blockHashInStorage?: Hash;
+            waitForFinalization?: boolean;
         }
     ): Promise<void> {
-        const { timeoutMs = 8000, blockHashInStorage } = options || {};
+        const { timeoutMs = 8000, blockHashInStorage, waitForFinalization = false } = options || {};
         this.logger.verbose(`Waiting for ${peers.length} peers to sync`, {
             forkId,
             timeout: timeoutMs,
@@ -35,7 +37,7 @@ export class SyncCoordinator {
             useEventBarrier: !!this.eventBarrier
         });
 
-        const checkSync = () => {
+        const checkSync = async () => {
             if (peers.length === 0) return true;
 
             const blocks = peers.map((peer) =>
@@ -54,16 +56,42 @@ export class SyncCoordinator {
             const firstHash = blocks[0]!.hash;
             const firstHeight = blocks[0]!.height;
 
-            return blocks.every(
+            // Check block sync (same hash and height)
+            const blocksInSync = blocks.every(
                 (b) => b!.hash === firstHash && b!.height === firstHeight
             );
+
+            if (!blocksInSync) return false;
+
+            if (waitForFinalization) {
+                // First check N/N signatures
+                let totalParticipants: number;
+                try {
+                    const participants =
+                        await peers[0].stateManager.diamondStateMachine.getParticipants();
+                    totalParticipants = participants.length;
+                } catch (error) {
+                    this.logger.error(`Failed to get participants`, { error });
+                    return false;
+                }
+
+                for (const block of blocks) {
+                    const actualSignatures = block!.allSignatures.size;
+
+                    if (actualSignatures < totalParticipants) return false;
+                }
+            }
+
+            return true;
         };
 
         let barrierError: EventBarrierCapturedError | undefined;
         try {
             await this.eventBarrier.waitFor(checkSync, {
                 timeoutMs,
-                timeoutMessage: `Peers failed to sync within ${timeoutMs}ms`
+                timeoutMessage: waitForFinalization
+                    ? `Peers failed to sync and finalize within ${timeoutMs}ms`
+                    : `Peers failed to sync within ${timeoutMs}ms`
             });
             return;
         } catch (error) {

@@ -103,4 +103,31 @@ describe("E2E: State Snapshots", function () {
         await h.assert.snapshot.snapshotMatchesLocal();
         await h.assert.sync.maliciousPeerExcluded();
     });
+
+    it("should handle snapshot update at blockHeight = 0 (first snapshot) - edge case since genesis is also height 0", async function () {
+        const h = TestSession.getHarness();
+
+        await h.lifecycle.start(3, 0);
+        await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
+        await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
+
+        h.event.resetEventSpies();
+        await h.contextApi.capturePrePostSnapshotContext();
+
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
+
+        await h.transition.postSnapshot();
+
+        await h.event.waitForEventCounts(
+            "onStateSnapshotUpdated",
+            h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
+            10000,
+            { mode: "atLeast" }
+        );
+
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
+        await h.assert.snapshot.snapshotMatchesLocal();
+        await h.assert.sync.blockHeight({ expectedHeight: 0 });
+    });
 });

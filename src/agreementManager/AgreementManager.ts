@@ -163,10 +163,7 @@ class AgreementManager {
             for (const block of blockIterator) {
                 signedBlocks.push(block.signedBlock);
 
-                if (
-                    block.height === 0 ||
-                    block.stateSnapshotHash === previousThresholdSnapshot.hash
-                ) {
+                if (block.stateSnapshotHash === previousThresholdSnapshot.hash) {
                     break;
                 }
             }
@@ -277,7 +274,7 @@ class AgreementManager {
 
         const lastBlockConfirmation =
             milestone.blockConfirmations[
-                milestone.blockConfirmations.length - 1
+            milestone.blockConfirmations.length - 1
             ];
         return Block.fromBlockConfirmation(lastBlockConfirmation);
     }

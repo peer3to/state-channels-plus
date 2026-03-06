@@ -12,12 +12,14 @@ export class AssertSyncActions {
         blockHashInStorage?: Hash;
         peerIndices?: number[];
         timeout?: number;
+        waitForFinalization?: boolean;
     }): Promise<void> {
         const {
             expectedStateMachineStateHash,
             blockHashInStorage,
             peerIndices,
-            timeout = 10000
+            timeout = 10000,
+            waitForFinalization = false
         } = options || {};
         const peers = this.harness.getFilteredPeers(peerIndices);
         if (peers.length < 2)
@@ -30,7 +32,8 @@ export class AssertSyncActions {
 
         await this.harness.syncCoordinator.waitForPeersToSync(peers, forkId, {
             timeoutMs: timeout,
-            blockHashInStorage
+            blockHashInStorage,
+            waitForFinalization
         });
 
         const firstPeerIndex = peers[0].index;
