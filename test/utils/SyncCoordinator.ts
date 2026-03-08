@@ -3,6 +3,12 @@ import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import type { TestPeer } from "@test/harness/core/types";
 
+export type WaitForPeersToSyncOptions = {
+    timeoutMs?: number;
+    waitForFinalization?: boolean;
+    expectedHeight?: number;
+};
+
 /**
  * Handles synchronization operations and assertions for test peers.
  * Provides both async waiting and synchronous checking methods.
@@ -18,7 +24,7 @@ export class SyncCoordinator {
 
     /**
      * Wait for all peers (or specific peer indices) to have the same latest block (same hash and height)
-     * Optionally wait for N/N signatures (finalization) as well
+     * Optionally wait for N/N signatures (finalization) and/or a minimum block height.
      */
     public async waitForPeersToSync(
         peers: TestPeer[],
@@ -34,7 +40,8 @@ export class SyncCoordinator {
             forkId,
             timeout: timeoutMs,
             peerIndices: peers.map((p) => p.index),
-            useEventBarrier: !!this.eventBarrier
+            useEventBarrier: !!this.eventBarrier,
+            expectedHeight
         });
 
         const checkSync = async () => {

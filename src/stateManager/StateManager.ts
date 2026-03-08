@@ -2492,6 +2492,11 @@ class StateManager {
                 await this.diamondStateMachine.getParticipants();
             const isParticipant = participants.includes(this.signerAddress);
             if (isParticipant) this.setStatus(Status.PARTICIPATING);
+        } else if (
+            this.status === Status.PARTICIPATING &&
+            participantChanges.left.has(this.signerAddress)
+        ) {
+            this.setStatus(Status.SYNCED);
         }
 
         // step 10 - Notify any event hooks

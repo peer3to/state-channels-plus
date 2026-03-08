@@ -3,7 +3,7 @@ import { TestSession, PeerTestHarness } from "@test/harness";
 PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Join/Leave Sequence", function () {
-    it.only("join/leave sequence and fork resolution", async function () {
+    it("join/leave sequence and fork resolution", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 0, {

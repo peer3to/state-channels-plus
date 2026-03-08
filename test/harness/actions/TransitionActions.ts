@@ -179,12 +179,17 @@ export class TransitionActions {
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
+            const authorLatestBlock =
+                peer.stateManager.storage.blocks.getLatestBlock(forkId);
+            const expectedHeight = authorLatestBlock?.height;
+
             const peers = this.harness.getFilteredOrHonestPeers(
                 options.waitForPeers
             );
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
-                forkId
+                forkId,
+                { expectedHeight }
             );
         }
 

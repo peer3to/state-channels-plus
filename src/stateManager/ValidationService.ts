@@ -598,15 +598,7 @@ export default class ValidationService {
         );
 
         if (participants.size === 0) {
-            this.logger.warn(
-                "getParticipants - ⚠️  NO SNAPSHOT FOUND for previous height — participants=[] from storage, falling back to ON-CHAIN (may be stale after a leaveChannel)",
-                {
-                    blockHeight: blockCoordinates.height,
-                    lookupHeight: blockCoordinates.height - 1,
-                    forkId: blockCoordinates.forkId
-                }
-            );
-
+            // get participants from chain
             const [participantsFromChain, pendingParticipants] =
                 await Promise.all([
                     this.stateChannelManagerContract.getParticipants(channelId),
@@ -618,12 +610,6 @@ export default class ValidationService {
                 ...participantsFromChain,
                 ...pendingParticipants
             ]);
-
-            this.logger.warn("getParticipants - on-chain fallback result", {
-                blockHeight: blockCoordinates.height,
-                onChainParticipants: [...participantsFromChain],
-                pendingParticipants: [...pendingParticipants]
-            });
         }
 
         return participants;
