@@ -70,6 +70,12 @@ export class SyncCoordinator {
 
             if (!blocksInSync) return false;
 
+            // If a minimum expected height was provided, ensure all peers have
+            // reached at least that height before considering them synced.
+            if (expectedHeight !== undefined && firstHeight < expectedHeight) {
+                return false;
+            }
+
             if (waitForFinalization) {
                 // First check N/N signatures
                 let totalParticipants: number;
