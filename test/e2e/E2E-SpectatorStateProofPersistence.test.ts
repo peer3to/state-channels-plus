@@ -3,7 +3,7 @@ import { TestSession, PeerTestHarness } from "@test/harness";
 PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Join/Leave Sequence", function () {
-    it("join/leave sequence and fork resolution", async function () {
+    it.only("join/leave sequence and fork resolution", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 0, {
@@ -15,133 +15,67 @@ describe("E2E: Join/Leave Sequence", function () {
             }
         });
         let peerIndices = [0, 1, 2, 3];
+        let spectatorIndices = [];
 
-        // 0,1
         await h.transition.advanceState({ count: 2 });
 
-        //  peer 2 is leaving the channel
-        // left with peers [0, 1, 3]
-        // 2
-        let nextPeert = await h.query.getNextPeerToWrite();
-        console.log(
-            "Next to write: peer index",
-            nextPeert.index,
-            "address",
-            nextPeert.address
-        );
+        // Leave peer 2
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
         peerIndices = [0, 1, 3];
 
-        // 3
-        nextPeert = await h.query.getNextPeerToWrite();
-        console.log(
-            "Next to write: peer index",
-            nextPeert.index,
-            "address",
-            nextPeert.address
-        );
-        await h.transition.advanceState({ count: 1 });
+        // turns of 3,0
+        await h.transition.advanceState({ count: 2 });
 
-        // 0
-        nextPeert = await h.query.getNextPeerToWrite();
-        console.log(
-            "Next to write: peer index",
-            nextPeert.index,
-            "address",
-            nextPeert.address
-        );
-        await h.transition.advanceState({ count: 1 });
-
+        // Join peer 4 as spectator
         await h.addPeer(); // This adds peer index 4 as spectator
         await h.event.waitUntilEventOccurs("onConnection", 5000, [4]);
         await h.assert.sync.peersInSyncWait();
         await h.assert.sync.participantCount({ expectedCount: 3 });
-        peerIndices = [0, 1, 3, 4];
-        // 1
-        nextPeert = await h.query.getNextPeerToWrite();
-        console.log(
-            "Next to write: peer index",
-            nextPeert.index,
-            "address",
-            nextPeert.address
-        );
-        await h.transition.advanceState({
-            count: 1,
-            waitForPeers: peerIndices
-        });
 
-        // 3
-        nextPeert = await h.query.getNextPeerToWrite();
-        console.log(
-            "Next to write: peer index",
-            nextPeert.index,
-            "address",
-            nextPeert.address
-        );
+        spectatorIndices = [4];
+
+        // turns of 1,3
         await h.transition.advanceState({
-            count: 1,
-            waitForPeers: peerIndices
+            count: 2,
+            waitForPeers: peerIndices.concat(spectatorIndices)
         });
 
         // peer 0 is leaving the channel
-        // left with peers [1, 3] and peer 4 is a spectator
 
-        nextPeert = await h.query.getNextPeerToWrite();
-        peerIndices = [1, 3, 4];
-        console.log(
-            "Next to write: peer index",
-            nextPeert.index,
-            "address",
-            nextPeert.address
-        );
         await h.transition.advanceState({
             txFn: (c) => c.leaveChannel(),
             waitForPeers: peerIndices
         });
         await h.assert.sync.participantCount({ expectedCount: 2 });
+        peerIndices = [1, 3];
 
-        // 1
-        nextPeert = await h.query.getNextPeerToWrite();
-        console.log(
-            "Next to write after peer 0  has left: peer index",
-            nextPeert.index,
-            "address",
-            nextPeert.address
-        );
+        // turns of 1,3
         await h.transition.advanceState({
-            count: 1,
+            count: 2,
             waitForPeers: peerIndices
         });
 
-        // 3
-        nextPeert = await h.query.getNextPeerToWrite();
-        console.log(
-            "Next to write after peer 3 has left: peer index",
-            nextPeert.index,
-            "address",
-            nextPeert.address
-        );
+        // Join peer 5 as spectator
+        await h.addPeer();
+        await h.event.waitUntilEventOccurs("onConnection", 5000, [5]);
+        await h.assert.sync.peersInSyncWait();
+        await h.assert.sync.participantCount({ expectedCount: 2 });
+        spectatorIndices = [4, 5];
+
         await h.transition.advanceState({
-            count: 1,
-            waitForPeers: peerIndices
+            count: 2,
+            waitForPeers: peerIndices.concat(spectatorIndices)
         });
 
-        // await h.addPeer();
-        // await h.event.waitUntilEventOccurs("onConnection", 5000, [5]);
-        // await h.assert.sync.peersInSyncWait();
-        // await h.assert.sync.participantCount({ expectedCount: 2 });
+        // Capture the state before malicious action
+        const preDisputeForkId = h.activeForkId;
+        h.event.resetEventSpies();
 
-        // await h.transition.advanceState({ count: 2 });
-        // await h.assert.sync.peersInSyncWait();
-
-        // // Capture the state before malicious action
-        // const preDisputeForkId = h.activeForkId;
-        // h.event.resetEventSpies();
-
-        // const maliciousPeerIndex = 1;
-        // await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
+        // next is turn of peer 1
+        const maliciousPeerIndex = 1;
+        await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
 
         // await h.assert.dispute.initiatedAndCommitedWait();
 
