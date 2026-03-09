@@ -75,9 +75,13 @@ describe("E2E: Join/Leave Sequence", function () {
 
         // next is turn of peer 1
         const maliciousPeerIndex = 1;
+        const honestPeerIndices = [3];
         await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
 
-        // await h.assert.dispute.initiatedAndCommitedWait();
+        await h.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: honestPeerIndices,
+            expectedCount: 1
+        });
 
         // await h.dispute.resolveDisputeWait({
         //     maliciousPeerIndex,
