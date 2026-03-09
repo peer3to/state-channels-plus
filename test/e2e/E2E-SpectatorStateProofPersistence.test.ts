@@ -1,4 +1,5 @@
 import { TestSession, PeerTestHarness } from "@test/harness";
+import { expect } from "chai";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -83,19 +84,24 @@ describe("E2E: Join/Leave Sequence", function () {
             expectedCount: 1
         });
 
-        // await h.dispute.resolveDisputeWait({
-        //     maliciousPeerIndex,
-        //     forkSettleTimeoutMs: 15000,
-        //     disputesCommittedTimeoutMs: 10000
-        // });
+        await h.dispute.resolveDisputeWait({
+            maliciousPeerIndex,
+            forkSettleTimeoutMs: 15000,
+            disputesCommittedTimeoutMs: 10000,
+            honestPeerIndices: honestPeerIndices.concat(spectatorIndices)
+        });
 
-        // const postDisputeForkId = h.activeForkId;
-        // expect(preDisputeForkId).to.not.equal(postDisputeForkId, "Fork should have changed after dispute resolution");
+        const postDisputeForkId = h.activeForkId;
+        expect(preDisputeForkId).to.not.equal(
+            postDisputeForkId,
+            "Fork should have changed after dispute resolution"
+        );
 
-        // await h.transition.fromHonestPeersOnly((c) => c.add(11));
-        // await h.transition.fromHonestPeersOnly((c) => c.add(12));
-
-        // const allPeerIndices = [0, 2, 3, 4, 5, 6, 7]; // excluding malicious peer 1
-        // await h.assert.sync.peersInSyncWait({ peerIndices: allPeerIndices });
+        for (const i of spectatorIndices) {
+            expect(h.getPeer(i).stateManager.forkId).to.equal(
+                postDisputeForkId,
+                `spectator peer ${i} should be on new fork`
+            );
+        }
     });
 });
