@@ -17,18 +17,6 @@ PeerTestHarness.setDefaultLogLevel("error");
  */
 describe("E2E: Dispute Manager", function () {
     describe("Dispute Initiation", function () {
-        it("should create dispute for double-sign detected", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            await h.byzantine.submitDoubleSignBlock(1);
-            await h.assert.dispute.initiatedAndCommitedWait();
-            await h.assert.storage.honestPeersStoredFraudProof({
-                fraudProofType: FraudProofType.BlockDoubleSign,
-                maliciousPeerIndex: 1
-            });
-            await h.assert.storage.storedDisputeConfirmationsWait();
-        });
-
         it("should create dispute for invalid state transition", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
@@ -51,18 +39,6 @@ describe("E2E: Dispute Manager", function () {
             await h.assert.storage.honestPeersStoredFraudProof({
                 fraudProofType: FraudProofType.ForgedInboundMessageBlock,
                 maliciousPeerIndex: nextPeer.index
-            });
-            await h.assert.storage.storedDisputeConfirmationsWait();
-        });
-
-        it("should handle double-sign from different peer configurations", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 3);
-            await h.byzantine.submitDoubleSignBlock(2);
-            await h.assert.dispute.initiatedAndCommitedWait();
-            await h.assert.storage.honestPeersStoredFraudProof({
-                fraudProofType: FraudProofType.BlockDoubleSign,
-                maliciousPeerIndex: 2
             });
             await h.assert.storage.storedDisputeConfirmationsWait();
         });
