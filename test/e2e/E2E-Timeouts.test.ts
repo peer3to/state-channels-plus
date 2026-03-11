@@ -48,6 +48,8 @@ describe("E2E: Timeouts", function () {
             await h.transition.advanceState({ rounds: 1 }); // All 3 peers write once
             h.event.resetEventSpies();
             await h.network.disconnectPeer(2);
+            // TODO - never flaky when run in isolation - very flaky when run in parallel
+            // TODO - under load Peer 1 can experience RaceConditionBlockCalldataTimestampTooLate - investigate
             await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 write (peer 2 disconnected)
             await h.assert.calldata.calldataPosted();
             await h.assert.sync.peersInSyncWait();

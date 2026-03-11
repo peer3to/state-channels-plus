@@ -9,7 +9,7 @@ import { FraudProofStorage } from "./FraudProofStorage";
 
 import { BlockCoordinates, StateSnapshot } from "@/models";
 import { deepCopyProxy } from "@/utils";
-import { ForkId, Bytes, BlockOrSnapshot } from "@/types/types";
+import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
 import { Address } from "@/types/types";
 import { TimeoutStorage } from "./TimeoutStorage";
 import { ForceExitStorage } from "./ForceExitStorage";
@@ -97,12 +97,45 @@ export class Storage {
         });
     }
 
-    getParticipants(coordinates: BlockCoordinates): Address[] {
+    getParticipantsUnion(
+        coordinates: BlockCoordinates,
+        resultingStateSnapshotHash?: Hash
+    ): Address[] {
         const previousSnapshot = this.getPreviousStateSnapshot(coordinates);
-        if (!previousSnapshot || !previousSnapshot.snapshotData.participants) {
-            return [];
+        const participants = new Set<Address>();
+
+        if (previousSnapshot?.snapshotData.participants) {
+            for (const participant of previousSnapshot.snapshotData
+                .participants) {
+                participants.add(participant);
+            }
         }
-        return previousSnapshot.snapshotData.participants;
+
+        let resultingSnapshot: StateSnapshot | undefined;
+        if (resultingStateSnapshotHash) {
+            resultingSnapshot = this.stateSnapshots.getStateSnapshotByHash(
+                resultingStateSnapshotHash
+            );
+        } else {
+            const block = this.blocks.getBlock(
+                coordinates.forkId,
+                coordinates.height
+            );
+            if (block) {
+                resultingSnapshot = this.stateSnapshots.getStateSnapshotByHash(
+                    block.stateSnapshotHash
+                );
+            }
+        }
+
+        if (resultingSnapshot?.snapshotData.participants) {
+            for (const participant of resultingSnapshot.snapshotData
+                .participants) {
+                participants.add(participant);
+            }
+        }
+
+        return [...participants];
     }
 
     getPreviousBlockOrSnapshot(coordinates: BlockCoordinates): BlockOrSnapshot {

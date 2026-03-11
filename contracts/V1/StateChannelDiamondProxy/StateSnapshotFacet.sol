@@ -5,8 +5,6 @@ import "../types/DataTypes.sol";
 import "./StateChannelManagerProxy.sol";
 import "./Errors.sol";
 
-import "./UtilityFacet.sol";
-
 contract StateSnapshotFacet is StateChannelCommon {
     function updateStateSnapshotFork(
         bytes32 channelId,
@@ -59,9 +57,7 @@ contract StateSnapshotFacet is StateChannelCommon {
             RaceConditionBlockHeightTooOld()
         );
         require(
-            _verifyMilestones(
-                currentStateSnapshot.forkId, milestoneProofs, milestoneSnapshots, currentStateSnapshot.snapshotData
-            ),
+            _verifyMilestones(currentStateSnapshot.forkId, milestoneProofs, milestoneSnapshots, currentStateSnapshot),
             ErrorInvalidStateProof()
         );
 
@@ -105,10 +101,11 @@ contract StateSnapshotFacet is StateChannelCommon {
         bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        SnapshotData memory genesisSnapshotData
-    ) internal view returns (bool) {
-        (bool isValid,) = UtilityFacet(utilityFacetAddress)
-            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, genesisSnapshotData);
+        StateSnapshot memory thresholdStateSnapshot
+    ) internal returns (bool) {
+        bool isValid = StateChannelManagerProxy(address(this)).verifyMilestones(
+            forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot
+        );
         return isValid;
     }
 

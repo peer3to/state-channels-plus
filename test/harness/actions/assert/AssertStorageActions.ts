@@ -8,9 +8,76 @@ import {
 import { Codec, DetachedPromises, hash, Type } from "@/utils";
 import PeerTestHarness from "@test/fixtures/PeerTestHarness";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ethers } from "ethers";
 
 export class AssertStorageActions {
     constructor(private readonly harness: PeerTestHarness) {}
+
+    honestPeersStoredBlockAndState(
+        height: number,
+        forkId: ForkId = this.harness.activeForkId!
+    ): void {
+        if (!forkId) {
+            throw new Error("No active fork ID");
+        }
+
+        const honestPeers = this.harness.getHonestPeers();
+        if (honestPeers.length === 0) {
+            throw new Error("No honest peers available to inspect storage");
+        }
+
+        const referencePeer = honestPeers[0];
+        const referenceBlockHash = this.assertStoredBlockAndStateExists(
+            referencePeer.index,
+            forkId,
+            height
+        );
+
+        for (const peer of honestPeers.slice(1)) {
+            const peerBlockHash = this.assertStoredBlockAndStateExists(
+                peer.index,
+                forkId,
+                height
+            );
+
+            if (peerBlockHash !== referenceBlockHash) {
+                throw new Error(
+                    `Peer ${peer.index} stored block ${peerBlockHash} for ${forkId}:${height}, expected ${referenceBlockHash} from peer ${referencePeer.index}`
+                );
+            }
+        }
+    }
+
+    honestPeersStoredBlockAndStateWait(options: {
+        height: number;
+        forkId?: ForkId;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const forkId = options.forkId ?? this.harness.activeForkId;
+
+        const condition = () => {
+            try {
+                this.honestPeersStoredBlockAndState(options.height, forkId);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        };
+
+        const promise = this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs: options.timeoutMs,
+            timeoutMessageFn: async () => {
+                let errorMsg = `Block and state were not stored on all honest peers within ${options.timeoutMs ?? 5000}ms for ${forkId}:${options.height}`;
+                try {
+                    this.honestPeersStoredBlockAndState(options.height, forkId);
+                } catch (error) {
+                    errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
+                }
+                return errorMsg;
+            }
+        });
+        return promise;
+    }
 
     honestPeersStoredFraudProof(options: {
         fraudProofType?: FraudProofType;
@@ -219,5 +286,75 @@ export class AssertStorageActions {
             }
         });
         return promise;
+    }
+
+    private assertStoredBlockAndStateExists(
+        peerIndex: number,
+        forkId: ForkId,
+        height: number
+    ): Hash {
+        const storage = this.harness.query.getPeerStorage(peerIndex);
+        const block = storage.blocks.getBlock(forkId, height);
+
+        if (!block) {
+            throw new Error(
+                `Peer ${peerIndex} has no persisted block for ${forkId}:${height}`
+            );
+        }
+
+        const snapshot = storage.stateSnapshots.getStateSnapshotByHash(
+            block.stateSnapshotHash
+        );
+        if (!snapshot) {
+            throw new Error(
+                `Peer ${peerIndex} is missing state snapshot ${block.stateSnapshotHash} for ${forkId}:${height}`
+            );
+        }
+
+        const stateMachineState =
+            storage.stateMachineStates.getStateMachineState(
+                snapshot.stateMachineStateHash
+            );
+        if (!stateMachineState) {
+            throw new Error(
+                `Peer ${peerIndex} is missing state machine state ${snapshot.stateMachineStateHash} for ${forkId}:${height}`
+            );
+        }
+
+        for (const messageBlock of block.messageBlocks) {
+            const messageBlockHash = hash(
+                Codec.encode(messageBlock, Type.MessageBlock)
+            ) as Hash;
+
+            if (!storage.inboundMessages.getMessageBlock(messageBlockHash)) {
+                throw new Error(
+                    `Peer ${peerIndex} is missing inbound message block ${messageBlockHash} referenced by ${forkId}:${height}`
+                );
+            }
+        }
+
+        if (
+            snapshot.latestInboundMessageBlockHash !== ethers.ZeroHash &&
+            !storage.inboundMessages.getMessageBlock(
+                snapshot.latestInboundMessageBlockHash
+            )
+        ) {
+            throw new Error(
+                `Peer ${peerIndex} is missing inbound message block ${snapshot.latestInboundMessageBlockHash} referenced by ${forkId}:${height}`
+            );
+        }
+
+        if (
+            snapshot.latestOutboundMessageBlockHash !== ethers.ZeroHash &&
+            !storage.outboundMessages.getMessageBlock(
+                snapshot.latestOutboundMessageBlockHash
+            )
+        ) {
+            throw new Error(
+                `Peer ${peerIndex} is missing outbound message block ${snapshot.latestOutboundMessageBlockHash} referenced by ${forkId}:${height}`
+            );
+        }
+
+        return block.hash;
     }
 }

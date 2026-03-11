@@ -154,6 +154,7 @@ export function dispute(
     overrides: Partial<{
         input: Partial<DisputeInputStruct>;
         outputSnapshotDataHash?: Bytes;
+        postedAuditingData?: boolean;
     }> = {}
 ): DisputeStruct {
     const defaultDispute: DisputeStruct = {
@@ -184,7 +185,8 @@ export function dispute(
             selfRemoval: false
         },
 
-        outputSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32))
+        outputSnapshotDataHash: ethers.hexlify(ethers.randomBytes(32)),
+        postedAuditingData: false
     };
     const dispute = {
         input: {
@@ -193,7 +195,9 @@ export function dispute(
         },
         outputSnapshotDataHash:
             overrides.outputSnapshotDataHash ||
-            defaultDispute.outputSnapshotDataHash
+            defaultDispute.outputSnapshotDataHash,
+        postedAuditingData:
+            overrides.postedAuditingData ?? defaultDispute.postedAuditingData
     };
 
     return { ...dispute };

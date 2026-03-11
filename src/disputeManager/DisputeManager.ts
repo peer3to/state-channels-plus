@@ -98,16 +98,13 @@ class DisputeManager {
                 fraudProofsToApply
             } = await this.constructDispute(forkId);
 
+            const shouldPostAuditingData = dispute.postedAuditingData;
+
             LoggerUtils.logDisputeInitiated(
                 this.logger,
                 dispute,
                 fraudProofsToApply
             );
-
-            const pendingParticipants =
-                await this.stateChannelManagerContract.getPendingParticipants(
-                    this.channelId
-                );
 
             // check if multicall is needed
             if (fraudProofsToApply.length > 0) {
@@ -120,7 +117,7 @@ class DisputeManager {
                 ).data;
                 // 2) upload dispute
                 let uploadDisputeCalldata: string;
-                if (pendingParticipants.length > 0) {
+                if (shouldPostAuditingData) {
                     // with calldata
                     uploadDisputeCalldata = (
                         await this.stateChannelManagerContract.uploadDisputeWithCalldata.populateTransaction(
@@ -142,7 +139,7 @@ class DisputeManager {
                 ]);
             } else {
                 // no multicall - upload dispute separately
-                if (pendingParticipants.length > 0) {
+                if (shouldPostAuditingData) {
                     // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
                     txResponse =
                         await this.stateChannelManagerContract.uploadDisputeWithCalldata(
@@ -244,7 +241,10 @@ class DisputeManager {
                 this.channelId,
                 Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
             ),
-            this.diamondStateMachine.getParticipants()
+            this.storage.getParticipantsUnion({
+                forkId,
+                height: latestBlockHeight
+            })
         ]).catch((error) => {
             this.logger.error(
                 "Error constructing dispute - failed to get inputData",
@@ -258,6 +258,7 @@ class DisputeManager {
             );
             throw error;
         });
+
         // onChainSlashes
         // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
         let onChainSlashes = new Set<Address>(_onChainSlashes);
@@ -354,7 +355,7 @@ class DisputeManager {
                 await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
                     disputeInput,
                     auditingData.latestStateSnapshot,
-                    auditingData.latestStateStateMachineState,
+                    latestStateMachineState,
                     auditingData.inboundMessageBlocks
                 );
         } catch (error) {
@@ -375,9 +376,21 @@ class DisputeManager {
             Codec.encode(outputSnapshotData, Type.SnapshotData)
         );
 
-        const dispute: DisputeStruct = {
+        const draftDispute: DisputeStruct = {
             input: disputeInput,
-            outputSnapshotDataHash: outputSnapshotDataHash
+            outputSnapshotDataHash: outputSnapshotDataHash,
+            postedAuditingData: false
+        };
+
+        const isLastMilestoneFinalByEveryone =
+            await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
+                draftDispute
+            );
+        const postedAuditingData = !isLastMilestoneFinalByEveryone;
+
+        const dispute: DisputeStruct = {
+            ...draftDispute,
+            postedAuditingData
         };
 
         // ****** TODO - run auditing as a sanity check *******
@@ -395,7 +408,12 @@ class DisputeManager {
             },
             signatures: []
         };
-
+        this.logger.debug("CONSTRUCTED DISPUTE:", {
+            dispute: LoggerUtils.getDisputeMetadata(dispute),
+            auditingData: auditingData
+                ? LoggerUtils.getAuditingMetadata(auditingData)
+                : undefined
+        });
         return {
             dispute,
             disputeConfirmation,
@@ -443,15 +461,19 @@ class DisputeManager {
                 latestStateSnapshot = genesisStateSnapshot; // just to use the field, verifyStateProof check will fail up to this point
             } else latestStateSnapshot = snapshot;
         }
-
-        // latestStateStateMachineState
-        let latestStateStateMachineState =
-            this.storage.stateMachineStates.getStateMachineState(
-                latestStateSnapshot.stateMachineStateHash
+        const latestFinalizedStateSnapshot =
+            this.agreementManager.getLatestFinalizedSnapshot(
+                stateProof,
+                forkId
             );
-        if (!latestStateStateMachineState) {
+        // latestFinalizedStateStateMachineState
+        let latestFinalizedStateStateMachineState =
+            this.storage.stateMachineStates.getStateMachineState(
+                latestFinalizedStateSnapshot.stateMachineStateHash
+            );
+        if (!latestFinalizedStateStateMachineState) {
             isPartial = true;
-            latestStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
+            latestFinalizedStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
         }
 
         // inbound message blocks
@@ -473,7 +495,7 @@ class DisputeManager {
             auditingData: {
                 genesisStateSnapshotData: genesisStateSnapshot.snapshotData,
                 latestStateSnapshot: latestStateSnapshot.toStruct(),
-                latestStateStateMachineState: latestStateStateMachineState,
+                latestFinalizedStateStateMachineState,
                 milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
                     snapshot.toStruct()
                 ),

@@ -10,6 +10,7 @@ import "./FraudProofFacet.sol";
 import "./DisputeFraudProofFacet.sol";
 import "./StateSnapshotFacet.sol";
 import "./JoinChannelFacet.sol";
+import "./StateProofFacet.sol";
 import "../types/DisputeTypes.sol";
 import "../types/MessageTypeHashes.sol";
 import "./utils/GeneralUtils.sol";
@@ -30,6 +31,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
         address _joinChannelFacet,
+        address _stateProofFacet,
         address _utilityFacet,
         address _consumerFacet,
         uint256 _p2pTime,
@@ -44,6 +46,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         disputeFraudProofFacetAddress = _disputeFraudProofFacet;
         stateSnapshotFacetAddress = _stateSnapshotFacet;
         joinChannelFacetAddress = _joinChannelFacet;
+        stateProofFacetAddress = _stateProofFacet;
         utilityFacetAddress = _utilityFacet;
         consumerFacetAddress = _consumerFacet;
         p2pTime = _p2pTime == 0 ? DEFAULT_P2P_TIME : _p2pTime;
@@ -114,12 +117,9 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
-            .verifyThresholdSigned(
-                openChannelData.participants,
-                openChannelConfirmation.encodedOpenChannel,
-                openChannelConfirmation.signatures
-            );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
+        );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -159,7 +159,10 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
+            snapshotData: genesisSnapshotData,
+            forkId: forkId,
+            blockHeight: 0,
+            timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
@@ -328,6 +331,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return result;
     }
 
+    function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
+        bytes memory result = _delegatecall(
+            disputeFraudProofFacetAddress,
+            abi.encodeCall(DisputeFraudProofFacet.isLastMilestoneFinalByEveryone, (dispute))
+        );
+        return abi.decode(result, (bool));
+    }
+
     function getParticipants(bytes32 channelId)
         public
         view
@@ -393,6 +404,67 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         returns (bool)
     {
         return StateChannelCommon.hasInboundMessageBlock(channelId, messageBlockHash);
+    }
+
+    function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        virtual
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress, abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, disputeAuditingData))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function isCorrectLatestState(Dispute memory dispute, SnapshotData memory genesisStateSnapshotData)
+        public
+        virtual
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(StateProofFacet.isCorrectLatestState, (dispute, genesisStateSnapshotData))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function verifyMilestones(
+        bytes32 forkId,
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory thresholdStateSnapshot
+    ) public override(StateChannelManagerInterface) returns (bool isValid) {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(
+                StateProofFacet.verifyMilestones, (forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot)
+            )
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function isMilestoneFinal(
+        bytes32 forkId,
+        SnapshotData memory thresholdSnapshotData,
+        MilestoneProof memory milestone
+    ) public override(StateChannelManagerInterface) returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(StateProofFacet.isMilestoneFinal, (forkId, thresholdSnapshotData, milestone))
+        );
+        return abi.decode(result, (bool, bytes32));
+    }
+
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot)
+        public
+        view
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        return UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(snapshot);
     }
 
     function isChannelOpen(bytes32 channelId) public view override returns (bool, StateSnapshot memory) {

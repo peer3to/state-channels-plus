@@ -46,10 +46,7 @@ struct DisputeFraudProof {
 enum DisputeFraudProofType {
     DisputeNotLatestState,
     DisputeInvalidOutputState,
-    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
-    DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
-    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
+    DisputeInvalidStateProof,
     DisputeInvalidBalanceInvariant,
     DisputeOnChainSlashesNotSubset,
     TimeoutThreshold,
@@ -57,5 +54,6 @@ enum DisputeFraudProofType {
     TimeoutNotLinkedToLatestState,
     TimeoutParticipantNotNext,
     TimeoutTooEarly,
-    DisputeInvalidBlockInStateProofApplyFraudProof
+    DisputeInvalidBlockInStateProofApplyFraudProof,
+    DisputeLastMilestoneNotFinalAndNoAuditingData
 }

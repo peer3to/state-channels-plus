@@ -84,9 +84,9 @@ import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { TransactionResponse } from "ethers";
+import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
 const NULL = "0x00";
-const LOG_TAG = "[STATE MANAGER]";
 
 type ParticipantChanges = {
     left: Set<Address>;
@@ -776,14 +776,18 @@ class StateManager {
             onChainTimestamp?: Timestamp;
             validationStrategy?: AValidationStrategy;
             senderAddress?: string;
+            skipMutex?: boolean;
         }
     ): Promise<boolean> {
         const strategy =
             options?.validationStrategy ||
             this.getStrategyByStatus(this.status);
+        const shouldLockMutex = !(options?.skipMutex ?? false);
 
         try {
-            await this.mutex.lock();
+            if (shouldLockMutex) {
+                await this.mutex.lock();
+            }
 
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
@@ -964,6 +968,37 @@ class StateManager {
                 );
             }
 
+            // Union on the participant set -> check signers
+            const allowedSigners = new Set<Address>([
+                ...previousStateSnapshot.snapshotData.participants,
+                ...stateSnapshot.snapshotData.participants
+            ]);
+            const unexpectedSigners = Array.from(
+                block.allSignerAddresses
+            ).filter((signer) => !allowedSigners.has(signer));
+
+            if (unexpectedSigners.length > 0) {
+                validationResult =
+                    await strategy.notAllSingersAreParticipants(block);
+                this.logger.warn(
+                    "onBlockConfirmation - signer not in previous/resulting participant union",
+                    {
+                        strategy: strategy.name,
+                        validationResult:
+                            BlockValidationResult[validationResult],
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.storage
+                        ),
+                        unexpectedSigners,
+                        allowedSigners: Array.from(allowedSigners)
+                    }
+                );
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
             // TODO - apply strategy here too
             // All validations passed - proceed with success action
             await this.success(
@@ -972,7 +1007,10 @@ class StateManager {
                 stateAfterInbound,
                 successCallback,
                 participantChanges,
-                outboundMessageBlock
+                {
+                    outboundMessageBlock,
+                    strategy
+                }
             );
             const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
             this.logger.info(
@@ -996,7 +1034,9 @@ class StateManager {
             });
             throw error;
         } finally {
-            this.mutex.unlock();
+            if (shouldLockMutex) {
+                this.mutex.unlock();
+            }
         }
     }
 
@@ -1141,7 +1181,9 @@ class StateManager {
                 stateAfterInbound,
                 successCallback,
                 participantChanges,
-                outboundMessageBlock
+                {
+                    outboundMessageBlock
+                }
             );
 
             const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
@@ -1164,7 +1206,10 @@ class StateManager {
             return;
         }
         // If not everyone has signed, do the on-chain post
-        const participants = this.storage.getParticipants(block.coordinates);
+        const participants = this.storage.getParticipantsUnion(
+            block.coordinates,
+            block.stateSnapshotHash
+        );
 
         // TODO - this can be race conditioned and we could be granted extra time, but we don't care to check that on-chain and will assume we're not granted extra time for this
         const previousRelevantTimestamp =
@@ -1208,18 +1253,23 @@ class StateManager {
                         signer: this.signer,
                         tx: txResponse!,
                         handlers: {
-                            RaceConditionBlockCalldataTimestampTooLate: () => {
-                                const localErrorTimestamp =
-                                    Clock.getTimeInSeconds();
-                                this.logger.warn(
-                                    "RaceConditionBlockCalldataTimestampTooLate",
-                                    {
-                                        localErrorTimestamp,
-                                        maxTimestamp,
-                                        block: blockMetadata
-                                    }
-                                );
-                            }
+                            RaceConditionBlockCalldataTimestampTooLate:
+                                async () => {
+                                    const localErrorTimestamp =
+                                        Clock.getTimeInSeconds();
+                                    const currentOnChainTimestamp =
+                                        await Clock.getBlockchainTime();
+                                    this.logger.warn(
+                                        "RaceConditionBlockCalldataTimestampTooLate",
+                                        {
+                                            localErrorTimestamp,
+                                            maxTimestamp,
+                                            currentOnChainTimestamp,
+                                            previousRelevantTimestamp,
+                                            block: blockMetadata
+                                        }
+                                    );
+                                }
                         }
                     });
                     //
@@ -1568,7 +1618,7 @@ class StateManager {
                             this.storage.disputes.getDispute(commitment);
                         if (!dispute) {
                             throw new Error(
-                                `Missing Data Availability for dispute commitment ${commitment}`
+                                `Missing Dispute in storage for dispute commitment ${commitment}`
                             );
                         }
                         return dispute;
@@ -2362,10 +2412,16 @@ class StateManager {
         encodedStateMachineState: Bytes,
         successCallback: () => void,
         participantChanges: ParticipantChanges,
-        outboundMessageBlock?: MessageBlockStruct
+        options?: {
+            outboundMessageBlock?: MessageBlockStruct;
+            strategy?: AValidationStrategy;
+        }
     ): Promise<void> {
-        // step 1 - Confirm and Gossip
-        if (await this.shouldSignBlock(block)) {
+        // step 1 - Confirm and Gossip // TODO - quick hack - cleaner code later
+        if (
+            (await this.shouldSignBlock(block)) &&
+            !(options?.strategy instanceof DisputeValidationStrategy)
+        ) {
             // Sign the block and add our signature to confirmation signatures
             const signature = await block.sign(this.signer);
             this.logger.debug("Signing block", {
@@ -2373,14 +2429,19 @@ class StateManager {
             });
             block.expandSignatures([signature]);
         }
-        // always broadcast if participating
-        if (this.status === Status.PARTICIPATING)
+        // always broadcast if participating // TODO - quick hack - cleaner code later
+        if (
+            this.status === Status.PARTICIPATING &&
+            !(options?.strategy instanceof DisputeValidationStrategy)
+        )
             this.p2pManager.remoteRpc.stateTransitionService
                 .onBlockConfirmation(block.blockConfirmationStruct)
                 .broadcast();
 
-        // step 2 - persist the block
-        this.storage.blocks.storeBlock(block);
+        // step 2 - persist the block // TODO - quick hack - cleaner code later
+        this.storage.blocks.storeBlock(block, {
+            justPersist: options?.strategy instanceof DisputeValidationStrategy
+        });
 
         // step 3 - persist the state snapshot
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
@@ -2392,9 +2453,12 @@ class StateManager {
         );
 
         // step 5 - persist the outbound message blocks if any
-        if (outboundMessageBlock) {
-            this.storage.outboundMessages.store(outboundMessageBlock);
+        if (options?.outboundMessageBlock) {
+            this.storage.outboundMessages.store(options.outboundMessageBlock);
         }
+
+        // TODO - quick hack - cleaner code later
+        if (options?.strategy instanceof DisputeValidationStrategy) return;
 
         // step 6 - persist participant change points
         if (
@@ -2412,7 +2476,7 @@ class StateManager {
             block,
             stateSnapshot,
             participantChanges,
-            outboundMessageBlock
+            options?.outboundMessageBlock
         );
 
         // step 8 - success callback
@@ -2531,7 +2595,10 @@ class StateManager {
         forkId: ForkId,
         blockHeight: BlockHeight,
         blockAuthor: Address,
-        blockCommitment: Hash
+        blockCommitment: Hash,
+        options?: {
+            skipMutex?: boolean;
+        }
     ): Promise<UpdatedBlockWithCalldata | undefined> {
         try {
             // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
@@ -2580,39 +2647,16 @@ class StateManager {
             };
             const timestamp = Number(logs[0].args.timestamp);
 
-            this.storage.blockCalldata.storeBlockCalldata({
-                signedBlock,
-                onChainTimestamp: timestamp
-            });
-            await this.diamondStateMachine.localDiamondContract.onBlockCalldataPosted(
+            await this.eventHandler.onBlockCalldataPosted(
                 this.channelId,
                 blockCommitment,
                 blockAuthor,
                 signedBlock,
-                timestamp
+                timestamp,
+                {
+                    skipMutex: options?.skipMutex
+                }
             );
-
-            const existingBlock = this.storage.blocks.getBlock(
-                forkId,
-                blockHeight
-            );
-            if (existingBlock) {
-                this.storage.blocks.setOnChainTimestamp(
-                    existingBlock.hash,
-                    timestamp
-                );
-            }
-
-            // run the pipeline DETACHED to prevent deadlocks, but also treat it as it came from the subscribed event -> recheck the block
-            const rerunPipelinePromise =
-                this.eventHandler.onBlockCalldataPosted(
-                    this.channelId,
-                    blockCommitment,
-                    blockAuthor,
-                    signedBlock,
-                    timestamp
-                );
-            DetachedPromises.collect(rerunPipelinePromise);
 
             const updatedBlock = this.storage.blocks.getBlock(
                 forkId,
@@ -2625,7 +2669,7 @@ class StateManager {
                 updatedBlock: updatedBlock
             };
         } catch (error) {
-            console.error(`${LOG_TAG}-fetchBlockCommitmentCalldata:`, error);
+            this.logger.error(`Error fetchBlockCommitmentCalldata:`, { error });
             return undefined;
         }
     }
@@ -2633,7 +2677,10 @@ class StateManager {
     async fetchUpdatedOnChainBlock(
         forkId: ForkId,
         blockHeight: BlockHeight,
-        blockAuthor: Address
+        blockAuthor: Address,
+        options?: {
+            skipMutex?: boolean;
+        }
     ): Promise<Block | undefined> {
         try {
             const commitmentResult =
@@ -2651,11 +2698,12 @@ class StateManager {
                     forkId,
                     blockHeight,
                     blockAuthor,
-                    commitmentResult.blockCalldataCommitment
+                    commitmentResult.blockCalldataCommitment,
+                    options
                 )
             )?.updatedBlock;
         } catch (error) {
-            console.error(`${LOG_TAG}-fetchUpdatedOnChainBlock:`, error);
+            this.logger.error(`Error fetchUpdatedOnChainBlock:`, { error });
             return undefined;
         }
     }

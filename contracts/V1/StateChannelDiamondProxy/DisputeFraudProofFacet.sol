@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./StateChannelManagerProxy.sol";
+import "./StateProofFacet.sol";
 import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
@@ -41,21 +42,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         if (proofType == DisputeFraudProofType.DisputeNotLatestState) return _handleDisputeNotLatestState;
         if (proofType == DisputeFraudProofType.DisputeInvalidOutputState) return _handleDisputeInvalidOutputState;
-        if (proofType == DisputeFraudProofType.DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified) {
-            return _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified;
-        }
-        if (proofType == DisputeFraudProofType.DisputeInvalidStateProofWithAuditingDataIntegrityVerified) {
-            return _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerified;
-        }
-        if (
-            proofType
-                == DisputeFraudProofType
-                    .DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks
-        ) {
-            return _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks;
-        }
-        if (proofType == DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified) {
-            return _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified;
+        if (proofType == DisputeFraudProofType.DisputeInvalidStateProof) {
+            return _handleDisputeInvalidStateProof;
         }
         if (proofType == DisputeFraudProofType.DisputeInvalidBalanceInvariant) {
             return _handleDisputeInvalidBalanceInvariant;
@@ -72,6 +60,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.TimeoutTooEarly) return _handleTimeoutTooEarly;
         if (proofType == DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof) {
             return _handleDisputeInvalidBlockInStateProofApplyFraudProof;
+        }
+        if (proofType == DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData) {
+            return _handleDisputeLastMilestoneNotFinalAndNoAuditingData;
         }
         return _handleInvalidDisputeFraudProofType;
     }
@@ -122,89 +113,67 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _valid(dispute.input.disputer);
     }
 
+    function _handleDisputeLastMilestoneNotFinalAndNoAuditingData(
+        bytes memory encodedFraudProof,
+        Dispute memory dispute
+    ) internal returns (address) {
+        abi.decode(encodedFraudProof, (DisputeLastMilestoneNotFinalAndNoAuditingData));
+
+        if (dispute.postedAuditingData) return _invalid();
+
+        bool isFinal = _isLastMilestoneFinalByEveryone(dispute);
+        if (!isFinal) return _valid(dispute.input.disputer);
+        return _invalid();
+    }
+
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
         returns (address)
     {
         DisputeInvalidOutputState memory proof = abi.decode(encodedFraudProof, (DisputeInvalidOutputState));
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
+        if (
+            !_isDataLinkedToDisputeInput(
+                dispute, proof.latestStateSnapshot, proof.latestStateMachineState, proof.inboundMessageBlocks
+            )
+        ) return _invalid();
 
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.isDisputeOutputCorrect, (dispute, proof.auditingData))
+            abi.encodeCall(
+                DisputeVerificationFacet.isDisputeOutputCorrect,
+                (dispute, proof.latestStateSnapshot, proof.latestStateMachineState, proof.inboundMessageBlocks)
+            )
         );
         bool isValid = abi.decode(result, (bool));
         if (!isValid) return _valid(dispute.input.disputer);
         return _invalid();
     }
 
-    function _handleDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
-        bytes memory encodedFraudProof,
-        Dispute memory dispute
-    ) internal view returns (address) {
-        DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified memory proof =
-            abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified));
+    function _handleDisputeInvalidStateProof(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        DisputeInvalidStateProof memory proof = abi.decode(encodedFraudProof, (DisputeInvalidStateProof));
+        // TODO extract this into its own fraud proof and test it
+        if (!dispute.postedAuditingData) {
+            if (!_isLastMilestoneFinalByEveryone(dispute)) return _invalid();
 
-        bool isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, false);
+            bytes memory latestStateData = abi.encodeCall(
+                StateProofFacet.isCorrectLatestState, (dispute, proof.auditingData.genesisStateSnapshotData)
+            );
+            (bool latestStateSuccess, bytes memory latestStateReturnData) =
+                stateProofFacetAddress.delegatecall(latestStateData);
+            if (!latestStateSuccess) return _invalid();
 
-        if (!isValid) return _valid(dispute.input.disputer);
-        return _invalid();
-    }
+            bool isCorrectLatestState_ = abi.decode(latestStateReturnData, (bool));
+            if (!isCorrectLatestState_) return _valid(dispute.input.disputer);
+            return _invalid();
+        }
 
-    function _handleDisputeInvalidStateProofWithAuditingDataIntegrityVerified(
-        bytes memory encodedFraudProof,
-        Dispute memory dispute
-    ) internal returns (address) {
-        DisputeInvalidStateProofWithAuditingDataIntegrityVerified memory proof =
-            abi.decode(encodedFraudProof, (DisputeInvalidStateProofWithAuditingDataIntegrityVerified));
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
-
-        bool isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, true);
-        if (!isValid) return _valid(dispute.input.disputer);
-        return _invalid();
-    }
-
-    function _handleDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
-        bytes memory encodedFraudProof,
-        Dispute memory dispute
-    ) internal returns (address) {
-        DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks memory proof = abi.decode(
-            encodedFraudProof, (DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks)
-        );
-        // Expect commitment to be invalid/junk
-        if (_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
-
-        bytes memory result = _delegatecall(
-            disputeVerificationFacetAddress,
-            // Will recheck everything, but we're mostly interested in exitBlocks
-            abi.encodeCall(DisputeVerificationFacet.isCorrectAuditingData, (dispute, proof.auditingData))
-        );
-        bool isValid = abi.decode(result, (bool));
-        if (!isValid) return _invalid();
-
-        isValid = UtilityFacet(utilityFacetAddress).verifyStateProof(dispute, proof.auditingData, false);
-        if (!isValid) return _invalid();
-
-        // dispute.input.auditingDataHash is junk, stateProof is valid and auditingData is correct
-        return _valid(dispute.input.disputer);
-    }
-
-    function _handleDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified(
-        bytes memory encodedFraudProof,
-        Dispute memory dispute
-    ) internal returns (address) {
-        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory proof =
-            abi.decode(encodedFraudProof, (DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified));
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
-
-        bytes memory result = _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.isCorrectAuditingData, (dispute, proof.auditingData))
-        );
-        bool isValid = abi.decode(result, (bool));
+        bytes memory data = abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, proof.auditingData));
+        (bool success, bytes memory returnData) = stateProofFacetAddress.delegatecall(data);
+        if (!success) return _valid(dispute.input.disputer);
+        bool isValid = abi.decode(returnData, (bool));
         if (!isValid) return _valid(dispute.input.disputer);
         return _invalid();
     }
@@ -213,19 +182,23 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         internal
         returns (address)
     {
-        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory proof =
-            abi.decode(encodedFraudProof, (DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified));
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
+        DisputeInvalidBalanceInvariant memory proof = abi.decode(encodedFraudProof, (DisputeInvalidBalanceInvariant));
+        if (
+            !_isLatestFinalizedStateLinkedToLatestFinalizedBlock(
+                dispute, proof.latestStateSnapshot, proof.latestStateMachineState
+            )
+        ) {
+            return _invalid();
+        }
 
         bytes32 channelId = dispute.input.channelId;
-        SnapshotData memory latestSnapshotData = proof.auditingData.latestStateSnapshot.snapshotData;
+        SnapshotData memory latestSnapshotData = proof.latestStateSnapshot.snapshotData;
 
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
                 DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot,
-                (channelId, latestSnapshotData, proof.auditingData.latestStateStateMachineState)
+                (channelId, latestSnapshotData, proof.latestStateMachineState)
             )
         );
         bool isValid = abi.decode(result, (bool));
@@ -235,12 +208,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _handleDisputeOnChainSlashesNotSubset(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
+        view
         returns (address)
     {
-        DisputeOnChainSlashesNotSubset memory proof = abi.decode(encodedFraudProof, (DisputeOnChainSlashesNotSubset));
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
-
         uint256 timestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
             dispute.input.channelId, dispute.input.forkId
         );
@@ -263,11 +233,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _handleTimeoutThreshold(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
+        view
         returns (address)
     {
         TimeoutThreshold memory proof = abi.decode(encodedFraudProof, (TimeoutThreshold));
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         // check is timeout set
         if (dispute.input.timeout.participant == address(0)) return _invalid();
@@ -288,8 +257,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // Check is block author the participant being timed-out
         if (dispute.input.timeout.participant != thresholdBlock.transaction.header.participant) return _invalid();
 
+        if (!_isSnapshotLinkedToLatestBlock(dispute, proof.latestStateSnapshot)) return _invalid();
+        if (!_isSnapshotLinkedToBlock(thresholdBlock, proof.thresholdStateSnapshot)) return _invalid();
+
         //check threshold
-        address[] memory thresholdParticipants = proof.auditingData.latestStateSnapshot.snapshotData.participants;
+        address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            proof.latestStateSnapshot.snapshotData.participants, proof.thresholdStateSnapshot.snapshotData.participants
+        );
         bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
             signedBlock.signature, proof.thresholdBlock.signatures
         );
@@ -322,13 +296,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         TimeoutParticipantNotNext memory proof = abi.decode(encodedFraudProof, (TimeoutParticipantNotNext));
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         // check is timeout set
         if (dispute.input.timeout.participant == address(0)) return _invalid();
 
-        stateMachineImplementation.setState(proof.auditingData.latestStateStateMachineState);
+        if (!_isLatestStateLinkedToLatestBlock(dispute, proof.latestStateSnapshot, proof.latestStateStateMachineState))
+        {
+            return _invalid();
+        }
+
+        stateMachineImplementation.setState(proof.latestStateStateMachineState);
         address nextAuthor = stateMachineImplementation.getNextToWrite();
 
         // check is next author timed-out
@@ -338,11 +315,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _handleTimeoutTooEarly(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
+        view
         returns (address)
     {
         TimeoutTooEarly memory proof = abi.decode(encodedFraudProof, (TimeoutTooEarly));
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, proof.auditingData)) return _invalid();
 
         // check is timeout set
         if (dispute.input.timeout.participant == address(0)) return _invalid();
@@ -354,10 +330,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
         bytes32 channelId = dispute.input.channelId;
         bytes32 forkId = dispute.input.forkId;
-        bytes32 originForkId = proof.auditingData.genesisStateSnapshotData.originForkId;
         if (!hasBlock) {
             // genesis
-            (bool hasGenesis, uint256 genesisTimestamp) = getGenesisTimestamp(channelId, originForkId, forkId);
+            if (!_isGenesisSnapshotDataLinkedToFork(forkId, proof.genesisStateSnapshotData)) return _invalid();
+            (bool hasGenesis, uint256 genesisTimestamp) =
+                getGenesisTimestamp(channelId, proof.genesisStateSnapshotData.originForkId, forkId);
             require(hasGenesis, RaceConditionGenesisTimestampNotAvailable());
             previousTimestamp = genesisTimestamp;
         } else {
@@ -399,10 +376,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         TimeoutCalldataPosted memory timeoutCalldataPostedProof = abi.decode(encodedFraudProof, (TimeoutCalldataPosted));
         SignedBlock memory postedBlock = timeoutCalldataPostedProof.postedBlock;
         Block memory _block = abi.decode(postedBlock.encodedBlock, (Block));
-        StateSnapshot memory latestStateSnapshot = timeoutCalldataPostedProof.auditingData.latestStateSnapshot;
-
-        // Requires correct auditing data
-        if (!_checkDisputeAuditingDataCommitment(dispute, timeoutCalldataPostedProof.auditingData)) return _invalid();
+        StateSnapshot memory latestStateSnapshot = timeoutCalldataPostedProof.latestStateSnapshot;
 
         // Check channelId
         if (!_areDisputeAndBlockSameChannel(dispute, _block)) return _invalid();
@@ -432,9 +406,18 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         uint256 previousTimestamp;
         if (!hasBlock) {
             // genesis
-            bytes32 originForkId = timeoutCalldataPostedProof.auditingData.genesisStateSnapshotData.originForkId;
-            (bool hasGenesis, uint256 genesisTimestamp) =
-                getGenesisTimestamp(dispute.input.channelId, originForkId, dispute.input.forkId);
+            if (
+                !_isGenesisSnapshotDataLinkedToFork(
+                    dispute.input.forkId, timeoutCalldataPostedProof.genesisStateSnapshotData
+                )
+            ) {
+                return _invalid();
+            }
+            (bool hasGenesis, uint256 genesisTimestamp) = getGenesisTimestamp(
+                dispute.input.channelId,
+                timeoutCalldataPostedProof.genesisStateSnapshotData.originForkId,
+                dispute.input.forkId
+            );
             require(hasGenesis, RaceConditionGenesisTimestampNotAvailable());
             previousTimestamp = genesisTimestamp;
         } else {
@@ -485,9 +468,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         Message[] memory outboundMessages;
         (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
             .executeStateTransition(
-            dispute.input.channelId,
-            timeoutCalldataPostedProof.auditingData.latestStateStateMachineState,
-            _block.transaction
+            dispute.input.channelId, timeoutCalldataPostedProof.latestStateStateMachineState, _block.transaction
         );
         if (!isSuccess) {
             return _invalid();
@@ -589,17 +570,6 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _invalid();
     }
 
-    function _checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        internal
-        returns (bool)
-    {
-        bytes memory result = _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(DisputeVerificationFacet.checkDisputeAuditingDataCommitment, (dispute, disputeAuditingData))
-        );
-        return abi.decode(result, (bool));
-    }
-
     function runFraudProof(FraudProof memory fraudProof, Dispute memory dispute) internal returns (address) {
         bytes memory result = _delegatecall(
             fraudProofFacetAddress,
@@ -609,5 +579,37 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             )
         );
         return abi.decode(result, (address));
+    }
+
+    function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
+        return _isLastMilestoneFinalByEveryone(dispute);
+    }
+
+    function _deriveExpectedParticipantsForDispute(Dispute memory dispute)
+        internal
+        view
+        returns (address[] memory expectedParticipants)
+    {
+        return _deriveEligibleParticipantsFromInboundHash(
+            dispute.input.channelId, dispute.input.latestInboundMessageBlockHash
+        );
+    }
+
+    function _isLastMilestoneFinalByEveryone(Dispute memory dispute) internal returns (bool isFinal) {
+        if (dispute.input.stateProof.milestones.length == 0) {
+            return true;
+        }
+
+        address[] memory expectedParticipants = _deriveExpectedParticipantsForDispute(dispute);
+
+        MilestoneProof memory lastMilestone =
+            dispute.input.stateProof.milestones[dispute.input.stateProof.milestones.length - 1];
+
+        SnapshotData memory thresholdSnapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
+        thresholdSnapshotData.participants = expectedParticipants;
+
+        (isFinal,) = StateChannelManagerProxy(address(this)).isMilestoneFinal(
+            dispute.input.forkId, thresholdSnapshotData, lastMilestone
+        );
     }
 }

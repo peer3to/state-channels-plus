@@ -253,12 +253,12 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             }
 
             // 2.9) verify stateProof proves latest state -> abort otherwise
-            const { isValid } =
-                await diamondStateMachine.localDiamondContract.verifyMilestones(
+            const isValid =
+                await diamondStateMachine.localDiamondContract.verifyMilestones.staticCall(
                     syncPayload.latestForkGenesisSnapshot.forkId,
                     syncPayload.stateProof.milestones,
                     syncPayload.milestoneSnapshots,
-                    syncPayload.latestForkGenesisSnapshot.snapshotData
+                    syncPayload.latestForkGenesisSnapshot
                 );
             if (!isValid) return this.service.abort(peerAddress);
 
@@ -354,7 +354,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 "Spectator successfully synced to latest proven state"
             );
         } catch (e) {
-            this.service.logger.debug(e);
+            this.service.logger.warn(e);
             return this.service.abort(peerAddress);
         }
     }

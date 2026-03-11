@@ -9,11 +9,13 @@ export class AssertSyncActions {
 
     async peersInSyncWait(options?: {
         expectedStateMachineStateHash?: Hash;
+        blockHashInStorage?: Hash;
         peerIndices?: number[];
         timeout?: number;
     }): Promise<void> {
         const {
             expectedStateMachineStateHash,
+            blockHashInStorage,
             peerIndices,
             timeout = 10000
         } = options || {};
@@ -26,11 +28,10 @@ export class AssertSyncActions {
             throw new Error("No active fork ID - cannot wait for sync");
         }
 
-        await this.harness.syncCoordinator.waitForPeersToSync(
-            peers,
-            forkId,
-            timeout
-        );
+        await this.harness.syncCoordinator.waitForPeersToSync(peers, forkId, {
+            timeoutMs: timeout,
+            blockHashInStorage
+        });
 
         const firstPeerIndex = peers[0].index;
         const firstPeerState =
@@ -60,7 +61,7 @@ export class AssertSyncActions {
         peerIndices?: number[];
     }): Promise<void> {
         const { expectedHeight, peerIndices } = options;
-        const peers = this.harness.getFilteredPeers(peerIndices);
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         if (peers.length === 0) {
             throw new Error("No peers available to check block height");
         }
