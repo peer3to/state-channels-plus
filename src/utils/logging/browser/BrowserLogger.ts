@@ -17,7 +17,8 @@ export class BrowserLogger extends Logger {
         sharedContext: SharedLoggerContext,
         level: LogLevel | undefined,
         logStore: LogStore,
-        logUploaderOptions?: LogUploaderOptions
+        logUploaderOptions?: LogUploaderOptions,
+        private readonly skipWriting: boolean = false
     ) {
         const logUploader =
             logUploaderOptions?.logUploader ||
@@ -32,6 +33,7 @@ export class BrowserLogger extends Logger {
                 : undefined);
 
         super(context, sharedContext, level, logStore, logUploader);
+        logUploader?.setLogger(this);
     }
 
     protected createChild(context: ExclusiveLoggerContext): Logger {
@@ -42,7 +44,8 @@ export class BrowserLogger extends Logger {
             this.logStore,
             {
                 logUploader: this.logUploader
-            }
+            },
+            this.skipWriting
         );
     }
 
@@ -72,6 +75,10 @@ export class BrowserLogger extends Logger {
     }
 
     protected write(logEntry: LogEntry) {
+        if (this.skipWriting) {
+            return;
+        }
+
         const { level, meta } = logEntry;
         const method = level === "verbose" ? "debug" : level;
 

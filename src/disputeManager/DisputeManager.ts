@@ -18,7 +18,8 @@ import {
     Mutex,
     difference,
     Logger,
-    tryDecodeCustomError
+    tryDecodeCustomError,
+    tryHandleEvmError
 } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -80,9 +81,15 @@ class DisputeManager {
     }
 
     public async dispute(forkId: ForkId): Promise<void> {
+        let txResponse;
         try {
             await this.mutex.lock();
-            if (this.storage.disputes.didIDispute(forkId)) return;
+            if (this.storage.disputes.didIDispute(forkId)) {
+                this.logger.info(
+                    `Already initiated dispute for forkId ${forkId}, skipping dispute attempt.`
+                );
+                return;
+            }
 
             const {
                 dispute,
@@ -91,16 +98,13 @@ class DisputeManager {
                 fraudProofsToApply
             } = await this.constructDispute(forkId);
 
+            const shouldPostAuditingData = dispute.postedAuditingData;
+
             LoggerUtils.logDisputeInitiated(
                 this.logger,
                 dispute,
                 fraudProofsToApply
             );
-
-            const pendingParticipants =
-                await this.stateChannelManagerContract.getPendingParticipants(
-                    this.channelId
-                );
 
             // check if multicall is needed
             if (fraudProofsToApply.length > 0) {
@@ -113,7 +117,7 @@ class DisputeManager {
                 ).data;
                 // 2) upload dispute
                 let uploadDisputeCalldata: string;
-                if (pendingParticipants.length > 0) {
+                if (shouldPostAuditingData) {
                     // with calldata
                     uploadDisputeCalldata = (
                         await this.stateChannelManagerContract.uploadDisputeWithCalldata.populateTransaction(
@@ -129,23 +133,25 @@ class DisputeManager {
                         )
                     ).data!;
                 }
-                await this.stateChannelManagerContract.multicall([
+                txResponse = await this.stateChannelManagerContract.multicall([
                     fraudProofCalldata,
                     uploadDisputeCalldata
                 ]);
             } else {
                 // no multicall - upload dispute separately
-                if (pendingParticipants.length > 0) {
+                if (shouldPostAuditingData) {
                     // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
-                    await this.stateChannelManagerContract.uploadDisputeWithCalldata(
-                        disputeConfirmation,
-                        auditingData
-                    );
+                    txResponse =
+                        await this.stateChannelManagerContract.uploadDisputeWithCalldata(
+                            disputeConfirmation,
+                            auditingData
+                        );
                 } else {
-                    await this.stateChannelManagerContract.uploadDispute(
-                        disputeConfirmation,
-                        { gasLimit: DEFAULT_GAS_LIMIT }
-                    );
+                    txResponse =
+                        await this.stateChannelManagerContract.uploadDispute(
+                            disputeConfirmation,
+                            { gasLimit: DEFAULT_GAS_LIMIT }
+                        );
                 }
             }
 
@@ -154,13 +160,28 @@ class DisputeManager {
                 hash(Codec.encode(dispute, Type.Dispute)),
                 dispute
             );
+            await txResponse.wait();
         } catch (error) {
-            this.logger.error("Error uploading dispute", {
+            const success = tryHandleEvmError(error, {
+                tx: txResponse,
+                logger: this.logger,
                 forkId,
-                channelId: this.channelId,
-                signerAddress: this.signerAddress,
-                error: error instanceof Error ? error.message : String(error)
+                signer: this.signer,
+                handlers: {
+                    ErrorCantParticipateInDispute: () => {
+                        // No op -> malcious peer
+                    }
+                }
             });
+            if (!success)
+                this.logger.error("Error uploading dispute", {
+                    forkId,
+                    channelId: this.channelId,
+                    signerAddress: this.signerAddress,
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                    customErrorHandles: success
+                });
 
             this.storage.disputes.storeDisputedFork(forkId, false);
         } finally {
@@ -220,7 +241,10 @@ class DisputeManager {
                 this.channelId,
                 Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
             ),
-            this.diamondStateMachine.getParticipants()
+            this.storage.getParticipantsUnion({
+                forkId,
+                height: latestBlockHeight
+            })
         ]).catch((error) => {
             this.logger.error(
                 "Error constructing dispute - failed to get inputData",
@@ -234,6 +258,7 @@ class DisputeManager {
             );
             throw error;
         });
+
         // onChainSlashes
         // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
         let onChainSlashes = new Set<Address>(_onChainSlashes);
@@ -330,7 +355,7 @@ class DisputeManager {
                 await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
                     disputeInput,
                     auditingData.latestStateSnapshot,
-                    auditingData.latestStateStateMachineState,
+                    latestStateMachineState,
                     auditingData.inboundMessageBlocks
                 );
         } catch (error) {
@@ -351,9 +376,21 @@ class DisputeManager {
             Codec.encode(outputSnapshotData, Type.SnapshotData)
         );
 
-        const dispute: DisputeStruct = {
+        const draftDispute: DisputeStruct = {
             input: disputeInput,
-            outputSnapshotDataHash: outputSnapshotDataHash
+            outputSnapshotDataHash: outputSnapshotDataHash,
+            postedAuditingData: false
+        };
+
+        const isLastMilestoneFinalByEveryone =
+            await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
+                draftDispute
+            );
+        const postedAuditingData = !isLastMilestoneFinalByEveryone;
+
+        const dispute: DisputeStruct = {
+            ...draftDispute,
+            postedAuditingData
         };
 
         // ****** TODO - run auditing as a sanity check *******
@@ -371,7 +408,12 @@ class DisputeManager {
             },
             signatures: []
         };
-
+        this.logger.debug("CONSTRUCTED DISPUTE:", {
+            dispute: LoggerUtils.getDisputeMetadata(dispute),
+            auditingData: auditingData
+                ? LoggerUtils.getAuditingMetadata(auditingData)
+                : undefined
+        });
         return {
             dispute,
             disputeConfirmation,
@@ -419,15 +461,19 @@ class DisputeManager {
                 latestStateSnapshot = genesisStateSnapshot; // just to use the field, verifyStateProof check will fail up to this point
             } else latestStateSnapshot = snapshot;
         }
-
-        // latestStateStateMachineState
-        let latestStateStateMachineState =
-            this.storage.stateMachineStates.getStateMachineState(
-                latestStateSnapshot.stateMachineStateHash
+        const latestFinalizedStateSnapshot =
+            this.agreementManager.getLatestFinalizedSnapshot(
+                stateProof,
+                forkId
             );
-        if (!latestStateStateMachineState) {
+        // latestFinalizedStateStateMachineState
+        let latestFinalizedStateStateMachineState =
+            this.storage.stateMachineStates.getStateMachineState(
+                latestFinalizedStateSnapshot.stateMachineStateHash
+            );
+        if (!latestFinalizedStateStateMachineState) {
             isPartial = true;
-            latestStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
+            latestFinalizedStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
         }
 
         // inbound message blocks
@@ -449,7 +495,7 @@ class DisputeManager {
             auditingData: {
                 genesisStateSnapshotData: genesisStateSnapshot.snapshotData,
                 latestStateSnapshot: latestStateSnapshot.toStruct(),
-                latestStateStateMachineState: latestStateStateMachineState,
+                latestFinalizedStateStateMachineState,
                 milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
                     snapshot.toStruct()
                 ),

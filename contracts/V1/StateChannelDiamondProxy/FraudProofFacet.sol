@@ -82,16 +82,22 @@ contract FraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        if (!(block1.transaction.header.forkId == block2.transaction.header.forkId
+        if (
+            !(
+                block1.transaction.header.forkId == block2.transaction.header.forkId
                     && block1.transaction.header.transactionCnt == block2.transaction.header.transactionCnt
-                    && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2)))) {
+                    && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2))
+            )
+        ) {
             return _invalid();
         }
 
-        (address signer1,) = UtilityFacet(utilityFacetAddress)
-            .retrieveSignerAddress(blockDoubleSignProof.block1.encodedBlock, blockDoubleSignProof.block1.signature);
-        (address signer2,) = UtilityFacet(utilityFacetAddress)
-            .retrieveSignerAddress(blockDoubleSignProof.block2.encodedBlock, blockDoubleSignProof.block2.signature);
+        (address signer1,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+            blockDoubleSignProof.block1.encodedBlock, blockDoubleSignProof.block1.signature
+        );
+        (address signer2,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+            blockDoubleSignProof.block2.encodedBlock, blockDoubleSignProof.block2.signature
+        );
         if (signer1 != signer2) {
             return _invalid();
         }
@@ -102,16 +108,15 @@ contract FraudProofFacet is StateChannelCommon {
         FraudProof memory fraudProof,
         FraudProofVerificationContext memory fraudProofVerificationContext
     ) internal returns (address) {
-        BlockInvalidStateTransitionProof memory
-            blockInvalidSTProof = abi.decode(fraudProof.encodedProof, (BlockInvalidStateTransitionProof));
+        BlockInvalidStateTransitionProof memory blockInvalidSTProof =
+            abi.decode(fraudProof.encodedProof, (BlockInvalidStateTransitionProof));
         Block memory fraudBlock = abi.decode(blockInvalidSTProof.invalidBlock.encodedBlock, (Block));
         StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-        (address signer,) = UtilityFacet(utilityFacetAddress)
-            .retrieveSignerAddress(
-                blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
-            );
+        (address signer,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+            blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
+        );
 
         bool isSuccess;
         bytes memory encodedModifiedState;
@@ -140,8 +145,8 @@ contract FraudProofFacet is StateChannelCommon {
 
         (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
             .executeStateTransition(
-                fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
-            );
+            fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
+        );
         if (!isSuccess) {
             return _valid(signer);
         }
@@ -149,9 +154,8 @@ contract FraudProofFacet is StateChannelCommon {
         SnapshotData memory newSnapshotData = previousStateSnapshot.snapshotData;
         if (outboundMessages.length > 0) {
             for (uint256 i = 0; i < outboundMessages.length; i++) {
-                newSnapshotData.totalWithdrawals = stateMachineImplementation.addBalance(
-                    newSnapshotData.totalWithdrawals, outboundMessages[i].balance
-                );
+                newSnapshotData.totalWithdrawals =
+                    stateMachineImplementation.addBalance(newSnapshotData.totalWithdrawals, outboundMessages[i].balance);
             }
 
             newSnapshotData.latestOutboundMessageBlockHeight += 1;
@@ -224,7 +228,7 @@ contract FraudProofFacet is StateChannelCommon {
         }
 
         // not onChainSnapshot -> need dispute window
-        if (forkId != keccak256(abi.encode(correctGenesisSnapshot.snapshotData))) return _invalid();
+        if (!_isGenesisSnapshotDataLinkedToFork(forkId, correctGenesisSnapshot.snapshotData)) return _invalid();
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow =
             _disputeData.disputeWindowMap[correctGenesisSnapshot.snapshotData.originForkId];

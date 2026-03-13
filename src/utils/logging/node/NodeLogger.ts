@@ -21,7 +21,8 @@ export class NodeLogger extends Logger {
         level: LogLevel | undefined,
         logStore: LogStore,
         logUploaderOptions?: LogUploaderOptions,
-        excludedTags: Set<string> = new Set()
+        excludedTags: Set<string> = new Set(),
+        private readonly skipWriting: boolean = false
     ) {
         const logUploader =
             logUploaderOptions?.logUploader ||
@@ -37,6 +38,7 @@ export class NodeLogger extends Logger {
 
         super(context, sharedContext, level, logStore, logUploader);
         this.excludedTags = excludedTags;
+        logUploader?.setLogger(this);
     }
 
     protected createChild(context: ExclusiveLoggerContext): Logger {
@@ -46,7 +48,8 @@ export class NodeLogger extends Logger {
             this.level,
             this.logStore,
             { logUploader: this.logUploader },
-            this.excludedTags
+            this.excludedTags,
+            this.skipWriting
         );
     }
 
@@ -103,26 +106,15 @@ export class NodeLogger extends Logger {
 
         return `${prefix} ${logEntry.message}`;
     }
-    private formatMeta(logEntry: LogEntry): any {
-        const hasMeta = logEntry.meta.length > 0;
-        const inspectFn = getInspect();
-        const metaStr = hasMeta
-            ? inspectFn
-                ? inspectFn(logEntry.meta, {
-                      depth: null,
-                      colors: true,
-                      maxArrayLength: null,
-                      breakLength: 80
-                  })
-                : logEntry.meta
-            : "";
-        return metaStr;
-    }
+
     protected write(logEntry: LogEntry): void {
+        if (this.skipWriting) {
+            return;
+        }
+
         const { level } = logEntry;
-        const method = level === "verbose" ? "debug" : level;
         const formattedMessage = this.formatMessage(logEntry);
-        const formattedMeta = this.formatMeta(logEntry);
+        const formattedMeta = logEntry.meta;
         if (
             console.groupCollapsed &&
             level !== "debug" &&
@@ -131,9 +123,9 @@ export class NodeLogger extends Logger {
             // eslint-disable-next-line no-console
             console.groupCollapsed(formattedMessage);
             // eslint-disable-next-line no-console
-            console[method](formattedMeta);
+            console.log(formattedMeta);
             // eslint-disable-next-line no-console
-            console[method](logEntry.stack);
+            console.log(logEntry.stack);
             // eslint-disable-next-line no-console
             console.groupEnd();
             return;
@@ -141,11 +133,7 @@ export class NodeLogger extends Logger {
 
         // Fallback when groups are not supported
         // eslint-disable-next-line no-console
-        (console as any)[method](
-            formattedMessage,
-            formattedMeta,
-            logEntry.stack
-        );
+        console.log(formattedMessage, formattedMeta, logEntry.stack);
     }
 
     public group(label?: string): void {
@@ -219,25 +207,5 @@ export class NodeLogger extends Logger {
         }
 
         return excludedTags;
-    }
-}
-
-// ******* Bundler safe sync dynamic import of util.inspect that runs only in nodejs ********
-
-let cachedInspect: ((value: any, options?: any) => string) | undefined;
-
-function getInspect(): ((value: any, options?: any) => string) | undefined {
-    if (cachedInspect) return cachedInspect;
-    if (!isNodeRuntime()) return undefined;
-    try {
-        // Use eval to avoid bundlers injecting require in browser builds.
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval
-        const req =
-            typeof require === "function" ? require : (0, eval)("require");
-        const util = req("util");
-        cachedInspect = util.inspect;
-        return cachedInspect;
-    } catch {
-        return undefined;
     }
 }

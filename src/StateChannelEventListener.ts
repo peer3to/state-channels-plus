@@ -229,11 +229,13 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { channelId, forkId, disputer } = logObj.args;
+                const { channelId, forkId, disputer, disputeHash } =
+                    logObj.args;
                 return this.eventHandler.onDisputeKilled(
                     channelId,
                     forkId,
-                    disputer
+                    disputer,
+                    disputeHash
                 );
             }
         },

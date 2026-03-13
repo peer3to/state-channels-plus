@@ -60,7 +60,7 @@ class Clock {
 
         const difference = latestTimestamp - currentTime;
 
-        const blockCnt = latestBlock.number;
+        const blockCnt = Math.min(latestBlock.number, 10);
         const pastBlock = await this.provider.getBlock(
             latestBlock.number - blockCnt
         );
@@ -68,12 +68,17 @@ class Clock {
         const pastTimestamp = pastBlock.timestamp;
 
         this.averageBlockTime = (latestTimestamp - pastTimestamp) / blockCnt;
+        console.log(
+            `Average block time calculated: ${this.averageBlockTime}s over ${blockCnt} blocks`,
+            `past block timestamp: ${pastTimestamp}, latest block timestamp: ${latestTimestamp}`,
+            `current time: ${currentTime}, difference: ${difference}s`
+        );
         if (!this.averageBlockTime) {
             this.clockAdjustmentSeconds += difference;
             return;
         }
         //TODO - think - should it be 2* or 1* or something else?
-        if (difference > 2 * this.averageBlockTime) {
+        if (Math.abs(difference) > this.averageBlockTime) {
             this.clockAdjustmentSeconds += difference;
             await this.syncClock(); // Recursively call syncClock until condition is satisfied
         }

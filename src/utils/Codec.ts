@@ -41,12 +41,10 @@ import {
     DisputeAuditingDataEthersType,
     DisputeNotLatestStateProofEthersType,
     DisputeInvalidOutputStateProofEthersType,
-    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedProofEthersType,
-    DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType,
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksProofEthersType,
-    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedProofEthersType,
+    DisputeInvalidStateProofProofEthersType,
     DisputeInvalidBalanceInvariantProofEthersType,
     DisputeOnChainSlashesNotSubsetProofEthersType,
+    DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType,
     TimeoutThresholdProofEthersType,
     TimeoutCalldataPostedProofEthersType,
     TimeoutNotLinkedToLatestStateProofEthersType,
@@ -65,20 +63,18 @@ import { SyncPayloadEthersType } from "@/types";
 import type { SyncPayload } from "@/types";
 import { ExecResult } from "@ethereumjs/evm";
 import {
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct,
-    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct,
     DisputeInvalidBalanceInvariantStruct,
     DisputeOnChainSlashesNotSubsetStruct,
     DisputeInvalidBlockInStateProofApplyFraudProofStruct,
     DisputeInvalidOutputStateStruct,
-    DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct,
-    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct,
+    DisputeInvalidStateProofStruct,
     DisputeNotLatestStateStruct,
     TimeoutCalldataPostedStruct,
     TimeoutNotLinkedToLatestStateStruct,
     TimeoutParticipantNotNextStruct,
     TimeoutThresholdStruct,
-    TimeoutTooEarlyStruct
+    TimeoutTooEarlyStruct,
+    DisputeLastMilestoneNotFinalAndNoAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 export type FraudStruct =
@@ -91,10 +87,7 @@ export type FraudStruct =
 export type DisputeFraudStruct =
     | DisputeNotLatestStateStruct
     | DisputeInvalidOutputStateStruct
-    | DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct
-    | DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct
-    | DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct
-    | DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct
+    | DisputeInvalidStateProofStruct
     | DisputeInvalidBalanceInvariantStruct
     | DisputeOnChainSlashesNotSubsetStruct
     | TimeoutThresholdStruct
@@ -102,7 +95,8 @@ export type DisputeFraudStruct =
     | TimeoutNotLinkedToLatestStateStruct
     | TimeoutParticipantNotNextStruct
     | TimeoutTooEarlyStruct
-    | DisputeInvalidBlockInStateProofApplyFraudProofStruct;
+    | DisputeInvalidBlockInStateProofApplyFraudProofStruct
+    | DisputeLastMilestoneNotFinalAndNoAuditingDataStruct;
 
 type StructType =
     | FraudStruct
@@ -184,20 +178,8 @@ export class Codec {
             DisputeInvalidOutputStateProofEthersType
         ],
         [
-            DisputeFraudProofType.DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
-            DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedProofEthersType
-        ],
-        [
-            DisputeFraudProofType.DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
-            DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType
-        ],
-        [
-            DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
-            DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksProofEthersType
-        ],
-        [
-            DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
-            DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedProofEthersType
+            DisputeFraudProofType.DisputeInvalidStateProof,
+            DisputeInvalidStateProofProofEthersType
         ],
         [
             DisputeFraudProofType.DisputeInvalidBalanceInvariant,
@@ -227,6 +209,10 @@ export class Codec {
         [
             DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
             DisputeInvalidBlockInStateProofApplyFraudProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData,
+            DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType
         ]
     ]);
 

@@ -1,5 +1,6 @@
-import { ForkId } from "@/types/types";
+import { ForkId, Hash } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
+import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import type { TestPeer } from "@test/harness/core/types";
 
 /**
@@ -21,8 +22,12 @@ export class SyncCoordinator {
     public async waitForPeersToSync(
         peers: TestPeer[],
         forkId: ForkId,
-        timeoutMs = 8000
+        options?: {
+            timeoutMs?: number;
+            blockHashInStorage?: Hash;
+        }
     ): Promise<void> {
+        const { timeoutMs = 8000, blockHashInStorage } = options || {};
         this.logger.verbose(`Waiting for ${peers.length} peers to sync`, {
             forkId,
             timeout: timeoutMs,
@@ -34,7 +39,11 @@ export class SyncCoordinator {
             if (peers.length === 0) return true;
 
             const blocks = peers.map((peer) =>
-                peer.stateManager.storage.blocks.getLatestBlock(forkId)
+                blockHashInStorage
+                    ? peer.stateManager.storage.blocks.getBlock(
+                          blockHashInStorage
+                      )
+                    : peer.stateManager.storage.blocks.getLatestBlock(forkId)
             );
 
             if (blocks.some((b) => !b)) {
@@ -50,6 +59,7 @@ export class SyncCoordinator {
             );
         };
 
+        let barrierError: EventBarrierCapturedError | undefined;
         try {
             await this.eventBarrier.waitFor(checkSync, {
                 timeoutMs,
@@ -57,7 +67,7 @@ export class SyncCoordinator {
             });
             return;
         } catch (error) {
-            // Fall through to error reporting
+            barrierError = error as EventBarrierCapturedError;
         }
 
         // Enhanced error reporting on timeout
@@ -67,9 +77,11 @@ export class SyncCoordinator {
             return `Peer ${peer.index}: ${block ? `hash=${block.hash} height=${block.height}` : "no_block"}`;
         });
 
-        throw new Error(
+        const syncError = new Error(
             `Peers at indices [${peers.map((p) => p.index).join(", ")}] failed to synchronize within ${timeoutMs}ms. States: ${peerStates.join("; ")}`
-        );
+        ) as EventBarrierCapturedError;
+        syncError.capturedBarrierStack = barrierError?.capturedBarrierStack;
+        throw syncError;
     }
 }
 

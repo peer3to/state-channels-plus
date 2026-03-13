@@ -43,7 +43,7 @@ interface StateChannelManagerEvents {
 
     event ChannelStorageCleared(bytes32 indexed channelId, bytes32 latestInboundMessageBlockHash);
 
-    event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer);
+    event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer, bytes32 disputeHash);
 
     event InboundMessagesProcessed(bytes32 indexed channelId, MessageBlock messageBlock);
 

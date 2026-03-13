@@ -1,5 +1,5 @@
 import { Block } from "@/models";
-import { BlockValidationResult } from "@/types";
+import { BlockValidationResult, Hash } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 import AValidationStrategy from "./AValidationStrategy";
@@ -34,6 +34,19 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             this.logger
         );
     }
+
+    private createDisputeInvalidBlockInStateProofApplyFraudProof(
+        fraudProofHash: Hash
+    ): void {
+        const fraudProof =
+            this.storage.fraudProofs.getFraudProofByHash(fraudProofHash)!;
+        this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
+            this.dispute,
+            fraudProof,
+            this.blockIndexInUnfinalizedPartOfStateProof
+        );
+    }
+
     public async interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
     ): Promise<boolean> {
@@ -120,12 +133,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         const hash =
             this.fraudProofService.createInvalidStateTransitionProof(block);
-        const fraudProof = this.storage.fraudProofs.getFraudProofByHash(hash)!;
-        this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
-            this.dispute,
-            fraudProof,
-            this.blockIndexInUnfinalizedPartOfStateProof
-        );
+        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
         // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
@@ -134,12 +142,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         const hash = this.fraudProofService.createWrongGenesisProof(block);
-        const fraudProof = this.storage.fraudProofs.getFraudProofByHash(hash)!;
-        this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
-            this.dispute,
-            fraudProof,
-            this.blockIndexInUnfinalizedPartOfStateProof
-        );
+        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
         // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
@@ -152,21 +155,13 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
                 block,
                 messageBlock
             );
-        const fraudProof = this.storage.fraudProofs.getFraudProofByHash(hash)!;
-        this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
-            this.dispute,
-            fraudProof,
-            this.blockIndexInUnfinalizedPartOfStateProof
-        );
+        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
-        // This should never be the case, since we should detect double sign before
-        throw new Error(
-            "conflictingButNotLinkedBlockDetected in DisputeValidationStrategy"
-        );
+        return this.blockIsNotLinkedAndIsNotFirstBlock(block);
     }
     public async blockForkIsDisputed(
         _block: Block,
@@ -182,9 +177,12 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISCONNECT;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
-        return BlockValidationResult.DISCONNECT;
+        const hash =
+            this.fraudProofService.createInvalidStateTransitionProof(block);
+        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
+        return BlockValidationResult.DISPUTE;
     }
     public async objectiveInvalidTimestampDetected(
         block: Block
@@ -192,12 +190,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         // TODO - think about this - can this change over time? i.e. can onChainTimestamp or the presence of calldata change things
         const hash = this.fraudProofService.createInvalidTimestampProof(block);
-        const fraudProof = this.storage.fraudProofs.getFraudProofByHash(hash)!;
-        this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
-            this.dispute,
-            fraudProof,
-            this.blockIndexInUnfinalizedPartOfStateProof
-        );
+        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
         // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }

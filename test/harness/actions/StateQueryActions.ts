@@ -6,6 +6,7 @@ import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { ethers } from "@/index";
 import Block from "@/models/Block";
+import { StateSnapshot } from "@/models";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -23,11 +24,16 @@ export class StateQueryActions {
         private logger: Logger
     ) {}
 
+    public getPeerStorage(peerIndex: number) {
+        const peer = this.harness.getPeer(peerIndex);
+        return peer.stateManager.storage;
+    }
+
     /**
      * Get the latest state machine state hash for a peer - ONLY if it exists in storage
      */
     public getLatestStateMachineStateHash(peerIndex: number): Hash | null {
-        const peer = this.harness.peers[peerIndex];
+        const peer = this.harness.getPeer(peerIndex);
         const storage = peer.stateManager.storage;
         if (!peer) throw new Error(`Peer ${peerIndex} not found`);
 
@@ -90,6 +96,14 @@ export class StateQueryActions {
               )?.hash || ethers.ZeroHash;
     }
 
+    public async getLocalStateSnapshot(peer: TestPeer): Promise<StateSnapshot> {
+        const stateManager = peer.stateManager;
+        const localDiamond =
+            stateManager.diamondStateMachine.localDiamondContract;
+        return StateSnapshot.from(
+            await localDiamond.getStateSnapshot(stateManager.channelId)
+        );
+    }
     /**
      * Get the next peer that should write a block
      */
@@ -147,19 +161,10 @@ export class StateQueryActions {
         toPeerIndex: number,
         timeoutMs: number = 5000
     ): Promise<ATransport> {
-        const fromPeer = this.harness.getPeer(fromPeerIndex);
-        const toPeer = this.harness.getPeer(toPeerIndex);
         let resolvedTransport: ATransport | undefined;
 
         const condition = () => {
-            const transport =
-                fromPeer.stateManager.p2pManager.openConnections.find((t) => {
-                    const profile =
-                        fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                            t
-                        );
-                    return profile?.evmAddress === toPeer.address;
-                });
+            const transport = this.getTransport(fromPeerIndex, toPeerIndex);
 
             if (transport) {
                 resolvedTransport = transport;
@@ -174,18 +179,30 @@ export class StateQueryActions {
             return resolvedTransport!;
         }
 
-        // Use connection barrier for event-driven waiting
-        try {
-            await this.harness.connectionBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
-            });
-            return resolvedTransport!;
-        } catch {
-            throw new Error(
-                `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
-            );
-        }
+        await this.harness.connectionBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
+        });
+        return resolvedTransport!;
+    }
+
+    /**
+     * Get the transport in fromPeerIndex p2pManager towards toPeerIndex
+     */
+    getTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number
+    ): ATransport | undefined {
+        const fromPeer = this.harness.getPeer(fromPeerIndex);
+        const toPeer = this.harness.getPeer(toPeerIndex);
+
+        return fromPeer.stateManager.p2pManager.openConnections.find((t) => {
+            const profile =
+                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                    t
+                );
+            return profile?.evmAddress === toPeer.address;
+        });
     }
 
     /**
@@ -201,11 +218,63 @@ export class StateQueryActions {
      */
     getProfile(
         peerIndex: number,
-        evmAddress: Address
+        options?: { evmAddress?: Address; transport?: ATransport }
     ): PeerProfile | undefined {
+        const { evmAddress, transport } = options || {};
         const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-            evmAddress
+        if (!evmAddress && !transport) {
+            throw new Error(
+                "Either evmAddress or transport must be provided to getProfile"
+            );
+        }
+        if (transport) {
+            return peer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                transport
+            );
+        }
+        if (evmAddress) {
+            return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
+                evmAddress
+            );
+        }
+        return undefined;
+    }
+
+    async getDisputeHashes(options?: {
+        peerIndices?: number[];
+        disputedForkId?: ForkId;
+    }): Promise<Hash[]> {
+        const { peerIndices, disputedForkId } = options || {};
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
+
+        const forkId = disputedForkId ?? this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error(
+                "No fork ID available to query dispute commitments"
+            );
+        }
+
+        const disputeHashes = new Set<Hash>();
+
+        const disputeWindowsByPeer = await Promise.all(
+            peers.map((peer) => {
+                const localDiamond = this.harness.getLocalDiamond(peer.index);
+                return localDiamond.getDisputeWindows(this.harness.channelId, [
+                    forkId
+                ]);
+            })
         );
+
+        for (const disputeWindows of disputeWindowsByPeer) {
+            const disputeWindow = disputeWindows[0];
+            if (!disputeWindow) continue;
+
+            for (const disputeCommitment of disputeWindow.evidence
+                .disputeCommitments) {
+                disputeHashes.add(disputeCommitment as Hash);
+            }
+        }
+
+        return Array.from(disputeHashes);
     }
 }

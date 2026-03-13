@@ -1,5 +1,7 @@
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport, WebRTCTransport } from "@/transport";
+// @ts-expect-error - get-webrtc doesn't ship TypeScript declarations
+import { RTCPeerConnection, RTCIceCandidate } from "get-webrtc";
 
 import WebRTCSetupService from "./WebRTCSetupService";
 
@@ -32,14 +34,12 @@ class WebRTCSetupRpcMethods extends ARpcMethods {
                 }
             };
             connection.ondatachannel = (event: any) => {
-                console.log("WebRTC - onOfferWebRTC - ondatachannel");
                 new WebRTCTransport(event.channel, this.p2pManager);
             };
             this.service.connectionMap.set(peerAddress, connection);
 
             this.service.setupConnectionStateHandlers(connection, peerAddress);
             const offer = JSON.parse(serializedOffer);
-            console.log("onOfferWebRTC - offer", offer);
             await connection.setRemoteDescription(offer);
             const answer = await connection.createAnswer();
             await connection.setLocalDescription(answer);
@@ -48,7 +48,7 @@ class WebRTCSetupRpcMethods extends ARpcMethods {
                 .onAnswerWebRTC(serializedAnswer)
                 .sendOne(peerAddress);
         } catch (e) {
-            console.log("onOfferWebRTC - error", e);
+            this.service.logger.verbose("onOfferWebRTC - error", e);
         }
     }
 
@@ -63,13 +63,11 @@ class WebRTCSetupRpcMethods extends ARpcMethods {
                 return;
             }
             const connection = this.service.connectionMap.get(peerAddress);
-            if (!connection)
-                return console.log("onAnswerWebRTC - no connection");
+            if (!connection) return;
             const answer = JSON.parse(serializedAnswer);
-            console.log("onAnswerWebRTC - answer", answer);
             await connection.setRemoteDescription(answer);
         } catch (e) {
-            console.log("onAnswerWebRTC - error", e);
+            this.service.logger.verbose("onAnswerWebRTC - error", e);
         }
     }
 
@@ -95,7 +93,7 @@ class WebRTCSetupRpcMethods extends ARpcMethods {
 
             await connection.addIceCandidate(candidate);
         } catch (error) {
-            console.error("onIceCandidate - error:", error);
+            this.service.logger.verbose("onIceCandidate - error", error);
         }
     }
 }
