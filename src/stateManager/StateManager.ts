@@ -782,10 +782,9 @@ class StateManager {
         const strategy =
             options?.validationStrategy ||
             this.getStrategyByStatus(this.status);
-        const shouldLockMutex = !(options?.skipMutex ?? false);
 
         try {
-            if (shouldLockMutex) {
+            if (!options?.skipMutex) {
                 await this.mutex.lock();
             }
 
@@ -973,11 +972,12 @@ class StateManager {
                 ...previousStateSnapshot.snapshotData.participants,
                 ...stateSnapshot.snapshotData.participants
             ]);
-            const unexpectedSigners = Array.from(
-                block.allSignerAddresses
-            ).filter((signer) => !allowedSigners.has(signer));
+            const unexpectedSigners = difference(
+                block.allSignerAddresses,
+                allowedSigners
+            );
 
-            if (unexpectedSigners.length > 0) {
+            if (unexpectedSigners.size > 0) {
                 validationResult =
                     await strategy.notAllSingersAreParticipants(block);
                 this.logger.warn(
@@ -990,7 +990,7 @@ class StateManager {
                             block,
                             this.storage
                         ),
-                        unexpectedSigners,
+                        unexpectedSigners: Array.from(unexpectedSigners),
                         allowedSigners: Array.from(allowedSigners)
                     }
                 );
@@ -1034,7 +1034,7 @@ class StateManager {
             });
             throw error;
         } finally {
-            if (shouldLockMutex) {
+            if (!options?.skipMutex) {
                 this.mutex.unlock();
             }
         }
