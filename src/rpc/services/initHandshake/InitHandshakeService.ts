@@ -10,8 +10,9 @@ import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import EventBarrier from "@/utils/EventBarrier";
 import { Status } from "@/types";
-import { getChecksumAddress } from "@/utils";
+import { DetachedPromises, getChecksumAddress } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
 type ConnectionChallenge = {
     randomChallengeHash: string;
@@ -111,7 +112,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         const isCompleted = !!profile && profile.getIsHandshakeCompleted();
 
         const transportMeta = LoggerUtils.getTransportMetadata(transport);
-        this.logger.debug(
+        this.logger.verbose(
             `Checking if handshake completed for transport ${TransportType[transport.transportType]}`,
             { ...transportMeta, isCompleted, profileExists: !!profile }
         );
@@ -133,7 +134,14 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                 }
             );
             return true;
-        } catch {
+        } catch (error) {
+            const barrierError = error as EventBarrierCapturedError;
+            this.logger.verbose("waitForHandshakeCompleted failed", {
+                error,
+                capturedBarrierStack: barrierError.capturedBarrierStack,
+                transportType: TransportType[transport.transportType],
+                peerAddress: transport.peerAddress
+            });
             return false;
         }
     }
@@ -187,7 +195,9 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         );
     }
 
-    public maybeFinalizeHandshakeOnceFromTransport(transport: ATransport) {
+    public async maybeFinalizeHandshakeOnceFromTransport(
+        transport: ATransport
+    ) {
         const verifiedPeerAddress =
             this.verifiedPeerAddressByTransport.get(transport);
         const didReceiveAck = this.didReceiveAck(transport);
@@ -222,7 +232,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         profile.setIsHandshakeCompleted(true);
 
         const completedPeerAddress = profile.getEvmAddress().toString();
-        this.logger.debug(
+        this.logger.info(
             `Handshake completed with peer ${completedPeerAddress} over transport ${TransportType[transport.transportType]}`
         );
 
@@ -244,29 +254,41 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         }
 
         const stateManager = this.p2pManager.stateManager;
-        const isChannelOpened = stateManager.getStatus() === Status.OPENED;
-        if (isChannelOpened) {
-            this.logger.debug(
-                `Initiating sync after handshake with peer ${completedPeerAddress}`
+        const isChannelOpenedStatus =
+            stateManager.getStatus() === Status.OPENED;
+        const isPeerParticipant =
+            await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
+                stateManager.getChannelId(),
+                completedPeerAddress
             );
-            this.p2pManager.localRpc.spectateService.sync(
-                completedPeerAddress,
-                stateManager.getChannelId()
-            );
+        if (isChannelOpenedStatus) {
+            if (isPeerParticipant) {
+                this.logger.debug(
+                    `Initiating sync after handshake with peer ${completedPeerAddress}`
+                );
+                this.p2pManager.localRpc.spectateService.sync(
+                    completedPeerAddress,
+                    stateManager.getChannelId()
+                );
+            } else {
+                this.logger.debug(
+                    `Skipping sync after handshake with peer ${completedPeerAddress} - not a participant`
+                );
+            }
         }
 
         this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
             completedPeerAddress,
-            isChannelOpened
+            isChannelOpenedStatus
         );
 
         // Allow guards to return early once handshake completes.
         const transportMeta = LoggerUtils.getTransportMetadata(transport);
-        this.logger.debug(
+        this.logger.verbose(
             `Signaling handshake completion for transport ${TransportType[transport.transportType]}`,
             { ...transportMeta }
         );
-        void this.handshakeBarrier.signal();
+        DetachedPromises.collect(this.handshakeBarrier.signal());
     }
 }
 

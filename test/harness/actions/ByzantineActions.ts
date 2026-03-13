@@ -1,4 +1,4 @@
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger, Codec, Type } from "@/utils";
 import { ForkId, Bytes, Hash, BlockHeight } from "@/types/types";
 import Block from "@/models/Block";
@@ -13,11 +13,15 @@ import {
 import { ethers, ZeroHash } from "ethers";
 import Clock from "@/Clock";
 import { hash } from "@/utils";
-import { AStateMachine } from "@typechain-types";
+import {
+    DisputeTampering,
+    DisputeTamper
+} from "@test/harness/actions/DisputeTamperingActions";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 export class ByzantineActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
@@ -35,6 +39,9 @@ export class ByzantineActions {
         originalBlock: Block;
     }> {
         const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         this.logger.debug(
@@ -113,6 +120,9 @@ export class ByzantineActions {
         }
     ): Promise<Block> {
         const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         this.logger.debug(
@@ -127,7 +137,7 @@ export class ByzantineActions {
 
         const nextBlockHeight =
             peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlockHash = this.getPreviousBlockHash(
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
             peer,
             forkId,
             nextBlockHeight
@@ -138,7 +148,7 @@ export class ByzantineActions {
         if (options?.transactionData) {
             transactionData = options.transactionData;
         } else {
-            const contractInterface = (peer.contractInstance as any).interface;
+            const contractInterface = peer.contractInstance.interface;
             transactionData = contractInterface.encodeFunctionData("add", [
                 1
             ]) as Bytes;
@@ -199,18 +209,21 @@ export class ByzantineActions {
         }
     ): Promise<Block> {
         const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         const nextBlockHeight =
             peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
         const previousBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        const previousBlockHash = this.getPreviousBlockHash(
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
             peer,
             forkId,
             nextBlockHeight
         );
-        const stateSnapshotHash = this.getStateSnapshotHash(
+        const stateSnapshotHash = this.harness.query.getStateSnapshotHash(
             peer,
             forkId,
             previousBlock
@@ -261,7 +274,7 @@ export class ByzantineActions {
             timestamp: BigInt(Clock.getTimeInSeconds())
         };
 
-        const contractInterface = (peer.contractInstance as any).interface;
+        const contractInterface = peer.contractInstance.interface;
         const transactionData = contractInterface.encodeFunctionData("add", [
             1
         ]) as Bytes;
@@ -301,6 +314,10 @@ export class ByzantineActions {
             { forkId }
         );
 
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+
         peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(forgedBlock.blockConfirmationStruct)
             .broadcast();
@@ -320,13 +337,19 @@ export class ByzantineActions {
         }
     ): Promise<BlockStruct> {
         const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
         const forkId = options.forkId || this.harness.activeForkId!;
         const height = options.height;
 
         const previousBlock =
             peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        const previousBlockHash = this.getPreviousBlockHash(peer, forkId);
-        const stateSnapshotHash = this.getStateSnapshotHash(
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
+            peer,
+            forkId
+        );
+        const stateSnapshotHash = this.harness.query.getStateSnapshotHash(
             peer,
             forkId,
             previousBlock
@@ -389,43 +412,191 @@ export class ByzantineActions {
         return blockStruct;
     }
 
-    // Private helper methods
-    private getPreviousBlockHash(
-        peer: TestPeer<AStateMachine>,
-        forkId: ForkId,
-        height?: BlockHeight
-    ): Hash {
-        if (height !== undefined) {
-            const previousBlockOrSnapshot =
-                peer.stateManager.storage.getPreviousBlockOrSnapshot({
-                    forkId,
-                    height
-                });
-            return previousBlockOrSnapshot.block
-                ? previousBlockOrSnapshot.block.hash
-                : previousBlockOrSnapshot.stateSnapshot!.hash;
+    async invalidTransitionFromNext(): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
         }
 
-        const previousBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        return (
-            previousBlock?.hash ||
-            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                forkId
-            )?.hash ||
-            ethers.ZeroHash
+        const maliciousPeer = await this.harness.query.getNextPeerToWrite();
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: maliciousPeer.index
+        });
+        await this.submitInvalidStateTransitionBlock(maliciousPeer.index, {
+            forkId
+        });
+    }
+
+    async forgedInboundMessageFromNext(): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const maliciousPeer = await this.harness.query.getNextPeerToWrite();
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: maliciousPeer.index
+        });
+        await this.submitForgedInboundMessageBlock(maliciousPeer.index, {
+            forkId
+        });
+    }
+
+    async postTamperedDisputeWith(
+        peerIndex: number,
+        tamperFn: DisputeTamper
+    ): Promise<DisputeStruct> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const { dispute } = await this.harness.tamper.postTamperedDispute(
+            peerIndex,
+            tamperFn,
+            forkId
+        );
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        return dispute;
+    }
+
+    async postTamperedDisputeAuditingData(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperAuditingDataHash
         );
     }
 
-    private getStateSnapshotHash(
-        peer: TestPeer<AStateMachine>,
-        forkId: ForkId,
-        previousBlock?: Block
-    ): Hash {
-        return previousBlock
-            ? previousBlock.stateSnapshotHash
-            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                  forkId
-              )?.hash || ethers.ZeroHash;
+    async postTamperedDisputeTimeout(options: {
+        submitterIndex: number;
+        wrongParticipantIndex: number;
+        blockHeight?: number;
+    }): Promise<DisputeStruct> {
+        const {
+            submitterIndex,
+            wrongParticipantIndex,
+            blockHeight = 2
+        } = options;
+
+        const wrongPeer = this.harness.peers[wrongParticipantIndex];
+        if (!wrongPeer) {
+            throw new Error(`Peer ${wrongParticipantIndex} not found`);
+        }
+
+        const tamperFn = DisputeTampering.createTamperTimeoutParticipant(
+            wrongPeer.address,
+            blockHeight
+        );
+        return this.postTamperedDisputeWith(submitterIndex, tamperFn);
+    }
+
+    async tamperedDisputePartialAuditing(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperPartialAuditing
+        );
+    }
+
+    async tamperedDisputeDoubleFault(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperDoubleFault
+        );
+    }
+
+    async tamperedDisputeInvalidStateProof(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperInvalidStateProof
+        );
+    }
+
+    async tamperedDisputeInvalidStateProofWithCalldata(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperInvalidStateProofWithCalldata
+        );
+    }
+
+    stubDisputeConstruction(options: {
+        peerIndex: number;
+        tamperFn: DisputeTamper;
+    }): void {
+        this.harness.tamper.stubConstructDispute(
+            options.peerIndex,
+            options.tamperFn
+        );
+    }
+
+    restoreDisputeConstruction(peerIndex: number): void {
+        this.harness.tamper.restoreConstructDispute(peerIndex);
+    }
+
+    async disconnect(peerIndex: number): Promise<void> {
+        await this.harness.network.disconnectPeer(peerIndex);
+    }
+
+    stubCalldataHandler(peerIndex: number): void {
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const eventHandler = peer.stateManager.eventHandler;
+        const original = eventHandler.onBlockCalldataPosted.bind(eventHandler);
+        this.harness.context[`peer${peerIndex}OriginalCalldataHandler`] =
+            original;
+        eventHandler.onBlockCalldataPosted = async () => {};
+    }
+
+    restoreCalldataHandler(peerIndex: number): void {
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const original =
+            this.harness.context[`peer${peerIndex}OriginalCalldataHandler`];
+        if (!original) {
+            throw new Error(
+                `No original calldata handler found for peer ${peerIndex}`
+            );
+        }
+
+        peer.stateManager.eventHandler.onBlockCalldataPosted = original;
+    }
+
+    stubBroadcast(peerIndex: number): void {
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const remoteRpc = peer.stateManager.p2pManager.remoteRpc;
+        this.harness.context[`peer${peerIndex}OriginalBroadcast`] =
+            remoteRpc.stateTransitionService.onBlockConfirmation;
+
+        remoteRpc.stateTransitionService.onBlockConfirmation = (
+            _blockConfirmation
+        ) => {
+            peer.logger.info("Suppressed broadcast from peer " + peerIndex);
+            return {
+                broadcast: () => {},
+                sendOne: () => {},
+                sendMultiple: () => {}
+            } as any;
+        };
     }
 }

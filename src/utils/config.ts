@@ -9,11 +9,11 @@ export type Config = {
     DEBUG_CHANNEL_CONTRACT: boolean;
     DEBUG_LOCAL_TRANSPORT: boolean;
     LOG_LEVEL: string;
+    LOG_SKIP_WRITING: boolean;
     LOG_EXCLUDE_TAGS: string;
     EXCLUDE_LOG_TAGS: string;
     HOLEPUNCH_RELAYER_URLS: string[];
     // Crash log collection
-    ENABLE_CRASH_LOG_COLLECTION: boolean;
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
     CRASH_LOG_MAX_SIZE_MB: number;
@@ -28,12 +28,12 @@ const DEFAULT_CONFIG: Config = {
     DEBUG_CHANNEL_CONTRACT: false,
     DEBUG_LOCAL_TRANSPORT: false,
     LOG_LEVEL: "info",
+    LOG_SKIP_WRITING: false,
     LOG_EXCLUDE_TAGS: "",
     EXCLUDE_LOG_TAGS: "",
     HOLEPUNCH_RELAYER_URLS: [],
-    // Crash log collection defaults - enabled by default with localhost endpoint
-    ENABLE_CRASH_LOG_COLLECTION: true,
-    CRASH_LOG_UPLOAD_ENDPOINT: "http://localhost:3001",
+    // Crash log collection is enabled when upload endpoint is configured.
+    CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
     CRASH_LOG_MAX_SIZE_MB: 10
 };

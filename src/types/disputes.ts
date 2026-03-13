@@ -2,6 +2,7 @@ import { ReduceOutputStruct } from "@typechain-types/contracts/V1/types/DisputeT
 import {
     BlockConfirmationEthersType,
     SignedBlockEthersType,
+    SnapshotDataEthersType,
     TimeoutEthersType,
     StateSnapshotEthersType,
     DisputeAuditingDataEthersType,
@@ -45,6 +46,7 @@ export const DisputeInputEthersType = `tuple(
 
 export const DisputeEthersType = `tuple(
     ${DisputeInputEthersType} input,
+    bool postedAuditingData,
     bytes32 outputSnapshotDataHash
 )`;
 
@@ -137,40 +139,34 @@ export type ReduceData = {
 export const DisputeNotLatestStateProofEthersType = SignedBlockEthersType;
 
 export const DisputeInvalidOutputStateProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData
+    ${StateSnapshotEthersType} latestStateSnapshot,
+    bytes latestStateMachineState,
+    ${MessageBlockEthersType}[] inboundMessageBlocks
 )`;
 
-export const DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData
-)`;
-
-export const DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData
-)`;
-
-export const DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData
-)`;
-
-export const DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedProofEthersType = `tuple(
+export const DisputeInvalidStateProofProofEthersType = `tuple(
     ${DisputeAuditingDataEthersType} auditingData
 )`;
 
 export const DisputeInvalidBalanceInvariantProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData
+    ${StateSnapshotEthersType} latestStateSnapshot,
+    bytes latestStateMachineState
 )`;
 
 export const DisputeOnChainSlashesNotSubsetProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData
+    bool __
 )`;
 
 export const TimeoutThresholdProofEthersType = `tuple(
     ${BlockConfirmationEthersType} thresholdBlock,
-    ${DisputeAuditingDataEthersType} auditingData
+    ${StateSnapshotEthersType} latestStateSnapshot,
+    ${StateSnapshotEthersType} thresholdStateSnapshot
 )`;
 
 export const TimeoutCalldataPostedProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData,
+    ${SnapshotDataEthersType} genesisStateSnapshotData,
+    ${StateSnapshotEthersType} latestStateSnapshot,
+    bytes latestStateStateMachineState,
     ${SignedBlockEthersType} postedBlock,
     uint256 onChainTimestamp,
     uint256 previousBlockOnChainTimestamp,
@@ -181,12 +177,17 @@ export const TimeoutNotLinkedToLatestStateProofEthersType = `tuple(
     bool __
 )`;
 
+export const DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType = `tuple(
+    bool __
+)`;
+
 export const TimeoutParticipantNotNextProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData
+    ${StateSnapshotEthersType} latestStateSnapshot,
+    bytes latestStateStateMachineState
 )`;
 
 export const TimeoutTooEarlyProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData,
+    ${SnapshotDataEthersType} genesisStateSnapshotData,
     uint256 previousBlockOnChainTimestamp
 )`;
 

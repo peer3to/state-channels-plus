@@ -1,12 +1,4 @@
-import {
-    ScenarioRunner,
-    Scenario,
-    Assert,
-    Event,
-    Lifecycle,
-    Transition,
-    PeerTestHarness
-} from "@test/harness";
+import { TestSession, PeerTestHarness } from "@test/harness";
 import { expect } from "chai";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ATransport } from "@/transport";
@@ -31,19 +23,17 @@ describe("E2E: Spectate Service", function () {
         // queuing logic for in-progress handshakes makes it difficult to reliably test
         // the exact failure path without introducing unacceptable complexity/fragility.
         // Guard functionality is better validated through integration behavior (normal flows work).
-        it.skip("should NOT allow spectate RPC before handshake completes", async function () {
-            const { harness, cleanup } =
-                await ScenarioRunner.executeWithCleanup(
-                    Scenario.emptyChannel(2, {
-                        autoConnect: false,
-                        timeConfig: {
-                            agreementTime: 10,
-                            p2pTime: 2,
-                            chainFallbackTime: 2,
-                            evidenceTime: 2
-                        }
-                    })
-                );
+        it("should NOT allow spectate RPC before handshake completes", async function () {
+            const harness = TestSession.getHarness();
+            await harness.lifecycle.start(2, 0, {
+                autoConnect: false,
+                timeConfig: {
+                    agreementTime: 10,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
 
             const peer0 = harness.peers[0];
             const peer1 = harness.peers[1];
@@ -91,7 +81,7 @@ describe("E2E: Spectate Service", function () {
             (peer1SpectateService as any).guards = [guardInstance];
 
             // Start connections
-            await Lifecycle.triggerConnections().run(harness);
+            await harness.network.connectAllPeers();
 
             // Wait for transport using event barrier
             await harness.eventCountsBarrier.waitFor(
@@ -140,108 +130,109 @@ describe("E2E: Spectate Service", function () {
                 originalPeer1InitHandshake;
             peer0InitHandshakeService.initHandshake =
                 originalPeer0InitHandshake;
-
-            await cleanup();
         });
     });
 
     describe("Same Fork Spectating", function () {
         it("should spectate successfully when on-chain snapshot is already on the same fork", async function () {
-            await ScenarioRunner.execute(
-                Scenario.spectatorJoinedAndSynced(),
-                // Continue transitioning 3 more times with all 4 peers
-                Scenario.advanceState(3),
-                Assert.peersInSync([0, 1, 2, 3]),
-                // Participant count should remain the same as initial (3)
-                // On-chain snapshot should still be on original fork
-                Assert.participantCount({ expectedCount: 3, peerIndex: 3 }),
-                Assert.snapshotOnFork()
-            );
+            const h = TestSession.getHarness();
+            await h.scenario.spectatorJoinedAndSynced();
+            await h.transition.advanceState({ count: 3 });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2, 3] });
+            await h.assert.sync.participantCount({
+                expectedCount: 3,
+                peerIndex: 3
+            });
+            await h.assert.snapshot.onChainSnapshotOnFork();
         });
     });
 
     describe("Fork Traversal Spectating", function () {
         it("should spectate successfully even when it must traverse forks (dispute -> reduced fork)", async function () {
-            await ScenarioRunner.execute(
-                // Setup 5 peers and advance state
-                Scenario.emptyChannel(5, {
-                    timeConfig: {
-                        p2pTime: 30,
-                        agreementTime: 2,
-                        chainFallbackTime: 2,
-                        evidenceTime: 10 // Increased from 3 to give more time for all peers to commit disputes
-                    }
-                }),
-                Scenario.advanceState(5),
-                Assert.allPeersInSync(),
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(5, 0, {
+                timeConfig: {
+                    p2pTime: 30,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+            await h.transition.advanceState({ count: 5 });
+            await h.assert.sync.peersInSyncWait();
 
-                // Create and resolve invalid state transition dispute
-                // This will reduce the fork (remove peer 2)
-                // Using extended settlement timing for 5-peer scenario
-                Scenario.disputeWithReduction({
-                    maliciousPeerIndex: 2,
-                    forkSettleTimeoutMs: 15000,
-                    disputesCommittedTimeoutMs: 10000
-                }),
+            await h.scenario.disputeWithReduction({
+                maliciousPeerIndex: 2,
+                forkSettleTimeoutMs: 15000,
+                disputesCommittedTimeoutMs: 10000
+            });
 
-                // Post snapshot to move on-chain state to the new fork
-                Transition.postSnapshot({ peerIndex: 0 }),
+            await h.transition.postSnapshot({ peerIndex: 0 });
+            await h.transition.sequenceFromHonestPeers([
+                (c) => c.add(2),
+                (c) => c.add(2),
+                (c) => c.add(2)
+            ]);
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
 
-                // Continue with 3 more transitions using only honest peers
-                Transition.sequenceFromHonestPeers([
-                    (c) => c.add(2),
-                    (c) => c.add(2),
-                    (c) => c.add(2)
-                ]),
-                Assert.peersInSync([0, 1, 3, 4]),
+            await h.addPeer();
+            await h.event.waitUntilEventOccurs("onConnection", 5000, [5]);
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 3, 4, 5]
+            });
 
-                // Add a new peer (spectator) that must traverse forks
-                Lifecycle.addPeer(),
-                Event.waitUntilEventOccurs("onConnection", 5000),
-                Assert.peersInSync([0, 1, 3, 4, 5]),
+            await h.transition.fromHonestPeersOnly((c) => c.add(2));
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 3, 4, 5]
+            });
+            await h.transition.fromHonestPeersOnly((c) => c.add(2));
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 3, 4, 5]
+            });
 
-                // Continue with 2 more transitions from honest peers
-                Transition.fromHonestPeersOnly((c) => c.add(2)),
-                Assert.peersInSync([0, 1, 3, 4, 5]), // Include spectator in sync
-                Transition.fromHonestPeersOnly((c) => c.add(2)),
-                Assert.peersInSync([0, 1, 3, 4, 5]), // Include spectator in sync
-
-                // Verify all peers are in sync
-                Assert.peersInSync([0, 1, 3, 4, 5]),
-                Assert.participantCount({ expectedCount: 4, peerIndex: 5 }), // Check on peer 5 (spectator)
-                Assert.snapshotOnFork()
-            );
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 3, 4, 5]
+            });
+            await h.assert.sync.participantCount({
+                expectedCount: 4,
+                peerIndex: 5
+            });
+            await h.assert.snapshot.onChainSnapshotOnFork();
         });
     });
 
     describe("block height 0 spectating", function () {
         it("should spectate successfully when joining at genesis state", async function () {
-            await ScenarioRunner.execute(
-                // Setup 2 peers but don't make any moves yet (stay at genesis)
-                Scenario.emptyChannel(2),
-                // Add a spectator to the genesis state
-                Lifecycle.addPeer(),
-                Assert.participantCount({ expectedCount: 2, peerIndex: 2 }),
-                Scenario.advanceState(1),
-                // Assert all peers including spectator synced with the new state
-                Assert.peersInSync([0, 1, 2]),
-                Assert.participantCount({ expectedCount: 2, peerIndex: 2 })
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0);
+            await h.addPeer();
+            await h.assert.sync.participantCount({
+                expectedCount: 2,
+                peerIndex: 2
+            });
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
+            await h.assert.sync.participantCount({
+                expectedCount: 2,
+                peerIndex: 2
+            });
         });
 
         it("should spectate successfully when joining at block 0", async function () {
-            await ScenarioRunner.execute(
-                // Setup 2 peers but don't make any moves yet (stay at genesis)
-                Scenario.emptyChannel(2),
-
-                Scenario.advanceState(1),
-                Assert.peersInSync([0, 1]),
-                Lifecycle.addPeer(),
-                Assert.participantCount({ expectedCount: 2, peerIndex: 2 }),
-                // Assert all peers including spectator synced with the new state
-                Assert.peersInSync([0, 1, 2]),
-                Assert.participantCount({ expectedCount: 2, peerIndex: 2 })
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0);
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+            await h.addPeer();
+            await h.assert.sync.participantCount({
+                expectedCount: 2,
+                peerIndex: 2
+            });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
+            await h.assert.sync.participantCount({
+                expectedCount: 2,
+                peerIndex: 2
+            });
         });
     });
 });

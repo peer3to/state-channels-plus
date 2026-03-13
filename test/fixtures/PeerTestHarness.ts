@@ -2,15 +2,13 @@ import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/Math
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { Signer } from "ethers";
 import * as sinon from "sinon";
+import * as dotenv from "dotenv";
 import hre from "hardhat";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { setImmediate } from "node:timers";
-import { EvmStateMachine, P2pInstance } from "@/evm";
-import StateManager from "@/stateManager";
+import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
-import { AStateMachine, StateChannelManagerProxy } from "@typechain-types";
-import { ForkId, ChannelId, Address, Hash, Bytes } from "@/types/types";
-import { TimeConfig } from "@/types/time";
+import { MathStateMachine, StateChannelManagerProxy } from "@typechain-types";
+import { ForkId, ChannelId, Address, Hash } from "@/types/types";
 
 import {
     createLogger,
@@ -19,145 +17,40 @@ import {
     retry,
     EventBarrier
 } from "@/utils";
-import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { createConfig, Config } from "@/utils/config";
+import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deployFullStack } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
-import { ChannelActions } from "@test/harness/actions/ChannelActions";
+import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
 import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
-import { AssertActions } from "@test/harness/actions/AssertActions";
+import { AssertActions } from "@test/harness";
 import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
 import { EventActions } from "@test/harness/actions/EventActions";
 import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
+import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingActions";
 import { RPCActions } from "@test/harness/actions/RPCActions";
+import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
+import { ContextActions } from "@test/harness/actions/ContextActions";
+import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { HarnessContext } from "@test/harness";
+import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
+import { LogLevel } from "@/utils/logging/Logger";
+import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 
-export interface TestPeer<
-    T extends AStateMachine,
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> {
-    index: number;
-    signer: Signer;
-    address: string;
-    p2pInstance: P2pInstance<T, TFactories>;
-    stateManager: StateManager;
-    contractInstance: T;
-    eventSpies: EventSpies;
-    joinChannelCommitment?: JoinChannelStruct;
-    turnBarrier: EventBarrier;
-    logger: Logger;
-}
-
-/**
- * Spy functions for tracking event calls
- * match with P2pEventHooks and EventHandler methods
- */
-export interface EventSpies {
-    // P2pEventHooks spies
-    onConnection?: sinon.SinonSpy;
-    onTurn?: sinon.SinonSpy;
-    onSetState?: sinon.SinonSpy;
-    onPostingCalldata?: sinon.SinonSpy;
-    onPostedCalldata?: sinon.SinonSpy;
-    disputeStarted?: sinon.SinonSpy;
-    onInitiatingDispute?: sinon.SinonSpy;
-    onDisputeUpdate?: sinon.SinonSpy;
-
-    // EventHandler method spies
-    onChannelOpened?: sinon.SinonSpy;
-    onStateSnapshotUpdated?: sinon.SinonSpy;
-    onBlockCalldataPosted?: sinon.SinonSpy;
-    onDisputeCommitted?: sinon.SinonSpy;
-    onChainSlashed?: sinon.SinonSpy;
-    onDisputeReducedResultCommitted?: sinon.SinonSpy;
-    onWithdrawalsUpdated?: sinon.SinonSpy;
-    onChannelStorageCleared?: sinon.SinonSpy;
-    onDisputeKilled?: sinon.SinonSpy;
-    onInboundMessagesProcessed?: sinon.SinonSpy;
-}
-
-/**
- * Options for configuring the test harness
- */
-export interface HarnessOptions<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> {
-    /**
-     * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
-     *
-     * Set to "error" to suppress verbose logs during tests.
-     * Set to "debug" or "verbose" for detailed debugging.
-     *
-     * @example
-     * ```ts
-     * // Quiet tests (recommended for CI/passing tests)
-     * Scenario.emptyChannel(3, { logLevel: "error" })
-     *
-     * // Verbose debugging (when investigating failures)
-     * Scenario.emptyChannel(3, { logLevel: "debug" })
-     * ```
-     *
-     * @default undefined (uses LOG_LEVEL env var or "info")
-     */
-    logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
-
-    timeConfig?: Partial<TimeConfig>;
-    channelId?: string;
-    initialBalance?: number;
-    gasLimit?: number;
-    autoConnect?: boolean;
-    configOverrides?: Partial<Config>; // Direct config overrides
-    rpcServiceFactories?: TFactories;
-}
-
-export type SubmitTransactionOptions = {
-    waitForSync?: boolean;
-    waitForPeers?: number[];
-    waitForTurn?: boolean;
-};
-
-export type AssertAllPeersInSyncOptions = {
-    expectedState?: Bytes;
-    peerIndices?: number[];
-};
-
-export type CreateAndResolveDisputeResult<
-    T extends AStateMachine,
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
-    originalForkId: ForkId;
-    newForkId: ForkId;
-    maliciousPeerIndex: number;
-    honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<T, TFactories>>;
-};
-
-export type CreateAndResolveForkResult<
-    T extends AStateMachine,
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
-    originalForkId: ForkId;
-    reducedForkId: ForkId;
-    maliciousPeerIndex: number;
-    honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<T, TFactories>>;
-};
+// peformance monitoring
+const h = monitorEventLoopDelay();
+h.enable();
+let last = performance.eventLoopUtilization();
 
 /**
  * Main test harness for E2E peer-to-peer testing
  */
 export class PeerTestHarness<
-    T extends AStateMachine,
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > {
@@ -174,22 +67,23 @@ export class PeerTestHarness<
         PeerTestHarness.defaultLogLevel = level;
     }
 
-    public peers: TestPeer<T, TFactories>[] = [];
+    public peers: TestPeer<TFactories>[] = [];
     public channelManager!: StateChannelManagerProxy;
-    private sharedDeployTx!: any;
+    private sharedDeployTx!: unknown;
     public channelId!: ChannelId;
     public options!: Required<HarnessOptions<TFactories>>;
-    public activeForkId?: ForkId;
     private harnessConfig!: Partial<Config>;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
+    private autoTimeAdvanceTickInProgress = false;
+    private restoreAutomineOnCleanup = false;
 
     /**
      * Test context for cross-block state sharing
      * Used by blocks to store and retrieve test-specific data (e.g., malicious peer index, fork IDs)
      */
-    public context: HarnessContext = {};
+    public context = new HarnessContext();
 
     // barriers
     public connectionBarrier: EventBarrier;
@@ -198,15 +92,34 @@ export class PeerTestHarness<
     public disconnectionBarrier: EventBarrier;
 
     // action instances
-    public readonly channelActions!: ChannelActions;
-    public readonly transitionActions!: TransitionActions;
-    public readonly networkController!: NetworkController;
-    public readonly assertActions!: AssertActions;
-    public readonly byzantineActions!: ByzantineActions;
-    public readonly eventActions!: EventActions;
-    public readonly stateQuery!: StateQueryActions;
-    public readonly disputeOrchestrator!: DisputeOrchestrator;
-    public readonly rpcActions!: RPCActions;
+    public readonly lifecycle!: LifecycleActions;
+    public readonly transition!: TransitionActions;
+    public readonly network!: NetworkController;
+    public readonly assert!: AssertActions;
+    public readonly byzantine!: ByzantineActions;
+    public readonly event!: EventActions;
+    public readonly query!: StateQueryActions;
+    public readonly dispute!: DisputeOrchestrator;
+    public readonly tamper!: DisputeTamperingActions;
+    public readonly rpc!: RPCActions;
+    public readonly rpcStub!: RpcStubActions;
+    public readonly contextApi!: ContextActions;
+    public readonly scenario!: ScenarioActions;
+
+    /**
+     * First honest peer's fork ID is considered the active fork ID for the channel.
+     */
+    public get activeForkId(): ForkId | undefined {
+        const honestPeers = this.getHonestPeers();
+
+        if (honestPeers.length === 0) {
+            throw new Error(
+                "No honest peers available to determine active fork ID"
+            );
+        }
+
+        return honestPeers[0].stateManager.forkId;
+    }
 
     constructor() {
         // toJSON can't serialize BigInts, so we need to override it
@@ -215,10 +128,46 @@ export class PeerTestHarness<
                 return Number(this);
             };
         }
-        createConfig(); // Ensure config is initialized -> load env for tests
+        dotenv.config(); // use .env since it's gitignored and it's only for testing - not altering SDK usage
+        createConfig(); // Ensure config is initialized for tests
 
         // Logger starts with default level - will be reconfigured in setup()
-        this.logger = createLogger({}, { component: "TestHarness" });
+        this.logger = createLogger(
+            {},
+            { component: "TestHarness" },
+            { level: config.LOG_LEVEL as LogLevel, attachErrorListener: false }
+        );
+        setInterval(() => {
+            const elu = performance.eventLoopUtilization(last);
+            last = performance.eventLoopUtilization();
+            const dMean = h.mean / 1e6; // convert to ms
+            const d50 = h.percentile(50) / 1e6;
+            const d90 = h.percentile(90) / 1e6;
+            const d99 = h.percentile(99) / 1e6;
+            const dMax = h.max / 1e6;
+            const shouldWarn =
+                elu.utilization > 0.8 ||
+                dMean > 200 ||
+                d50 > 200 ||
+                d90 > 200 ||
+                d99 > 200 ||
+                dMax > 200;
+            const logFn = shouldWarn
+                ? this.logger.warn.bind(this.logger)
+                : this.logger.verbose.bind(this.logger);
+            logFn(
+                `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${elu.utilization}`,
+                {
+                    dMean,
+                    d50,
+                    d90,
+                    d99,
+                    dMax,
+                    utilization: elu.utilization
+                }
+            );
+            h.reset();
+        }, 1000);
         LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
@@ -226,23 +175,24 @@ export class PeerTestHarness<
         this.disconnectionBarrier = new EventBarrier(this.logger);
 
         // Initialize action instances
-        this.channelActions = new ChannelActions(this, this.logger);
-        this.transitionActions = new TransitionActions(this, this.logger);
-        this.networkController = new NetworkController(this, this.logger);
-        this.assertActions = new AssertActions(this, this.logger);
-        this.byzantineActions = new ByzantineActions(this, this.logger);
-        this.eventActions = new EventActions(this, this.logger);
-        this.stateQuery = new StateQueryActions(this, this.logger);
-        this.disputeOrchestrator = new DisputeOrchestrator(this, this.logger);
-        this.rpcActions = new RPCActions(this, this.logger);
+        this.lifecycle = new LifecycleActions(this, this.logger);
+        this.transition = new TransitionActions(this, this.logger);
+        this.network = new NetworkController(this, this.logger);
+        this.assert = new AssertActions(this, this.logger);
+        this.byzantine = new ByzantineActions(this, this.logger);
+        this.event = new EventActions(this, this.logger);
+        this.query = new StateQueryActions(this, this.logger);
+        this.dispute = new DisputeOrchestrator(this, this.logger);
+        this.tamper = new DisputeTamperingActions(this, this.logger);
+        this.rpc = new RPCActions(this, this.logger);
+        this.rpcStub = new RpcStubActions(this, this.logger);
+        this.contextApi = new ContextActions(this, this.logger);
+        this.scenario = new ScenarioActions(this, this.logger);
     }
 
-    async setup<
-        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-        const TNewFactories extends RpcServiceFactoryMap = {}
-    >(
+    async setup(
         numPeers: number,
-        options?: HarnessOptions<TNewFactories>
+        options?: HarnessOptions<TFactories>
     ): Promise<void> {
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
@@ -251,10 +201,19 @@ export class PeerTestHarness<
             ...testConfig,
             ...(options?.configOverrides || {})
         };
+
         this.options = {
             logLevel:
-                options?.logLevel ?? PeerTestHarness.defaultLogLevel ?? "info", // Use global default if not specified
-            timeConfig: options?.timeConfig || {},
+                options?.logLevel ??
+                (config.LOG_LEVEL as LogLevel) ??
+                PeerTestHarness.defaultLogLevel ??
+                "info", // Use global default if not specified
+            timeConfig: options?.timeConfig || {
+                p2pTime: 1,
+                agreementTime: 2,
+                chainFallbackTime: 2,
+                evidenceTime: 3
+            },
             channelId:
                 options?.channelId ||
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
@@ -265,17 +224,13 @@ export class PeerTestHarness<
             rpcServiceFactories: (options?.rpcServiceFactories ??
                 {}) as TFactories
         };
-
-        // Reconfigure logger with user-specified log level
-        if (this.options.logLevel) {
-            this.logger = createLogger(
-                {},
-                { component: "TestHarness" },
-                { level: this.options.logLevel }
+        if (
+            !this.options.timeConfig.agreementTime ||
+            this.options.timeConfig.agreementTime <= 1
+        )
+            throw new Error(
+                "agreementTime must be greater than 1 second for reliable test execution"
             );
-            LocalDiscoveryServer.setLogger(this.logger);
-        }
-
         this.syncCoordinator = new SyncCoordinator(
             this.logger,
             this.eventCountsBarrier
@@ -287,17 +242,19 @@ export class PeerTestHarness<
             await this.createPeer(i, signers[i]);
         }
 
-        // Start automatic blockchain time advancement
-        this.startAutoTimeAdvance();
-
         this.logger.info("Test harness setup completed");
+    }
+
+    setChannelId(channelId: ChannelId) {
+        this.channelId = channelId;
+        this.logger.updateSharedContext({ channelId: String(channelId) });
     }
 
     /**
      * Create a new peer after `setup()` has already run.
      * If a channel is already open (i.e. `this.channelId` is set), the peer is also connected to that channel.
      */
-    public async addPeer(signer?: Signer): Promise<TestPeer<T, TFactories>> {
+    public async addPeer(signer?: Signer): Promise<TestPeer<TFactories>> {
         if (!this.channelManager || !this.sharedDeployTx) {
             throw new Error("Harness not initialized; call setup() first");
         }
@@ -320,16 +277,19 @@ export class PeerTestHarness<
         // If a channel is already known, connect the new peer to it.
         if (this.channelId) {
             await peer.p2pInstance.p2pSigner.connectToChannel(this.channelId);
+            await LocalDiscoveryServer.connectToPeers(
+                peer.stateManager.p2pManager.self,
+                this.channelId,
+                peer.address
+            );
         }
 
-        return peer as TestPeer<T, TFactories>;
+        return peer as TestPeer<TFactories>;
     }
 
     private async deployContracts(): Promise<void> {
         const mathSMFactory =
             await hre.ethers.getContractFactory("MathStateMachine");
-        const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
-        await mathInstance.waitForDeployment();
 
         this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
             this.options.gasLimit
@@ -351,18 +311,18 @@ export class PeerTestHarness<
     private async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
 
-        const PeerLogger = createLogger(
+        const peerLogger = createLogger(
             {
                 peerId: index,
                 peerAddress: address
             },
             { component: `PeerTestHarness` },
-            { level: this.options.logLevel } // Use same log level as harness
+            { level: this.options.logLevel, attachErrorListener: false } // Use same log level as harness
         );
 
         this.logger.debug(`Creating peer ${index} at ${address}`);
 
-        const peerTurnBarrier = new EventBarrier(PeerLogger);
+        const peerTurnBarrier = new EventBarrier(peerLogger);
 
         const eventSpies: EventSpies = {
             // P2pEventHooks spies
@@ -390,7 +350,7 @@ export class PeerTestHarness<
 
         const hooks: P2pEventHooks = {
             onConnection: (addr: Address, isChannelOpened: boolean) => {
-                PeerLogger.verbose(`Connection established with ${addr}`, {
+                peerLogger.verbose(`Connection established with ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onConnection?.(addr, isChannelOpened);
@@ -398,7 +358,7 @@ export class PeerTestHarness<
                 this.eventCountsBarrier.signal();
             },
             onDisconnection: (addr: Address) => {
-                PeerLogger.verbose(`Disconnection from ${addr}`, {
+                peerLogger.verbose(`Disconnection from ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 this.disconnectionBarrier.signal();
@@ -410,7 +370,7 @@ export class PeerTestHarness<
                 _agreementTime: number,
                 _chainFallbackTime: number
             ) => {
-                PeerLogger.verbose(`Turn received from ${addr}`, {
+                peerLogger.verbose(`Turn received from ${addr}`, {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onTurn?.(addr);
@@ -418,26 +378,26 @@ export class PeerTestHarness<
                 this.eventCountsBarrier.signal();
             },
             onSetState: () => {
-                PeerLogger.debug("State set", { component: "P2pEventHooks" });
+                peerLogger.debug("State set", { component: "P2pEventHooks" });
                 eventSpies.onSetState?.();
                 this.eventCountsBarrier.signal();
             },
             onPostingCalldata: () => {
-                PeerLogger.debug("Posting calldata to blockchain", {
+                peerLogger.debug("Posting calldata to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostingCalldata?.();
                 this.eventCountsBarrier.signal();
             },
             onPostedCalldata: () => {
-                PeerLogger.debug("Calldata posted to blockchain", {
+                peerLogger.debug("Calldata posted to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostedCalldata?.();
                 this.eventCountsBarrier.signal();
             },
             onDisputeStarted: (maxDuration: number) => {
-                PeerLogger.debug("Dispute started", {
+                peerLogger.debug("Dispute started", {
                     component: "P2pEventHooks",
                     maxDuration
                 });
@@ -448,7 +408,7 @@ export class PeerTestHarness<
                 disputeHash: Hash,
                 dispute: DisputeStruct
             ) => {
-                PeerLogger.info(
+                peerLogger.info(
                     `Initiating dispute - DisputeHash:${disputeHash}`,
                     {
                         component: "P2pEventHooks"
@@ -457,15 +417,15 @@ export class PeerTestHarness<
                 eventSpies.onInitiatingDispute?.(disputeHash, dispute);
                 this.eventCountsBarrier.signal();
             },
-            onDisputeUpdate: (dispute: any) => {
-                PeerLogger.info("Dispute updated", {
+            onDisputeUpdate: (dispute: DisputeStruct) => {
+                peerLogger.info("Dispute updated", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onDisputeUpdate?.(dispute);
                 this.eventCountsBarrier.signal();
             },
             onDisputeAcknowledgment: (addr: Address) => {
-                PeerLogger.verbose(
+                peerLogger.verbose(
                     `Dispute acknowledgment received from ${addr}`,
                     {
                         component: "P2pEventHooks"
@@ -481,21 +441,18 @@ export class PeerTestHarness<
             await hre.ethers.getContractFactory("MathStateMachine");
         const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
 
-        const p2pInstance = await EvmStateMachine.p2pSetup<any, TFactories>(
-            signer,
-            this.sharedDeployTx,
-            this.channelManager,
-            mathInstance,
-            {
-                peerId: index,
-                peerLogger: PeerLogger,
-                p2pEventHooks: hooks,
-                rpcServiceFactories: this.options.rpcServiceFactories,
-                config: this.harnessConfig
-            }
-        );
+        const p2pInstance = await EvmStateMachine.p2pSetup<
+            MathStateMachine,
+            TFactories
+        >(signer, this.sharedDeployTx, this.channelManager, mathInstance, {
+            peerId: index,
+            peerLogger: peerLogger,
+            p2pEventHooks: hooks,
+            rpcServiceFactories: this.options.rpcServiceFactories,
+            config: this.harnessConfig
+        });
 
-        const peer: TestPeer<T, TFactories> = {
+        const peer: TestPeer<TFactories> = {
             index,
             signer,
             address,
@@ -504,11 +461,8 @@ export class PeerTestHarness<
             contractInstance: p2pInstance.p2pContractInstance,
             eventSpies,
             turnBarrier: peerTurnBarrier,
-            logger: PeerLogger
+            logger: peerLogger
         };
-
-        // Attach harness to stateManager for RPC barrier signaling
-        (peer.stateManager as any).testHarness = this;
 
         // Wrap EventHandler methods with spies (without replacing the original functionality)
         this.wrapEventHandlerWithSpies(peer);
@@ -517,7 +471,7 @@ export class PeerTestHarness<
         this.logger.debug(`Peer ${index} created successfully`);
     }
 
-    private wrapEventHandlerWithSpies(peer: TestPeer<T, TFactories>): void {
+    private wrapEventHandlerWithSpies(peer: TestPeer<TFactories>): void {
         const eventHandler = peer.stateManager.eventHandler;
         const spies = peer.eventSpies;
         const eventCountsBarrier = this.eventCountsBarrier;
@@ -529,13 +483,13 @@ export class PeerTestHarness<
 
                 // Only intercept EventHandler methods that have corresponding spies
                 if (typeof originalMethod === "function" && prop in spies) {
-                    return function (...args: any[]) {
+                    return async function (...args: unknown[]) {
                         // Call the spy first to record the call
                         const spy = spies[prop as keyof EventSpies];
-                        spy?.(...args);
+                        spy?.(...(args as Parameters<sinon.SinonSpy>));
 
                         // Then call the original method
-                        Reflect.apply(originalMethod, target, args);
+                        await Reflect.apply(originalMethod, target, args);
                         return eventCountsBarrier.signal();
                     };
                 }
@@ -554,27 +508,78 @@ export class PeerTestHarness<
 
     /**
      * Starts automatic blockchain time advancement to simulate natural time passing.
-     * Advances chain time by 1 second every second.
+     * Mines blocks on a fixed cadence so time progresses even without transactions.
      */
-    startAutoTimeAdvance(intervalMs: number = 1000): void {
+    async startAutoTimeAdvance(options?: {
+        intervalSeconds?: number;
+        disableAutomine?: boolean;
+    }): Promise<void> {
         if (this.autoTimeAdvanceInterval) {
             this.logger.debug("Auto time advance already running");
             return;
         }
 
+        const intervalSeconds = options?.intervalSeconds ?? 2;
+        const disableAutomine = options?.disableAutomine ?? true;
+
         this.logger.debug(
-            `Starting auto blockchain time advance (every ${intervalMs}ms)`
+            `Starting auto blockchain mine (every ${intervalSeconds}s)`
         );
 
-        this.autoTimeAdvanceInterval = setInterval(
-            () =>
-                retry(() => time.increase(1), {
+        if (disableAutomine) {
+            await hre.ethers.provider.send("evm_setAutomine", [false]);
+            this.restoreAutomineOnCleanup = true;
+        }
+
+        this.autoTimeAdvanceInterval = setInterval(() => {
+            if (this.autoTimeAdvanceTickInProgress) return;
+            this.autoTimeAdvanceTickInProgress = true;
+            void retry(
+                async () => {
+                    const currentTimestampSeconds = Math.floor(
+                        Date.now() / 1000
+                    );
+
+                    await hre.ethers.provider.send(
+                        "evm_setNextBlockTimestamp",
+                        [currentTimestampSeconds]
+                    );
+                    await hre.ethers.provider.send("evm_mine", []);
+
+                    const latestBlock =
+                        await hre.ethers.provider.getBlock("latest");
+
+                    if (!latestBlock) {
+                        this.logger.verbose(
+                            "Auto time advance mined block, but latest block was unavailable"
+                        );
+                        return;
+                    }
+
+                    const transactionHashes = (
+                        latestBlock.transactions || []
+                    ).map((tx) => String(tx));
+
+                    this.logger.debug(
+                        `Auto-mined block ${latestBlock.number} txCount: ${transactionHashes.length}`,
+                        {
+                            blockNumber: latestBlock.number,
+                            currentTimestampSeconds,
+                            timestamp: latestBlock.timestamp,
+                            transactionCount: transactionHashes.length,
+                            transactionHashes
+                        }
+                    );
+                },
+                {
                     maxRetries: 30,
                     delayMs: 5,
                     useExponentialBackoff: false
-                }),
-            intervalMs
-        );
+                }
+            ).finally(() => {
+                this.autoTimeAdvanceTickInProgress = false;
+            });
+        }, intervalSeconds * 1000);
     }
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
@@ -584,6 +589,16 @@ export class PeerTestHarness<
             clearInterval(this.autoTimeAdvanceInterval);
             this.autoTimeAdvanceInterval = undefined;
         }
+        this.autoTimeAdvanceTickInProgress = false;
+
+        if (this.restoreAutomineOnCleanup) {
+            try {
+                await hre.ethers.provider.send("evm_setAutomine", [true]);
+            } catch {
+                // ignore
+            }
+            this.restoreAutomineOnCleanup = false;
+        }
 
         if (this.channelManager) {
             this.channelManager.removeAllListeners();
@@ -592,33 +607,20 @@ export class PeerTestHarness<
         this.connectionBarrier.clear();
         this.eventCountsBarrier.clear();
 
-        const disposePromises: Promise<any>[] = [];
+        const disposePromises: Promise<unknown>[] = [];
 
         for (const peer of this.peers) {
             try {
                 peer.logger.verbose("Cleaning up peer", {
                     component: "TestHarness"
                 });
-                peer.contractInstance.removeAllListeners();
-
-                // Close P2P connections
-                const connections = [
-                    ...peer.p2pInstance.p2pSigner.p2pManager.openConnections
-                ];
-                for (const connection of connections) {
-                    try {
-                        connection.close();
-                    } catch (error) {
-                        peer.logger.warn(`Error closing connection: ${error}`);
-                    }
-                }
-                peer.p2pInstance.p2pSigner.p2pManager.openConnections = [];
 
                 disposePromises.push(peer.p2pInstance.dispose());
 
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
                 );
+
                 peer.logger.verbose("Peer cleanup completed", {
                     component: "TestHarness"
                 });
@@ -635,21 +637,16 @@ export class PeerTestHarness<
 
         this.peers = [];
 
-        // Clear context properties stored by Context and Event blocks
-        delete (this as any).honestPeerIndices;
-        delete (this as any).maliciousPeerIndex;
-        delete (this as any).originalForkId;
-        delete (this as any).newForkId;
-        delete (this as any).lastMaliciousPeerIndex;
-
         // Fully reset the context object to ensure no properties leak between tests
-        this.context = {};
+        this.context = new HarnessContext();
 
         // Cleanup discovery server and peer servers
         await LocalDiscoveryServer.cleanup();
+
+        this.logger.dispose();
     }
 
-    getPeer(index: number): TestPeer<T, TFactories> {
+    getPeer(index: number): TestPeer<TFactories> {
         const peer = this.peers[index];
         if (!peer) throw new Error(`Peer ${index} not found`);
         return peer;
@@ -659,64 +656,32 @@ export class PeerTestHarness<
         return this.peers.map((p) => p.address);
     }
 
+    getFilteredPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
+        return peerIndices
+            ? peerIndices.map((i) => this.getPeer(i))
+            : this.peers;
+    }
+
+    getHonestPeers(excludePeerIndices?: number[]): TestPeer<TFactories>[] {
+        const excludeSet = new Set<number>([
+            ...(excludePeerIndices ?? []),
+            ...(this.context.maliciousPeerIndices ?? [])
+        ]);
+        return this.peers.filter((peer) => !excludeSet.has(peer.index));
+    }
+    getFilteredOrHonestPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
+        if (peerIndices) {
+            return this.getFilteredPeers(peerIndices);
+        }
+        return this.getHonestPeers();
+    }
     getConfig(): Partial<Config> {
         return this.harnessConfig;
     }
 
-    async waitForForkChange(
-        options: {
-            expectedForkId?: ForkId;
-            excludeForkIds?: ForkId[];
-            peerIndices?: number[];
-            timeoutMs?: number;
-        } = {}
-    ): Promise<boolean> {
-        const {
-            expectedForkId,
-            excludeForkIds = [],
-            peerIndices,
-            timeoutMs = 10000
-        } = options;
-
-        const peersToCheck = peerIndices
-            ? peerIndices.map((i) => this.peers[i])
-            : this.peers;
-
-        const { ZeroHash } = await import("ethers");
-        const excludeSet = new Set([...excludeForkIds, ZeroHash]);
-
-        const condition = () => {
-            const peerForks = peersToCheck
-                .map((p) => p.stateManager.forkId)
-                .filter((fid) => !excludeSet.has(fid));
-
-            if (peerForks.length === 0) return false;
-
-            if (expectedForkId) {
-                return peerForks.every((fid) => fid === expectedForkId);
-            } else {
-                // All peers have moved to same new fork
-                const uniqueForks = new Set(peerForks);
-                return (
-                    uniqueForks.size === 1 &&
-                    peerForks.length === peersToCheck.length
-                );
-            }
-        };
-
-        // Check immediately
-        if (condition()) return true;
-
-        // Use event barrier (fires on state changes)
-        try {
-            await this.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Fork change not detected within ${timeoutMs}ms`
-            });
-            return true;
-        } catch {
-            return false;
-        }
+    getLocalDiamond(peerIndex: number) {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.diamondStateMachine.localDiamondContract;
     }
 }
 

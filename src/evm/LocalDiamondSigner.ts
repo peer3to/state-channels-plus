@@ -53,7 +53,9 @@ class LocalDiamondSigner implements Signer {
             );
             return hexlify(result.returnValue);
         } catch (error) {
-            throw new Error(`LocalDiamond call failed: ${error}`);
+            const e = new Error(`LocalDiamond call failed: ${error}`);
+            (e as any).data = (error as any).data;
+            throw e;
         }
     }
 
@@ -104,7 +106,9 @@ class LocalDiamondSigner implements Signer {
 
             return mockResponse as unknown as TransactionResponse;
         } catch (error) {
-            throw new Error(`LocalDiamond transaction failed: ${error}`);
+            const e = new Error(`LocalDiamond transaction failed: ${error}`);
+            (e as any).data = (error as any).data;
+            throw e;
         }
     }
 

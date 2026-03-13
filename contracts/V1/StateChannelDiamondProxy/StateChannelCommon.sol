@@ -61,12 +61,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
-        return UtilityFacet(utilityFacetAddress)
-            .subtractAddressArrays(
-                UtilityFacet(utilityFacetAddress)
-                    .concatAddressArrays(getSnapshotParticipants(channelId), getPendingParticipants(channelId)),
-                getOnChainSlashedParticipants(channelId)
-            );
+        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(
+            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+                getSnapshotParticipants(channelId), getPendingParticipants(channelId)
+            ),
+            getOnChainSlashedParticipants(channelId)
+        );
     }
 
     function getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
@@ -80,15 +80,16 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+                    && StateChannelManagerInterface(address(this)).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
             return (false, 0);
         }
         (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        uint256 genesisTimestap = killPeriodEnd + evidenceTime;
         if (!isExpired) {
-            return (false, killPeriodEnd);
+            return (false, genesisTimestap);
         }
         if (killPeriodEnd == 0) {
             // Dispute window doesn't exist
@@ -100,9 +101,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
-            return (false, killPeriodEnd);
+            return (false, 0);
         }
-        return (true, killPeriodEnd);
+        return (true, genesisTimestap);
     }
 
     function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
@@ -110,31 +111,67 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getPendingParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
-        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
-        address[] memory pendingParticipants = new address[](0);
+        address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
+            channelId, channelBalances[channelId].latestInboundMessageBlockHash, bytes32(0)
+        );
+        return pendingParticipants;
+    }
 
-        bytes32 inboundHash = channelBalances[channelId].latestInboundMessageBlockHash;
-        while (inboundHash != bytes32(0)) {
+    function _derivePendingParticipantsFromInboundHash(
+        bytes32 channelId,
+        bytes32 fromInboundHash,
+        bytes32 toInboundHash
+    ) internal view returns (address[] memory pendingParticipants) {
+        pendingParticipants = new address[](0);
+        bytes32 inboundHash = fromInboundHash;
+
+        while (inboundHash != bytes32(0) && inboundHash != toInboundHash) {
             MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
-            // Stop at pruned / non-existent blocks (pruning deletes the snapshot head too)
             if (inboundBlock.timestamp == 0 && inboundBlock.messages.length == 0) {
-                break;
+                inboundHash = inboundBlock.previousBlockHash;
+                continue;
             }
 
             for (uint256 i = 0; i < inboundBlock.messages.length; i++) {
                 if (inboundBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
                     JoinChannel memory joinChannel = abi.decode(inboundBlock.messages[i].data, (JoinChannel));
-                    if (!UtilityFacet(utilityFacetAddress)
-                            .isAddressInArray(snapshotParticipants, joinChannel.participant)) {
-                        pendingParticipants = UtilityFacet(utilityFacetAddress)
-                            .insertIntoAddressArrayNoDuplicates(pendingParticipants, joinChannel.participant);
-                    }
+                    pendingParticipants = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                        pendingParticipants, joinChannel.participant
+                    );
                 }
             }
+
             inboundHash = inboundBlock.previousBlockHash;
         }
 
         return pendingParticipants;
+    }
+
+    function _deriveEligibleParticipantsFromInboundHash(bytes32 channelId, bytes32 latestInboundMessageBlockHash)
+        internal
+        view
+        returns (address[] memory eligibleParticipants)
+    {
+        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
+        return _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
+            channelId, latestInboundMessageBlockHash, snapshotParticipants
+        );
+    }
+
+    function _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
+        bytes32 channelId,
+        bytes32 latestInboundMessageBlockHash,
+        address[] memory snapshotParticipants
+    ) internal view returns (address[] memory eligibleParticipants) {
+        address[] memory pendingParticipants =
+            _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, bytes32(0));
+
+        address[] memory participants =
+            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
+        eligibleParticipants = UtilityFacet(utilityFacetAddress).subtractAddressArrays(
+            participants, getOnChainSlashedParticipants(channelId)
+        );
+        return eligibleParticipants;
     }
 
     function getStateSnapshot(bytes32 channelId) public view virtual returns (StateSnapshot memory) {
@@ -315,6 +352,118 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return previousBlockHash == toSnapshot.latestOutboundMessageBlockHash;
     }
 
+    function _isSnapshotLinkedToLatestBlock(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
+        internal
+        pure
+        returns (bool)
+    {
+        bytes32 snapshotHash = keccak256(abi.encode(latestStateSnapshot));
+
+        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+        if (hasBlock) {
+            return latestBlock.stateSnapshotHash == snapshotHash;
+        }
+
+        return dispute.input.forkId == keccak256(abi.encode(latestStateSnapshot.snapshotData));
+    }
+
+    function _isSnapshotLinkedToBlock(Block memory blockData, StateSnapshot memory stateSnapshot)
+        internal
+        pure
+        returns (bool)
+    {
+        return blockData.stateSnapshotHash == keccak256(abi.encode(stateSnapshot));
+    }
+
+    function _isGenesisSnapshotDataLinkedToFork(bytes32 forkId, SnapshotData memory genesisStateSnapshotData)
+        internal
+        pure
+        returns (bool)
+    {
+        return forkId == keccak256(abi.encode(genesisStateSnapshotData));
+    }
+
+    function _isLatestStateLinkedToLatestBlock(
+        Dispute memory dispute,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState
+    ) internal pure returns (bool) {
+        bytes32 snapshotHash = keccak256(abi.encode(latestStateSnapshot));
+        if (snapshotHash != dispute.input.latestStateSnapshotHash) return false;
+
+        if (latestStateSnapshot.snapshotData.stateMachineStateHash != keccak256(latestStateMachineState)) {
+            return false;
+        }
+
+        return _isSnapshotLinkedToLatestBlock(dispute, latestStateSnapshot);
+    }
+
+    function _isLatestFinalizedStateLinkedToLatestFinalizedBlock(
+        Dispute memory dispute,
+        StateSnapshot memory latestFinalizedStateSnapshot,
+        bytes memory latestFinalizedStateMachineState
+    ) internal pure returns (bool) {
+        bytes32 snapshotHash = keccak256(abi.encode(latestFinalizedStateSnapshot));
+        if (
+            latestFinalizedStateSnapshot.snapshotData.stateMachineStateHash
+                != keccak256(latestFinalizedStateMachineState)
+        ) {
+            return false;
+        }
+
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        if (milestones.length > 0) {
+            MilestoneProof memory lastMilestone = milestones[milestones.length - 1];
+            if (lastMilestone.blockConfirmations.length == 0) {
+                return false;
+            }
+
+            Block memory latestFinalizedBlock =
+                abi.decode(lastMilestone.blockConfirmations[0].signedBlock.encodedBlock, (Block));
+            return latestFinalizedBlock.stateSnapshotHash == snapshotHash;
+        }
+
+        return dispute.input.forkId == keccak256(abi.encode(latestFinalizedStateSnapshot.snapshotData));
+    }
+
+    function _isDataLinkedToDisputeInput(
+        Dispute memory dispute,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        MessageBlock[] memory inboundMessageBlocks
+    ) internal pure returns (bool) {
+        if (!_isLatestStateLinkedToLatestBlock(dispute, latestStateSnapshot, latestStateMachineState)) {
+            return false;
+        }
+
+        return _verifyInboundMessageBlocks(
+            latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+            dispute.input.latestInboundMessageBlockHash,
+            inboundMessageBlocks
+        );
+    }
+
+    function _verifyInboundMessageBlocks(
+        bytes32 previousInboundMessageBlockHash,
+        bytes32 latestInboundMessageBlockHash,
+        MessageBlock[] memory inboundMessageBlocks
+    ) internal pure returns (bool) {
+        uint256 lastHeight;
+        bool hasLastHeight;
+        for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
+            if (previousInboundMessageBlockHash != inboundMessageBlocks[i].previousBlockHash) {
+                return false;
+            }
+            if (hasLastHeight && inboundMessageBlocks[i].blockHeight != lastHeight + 1) {
+                return false;
+            }
+            previousInboundMessageBlockHash = keccak256(abi.encode(inboundMessageBlocks[i]));
+            lastHeight = inboundMessageBlocks[i].blockHeight;
+            hasLastHeight = true;
+        }
+        return previousInboundMessageBlockHash == latestInboundMessageBlockHash;
+    }
+
     function _applyInboundMessages(
         bytes memory encodedStateMachineState,
         MessageBlock[] memory inboundMessageBlocks,
@@ -326,9 +475,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
                 require(success, ErrorDisputeStateMachineInboundProcessingFailed());
-                newTotalDeposits = stateMachineImplementation.addBalance(
-                    newTotalDeposits, inboundMessageBlocks[i].messages[j].balance
-                );
+                newTotalDeposits =
+                    stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
         }
         encodedModifiedState = stateMachineImplementation.getState();
@@ -381,18 +529,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return false;
     }
 
-    function _canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
-        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
-        if (UtilityFacet(utilityFacetAddress).isAddressInArray(snapshotParticipants, participant)) {
-            return !isParticipantSlashedOnChain(channelId, participant);
-        }
-
-        address[] memory pendingParticipants = getPendingParticipants(channelId);
-        if (!UtilityFacet(utilityFacetAddress).isAddressInArray(pendingParticipants, participant)) {
-            return false;
-        }
-
-        return !isParticipantSlashedOnChain(channelId, participant);
+    function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
+        address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHash(
+            channelId, channelBalances[channelId].latestInboundMessageBlockHash
+        );
+        return UtilityFacet(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
     }
     // ???????
 

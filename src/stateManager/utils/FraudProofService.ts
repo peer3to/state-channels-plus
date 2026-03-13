@@ -59,7 +59,6 @@ export default class FraudProofService {
             fraudType: fraudTypeName,
             ...additionalFields
         });
-        console.trace(`Fraud detected: ${fraudTypeName}`);
     }
 
     /**

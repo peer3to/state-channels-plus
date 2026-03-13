@@ -1,11 +1,12 @@
-import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
-import { ForkId, Address } from "@/types/types";
-import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
-import { AStateMachine } from "@typechain-types";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import { ethers } from "@/index";
+import Block from "@/models/Block";
+import { StateSnapshot } from "@/models";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -19,55 +20,94 @@ import type { RpcServiceFactoryMap } from "@/rpc/registry";
  */
 export class StateQueryActions {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
-    /**
-     * Get the state machine state for a peer
-     */
-    getStateMachineState(peerIndex: number, forkId: ForkId): any {
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
-
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
-            const genesisSnapshot =
-                peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                    forkId
-                );
-            return genesisSnapshot ? "genesis" : null;
-        }
-
-        const stateSnapshot =
-            peer.stateManager.storage.stateSnapshots.getStateSnapshotByHash(
-                latestBlock.stateSnapshotHash
-            );
-        return stateSnapshot ? stateSnapshot.snapshotData : null;
+    public getPeerStorage(peerIndex: number) {
+        const peer = this.harness.getPeer(peerIndex);
+        return peer.stateManager.storage;
     }
 
     /**
-     * Get the state machine state hash for a peer
+     * Get the latest state machine state hash for a peer - ONLY if it exists in storage
      */
-    private getStateMachineStateHash(peerIndex: number): string | null {
-        const peer = this.harness.peers[peerIndex];
+    public getLatestStateMachineStateHash(peerIndex: number): Hash | null {
+        const peer = this.harness.getPeer(peerIndex);
+        const storage = peer.stateManager.storage;
         if (!peer) throw new Error(`Peer ${peerIndex} not found`);
 
-        const latestBlock = peer.stateManager.storage.blocks.getLatestBlock(
+        const latestBlock = storage.blocks.getLatestBlock(
             this.harness.activeForkId!
         );
         if (!latestBlock) return null;
 
-        return latestBlock.stateSnapshotHash?.toString() || null;
+        const latestStateSnapshot =
+            storage.stateSnapshots.getStateSnapshotByHash(
+                latestBlock.stateSnapshotHash
+            );
+        if (!latestStateSnapshot) return null;
+
+        const latestStateMachineState =
+            storage.stateMachineStates.getStateMachineState(
+                latestStateSnapshot.stateMachineStateHash
+            );
+        if (!latestStateMachineState) return null;
+
+        return latestStateSnapshot.stateMachineStateHash; // return the hash if the state exists
     }
 
+    public getPreviousBlockHash(
+        peer: TestPeer,
+        forkId: ForkId,
+        height?: BlockHeight
+    ): Hash {
+        if (height !== undefined) {
+            const previousBlockOrSnapshot =
+                peer.stateManager.storage.getPreviousBlockOrSnapshot({
+                    forkId,
+                    height
+                });
+            return previousBlockOrSnapshot.block
+                ? previousBlockOrSnapshot.block.hash
+                : previousBlockOrSnapshot.stateSnapshot!.hash;
+        }
+
+        const previousBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        return (
+            previousBlock?.hash ||
+            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
+            )?.hash ||
+            ethers.ZeroHash
+        );
+    }
+
+    public getStateSnapshotHash(
+        peer: TestPeer,
+        forkId: ForkId,
+        previousBlock?: Block
+    ): Hash {
+        return previousBlock
+            ? previousBlock.stateSnapshotHash
+            : peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                  forkId
+              )?.hash || ethers.ZeroHash;
+    }
+
+    public async getLocalStateSnapshot(peer: TestPeer): Promise<StateSnapshot> {
+        const stateManager = peer.stateManager;
+        const localDiamond =
+            stateManager.diamondStateMachine.localDiamondContract;
+        return StateSnapshot.from(
+            await localDiamond.getStateSnapshot(stateManager.channelId)
+        );
+    }
     /**
      * Get the next peer that should write a block
      */
-    async getNextPeerToWrite(): Promise<
-        TestPeer<AStateMachine, RpcServiceFactoryMap>
-    > {
+    async getNextPeerToWrite(): Promise<TestPeer> {
         try {
             const nextAddress =
                 await this.harness.peers[0].stateManager.diamondStateMachine.getNextToWrite();
@@ -79,7 +119,7 @@ export class StateQueryActions {
             );
             if (!nextPeer) {
                 // Enhanced error reporting
-                const stateHash = this.getStateMachineStateHash(0);
+                const stateHash = this.getLatestStateMachineStateHash(0);
                 const peerAddresses = this.harness.peers.map((p) => p.address);
 
                 const latestBlock =
@@ -121,19 +161,10 @@ export class StateQueryActions {
         toPeerIndex: number,
         timeoutMs: number = 5000
     ): Promise<ATransport> {
-        const fromPeer = this.harness.getPeer(fromPeerIndex);
-        const toPeer = this.harness.getPeer(toPeerIndex);
         let resolvedTransport: ATransport | undefined;
 
         const condition = () => {
-            const transport =
-                fromPeer.stateManager.p2pManager.openConnections.find((t) => {
-                    const profile =
-                        fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
-                            t
-                        );
-                    return profile?.evmAddress === toPeer.address;
-                });
+            const transport = this.getTransport(fromPeerIndex, toPeerIndex);
 
             if (transport) {
                 resolvedTransport = transport;
@@ -148,18 +179,30 @@ export class StateQueryActions {
             return resolvedTransport!;
         }
 
-        // Use connection barrier for event-driven waiting
-        try {
-            await this.harness.connectionBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
-            });
-            return resolvedTransport!;
-        } catch (error) {
-            throw new Error(
-                `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
-            );
-        }
+        await this.harness.connectionBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessage: `Transport from peer ${fromPeerIndex} to peer ${toPeerIndex} not available within ${timeoutMs}ms`
+        });
+        return resolvedTransport!;
+    }
+
+    /**
+     * Get the transport in fromPeerIndex p2pManager towards toPeerIndex
+     */
+    getTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number
+    ): ATransport | undefined {
+        const fromPeer = this.harness.getPeer(fromPeerIndex);
+        const toPeer = this.harness.getPeer(toPeerIndex);
+
+        return fromPeer.stateManager.p2pManager.openConnections.find((t) => {
+            const profile =
+                fromPeer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                    t
+                );
+            return profile?.evmAddress === toPeer.address;
+        });
     }
 
     /**
@@ -175,11 +218,63 @@ export class StateQueryActions {
      */
     getProfile(
         peerIndex: number,
-        evmAddress: Address
+        options?: { evmAddress?: Address; transport?: ATransport }
     ): PeerProfile | undefined {
+        const { evmAddress, transport } = options || {};
         const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-            evmAddress
+        if (!evmAddress && !transport) {
+            throw new Error(
+                "Either evmAddress or transport must be provided to getProfile"
+            );
+        }
+        if (transport) {
+            return peer.stateManager.p2pManager.profileManager.getProfileByTransport(
+                transport
+            );
+        }
+        if (evmAddress) {
+            return peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
+                evmAddress
+            );
+        }
+        return undefined;
+    }
+
+    async getDisputeHashes(options?: {
+        peerIndices?: number[];
+        disputedForkId?: ForkId;
+    }): Promise<Hash[]> {
+        const { peerIndices, disputedForkId } = options || {};
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
+
+        const forkId = disputedForkId ?? this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error(
+                "No fork ID available to query dispute commitments"
+            );
+        }
+
+        const disputeHashes = new Set<Hash>();
+
+        const disputeWindowsByPeer = await Promise.all(
+            peers.map((peer) => {
+                const localDiamond = this.harness.getLocalDiamond(peer.index);
+                return localDiamond.getDisputeWindows(this.harness.channelId, [
+                    forkId
+                ]);
+            })
         );
+
+        for (const disputeWindows of disputeWindowsByPeer) {
+            const disputeWindow = disputeWindows[0];
+            if (!disputeWindow) continue;
+
+            for (const disputeCommitment of disputeWindow.evidence
+                .disputeCommitments) {
+                disputeHashes.add(disputeCommitment as Hash);
+            }
+        }
+
+        return Array.from(disputeHashes);
     }
 }

@@ -4,7 +4,7 @@ import { ZeroHash } from "ethers";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
-import { Block, BlockCoordinates, StateSnapshot } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import { difference, isSubset, Logger } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
@@ -14,6 +14,7 @@ import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import type StateManager from "@/stateManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
+import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -63,8 +64,8 @@ export default class ValidationService {
         }
 
         //  Get participants
-        const participants = await this.getParticipants(
-            block.coordinates,
+        const participants = await this.getParticipantsUnionOrOnChain(
+            block,
             block.channelId
         );
 
@@ -107,7 +108,11 @@ export default class ValidationService {
             return conflictResult;
         }
 
-        if (await this.isDisputedFork(block.forkId, block.channelId)) {
+        if (
+            //TODO - quick hack - later want cleaner code
+            !(strategy instanceof DisputeValidationStrategy) &&
+            (await this.isDisputedFork(block.forkId, block.channelId))
+        ) {
             this.logger.warn("validateBlockConfirmation - fork disputed", {
                 strategy: strategy.name,
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
@@ -119,7 +124,11 @@ export default class ValidationService {
         const expectedNextHeight = this.storage.blocks.getNextBlockHeight(
             block.forkId
         );
-        if (block.height > expectedNextHeight) {
+        if (
+            //TODO - quick hack - later want cleaner code
+            !(strategy instanceof DisputeValidationStrategy) &&
+            block.height > expectedNextHeight
+        ) {
             this.logger.warn(
                 "validateBlockConfirmation - block is in the future",
                 {
@@ -148,10 +157,46 @@ export default class ValidationService {
                 strategy: strategy.name,
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
+            // TODO -> here for the dispute strategy we can kill the dispute, since the stateProof comitted to the whole structure
             return await strategy.blockIsNotLinkedAndIsNotFirstBlock(block);
         }
 
         // isNextLeader
+        //TODO - quick hack - later want cleaner code
+        if (strategy instanceof DisputeValidationStrategy) {
+            const previousSnapshot = this.storage.getPreviousStateSnapshot(
+                block.coordinates
+            );
+            if (!previousSnapshot) {
+                this.logger.error(
+                    "DISPUTE Strategy -validateBlockConfirmation - missing previous snapshot",
+                    {
+                        strategy: strategy.name,
+                        block: LoggerUtils.getBlockMetadata(block, this.storage)
+                    }
+                );
+                throw new Error(
+                    "Missing previous snapshot for dispute validation strategy"
+                );
+            }
+            const previousState =
+                this.storage.stateMachineStates.getStateMachineState(
+                    previousSnapshot.stateMachineStateHash
+                );
+            if (!previousState) {
+                this.logger.error(
+                    "DISPUTE Strategy -validateBlockConfirmation - missing previous state machine state",
+                    {
+                        strategy: strategy.name,
+                        block: LoggerUtils.getBlockMetadata(block, this.storage)
+                    }
+                );
+                throw new Error(
+                    "Missing previous state machine state for dispute validation strategy"
+                );
+            }
+            await this.diamondStateMachine.setState(previousState);
+        }
         const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
             this.logger.warn(
@@ -219,8 +264,8 @@ export default class ValidationService {
             })
         ) {
             const signerAddresses = block.confirmationSignerAddresses;
+            // TODO - This doesn't take into account the participant UNION, since the posterior state is not known, so a race condition is possible where the new participant signs, but is not accounted for
             const areAllParticipants = isSubset(signerAddresses, participants);
-
             if (!areAllParticipants) {
                 this.logger.warn(
                     "BlockConfirmation - checkDuplicateBlock - not all signers are participants",
@@ -466,7 +511,8 @@ export default class ValidationService {
                 await this.stateManager.fetchUpdatedOnChainBlock(
                     previousBlock.forkId,
                     previousBlock.height,
-                    previousBlock.author
+                    previousBlock.author,
+                    { skipMutex: true }
                 )
             )?.onChainTimestamp;
 
@@ -540,12 +586,15 @@ export default class ValidationService {
 
     // ────────────────────── Helpers ─────────────────────
 
-    private async getParticipants(
-        blockCoordinates: BlockCoordinates,
+    private async getParticipantsUnionOrOnChain(
+        block: Block,
         channelId: ChannelId
     ): Promise<Set<Address>> {
         let participants = new Set(
-            this.storage.getParticipants(blockCoordinates)
+            this.storage.getParticipantsUnion(
+                block.coordinates,
+                block.stateSnapshotHash
+            )
         );
 
         if (participants.size === 0) {
@@ -576,7 +625,8 @@ export default class ValidationService {
                 await this.stateManager.fetchUpdatedOnChainBlock(
                     block.forkId,
                     block.height,
-                    block.author
+                    block.author,
+                    { skipMutex: true }
                 )
             )?.onChainTimestamp;
             // if still doesn't have on-chain timestamp return false - not posted at all

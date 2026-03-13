@@ -3,14 +3,18 @@ import { Address } from "@ethereumjs/util";
 import { ethers } from "ethers";
 import { Bytes } from "@/types/types";
 import Clock from "@/Clock";
+import { Logger } from "..";
+import { tryDecodeCustomError } from "@/utils";
 
 export default class ContractExecuter {
     private readonly evm: EVM;
     private readonly contractAddress: Address;
+    private readonly logger?: Logger;
 
-    constructor(evm: EVM, contractAddress: Address) {
+    constructor(evm: EVM, contractAddress: Address, logger?: Logger) {
         this.evm = evm;
         this.contractAddress = contractAddress;
+        this.logger = logger?.child({ component: "ContractExecuter" });
     }
 
     getContractAddress(): Address {
@@ -37,6 +41,7 @@ export default class ContractExecuter {
                 getBlobGasPrice: () => undefined
             }
         } as any;
+
         if (isSimulation) await this.evm.journal.checkpoint();
         const result = await this.evm.runCall({
             data: ethers.getBytes(data),
@@ -44,20 +49,32 @@ export default class ContractExecuter {
             block,
             caller
         });
-        if (isSimulation) await this.evm.journal.revert();
+        if (isSimulation) {
+            try {
+                await this.evm.journal.revert();
+            } catch (error) {
+                this.logger?.error(
+                    "Error EVM journal revert failed after simulation",
+                    { error }
+                );
+            }
+        }
         if (result.execResult.exceptionError) {
             const exceptionError = result.execResult.exceptionError;
             const errorData = result.execResult.returnValue
                 ? ethers.hexlify(result.execResult.returnValue)
                 : null;
-
-            const errorMessage = `EVM execution failed: ${exceptionError.error || exceptionError}`;
+            const custom = tryDecodeCustomError({ data: errorData });
+            const errorMessage = `EVM execution failed: ${custom?.name || exceptionError.error || exceptionError}`;
 
             // Create error with structured data for the proxy to handle
             const error = new Error(errorMessage);
-            (error as any).execResult = result.execResult;
             (error as any).data = errorData;
 
+            this.logger?.warn("Contract call execution failed", {
+                errors: error,
+                custom: custom
+            });
             throw error;
         }
 

@@ -1,10 +1,4 @@
-import {
-    ScenarioRunner,
-    Scenario,
-    Assert,
-    Transition,
-    PeerTestHarness
-} from "@test/harness";
+import { TestSession, PeerTestHarness } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -19,58 +13,65 @@ PeerTestHarness.setDefaultLogLevel("error");
 describe("E2E: State Transitions", function () {
     describe("Basic State Advancement", function () {
         it("should handle consecutive blocks between participants", async function () {
-            await ScenarioRunner.execute(
-                Scenario.emptyChannel(3),
-                Scenario.advanceState(10),
-                Assert.allPeersInSync(),
-                Assert.blockHeight(9) // 10 blocks after genesis = height 9
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3);
+            await h.transition.advanceState({ count: 10 });
+            await h.assert.sync.peersInSyncWait();
+            await h.assert.sync.blockHeight({ expectedHeight: 9 }); // 10 blocks after genesis = height 9
         });
 
         it("should handle full round rotation", async function () {
-            await ScenarioRunner.execute(
-                Scenario.emptyChannel(4),
-                Scenario.fullRound(), // All 4 peers write once
-                Assert.allPeersInSync(),
-                Assert.blockHeight(3) // 4 transitions = height 3
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4);
+            await h.transition.advanceState({ rounds: 1 }); // All 4 peers write once
+            await h.assert.sync.peersInSyncWait();
+            await h.assert.sync.blockHeight({ expectedHeight: 3 }); // 4 transitions = height 3
         });
 
         it("should handle multiple rotation rounds", async function () {
-            await ScenarioRunner.execute(
-                Scenario.emptyChannel(3),
-                Scenario.multipleRounds(3), // 3 rounds = 9 transitions
-                Assert.allPeersInSync(),
-                Assert.blockHeight(8)
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3);
+            await h.transition.advanceState({ rounds: 3 }); // 3 rounds = 9 transitions
+            await h.assert.sync.peersInSyncWait();
+            await h.assert.sync.blockHeight({ expectedHeight: 8 });
         });
     });
 
     describe("State Modifications", function () {
         it("should handle honest peer transitions after fork resolution", async function () {
-            await ScenarioRunner.execute(
-                Scenario.activeChannel(4, 2, {
-                    timeConfig: {
-                        p2pTime: 30,
-                        agreementTime: 2,
-                        chainFallbackTime: 2,
-                        evidenceTime: 3
-                    }
-                }),
-                Assert.allPeersInSync(),
+            const h = TestSession.getHarness();
 
-                // Create and resolve fork (removes peer 2)
-                Scenario.forkResolution({ maliciousPeerIndex: 2 }),
+            await h.lifecycle.start(4, 2);
+            await h.assert.sync.peersInSyncWait();
 
-                // Continue with honest peers only
-                Transition.fromHonestPeersOnly((c) => c.add(1)),
-                Transition.fromHonestPeersOnly((c) => c.add(2)),
-                Transition.fromHonestPeersOnly((c) => c.add(3)),
+            const maliciousPeerIndex = 2;
 
-                // Verify liveness maintained among honest peers
-                Assert.onlyHonestPeersInSync(),
-                Assert.maliciousPeerExcluded()
+            await h.dispute.createInvalidStateTransitionDispute(
+                maliciousPeerIndex,
+                {
+                    resetEventSpies: true
+                }
             );
+            await h.assert.dispute.initiatedAndCommitedWait();
+            const result = await h.dispute.resolveDisputeWait({
+                maliciousPeerIndex,
+                assertMaliciousRemoved: false
+            });
+
+            await h.transition.submitNext((c) => c.add(1), {
+                waitForTurn: true,
+                waitForSync: true
+            });
+            await h.transition.submitNext((c) => c.add(2), {
+                waitForTurn: true,
+                waitForSync: true
+            });
+            await h.transition.submitNext((c) => c.add(3), {
+                waitForTurn: true,
+                waitForSync: true
+            });
+
+            await h.assert.sync.onlyHonestPeersInSync();
         });
     });
 });

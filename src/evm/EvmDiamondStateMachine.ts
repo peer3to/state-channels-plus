@@ -38,6 +38,7 @@ import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
 import { createConfig, config, Config } from "@/utils/config";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 /**
  * Manages peer-to-peer communication and state machines
@@ -356,7 +357,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         const diamondExecuter = new ContractExecuter(
             evm,
-            diamondResult.address
+            diamondResult.address,
+            logger
         );
         const localDiamondSigner = new LocalDiamondSigner(
             signer,
@@ -376,7 +378,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         return {
             evmDiamondStateMachine: new EvmDiamondStateMachine(
-                new ContractExecuter(evm, stateMachineAddress),
+                new ContractExecuter(evm, stateMachineAddress, logger),
                 contractInterface,
                 diamondExecuter,
                 proxiedLocalDiamond
@@ -430,7 +432,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     peerId: pid,
                     peerAddress: signerAddress
                 },
-                { component: "ClientApp" }
+                { component: "ClientApp" },
+                { attachErrorListener: true }
             );
 
         // Sync clock to DLT
@@ -456,6 +459,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             chainFallbackTime: Number(configTimes[2]),
             evidenceTime: Number(configTimes[3])
         };
+        await LoggerUtils.logTimestamp(logger, "info", timeConfig);
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
         // Pass the SCM contract so local diamond can sync its time config

@@ -46,6 +46,18 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return outputSnapshotData;
     }
 
+    function computeDisputeOutputState(
+        DisputeInput memory disputeInput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        MessageBlock[] memory inboundMessageBlocks
+    ) public returns (DisputeOutputState memory outputState) {
+        address[] memory removals = _calculateRemovals(disputeInput);
+        return generateDisputeOutputState(
+            latestStateMachineState, disputeInput.onChainSlashes, removals, inboundMessageBlocks, latestStateSnapshot
+        );
+    }
+
     function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
         uint256 maxSlashCount;
         uint256 slashCount;
@@ -166,7 +178,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
         bytes32 forkId = disputes[0].input.forkId;
-        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
+        require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         //require all disputes are part of commitment
@@ -202,15 +214,31 @@ contract DisputeVerificationFacet is StateChannelCommon {
         Dispute[] memory disputes,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
-        MessageBlock[] memory inboundMessageBlocks
+        MessageBlock[] memory inboundMessageBlocks,
+        bytes32 expectedReducedForkId
     ) public {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
         bytes32 forkId = disputes[0].input.forkId;
-        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
 
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[disputes[0].input.forkId];
+
+        // no dispute window exists for this fork -> nothing to reduce
+        if (!_isDisputeWidnowCreated(disputeWindow)) {
+            return;
+        }
+
+        // already reduced: expectation must match
+        if (disputeWindow.reducedResult.forkId != bytes32(0)) {
+            require(
+                disputeWindow.reducedResult.forkId == expectedReducedForkId,
+                RaceConditionReductionExpectationDoesntMatch()
+            );
+            return;
+        }
+
+        // require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         // require that provided disputes correspond to committed set
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
 
@@ -222,6 +250,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // compute the new forkId
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
+
+        require(winningForkId == expectedReducedForkId, RaceConditionReductionExpectationDoesntMatch());
 
         // commit reduced result (enforces kill period expiration inside)
         _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
@@ -271,8 +301,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         address[] memory removals = reducedOutput.selfRemovals;
         if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals = UtilityFacet(utilityFacetAddress)
-                .insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
+            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                removals, reducedOutput.timeout.participant
+            );
         }
 
         DisputeOutputState memory outputState = generateDisputeOutputState(
@@ -384,27 +415,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return _areDisputeAndBlockSameFork(dispute, latestBlock);
     }
 
-    function _verifyInboundMessageBlocks(
-        bytes32 previousInboundMessageBlockHash,
-        bytes32 latestInboundMessageBlockHash,
-        MessageBlock[] memory inboundMessageBlocks
-    ) internal pure returns (bool) {
-        uint256 lastHeight;
-        bool hasLastHeight;
-        for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
-            if (previousInboundMessageBlockHash != inboundMessageBlocks[i].previousBlockHash) {
-                return false;
-            }
-            if (hasLastHeight && inboundMessageBlocks[i].blockHeight != lastHeight + 1) {
-                return false;
-            }
-            previousInboundMessageBlockHash = keccak256(abi.encode(inboundMessageBlocks[i]));
-            lastHeight = inboundMessageBlocks[i].blockHeight;
-            hasLastHeight = true;
-        }
-        return previousInboundMessageBlockHash == latestInboundMessageBlockHash;
-    }
-
     function _verifyDisputeOutboundMessageBlocks(DisputeAuditingData memory disputeAuditingData)
         internal
         view
@@ -469,17 +479,20 @@ contract DisputeVerificationFacet is StateChannelCommon {
         console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
         console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
         console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
-        if (!stateMachineImplementation.areBalancesEqual(
+        if (
+            !stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
-            )) return false;
+            )
+        ) return false;
         console.log("BALANCE 5");
         return true;
     }
 
     function _killDispute(Dispute memory dispute) internal {
         DisputeData storage disputeData = disputeData[dispute.input.channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
+        bytes32 forkId = _getDisputeFork(dispute);
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
 
         // require that the dispute window exists and is not expired
         (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
@@ -505,21 +518,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             disputeWindow.evidence.disputeCommitments[disputeWindow.evidence.disputeCommitments.length - 1];
         disputeWindow.evidence.disputeCommitments.pop();
 
-        //if dispute window is empty, delete it
-        if (disputeWindow.evidence.disputeCommitments.length == 0) {
-            bytes32 forkId = _getDisputeFork(dispute);
-            delete disputeData.disputeWindowMap[forkId];
-
-            for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
-                if (disputeData.disputedForks[i] == forkId) {
-                    //remove disputed fork from the list
-                    disputeData.disputedForks[i] = disputeData.disputedForks[disputeData.disputedForks.length - 1];
-                    disputeData.disputedForks.pop();
-                    break;
-                }
-            }
-            emit DisputeKilled(dispute.input.channelId, forkId, dispute.input.disputer);
-        }
+        emit DisputeKilled(dispute.input.channelId, forkId, dispute.input.disputer, commitment);
     }
 
     function _calculateRemovals(DisputeInput memory disputeInput) internal pure returns (address[] memory removals) {
@@ -550,67 +549,71 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData));
     }
 
-    function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        view
-        returns (bool)
-    {
-        // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
+    // function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+    //     public
+    //     view
+    //     returns (bool)
+    // {
+    //     // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
 
-        // Check dispute commits to genesisStateSnapshot
-        if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) return false;
+    //     // Check dispute commits to genesisStateSnapshot
+    //     if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) return false;
 
-        // Check latestStateSnapshot
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
-        if (
-            hasBlock
-                && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
-                    || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
-        ) {
-            return false;
-        }
-        if (
-            !hasBlock
-                && dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
-        ) {
-            return false;
-        }
+    //     // Check latestStateSnapshot
+    //     (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+    //     if (
+    //         hasBlock
+    //             && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
+    //                 || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
+    //     ) {
+    //         return false;
+    //     }
+    //     if (
+    //         !hasBlock
+    //             && dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
+    //     ) {
+    //         return false;
+    //     }
 
-        // Check milestones
-        Block[] memory milestoneBlocks = _getMilestoneBlocks(dispute.input.stateProof);
-        if (milestoneBlocks.length != disputeAuditingData.milestoneSnapshots.length) return false;
-        for (uint256 i = 0; i < milestoneBlocks.length; i++) {
-            if (
-                milestoneBlocks[i].stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.milestoneSnapshots[i]))
-            ) {
-                return false;
-            }
-        }
+    //     // Check milestones
+    //     Block[] memory milestoneBlocks = _getMilestoneBlocks(dispute.input.stateProof);
+    //     if (milestoneBlocks.length != disputeAuditingData.milestoneSnapshots.length) return false;
+    //     for (uint256 i = 0; i < milestoneBlocks.length; i++) {
+    //         if (
+    //             milestoneBlocks[i].stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.milestoneSnapshots[i]))
+    //         ) {
+    //             return false;
+    //         }
+    //     }
 
-        // Check latest stateMachineState
-        if (
-            disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
-                != keccak256(disputeAuditingData.latestStateStateMachineState)
-        ) return false;
+    //     // Check latest stateMachineState
+    //     if (
+    //         disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
+    //             != keccak256(disputeAuditingData.latestStateStateMachineState)
+    //     ) return false;
 
-        // Check outbound message blocks
-        if (!_verifyDisputeOutboundMessageBlocks(disputeAuditingData)) return false;
+    //     // Check outbound message blocks
+    //     if (!_verifyDisputeOutboundMessageBlocks(disputeAuditingData)) return false;
 
-        return true;
-    }
+    //     return true;
+    // }
 
-    function isDisputeOutputCorrect(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        returns (bool)
-    {
+    function isDisputeOutputCorrect(
+        Dispute memory dispute,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        MessageBlock[] memory inboundMessageBlocks
+    ) public returns (bool) {
         // It's annoying that this function can not be view/pure since the way we modify encodedState is semantically 'stateful' even though logically it's stateless
+
+        // Ensure the provided input context is actually linked to the dispute input
+        if (!_isDataLinkedToDisputeInput(dispute, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)) {
+            return false;
+        }
 
         // ***************** Generate output snapshot ***************
         SnapshotData memory outputSnapshotData = computeDisputeOutputSnapshotData(
-            dispute.input,
-            disputeAuditingData.latestStateSnapshot,
-            disputeAuditingData.latestStateStateMachineState,
-            disputeAuditingData.inboundMessageBlocks
+            dispute.input, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks
         );
 
         //verify outputStateSnapshot commitment
@@ -621,13 +624,23 @@ contract DisputeVerificationFacet is StateChannelCommon {
         internal
         returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
     {
-        exitChannels = new ExitChannel[](slashedParticipants.length);
+        ExitChannel[] memory _exitChannels = new ExitChannel[](slashedParticipants.length);
         stateMachineImplementation.setState(encodedState);
+        uint256 slashCount = 0;
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
             bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
-            require(success, ErrorDisputeStateMachineSlashingFailed());
+            ExitChannel memory exitChannel;
+            (success, exitChannel) = stateMachineImplementation.slashParticipant(slashedParticipants[i]);
+            if (success) {
+                _exitChannels[slashCount++] = exitChannel;
+            }
         }
+
+        exitChannels = new ExitChannel[](slashCount);
+        for (uint256 i = 0; i < slashCount; i++) {
+            exitChannels[i] = _exitChannels[i];
+        }
+
         return (stateMachineImplementation.getState(), exitChannels);
     }
 
@@ -635,14 +648,23 @@ contract DisputeVerificationFacet is StateChannelCommon {
         internal
         returns (bytes memory encodedModifiedState, ExitChannel[] memory)
     {
-        ExitChannel[] memory exitChannels = new ExitChannel[](participants.length);
+        ExitChannel[] memory _exitChannels = new ExitChannel[](participants.length);
         stateMachineImplementation.setState(encodedState);
+        uint256 removalCount = 0;
         for (uint256 i = 0; i < participants.length; i++) {
             bool success;
-            (success, exitChannels[i]) = stateMachineImplementation.removeParticipant(participants[i]);
-            // require(success, "Remove failed");
-            require(success, ErrorDisputeStateMachineRemovingFailed());
+            ExitChannel memory exitChannel;
+            (success, exitChannel) = stateMachineImplementation.removeParticipant(participants[i]);
+            if (success) {
+                _exitChannels[removalCount++] = exitChannel;
+            }
         }
+
+        ExitChannel[] memory exitChannels = new ExitChannel[](removalCount);
+        for (uint256 i = 0; i < removalCount; i++) {
+            exitChannels[i] = _exitChannels[i];
+        }
+
         return (stateMachineImplementation.getState(), exitChannels);
     }
 }

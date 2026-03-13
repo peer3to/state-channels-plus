@@ -1,5 +1,6 @@
 // @ts-expect-error- get-webrtc doesn't have TypeScript declarations
 import { RTCPeerConnection } from "get-webrtc";
+import { DetachedPromises } from "@/utils";
 
 export interface P2PConnectivityInfo {
     canHolePunch: boolean;
@@ -91,15 +92,18 @@ export class P2PConnectivityService {
             };
 
             pc.createDataChannel("singleTest");
-            pc.createOffer()
-                .then((offer: any) => pc.setLocalDescription(offer))
-                .catch(() => {
-                    if (!done) {
-                        done = true;
-                        cleanup();
-                        resolve(null);
-                    }
-                });
+            DetachedPromises.collect(
+                pc
+                    .createOffer()
+                    .then((offer: any) => pc.setLocalDescription(offer))
+                    .catch(() => {
+                        if (!done) {
+                            done = true;
+                            cleanup();
+                            resolve(null);
+                        }
+                    })
+            );
 
             setTimeout(() => {
                 if (!done) {

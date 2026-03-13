@@ -42,7 +42,7 @@ class StateChannelEventListener {
         }
         const filter = filterFactory();
         const wrappedHandler = async (logObj: any) => {
-            this.logger.info("On-chain event received", {
+            this.logger.info(`On-chain event received - ${key}`, {
                 event: key,
                 args: logObj?.args
             });
@@ -229,11 +229,13 @@ class StateChannelEventListener {
                     channelId
                 ),
             handler: (logObj: any) => {
-                const { channelId, forkId, disputer } = logObj.args;
+                const { channelId, forkId, disputer, disputeHash } =
+                    logObj.args;
                 return this.eventHandler.onDisputeKilled(
                     channelId,
                     forkId,
-                    disputer
+                    disputer,
+                    disputeHash
                 );
             }
         },
