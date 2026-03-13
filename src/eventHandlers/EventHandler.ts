@@ -104,7 +104,10 @@ export class EventHandler {
         commitmentHash: Hash,
         sender: Address,
         signedBlock: SignedBlockStruct,
-        timestamp: Timestamp
+        timestamp: Timestamp,
+        options?: {
+            skipMutex?: boolean;
+        }
     ): Promise<void> {
         this.logger.verbose("Block calldata posted on-chain", {
             channelId,
@@ -124,12 +127,14 @@ export class EventHandler {
             timestamp
         );
         this.p2pEventHooks.onPostedCalldata?.();
+
         const blockConfirmation: BlockConfirmationStruct = {
             signedBlock,
             signatures: []
         };
         await this.stateManager.onBlockConfirmation(blockConfirmation, {
             onChainTimestamp: Number(timestamp),
+            skipMutex: options?.skipMutex,
             validationStrategy: new CalldataCommittedStrategy(
                 this.stateManager.disputeManager,
                 this.stateManager.blockValidationStrategy
@@ -201,11 +206,54 @@ export class EventHandler {
                     );
                 disputeAuditingData = auditingData;
             }
+
+            const latestSnapshot =
+                this.stateManager.agreementManager.getLatestSnapshotFromStateProof(
+                    dispute.input.stateProof,
+                    forkId
+                );
+            const latestStateMachineState =
+                this.storage.stateMachineStates.getStateMachineState(
+                    latestSnapshot.stateMachineStateHash as Hash
+                );
+
+            if (!latestStateMachineState) {
+                throw new Error(
+                    `StateMachineState not available for latest snapshot hash: ${latestSnapshot.stateMachineStateHash}`
+                );
+            }
+
+            const outputSnapshotData =
+                await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
+                    dispute.input,
+                    latestSnapshot.toStruct(),
+                    latestStateMachineState,
+                    disputeAuditingData.inboundMessageBlocks
+                );
+
+            const disputeOutputState =
+                await this.diamondStateMachine.localDiamondContract.computeDisputeOutputState.staticCall(
+                    dispute.input,
+                    latestSnapshot.toStruct(),
+                    latestStateMachineState,
+                    disputeAuditingData.inboundMessageBlocks
+                );
+
+            const evidenceTime = this.stateManager.timeConfig.evidenceTime;
+
+            // TODO - unified single place for genesis timestamp
+            // TODO - currently not use, but not sure if genesis timestamp is calculated like this in this case - come back later
+            const genesisTimestamp =
+                Number(disputeCreationTimestamp) + evidenceTime;
+
             return this.stateManager.setGenesisState(
-                disputeAuditingData.latestStateSnapshot.snapshotData,
-                disputeAuditingData.latestStateStateMachineState,
+                outputSnapshotData,
+                disputeOutputState.encodedModifiedState as Bytes,
                 dispute.outputSnapshotDataHash as ForkId,
-                disputeCreationTimestamp
+                genesisTimestamp,
+                disputeOutputState.outboundMessageBlock.messages.length > 0
+                    ? disputeOutputState.outboundMessageBlock
+                    : undefined
             );
         }
 

@@ -39,6 +39,11 @@ export class DisputeTampering {
         dispute.input.latestStateSnapshotHash = hash("0x42");
     }
 
+    static tamperInvalidStateProofWithCalldata(dispute: DisputeStruct): void {
+        DisputeTampering.tamperInvalidStateProof(dispute);
+        dispute.postedAuditingData = true;
+    }
+
     static tamperPartialAuditing(dispute: DisputeStruct): void {
         const tamperedStateProof = dispute.input.stateProof;
         if (
@@ -78,7 +83,7 @@ export class DisputeTamperingActions {
         const peer = this.harness.getPeer(authorPeerIndex);
         const targetForkId = forkId || this.harness.activeForkId!;
 
-        const { dispute, disputeConfirmation } =
+        const { dispute, disputeConfirmation, auditingData } =
             await peer.stateManager.disputeManager.constructDispute(
                 targetForkId
             );
@@ -89,9 +94,14 @@ export class DisputeTamperingActions {
         this.logger.debug(
             `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
         );
-        const txResp = await this.harness.channelManager
-            .connect(peer.signer)
-            .uploadDispute(disputeConfirmation);
+
+        const channelManager = this.harness.channelManager.connect(peer.signer);
+        const txResp = dispute.postedAuditingData
+            ? await channelManager.uploadDisputeWithCalldata(
+                  disputeConfirmation,
+                  auditingData
+              )
+            : await channelManager.uploadDispute(disputeConfirmation);
         await txResp.wait();
 
         this.harness.context.tamperedDisputes.push(dispute);

@@ -182,7 +182,7 @@ export class LoggerUtils {
     }
     static getBlockMetadata(block: Block, storage?: Storage) {
         const thresholdAddresses = new Set<Address>(
-            storage?.getParticipants(block.coordinates) || []
+            storage?.getParticipantsUnion(block.coordinates) || []
         );
         const allSigners = block.allSignerAddresses;
         const allSignersSet =
@@ -352,10 +352,12 @@ export class LoggerUtils {
 
     static getDisputeMetadata(dispute: DisputeStruct) {
         const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        const postedAuditingData = dispute.postedAuditingData;
         return {
             disputeHash,
             input: this.getDisputeInputMetadata(dispute.input),
-            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash)
+            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash),
+            postedAuditingData
         };
     }
 
@@ -399,8 +401,8 @@ export class LoggerUtils {
                 (snapshot) =>
                     this.getSnapshotMetadata(StateSnapshot.from(snapshot))
             ),
-            latestStateStateMachineStateHash: String(
-                hash(auditingData.latestStateStateMachineState)
+            latestFinalizedStateStateMachineStateHash: String(
+                hash(auditingData.latestFinalizedStateStateMachineState || "0x")
             ),
             inboundMessageBlocks: auditingData.inboundMessageBlocks.map(
                 (messageBlock) => this.getMessageBlockMetadata(messageBlock)

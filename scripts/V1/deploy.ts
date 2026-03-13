@@ -13,6 +13,7 @@ import FraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDi
 import DisputeFraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol/DisputeFraudProofFacet.json";
 import StateSnapshotFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol/StateSnapshotFacet.json";
 import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol/JoinChannelFacet.json";
+import StateProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol/StateProofFacet.json";
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
 import UtilityFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol/UtilityFacet.json";
@@ -29,6 +30,7 @@ const facetArtifacts = [
     DisputeFraudProofFacetArtifact,
     StateSnapshotFacetArtifact,
     JoinChannelFacetArtifact,
+    StateProofFacetArtifact,
     UtilityFacetArtifact
 ];
 

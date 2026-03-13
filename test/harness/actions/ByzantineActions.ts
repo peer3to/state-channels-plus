@@ -521,6 +521,15 @@ export class ByzantineActions {
         );
     }
 
+    async tamperedDisputeInvalidStateProofWithCalldata(
+        peerIndex: number
+    ): Promise<DisputeStruct> {
+        return this.postTamperedDisputeWith(
+            peerIndex,
+            DisputeTampering.tamperInvalidStateProofWithCalldata
+        );
+    }
+
     stubDisputeConstruction(options: {
         peerIndex: number;
         tamperFn: DisputeTamper;
