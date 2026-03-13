@@ -33,13 +33,13 @@ export class DisputeOrchestrator {
         }
     ): Promise<void> {
         if (options?.resetEventSpies) {
-            this.harness.eventActions.resetEventSpies();
+            this.harness.event.resetEventSpies();
         }
 
-        await this.harness.byzantineActions.submitInvalidStateTransitionBlock(
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
             maliciousPeerIndex,
             {
-                forkId: options?.forkId || this.harness.activeForkId!
+                forkId: options?.forkId
             }
         );
     }
@@ -47,7 +47,7 @@ export class DisputeOrchestrator {
     /**
      * Waits for dispute commitment and fork reduction, agnostic to how the dispute was created.
      */
-    async resolveDispute(options: {
+    async resolveDisputeWait(options: {
         maliciousPeerIndex: number;
         forkId?: ForkId;
         honestPeerIndices?: number[];
@@ -59,11 +59,9 @@ export class DisputeOrchestrator {
     }): Promise<CreateAndResolveDisputeResult> {
         const originalForkId = options.forkId || this.harness.activeForkId!;
         const maliciousPeerIndex = options.maliciousPeerIndex;
-        const honestPeerIndices =
-            options.honestPeerIndices ??
-            (await this.getParticipantPeerIndices()).filter(
-                (i) => i !== maliciousPeerIndex
-            );
+        const honestPeerIndices = this.harness
+            .getFilteredOrHonestPeers(options.honestPeerIndices)
+            .map((p) => p.index);
 
         if (honestPeerIndices.length < 1) {
             throw new Error(
@@ -77,38 +75,22 @@ export class DisputeOrchestrator {
         const expectedDisputesCommittedPerPeer =
             options.expectedDisputesCommittedPerPeer ?? 1;
 
-        const disputesCommitted =
-            await this.harness.eventActions.waitForEventCounts(
-                "onDisputeCommitted",
-                honestPeerIndices.map((peerId) => ({
-                    peerId,
-                    expectedCount: expectedDisputesCommittedPerPeer
-                })),
-                disputesCommittedTimeoutMs,
-                { mode: options.disputesCommittedMode ?? "atLeast" }
-            );
+        await this.harness.event.waitForEventCounts(
+            "onDisputeCommitted",
+            honestPeerIndices.map((peerId) => ({
+                peerId,
+                expectedCount: expectedDisputesCommittedPerPeer
+            })),
+            disputesCommittedTimeoutMs,
+            { mode: options.disputesCommittedMode ?? "atLeast" }
+        );
 
-        if (!disputesCommitted) {
-            throw new Error(
-                `Disputes not committed across peers within ${String(
-                    disputesCommittedTimeoutMs
-                )}ms`
-            );
-        }
-
-        const forkSettled = await this.harness.waitForForkChange({
+        await this.harness.assert.sync.forkChangedWait({
+            originalForkId,
             excludeForkIds: [originalForkId],
-            peerIndices: honestPeerIndices,
+            honestPeerIndices,
             timeoutMs: options.forkSettleTimeoutMs ?? 10000
         });
-
-        if (!forkSettled) {
-            throw new Error(
-                `Fork did not settle within ${String(
-                    options.forkSettleTimeoutMs ?? 10000
-                )}ms`
-            );
-        }
 
         const honestPeers = honestPeerIndices.map((idx) =>
             this.harness.getPeer(idx)
@@ -143,24 +125,5 @@ export class DisputeOrchestrator {
             honestPeerIndices,
             honestPeers
         };
-    }
-
-    private async getParticipantPeerIndices(
-        providerPeerIndex: number = 0
-    ): Promise<number[]> {
-        const provider = this.harness.getPeer(providerPeerIndex);
-        const participants =
-            await provider.stateManager.diamondStateMachine.getParticipants();
-        const participantSet = new Set(
-            participants.map((a) => a.toString().toLowerCase())
-        );
-
-        return this.harness.peers
-            .map((p) => p.index)
-            .filter((idx) =>
-                participantSet.has(
-                    this.harness.getPeer(idx).address.toLowerCase()
-                )
-            );
     }
 }

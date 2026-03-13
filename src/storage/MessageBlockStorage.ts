@@ -5,6 +5,7 @@ import { ZeroHash } from "ethers";
 
 type StoreOptions = {
     hash?: Hash;
+    justPersist?: boolean; // if true, do not update latest block pointers
 };
 
 export class MessageBlockStorage {
@@ -30,6 +31,8 @@ export class MessageBlockStorage {
         if (!this.blockMap.has(blockHash)) {
             this.blockMap.set(blockHash, messageBlock);
         }
+
+        if (options?.justPersist) return blockHash;
 
         if (
             this.latestBlockHeight === undefined ||

@@ -36,3 +36,5 @@ src/utils/GeneratedArtifacts.ts
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+/profiles

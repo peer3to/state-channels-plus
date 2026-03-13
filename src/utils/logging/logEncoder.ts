@@ -14,10 +14,37 @@ export function decodeLogs(encodedLogs: string): LogEntry[] {
 }
 
 export function encodeLogEntry(logEntry: LogEntry): string {
+    const seen = new WeakSet<object>();
+
     return JSON.stringify(logEntry, (_key, value) => {
         if (typeof value === "bigint") {
             return value.toString();
         }
+
+        if (value instanceof Error) {
+            const serializedError: Record<string, unknown> = {
+                name: value.name,
+                message: value.message,
+                stack: value.stack
+            };
+
+            for (const propertyName of Object.getOwnPropertyNames(value)) {
+                if (!(propertyName in serializedError)) {
+                    serializedError[propertyName] =
+                        value[propertyName as keyof Error];
+                }
+            }
+
+            return serializedError;
+        }
+
+        if (typeof value === "object" && value !== null) {
+            if (seen.has(value)) {
+                return "[Circular]";
+            }
+            seen.add(value);
+        }
+
         return value;
     });
 }

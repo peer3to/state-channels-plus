@@ -15,6 +15,7 @@ export * from "./participantUtils";
 export * from "./config";
 export * from "./hash";
 export * from "./evmErrorHandler";
+export * from "./DetachedPromises";
 export * from "./logging";
 export * from "./EthersResultProxy";
 export * from "./address";

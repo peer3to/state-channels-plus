@@ -151,10 +151,19 @@ export default class OpenChannelNegotiationService extends ARpcService<
             this.getParticipantsAndBalances(peer);
 
         const channelId = this.p2pManager.stateManager.getChannelId();
-        const alreadyOpen =
-            await this.p2pManager.stateManager.stateChannelManagerContract.isChannelOpen(
+        let [alreadyOpen] =
+            await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isChannelOpen(
                 channelId
             );
+
+        if (!alreadyOpen) {
+            await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
+            [alreadyOpen] =
+                await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isChannelOpen(
+                    channelId
+                );
+        }
+
         if (alreadyOpen) {
             this.state.channelOpened = true;
             this.resetNegotiation("channel already open");
@@ -284,10 +293,18 @@ export default class OpenChannelNegotiationService extends ARpcService<
         this.state.timeoutHandle = setTimeout(async () => {
             try {
                 const channelId = this.p2pManager.stateManager.getChannelId();
-                const isOpen =
-                    await this.p2pManager.stateManager.stateChannelManagerContract.isChannelOpen(
+                let [isOpen] =
+                    await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isChannelOpen(
                         channelId
                     );
+
+                if (!isOpen) {
+                    await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
+                    [isOpen] =
+                        await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isChannelOpen(
+                            channelId
+                        );
+                }
                 if (isOpen) {
                     this.state.channelOpened = true;
                     this.resetNegotiation("channel opened");

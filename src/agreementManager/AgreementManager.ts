@@ -21,6 +21,7 @@ import { Logger } from "@/utils";
 import { ZeroHash } from "ethers";
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { ReduceData } from "@/types";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 /**
  * AgreementManager acts as a higher logic layer over storage
@@ -56,7 +57,10 @@ class AgreementManager {
 
     public didEveryoneSignBlock(block: Block): boolean {
         const thresholdAddresses = new Set<Address>(
-            this.storage.getParticipants(block.coordinates)
+            this.storage.getParticipantsUnion(
+                block.coordinates,
+                block.stateSnapshotHash
+            )
         );
 
         return block.didEveryoneSign(thresholdAddresses);
@@ -92,7 +96,7 @@ class AgreementManager {
             this.storage.participantSetChanges.getChangePointsInRange(forkId);
 
         const milestones: MilestoneProofStruct[] = [];
-        let currentSnapshot = genesisSnapshot;
+        let previousThresholdSnapshot = genesisSnapshot;
 
         // For each participant change point, iterate forward to prove it's final
         for (const changeHeight of participantChangeHeights) {
@@ -104,7 +108,7 @@ class AgreementManager {
 
             const milestone = this.tryBuildMilestone(
                 blockIterator,
-                currentSnapshot
+                previousThresholdSnapshot
             );
 
             if (milestone) {
@@ -114,7 +118,7 @@ class AgreementManager {
                     throw new Error(
                         "Milestone built but corresponding snapshot not found"
                     );
-                currentSnapshot = newSnapshot;
+                previousThresholdSnapshot = newSnapshot;
             } else {
                 // Break early because we can't prove finality beyond this point
                 break;
@@ -130,7 +134,7 @@ class AgreementManager {
 
         const milestone = this.tryBuildMilestone(
             blockIterator,
-            currentSnapshot
+            previousThresholdSnapshot
         );
         if (milestone) {
             milestones.push(milestone);
@@ -139,7 +143,7 @@ class AgreementManager {
                 throw new Error(
                     "Milestone built but corresponding snapshot not found"
                 );
-            currentSnapshot = newSnapshot;
+            previousThresholdSnapshot = newSnapshot;
 
             return {
                 milestones,
@@ -161,7 +165,7 @@ class AgreementManager {
 
                 if (
                     block.height === 0 ||
-                    block.stateSnapshotHash === currentSnapshot.hash
+                    block.stateSnapshotHash === previousThresholdSnapshot.hash
                 ) {
                     break;
                 }
@@ -196,6 +200,76 @@ class AgreementManager {
         return snapshot;
     }
 
+    public getLatestFinalizedSnapshot(
+        stateProof: StateProofStruct,
+        forkId: ForkId
+    ): StateSnapshot {
+        const lastMilestone = stateProof.milestones.at(-1);
+        if (lastMilestone) {
+            if (lastMilestone.blockConfirmations.length === 0) {
+                throw new Error(
+                    "Cannot get latest finalized snapshot from empty last milestone"
+                );
+            }
+
+            const firstConfirmation = lastMilestone.blockConfirmations[0];
+            const firstMilestoneBlock =
+                Block.fromBlockConfirmation(firstConfirmation);
+
+            const latestFinalizedSnapshot =
+                this.storage.stateSnapshots.getStateSnapshotByHash(
+                    firstMilestoneBlock.stateSnapshotHash
+                );
+
+            if (!latestFinalizedSnapshot) {
+                throw new Error(
+                    `Missing latest finalized snapshot for hash ${firstMilestoneBlock.stateSnapshotHash}`
+                );
+            }
+
+            return latestFinalizedSnapshot;
+        }
+
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+
+        if (!genesisSnapshot) {
+            throw new Error(`Missing genesis snapshot for fork ${forkId}`);
+        }
+
+        return genesisSnapshot;
+    }
+
+    public getLatestSnapshotFromStateProof(
+        stateProof: StateProofStruct,
+        forkId: ForkId
+    ): StateSnapshot {
+        const latestBlock = this.getLatestBlockFromStateProof(stateProof);
+        if (!latestBlock) {
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+
+            if (!genesisSnapshot) {
+                throw new Error(`Missing genesis snapshot for fork ${forkId}`);
+            }
+
+            return genesisSnapshot;
+        }
+
+        const latestSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                latestBlock.stateSnapshotHash
+            );
+
+        if (!latestSnapshot) {
+            throw new Error(
+                `Missing latest snapshot for hash ${latestBlock.stateSnapshotHash}`
+            );
+        }
+
+        return latestSnapshot;
+    }
+
     public getLastBlockFromMilestone(
         milestone: MilestoneProofStruct
     ): Block | undefined {
@@ -220,7 +294,9 @@ class AgreementManager {
             return undefined;
 
         if (stateProof.signedBlocks.length > 0)
-            return Block.fromSignedBlock(stateProof.signedBlocks[0]);
+            return Block.fromSignedBlock(
+                stateProof.signedBlocks[stateProof.signedBlocks.length - 1]
+            );
 
         // else - milestones.length > 0
         return this.getLastBlockFromMilestone(
@@ -233,11 +309,30 @@ class AgreementManager {
      */
     public tryBuildMilestone(
         blockIterator: Generator<Block, void, unknown>,
-        currentSnapshot: StateSnapshot
+        previousThresholdSnapshot: StateSnapshot
     ): MilestoneProofStruct | undefined {
         const requiredSignersSet = new Set<Address>(
-            currentSnapshot.snapshotData.participants
+            previousThresholdSnapshot.snapshotData.participants
         );
+
+        // Union of the previous snapshot and the resulting snapshot
+        // When executed in the context of an honest peer, it accounts for pending participants
+        // The honest peer verified the state transition of the join => the pending participat is in the resulting participant set
+        const expandRequiredParticipantsWithFirstBlockParticipants = (
+            firstBlock: Block
+        ) => {
+            const resultingSnapshot =
+                this.storage.stateSnapshots.getStateSnapshotByHash(
+                    firstBlock.stateSnapshotHash
+                );
+            if (!resultingSnapshot) {
+                return;
+            }
+            for (const participant of resultingSnapshot.snapshotData
+                .participants) {
+                requiredSignersSet.add(participant);
+            }
+        };
 
         const filteredBlocks: Block[] = [];
 
@@ -245,6 +340,12 @@ class AgreementManager {
             const filteredBlock = Block.fromSignedBlock(
                 currentBlock.signedBlock
             );
+
+            if (filteredBlocks.length === 0) {
+                expandRequiredParticipantsWithFirstBlockParticipants(
+                    currentBlock
+                );
+            }
 
             for (const signature of currentBlock.allSignatures) {
                 const participantAddress =
@@ -264,8 +365,11 @@ class AgreementManager {
 
             filteredBlocks.push(filteredBlock);
 
-            // If this block commits to currentSnapshot, we can't build a milestone
-            if (currentBlock.stateSnapshotHash === currentSnapshot.hash) {
+            // If this block commits to previousThresholdSnapshot, we can't build a milestone
+            if (
+                currentBlock.stateSnapshotHash ===
+                previousThresholdSnapshot.hash
+            ) {
                 break;
             }
 
@@ -338,7 +442,7 @@ class AgreementManager {
                 this.storage.disputes.getDisputeConfirmation(commitment);
             if (!disputeConfirmation) {
                 throw new Error(
-                    `Missing Data Availability for dispute commitment ${commitment}`
+                    `Missing Dispute Confirmation in storage for dispute commitment ${commitment}`
                 );
             }
             return disputeConfirmation;
@@ -361,7 +465,7 @@ class AgreementManager {
             const dispute = this.storage.disputes.getDispute(commitment);
             if (!dispute) {
                 throw new Error(
-                    `Missing Data Availability for dispute commitment ${commitment}`
+                    `Missing Dispute in storage for dispute commitment ${commitment}`
                 );
             }
 
@@ -375,6 +479,10 @@ class AgreementManager {
         reducedOutput: ReduceOutputStruct
     ): Promise<ReduceData> {
         // reducedOutput latestStateSnapshot
+        this.logger.debug(
+            "ReduceOutput",
+            LoggerUtils.getReducedOutputMetadata(reducedOutput)
+        );
         let reducedLatestStateSnapshot: StateSnapshot;
         if (
             !reducedOutput.latestBlock ||

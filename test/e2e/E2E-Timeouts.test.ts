@@ -1,12 +1,4 @@
-import {
-    ScenarioRunner,
-    Scenario,
-    Transition,
-    Event,
-    Byzantine,
-    Assert,
-    PeerTestHarness
-} from "@test/harness";
+import { TestSession, PeerTestHarness } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -22,117 +14,131 @@ PeerTestHarness.setDefaultLogLevel("error");
 describe("E2E: Timeouts", function () {
     describe("Basic Timeout Scenarios", function () {
         it("should handle timeout when next peer to write does not author a block", async function () {
-            await ScenarioRunner.execute(
-                Scenario.timeoutSetup(3),
-                Transition.advanceState({ count: 2 }), // Peers 0 and 1 take their turn
-                // Peer 2 should take turn but doesn't -> timeout triggers
+            this.timeout(90000);
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 take their turn
 
-                Event.reset(),
-                Assert.disputeInitiatedByPeers({
-                    peers: [0, 1],
-                    timeoutMs: 10000
-                }),
-                Assert.didNotInitiateDispute({ peers: [2] }),
-                Assert.disputeCommittedByPeers({ expectedCount: 1 }),
-                Assert.noCalldataPosted()
-            );
+            h.event.resetEventSpies();
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [0, 1],
+                timeoutMs: 10000
+            });
+            await h.assert.dispute.didNotInitiate({ peers: [2] });
+            h.assert.calldata.noCalldataPosted();
         });
 
         it("should demonstrate timeout creates disputes", async function () {
-            await ScenarioRunner.execute(
-                Scenario.timeoutSetup(3),
-                Transition.advanceState({ count: 2 }), // First 2 peers take turn, 3rd doesn't
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            await h.transition.advanceState({ count: 2 }); // First 2 peers take turn, 3rd doesn't
 
-                Event.reset(),
-                Assert.disputeInitiatedByPeers({
-                    peers: [0, 1],
-                    timeoutMs: 10000
-                })
-            );
+            h.event.resetEventSpies();
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [0, 1],
+                timeoutMs: 10000
+            });
         });
     });
 
     describe("Network Disconnection Timeouts", function () {
         it("should handle timeout when non-author peer disconnects (calldata posting)", async function () {
-            await ScenarioRunner.execute(
-                Scenario.timeoutSetup(3),
-                Transition.advanceState({ rounds: 1 }), // All 3 peers write once
-                Event.reset(),
-                // Now it's peer 0's turn - disconnect peer 2 (non-author)
-                Byzantine.disconnect(2),
-                // Peer 0 authors but can't get peer 2's signature -> posts calldata
-                // Then peer 1 writes to test liveness
-                Transition.advanceState({ count: 2 }), // Peers 0 and 1 write (peer 2 disconnected)
-                // Wait for calldata posting to happen during these writes
-                Assert.calldataPosted()
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            await h.transition.advanceState({ rounds: 1 }); // All 3 peers write once
+            h.event.resetEventSpies();
+            await h.network.disconnectPeer(2);
+            // TODO - never flaky when run in isolation - very flaky when run in parallel
+            // TODO - under load Peer 1 can experience RaceConditionBlockCalldataTimestampTooLate - investigate
+            await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 write (peer 2 disconnected)
+            await h.assert.calldata.calldataPosted();
+            await h.assert.sync.peersInSyncWait();
         });
 
         it("should handle timeout when author peer disconnects", async function () {
-            await ScenarioRunner.execute(
-                Scenario.timeoutSetup(3),
-                Transition.advanceState({ rounds: 1 }), // Heights 0, 1, 2 - All 3 peers write once
-                Transition.advanceState({ count: 1 }), // Height 3 - Peer 0 writes again
-                Event.reset(),
-                // Now it's peer 1's turn - disconnect them (author peer)
-                Byzantine.disconnect(1),
-                // Wait for timeout dispute from peers 0 and 2
-                Assert.disputeInitiatedByPeers({
-                    peers: [0, 2],
-                    timeoutMs: 10000
-                })
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            await h.transition.advanceState({ rounds: 1 }); // Heights 0,1,2
+            await h.transition.advanceState({ count: 1 }); // Height 3
+            h.event.resetEventSpies();
+            await h.network.disconnectPeer(1);
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [0, 2],
+                timeoutMs: 10000
+            });
         });
     });
 
     describe("Forced Timeout (Junk Calldata)", function () {
         it("should create forced timeout when peer posts junk calldata that is rejected", async function () {
-            await ScenarioRunner.execute(
-                Scenario.timeoutSetup(3),
-                Transition.advanceState({ count: 2 }), // Peers 0 and 1 write
-                Event.reset(),
-                // Peer 2 posts invalid calldata on-chain
-                Byzantine.postJunkCalldata(2),
-                // Wait for other peers to detect the calldata
-                Event.waitUntilEventOccurs("onBlockCalldataPosted"),
-                // Assert forced timeout detection
-                Assert.disputeInitiatedByPeers({
-                    peers: [0, 1],
-                    timeoutMs: 10000
-                }),
-                Assert.disputeCommittedByPeers(),
-                // Assert it's a forced timeout
-                Assert.timeoutIsForced({ participant: 2 })
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 write
+            h.event.resetEventSpies();
+
+            const currentBlock =
+                h.peers[0].stateManager.storage.blocks.getLatestBlock(
+                    h.activeForkId!
+                );
+            if (!currentBlock) {
+                throw new Error("No current block found");
+            }
+
+            await h.byzantine.postJunkCalldataOnChain(2, {
+                height: currentBlock.height + 1
+            });
+            await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [0, 1],
+                timeoutMs: 10000
+            });
+            await h.assert.dispute.committedWait();
+            h.assert.storage.storedTimeout({ timedoutParticipantIndex: 2 });
         });
 
         it("should handle timeout when previous peer posted junk calldata and next peer doesn't author block", async function () {
-            // Combined scenario: valid block + junk calldata + timeout
-            await ScenarioRunner.execute(
-                Scenario.timeoutSetup(3),
-                Transition.advanceState({ count: 2 }), // Peers 0 and 1 write
-                Transition.peerWrite({ peer: 2 }), // Peer 2 writes valid block
-                Event.reset(),
-                Byzantine.postJunkCalldata(2, { heightOffset: 0 }), // For current height
-                Event.waitUntilEventOccurs("onBlockCalldataPosted"),
-                Event.reset(),
-                Assert.disputeInitiatedByPeers({
-                    peers: [1, 2],
-                    timeoutMs: 10000
-                })
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 write
+            await h.transition.peerWrite({ peer: 2 }); // Peer 2 writes valid block
+            h.event.resetEventSpies();
+
+            const currentBlock =
+                h.peers[0].stateManager.storage.blocks.getLatestBlock(
+                    h.activeForkId!
+                );
+            if (!currentBlock) {
+                throw new Error("No current block found");
+            }
+
+            await h.byzantine.postJunkCalldataOnChain(2, {
+                height: currentBlock.height
+            });
+            await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
+            h.event.resetEventSpies();
+            await h.assert.dispute.initiatedAndCommitedWait({
+                peersIndices: [1, 2],
+                timeoutMs: 10000
+            });
+            await h.assert.storage.storedTimeout({
+                timedoutParticipantIndex: 0,
+                peerToCheck: 1
+            }); // peer 0 should be timed out for not authoring block
+            await h.assert.storage.storedTimeout({
+                timedoutParticipantIndex: 0,
+                peerToCheck: 2
+            }); // peer 0 should be timed out for not authoring block
         });
     });
 
     describe("Network Liveness", function () {
         it("should maintain liveness when peer disconnects mid-transaction", async function () {
-            await ScenarioRunner.execute(
-                Scenario.startChannel(3, 2),
-                Byzantine.disconnect(2), // Peer 2 goes offline
-                Transition.advanceState({ count: 1 }), // Should work with peers 0,1
-                Assert.peersInSync({ peerIndices: [0, 1] }),
-                Assert.noDisputes()
-            );
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            await h.network.disconnectPeer(2);
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+            h.assert.dispute.noDisputes();
         });
     });
 });
