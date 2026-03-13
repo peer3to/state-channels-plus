@@ -782,7 +782,6 @@ class StateManager {
         const strategy =
             options?.validationStrategy ||
             this.getStrategyByStatus(this.status);
-        const shouldLockMutex = !(options?.skipMutex ?? false);
 
         try {
             if (!options?.skipMutex) {
