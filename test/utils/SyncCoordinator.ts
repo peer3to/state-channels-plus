@@ -3,12 +3,6 @@ import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import type { TestPeer } from "@test/harness/core/types";
 
-export type WaitForPeersToSyncOptions = {
-    timeoutMs?: number;
-    waitForFinalization?: boolean;
-    expectedHeight?: number;
-};
-
 /**
  * Handles synchronization operations and assertions for test peers.
  * Provides both async waiting and synchronous checking methods.
@@ -33,15 +27,21 @@ export class SyncCoordinator {
             timeoutMs?: number;
             blockHashInStorage?: Hash;
             waitForFinalization?: boolean;
+            expectedHeight?: number;
         }
     ): Promise<void> {
-        const { timeoutMs = 8000, blockHashInStorage, waitForFinalization = false } = options || {};
+        const {
+            timeoutMs = 8000,
+            blockHashInStorage,
+            waitForFinalization = false,
+            expectedHeight
+        } = options || {};
         this.logger.verbose(`Waiting for ${peers.length} peers to sync`, {
             forkId,
             timeout: timeoutMs,
             peerIndices: peers.map((p) => p.index),
             useEventBarrier: !!this.eventBarrier,
-            expectedHeight
+            expectedHeight: expectedHeight
         });
 
         const checkSync = async () => {
