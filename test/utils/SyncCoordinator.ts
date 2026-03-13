@@ -67,6 +67,35 @@ export class SyncCoordinator {
             const blocksInSync = blocks.every(
                 (b) => b!.hash === firstHash && b!.height === firstHeight
             );
+
+            if (!blocksInSync) return false;
+
+            // If a minimum expected height was provided, ensure all peers have
+            // reached at least that height before considering them synced.
+            if (expectedHeight !== undefined && firstHeight < expectedHeight) {
+                return false;
+            }
+
+            if (waitForFinalization) {
+                // First check N/N signatures
+                let totalParticipants: number;
+                try {
+                    const participants =
+                        await peers[0].stateManager.diamondStateMachine.getParticipants();
+                    totalParticipants = participants.length;
+                } catch (error) {
+                    this.logger.error(`Failed to get participants`, { error });
+                    return false;
+                }
+
+                for (const block of blocks) {
+                    const actualSignatures = block!.allSignatures.size;
+
+                    if (actualSignatures < totalParticipants) return false;
+                }
+            }
+
+            return true;
         };
 
         let barrierError: EventBarrierCapturedError | undefined;

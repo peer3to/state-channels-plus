@@ -8,6 +8,8 @@ export class AssertDisputeActions {
         expectedCount?: number;
         timeoutMs?: number;
         peersIndices?: number[];
+        /** If true, skip the check that non-honest peers did not initiate (e.g. when byzantine peer may receive its own broadcast). */
+        allowByzantineInitiation?: boolean;
     }) {
         await this.initiatedWait(options);
         await this.committedWait(options);
@@ -16,8 +18,14 @@ export class AssertDisputeActions {
     async initiatedWait(options?: {
         peersIndices?: number[];
         timeoutMs?: number;
+        /** If true, skip the check that non-honest peers did not initiate (e.g. when byzantine peer may receive its own broadcast). */
+        allowByzantineInitiation?: boolean;
     }): Promise<void> {
-        const { peersIndices, timeoutMs = 5000 } = options || {};
+        const {
+            peersIndices,
+            timeoutMs = 5000,
+            allowByzantineInitiation = false
+        } = options || {};
 
         let peers = this.harness.getFilteredOrHonestPeers(peersIndices);
 
@@ -31,6 +39,10 @@ export class AssertDisputeActions {
             expectedCounts,
             timeoutMs
         );
+
+        if (allowByzantineInitiation) {
+            return;
+        }
 
         const nonInitiators = this.harness.peers.filter(
             (peer) => !peers.includes(peer)
@@ -52,11 +64,14 @@ export class AssertDisputeActions {
         expectedCount?: number;
         timeoutMs?: number;
         peersIndices?: number[];
+        /** Default "atLeast" so extra commitments (e.g. from malicious peer) still pass. */
+        mode?: "exact" | "atLeast";
     }): Promise<void> {
         const {
             expectedCount = this.harness.getHonestPeers().length,
             timeoutMs = 5000,
-            peersIndices
+            peersIndices,
+            mode = "atLeast"
         } = options || {};
 
         const peers = this.harness.getFilteredOrHonestPeers(peersIndices);
@@ -69,7 +84,8 @@ export class AssertDisputeActions {
         await this.harness.event.waitForEventCounts(
             "onDisputeCommitted",
             expectedCounts,
-            timeoutMs
+            timeoutMs,
+            { mode }
         );
     }
 
