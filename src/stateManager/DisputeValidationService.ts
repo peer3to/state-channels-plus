@@ -334,17 +334,15 @@ export default class DisputeValidationService {
                 return false;
             }
 
-            const latestStateStateMachineState = latestStateMachineState;
-
             // [check] isParticipantNext
             const nextToWrite = await this.diamondStateMachine.peekNextToWrite(
-                latestStateStateMachineState
+                latestStateMachineState
             );
             if (nextToWrite !== dispute.input.timeout.participant) {
                 this.disputeFraudProofService.createTimeoutParticipantNotNext(
                     dispute,
                     disputeAuditingData.latestStateSnapshot,
-                    latestStateStateMachineState
+                    latestStateMachineState
                 );
                 return false;
             }
@@ -432,7 +430,7 @@ export default class DisputeValidationService {
                     dispute,
                     disputeAuditingData.genesisStateSnapshotData,
                     disputeAuditingData.latestStateSnapshot,
-                    latestStateStateMachineState,
+                    latestStateMachineState,
                     block.signedBlock,
                     block.onChainTimestamp,
                     previousBlockCalldata?.onChainTimestamp || 0,
