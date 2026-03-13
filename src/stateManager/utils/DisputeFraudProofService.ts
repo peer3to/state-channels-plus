@@ -217,6 +217,20 @@ export default class DisputeFraudProofService {
         });
     }
 
+    createDisputeInvalidAuditingDataHash(
+        dispute: DisputeStruct,
+        auditingData: DisputeAuditingDataStruct
+    ): Hash {
+        const proof: { auditingData: DisputeAuditingDataStruct } = {
+            auditingData
+        };
+
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.DisputeInvalidAuditingDataHash,
+            struct: proof as never
+        });
+    }
+
     createDisputeInvalidBlockInStateProofApplyFraudProof(
         dispute: DisputeStruct,
         fraudProof: FraudProofStruct,

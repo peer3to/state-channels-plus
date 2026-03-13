@@ -55,5 +55,6 @@ enum DisputeFraudProofType {
     TimeoutParticipantNotNext,
     TimeoutTooEarly,
     DisputeInvalidBlockInStateProofApplyFraudProof,
-    DisputeLastMilestoneNotFinalAndNoAuditingData
+    DisputeLastMilestoneNotFinalAndNoAuditingData,
+    DisputeInvalidAuditingDataHash
 }

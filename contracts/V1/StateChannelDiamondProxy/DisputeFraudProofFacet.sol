@@ -64,6 +64,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData) {
             return _handleDisputeLastMilestoneNotFinalAndNoAuditingData;
         }
+        if (proofType == DisputeFraudProofType.DisputeInvalidAuditingDataHash) {
+            return _handleDisputeInvalidAuditingDataHash;
+        }
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -124,6 +127,31 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bool isFinal = _isLastMilestoneFinalByEveryone(dispute);
         if (!isFinal) return _valid(dispute.input.disputer);
         return _invalid();
+    }
+
+    function _handleDisputeInvalidAuditingDataHash(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        DisputeInvalidAuditingDataHash memory proof = abi.decode(encodedFraudProof, (DisputeInvalidAuditingDataHash));
+
+        if (dispute.postedAuditingData) return _invalid();
+
+        if (!_isLastMilestoneFinalByEveryone(dispute)) return _invalid();
+
+        bytes memory latestStateData =
+            abi.encodeCall(StateProofFacet.isCorrectLatestState, (dispute, proof.auditingData.genesisStateSnapshotData));
+        (bool latestStateSuccess, bytes memory latestStateReturnData) =
+            stateProofFacetAddress.delegatecall(latestStateData);
+        if (!latestStateSuccess) return _invalid();
+
+        bool isCorrectState = abi.decode(latestStateReturnData, (bool));
+        if (!isCorrectState) return _invalid();
+
+        // If the hash of the provided auditing data matches the dispute commitment, no fraud
+        if (keccak256(abi.encode(proof.auditingData)) == dispute.input.disputeAuditingDataHash) return _invalid();
+
+        return _valid(dispute.input.disputer);
     }
 
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)

@@ -3,7 +3,14 @@ import { ethers } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
-import { Codec, isSubset, Logger, tryDecodeCustomError, Type } from "@/utils";
+import {
+    Codec,
+    hash,
+    isSubset,
+    Logger,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
 import { Address, Bytes, Signature } from "@/types/types";
 
 import DisputeFraudProofService from "./utils/DisputeFraudProofService";
@@ -174,12 +181,33 @@ export default class DisputeValidationService {
         const postedAuditingData = this.hasPostedAuditingData(dispute);
 
         //TODO - quick hack, but the stuff we need SHOULD actually be available
-        const { auditingData: disputeAuditingData } =
+        const { auditingData: disputeAuditingData, isPartial } =
             this.disputeManager.getAuditingData(
                 dispute.input.forkId,
                 dispute.input.stateProof
             );
-        // TODO move this check above and into its own fraud proof
+
+        if (!postedAuditingData && !isPartial) {
+            const actualHash = hash(
+                Codec.encode(disputeAuditingData, Type.DisputeAuditingData)
+            );
+            if (actualHash !== dispute.input.disputeAuditingDataHash) {
+                this.logger.warn(
+                    "Dispute auditingDataHash does not match actual auditing data",
+                    {
+                        dispute: LoggerUtils.getDisputeMetadata(dispute),
+                        auditingData:
+                            LoggerUtils.getAuditingMetadata(disputeAuditingData)
+                    }
+                );
+                this.disputeFraudProofService.createDisputeInvalidAuditingDataHash(
+                    dispute,
+                    disputeAuditingData
+                );
+                return false;
+            }
+        }
+
         if (!postedAuditingData) {
             const isCorrectLatestState =
                 await this.stateChannelManagerContract.isCorrectLatestState.staticCall(

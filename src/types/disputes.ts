@@ -195,3 +195,7 @@ export const DisputeInvalidBlockInStateProofApplyFraudProofEthersType = `tuple(
     ${FraudProofEthersType} fraudProof,
     uint256 blockIndexInUnfinalizedPartOfStateProof
 )`;
+
+export const DisputeInvalidAuditingDataHashProofEthersType = `tuple(
+    ${DisputeAuditingDataEthersType} auditingData
+)`;

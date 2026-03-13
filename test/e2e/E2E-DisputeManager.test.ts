@@ -104,25 +104,18 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Fraud Proof Detection", function () {
-        it("should ignore incorrect auditing data commitment in dispute posted without auditing data and resolve normally", async function () {
-            //
-            // TODO - auditingData hash is irelevant when finality on the milestone is reached and is only used to verify the state proof when auditing data is required.
-            // This should be a legitimate test, and it runs as expected 'not killed', but it should be done in a way where it's a legitimate dispute
-            // Stub the dispute construction to tamper with this field when it create a legitimate dispute
-            // The code bellow should be used to test a dispute fraud proof named 'InvalidDisputeReason' - e.g disputes that are just created with no legitimate enforcment
-            // (need to implement the fraud proof)
-            //
-            // const h = TestSession.getHarness();
-            // await h.scenario.preDisputeSetup();
-            // await h.byzantine.postTamperedDisputeAuditingData(1);
-            // await h.event.waitForAllPeers("onDisputeKilled", 1, {
-            //     mode: "atLeast"
-            // });
-            // await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
-            // await h.dispute.resolveDisputeWait({
-            //     maliciousPeerIndex: 1
-            // });
-            // await h.assert.sync.forkChangedWait();
+        it.only("should kill dispute and slash disputer when auditingDataHash is tampered in dispute posted without auditing data", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            await h.byzantine.postTamperedDisputeAuditingData(1);
+            await h.event.waitForAllPeers("onDisputeKilled", 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
+            await h.dispute.resolveDisputeWait({
+                maliciousPeerIndex: 1
+            });
+            await h.assert.sync.forkChangedWait();
         });
 
         it("should reject dispute submission when posted auditing data hash does not match submitted auditing data", async function () {

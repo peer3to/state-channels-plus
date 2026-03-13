@@ -15,7 +15,8 @@ contract DisputeFraudProofTypes {
         TimeoutParticipantNotNext memory l,
         TimeoutTooEarly memory m,
         DisputeInvalidBlockInStateProofApplyFraudProof memory n,
-        DisputeLastMilestoneNotFinalAndNoAuditingData memory o
+        DisputeLastMilestoneNotFinalAndNoAuditingData memory o,
+        DisputeInvalidAuditingDataHash memory p
     ) {}
 }
 
@@ -87,4 +88,8 @@ struct DisputeInvalidBlockInStateProofApplyFraudProof {
 
 struct DisputeLastMilestoneNotFinalAndNoAuditingData {
     bool __;
+}
+
+struct DisputeInvalidAuditingDataHash {
+    DisputeAuditingData auditingData;
 }

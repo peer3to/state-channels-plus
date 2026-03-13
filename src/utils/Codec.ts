@@ -45,6 +45,7 @@ import {
     DisputeInvalidBalanceInvariantProofEthersType,
     DisputeOnChainSlashesNotSubsetProofEthersType,
     DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType,
+    DisputeInvalidAuditingDataHashProofEthersType,
     TimeoutThresholdProofEthersType,
     TimeoutCalldataPostedProofEthersType,
     TimeoutNotLinkedToLatestStateProofEthersType,
@@ -213,6 +214,10 @@ export class Codec {
         [
             DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData,
             DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidAuditingDataHash,
+            DisputeInvalidAuditingDataHashProofEthersType
         ]
     ]);
 
