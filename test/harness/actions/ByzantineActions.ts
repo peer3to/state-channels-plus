@@ -599,4 +599,401 @@ export class ByzantineActions {
             } as any;
         };
     }
+
+    /**
+     * Submit a block with invalid transaction data that causes applyTransaction to fail
+     */
+    async submitInvalidTransactionDataBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+        }
+    ): Promise<Block> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        const forkId = options?.forkId || this.harness.activeForkId!;
+
+        const latestBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) {
+            throw new Error(`No block found for fork ${forkId}`);
+        }
+
+        const nextBlockHeight =
+            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
+            peer,
+            forkId,
+            nextBlockHeight
+        );
+
+        // Create malformed transaction data that will cause applyTransaction to fail
+        const malformedData = "0x1234567890abcdef"; // Invalid transaction data
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId: forkId,
+                transactionCnt: BigInt(nextBlockHeight),
+                timestamp: BigInt(latestBlock.timestamp) + 1n
+            },
+            body: {
+                encodedData: malformedData as Bytes,
+                data: malformedData as Bytes
+            }
+        };
+
+        // Create a valid state snapshot hash (the fraud is in the transaction, not the state)
+        const { success, encodedState } =
+            await peer.stateManager.applyTransaction({
+                ...transaction,
+                body: {
+                    encodedData:
+                        peer.contractInstance.interface.encodeFunctionData(
+                            "add",
+                            [1]
+                        ) as Bytes,
+                    data: peer.contractInstance.interface.encodeFunctionData(
+                        "add",
+                        [1]
+                    ) as Bytes
+                }
+            });
+
+        if (!success) {
+            throw new Error("Failed to compute valid state for fraud block");
+        }
+
+        const blockStruct: BlockStruct = {
+            transaction: transaction, // Use the malformed transaction
+            stateSnapshotHash: hash(encodedState), // But claim it produces this valid state
+            previousBlockHash: previousBlockHash,
+            messageBlocks: []
+        };
+
+        const invalidBlock = await Block.fromBlockStruct(
+            blockStruct,
+            peer.signer
+        );
+
+        this.logger.info(
+            `Peer ${peerIndex} creating invalid transaction data block: height=${invalidBlock.height}`
+        );
+
+        // Broadcast the invalid block
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(invalidBlock.blockConfirmationStruct)
+            .broadcast();
+
+        return invalidBlock;
+    }
+
+    /**
+     * Submit a block with broken inbound message chain
+     */
+    async submitBrokenInboundChainBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+        }
+    ): Promise<Block> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        const forkId = options?.forkId || this.harness.activeForkId!;
+
+        const latestBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) {
+            throw new Error(`No block found for fork ${forkId}`);
+        }
+
+        const nextBlockHeight =
+            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
+            peer,
+            forkId,
+            nextBlockHeight
+        );
+
+        // Create a valid transaction
+        const contractInterface = peer.contractInstance.interface;
+        const transactionData = contractInterface.encodeFunctionData("add", [
+            1
+        ]) as Bytes;
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId: forkId,
+                transactionCnt: BigInt(nextBlockHeight),
+                timestamp: BigInt(latestBlock.timestamp) + 1n
+            },
+            body: {
+                encodedData: transactionData,
+                data: transactionData
+            }
+        };
+
+        // Create a fake message block with wrong previous hash to break the chain
+        const brokenMessageBlock: MessageBlockStruct = {
+            previousBlockHash: ethers.keccak256(
+                ethers.toUtf8Bytes("fake_hash")
+            ), // Wrong hash
+            blockHeight: nextBlockHeight,
+            messages: [],
+            totalBalance: {
+                amount: 0n,
+                data: "0x"
+            } as BalanceStruct,
+            timestamp: BigInt(Date.now())
+        };
+
+        const blockStruct: BlockStruct = {
+            transaction: transaction,
+            stateSnapshotHash: ethers.ZeroHash as Hash, // Will be computed incorrectly due to broken chain
+            previousBlockHash: previousBlockHash,
+            messageBlocks: [brokenMessageBlock]
+        };
+
+        const invalidBlock = await Block.fromBlockStruct(
+            blockStruct,
+            peer.signer
+        );
+
+        this.logger.info(
+            `Peer ${peerIndex} creating broken inbound chain block: height=${invalidBlock.height}`
+        );
+
+        // Broadcast the invalid block
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(invalidBlock.blockConfirmationStruct)
+            .broadcast();
+
+        return invalidBlock;
+    }
+
+    /**
+     * Submit a block at height 0 with a wrong previousBlockHash
+     * Precondition:  maliciousPeerIndex must not be the peer who wrote
+     * the original genesis block).
+     */
+    async submitWrongGenesisBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+        }
+    ): Promise<Block> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        const forkId = options?.forkId || this.harness.activeForkId!;
+
+        // Wrong previousBlockHash — not the real genesis snapshot hash.
+        // This makes isLinked(block) return false, which combined with the
+        // existing conflicting block at height 0 triggers wrongGenesisDetected.
+        const wrongPreviousBlockHash = hash(
+            ethers.toUtf8Bytes("wrong_genesis_hash")
+        ) as Hash;
+
+        const contractInterface = peer.contractInstance.interface;
+        const transactionData = contractInterface.encodeFunctionData("add", [
+            1
+        ]) as Bytes;
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId,
+                transactionCnt: 0n, // height 0
+                timestamp: BigInt(Clock.getTimeInSeconds())
+            },
+            body: {
+                encodedData: transactionData,
+                data: transactionData
+            }
+        };
+
+        const blockStruct: BlockStruct = {
+            transaction,
+            stateSnapshotHash: ZeroHash as Hash,
+            previousBlockHash: wrongPreviousBlockHash,
+            messageBlocks: []
+        };
+
+        const wrongGenesisBlock = await Block.fromBlockStruct(
+            blockStruct,
+            peer.signer
+        );
+
+        this.logger.info(
+            `Peer ${peerIndex} broadcasting wrong genesis block: height=${wrongGenesisBlock.height}`,
+            { forkId }
+        );
+
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(wrongGenesisBlock.blockConfirmationStruct)
+            .broadcast();
+
+        return wrongGenesisBlock;
+    }
+
+    /**
+     * Submit a correctly-linked next block signed by a peer that is NOT the
+     * expected next leader.
+     * Precondition: peerIndex must NOT be the peer that getNextToWrite() returns
+
+     */
+    async submitUnexpectedNextLeaderBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+        }
+    ): Promise<Block> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        const forkId = options?.forkId || this.harness.activeForkId!;
+
+        const latestBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) {
+            throw new Error(`No block found for fork ${forkId}`);
+        }
+
+        const nextBlockHeight =
+            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
+        // Correct previousBlockHash so the block passes the isLinked check and
+        // reaches the next-leader check in validateBlockConfirmation.
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
+            peer,
+            forkId,
+            nextBlockHeight
+        );
+
+        const contractInterface = peer.contractInstance.interface;
+        const transactionData = contractInterface.encodeFunctionData("add", [
+            1
+        ]) as Bytes;
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId,
+                transactionCnt: BigInt(nextBlockHeight),
+                timestamp: BigInt(latestBlock.timestamp) + 1n
+            },
+            body: {
+                encodedData: transactionData,
+                data: transactionData
+            }
+        };
+
+        const blockStruct: BlockStruct = {
+            transaction,
+            // stateSnapshotHash can be anything — invalidStateTransitionDetected
+            // fires at the next-leader check, before any hash comparison.
+            stateSnapshotHash: ZeroHash as Hash,
+            previousBlockHash,
+            messageBlocks: []
+        };
+
+        const block = await Block.fromBlockStruct(blockStruct, peer.signer);
+
+        this.logger.info(
+            `Peer ${peerIndex} submitting unexpected-next-leader block: height=${block.height}`,
+            { forkId }
+        );
+
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(block.blockConfirmationStruct)
+            .broadcast();
+
+        return block;
+    }
+
+    /**
+     * Submit a block with invalid timestamp (objectively invalid)
+     */
+    async submitInvalidTimestampBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+        }
+    ): Promise<Block> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        const forkId = options?.forkId || this.harness.activeForkId!;
+
+        const latestBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) {
+            throw new Error(`No block found for fork ${forkId}`);
+        }
+
+        const nextBlockHeight =
+            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
+        const previousBlockHash = this.harness.query.getPreviousBlockHash(
+            peer,
+            forkId,
+            nextBlockHeight
+        );
+
+        // Create a valid transaction
+        const contractInterface = peer.contractInstance.interface;
+        const transactionData = contractInterface.encodeFunctionData("add", [
+            1
+        ]) as Bytes;
+
+        // Create transaction with objectively invalid timestamp (in the past)
+        const invalidTimestamp = BigInt(latestBlock.timestamp) - 1000n; // Timestamp before previous block
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: peer.stateManager.getChannelId(),
+                participant: peer.address,
+                forkId: forkId,
+                transactionCnt: BigInt(nextBlockHeight),
+                timestamp: invalidTimestamp // Invalid timestamp
+            },
+            body: {
+                encodedData: transactionData,
+                data: transactionData
+            }
+        };
+
+        const blockStruct: BlockStruct = {
+            transaction: transaction,
+            stateSnapshotHash: ethers.ZeroHash as Hash,
+            previousBlockHash: previousBlockHash,
+            messageBlocks: []
+        };
+
+        const invalidBlock = await Block.fromBlockStruct(
+            blockStruct,
+            peer.signer
+        );
+
+        this.logger.info(
+            `Peer ${peerIndex} creating invalid timestamp block: height=${invalidBlock.height}, timestamp=${invalidTimestamp}`
+        );
+
+        // Broadcast the invalid block
+        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(invalidBlock.blockConfirmationStruct)
+            .broadcast();
+
+        return invalidBlock;
+    }
 }

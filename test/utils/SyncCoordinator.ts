@@ -3,6 +3,12 @@ import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import type { TestPeer } from "@test/harness/core/types";
 
+export type WaitForPeersToSyncOptions = {
+    timeoutMs?: number;
+    waitForFinalization?: boolean;
+    expectedHeight?: number;
+};
+
 /**
  * Handles synchronization operations and assertions for test peers.
  * Provides both async waiting and synchronous checking methods.
@@ -18,7 +24,7 @@ export class SyncCoordinator {
 
     /**
      * Wait for all peers (or specific peer indices) to have the same latest block (same hash and height)
-     * Optionally wait for N/N signatures (finalization) as well
+     * Optionally wait for N/N signatures (finalization) and/or a minimum block height.
      */
     public async waitForPeersToSync(
         peers: TestPeer[],
@@ -34,7 +40,8 @@ export class SyncCoordinator {
             forkId,
             timeout: timeoutMs,
             peerIndices: peers.map((p) => p.index),
-            useEventBarrier: !!this.eventBarrier
+            useEventBarrier: !!this.eventBarrier,
+            expectedHeight
         });
 
         const checkSync = async () => {
@@ -63,6 +70,12 @@ export class SyncCoordinator {
 
             if (!blocksInSync) return false;
 
+            // If a minimum expected height was provided, ensure all peers have
+            // reached at least that height before considering them synced.
+            if (expectedHeight !== undefined && firstHeight < expectedHeight) {
+                return false;
+            }
+
             if (waitForFinalization) {
                 // First check N/N signatures
                 let totalParticipants: number;
@@ -76,10 +89,12 @@ export class SyncCoordinator {
                 }
 
                 for (const block of blocks) {
-                    if (block!.allSignatures.size < totalParticipants)
-                        return false;
+                    const actualSignatures = block!.allSignatures.size;
+
+                    if (actualSignatures < totalParticipants) return false;
                 }
             }
+
             return true;
         };
 
