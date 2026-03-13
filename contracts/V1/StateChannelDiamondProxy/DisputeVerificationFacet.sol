@@ -46,6 +46,18 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return outputSnapshotData;
     }
 
+    function computeDisputeOutputState(
+        DisputeInput memory disputeInput,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        MessageBlock[] memory inboundMessageBlocks
+    ) public returns (DisputeOutputState memory outputState) {
+        address[] memory removals = _calculateRemovals(disputeInput);
+        return generateDisputeOutputState(
+            latestStateMachineState, disputeInput.onChainSlashes, removals, inboundMessageBlocks, latestStateSnapshot
+        );
+    }
+
     function reduce(Dispute[] memory disputes) public view returns (ReduceOutput memory reducedOutput) {
         uint256 maxSlashCount;
         uint256 slashCount;
@@ -289,8 +301,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         address[] memory removals = reducedOutput.selfRemovals;
         if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals = UtilityFacet(utilityFacetAddress)
-                .insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
+            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                removals, reducedOutput.timeout.participant
+            );
         }
 
         DisputeOutputState memory outputState = generateDisputeOutputState(
@@ -402,27 +415,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return _areDisputeAndBlockSameFork(dispute, latestBlock);
     }
 
-    function _verifyInboundMessageBlocks(
-        bytes32 previousInboundMessageBlockHash,
-        bytes32 latestInboundMessageBlockHash,
-        MessageBlock[] memory inboundMessageBlocks
-    ) internal pure returns (bool) {
-        uint256 lastHeight;
-        bool hasLastHeight;
-        for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
-            if (previousInboundMessageBlockHash != inboundMessageBlocks[i].previousBlockHash) {
-                return false;
-            }
-            if (hasLastHeight && inboundMessageBlocks[i].blockHeight != lastHeight + 1) {
-                return false;
-            }
-            previousInboundMessageBlockHash = keccak256(abi.encode(inboundMessageBlocks[i]));
-            lastHeight = inboundMessageBlocks[i].blockHeight;
-            hasLastHeight = true;
-        }
-        return previousInboundMessageBlockHash == latestInboundMessageBlockHash;
-    }
-
     function _verifyDisputeOutboundMessageBlocks(DisputeAuditingData memory disputeAuditingData)
         internal
         view
@@ -487,10 +479,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
         console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
         console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
         console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
-        if (!stateMachineImplementation.areBalancesEqual(
+        if (
+            !stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
-            )) return false;
+            )
+        ) return false;
         console.log("BALANCE 5");
         return true;
     }
@@ -555,67 +549,71 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData));
     }
 
-    function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        view
-        returns (bool)
-    {
-        // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
+    // function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+    //     public
+    //     view
+    //     returns (bool)
+    // {
+    //     // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
 
-        // Check dispute commits to genesisStateSnapshot
-        if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) return false;
+    //     // Check dispute commits to genesisStateSnapshot
+    //     if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) return false;
 
-        // Check latestStateSnapshot
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
-        if (
-            hasBlock
-                && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
-                    || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
-        ) {
-            return false;
-        }
-        if (
-            !hasBlock
-                && dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
-        ) {
-            return false;
-        }
+    //     // Check latestStateSnapshot
+    //     (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+    //     if (
+    //         hasBlock
+    //             && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
+    //                 || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
+    //     ) {
+    //         return false;
+    //     }
+    //     if (
+    //         !hasBlock
+    //             && dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
+    //     ) {
+    //         return false;
+    //     }
 
-        // Check milestones
-        Block[] memory milestoneBlocks = _getMilestoneBlocks(dispute.input.stateProof);
-        if (milestoneBlocks.length != disputeAuditingData.milestoneSnapshots.length) return false;
-        for (uint256 i = 0; i < milestoneBlocks.length; i++) {
-            if (
-                milestoneBlocks[i].stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.milestoneSnapshots[i]))
-            ) {
-                return false;
-            }
-        }
+    //     // Check milestones
+    //     Block[] memory milestoneBlocks = _getMilestoneBlocks(dispute.input.stateProof);
+    //     if (milestoneBlocks.length != disputeAuditingData.milestoneSnapshots.length) return false;
+    //     for (uint256 i = 0; i < milestoneBlocks.length; i++) {
+    //         if (
+    //             milestoneBlocks[i].stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.milestoneSnapshots[i]))
+    //         ) {
+    //             return false;
+    //         }
+    //     }
 
-        // Check latest stateMachineState
-        if (
-            disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
-                != keccak256(disputeAuditingData.latestStateStateMachineState)
-        ) return false;
+    //     // Check latest stateMachineState
+    //     if (
+    //         disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
+    //             != keccak256(disputeAuditingData.latestStateStateMachineState)
+    //     ) return false;
 
-        // Check outbound message blocks
-        if (!_verifyDisputeOutboundMessageBlocks(disputeAuditingData)) return false;
+    //     // Check outbound message blocks
+    //     if (!_verifyDisputeOutboundMessageBlocks(disputeAuditingData)) return false;
 
-        return true;
-    }
+    //     return true;
+    // }
 
-    function isDisputeOutputCorrect(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        returns (bool)
-    {
+    function isDisputeOutputCorrect(
+        Dispute memory dispute,
+        StateSnapshot memory latestStateSnapshot,
+        bytes memory latestStateMachineState,
+        MessageBlock[] memory inboundMessageBlocks
+    ) public returns (bool) {
         // It's annoying that this function can not be view/pure since the way we modify encodedState is semantically 'stateful' even though logically it's stateless
+
+        // Ensure the provided input context is actually linked to the dispute input
+        if (!_isDataLinkedToDisputeInput(dispute, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)) {
+            return false;
+        }
 
         // ***************** Generate output snapshot ***************
         SnapshotData memory outputSnapshotData = computeDisputeOutputSnapshotData(
-            dispute.input,
-            disputeAuditingData.latestStateSnapshot,
-            disputeAuditingData.latestStateStateMachineState,
-            disputeAuditingData.inboundMessageBlocks
+            dispute.input, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks
         );
 
         //verify outputStateSnapshot commitment

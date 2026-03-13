@@ -1,7 +1,9 @@
 import { StateSnapshot } from "@/models";
+import { ForkId } from "@/types";
 import type StateManager from "@/stateManager";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export class ContextActions {
     constructor(
@@ -21,22 +23,7 @@ export class ContextActions {
                 (i) => i !== maliciousPeerIndex
             );
 
-        this.harness.context.honestPeerIndices = honest;
-        this.harness.context.maliciousPeerIndices = [maliciousPeerIndex];
-    }
-
-    updateActiveFork(): void {
-        const honestIndices = this.harness.context.honestPeerIndices;
-        if (!honestIndices || honestIndices.length === 0) {
-            throw new Error(
-                "honestPeerIndices not set - call markMaliciousPeer first"
-            );
-        }
-
-        const newForkId =
-            this.harness.peers[honestIndices[0]].stateManager.forkId;
-        this.harness.context.newForkId = newForkId;
-        this.harness.activeForkId = newForkId;
+        this.harness.context.maliciousPeerIndices.push(maliciousPeerIndex);
     }
 
     async capturePrePostSnapshotContext(options?: {
@@ -66,7 +53,15 @@ export class ContextActions {
         if (!lastSnapshot) {
             throw new Error("No milestone snapshot available");
         }
-
+        this.harness.logger.debug(
+            "CapturePrePostSnapshotContext - Calculating expected withdrawals delta",
+            {
+                currentOnChainSnapshot: LoggerUtils.getSnapshotMetadata(
+                    onChainSnapshotBefore
+                ),
+                newSnapshot: LoggerUtils.getSnapshotMetadata(lastSnapshot)
+            }
+        );
         const expectedWithdrawalsDeltaBalance =
             await this.computeExpectedWithdrawalsDelta(
                 peer,

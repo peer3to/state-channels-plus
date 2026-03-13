@@ -27,8 +27,7 @@ export class AssertSnapshotActions {
             );
         }
     }
-
-    async onChainSnapshotChangedDetached(options?: {
+    async onChainSnapshotChangedWait(options?: {
         expectedForkId?: string;
         expectedSnapshot?: StateSnapshot;
         timeoutMs?: number;
@@ -45,7 +44,7 @@ export class AssertSnapshotActions {
             honestPeers = this.harness.getHonestPeers();
             localSnapshots = await Promise.all(
                 honestPeers.map((peer) =>
-                    this.harness.stateQuery.getLocalStateSnapshot(peer)
+                    this.harness.query.getLocalStateSnapshot(peer)
                 )
             );
             for (const localSnapshot of localSnapshots) {
@@ -78,7 +77,16 @@ export class AssertSnapshotActions {
                 )
             }
         });
-        DetachedPromises.collect(promise);
+        return promise;
+    }
+
+    async onChainSnapshotChangedDetached(options?: {
+        expectedForkId?: string;
+        expectedSnapshot?: StateSnapshot;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const detachedPromise = this.onChainSnapshotChangedWait(options);
+        DetachedPromises.collect(detachedPromise);
     }
 
     async snapshotMatchesLocal(options?: {
@@ -131,38 +139,6 @@ export class AssertSnapshotActions {
         }
     }
 
-    async channelWithdrawalsMatchSnapshot(options?: {
-        peerIndex?: number;
-    }): Promise<void> {
-        const { peerIndex = 0 } = options || {};
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const onChainSnapshot = StateSnapshot.from(
-            await this.harness.channelManager.getStateSnapshot(
-                this.harness.channelId
-            )
-        );
-        const channelBalance =
-            await this.harness.channelManager.getChannelBalance(
-                this.harness.channelId
-            );
-
-        const stateMachine = peer.stateManager.diamondStateMachine;
-        const balancesMatch = await stateMachine.areBalancesEqual(
-            channelBalance.totalWithdrawals,
-            onChainSnapshot.snapshotData.totalWithdrawals
-        );
-
-        if (!balancesMatch) {
-            throw new Error(
-                "Channel totalWithdrawals does not match on-chain snapshot totalWithdrawals"
-            );
-        }
-    }
-
     async withdrawalDeltaMatchesExpected(options?: {
         peerIndex?: number;
     }): Promise<void> {
@@ -204,25 +180,19 @@ export class AssertSnapshotActions {
 
         if (!deltaMatches) {
             throw new Error(
-                "Actual withdrawal delta does not match expected delta from outbound messages"
+                `Actual withdrawal delta does not match expected delta from outbound messages. Expected: ${expectedWithdrawalsDelta.amount.toString()}, Actual: ${actualDelta.amount.toString()}`
             );
         }
     }
 
-    async onChainBalanceMatchesSnapshot(options?: {
+    async verifyOnChainChannelBalanceInvariant(options?: {
         peerIndex?: number;
+        encodedStateMachineState?: string;
     }): Promise<void> {
-        const { peerIndex = 0 } = options || {};
+        const { peerIndex = 0, encodedStateMachineState } = options || {};
         const peer = this.harness.peers[peerIndex];
         if (!peer) {
             throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const lastSnapshot = this.harness.context.lastMilestoneSnapshot;
-        if (!lastSnapshot) {
-            throw new Error(
-                "No last milestone snapshot found in context. Call context capture first."
-            );
         }
 
         const onChainSnapshot = StateSnapshot.from(
@@ -231,16 +201,27 @@ export class AssertSnapshotActions {
             )
         );
 
-        const stateMachine = peer.stateManager.diamondStateMachine;
-        const withdrawalsMatch = await stateMachine.areBalancesEqual(
-            onChainSnapshot.snapshotData.totalWithdrawals,
-            lastSnapshot.snapshotData.totalWithdrawals
-        );
-
-        if (!withdrawalsMatch) {
-            throw new Error(
-                "On-chain totalWithdrawals does not match last milestone snapshot totalWithdrawals"
+        const encodedState =
+            encodedStateMachineState ??
+            peer.stateManager.storage.stateMachineStates.getStateMachineState(
+                onChainSnapshot.stateMachineStateHash
             );
+
+        if (!encodedState) {
+            throw new Error(
+                `No encoded state machine state found for on-chain snapshot state hash ${onChainSnapshot.stateMachineStateHash}`
+            );
+        }
+
+        const isValidBalanceInvariant =
+            await peer.stateManager.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+                this.harness.channelId,
+                onChainSnapshot.snapshotData,
+                encodedState
+            );
+
+        if (!isValidBalanceInvariant) {
+            throw new Error("On-chain snapshot balance invariant check failed");
         }
     }
 

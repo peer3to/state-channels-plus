@@ -22,6 +22,8 @@ contract DisputeTypes {
 struct Dispute {
     // @notice Dispute input data
     DisputeInput input;
+    /// @notice True if dispute was posted with auditing data calldata
+    bool postedAuditingData;
     /// @notice Hash of output state (latest on-chain state)
     /// @dev created after from dispute resolution
     bytes32 outputSnapshotDataHash;
@@ -120,7 +122,7 @@ struct DisputeAuditingData {
     SnapshotData genesisStateSnapshotData;
     StateSnapshot latestStateSnapshot;
     StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
-    bytes latestStateStateMachineState;
+    bytes latestFinalizedStateStateMachineState;
     MessageBlock[] inboundMessageBlocks;
     /// @notice Stores all outbound message blocks since genesis
     /// @dev Covers the outbound message chain segment proven up to the challenge deadline (new fork)

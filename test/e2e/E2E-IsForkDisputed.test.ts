@@ -1,4 +1,5 @@
 import { TestSession, PeerTestHarness, sleep } from "@test/harness";
+import { expect } from "chai";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -20,20 +21,6 @@ describe("E2E: Is Fork Disputed", function () {
                 byzantinePeer: 1
             });
 
-            await h.rpc.requestDisputeAcknowledgment({ peerIndex: 0 });
-            await h.assert.rpc.allPeersAcknowledgedDispute({
-                requestingPeer: 0,
-                excludePeers: [1]
-            });
-        });
-
-        it("should successfully acknowledge genuinely disputed fork", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.activeChannelWithDispute({
-                numPeers: 3,
-                numBlocks: 2,
-                byzantinePeer: 1
-            });
             await h.rpc.requestDisputeAcknowledgment({ peerIndex: 0 });
             await h.assert.rpc.allPeersAcknowledgedDispute({
                 requestingPeer: 0,
@@ -87,7 +74,7 @@ describe("E2E: Is Fork Disputed", function () {
 
         it("should disconnect non-responding peers after acknowledgment timeout", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3, 0, { timeConfig: { agreementTime: 1 } });
+            await h.lifecycle.start(3, 0);
             await h.rpc.requestFakeDisputeWithSpiedDisconnect({
                 requestingPeer: 0
             });
@@ -124,13 +111,34 @@ describe("E2E: Is Fork Disputed", function () {
 
         it("should disconnect peer requesting acknowledgment of non-disputed fork", async function () {
             const h = TestSession.getHarness();
-            await h.channel.start(3, 2);
+            await h.lifecycle.start(3, 2);
             h.event.resetEventSpies();
             await h.rpc.sendFakeDisputeRequest({ fromPeer: 0, toPeer: 1 });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 1,
                 expectedFinalCount: 1
             });
+        });
+
+        it("should run stubbed RPC method via createRPCMethods wrapper", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 2);
+
+            let called = false;
+            const restore = h.rpcStub.stubServiceCreateRpcMethod({
+                peerIndex: 1,
+                serviceName: "isForkDisputedService",
+                methodName: "onDisputeAcknowledgmentRequest",
+                stubbedMethod: async (_channelId, _forkId) => {
+                    called = true;
+                }
+            });
+
+            await h.rpc.sendFakeDisputeRequest({ fromPeer: 0, toPeer: 1 });
+
+            expect(called).to.equal(true);
+
+            restore();
         });
     });
 });

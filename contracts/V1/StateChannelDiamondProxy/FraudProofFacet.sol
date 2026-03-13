@@ -228,7 +228,7 @@ contract FraudProofFacet is StateChannelCommon {
         }
 
         // not onChainSnapshot -> need dispute window
-        if (forkId != keccak256(abi.encode(correctGenesisSnapshot.snapshotData))) return _invalid();
+        if (!_isGenesisSnapshotDataLinkedToFork(forkId, correctGenesisSnapshot.snapshotData)) return _invalid();
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow =
             _disputeData.disputeWindowMap[correctGenesisSnapshot.snapshotData.originForkId];

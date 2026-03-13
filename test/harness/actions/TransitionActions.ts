@@ -1,6 +1,6 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
-import { Logger } from "@/utils";
+import { Logger, sleep } from "@/utils";
 import { MathStateMachine } from "@typechain-types/index";
 import { StateSnapshot } from "@/models";
 
@@ -10,6 +10,7 @@ export type TransitionOptions = {
     waitForSync?: boolean;
     waitForPeers?: number[];
     waitForTurn?: boolean;
+    delayMs?: number;
 };
 
 /**
@@ -28,7 +29,7 @@ export class TransitionActions {
         txFn: (contract: TransitionContract) => Promise<any>,
         options: TransitionOptions = { waitForTurn: true, waitForSync: true }
     ): Promise<any> {
-        const nextPeer = await this.harness.stateQuery.getNextPeerToWrite();
+        const nextPeer = await this.harness.query.getNextPeerToWrite();
 
         if (options.waitForTurn) {
             await this.waitForTurn(nextPeer);
@@ -96,9 +97,7 @@ export class TransitionActions {
         txFn: (contract: TransitionContract) => Promise<any>,
         options?: { waitForSync?: boolean }
     ): Promise<void> {
-        const honestIndices =
-            this.harness.context.honestPeerIndices ||
-            Array.from({ length: this.harness.peers.length }, (_, i) => i);
+        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
 
         await this.submitNext(txFn, {
             waitForTurn: true,
@@ -110,7 +109,7 @@ export class TransitionActions {
     async sequenceFromHonestPeers(
         txFns: Array<(contract: TransitionContract) => Promise<any>>
     ): Promise<void> {
-        const honestIndices = this.harness.context.honestPeerIndices;
+        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
         if (!honestIndices) {
             throw new Error(
                 "honestPeerIndices not set - resolve dispute context first"
@@ -170,6 +169,8 @@ export class TransitionActions {
             await this.waitForTurn(peer);
         }
 
+        if (options.delayMs) await sleep(options.delayMs);
+
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
         if (options.waitForSync) {
@@ -178,7 +179,9 @@ export class TransitionActions {
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
-            const peers = this.harness.getFilteredPeers(options.waitForPeers);
+            const peers = this.harness.getFilteredOrHonestPeers(
+                options.waitForPeers
+            );
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
                 forkId

@@ -4,6 +4,8 @@ export * from "./core/types";
 import { DetachedPromises } from "@/utils";
 import { TestSession } from "./session/TestSession";
 
+Error.stackTraceLimit = Infinity;
+
 declare global {
     // eslint-disable-next-line no-var
     var __peer3SessionHooksRegistered__: boolean | undefined;
@@ -37,12 +39,14 @@ if (
     });
 
     afterEach(async function () {
-        console.trace(
-            `Test afterEach started - awaiting ${DetachedPromises.size()} detached promises`
-        );
-
-        await DetachedPromises.awaitAllAndClearRecursive();
-
+        if (this.currentTest?.state === "passed") {
+            console.trace(
+                `Test passed - awaiting any detached promises to surface before finishing test!`
+            );
+            await DetachedPromises.awaitAllAndClear();
+            console.trace(`All detached promises settled for passing test.`);
+        }
+        DetachedPromises.clear();
         const firstDetachedError = TestSession.getFirstDetachedError();
 
         if (this.currentTest?.state === "failed" || firstDetachedError) {
@@ -67,17 +71,19 @@ if (
             );
             DetachedPromises.collect(promise);
         }
-        await DetachedPromises.awaitAllAndClearRecursive();
+        // Await the logs with a default timeout
+        await DetachedPromises.awaitAllAndClear();
         console.trace(
             `Test afterEach completed - all detached promises settled`
         );
         await TestSession.clear();
         if (firstDetachedError) throw firstDetachedError;
+        console.trace(`Test afterEach DONE`);
     });
 }
 
 // Action classes (for advanced usage)
-export { ChannelActions } from "./actions/ChannelActions";
+export { LifecycleActions as ChannelActions } from "./actions/lifecycle/LifecycleActions";
 export { TransitionActions } from "./actions/TransitionActions";
 export { NetworkController } from "./actions/NetworkController";
 export { DisputeOrchestrator } from "./actions/DisputeOrchestrator";
@@ -88,6 +94,7 @@ export {
 export { AssertActions } from "./actions/assert/AssertActions";
 export { ByzantineActions } from "./actions/ByzantineActions";
 export { RPCActions } from "./actions/RPCActions";
+export { RpcStubActions } from "./actions/rpcStubActions";
 export { ContextActions } from "./actions/ContextActions";
 export { ScenarioActions } from "./actions/ScenarioActions";
 

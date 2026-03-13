@@ -7,6 +7,8 @@ const { Project, SyntaxKind } = require("ts-morph");
 
 const DEFAULT_LOG_DIR = "./logs";
 const DEFAULT_WORKERS = 8;
+const DEFAULT_WORKER_START_STAGGER_MS = 1000;
+const DEFAULT_STREAM_CHILD_OUTPUT = false;
 
 function parseCliArgs(argv) {
     const options = {
@@ -205,28 +207,43 @@ function markLogAsError(logDir, logName) {
 
 async function runTask(cmd, args, env, label, logPath) {
     return new Promise((resolve) => {
+        const startedAt = Date.now();
         let stdout = "";
         let stderr = "";
+        const streamChildOutput =
+            env.STREAM_PARALLEL_CHILD_OUTPUT === "1" ||
+            env.STREAM_PARALLEL_CHILD_OUTPUT === "true";
 
         fs.mkdirSync(path.dirname(logPath), { recursive: true });
         const logStream = fs.createWriteStream(logPath, { flags: "w" });
 
+        const childEnv = { ...process.env, ...env };
+        for (const [key, value] of Object.entries(childEnv)) {
+            if (value === undefined || value === null) {
+                delete childEnv[key];
+            }
+        }
+
         const child = spawn(cmd, args, {
             stdio: ["inherit", "pipe", "pipe"],
-            env: { ...process.env, ...env }
+            env: childEnv
         });
 
         child.stdout.on("data", (data) => {
-            // Write raw buffer to preserve colors
-            process.stdout.write(data);
+            // Optionally mirror to console
+            if (streamChildOutput) {
+                process.stdout.write(data);
+            }
             logStream.write(data);
             // Also capture as string for parsing
             stdout += data.toString();
         });
 
         child.stderr.on("data", (data) => {
-            // Write raw buffer to preserve colors
-            process.stderr.write(data);
+            // Optionally mirror to console
+            if (streamChildOutput) {
+                process.stderr.write(data);
+            }
             logStream.write(data);
             // Also capture as string for parsing
             stderr += data.toString();
@@ -234,15 +251,39 @@ async function runTask(cmd, args, env, label, logPath) {
 
         child.on("exit", (code) => {
             logStream.end();
-            resolve({ code, label, stdout, stderr });
+            const durationMs = Date.now() - startedAt;
+            resolve({ code, label, stdout, stderr, durationMs });
         });
 
         child.on("error", (err) => {
             logStream.end();
             stderr += String(err);
-            resolve({ code: 1, label, stdout, stderr });
+            const durationMs = Date.now() - startedAt;
+            resolve({ code: 1, label, stdout, stderr, durationMs });
         });
     });
+}
+
+function formatDurationMs(durationMs) {
+    return `${(durationMs / 1000).toFixed(2)}s`;
+}
+
+function formatResultLine({
+    phase,
+    code,
+    label,
+    durationMs,
+    completed,
+    total,
+    rerunAttempt
+}) {
+    const status = code === 0 ? "PASS" : "FAIL";
+    const phasePrefix = rerunAttempt ? `${phase}#${rerunAttempt}` : phase;
+    const duration = formatDurationMs(durationMs);
+    if (code === 0) {
+        return `[${completed}/${total}] ${phasePrefix} ${status} (${duration})`;
+    }
+    return `[${completed}/${total}] ${phasePrefix} ${status} ${label} (${duration})`;
 }
 
 async function main() {
@@ -289,32 +330,64 @@ async function main() {
     const env = {
         ...process.env,
         LOG_LEVEL: process.env.LOG_LEVEL || "error",
+        NODE_OPTIONS: [
+            process.env.NODE_OPTIONS,
+            "--enable-source-maps",
+            "--stack-trace-limit=1000"
+        ]
+            .filter(Boolean)
+            .join(" "),
+        EVENT_BARRIER_TIMEOUT_SCALE:
+            process.env.EVENT_BARRIER_TIMEOUT_SCALE || "3",
+        // CRASH_LOG_UPLOAD_ENDPOINT: "",
+        // CRASH_LOG_API_TOKEN: "",
+        STREAM_PARALLEL_CHILD_OUTPUT:
+            process.env.STREAM_PARALLEL_CHILD_OUTPUT ||
+            (DEFAULT_STREAM_CHILD_OUTPUT ? "1" : "0"),
         // Assign unique discovery port based on worker index or PID
         // Force color output even when piped
         FORCE_COLOR: "1",
         TERM: process.env.TERM || "xterm-256color"
     };
 
+    const rerunEnv = {
+        ...env,
+        CRASH_LOG_UPLOAD_ENDPOINT: undefined,
+        CRASH_LOG_API_TOKEN: undefined
+    };
+
+    console.log(
+        `Using EVENT_BARRIER_TIMEOUT_SCALE=${env.EVENT_BARRIER_TIMEOUT_SCALE}`
+    );
+    console.log(`Failure log upload=off (empty upload endpoint)`);
+    console.log(
+        `Streaming child output=${env.STREAM_PARALLEL_CHILD_OUTPUT === "1" ? "on" : "off"}`
+    );
+    console.log(
+        "Rerun failure log upload=deferred to child env/dotenv resolution"
+    );
+
     const startTime = Date.now();
+    const configuredStagger = Number.parseInt(
+        process.env.E2E_WORKER_START_STAGGER_MS ||
+            String(DEFAULT_WORKER_START_STAGGER_MS),
+        10
+    );
+    const workerStartStaggerMs =
+        Number.isFinite(configuredStagger) && configuredStagger >= 0
+            ? configuredStagger
+            : DEFAULT_WORKER_START_STAGGER_MS;
+    let nextLaunchAt = Date.now();
+
+    console.log(`Using worker start stagger=${workerStartStaggerMs}ms`);
+
     let idx = 0;
     let active = 0;
     let failed = [];
-    let totalPassing = 0;
-    let totalFailing = 0;
-    let totalPending = 0;
-
-    // Parse Mocha output to extract test counts
-    function parseTestOutput(output) {
-        const passingMatch = output.match(/(\d+)\s+passing/);
-        const failingMatch = output.match(/(\d+)\s+failing/);
-        const pendingMatch = output.match(/(\d+)\s+pending/);
-
-        return {
-            passing: passingMatch ? parseInt(passingMatch[1], 10) : 0,
-            failing: failingMatch ? parseInt(failingMatch[1], 10) : 0,
-            pending: pendingMatch ? parseInt(pendingMatch[1], 10) : 0
-        };
-    }
+    let completed = 0;
+    let initialRunTotalDurationMs = 0;
+    let rerunTotalDurationMs = 0;
+    const initialRunStartedAt = Date.now();
 
     await new Promise((resolve) => {
         const maybeStartNext = () => {
@@ -325,32 +398,110 @@ async function main() {
             while (active < workers && idx < tasks.length) {
                 const task = tasks[idx++];
                 active++;
-                runTask(
-                    "yarn",
-                    ["--silent", ...task.args],
-                    {
-                        ...env
-                    },
-                    task.label,
-                    getLogPath(logDir, task.logName)
-                ).then(({ code, label, stdout, stderr }) => {
-                    active--;
-                    const output = stdout + stderr;
-                    const counts = parseTestOutput(output);
-                    totalPassing += counts.passing;
-                    totalFailing += counts.failing;
-                    totalPending += counts.pending;
+                const now = Date.now();
+                const delayMs = Math.max(0, nextLaunchAt - now);
+                nextLaunchAt =
+                    Math.max(nextLaunchAt, now) + workerStartStaggerMs;
 
-                    if (code !== 0) {
-                        failed.push(label);
-                        markLogAsError(logDir, task.logName);
-                    }
-                    maybeStartNext();
-                });
+                setTimeout(() => {
+                    runTask(
+                        "yarn",
+                        ["--silent", ...task.args],
+                        {
+                            ...env
+                        },
+                        task.label,
+                        getLogPath(logDir, task.logName)
+                    ).then(({ code, label, stdout, stderr, durationMs }) => {
+                        active--;
+                        void stdout;
+                        void stderr;
+                        initialRunTotalDurationMs += durationMs;
+
+                        completed++;
+                        if (code !== 0) {
+                            failed.push(task);
+                            markLogAsError(logDir, task.logName);
+                        }
+                        console.log(
+                            formatResultLine({
+                                phase: "run",
+                                label,
+                                code,
+                                durationMs,
+                                completed,
+                                total: tasks.length
+                            })
+                        );
+                        maybeStartNext();
+                    });
+                }, delayMs);
             }
         };
         maybeStartNext();
     });
+    const initialRunWallDurationMs = Date.now() - initialRunStartedAt;
+
+    const rerunFailures = [];
+    if (failed.length > 0) {
+        console.log(
+            `\nStarting reruns for ${failed.length} failed task(s): 1 parallel attempt each`
+        );
+    }
+
+    const rerunResults = await Promise.all(
+        failed.map(async (task) => {
+            console.log(`Rerunning failed task (parallel): ${task.label}`);
+            const rerunLogName = `${task.logName}__rerun1`;
+            const { code, label, stdout, stderr, durationMs } = await runTask(
+                "yarn",
+                ["--silent", ...task.args],
+                {
+                    ...rerunEnv
+                },
+                task.label,
+                getLogPath(logDir, rerunLogName)
+            );
+
+            return {
+                task,
+                code,
+                label,
+                durationMs,
+                rerunLogName
+            };
+        })
+    );
+
+    const rerunWallDurationMs = rerunResults.reduce(
+        (max, r) => Math.max(max, r.durationMs || 0),
+        0
+    );
+
+    for (const result of rerunResults) {
+        completed++;
+        rerunTotalDurationMs += result.durationMs;
+
+        if (result.code !== 0) {
+            rerunFailures.push(result.task.label);
+            markLogAsError(logDir, result.rerunLogName);
+        }
+
+        console.log(
+            formatResultLine({
+                phase: "rerun",
+                label: result.label,
+                code: result.code,
+                durationMs: result.durationMs,
+                completed,
+                total: tasks.length + failed.length,
+                rerunAttempt: 1
+            })
+        );
+    }
+
+    const totalFailing = rerunFailures.length;
+    const totalPassing = tasks.length - totalFailing;
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
@@ -362,13 +513,17 @@ async function main() {
     if (totalFailing > 0) {
         console.log(`\x1b[31m  ${totalFailing} failing\x1b[0m`);
     }
-    if (totalPending > 0) {
-        console.log(`  ${totalPending} pending`);
-    }
-
-    if (failed.length > 0) {
+    console.log(
+        `  Initial run: wall=${formatDurationMs(initialRunWallDurationMs)}, sum=${formatDurationMs(initialRunTotalDurationMs)}`
+    );
+    console.log(
+        `  Rerun: wall=${formatDurationMs(rerunWallDurationMs)}, sum=${formatDurationMs(rerunTotalDurationMs)}`
+    );
+    if (rerunFailures.length > 0) {
         cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
-        console.error(`\nFailed tasks:\n- ${failed.join("\n- ")}\n`);
+        console.error(
+            `\nFailed tasks after reruns:\n- ${rerunFailures.join("\n- ")}\n`
+        );
         process.exit(1);
     }
 

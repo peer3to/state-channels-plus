@@ -4,7 +4,6 @@ import { Signer } from "ethers";
 import * as sinon from "sinon";
 import * as dotenv from "dotenv";
 import hre from "hardhat";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { setImmediate } from "node:timers";
 import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -25,7 +24,7 @@ import { deployFullStack } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
-import { ChannelActions } from "@test/harness/actions/ChannelActions";
+import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
 import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
 import { AssertActions } from "@test/harness";
@@ -35,12 +34,12 @@ import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
 import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingActions";
 import { RPCActions } from "@test/harness/actions/RPCActions";
+import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
 import { ContextActions } from "@test/harness/actions/ContextActions";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { HarnessContext } from "@test/harness";
 import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
 import { LogLevel } from "@/utils/logging/Logger";
-import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 
 // peformance monitoring
@@ -73,7 +72,6 @@ export class PeerTestHarness<
     private sharedDeployTx!: unknown;
     public channelId!: ChannelId;
     public options!: Required<HarnessOptions<TFactories>>;
-    public activeForkId?: ForkId;
     private harnessConfig!: Partial<Config>;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator;
@@ -85,7 +83,7 @@ export class PeerTestHarness<
      * Test context for cross-block state sharing
      * Used by blocks to store and retrieve test-specific data (e.g., malicious peer index, fork IDs)
      */
-    public context: HarnessContext = {};
+    public context = new HarnessContext();
 
     // barriers
     public connectionBarrier: EventBarrier;
@@ -94,21 +92,7 @@ export class PeerTestHarness<
     public disconnectionBarrier: EventBarrier;
 
     // action instances
-    public readonly channelActions!: ChannelActions;
-    public readonly transitionActions!: TransitionActions;
-    public readonly networkController!: NetworkController;
-    public readonly assertActions!: AssertActions;
-    public readonly byzantineActions!: ByzantineActions;
-    public readonly eventActions!: EventActions;
-    public readonly stateQuery!: StateQueryActions;
-    public readonly disputeOrchestrator!: DisputeOrchestrator;
-    public readonly disputeTampering!: DisputeTamperingActions;
-    public readonly rpcActions!: RPCActions;
-    public readonly contextActions!: ContextActions;
-    public readonly scenarioActions!: ScenarioActions;
-
-    // ergonomic aliases for action-first tests
-    public readonly channel!: ChannelActions;
+    public readonly lifecycle!: LifecycleActions;
     public readonly transition!: TransitionActions;
     public readonly network!: NetworkController;
     public readonly assert!: AssertActions;
@@ -118,8 +102,24 @@ export class PeerTestHarness<
     public readonly dispute!: DisputeOrchestrator;
     public readonly tamper!: DisputeTamperingActions;
     public readonly rpc!: RPCActions;
+    public readonly rpcStub!: RpcStubActions;
     public readonly contextApi!: ContextActions;
     public readonly scenario!: ScenarioActions;
+
+    /**
+     * First honest peer's fork ID is considered the active fork ID for the channel.
+     */
+    public get activeForkId(): ForkId | undefined {
+        const honestPeers = this.getHonestPeers();
+
+        if (honestPeers.length === 0) {
+            throw new Error(
+                "No honest peers available to determine active fork ID"
+            );
+        }
+
+        return honestPeers[0].stateManager.forkId;
+    }
 
     constructor() {
         // toJSON can't serialize BigInts, so we need to override it
@@ -145,7 +145,17 @@ export class PeerTestHarness<
             const d90 = h.percentile(90) / 1e6;
             const d99 = h.percentile(99) / 1e6;
             const dMax = h.max / 1e6;
-            this.logger.verbose(
+            const shouldWarn =
+                elu.utilization > 0.8 ||
+                dMean > 200 ||
+                d50 > 200 ||
+                d90 > 200 ||
+                d99 > 200 ||
+                dMax > 200;
+            const logFn = shouldWarn
+                ? this.logger.warn.bind(this.logger)
+                : this.logger.verbose.bind(this.logger);
+            logFn(
                 `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${elu.utilization}`,
                 {
                     dMean,
@@ -165,31 +175,19 @@ export class PeerTestHarness<
         this.disconnectionBarrier = new EventBarrier(this.logger);
 
         // Initialize action instances
-        this.channelActions = new ChannelActions(this, this.logger);
-        this.transitionActions = new TransitionActions(this, this.logger);
-        this.networkController = new NetworkController(this, this.logger);
-        this.assertActions = new AssertActions(this, this.logger);
-        this.byzantineActions = new ByzantineActions(this, this.logger);
-        this.eventActions = new EventActions(this, this.logger);
-        this.stateQuery = new StateQueryActions(this, this.logger);
-        this.disputeOrchestrator = new DisputeOrchestrator(this, this.logger);
-        this.disputeTampering = new DisputeTamperingActions(this, this.logger);
-        this.rpcActions = new RPCActions(this, this.logger);
-        this.contextActions = new ContextActions(this, this.logger);
-        this.scenarioActions = new ScenarioActions(this, this.logger);
-
-        this.channel = this.channelActions;
-        this.transition = this.transitionActions;
-        this.network = this.networkController;
-        this.assert = this.assertActions;
-        this.byzantine = this.byzantineActions;
-        this.event = this.eventActions;
-        this.query = this.stateQuery;
-        this.dispute = this.disputeOrchestrator;
-        this.tamper = this.disputeTampering;
-        this.rpc = this.rpcActions;
-        this.contextApi = this.contextActions;
-        this.scenario = this.scenarioActions;
+        this.lifecycle = new LifecycleActions(this, this.logger);
+        this.transition = new TransitionActions(this, this.logger);
+        this.network = new NetworkController(this, this.logger);
+        this.assert = new AssertActions(this, this.logger);
+        this.byzantine = new ByzantineActions(this, this.logger);
+        this.event = new EventActions(this, this.logger);
+        this.query = new StateQueryActions(this, this.logger);
+        this.dispute = new DisputeOrchestrator(this, this.logger);
+        this.tamper = new DisputeTamperingActions(this, this.logger);
+        this.rpc = new RPCActions(this, this.logger);
+        this.rpcStub = new RpcStubActions(this, this.logger);
+        this.contextApi = new ContextActions(this, this.logger);
+        this.scenario = new ScenarioActions(this, this.logger);
     }
 
     async setup(
@@ -203,13 +201,19 @@ export class PeerTestHarness<
             ...testConfig,
             ...(options?.configOverrides || {})
         };
+
         this.options = {
             logLevel:
                 options?.logLevel ??
                 (config.LOG_LEVEL as LogLevel) ??
                 PeerTestHarness.defaultLogLevel ??
                 "info", // Use global default if not specified
-            timeConfig: options?.timeConfig || {},
+            timeConfig: options?.timeConfig || {
+                p2pTime: 1,
+                agreementTime: 2,
+                chainFallbackTime: 2,
+                evidenceTime: 3
+            },
             channelId:
                 options?.channelId ||
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
@@ -220,7 +224,13 @@ export class PeerTestHarness<
             rpcServiceFactories: (options?.rpcServiceFactories ??
                 {}) as TFactories
         };
-
+        if (
+            !this.options.timeConfig.agreementTime ||
+            this.options.timeConfig.agreementTime <= 1
+        )
+            throw new Error(
+                "agreementTime must be greater than 1 second for reliable test execution"
+            );
         this.syncCoordinator = new SyncCoordinator(
             this.logger,
             this.eventCountsBarrier
@@ -267,6 +277,11 @@ export class PeerTestHarness<
         // If a channel is already known, connect the new peer to it.
         if (this.channelId) {
             await peer.p2pInstance.p2pSigner.connectToChannel(this.channelId);
+            await LocalDiscoveryServer.connectToPeers(
+                peer.stateManager.p2pManager.self,
+                this.channelId,
+                peer.address
+            );
         }
 
         return peer as TestPeer<TFactories>;
@@ -275,8 +290,6 @@ export class PeerTestHarness<
     private async deployContracts(): Promise<void> {
         const mathSMFactory =
             await hre.ethers.getContractFactory("MathStateMachine");
-        const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
-        await mathInstance.waitForDeployment();
 
         this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
             this.options.gasLimit
@@ -498,8 +511,7 @@ export class PeerTestHarness<
      * Mines blocks on a fixed cadence so time progresses even without transactions.
      */
     async startAutoTimeAdvance(options?: {
-        intervalMs?: number;
-        stepSeconds?: number;
+        intervalSeconds?: number;
         disableAutomine?: boolean;
     }): Promise<void> {
         if (this.autoTimeAdvanceInterval) {
@@ -507,12 +519,11 @@ export class PeerTestHarness<
             return;
         }
 
-        const intervalMs = options?.intervalMs ?? 2000;
-        const stepSeconds = options?.stepSeconds ?? 2;
+        const intervalSeconds = options?.intervalSeconds ?? 2;
         const disableAutomine = options?.disableAutomine ?? true;
 
         this.logger.debug(
-            `Starting auto blockchain time advance (every ${intervalMs}ms, step ${stepSeconds}s)`
+            `Starting auto blockchain mine (every ${intervalSeconds}s)`
         );
 
         if (disableAutomine) {
@@ -525,7 +536,15 @@ export class PeerTestHarness<
             this.autoTimeAdvanceTickInProgress = true;
             void retry(
                 async () => {
-                    await time.increase(stepSeconds);
+                    const currentTimestampSeconds = Math.floor(
+                        Date.now() / 1000
+                    );
+
+                    await hre.ethers.provider.send(
+                        "evm_setNextBlockTimestamp",
+                        [currentTimestampSeconds]
+                    );
+                    await hre.ethers.provider.send("evm_mine", []);
 
                     const latestBlock =
                         await hre.ethers.provider.getBlock("latest");
@@ -545,6 +564,7 @@ export class PeerTestHarness<
                         `Auto-mined block ${latestBlock.number} txCount: ${transactionHashes.length}`,
                         {
                             blockNumber: latestBlock.number,
+                            currentTimestampSeconds,
                             timestamp: latestBlock.timestamp,
                             transactionCount: transactionHashes.length,
                             transactionHashes
@@ -559,7 +579,7 @@ export class PeerTestHarness<
             ).finally(() => {
                 this.autoTimeAdvanceTickInProgress = false;
             });
-        }, intervalMs);
+        }, intervalSeconds * 1000);
     }
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
@@ -618,7 +638,7 @@ export class PeerTestHarness<
         this.peers = [];
 
         // Fully reset the context object to ensure no properties leak between tests
-        this.context = {};
+        this.context = new HarnessContext();
 
         // Cleanup discovery server and peer servers
         await LocalDiscoveryServer.cleanup();
@@ -649,75 +669,19 @@ export class PeerTestHarness<
         ]);
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
+    getFilteredOrHonestPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
+        if (peerIndices) {
+            return this.getFilteredPeers(peerIndices);
+        }
+        return this.getHonestPeers();
+    }
     getConfig(): Partial<Config> {
         return this.harnessConfig;
     }
 
-    async waitForForkChange(
-        options: {
-            expectedForkId?: ForkId;
-            excludeForkIds?: ForkId[];
-            peerIndices?: number[];
-            timeoutMs?: number;
-        } = {}
-    ): Promise<boolean> {
-        const {
-            expectedForkId,
-            excludeForkIds = [],
-            peerIndices,
-            timeoutMs = 10000
-        } = options;
-
-        const peersToCheck = peerIndices
-            ? peerIndices.map((i) => this.peers[i])
-            : this.peers;
-
-        const { ZeroHash } = await import("ethers");
-        const excludeSet = new Set([...excludeForkIds, ZeroHash]);
-
-        const condition = () => {
-            const peerForks = peersToCheck
-                .map((p) => p.stateManager.forkId)
-                .filter((fid) => !excludeSet.has(fid));
-
-            if (peerForks.length === 0) return false;
-
-            if (expectedForkId) {
-                const isGood = peerForks.every((fid) => fid === expectedForkId);
-                if (isGood) this.activeForkId = expectedForkId;
-                return isGood;
-            } else {
-                // All peers have moved to same new fork
-                const uniqueForks = new Set(peerForks);
-                const isGood =
-                    uniqueForks.size === 1 &&
-                    peerForks.length === peersToCheck.length;
-                if (isGood) this.activeForkId = peerForks[0];
-                return isGood;
-            }
-        };
-
-        // Check immediately
-        if (condition()) return true;
-
-        // Use event barrier (fires on state changes)
-        try {
-            await this.eventCountsBarrier.waitFor(condition, {
-                timeoutMs,
-                timeoutMessage: `Fork change not detected within ${timeoutMs}ms`
-            });
-            return true;
-        } catch (error) {
-            const barrierError = error as EventBarrierCapturedError;
-            this.logger.error("waitForForkChange waitFor failed", {
-                error,
-                capturedBarrierStack: barrierError.capturedBarrierStack,
-                expectedForkId,
-                peerIndices,
-                timeoutMs
-            });
-            return false;
-        }
+    getLocalDiamond(peerIndex: number) {
+        const peer = this.getPeer(peerIndex);
+        return peer.stateManager.diamondStateMachine.localDiamondContract;
     }
 }
 

@@ -7,6 +7,7 @@ import {
     AssertSnapshotActions,
     AssertSyncActions
 } from ".";
+import { AssertStorageActions } from "./AssertStorageActions";
 
 export class AssertActions {
     public readonly calldata: AssertCalldataActions;
@@ -14,6 +15,7 @@ export class AssertActions {
     public readonly rpc: AssertRPCActions;
     public readonly snapshot: AssertSnapshotActions;
     public readonly sync: AssertSyncActions;
+    public readonly storage: AssertStorageActions;
 
     constructor(
         private harness: PeerTestHarness,
@@ -24,5 +26,6 @@ export class AssertActions {
         this.rpc = new AssertRPCActions(this.harness);
         this.snapshot = new AssertSnapshotActions(this.harness);
         this.sync = new AssertSyncActions(this.harness);
+        this.storage = new AssertStorageActions(this.harness);
     }
 }

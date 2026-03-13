@@ -1,11 +1,12 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { Logger } from "@/utils";
+import { LocalDiscoveryServer, Logger } from "@/utils";
 import { ForkId, Address } from "@/types/types";
 import IsForkDisputedService from "@/rpc/services/isForkDisputedService/IsForkDisputedService";
 import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
 import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
 import { ethers } from "ethers";
+import ATransport from "@/transport/ATransport";
 
 /**
  * Actions for RPC service testing
@@ -17,6 +18,24 @@ export class RPCActions {
         private logger: Logger
     ) {}
 
+    getRemoteRpc(peerIndex: number) {
+        const peer = this.harness.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.remoteRpc;
+    }
+
+    getLocalRpc(peerIndex: number) {
+        const peer = this.harness.getPeer(peerIndex);
+        return peer.stateManager.p2pManager.localRpc;
+    }
+    /**
+     * (alias) Get the transport in fromPeerIndex p2pManager towards toPeerIndex
+     */
+    getTransport(
+        fromPeerIndex: number,
+        toPeerIndex: number
+    ): ATransport | undefined {
+        return this.harness.query.getTransport(fromPeerIndex, toPeerIndex);
+    }
     /**
      * Get IsForkDisputed RPC service for a peer
      */
@@ -40,10 +59,9 @@ export class RPCActions {
         peerIndex: number,
         otherPeerAddress: Address
     ): boolean {
-        const profile = this.harness.stateQuery.getProfile(
-            peerIndex,
-            otherPeerAddress
-        );
+        const profile = this.harness.query.getProfile(peerIndex, {
+            evmAddress: otherPeerAddress
+        });
         return profile?.getIsHandshakeCompleted() ?? false;
     }
 
@@ -91,6 +109,11 @@ export class RPCActions {
         await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
             this.harness.channelId!.toString()
         );
+        await LocalDiscoveryServer.connectToPeers(
+            newPeer.stateManager.p2pManager.self,
+            this.harness.channelId!,
+            newPeer.address
+        );
         await this.waitForHandshakeCompleted(
             observingPeerIndex,
             newPeer.address
@@ -120,7 +143,7 @@ export class RPCActions {
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -149,7 +172,7 @@ export class RPCActions {
         const buildingPeerObj = this.harness.getPeer(buildingPeer);
         const observingPeerObj = this.harness.getPeer(observingPeer);
 
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             observingPeer,
             buildingPeer,
             5000
@@ -174,7 +197,7 @@ export class RPCActions {
     }
 
     async connectPeers(peerIndices: number[]): Promise<void> {
-        await this.harness.networkController.connectPeers(peerIndices);
+        await this.harness.network.connectPeers(peerIndices);
     }
 
     async newPeerJoins(options: {
@@ -193,7 +216,7 @@ export class RPCActions {
         timeOffset: number;
     }): Promise<void> {
         const { fromPeer, toPeer, timeOffset } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -215,7 +238,7 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             fromPeer,
             toPeer,
             5000
@@ -231,7 +254,7 @@ export class RPCActions {
         delaySeconds: number;
     }): Promise<void> {
         const { fromPeer, toPeer, delaySeconds } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -263,38 +286,12 @@ export class RPCActions {
         );
     }
 
-    async sendInvalidSignatureHandshakeResponse(options: {
-        fromPeer: number;
-        toPeer: number;
-    }): Promise<void> {
-        const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
-            toPeer,
-            fromPeer,
-            5000
-        );
-
-        const fromPeerObj = this.harness.getPeer(fromPeer);
-        const initiatingService = this.getInitHandshakeService(toPeer);
-
-        const wrongMessage = ethers.randomBytes(32);
-        const invalidSignature =
-            await fromPeerObj.signer.signMessage(wrongMessage);
-
-        const rpcHandler = initiatingService.createRPCMethods(transport);
-        await rpcHandler.onInitHandshakeResponse(
-            invalidSignature,
-            Clock.getTimeInSeconds(),
-            fromPeerObj.stateManager.p2pManager.preferredTransport
-        );
-    }
-
     async sendUnsolicitedHandshakeResponse(options: {
         fromPeer: number;
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -327,7 +324,7 @@ export class RPCActions {
         targetPeer: number;
     }): Promise<void> {
         const { peerIndex, targetPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             peerIndex,
             targetPeer,
             5000
@@ -342,7 +339,7 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             toPeer,
             fromPeer,
             5000
@@ -375,7 +372,7 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.stateQuery.waitForPeerTransport(
+        const transport = await this.harness.query.waitForPeerTransport(
             fromPeer,
             toPeer,
             5000

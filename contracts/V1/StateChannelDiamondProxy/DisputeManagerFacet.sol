@@ -8,7 +8,9 @@ import "./UtilityFacet.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public {
-        _uploadDispute(disputeConfirmation, false);
+        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
+        require(!dispute.postedAuditingData, ErrorDisputePostedAuditingDataMismatch());
+        _uploadDispute(disputeConfirmation);
     }
 
     function uploadDisputeWithCalldata(
@@ -16,9 +18,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeAuditingData memory disputeAuditingData
     ) public {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
+        require(dispute.postedAuditingData, ErrorDisputePostedAuditingDataMismatch());
         bytes32 disputeAuditingDataHash = keccak256(abi.encode(disputeAuditingData));
         require(dispute.input.disputeAuditingDataHash == disputeAuditingDataHash, ErrorAuditingDataHashMismatch());
-        (bool isFinal, uint256 creationTimestamp) = _uploadDispute(disputeConfirmation, true);
+        (bool isFinal, uint256 creationTimestamp) = _uploadDispute(disputeConfirmation);
 
         emit DisputeCommittedWithAuditingData(
             dispute.input.channelId,
@@ -39,7 +42,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
     // ********************** Internal/private functions
 
-    function _uploadDispute(DisputeConfirmation memory disputeConfirmation, bool isAuditingCalldataProvided)
+    function _uploadDispute(DisputeConfirmation memory disputeConfirmation)
         internal
         returns (bool isFinal, uint256 disputeWindowCreationTimestamp)
     {
@@ -55,9 +58,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         bytes32 forkId = _getDisputeFork(dispute);
         DisputeWindow storage disputeWindow = disputeWindowMap[forkId];
         bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
-        if (!isAuditingCalldataProvided && !isThresholdFinal) {
-            require(!_isAuditingCalldataRequired(disputeConfirmation), RaceConditionDisputeAuditingRequired());
-        }
 
         //check if dispute window is created/opened for the disputed fork, otherwise create/open it
         if (disputeWindow.evidence.creationTimestamp == 0) {
@@ -98,7 +98,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         }
         disputeWindow.evidence.hasPosted.push(dispute.input.disputer); //disputer has posted the dispute
 
-        if (!isAuditingCalldataProvided) {
+        if (!dispute.postedAuditingData) {
             emit DisputeCommitted(
                 dispute.input.channelId,
                 disputeConfirmation,
@@ -163,20 +163,5 @@ contract DisputeManagerFacet is StateChannelCommon {
             thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
         );
         return isThresholdFinal;
-    }
-
-    function _isAuditingCalldataRequired(DisputeConfirmation memory disputeConfirmation)
-        internal
-        view
-        returns (bool isRequired)
-    {
-        Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        address[] memory pendingParticipants = getPendingParticipants(dispute.input.channelId);
-        if (disputeConfirmation.signatures.length < pendingParticipants.length) return true;
-
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            pendingParticipants, disputeConfirmation.signedDispute.encodedDispute, disputeConfirmation.signatures
-        );
-        return !isThresholdFinal;
     }
 }

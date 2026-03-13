@@ -1,17 +1,21 @@
 import type { ForkId, Hash } from "@/types/types";
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { ZeroHash } from "ethers";
+import StateSnapshot from "@/models/StateSnapshot";
 
 export class AssertSyncActions {
     constructor(private readonly harness: PeerTestHarness) {}
 
-    async peersInSync(options?: {
+    async peersInSyncWait(options?: {
         expectedStateMachineStateHash?: Hash;
+        blockHashInStorage?: Hash;
         peerIndices?: number[];
         timeout?: number;
     }): Promise<void> {
         const {
             expectedStateMachineStateHash,
+            blockHashInStorage,
             peerIndices,
             timeout = 10000
         } = options || {};
@@ -24,24 +28,19 @@ export class AssertSyncActions {
             throw new Error("No active fork ID - cannot wait for sync");
         }
 
-        await this.harness.syncCoordinator.waitForPeersToSync(
-            peers,
-            forkId,
-            timeout
-        );
+        await this.harness.syncCoordinator.waitForPeersToSync(peers, forkId, {
+            timeoutMs: timeout,
+            blockHashInStorage
+        });
 
         const firstPeerIndex = peers[0].index;
         const firstPeerState =
-            this.harness.stateQuery.getLatestStateMachineStateHash(
-                firstPeerIndex
-            );
+            this.harness.query.getLatestStateMachineStateHash(firstPeerIndex);
 
         for (let i = 1; i < peers.length; i++) {
             const peerIndex = peers[i].index;
             const peerState =
-                this.harness.stateQuery.getLatestStateMachineStateHash(
-                    peerIndex
-                );
+                this.harness.query.getLatestStateMachineStateHash(peerIndex);
 
             expect(peerState).to.deep.equal(
                 firstPeerState,
@@ -62,7 +61,7 @@ export class AssertSyncActions {
         peerIndices?: number[];
     }): Promise<void> {
         const { expectedHeight, peerIndices } = options;
-        const peers = this.harness.getFilteredPeers(peerIndices);
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         if (peers.length === 0) {
             throw new Error("No peers available to check block height");
         }
@@ -86,34 +85,126 @@ export class AssertSyncActions {
         }
     }
 
-    async forkChanged(options: {
-        originalForkId: ForkId;
-        timeoutMs?: number;
-        minHonestPeers?: number;
-    }): Promise<void> {
+    forkChanged(options?: {
+        originalForkId?: ForkId;
+        expectedForkId?: ForkId;
+        excludeForkIds?: ForkId[];
+        honestPeerIndices?: number[];
+    }) {
         const {
-            originalForkId,
-            timeoutMs = 10000,
-            minHonestPeers = 3
-        } = options;
+            originalForkId = this.harness.context.originalForkId ||
+                this.harness.activeForkId!,
+            expectedForkId,
+            excludeForkIds = [],
+            honestPeerIndices
+        } = options || {};
 
-        const { ZeroHash } = await import("ethers");
-        const forkChanged = await this.harness.waitForForkChange({
-            excludeForkIds: [originalForkId, ZeroHash],
-            timeoutMs
-        });
+        const peers = this.harness.getFilteredOrHonestPeers(honestPeerIndices);
 
-        if (!forkChanged) {
-            const peerForks = this.harness.peers
-                .map((p) => p.stateManager.forkId)
-                .filter(
-                    (forkId) => forkId !== ZeroHash && forkId !== originalForkId
-                );
-            const peersOnNewFork = peerForks.length;
+        const excludeSet = new Set([
+            ...excludeForkIds,
+            ZeroHash,
+            originalForkId
+        ]);
+
+        const peerForks = peers
+            .map((p) => p.stateManager.forkId)
+            .filter((fid) => !excludeSet.has(fid));
+
+        if (peerForks.length != peers.length)
             throw new Error(
-                `Fork did not change within ${timeoutMs}ms. Expected at least ${minHonestPeers} peers on new fork, got ${peersOnNewFork}.`
+                `Not all peers have moved to a new fork - expected ${peers.length}, actual ${peerForks.length}`
+            );
+
+        if (expectedForkId) {
+            const isGood = peerForks.every((fid) => fid === expectedForkId);
+            if (!isGood)
+                throw new Error(
+                    `Expected all peers to move to fork ${expectedForkId}, but found: ${JSON.stringify(peerForks)}`
+                );
+            return;
+        } else {
+            // All peers have moved to same new fork
+            const uniqueForks = new Set(peerForks);
+            const isGood = uniqueForks.size === 1;
+            if (!isGood)
+                throw new Error(
+                    `Expected all peers to move to the same new fork, but found: ${JSON.stringify(peerForks)}`
+                );
+            return;
+        }
+    }
+    async forkChangedWait(options?: {
+        originalForkId?: ForkId;
+        expectedForkId?: ForkId;
+        excludeForkIds?: ForkId[];
+        honestPeerIndices?: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { timeoutMs = 5000 } = options || {};
+        const condition = () => {
+            try {
+                this.forkChanged(options);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        };
+
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs,
+            timeoutMessageFn: () => {
+                let errorMsg = `Fork change not detected within ${timeoutMs}ms`;
+                try {
+                    this.forkChanged(options);
+                } catch (error) {
+                    errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
+                }
+                return errorMsg;
+            }
+        });
+    }
+
+    async onChainSnapshotAndPeersSameFork(): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active forkId");
+        }
+        const onChainSnapshot = StateSnapshot.from(
+            await this.harness.channelManager.getStateSnapshot(
+                this.harness.channelId
+            )
+        );
+        if (onChainSnapshot.forkID !== forkId) {
+            throw new Error(
+                `Expected on-chain snapshot to be on same fork as peers (${forkId}), but found ${onChainSnapshot.forkID}`
             );
         }
+    }
+
+    async onChainSnapshotAndPeersSameForkWait(options?: {
+        timeoutMs?: number;
+    }) {
+        const condition = async () => {
+            try {
+                await this.onChainSnapshotAndPeersSameFork();
+                return true;
+            } catch (error) {
+                return false;
+            }
+        };
+        await this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs: options?.timeoutMs,
+            timeoutMessageFn: () => {
+                let errorMsg = "";
+                try {
+                    this.onChainSnapshotAndPeersSameFork();
+                } catch (error) {
+                    errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
+                }
+                return errorMsg;
+            }
+        });
     }
 
     forkUnchanged(): void {
@@ -139,14 +230,12 @@ export class AssertSyncActions {
     }
 
     async onlyHonestPeersInSync(): Promise<void> {
-        const honestIndices = this.harness.context.honestPeerIndices;
-        if (!honestIndices) {
-            throw new Error(
-                "honestPeerIndices not set - resolve dispute context first"
-            );
+        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
+        if (!honestIndices || honestIndices.length === 0) {
+            throw new Error("No honest peers found");
         }
 
-        await this.peersInSync({ peerIndices: honestIndices });
+        await this.peersInSyncWait({ peerIndices: honestIndices });
     }
 
     async maliciousPeerExcluded(): Promise<void> {
@@ -157,7 +246,7 @@ export class AssertSyncActions {
             );
         }
 
-        const nextWriter = await this.harness.stateQuery.getNextPeerToWrite();
+        const nextWriter = await this.harness.query.getNextPeerToWrite();
         if (maliciousIndices.includes(nextWriter.index)) {
             throw new Error(
                 `Malicious peer ${nextWriter.index} should not receive next turn, but it did`

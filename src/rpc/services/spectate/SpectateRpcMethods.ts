@@ -253,12 +253,12 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             }
 
             // 2.9) verify stateProof proves latest state -> abort otherwise
-            const { isValid } =
-                await diamondStateMachine.localDiamondContract.verifyMilestones(
+            const isValid =
+                await diamondStateMachine.localDiamondContract.verifyMilestones.staticCall(
                     syncPayload.latestForkGenesisSnapshot.forkId,
                     syncPayload.stateProof.milestones,
                     syncPayload.milestoneSnapshots,
-                    syncPayload.latestForkGenesisSnapshot.snapshotData
+                    syncPayload.latestForkGenesisSnapshot
                 );
             if (!isValid) return this.service.abort(peerAddress);
 
@@ -289,7 +289,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     latestFinalizedSnapshot.snapshotData,
                     syncPayload.latestFinalizedEncodedState
                 );
-            if (!isValidBalance) this.service.abort(peerAddress);
+            if (!isValidBalance) return this.service.abort(peerAddress);
 
             // 3) Finally - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
             const isMulticallSuccess =
@@ -323,8 +323,16 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 })
             );
             for (const bc of blockConfirmations) {
-                const isOk = await stateManager.onBlockConfirmation(bc);
-                if (!isOk) this.service.abort(peerAddress);
+                try {
+                    const isOk = await stateManager.onBlockConfirmation(bc);
+                    if (!isOk) return this.service.abort(peerAddress);
+                } catch (e) {
+                    this.service.logger.error(
+                        `Error processing block confirmation during spectate sync`,
+                        { error: e }
+                    );
+                    return this.service.abort(peerAddress);
+                }
             }
             this.service.logger.debug(
                 `Spectate sync - next block height after pipeline ${stateManager.storage.blocks.getNextBlockHeight(finalForkId)}`
@@ -346,8 +354,8 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 "Spectator successfully synced to latest proven state"
             );
         } catch (e) {
-            this.service.logger.debug(e);
-            this.service.abort(peerAddress);
+            this.service.logger.warn(e);
+            return this.service.abort(peerAddress);
         }
     }
 }

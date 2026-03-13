@@ -21,31 +21,31 @@ describe("E2E: State Snapshots", function () {
 
     it("should post updated state snapshot on-chain after 3 transitions", async function () {
         const h = TestSession.getHarness();
-        await h.channel.start(3);
+        await h.lifecycle.start(3);
 
         await h.transition.advanceState({ count: 1 });
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
         await h.transition.advanceState({ count: 1 });
 
-        await h.assert.sync.peersInSync();
+        await h.assert.sync.peersInSyncWait();
         h.event.resetEventSpies();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
         await h.contextApi.capturePrePostSnapshotContext();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.transition.postSnapshot();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
-        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
             10000,
             { mode: "atLeast" }
         );
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.snapshotMatchesLocal();
     });
 
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdate({
+        await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached({
             timeConfig: forkTimeConfig
         });
 
@@ -55,20 +55,21 @@ describe("E2E: State Snapshots", function () {
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
 
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
+        await await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         await h.contextApi.capturePrePostSnapshotContext();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
+        h.event.resetEventSpies();
         await h.transition.postSnapshot();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
-        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
 
-        const honest = h.context.honestPeerIndices || [];
+        const honest = h.getHonestPeers().map((p) => p.index);
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             honest.map((peerId) => ({ peerId, expectedCount: 1 })),
             10000,
             { mode: "atLeast" }
         );
-
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.snapshotMatchesLocal();
         await h.assert.sync.maliciousPeerExcluded();
     });
@@ -76,7 +77,7 @@ describe("E2E: State Snapshots", function () {
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
         const h = TestSession.getHarness();
 
-        await h.scenario.fourPeerDisputeResolution({
+        await h.scenario.fourPeersDisputeResolution({
             timeConfig: forkTimeConfig
         });
         await h.transition.fromHonestPeersOnly((c) => c.add(1));
@@ -85,21 +86,21 @@ describe("E2E: State Snapshots", function () {
 
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
         await h.contextApi.capturePrePostSnapshotContext();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.transition.postSnapshot();
-        await h.assert.snapshot.channelWithdrawalsMatchSnapshot();
-        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
 
-        const honest = h.context.honestPeerIndices || [];
+        const honest = h.getHonestPeers().map((p) => p.index);
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
             honest.map((peerId) => ({ peerId, expectedCount: 1 })),
             10000,
             { mode: "atLeast" }
         );
-        await h.assert.snapshot.onChainBalanceMatchesSnapshot();
+        await h.assert.snapshot.withdrawalDeltaMatchesExpected();
+        await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.onChainSnapshotOnFork();
+        await h.assert.snapshot.snapshotMatchesLocal();
         await h.assert.sync.maliciousPeerExcluded();
     });
 });

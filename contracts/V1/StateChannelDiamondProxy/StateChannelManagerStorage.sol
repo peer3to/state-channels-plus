@@ -22,6 +22,7 @@ contract StateChannelManagerStorage {
     address disputeFraudProofFacetAddress;
     address stateSnapshotFacetAddress;
     address joinChannelFacetAddress;
+    address stateProofFacetAddress;
     address consumerFacetAddress;
     address utilityFacetAddress;
 

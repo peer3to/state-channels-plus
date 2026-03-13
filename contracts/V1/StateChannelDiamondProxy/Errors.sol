@@ -40,6 +40,7 @@ error ErrorDisputeChallengePeriodExpired();
 error ErrorDisputeAlreadyPosted();
 error ErrorCantParticipateInDispute();
 error ErrorAuditingDataHashMismatch();
+error ErrorDisputePostedAuditingDataMismatch();
 
 //Reduce errors
 error ErrorNoDisputesProvided();

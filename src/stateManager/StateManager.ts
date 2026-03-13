@@ -84,9 +84,9 @@ import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { TransactionResponse } from "ethers";
+import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
 const NULL = "0x00";
-const LOG_TAG = "[STATE MANAGER]";
 
 type ParticipantChanges = {
     left: Set<Address>;
@@ -643,83 +643,90 @@ class StateManager {
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
         await this.mutex.lock();
-        const normalizedGenesisTimestamp = Number(stateSnapshot.timestamp);
+        try {
+            const normalizedGenesisTimestamp = Number(stateSnapshot.timestamp);
 
-        // Persist state snapshot (as a model)
-        const latestSnapshot = StateSnapshot.from(stateSnapshot);
-        this.storage.stateSnapshots.storeStateSnapshot(latestSnapshot);
+            // Persist state snapshot (as a model)
+            const latestSnapshot = StateSnapshot.from(stateSnapshot);
+            this.storage.stateSnapshots.storeStateSnapshot(latestSnapshot);
 
-        // Persist outbound message block if provided
-        if (outboundMessageBlock) {
-            this.storage.outboundMessages.store(outboundMessageBlock);
-        }
+            // Persist outbound message block if provided
+            if (outboundMessageBlock) {
+                this.storage.outboundMessages.store(outboundMessageBlock);
+            }
 
-        // Persist state machine state (keyed by snapshot hash when available)
-        this.storage.stateMachineStates.storeStateMachineState(encodedState, {
-            hash: stateSnapshot.snapshotData.stateMachineStateHash
-        });
+            // Persist state machine state (keyed by snapshot hash when available)
+            this.storage.stateMachineStates.storeStateMachineState(
+                encodedState,
+                {
+                    hash: stateSnapshot.snapshotData.stateMachineStateHash
+                }
+            );
 
-        // Update local EVM/state machine
-        await this.diamondStateMachine.setState(encodedState);
+            // Update local EVM/state machine
+            await this.diamondStateMachine.setState(encodedState);
 
-        // Update the forkId to the new fork
-        const forkId = stateSnapshot.forkId;
-        this.forkId = forkId;
+            // Update the forkId to the new fork
+            const forkId = stateSnapshot.forkId;
+            this.forkId = forkId;
 
-        const participants = await this.diamondStateMachine.getParticipants();
-        const isParticipant = participants.includes(this.signerAddress);
-        if (isParticipant) {
-            this.setStatus(Status.PARTICIPATING);
-        } else {
-            this.setStatus(Status.SYNCED);
-        }
+            const participants =
+                await this.diamondStateMachine.getParticipants();
+            const isParticipant = participants.includes(this.signerAddress);
+            if (isParticipant) {
+                this.setStatus(Status.PARTICIPATING);
+            } else {
+                this.setStatus(Status.SYNCED);
+            }
 
-        const nextToWrite = await this.diamondStateMachine.getNextToWrite();
+            const nextToWrite = await this.diamondStateMachine.getNextToWrite();
 
-        const nextTransactionCnt = this.storage.blocks.getNextBlockHeight(
-            this.forkId
-        );
+            const nextTransactionCnt = this.storage.blocks.getNextBlockHeight(
+                this.forkId
+            );
 
-        const timeAdjustment =
-            normalizedGenesisTimestamp - Clock.getTimeInSeconds();
-        const turnTime = this.timeConfig.p2pTime;
-        const timeoutWaitTime =
-            this.getTimeoutWaitTimeSeconds() + timeAdjustment;
-        this.logger.info(
-            `setLatestState - schedule timeoutNext in (${timeoutWaitTime}s)`,
-            {
+            const timeAdjustment =
+                normalizedGenesisTimestamp - Clock.getTimeInSeconds();
+            const turnTime = this.timeConfig.p2pTime;
+            const timeoutWaitTime =
+                this.getTimeoutWaitTimeSeconds() + timeAdjustment;
+            this.logger.info(
+                `setLatestState - schedule timeoutNext in (${timeoutWaitTime}s)`,
+                {
+                    nextToWrite,
+                    turnTime,
+                    timeAdjustment,
+                    timeoutWaitTime,
+                    genesisTimestamp: normalizedGenesisTimestamp
+                }
+            );
+            this.timeoutManager.scheduleTask(
+                () =>
+                    this.tryTimeoutParticipant(
+                        forkId,
+                        nextTransactionCnt,
+                        nextToWrite
+                    ),
+                timeoutWaitTime * 1000,
+                `participantTimeout(setState) - fork ${forkId} - block ${nextTransactionCnt} - participant ${nextToWrite}`
+            );
+
+            this.timeoutManager.scheduleTask(
+                () => this.tryExecuteFromQueue(),
+                0,
+                "tryExecuteFromQueue"
+            );
+
+            this.p2pEventHooks.onSetState?.();
+            this.p2pEventHooks.onTurn?.(
                 nextToWrite,
                 turnTime,
-                timeAdjustment,
-                timeoutWaitTime,
-                genesisTimestamp: normalizedGenesisTimestamp
-            }
-        );
-        this.timeoutManager.scheduleTask(
-            () =>
-                this.tryTimeoutParticipant(
-                    forkId,
-                    nextTransactionCnt,
-                    nextToWrite
-                ),
-            timeoutWaitTime * 1000,
-            `participantTimeout(setState) - fork ${forkId} - block ${nextTransactionCnt} - participant ${nextToWrite}`
-        );
-
-        this.timeoutManager.scheduleTask(
-            () => this.tryExecuteFromQueue(),
-            0,
-            "tryExecuteFromQueue"
-        );
-
-        this.p2pEventHooks.onSetState?.();
-        this.p2pEventHooks.onTurn?.(
-            nextToWrite,
-            turnTime,
-            this.timeConfig.agreementTime,
-            this.timeConfig.chainFallbackTime
-        );
-        this.mutex.unlock();
+                this.timeConfig.agreementTime,
+                this.timeConfig.chainFallbackTime
+            );
+        } finally {
+            this.mutex.unlock();
+        }
     }
 
     public async setGenesisState(
@@ -769,6 +776,7 @@ class StateManager {
             onChainTimestamp?: Timestamp;
             validationStrategy?: AValidationStrategy;
             senderAddress?: string;
+            skipMutex?: boolean;
         }
     ): Promise<boolean> {
         const strategy =
@@ -776,7 +784,9 @@ class StateManager {
             this.getStrategyByStatus(this.status);
 
         try {
-            await this.mutex.lock();
+            if (!options?.skipMutex) {
+                await this.mutex.lock();
+            }
 
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
@@ -957,6 +967,38 @@ class StateManager {
                 );
             }
 
+            // Union on the participant set -> check signers
+            const allowedSigners = new Set<Address>([
+                ...previousStateSnapshot.snapshotData.participants,
+                ...stateSnapshot.snapshotData.participants
+            ]);
+            const unexpectedSigners = difference(
+                block.allSignerAddresses,
+                allowedSigners
+            );
+
+            if (unexpectedSigners.size > 0) {
+                validationResult =
+                    await strategy.notAllSingersAreParticipants(block);
+                this.logger.warn(
+                    "onBlockConfirmation - signer not in previous/resulting participant union",
+                    {
+                        strategy: strategy.name,
+                        validationResult:
+                            BlockValidationResult[validationResult],
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.storage
+                        ),
+                        unexpectedSigners: Array.from(unexpectedSigners),
+                        allowedSigners: Array.from(allowedSigners)
+                    }
+                );
+                return await strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
             // TODO - apply strategy here too
             // All validations passed - proceed with success action
             await this.success(
@@ -965,7 +1007,10 @@ class StateManager {
                 stateAfterInbound,
                 successCallback,
                 participantChanges,
-                outboundMessageBlock
+                {
+                    outboundMessageBlock,
+                    strategy
+                }
             );
             const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
             this.logger.info(
@@ -989,7 +1034,9 @@ class StateManager {
             });
             throw error;
         } finally {
-            this.mutex.unlock();
+            if (!options?.skipMutex) {
+                this.mutex.unlock();
+            }
         }
     }
 
@@ -1134,7 +1181,9 @@ class StateManager {
                 stateAfterInbound,
                 successCallback,
                 participantChanges,
-                outboundMessageBlock
+                {
+                    outboundMessageBlock
+                }
             );
 
             const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
@@ -1157,7 +1206,10 @@ class StateManager {
             return;
         }
         // If not everyone has signed, do the on-chain post
-        const participants = this.storage.getParticipants(block.coordinates);
+        const participants = this.storage.getParticipantsUnion(
+            block.coordinates,
+            block.stateSnapshotHash
+        );
 
         // TODO - this can be race conditioned and we could be granted extra time, but we don't care to check that on-chain and will assume we're not granted extra time for this
         const previousRelevantTimestamp =
@@ -1201,18 +1253,23 @@ class StateManager {
                         signer: this.signer,
                         tx: txResponse!,
                         handlers: {
-                            RaceConditionBlockCalldataTimestampTooLate: () => {
-                                const localErrorTimestamp =
-                                    Clock.getTimeInSeconds();
-                                this.logger.warn(
-                                    "RaceConditionBlockCalldataTimestampTooLate",
-                                    {
-                                        localErrorTimestamp,
-                                        maxTimestamp,
-                                        block: blockMetadata
-                                    }
-                                );
-                            }
+                            RaceConditionBlockCalldataTimestampTooLate:
+                                async () => {
+                                    const localErrorTimestamp =
+                                        Clock.getTimeInSeconds();
+                                    const currentOnChainTimestamp =
+                                        await Clock.getBlockchainTime();
+                                    this.logger.warn(
+                                        "RaceConditionBlockCalldataTimestampTooLate",
+                                        {
+                                            localErrorTimestamp,
+                                            maxTimestamp,
+                                            currentOnChainTimestamp,
+                                            previousRelevantTimestamp,
+                                            block: blockMetadata
+                                        }
+                                    );
+                                }
                         }
                     });
                     //
@@ -1245,14 +1302,55 @@ class StateManager {
         ];
 
         if (callData.length > 0) {
+            this.logger.info(
+                `Posting state snapshot on-chain for fork ${LoggerUtils.formatHash(forkId)}`,
+                {
+                    expectedSnapshot: expectedSnapshot
+                        ? LoggerUtils.getSnapshotMetadata(expectedSnapshot)
+                        : "ERROR N/A",
+                    forkData: {
+                        snapshot: forkData?.expectedSnapshot
+                            ? LoggerUtils.getSnapshotMetadata(
+                                  forkData.expectedSnapshot
+                              )
+                            : "N/A",
+                        outboundMessageBlocks: forkData?.outboundMessageBlocks
+                            ? forkData.outboundMessageBlocks.map(
+                                  LoggerUtils.getMessageBlockMetadata
+                              )
+                            : "N/A"
+                    },
+                    sameForkData: {
+                        snapshot: sameForkData?.expectedSnapshot
+                            ? LoggerUtils.getSnapshotMetadata(
+                                  sameForkData.expectedSnapshot
+                              )
+                            : "N/A",
+                        outboundMessageBlocks:
+                            sameForkData?.outboundMessageBlocks
+                                ? sameForkData.outboundMessageBlocks.map(
+                                      LoggerUtils.getMessageBlockMetadata
+                                  )
+                                : "N/A"
+                    }
+                }
+            );
+            let transactionResponse: TransactionResponse;
             const txResponsePromise = this.stateChannelManagerContract
                 .multicall(callData)
                 .then((txResponse) => {
+                    transactionResponse = txResponse;
                     const txReceiptPromise = txResponse.wait();
                     DetachedPromises.collect(txReceiptPromise);
                     return txReceiptPromise;
                 })
                 .catch((error) => {
+                    const custom = tryHandleEvmError(error, {
+                        tx: transactionResponse!,
+                        logger: this.logger,
+                        signer: this.signer,
+                        forkId
+                    });
                     this.logger.error("Error posting state snapshot", {
                         error:
                             error instanceof Error
@@ -1400,7 +1498,6 @@ class StateManager {
         | {
               callData: string[];
               expectedSnapshot: StateSnapshot;
-              genesisSnapshot: StateSnapshot;
               outboundMessageBlocks: MessageBlockStruct[];
           }
         | undefined
@@ -1521,7 +1618,7 @@ class StateManager {
                             this.storage.disputes.getDispute(commitment);
                         if (!dispute) {
                             throw new Error(
-                                `Missing Data Availability for dispute commitment ${commitment}`
+                                `Missing Dispute in storage for dispute commitment ${commitment}`
                             );
                         }
                         return dispute;
@@ -1670,7 +1767,6 @@ class StateManager {
             return {
                 callData,
                 expectedSnapshot: genesisSnapshot,
-                genesisSnapshot,
                 outboundMessageBlocks
             };
         } catch (error) {
@@ -2316,10 +2412,16 @@ class StateManager {
         encodedStateMachineState: Bytes,
         successCallback: () => void,
         participantChanges: ParticipantChanges,
-        outboundMessageBlock?: MessageBlockStruct
+        options?: {
+            outboundMessageBlock?: MessageBlockStruct;
+            strategy?: AValidationStrategy;
+        }
     ): Promise<void> {
-        // step 1 - Confirm and Gossip
-        if (await this.shouldSignBlock(block)) {
+        // step 1 - Confirm and Gossip // TODO - quick hack - cleaner code later
+        if (
+            (await this.shouldSignBlock(block)) &&
+            !(options?.strategy instanceof DisputeValidationStrategy)
+        ) {
             // Sign the block and add our signature to confirmation signatures
             const signature = await block.sign(this.signer);
             this.logger.debug("Signing block", {
@@ -2327,14 +2429,19 @@ class StateManager {
             });
             block.expandSignatures([signature]);
         }
-        // always broadcast if participating
-        if (this.status === Status.PARTICIPATING)
+        // always broadcast if participating // TODO - quick hack - cleaner code later
+        if (
+            this.status === Status.PARTICIPATING &&
+            !(options?.strategy instanceof DisputeValidationStrategy)
+        )
             this.p2pManager.remoteRpc.stateTransitionService
                 .onBlockConfirmation(block.blockConfirmationStruct)
                 .broadcast();
 
-        // step 2 - persist the block
-        this.storage.blocks.storeBlock(block);
+        // step 2 - persist the block // TODO - quick hack - cleaner code later
+        this.storage.blocks.storeBlock(block, {
+            justPersist: options?.strategy instanceof DisputeValidationStrategy
+        });
 
         // step 3 - persist the state snapshot
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
@@ -2346,9 +2453,12 @@ class StateManager {
         );
 
         // step 5 - persist the outbound message blocks if any
-        if (outboundMessageBlock) {
-            this.storage.outboundMessages.store(outboundMessageBlock);
+        if (options?.outboundMessageBlock) {
+            this.storage.outboundMessages.store(options.outboundMessageBlock);
         }
+
+        // TODO - quick hack - cleaner code later
+        if (options?.strategy instanceof DisputeValidationStrategy) return;
 
         // step 6 - persist participant change points
         if (
@@ -2366,7 +2476,7 @@ class StateManager {
             block,
             stateSnapshot,
             participantChanges,
-            outboundMessageBlock
+            options?.outboundMessageBlock
         );
 
         // step 8 - success callback
@@ -2485,7 +2595,10 @@ class StateManager {
         forkId: ForkId,
         blockHeight: BlockHeight,
         blockAuthor: Address,
-        blockCommitment: Hash
+        blockCommitment: Hash,
+        options?: {
+            skipMutex?: boolean;
+        }
     ): Promise<UpdatedBlockWithCalldata | undefined> {
         try {
             // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
@@ -2534,13 +2647,15 @@ class StateManager {
             };
             const timestamp = Number(logs[0].args.timestamp);
 
-            // this will also run BlockConfirmation pipeline which will also handle storage updates if needed
             await this.eventHandler.onBlockCalldataPosted(
                 this.channelId,
                 blockCommitment,
                 blockAuthor,
                 signedBlock,
-                timestamp
+                timestamp,
+                {
+                    skipMutex: options?.skipMutex
+                }
             );
 
             const updatedBlock = this.storage.blocks.getBlock(
@@ -2554,7 +2669,7 @@ class StateManager {
                 updatedBlock: updatedBlock
             };
         } catch (error) {
-            console.error(`${LOG_TAG}-fetchBlockCommitmentCalldata:`, error);
+            this.logger.error(`Error fetchBlockCommitmentCalldata:`, { error });
             return undefined;
         }
     }
@@ -2562,7 +2677,10 @@ class StateManager {
     async fetchUpdatedOnChainBlock(
         forkId: ForkId,
         blockHeight: BlockHeight,
-        blockAuthor: Address
+        blockAuthor: Address,
+        options?: {
+            skipMutex?: boolean;
+        }
     ): Promise<Block | undefined> {
         try {
             const commitmentResult =
@@ -2580,11 +2698,12 @@ class StateManager {
                     forkId,
                     blockHeight,
                     blockAuthor,
-                    commitmentResult.blockCalldataCommitment
+                    commitmentResult.blockCalldataCommitment,
+                    options
                 )
             )?.updatedBlock;
         } catch (error) {
-            console.error(`${LOG_TAG}-fetchUpdatedOnChainBlock:`, error);
+            this.logger.error(`Error fetchUpdatedOnChainBlock:`, { error });
             return undefined;
         }
     }
