@@ -13,7 +13,9 @@ const config: HardhatUserConfig = {
     defaultNetwork: "hardhat",
     networks: {
         hardhat: {
-            allowUnlimitedContractSize: true
+            allowUnlimitedContractSize: true,
+            gas: "auto",
+            initialDate: new Date().toISOString()
         },
         localhost: {
             url: "http://127.0.0.1:8545"
@@ -22,11 +24,9 @@ const config: HardhatUserConfig = {
             url: "http://srbpi.duckdns.org:8545"
         }
     },
-    mocha: {
-        require: ["test/setup.ts"]
-    },
+    mocha: {},
     solidity: {
-        version: "0.8.30",
+        version: "0.8.34",
         settings: {
             viaIR: true, // Enable the via-IR pipeline
             optimizer: {

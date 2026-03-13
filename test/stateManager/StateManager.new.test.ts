@@ -400,6 +400,8 @@ describe("StateManager - Refactored", () => {
 
             // Stub prepareUpdateSnapshotSameFork to return valid data directly
             sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
+                callData: ["0xmockedcalldata"],
+                expectedSnapshot: realSnapshot,
                 milestoneProofs: [{ blockConfirmations: [] }],
                 milestoneSnapshots: [realSnapshot],
                 outboundMessageBlocks: []
@@ -410,8 +412,8 @@ describe("StateManager - Refactored", () => {
 
             // Assert
             expect(
-                (stateManager.stateChannelManagerContract as any)
-                    .updateStateSnapshotSameFork.called
+                (stateManager.stateChannelManagerContract as any).multicall
+                    .called
             ).to.be.true;
         });
 
@@ -520,15 +522,20 @@ describe("StateManager - Refactored", () => {
 
             // Mock prepareUpdateSnapshotSameFork to return valid data
             sinon.stub(stateManager, "prepareUpdateSnapshotSameFork").resolves({
+                callData: ["0xmockedcalldata"],
+                expectedSnapshot: stateSnapshot({
+                    forkId: defaults.forkId,
+                    blockHeight: Number(defaults.onChainBlockHeight)
+                }),
                 milestoneProofs: [],
                 milestoneSnapshots: [],
                 outboundMessageBlocks: []
             });
 
             // Mock contract to throw error
-            (
-                stateManager.stateChannelManagerContract as any
-            ).updateStateSnapshotSameFork.rejects(new Error("Contract error"));
+            (stateManager.stateChannelManagerContract as any).multicall.rejects(
+                new Error("Contract error")
+            );
 
             // Act & Assert
             await expect(

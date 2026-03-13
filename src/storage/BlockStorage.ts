@@ -5,6 +5,7 @@ type CoordinateKey = string;
 type StoreOptions = {
     hash?: Hash;
     coordinates?: BlockCoordinates;
+    justPersist?: boolean;
 };
 
 export enum SortOrder {
@@ -295,8 +296,10 @@ export class BlockStorage {
             this.hashToBlockMap.set(blockHash, block);
             this.coordinatesToBlockMap.set(coordinateKey, block);
 
-            // Update max height
-            this._updateMaxHeight(coordinates.forkId, coordinates.height);
+            // Update max height unless this is a persistence-only operation
+            if (!options?.justPersist) {
+                this._updateMaxHeight(coordinates.forkId, coordinates.height);
+            }
 
             return blockHash;
         }

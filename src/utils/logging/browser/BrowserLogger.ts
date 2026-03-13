@@ -9,6 +9,7 @@ import { BrowserLogUploader } from "../LogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
 import type { LogStore } from "../logStore";
 import { BROWSER_PEER_COLORS, BROWSER_LEVEL_CSS } from "./colors";
+import { formatTimeFromSeconds } from "../formatUtils";
 
 export class BrowserLogger extends Logger {
     constructor(
@@ -16,7 +17,8 @@ export class BrowserLogger extends Logger {
         sharedContext: SharedLoggerContext,
         level: LogLevel | undefined,
         logStore: LogStore,
-        logUploaderOptions?: LogUploaderOptions
+        logUploaderOptions?: LogUploaderOptions,
+        private readonly skipWriting: boolean = false
     ) {
         const logUploader =
             logUploaderOptions?.logUploader ||
@@ -31,6 +33,7 @@ export class BrowserLogger extends Logger {
                 : undefined);
 
         super(context, sharedContext, level, logStore, logUploader);
+        logUploader?.setLogger(this);
     }
 
     protected createChild(context: ExclusiveLoggerContext): Logger {
@@ -41,7 +44,8 @@ export class BrowserLogger extends Logger {
             this.logStore,
             {
                 logUploader: this.logUploader
-            }
+            },
+            this.skipWriting
         );
     }
 
@@ -71,6 +75,10 @@ export class BrowserLogger extends Logger {
     }
 
     protected write(logEntry: LogEntry) {
+        if (this.skipWriting) {
+            return;
+        }
+
         const { level, meta } = logEntry;
         const method = level === "verbose" ? "debug" : level;
 
@@ -105,7 +113,9 @@ export class BrowserLogger extends Logger {
         };
 
         // Timestamp
-        push(`[${logEntry.time}]`, "color: #9ca3af");
+        const time = formatTimeFromSeconds(logEntry.time);
+
+        push(`[${time}]`, "color: #9ca3af");
 
         // Level
         push(`[${levelUpper}]`, this.levelCss(logEntry.level));

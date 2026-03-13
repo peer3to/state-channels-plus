@@ -120,6 +120,11 @@ const CONSOLE_SELECTORS: Record<
         types: ["string", "address", "string", "address"],
         format: ([msg1, addr1, msg2, addr2]) =>
             `${msg1} ${ethers.getAddress(addr1)} ${msg2} ${ethers.getAddress(addr2)}`
+    },
+    [selector("log(string,address,string,bool)")]: {
+        types: ["string", "address", "string", "bool"],
+        format: ([msg1, addr1, msg2, val]) =>
+            `${msg1} ${ethers.getAddress(addr1)} ${msg2} ${val ? "true" : "false"}`
     }
 };
 

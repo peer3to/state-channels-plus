@@ -6,10 +6,7 @@ contract DisputeFraudProofTypes {
     constructor(
         DisputeNotLatestState memory a,
         DisputeInvalidOutputState memory b,
-        DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified memory c,
-        DisputeInvalidStateProofWithAuditingDataIntegrityVerified memory d,
-        DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks memory e,
-        DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified memory f,
+        DisputeInvalidStateProof memory c,
         DisputeInvalidBalanceInvariant memory g,
         DisputeOnChainSlashesNotSubset memory h,
         TimeoutThreshold memory i,
@@ -17,7 +14,8 @@ contract DisputeFraudProofTypes {
         TimeoutNotLinkedToLatestState memory k,
         TimeoutParticipantNotNext memory l,
         TimeoutTooEarly memory m,
-        DisputeInvalidBlockInStateProofApplyFraudProof memory n
+        DisputeInvalidBlockInStateProofApplyFraudProof memory n,
+        DisputeLastMilestoneNotFinalAndNoAuditingData memory o
     ) {}
 }
 
@@ -31,38 +29,30 @@ struct DisputeNotLatestState {
 }
 
 struct DisputeInvalidOutputState {
-    DisputeAuditingData auditingData;
+    StateSnapshot latestStateSnapshot;
+    bytes latestStateMachineState;
+    MessageBlock[] inboundMessageBlocks;
 }
 
-struct DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified {
-    DisputeAuditingData auditingData;
-}
-
-struct DisputeInvalidStateProofWithAuditingDataIntegrityVerified {
-    DisputeAuditingData auditingData;
-}
-
-struct DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks {
-    DisputeAuditingData auditingData;
-}
-
-struct DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified {
+struct DisputeInvalidStateProof {
     DisputeAuditingData auditingData;
 }
 
 struct DisputeInvalidBalanceInvariant {
-    DisputeAuditingData auditingData;
+    StateSnapshot latestStateSnapshot;
+    bytes latestStateMachineState;
 }
 
 struct DisputeOnChainSlashesNotSubset {
-    DisputeAuditingData auditingData;
+    bool __;
 }
 
 // ========================== Timeout related fraud proofs ==========================
 
 struct TimeoutThreshold {
     BlockConfirmation thresholdBlock; // only N/N on single block - no virtual voting
-    DisputeAuditingData auditingData;
+    StateSnapshot latestStateSnapshot;
+    StateSnapshot thresholdStateSnapshot;
 }
 
 struct TimeoutNotLinkedToLatestState {
@@ -71,16 +61,19 @@ struct TimeoutNotLinkedToLatestState {
 // Linked to latestState, but participant is not next block author
 
 struct TimeoutParticipantNotNext {
-    DisputeAuditingData auditingData;
+    StateSnapshot latestStateSnapshot;
+    bytes latestStateStateMachineState;
 }
 
 struct TimeoutTooEarly {
-    DisputeAuditingData auditingData; // needed for snapshot.timestamp
+    SnapshotData genesisStateSnapshotData;
     uint256 previousBlockOnChainTimestamp;
 }
 
 struct TimeoutCalldataPosted {
-    DisputeAuditingData auditingData;
+    SnapshotData genesisStateSnapshotData;
+    StateSnapshot latestStateSnapshot;
+    bytes latestStateStateMachineState;
     SignedBlock postedBlock;
     uint256 onChainTimestamp;
     uint256 previousBlockOnChainTimestamp;
@@ -90,4 +83,8 @@ struct TimeoutCalldataPosted {
 struct DisputeInvalidBlockInStateProofApplyFraudProof {
     FraudProof fraudProof;
     uint256 blockIndexInUnfinalizedPartOfStateProof;
+}
+
+struct DisputeLastMilestoneNotFinalAndNoAuditingData {
+    bool __;
 }

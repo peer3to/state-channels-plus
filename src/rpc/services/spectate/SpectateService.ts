@@ -89,7 +89,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            "SpectateService - spectateSync timeout"
+            `SpectateService - spectateSync timeout - peer ${normalizedPeerAddress}`
         );
 
         this.requestMapByPeerAddress.set(normalizedPeerAddress, syncRequest);
@@ -489,6 +489,10 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     public abort(peerAddress: string) {
         // HandshakeCompletedGuard guarantees stable peer identity.
         // If we're not actively participating, treat this as a fatal sync failure.
+        this.logger.warn(`Aborting spectate sync with peer ${peerAddress}`, {
+            peerAddress,
+            myStatus: Status[this.p2pManager.stateManager.getStatus()]
+        });
         if (this.p2pManager.stateManager.getStatus() !== Status.PARTICIPATING) {
             this.p2pManager.disconnectAll();
             return;

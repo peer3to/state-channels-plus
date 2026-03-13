@@ -6,7 +6,7 @@ import { Logger, LocalDiscoveryServer } from "@/utils";
  */
 export class NetworkController {
     constructor(
-        private harness: PeerTestHarness<any, any>,
+        private harness: PeerTestHarness,
         private logger: Logger
     ) {}
 
@@ -15,11 +15,8 @@ export class NetworkController {
      */
     async connectAllPeers(): Promise<void> {
         this.logger.debug("Connecting peers...");
-        const started = await LocalDiscoveryServer.tryStart();
-        if (started) {
-            this.logger.verbose("Discovery server started");
-        }
-        await this.waitForP2PConnections();
+        const peerIndices = this.harness.getFilteredPeers().map((p) => p.index);
+        await this.connectPeers(peerIndices);
         this.logger.debug("All peers connected successfully");
     }
 
@@ -27,22 +24,28 @@ export class NetworkController {
      * Connect a subset of peers
      */
     async connectPeers(peerIndices: number[]): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
         const started = await LocalDiscoveryServer.tryStart();
         if (started) {
             this.logger.verbose("Discovery server started");
         }
 
         await Promise.all(
-            peerIndices.map((index) =>
-                this.harness.peers[
-                    index
-                ].stateManager.p2pManager.tryOpenConnectionToChannel(
+            peers.map((peer) =>
+                peer.stateManager.p2pManager.tryOpenConnectionToChannel(
                     this.harness.channelId!.toString()
                 )
             )
         );
-
-        await this.waitForP2PConnections();
+        await Promise.all(
+            peers.map((peer) =>
+                LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager.self,
+                    this.harness.channelId!,
+                    peer.address
+                )
+            )
+        );
     }
 
     /**
@@ -55,7 +58,7 @@ export class NetworkController {
 
         const condition = () =>
             this.harness.peers.filter(
-                (p: any) =>
+                (p) =>
                     p.p2pInstance.p2pSigner.p2pManager.openConnections.length >
                     0
             ).length >= Math.min(2, this.harness.peers.length);
@@ -84,12 +87,5 @@ export class NetworkController {
         }
 
         peer.logger.warn("Disconnected to simulate timeout");
-    }
-
-    /**
-     * Alias for disconnectPeer (simulates a peer timing out)
-     */
-    async simulatePeerTimeout(peerIndex: number): Promise<void> {
-        return this.disconnectPeer(peerIndex);
     }
 }

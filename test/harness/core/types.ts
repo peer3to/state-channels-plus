@@ -1,73 +1,137 @@
-import { AStateMachine } from "@typechain-types";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import { ForkId } from "@/types/types";
+import { StateSnapshot } from "@/models";
+import { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
+import * as sinon from "sinon";
 import { Signer } from "ethers";
 import { P2pInstance } from "@/evm";
 import StateManager from "@/stateManager";
-import { EventSpies } from "@test/fixtures/PeerTestHarness";
+import { MathStateMachine } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
-import { ForkId, ChannelId } from "@/types/types";
-import { StateChannelManagerProxy } from "@typechain-types";
-import { Config } from "@/utils/config";
-import { TimeConfig } from "@/types/time";
+import type { RpcServiceFactoryMap } from "@/rpc";
+import { TimeConfig } from "@/types";
+import { Config } from "@/utils";
 
 /**
- * Represents a single peer in the test environment
+ * Test context fields used by blocks for cross-block state sharing
+ * These fields are set by certain blocks and consumed by others
  */
-export interface TestPeer<
-    T extends AStateMachine,
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> {
-    index: number;
-    signer: Signer;
-    address: string;
-    p2pInstance: P2pInstance<T, TFactories>;
-    stateManager: StateManager;
-    contractInstance: T;
-    eventSpies: EventSpies;
-    joinChannelCommitment?: any;
-    turnBarrier: EventBarrier;
-    logger: Logger;
+export class HarnessContext {
+    /** Original fork ID captured before dispute/fork change (set by Context.captureOriginalFork) */
+    originalForkId?: ForkId;
+
+    /** Indices of malicious peers in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
+    maliciousPeerIndices: number[] = [];
+
+    /** Last tampered dispute object (set by Byzantine blocks) */
+    tamperedDisputes: DisputeStruct[] = [];
+
+    /** last milestone snapshot before posting snapshot (set by Context.capturePrePostSnapshotContext) */
+    lastMilestoneSnapshot?: StateSnapshot;
+
+    /** Channel balance before posting snapshot (set by Context.capturePrePostSnapshotContext) */
+    channelBalanceBefore?: ChannelBalanceStructOutput;
+
+    /** Expected withdrawals delta from prepared outbound messages (set by Context.capturePrePostSnapshotContext) */
+    expectedWithdrawalsDelta?: BalanceStruct;
+
+    /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Context.storeSnapshotCount) */
+    [key: `snapshotCount_${string}`]: number;
+
+    /** Dynamic snapshot count storage for peers - indexed by peer index (set by Context blocks) */
+    [key: `peer${number}SnapshotCountBefore`]: number;
+
+    /** Original calldata handler for peers - stored before stubbing (set by Byzantine.stubCalldataHandler) */
+    [key: `peer${number}OriginalCalldataHandler`]:
+        | ((...args: any[]) => Promise<void>)
+        | undefined;
+
+    /** Original broadcast function for peers - stored before stubbing (set by Byzantine.stubBroadcast) */
+    [key: `peer${number}OriginalBroadcast`]:
+        | ((...args: any[]) => any)
+        | undefined;
 }
 
 /**
- * Configuration options for harness initialization
+ * Options for configuring the test harness
  */
-export interface HarnessOptions<
+export type HarnessOptions<
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
-> {
+> = {
+    /**
+     * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
+     *
+     * Set to "error" to suppress verbose logs during tests.
+     * Set to "debug" or "verbose" for detailed debugging.
+     *
+     * @example
+     * ```ts
+     * // Quiet tests (recommended for CI/passing tests)
+     * Scenario.startChannel(3, 0, { logLevel: "error" })
+     *
+     * // Verbose debugging (when investigating failures)
+     * Scenario.startChannel(3, 0, { logLevel: "debug" })
+     * ```
+     *
+     * @default undefined (uses LOG_LEVEL env var or "info")
+     */
+    logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
+
     timeConfig?: Partial<TimeConfig>;
     channelId?: string;
     initialBalance?: number;
     gasLimit?: number;
     autoConnect?: boolean;
-    configOverrides?: Partial<Config>;
+    configOverrides?: Partial<Config>; // Direct config overrides
     rpcServiceFactories?: TFactories;
-}
+};
 
-/**
- * Options for transaction submission
- */
-export type SubmitTransactionOptions = {
-    waitForSync?: boolean;
-    waitForPeers?: number[];
-    waitForTurn?: boolean;
+export type TestPeer<
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    TFactories extends RpcServiceFactoryMap = {}
+> = {
+    index: number;
+    signer: Signer;
+    address: string;
+    p2pInstance: P2pInstance<MathStateMachine, TFactories>;
+    stateManager: StateManager;
+    contractInstance: MathStateMachine;
+    eventSpies: EventSpies;
+    turnBarrier: EventBarrier;
+    logger: Logger;
 };
 
 /**
- * Options for asserting peer synchronization
+ * Spy functions for tracking event calls
+ * match with P2pEventHooks and EventHandler methods
  */
-export type AssertAllPeersInSyncOptions = {
-    expectedState?: any;
-    peerIndices?: number[];
+export type EventSpies = {
+    // P2pEventHooks spies
+    onConnection?: sinon.SinonSpy;
+    onTurn?: sinon.SinonSpy;
+    onSetState?: sinon.SinonSpy;
+    onPostingCalldata?: sinon.SinonSpy;
+    onPostedCalldata?: sinon.SinonSpy;
+    disputeStarted?: sinon.SinonSpy;
+    onInitiatingDispute?: sinon.SinonSpy;
+    onDisputeUpdate?: sinon.SinonSpy;
+
+    // EventHandler method spies
+    onChannelOpened?: sinon.SinonSpy;
+    onStateSnapshotUpdated?: sinon.SinonSpy;
+    onBlockCalldataPosted?: sinon.SinonSpy;
+    onDisputeCommitted?: sinon.SinonSpy;
+    onChainSlashed?: sinon.SinonSpy;
+    onDisputeReducedResultCommitted?: sinon.SinonSpy;
+    onWithdrawalsUpdated?: sinon.SinonSpy;
+    onChannelStorageCleared?: sinon.SinonSpy;
+    onDisputeKilled?: sinon.SinonSpy;
+    onInboundMessagesProcessed?: sinon.SinonSpy;
 };
 
-/**
- * Result of creating and resolving a dispute
- */
 export type CreateAndResolveDisputeResult<
-    T extends AStateMachine,
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     TFactories extends RpcServiceFactoryMap = {}
 > = {
@@ -75,62 +139,5 @@ export type CreateAndResolveDisputeResult<
     newForkId: ForkId;
     maliciousPeerIndex: number;
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<T, TFactories>>;
+    honestPeers: Array<TestPeer<TFactories>>;
 };
-
-/**
- * Core harness state that blocks operate on
- */
-export interface PeerHarnessState<
-    T extends AStateMachine,
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> {
-    peers: Array<TestPeer<T, TFactories>>;
-    channelManager: StateChannelManagerProxy;
-    channelId?: ChannelId;
-    activeForkId?: ForkId;
-    options: Required<HarnessOptions<TFactories>>;
-}
-
-/**
- * Test context fields used by blocks for cross-block state sharing
- * These fields are set by certain blocks and consumed by others
- */
-export interface HarnessContext {
-    /** Original fork ID captured before dispute/fork change (set by Event.captureOriginalFork) */
-    originalForkId?: ForkId;
-
-    /** New fork ID after fork change (set by Context.updateActiveFork) */
-    newForkId?: ForkId;
-
-    /** Index of the malicious peer in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
-    maliciousPeerIndex?: number;
-
-    /** Last malicious peer index from most recent Byzantine attack (set by Byzantine blocks) */
-    lastMaliciousPeerIndex?: number;
-
-    /** Indices of honest peers in Byzantine attack scenarios (set by Context.markMaliciousPeer) */
-    honestPeerIndices?: number[];
-
-    /** Last tampered dispute object (set by Byzantine blocks) */
-    lastTamperedDispute?: any;
-
-    /** Promise that resolves to tampered dispute (set by Byzantine.interceptDisputeConstruction) */
-    tamperedDisputePromise?: Promise<any>;
-
-    /** Function to restore dispute construction after interception (set by Byzantine.interceptDisputeConstruction) */
-    restoreDisputeConstruction?: () => void;
-
-    /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Assert.storeSnapshotCount) */
-    [key: `snapshotCount_${string}`]: number;
-
-    /** Dynamic snapshot count storage for peers - indexed by peer index (set by Context blocks) */
-    [key: `peer${number}SnapshotCountBefore`]: number;
-
-    /** Original calldata handler for peers - stored before stubbing (set by Byzantine.stubCalldataHandler) */
-    [key: `peer${number}OriginalCalldataHandler`]: any;
-
-    /** Original broadcast function for peers - stored before stubbing (set by Byzantine.stubBroadcast) */
-    [key: `peer${number}OriginalBroadcast`]: any;
-}

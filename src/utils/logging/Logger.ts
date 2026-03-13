@@ -1,7 +1,9 @@
 import { Address } from "@/types/types";
+import Clock from "@/Clock";
 import type { LogUploader } from "./LogUploader";
 import type { LogStore } from "./logStore";
-import { formatTime } from "./formatUtils";
+import { LoggerUtils } from "../LoggerUtils";
+import { DetachedPromises } from "../DetachedPromises";
 
 // The context exclusive to each logger
 export type ExclusiveLoggerContext = {
@@ -28,12 +30,20 @@ export type LogEntry = {
     stack: string;
 };
 
+export type LoggerDestroyOptions = {
+    cascadeChildren?: boolean;
+    cascadeParent?: boolean;
+};
+
 export abstract class Logger {
     public level?: LogLevel;
     protected context: ExclusiveLoggerContext;
     protected readonly sharedContext: SharedLoggerContext; // shared among all child loggers - imutable reference
     protected logStore: LogStore;
     protected logUploader?: LogUploader;
+    protected parent?: Logger;
+    protected readonly children: Set<Logger> = new Set();
+    private destroyed = false;
 
     constructor(
         context: ExclusiveLoggerContext,
@@ -50,11 +60,12 @@ export abstract class Logger {
     }
 
     public child(context: ExclusiveLoggerContext): Logger {
-        return this.createChild({ ...this.context, ...(context || {}) });
+        const child = this.createChild({ ...this.context, ...(context || {}) });
+        this.linkChild(child);
+        return child;
     }
 
     public updateSharedContext(update: SharedLoggerContext): void {
-        if (update?.channelId || update?.peerAddress) this.logStore.clearLogs();
         const newSharedContext = { ...this.sharedContext, ...update };
         Object.assign(this.sharedContext, newSharedContext);
     }
@@ -67,11 +78,40 @@ export abstract class Logger {
         this.logStore.clearLogs();
     }
 
+    public dispose(options: LoggerDestroyOptions = {}): void {
+        if (this.destroyed) {
+            return;
+        }
+
+        this.destroyed = true;
+
+        if (options.cascadeChildren) {
+            for (const child of Array.from(this.children)) {
+                child.dispose(options);
+            }
+        }
+
+        if (options.cascadeParent && this.parent) {
+            this.parent.dispose(options);
+        }
+
+        this.logUploader?.destroy();
+        this.unlinkAll();
+    }
+
     private log(level: LogLevel, message: string, meta: any[]): void {
         if (!this.shouldProcessLevel(level)) return;
         const stack = new Error().stack!;
+
+        let timeSeconds: number;
+        try {
+            timeSeconds = Clock.getTimeInSeconds();
+        } catch {
+            timeSeconds = Math.floor(Date.now() / 1000);
+        }
+
         const logEntry: LogEntry = {
-            time: formatTime(),
+            time: String(timeSeconds),
             level,
             message,
             context: this.context,
@@ -94,7 +134,8 @@ export abstract class Logger {
     }
     public error(message: any, ...meta: any[]): void {
         this.log("error", message, meta);
-        this.logUploader?.uploadLogs();
+        const prommise = this.logUploader?.uploadLogs();
+        if (prommise) DetachedPromises.collect(prommise);
     }
     public verbose(message: any, ...meta: any[]): void {
         this.log("verbose", message, meta);
@@ -103,6 +144,34 @@ export abstract class Logger {
     public logEntry(logEntry: LogEntry): void {
         this.write(logEntry);
     }
+
+    public async uploadLogs(message: any, ...meta: any[]): Promise<void> {
+        await LoggerUtils.logTimestamp(this);
+        const localTime = new Date().getTime() / 1000;
+        this.warn(message, ...meta, localTime);
+        await this.logUploader?.uploadLogs();
+    }
+
+    private linkChild(child: Logger): void {
+        child.parent = this;
+        this.children.add(child);
+    }
+
+    private unlinkAll(): void {
+        const parentRef = this.parent;
+        if (parentRef) {
+            parentRef.children.delete(this);
+            this.parent = undefined;
+        }
+
+        for (const child of this.children) {
+            if (child.parent === this) {
+                child.parent = undefined;
+            }
+        }
+        this.children.clear();
+    }
+
     protected abstract createChild(context: ExclusiveLoggerContext): Logger;
     protected abstract write(logEntry: LogEntry): void;
     public abstract group(label?: string): void;
