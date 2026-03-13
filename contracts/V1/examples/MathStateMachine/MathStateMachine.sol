@@ -21,14 +21,12 @@ contract MathStateMachine is AStateMachine {
     }
 
     event Addition(uint256 a, uint256 b, uint256 result);
-    event NextToPlay(address player);
 
     function add(uint256 _number) public returns (uint256) {
         require(_tx.header.participant == getNextToWrite(), "MathStateMachine: add only next player can write");
         emit Addition(state.number, _number, state.number + _number);
         state.number += _number;
         state.currentTurnIndex++;
-        emit NextToPlay(getNextToWrite());
         return state.number;
     }
 
@@ -115,7 +113,6 @@ contract MathStateMachine is AStateMachine {
 
         if (success) {
             _addExitChannel(exitChannel);
-            emit NextToPlay(getNextToWrite());
         }
         console.log("Player leaving:", leavingPlayer, "Success:", success);
 
