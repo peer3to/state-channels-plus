@@ -6,16 +6,47 @@ import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import { Codec, SignatureUtils, Type } from "@/utils";
 import Clock from "@/Clock";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
-import { NetworkController } from "./NetworkController";
+import { NetworkController } from "../NetworkController";
+import { HarnessOptions } from "@test/harness/core/types";
 
 /**
  * Handles channel-related operations: open, join, verify
  */
-export class ChannelActions {
+export class LifecycleActions {
     constructor(
         private harness: PeerTestHarness,
         private logger: Logger
     ) {}
+
+    /**
+     * Full channel bootstrap in one call:
+     * setup peers -> open channel -> optional initial transitions
+     */
+    async start(
+        numPeers: number,
+        transitionCount: number = 0,
+        options?: HarnessOptions
+    ): Promise<ForkId> {
+        await this.harness.setup(numPeers, options);
+        const forkId = await this.openChannel();
+
+        for (let i = 0; i < transitionCount; i++) {
+            await this.harness.transition.increment(1);
+        }
+
+        return forkId;
+    }
+
+    async timeoutSetup(peerCount: number = 3, transitionCount: number = 0) {
+        await this.start(peerCount, transitionCount, {
+            timeConfig: {
+                p2pTime: 1,
+                agreementTime: 2,
+                chainFallbackTime: 2,
+                evidenceTime: 3
+            }
+        });
+    }
 
     /**
      * Open a channel with all current peers
@@ -28,6 +59,8 @@ export class ChannelActions {
         const signatures = await this.signOpenChannelStruct(openChannel);
         return this.submitOpenChannel(openChannel, signatures);
     }
+
+    // ************** PRIVATE HELPERS ****************
 
     private buildOpenChannelStruct(
         args: { participantAddresses?: string[] } = {}
@@ -83,6 +116,7 @@ export class ChannelActions {
                 this.logger
             );
             await networkController.connectAllPeers();
+            await this.harness.network.waitForP2PConnections();
         }
 
         this.logger.debug(
@@ -109,19 +143,12 @@ export class ChannelActions {
             expectedCount: 1
         }));
 
-        const stateSetOnAllPeers =
-            await this.harness.eventActions.waitForEventCounts(
-                "onSetState",
-                eventCounts,
-                2000,
-                { mode: "atLeast" }
-            );
-
-        if (!stateSetOnAllPeers) {
-            throw new Error(
-                "Failed to get fork ID on all peers after waiting 2000ms."
-            );
-        }
+        await this.harness.event.waitForEventCounts(
+            "onSetState",
+            eventCounts,
+            2000,
+            { mode: "atLeast" }
+        );
 
         // Verify all peers have the same valid fork ID
         const peerForkIds = getPeerForkIds();
@@ -134,8 +161,6 @@ export class ChannelActions {
                 `Fork IDs are not consistent across peers: ${peerForkIds.join(", ")}`
             );
         }
-
-        this.harness.activeForkId = peerForkIds[0] as ForkId;
 
         // State machine is already initialized when onSetState fires
         // (setState is called before forkId is set and before onSetState is called)

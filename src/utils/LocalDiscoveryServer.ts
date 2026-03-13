@@ -541,6 +541,7 @@ export class LocalDiscoveryServer {
             myPeerAddress,
             onConnection: (ws: WebSocket) => {
                 // Accepted a direct connection from another peer
+
                 const lt = new LocalTransport(ws, p2pManager);
                 p2pManager.localRpc.initHandshakeService.initHandshake(lt);
                 this.logger.debug("Inbound peer connection accepted", {

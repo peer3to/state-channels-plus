@@ -10,6 +10,7 @@ import "./FraudProofFacet.sol";
 import "./DisputeFraudProofFacet.sol";
 import "./StateSnapshotFacet.sol";
 import "./JoinChannelFacet.sol";
+import "./StateProofFacet.sol";
 import "../types/DisputeTypes.sol";
 import "../types/MessageTypeHashes.sol";
 import "./utils/GeneralUtils.sol";
@@ -30,6 +31,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         address _disputeFraudProofFacet,
         address _stateSnapshotFacet,
         address _joinChannelFacet,
+        address _stateProofFacet,
         address _utilityFacet,
         address _consumerFacet,
         uint256 _p2pTime,
@@ -44,6 +46,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         disputeFraudProofFacetAddress = _disputeFraudProofFacet;
         stateSnapshotFacetAddress = _stateSnapshotFacet;
         joinChannelFacetAddress = _joinChannelFacet;
+        stateProofFacetAddress = _stateProofFacet;
         utilityFacetAddress = _utilityFacet;
         consumerFacetAddress = _consumerFacet;
         p2pTime = _p2pTime == 0 ? DEFAULT_P2P_TIME : _p2pTime;
@@ -328,6 +331,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return result;
     }
 
+    function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
+        bytes memory result = _delegatecall(
+            disputeFraudProofFacetAddress,
+            abi.encodeCall(DisputeFraudProofFacet.isLastMilestoneFinalByEveryone, (dispute))
+        );
+        return abi.decode(result, (bool));
+    }
+
     function getParticipants(bytes32 channelId)
         public
         view
@@ -393,6 +404,67 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         returns (bool)
     {
         return StateChannelCommon.hasInboundMessageBlock(channelId, messageBlockHash);
+    }
+
+    function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        virtual
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress, abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, disputeAuditingData))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function isCorrectLatestState(Dispute memory dispute, SnapshotData memory genesisStateSnapshotData)
+        public
+        virtual
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(StateProofFacet.isCorrectLatestState, (dispute, genesisStateSnapshotData))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function verifyMilestones(
+        bytes32 forkId,
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory thresholdStateSnapshot
+    ) public override(StateChannelManagerInterface) returns (bool isValid) {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(
+                StateProofFacet.verifyMilestones, (forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot)
+            )
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function isMilestoneFinal(
+        bytes32 forkId,
+        SnapshotData memory thresholdSnapshotData,
+        MilestoneProof memory milestone
+    ) public override(StateChannelManagerInterface) returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(StateProofFacet.isMilestoneFinal, (forkId, thresholdSnapshotData, milestone))
+        );
+        return abi.decode(result, (bool, bytes32));
+    }
+
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot)
+        public
+        view
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        return UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(snapshot);
     }
 
     function isChannelOpen(bytes32 channelId) public view override returns (bool, StateSnapshot memory) {
@@ -486,13 +558,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         Dispute[] memory disputes,
         StateSnapshot memory stateSnapshot,
         bytes memory encodedStateMachineState,
-        MessageBlock[] memory inboundMessageBlocks
+        MessageBlock[] memory inboundMessageBlocks,
+        bytes32 expectedReducedForkId
     ) public override {
         _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
                 DisputeVerificationFacet.reduceAndFinalize,
-                (disputes, stateSnapshot, encodedStateMachineState, inboundMessageBlocks)
+                (disputes, stateSnapshot, encodedStateMachineState, inboundMessageBlocks, expectedReducedForkId)
             )
         );
     }
@@ -502,12 +575,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
         public
         view
-        returns (bool isKillPeriodExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
+        returns (bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
     {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        (isKillPeriodExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        return (isKillPeriodExpired, killPeriodEnd, block.timestamp);
+        (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        return (isExpired, killPeriodEnd, block.timestamp);
     }
 
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {

@@ -69,6 +69,19 @@ function convertReturn<T>(result: T): T {
     }
     return convertValue(result);
 }
+// Make args mutable, so ethers doesn't throw
+function convertArgs(args: any[]): any[] {
+    let mutated = false;
+    const converted = args.map((arg) => {
+        const next = convertValue(arg);
+        if (next !== arg) {
+            mutated = true;
+        }
+        return next;
+    });
+
+    return mutated ? converted : args;
+}
 
 function convertEventLog(log: any): any {
     if (log && typeof log === "object" && "args" in log) {
@@ -83,7 +96,7 @@ function convertEventLog(log: any): any {
 
 function wrapContractMethod(original: any, target: any) {
     const wrapper = (...args: any[]) =>
-        convertReturn(original.apply(target, args));
+        convertReturn(original.apply(target, convertArgs(args)));
 
     const descriptors = Object.getOwnPropertyDescriptors(original);
     delete descriptors.staticCall;
@@ -91,7 +104,7 @@ function wrapContractMethod(original: any, target: any) {
 
     Object.defineProperty(wrapper, "staticCall", {
         value: (...args: any[]) =>
-            convertReturn(original.staticCall.apply(target, args)),
+            convertReturn(original.staticCall.apply(target, convertArgs(args))),
         writable: true,
         enumerable: true,
         configurable: true

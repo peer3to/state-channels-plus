@@ -40,6 +40,7 @@ error ErrorDisputeChallengePeriodExpired();
 error ErrorDisputeAlreadyPosted();
 error ErrorCantParticipateInDispute();
 error ErrorAuditingDataHashMismatch();
+error ErrorDisputePostedAuditingDataMismatch();
 
 //Reduce errors
 error ErrorNoDisputesProvided();
@@ -74,6 +75,7 @@ error RaceConditionJoinChannelExpired();
 error RaceConditionDisputeEvidencePeriodExpired();
 error RaceConditionDisputeKillPeriodNotExpired();
 error RaceConditionDisputeAlreadyReduced();
+error RaceConditionReductionExpectationDoesntMatch();
 error RaceConditionDisputeAuditingRequired();
 error RaceConditionDisputeTimeoutCalldataPosted();
 error RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();

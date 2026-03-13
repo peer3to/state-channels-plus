@@ -1,14 +1,13 @@
-import { ethers } from "hardhat";
-import Clock from "@/Clock";
+// import { TestSession } from "./harness/session/TestSession";
 
-// Global test setup to ensure Clock is always initialized
-before(async function () {
-    console.log("Global test setup: Initializing Clock and mining blocks...");
-    // Ensure the chain has enough history for tests that query logs "N blocks back".
-    await ethers.provider.send("evm_setAutomine", [false]);
-    await ethers.provider.send("evm_setIntervalMining", [2000]); // ms
-    await ethers.provider.send("hardhat_mine", ["0x64"]); // 100 blocks
-    await Clock.init(ethers.provider);
+// export const mochaHooks = {
+//     async beforeEach() {
+//         await TestSession.reset();
+//     },
 
-    // TODO - this file can be deleted - it's not used anywhere
-});
+//     async afterEach() {
+//         await TestSession.clear();
+//     }
+// };
+
+// TODO - this file at some point stoped working for injecting the hooks through hardhat - I just injected everything in index.ts instead. We can come back to it later if needed.

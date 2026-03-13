@@ -129,6 +129,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     }
     public async tryOpenConnectionToChannel(channelId: string) {
         if (config.DEBUG_LOCAL_TRANSPORT) {
+            return;
             await LocalDiscoveryServer.tryStart();
             await LocalDiscoveryServer.connectToPeers(
                 this.self,

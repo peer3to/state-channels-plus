@@ -1,5 +1,7 @@
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport, WebRTCTransport } from "@/transport";
+// @ts-expect-error - get-webrtc doesn't ship TypeScript declarations
+import { RTCPeerConnection, RTCIceCandidate } from "get-webrtc";
 
 import WebRTCSetupService from "./WebRTCSetupService";
 

@@ -26,12 +26,21 @@ import ATransport from "@/transport/ATransport";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import {
+    MessageStruct,
     MessageBlockStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { LogLevel } from "./logging/Logger";
+import { TimeConfig } from "@/types";
 export class LoggerUtils {
+    private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
+        "0x9ce4e6bf06971600d59f74bebec9880ea91b2f4bdbfcc850572617eeaad2edc8":
+            "JOIN_CHANNEL_MESSAGE",
+        "0x7fc958f6d896a018ea54afc012524ea8e277a718198f19cfe9d7795f10efadae":
+            "EXIT_CHANNEL_MESSAGE"
+    };
+
     // ====================================
     // SIMPLE FORMATTERS
     // ====================================
@@ -108,7 +117,8 @@ export class LoggerUtils {
 
     static async logTimestamp(
         logger: Logger,
-        level: LogLevel = "info"
+        level: LogLevel = "info",
+        timeConfig?: TimeConfig
     ): Promise<void> {
         const virtualClockBefore = Clock.getTimeInSeconds();
         const localClockBefore = Math.floor(new Date().getTime() / 1000);
@@ -123,7 +133,8 @@ export class LoggerUtils {
             blockNumber,
             virtualClockAfter,
             localClockAfter,
-            network
+            network,
+            timeConfig
         });
     }
 
@@ -171,7 +182,7 @@ export class LoggerUtils {
     }
     static getBlockMetadata(block: Block, storage?: Storage) {
         const thresholdAddresses = new Set<Address>(
-            storage?.getParticipants(block.coordinates) || []
+            storage?.getParticipantsUnion(block.coordinates) || []
         );
         const allSigners = block.allSignerAddresses;
         const allSignersSet =
@@ -264,6 +275,32 @@ export class LoggerUtils {
         };
     }
 
+    static getMessageStructMeta(message: MessageStruct) {
+        const messageType = String(message.messageType);
+        const decodedMessageType = this.decodeMessageType(messageType);
+
+        return {
+            messageType,
+            decodedMessageType,
+            participant: String(message.participant),
+            balance: {
+                amount: Number(message.balance.amount),
+                data: String(message.balance.data)
+            },
+            dataHash: String(hash(message.data)),
+            dataLength: String(message.data).length
+        };
+    }
+
+    static decodeMessageType(messageType: string): string {
+        const normalized = messageType.toLowerCase();
+        return (
+            this.MESSAGE_TYPE_LABELS[normalized] ??
+            this.MESSAGE_TYPE_LABELS[messageType] ??
+            "UNKNOWN_MESSAGE_TYPE"
+        );
+    }
+
     static getReducedOutputMetadata(reducedOutput: ReduceOutputStruct) {
         return {
             latestBlock: this.getBlockStructMetadata(reducedOutput.latestBlock),
@@ -315,10 +352,12 @@ export class LoggerUtils {
 
     static getDisputeMetadata(dispute: DisputeStruct) {
         const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        const postedAuditingData = dispute.postedAuditingData;
         return {
             disputeHash,
             input: this.getDisputeInputMetadata(dispute.input),
-            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash)
+            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash),
+            postedAuditingData
         };
     }
 
@@ -362,8 +401,8 @@ export class LoggerUtils {
                 (snapshot) =>
                     this.getSnapshotMetadata(StateSnapshot.from(snapshot))
             ),
-            latestStateStateMachineStateHash: String(
-                hash(auditingData.latestStateStateMachineState)
+            latestFinalizedStateStateMachineStateHash: String(
+                hash(auditingData.latestFinalizedStateStateMachineState || "0x")
             ),
             inboundMessageBlocks: auditingData.inboundMessageBlocks.map(
                 (messageBlock) => this.getMessageBlockMetadata(messageBlock)

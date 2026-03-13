@@ -13,6 +13,7 @@ import FraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDi
 import DisputeFraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol/DisputeFraudProofFacet.json";
 import StateSnapshotFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol/StateSnapshotFacet.json";
 import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol/JoinChannelFacet.json";
+import StateProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol/StateProofFacet.json";
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
 import UtilityFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol/UtilityFacet.json";
@@ -29,6 +30,7 @@ const facetArtifacts = [
     DisputeFraudProofFacetArtifact,
     StateSnapshotFacetArtifact,
     JoinChannelFacetArtifact,
+    StateProofFacetArtifact,
     UtilityFacetArtifact
 ];
 
@@ -197,17 +199,16 @@ export async function deployFullStack(
         timeConfig
     } = params;
 
-    const { address: stateMachineAddress } = await deployArtifact(
-        stateMachineArtifact,
-        signer,
-        { args: stateMachineArgs }
-    );
+    const stateMachinePromise = deployArtifact(stateMachineArtifact, signer, {
+        args: stateMachineArgs
+    });
 
-    const { address: consumerFacetAddress } = await deployArtifact(
-        consumerFacetArtifact,
-        signer,
-        { args: consumerFacetArgs }
-    );
+    const consumerFacetPromise = deployArtifact(consumerFacetArtifact, signer, {
+        args: consumerFacetArgs
+    });
+
+    const { address: stateMachineAddress } = await stateMachinePromise;
+    const { address: consumerFacetAddress } = await consumerFacetPromise;
 
     return deploy(
         stateMachineAddress,

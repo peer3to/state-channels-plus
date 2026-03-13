@@ -432,13 +432,12 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     peerId: pid,
                     peerAddress: signerAddress
                 },
-                { component: "ClientApp" }
+                { component: "ClientApp" },
+                { attachErrorListener: true }
             );
 
         // Sync clock to DLT
         await Clock.init(signer.provider!);
-
-        await LoggerUtils.logTimestamp(logger);
 
         // Connect signer to state channel contract
         deployedStateChannelContractInstance =
@@ -460,6 +459,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             chainFallbackTime: Number(configTimes[2]),
             evidenceTime: Number(configTimes[3])
         };
+        await LoggerUtils.logTimestamp(logger, "info", timeConfig);
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
         // Pass the SCM contract so local diamond can sync its time config
