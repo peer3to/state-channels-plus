@@ -4,7 +4,6 @@ import { Signer } from "ethers";
 import * as sinon from "sinon";
 import * as dotenv from "dotenv";
 import hre from "hardhat";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { setImmediate } from "node:timers";
 import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -146,7 +145,17 @@ export class PeerTestHarness<
             const d90 = h.percentile(90) / 1e6;
             const d99 = h.percentile(99) / 1e6;
             const dMax = h.max / 1e6;
-            this.logger.verbose(
+            const shouldWarn =
+                elu.utilization > 0.8 ||
+                dMean > 200 ||
+                d50 > 200 ||
+                d90 > 200 ||
+                d99 > 200 ||
+                dMax > 200;
+            const logFn = shouldWarn
+                ? this.logger.warn.bind(this.logger)
+                : this.logger.verbose.bind(this.logger);
+            logFn(
                 `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${elu.utilization}`,
                 {
                     dMean,
@@ -192,6 +201,7 @@ export class PeerTestHarness<
             ...testConfig,
             ...(options?.configOverrides || {})
         };
+
         this.options = {
             logLevel:
                 options?.logLevel ??
@@ -214,7 +224,13 @@ export class PeerTestHarness<
             rpcServiceFactories: (options?.rpcServiceFactories ??
                 {}) as TFactories
         };
-
+        if (
+            !this.options.timeConfig.agreementTime ||
+            this.options.timeConfig.agreementTime <= 1
+        )
+            throw new Error(
+                "agreementTime must be greater than 1 second for reliable test execution"
+            );
         this.syncCoordinator = new SyncCoordinator(
             this.logger,
             this.eventCountsBarrier
@@ -261,6 +277,11 @@ export class PeerTestHarness<
         // If a channel is already known, connect the new peer to it.
         if (this.channelId) {
             await peer.p2pInstance.p2pSigner.connectToChannel(this.channelId);
+            await LocalDiscoveryServer.connectToPeers(
+                peer.stateManager.p2pManager.self,
+                this.channelId,
+                peer.address
+            );
         }
 
         return peer as TestPeer<TFactories>;
@@ -515,7 +536,15 @@ export class PeerTestHarness<
             this.autoTimeAdvanceTickInProgress = true;
             void retry(
                 async () => {
-                    await time.increase(intervalSeconds);
+                    const currentTimestampSeconds = Math.floor(
+                        Date.now() / 1000
+                    );
+
+                    await hre.ethers.provider.send(
+                        "evm_setNextBlockTimestamp",
+                        [currentTimestampSeconds]
+                    );
+                    await hre.ethers.provider.send("evm_mine", []);
 
                     const latestBlock =
                         await hre.ethers.provider.getBlock("latest");
@@ -535,6 +564,7 @@ export class PeerTestHarness<
                         `Auto-mined block ${latestBlock.number} txCount: ${transactionHashes.length}`,
                         {
                             blockNumber: latestBlock.number,
+                            currentTimestampSeconds,
                             timestamp: latestBlock.timestamp,
                             transactionCount: transactionHashes.length,
                             transactionHashes

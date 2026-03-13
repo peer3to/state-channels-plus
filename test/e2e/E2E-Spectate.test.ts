@@ -176,7 +176,7 @@ describe("E2E: Spectate Service", function () {
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
 
             await h.addPeer();
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.event.waitUntilEventOccurs("onConnection", 5000, [5]);
             await h.assert.sync.peersInSyncWait({
                 peerIndices: [0, 1, 3, 4, 5]
             });

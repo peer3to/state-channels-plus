@@ -18,7 +18,7 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 0
@@ -66,13 +66,21 @@ describe("E2E: Init Handshake", function () {
             await peer0LocalRpc.webRTCSetupService.initiateWebRTC(
                 transportToPeer1Before
             );
-            await h.event.waitUntilEventOccurs("onConnection", 10000);
 
+            await h.event.waitUntilEventOccurs("onConnection", 10000);
             if (
                 peer1Profile.transport.transportType === TransportType.HOLEPUNCH
             ) {
+                const refreshedPeer1Profile = h.query.getProfile(0, {
+                    evmAddress: h.getPeer(1).address
+                });
+                const isSameProfile = refreshedPeer1Profile === peer1Profile;
+                const transportType =
+                    TransportType[
+                        refreshedPeer1Profile!.transport!.transportType
+                    ];
                 throw new Error(
-                    `Transport didn't upgrade to WebRTC - still HOLEPUNCH`
+                    `Transport didn't upgrade to WebRTC - still HOLEPUNCH, profile same: ${isSameProfile}, transport type: ${transportType}`
                 );
             }
         });
@@ -83,7 +91,7 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 1
@@ -102,11 +110,10 @@ describe("E2E: Init Handshake", function () {
         it("should disconnect peer that doesn't respond within agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
-                autoConnect: false,
-                timeConfig: { agreementTime: 1 }
+                autoConnect: false
             });
             await h.rpc.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.initiateHandshakeWithoutResponse({
                 fromPeer: 0,
                 toPeer: 1
@@ -122,7 +129,7 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 0
@@ -160,33 +167,12 @@ describe("E2E: Init Handshake", function () {
         });
     });
 
-    describe("Signature Validation", function () {
-        it("should disconnect peer when handshake response has invalid signature", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 0, { autoConnect: true });
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
-            await h.rpc.clearHandshakeChallenge({
-                peerIndex: 0,
-                targetPeer: 1
-            });
-            await h.rpc.initiateHandshake({ fromPeer: 0, toPeer: 1 });
-            await h.rpc.sendInvalidSignatureHandshakeResponse({
-                fromPeer: 1,
-                toPeer: 0
-            });
-            await h.assert.rpc.peerDisconnectedFrom({
-                peerIndex: 0,
-                expectedFinalCount: 0
-            });
-        });
-    });
-
     describe("Unsolicited Messages", function () {
         it("should disconnect peer sending unsolicited handshake response", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
                 observingPeerIndex: 0

@@ -32,6 +32,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { LogLevel } from "./logging/Logger";
+import { TimeConfig } from "@/types";
 export class LoggerUtils {
     private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
         "0x9ce4e6bf06971600d59f74bebec9880ea91b2f4bdbfcc850572617eeaad2edc8":
@@ -116,7 +117,8 @@ export class LoggerUtils {
 
     static async logTimestamp(
         logger: Logger,
-        level: LogLevel = "info"
+        level: LogLevel = "info",
+        timeConfig?: TimeConfig
     ): Promise<void> {
         const virtualClockBefore = Clock.getTimeInSeconds();
         const localClockBefore = Math.floor(new Date().getTime() / 1000);
@@ -131,7 +133,8 @@ export class LoggerUtils {
             blockNumber,
             virtualClockAfter,
             localClockAfter,
-            network
+            network,
+            timeConfig
         });
     }
 
@@ -179,7 +182,7 @@ export class LoggerUtils {
     }
     static getBlockMetadata(block: Block, storage?: Storage) {
         const thresholdAddresses = new Set<Address>(
-            storage?.getParticipants(block.coordinates) || []
+            storage?.getParticipantsUnion(block.coordinates) || []
         );
         const allSigners = block.allSignerAddresses;
         const allSignersSet =
@@ -349,10 +352,12 @@ export class LoggerUtils {
 
     static getDisputeMetadata(dispute: DisputeStruct) {
         const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        const postedAuditingData = dispute.postedAuditingData;
         return {
             disputeHash,
             input: this.getDisputeInputMetadata(dispute.input),
-            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash)
+            outputSnapshotDataHash: String(dispute.outputSnapshotDataHash),
+            postedAuditingData
         };
     }
 
@@ -396,8 +401,8 @@ export class LoggerUtils {
                 (snapshot) =>
                     this.getSnapshotMetadata(StateSnapshot.from(snapshot))
             ),
-            latestStateStateMachineStateHash: String(
-                hash(auditingData.latestStateStateMachineState)
+            latestFinalizedStateStateMachineStateHash: String(
+                hash(auditingData.latestFinalizedStateStateMachineState || "0x")
             ),
             inboundMessageBlocks: auditingData.inboundMessageBlocks.map(
                 (messageBlock) => this.getMessageBlockMetadata(messageBlock)

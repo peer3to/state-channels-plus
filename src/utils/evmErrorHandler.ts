@@ -21,7 +21,8 @@ export type RaceConditionErrorName =
     | "RaceConditionDisputeTimeoutNotMinTimestamp"
     | "RaceConditionUnexpectedBlockCalldataPosted"
     | "RaceConditionGenesisTimestampNotAvailable"
-    | "ErrorCantParticipateInDispute";
+    | "ErrorCantParticipateInDispute"
+    | "ErrorDisputePostedAuditingDataMismatch";
 
 export type RaceConditionErrorHandlers = Partial<
     Record<RaceConditionErrorName, () => void>
@@ -150,7 +151,11 @@ async function _tryHandleEvmError(
             return true;
         } catch (callError) {
             // if call reverts, do nothing here
-            return _tryHandleEvmError(callError, options, recursionDepth + 1);
+            return await _tryHandleEvmError(
+                callError,
+                options,
+                recursionDepth + 1
+            );
         }
     }
 

@@ -42,6 +42,7 @@ export class EventBarrier {
             timeoutMetaFn
         } = options;
         const capturedStack = new Error("EventBarrier.waitFor called").stack;
+        const effectiveTimeoutMs = this.getEffectiveTimeoutMs(timeoutMs);
 
         // Fast path: resolve immediately if condition already satisfied.
         if (await condition()) {
@@ -51,12 +52,10 @@ export class EventBarrier {
         return new Promise<void>((resolve, reject) => {
             const timeoutId = setTimeout(async () => {
                 this.waiters.delete(waiter);
-                const errorMessage =
-                    "EventBarrier timeout: " +
-                    (timeoutMessageFn
-                        ? await timeoutMessageFn()
-                        : timeoutMessage ||
-                          `Condition not met within ${timeoutMs}ms`);
+                const timeoutDetail = timeoutMessageFn
+                    ? await timeoutMessageFn()
+                    : timeoutMessage || "Condition not met";
+                const errorMessage = `EventBarrier timeout after ${effectiveTimeoutMs}ms: ${timeoutDetail}`;
 
                 const error = this.createErrorWithCapturedStack(
                     errorMessage,
@@ -65,10 +64,12 @@ export class EventBarrier {
                 );
                 this.logger.error(errorMessage, {
                     timeoutMeta: timeoutMetaFn ? timeoutMetaFn() : timeoutMeta,
+                    timeoutMs,
+                    effectiveTimeoutMs,
                     capturedStack: waiter.capturedStack
                 });
                 reject(error);
-            }, timeoutMs);
+            }, effectiveTimeoutMs);
 
             const waiter: Waiter = {
                 condition,
@@ -88,6 +89,18 @@ export class EventBarrier {
 
             this.waiters.add(waiter);
         });
+    }
+
+    private getEffectiveTimeoutMs(timeoutMs: number): number {
+        const raw =
+            typeof process !== "undefined" && process?.env
+                ? process.env.EVENT_BARRIER_TIMEOUT_SCALE
+                : undefined;
+        const scale = raw ? Number(raw) : 1;
+        if (!Number.isFinite(scale) || scale <= 0) {
+            return timeoutMs;
+        }
+        return Math.ceil(timeoutMs * scale);
     }
 
     /**

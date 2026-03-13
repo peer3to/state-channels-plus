@@ -14,7 +14,8 @@ const config: HardhatUserConfig = {
     networks: {
         hardhat: {
             allowUnlimitedContractSize: true,
-            gas: "auto"
+            gas: "auto",
+            initialDate: new Date().toISOString()
         },
         localhost: {
             url: "http://127.0.0.1:8545"

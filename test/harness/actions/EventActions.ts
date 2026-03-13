@@ -73,27 +73,46 @@ export class EventActions {
      * Reset event spy history for one peer or all peers
      */
     resetEventSpies(peerIndex?: number): void {
-        if (peerIndex !== undefined) {
-            const peer = this.harness.peers[peerIndex];
-            if (!peer) throw new Error(`Peer ${peerIndex} not found`);
-            Object.values(peer.eventSpies).forEach((spy) =>
-                spy?.resetHistory()
+        const peers = this.harness.getFilteredPeers(
+            peerIndex !== undefined ? [peerIndex] : undefined
+        );
+
+        peers.forEach((peer) => {
+            const eventNames = Object.keys(peer.eventSpies) as Array<
+                keyof EventSpies
+            >;
+
+            const eventCounts = eventNames.map((eventName) => ({
+                eventName: String(eventName),
+                count: peer.eventSpies[eventName]?.callCount ?? 0
+            }));
+
+            const nonZeroEventCounts = eventCounts.filter(
+                ({ count }) => count > 0
             );
-        } else {
-            this.harness.peers.forEach((peer) => {
-                Object.values(peer.eventSpies).forEach((spy) =>
-                    spy?.resetHistory()
-                );
+
+            peer.logger.verbose(
+                `resetEventSpies - peer ${peer.index} current event counts`,
+                {
+                    peerIndex: peer.index,
+                    eventCounts: nonZeroEventCounts
+                }
+            );
+
+            eventNames.forEach((eventName) => {
+                peer.eventSpies[eventName]?.resetHistory();
             });
-        }
+        });
     }
 
     async waitUntilEventOccurs(
         eventName: keyof EventSpies,
-        timeoutMs: number = 5000
+        timeoutMs: number = 5000,
+        peerIndices?: number[]
     ): Promise<void> {
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         const condition = () => {
-            return this.harness.peers.some(
+            return peers.every(
                 (peer) => this.getEventCallCount(peer.index, eventName) > 0
             );
         };

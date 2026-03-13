@@ -48,8 +48,11 @@ describe("E2E: Timeouts", function () {
             await h.transition.advanceState({ rounds: 1 }); // All 3 peers write once
             h.event.resetEventSpies();
             await h.network.disconnectPeer(2);
+            // TODO - never flaky when run in isolation - very flaky when run in parallel
+            // TODO - under load Peer 1 can experience RaceConditionBlockCalldataTimestampTooLate - investigate
             await h.transition.advanceState({ count: 2 }); // Peers 0 and 1 write (peer 2 disconnected)
             await h.assert.calldata.calldataPosted();
+            await h.assert.sync.peersInSyncWait();
         });
 
         it("should handle timeout when author peer disconnects", async function () {
@@ -90,7 +93,7 @@ describe("E2E: Timeouts", function () {
                 timeoutMs: 10000
             });
             await h.assert.dispute.committedWait();
-            h.assert.storage.storedTimeout({ participant: 2 });
+            h.assert.storage.storedTimeout({ timedoutParticipantIndex: 2 });
         });
 
         it("should handle timeout when previous peer posted junk calldata and next peer doesn't author block", async function () {
@@ -113,10 +116,18 @@ describe("E2E: Timeouts", function () {
             });
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
             h.event.resetEventSpies();
-            await h.assert.dispute.initiatedWait({
+            await h.assert.dispute.initiatedAndCommitedWait({
                 peersIndices: [1, 2],
                 timeoutMs: 10000
             });
+            await h.assert.storage.storedTimeout({
+                timedoutParticipantIndex: 0,
+                peerToCheck: 1
+            }); // peer 0 should be timed out for not authoring block
+            await h.assert.storage.storedTimeout({
+                timedoutParticipantIndex: 0,
+                peerToCheck: 2
+            }); // peer 0 should be timed out for not authoring block
         });
     });
 

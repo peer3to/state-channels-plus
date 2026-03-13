@@ -118,7 +118,7 @@ export const DisputeAuditingDataEthersType = `tuple(
 ${SnapshotDataEthersType} genesisStateSnapshotData,
 ${StateSnapshotEthersType} latestStateSnapshot,
 ${StateSnapshotEthersType}[] milestoneSnapshots,
-bytes latestStateStateMachineState,
+bytes latestFinalizedStateStateMachineState,
 ${MessageBlockEthersType}[] inboundMessageBlocks,
 ${MessageBlockEthersType}[] outboundMessageBlocks
 )`;

@@ -1,4 +1,4 @@
-import { ForkId } from "@/types/types";
+import { ForkId, Hash } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import type { TestPeer } from "@test/harness/core/types";
@@ -22,8 +22,12 @@ export class SyncCoordinator {
     public async waitForPeersToSync(
         peers: TestPeer[],
         forkId: ForkId,
-        timeoutMs = 8000
+        options?: {
+            timeoutMs?: number;
+            blockHashInStorage?: Hash;
+        }
     ): Promise<void> {
+        const { timeoutMs = 8000, blockHashInStorage } = options || {};
         this.logger.verbose(`Waiting for ${peers.length} peers to sync`, {
             forkId,
             timeout: timeoutMs,
@@ -35,7 +39,11 @@ export class SyncCoordinator {
             if (peers.length === 0) return true;
 
             const blocks = peers.map((peer) =>
-                peer.stateManager.storage.blocks.getLatestBlock(forkId)
+                blockHashInStorage
+                    ? peer.stateManager.storage.blocks.getBlock(
+                          blockHashInStorage
+                      )
+                    : peer.stateManager.storage.blocks.getLatestBlock(forkId)
             );
 
             if (blocks.some((b) => !b)) {

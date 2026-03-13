@@ -23,7 +23,7 @@ export class ScenarioActions {
         await this.harness.assert.sync.forkChangedWait();
     }
 
-    async fourPeersDisputeResolutionAndSnapshotUpdate(options?: {
+    async fourPeersDisputeResolutionAndSnapshotUpdateDetached(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -36,6 +36,23 @@ export class ScenarioActions {
             peerIndex: 0
         });
         await this.harness.assert.snapshot.onChainSnapshotChangedDetached({
+            expectedSnapshot
+        });
+    }
+
+    async fourPeersDisputeResolutionAndSnapshotUpdateWait(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        await this.fourPeersDisputeResolution(options);
+        const expectedSnapshot = await this.harness.transition.postSnapshot({
+            peerIndex: 0
+        });
+        await this.harness.assert.snapshot.onChainSnapshotChangedWait({
             expectedSnapshot
         });
     }
@@ -63,6 +80,7 @@ export class ScenarioActions {
         await this.harness.transition.advanceState({
             count: initialTransitions
         });
+        await this.harness.event.resetEventSpies();
         await this.harness.addPeer();
         await this.harness.event.waitUntilEventOccurs("onConnection", 5000);
         await this.harness.assert.sync.peersInSyncWait({
@@ -71,35 +89,13 @@ export class ScenarioActions {
     }
 
     async readyForRedispute() {
-        await this.harness.lifecycle.start(4, 0, {
-            timeConfig: {
-                p2pTime: 2,
-                agreementTime: 1,
-                chainFallbackTime: 2,
-                evidenceTime: 4
-            }
-        });
+        await this.harness.lifecycle.start(4, 0);
 
         await this.harness.byzantine.disconnect(3);
         await this.harness.transition.advanceState({ txFn: (c) => c.add(1) });
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2]
         });
-        this.harness.event.resetEventSpies();
-    }
-
-    async peer2Isolated() {
-        await this.harness.lifecycle.start(3, 0, {
-            timeConfig: {
-                p2pTime: 1,
-                agreementTime: 1,
-                chainFallbackTime: 2
-            }
-        });
-
-        this.harness.byzantine.stubCalldataHandler(2);
-        this.harness.contextApi.storeSnapshotCount(2, "before_isolation");
-        await this.harness.byzantine.disconnect(2);
         this.harness.event.resetEventSpies();
     }
 

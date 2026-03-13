@@ -74,7 +74,7 @@ describe("E2E: Is Fork Disputed", function () {
 
         it("should disconnect non-responding peers after acknowledgment timeout", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 1 } });
+            await h.lifecycle.start(3, 0);
             await h.rpc.requestFakeDisputeWithSpiedDisconnect({
                 requestingPeer: 0
             });

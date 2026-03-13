@@ -286,32 +286,6 @@ export class RPCActions {
         );
     }
 
-    async sendInvalidSignatureHandshakeResponse(options: {
-        fromPeer: number;
-        toPeer: number;
-    }): Promise<void> {
-        const { fromPeer, toPeer } = options;
-        const transport = await this.harness.query.waitForPeerTransport(
-            toPeer,
-            fromPeer,
-            5000
-        );
-
-        const fromPeerObj = this.harness.getPeer(fromPeer);
-        const initiatingService = this.getInitHandshakeService(toPeer);
-
-        const wrongMessage = ethers.randomBytes(32);
-        const invalidSignature =
-            await fromPeerObj.signer.signMessage(wrongMessage);
-
-        const rpcHandler = initiatingService.createRPCMethods(transport);
-        await rpcHandler.onInitHandshakeResponse(
-            invalidSignature,
-            Clock.getTimeInSeconds(),
-            fromPeerObj.stateManager.p2pManager.preferredTransport
-        );
-    }
-
     async sendUnsolicitedHandshakeResponse(options: {
         fromPeer: number;
         toPeer: number;

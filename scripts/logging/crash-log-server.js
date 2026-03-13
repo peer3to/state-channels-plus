@@ -16,6 +16,8 @@ const LOG_DIR =
 
 const app = express();
 const channelDirCache = new Map();
+let uploadInFlight = 0;
+let uploadRequestSeq = 0;
 
 app.use(cors());
 
@@ -178,29 +180,93 @@ function sanitizeSegment(value) {
     return String(value).replace(/[\/]/g, "_");
 }
 
+function getRequestMeta(req) {
+    return req._uploadMeta || null;
+}
+
+function getHeaderString(value) {
+    if (Array.isArray(value)) return value[0] || "";
+    if (typeof value === "string") return value;
+    return "";
+}
+
+app.use("/logs/upload", (req, res, next) => {
+    const requestId = ++uploadRequestSeq;
+    const startedAt = Date.now();
+    const contentLengthHeader = Number(req.headers["content-length"] || 0);
+    const uploadId = getHeaderString(req.headers["x-upload-id"]);
+
+    uploadInFlight += 1;
+    req._uploadMeta = {
+        requestId,
+        startedAt,
+        uploadId,
+        contentLengthHeader: Number.isFinite(contentLengthHeader)
+            ? contentLengthHeader
+            : 0
+    };
+
+    console.log(
+        `[CrashLogServer][${requestId}] Upload start uploadId=${uploadId || "N/A"} method=${req.method} path=${req.path} inflight=${uploadInFlight} contentLengthHeader=${req._uploadMeta.contentLengthHeader}`
+    );
+
+    res.on("finish", () => {
+        const meta = getRequestMeta(req);
+        const totalMs = meta ? Date.now() - meta.startedAt : -1;
+        uploadInFlight = Math.max(0, uploadInFlight - 1);
+        console.log(
+            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload end uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} status=${res.statusCode} totalMs=${totalMs} inflight=${uploadInFlight}`
+        );
+    });
+
+    next();
+});
+
 app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
     try {
+        const meta = getRequestMeta(req);
+        const parseDoneMs = meta ? Date.now() - meta.startedAt : -1;
         const { channelId, peerAddress, compressedLogs } = req.body || {};
 
+        if (meta && meta.uploadId) {
+            res.setHeader("x-upload-id", meta.uploadId);
+        }
+
         if (!channelId || !peerAddress || !compressedLogs) {
+            console.warn(
+                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} missing required fields channelId=${Boolean(channelId)} peerAddress=${Boolean(peerAddress)} compressedLogs=${Boolean(compressedLogs)}`
+            );
             res.status(400).json({
                 error: "Incorrect request data"
             });
             return;
         }
 
+        const payloadBytes = Buffer.byteLength(String(compressedLogs), "utf8");
+        const resolveStartedAt = Date.now();
+
         const { dir: channelDir, timestamp } = await resolveChannelDir(
             channelId,
             { rotateIfOld: true }
         );
+        const resolveMs = Date.now() - resolveStartedAt;
         const safePeer = sanitizeSegment(peerAddress);
         const filename = `${safePeer}`;
         const filepath = path.join(channelDir, filename);
 
+        const writeStartedAt = Date.now();
+
         await fs.writeFile(filepath, compressedLogs, "utf8");
+
+        const writeMs = Date.now() - writeStartedAt;
+
+        console.log(
+            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} payloadBytes=${payloadBytes} parseMs=${parseDoneMs} resolveDirMs=${resolveMs} writeMs=${writeMs} timestamp=${timestamp}`
+        );
 
         res.status(200).json({
             success: true,
+            uploadId: meta && meta.uploadId ? meta.uploadId : null,
             channelId,
             peerAddress,
             filename
@@ -209,6 +275,42 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
         console.error("[CrashLogServer] Upload failed:", err);
         res.status(500).json({ error: "Internal server error" });
     }
+});
+
+app.use("/logs/upload", (err, req, res, next) => {
+    const meta = getRequestMeta(req);
+    const requestId = meta ? meta.requestId : "unknown";
+    const elapsedMs = meta ? Date.now() - meta.startedAt : -1;
+    const statusCode =
+        Number(err && err.status) || Number(err && err.statusCode);
+
+    if (err && err.type === "entity.too.large") {
+        console.error(
+            `[CrashLogServer][${requestId}] Upload parser rejected payload: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} entity too large elapsedMs=${elapsedMs} limit=50mb contentLengthHeader=${meta ? meta.contentLengthHeader : 0}`
+        );
+        res.status(413).json({ error: "Payload too large" });
+        return;
+    }
+
+    if (err && err.type === "entity.parse.failed") {
+        console.error(
+            `[CrashLogServer][${requestId}] Upload parser failed: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} invalid JSON elapsedMs=${elapsedMs}`
+        );
+        res.status(400).json({ error: "Invalid JSON body" });
+        return;
+    }
+
+    console.error(
+        `[CrashLogServer][${requestId}] Upload middleware error uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} elapsedMs=${elapsedMs} status=${statusCode || 500}:`,
+        err
+    );
+
+    if (res.headersSent) {
+        next(err);
+        return;
+    }
+
+    res.status(statusCode || 500).json({ error: "Internal server error" });
 });
 
 app.get("/logs/index", async (_req, res) => {

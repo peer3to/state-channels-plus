@@ -3,11 +3,13 @@ import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
-import { Hash, Signature } from "@/types/types";
+import { Bytes, Hash, Signature } from "@/types/types";
 import { Codec, DisputeFraudStruct, Logger } from "@/utils";
 import {
     BlockConfirmationStruct,
-    SignedBlockStruct
+    MessageBlockStruct,
+    SignedBlockStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
@@ -18,23 +20,20 @@ import {
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
-    DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct,
-    DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct,
     DisputeInvalidBalanceInvariantStruct,
     DisputeInvalidBlockInStateProofApplyFraudProofStruct,
     DisputeInvalidOutputStateStruct,
-    DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct,
-    DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct,
+    DisputeInvalidStateProofStruct,
     DisputeNotLatestStateStruct,
     DisputeOnChainSlashesNotSubsetStruct,
     TimeoutCalldataPostedStruct,
     TimeoutNotLinkedToLatestStateStruct,
     TimeoutParticipantNotNextStruct,
     TimeoutThresholdStruct,
-    TimeoutTooEarlyStruct
+    TimeoutTooEarlyStruct,
+    DisputeLastMilestoneNotFinalAndNoAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import { BigNumberish, BytesLike } from "ethers";
-
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
 
 /**
@@ -66,10 +65,14 @@ export default class DisputeFraudProofService {
 
     createDisputeInvalidOutputState(
         dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
+        latestStateSnapshot: StateSnapshotStruct,
+        latestStateMachineState: Bytes,
+        inboundMessageBlocks: MessageBlockStruct[]
     ): Hash {
         const proof: DisputeInvalidOutputStateStruct = {
-            auditingData
+            latestStateSnapshot,
+            latestStateMachineState,
+            inboundMessageBlocks
         };
 
         return this.storeFraudProof(dispute, {
@@ -78,69 +81,27 @@ export default class DisputeFraudProofService {
         });
     }
 
-    createDisputeInvalidStateProofWithoutAuditingDataIntegrityVerified(
+    createDisputeInvalidStateProof(
         dispute: DisputeStruct,
         auditingData: DisputeAuditingDataStruct
     ): Hash {
-        const proof: DisputeInvalidStateProofWithoutAuditingDataIntegrityVerifiedStruct =
-            {
-                auditingData
-            };
+        const proof: DisputeInvalidStateProofStruct = {
+            auditingData
+        };
 
         return this.storeFraudProof(dispute, {
-            type: DisputeFraudProofType.DisputeInvalidStateProofWithoutAuditingDataIntegrityVerified,
-            struct: proof
-        });
-    }
-    createDisputeInvalidStateProofWithAuditingDataIntegrityVerified(
-        dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
-    ): Hash {
-        const proof: DisputeInvalidStateProofWithAuditingDataIntegrityVerifiedStruct =
-            {
-                auditingData
-            };
-
-        return this.storeFraudProof(dispute, {
-            type: DisputeFraudProofType.DisputeInvalidStateProofWithAuditingDataIntegrityVerified,
-            struct: proof
-        });
-    }
-
-    createDisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks(
-        dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
-    ): Hash {
-        const proof: DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocksStruct =
-            {
-                auditingData
-            };
-
-        return this.storeFraudProof(dispute, {
-            type: DisputeFraudProofType.DisputeIncorrectAuditingDataCommitmentWithValidStateProofAndValidOutboundMessageBlocks,
-            struct: proof
-        });
-    }
-    createDisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified(
-        dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
-    ): Hash {
-        const proof: DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerifiedStruct =
-            {
-                auditingData
-            };
-
-        return this.storeFraudProof(dispute, {
-            type: DisputeFraudProofType.DisputeIncorrectAuditingDataWithAuditingDataIntegrityVerified,
+            type: DisputeFraudProofType.DisputeInvalidStateProof,
             struct: proof
         });
     }
     createDisputeInvalidBalanceInvariant(
         dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
+        latestStateSnapshot: StateSnapshotStruct,
+        latestStateMachineState: Bytes
     ): Hash {
         const proof: DisputeInvalidBalanceInvariantStruct = {
-            auditingData
+            latestStateSnapshot,
+            latestStateMachineState
         };
 
         return this.storeFraudProof(dispute, {
@@ -148,12 +109,9 @@ export default class DisputeFraudProofService {
             struct: proof
         });
     }
-    createDisputeOnChainSlashesNotSubset(
-        dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
-    ): Hash {
+    createDisputeOnChainSlashesNotSubset(dispute: DisputeStruct): Hash {
         const proof: DisputeOnChainSlashesNotSubsetStruct = {
-            auditingData
+            __: false
         };
 
         return this.storeFraudProof(dispute, {
@@ -163,12 +121,14 @@ export default class DisputeFraudProofService {
     }
     createTimeoutThreshold(
         dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct,
-        thresholdBlock: BlockConfirmationStruct
+        thresholdBlock: BlockConfirmationStruct,
+        latestStateSnapshot: StateSnapshotStruct,
+        thresholdStateSnapshot: StateSnapshotStruct
     ): Hash {
         const proof: TimeoutThresholdStruct = {
             thresholdBlock,
-            auditingData
+            latestStateSnapshot,
+            thresholdStateSnapshot
         };
 
         return this.storeFraudProof(dispute, {
@@ -178,14 +138,18 @@ export default class DisputeFraudProofService {
     }
     createTimeoutCalldataPosted(
         dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct,
+        genesisStateSnapshotData: DisputeAuditingDataStruct["genesisStateSnapshotData"],
+        latestStateSnapshot: StateSnapshotStruct,
+        latestStateStateMachineState: Bytes,
         postedBlock: SignedBlockStruct,
         onChainTimestamp: BigNumberish,
         previousBlockOnChainTimestamp: BigNumberish,
         previousBlockcalldata: SignedBlockStruct
     ): Hash {
         const proof: TimeoutCalldataPostedStruct = {
-            auditingData,
+            genesisStateSnapshotData,
+            latestStateSnapshot,
+            latestStateStateMachineState,
             postedBlock,
             onChainTimestamp,
             previousBlockOnChainTimestamp,
@@ -207,12 +171,28 @@ export default class DisputeFraudProofService {
             struct: proof
         });
     }
+
+    createDisputeLastMilestoneNotFinalAndNoAuditingData(
+        dispute: DisputeStruct
+    ): Hash {
+        const proof: DisputeLastMilestoneNotFinalAndNoAuditingDataStruct = {
+            __: false
+        };
+
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData,
+            struct: proof
+        });
+    }
+
     createTimeoutParticipantNotNext(
         dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
+        latestStateSnapshot: StateSnapshotStruct,
+        latestStateStateMachineState: Bytes
     ): Hash {
         const proof: TimeoutParticipantNotNextStruct = {
-            auditingData
+            latestStateSnapshot,
+            latestStateStateMachineState
         };
 
         return this.storeFraudProof(dispute, {
@@ -222,11 +202,11 @@ export default class DisputeFraudProofService {
     }
     createTimeoutTooEarly(
         dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct,
+        genesisStateSnapshotData: DisputeAuditingDataStruct["genesisStateSnapshotData"],
         previousBlockOnChainTimestampIfExists?: BigNumberish
     ): Hash {
         const proof: TimeoutTooEarlyStruct = {
-            auditingData,
+            genesisStateSnapshotData,
             previousBlockOnChainTimestamp:
                 previousBlockOnChainTimestampIfExists || 0
         };
@@ -264,7 +244,7 @@ export default class DisputeFraudProofService {
             encodedProof: Codec.encode(proof.struct, proof.type)
         };
 
-        const proofHash =
+        const disputeHash =
             this.storage.disputeFraudProofs.storeFraudProof(disputeFraudProof);
 
         this.logger.debug("Stored dispute fraud proof", {
@@ -272,6 +252,6 @@ export default class DisputeFraudProofService {
             type: DisputeFraudProofType[proof.type]
         });
 
-        return proofHash;
+        return disputeHash;
     }
 }

@@ -37,6 +37,31 @@ abstract contract StateChannelManagerInterface {
 
     function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view virtual returns (bool);
 
+    function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+        public
+        virtual
+        returns (bool);
+
+    function isCorrectLatestState(Dispute memory dispute, SnapshotData memory genesisStateSnapshotData)
+        public
+        virtual
+        returns (bool);
+
+    function verifyMilestones(
+        bytes32 forkId,
+        MilestoneProof[] memory milestoneProofs,
+        StateSnapshot[] memory milestoneSnapshots,
+        StateSnapshot memory thresholdStateSnapshot
+    ) public virtual returns (bool isValid);
+
+    function isMilestoneFinal(
+        bytes32 forkId,
+        SnapshotData memory thresholdSnapshotData,
+        MilestoneProof memory milestone
+    ) public virtual returns (bool isFinal, bytes32 finalizedSnapshotHash);
+
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public view virtual returns (bool);
+
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public virtual;
 
     function uploadDisputeWithCalldata(
