@@ -217,4 +217,18 @@ contract UtilityFacet {
     function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure returns (bool) {
         return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
     }
+
+    function isSnapshotNewer(StateSnapshot memory newSnapshot, StateSnapshot memory currentSnapshot)
+        public
+        pure
+        returns (bool)
+    {
+        if (newSnapshot.blockHeight > currentSnapshot.blockHeight) return true;
+        if (
+            newSnapshot.blockHeight == 0 && currentSnapshot.blockHeight == 0
+                && isGenesisSnapshotWithoutTimeCheck(currentSnapshot)
+                && keccak256(abi.encode(newSnapshot)) != keccak256(abi.encode(currentSnapshot))
+        ) return true;
+        return false;
+    }
 }

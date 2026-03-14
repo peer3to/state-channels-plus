@@ -1418,14 +1418,11 @@ class StateManager {
                         "Milestone built but corresponding snapshot not found"
                     );
 
-                // Include milestones that are newer than current on-chain, or at blockHeight 0 with different hash
-                const snapshotIsForFirstBlock =
-                    snapshot.blockHeight === 0 &&
-                    currentOnChainSnapshot.blockHeight === 0;
                 if (
-                    snapshot.blockHeight > currentOnChainSnapshot.blockHeight ||
-                    (snapshotIsForFirstBlock &&
-                        snapshot.hash !== currentOnChainSnapshot.hash)
+                    await this.diamondStateMachine.localDiamondContract.isSnapshotNewer(
+                        snapshot.toStruct(),
+                        currentOnChainSnapshot.toStruct()
+                    )
                 ) {
                     milestoneProofs.push(milestoneProof);
                     milestoneSnapshots.push(snapshot);

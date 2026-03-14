@@ -49,11 +49,9 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
-        bool isGenesisSnapshotWithoutTimeCheck =
-            UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentStateSnapshot);
         require(currentStateSnapshot.forkId == newStateSnapshot.forkId, RaceConditionSnapshotForkMismatch());
         require(
-            newStateSnapshot.blockHeight > currentStateSnapshot.blockHeight || isGenesisSnapshotWithoutTimeCheck,
+            UtilityFacet(utilityFacetAddress).isSnapshotNewer(newStateSnapshot, currentStateSnapshot),
             RaceConditionBlockHeightTooOld()
         );
         require(
