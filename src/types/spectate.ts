@@ -18,6 +18,7 @@ export interface DisputeWindowVerification {
 export interface SyncPayload {
     disputeWindows: DisputeWindowVerification[];
     latestForkGenesisSnapshot: StateSnapshotStruct;
+    latestForkGenesisEncodedState: Bytes;
     stateProof: StateProofStruct;
     milestoneSnapshots: StateSnapshotStruct[];
     latestFinalizedEncodedState: Bytes;

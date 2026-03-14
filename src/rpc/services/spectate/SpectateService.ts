@@ -216,12 +216,23 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         if (!latestForkGenesisSnapshot) {
             throw new Error(`No genesis snapshot found for fork ${forkId}`);
         }
+        const latestForkGenesisEncodedState =
+            stateManager.storage.stateMachineStates.getStateMachineState(
+                latestForkGenesisSnapshot.snapshotData.stateMachineStateHash
+            );
+        if (!latestForkGenesisEncodedState) {
+            throw new Error(
+                `No encoded state found for latest fork genesis state hash ${latestForkGenesisSnapshot.snapshotData.stateMachineStateHash}`
+            );
+        }
 
         const outboundMessageBlocksUpToLatestGenesis =
-            stateManager.storage.outboundMessages.getMessageBlocksInRange(
-                latestForkGenesisSnapshot.latestOutboundMessageBlockHash,
-                currentOnChainSnapshot.latestOutboundMessageBlockHash
-            );
+            stateManager.storage.outboundMessages.getMessageBlocksInRange({
+                fromBlockHash:
+                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash,
+                toBlockHash:
+                    currentOnChainSnapshot.latestOutboundMessageBlockHash
+            });
 
         const latestBlockHeight =
             stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
@@ -251,13 +262,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             });
 
         // As for a snapshot update, we prove the latest finalized one and from that one the peer can start performing SMR and validating each ST.
-        const latestFinalizedMilestoneSnapshot =
+        const latestFinalizedSnapshot =
             milestoneSnapshots.length > 0
                 ? milestoneSnapshots.at(-1)!
                 : latestForkGenesisSnapshot;
 
         const stateHash =
-            latestFinalizedMilestoneSnapshot.snapshotData.stateMachineStateHash;
+            latestFinalizedSnapshot.snapshotData.stateMachineStateHash;
         const latestFinalizedEncodedState =
             stateManager.storage.stateMachineStates.getStateMachineState(
                 stateHash
@@ -269,14 +280,17 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         }
 
         const outboundMessageBlocksOfTheLatestFork =
-            stateManager.storage.outboundMessages.getMessageBlocksInRange(
-                latestFinalizedMilestoneSnapshot.latestOutboundMessageBlockHash,
-                latestForkGenesisSnapshot.latestOutboundMessageBlockHash
-            );
+            stateManager.storage.outboundMessages.getMessageBlocksInRange({
+                fromBlockHash:
+                    latestFinalizedSnapshot.latestOutboundMessageBlockHash,
+                toBlockHash:
+                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash
+            });
         // Return payload with all available data
         const syncPayload: SyncPayload = {
             disputeWindows,
             latestForkGenesisSnapshot: latestForkGenesisSnapshot.toStruct(),
+            latestForkGenesisEncodedState,
             stateProof: latestStateProof,
             milestoneSnapshots: milestoneSnapshots.map((ms) => ms.toStruct()),
             latestFinalizedEncodedState,
@@ -450,6 +464,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         }
         storage.stateSnapshots.storeStateSnapshot(
             StateSnapshot.from(syncPayload.latestForkGenesisSnapshot)
+        );
+        storage.stateMachineStates.storeStateMachineState(
+            syncPayload.latestForkGenesisEncodedState,
+            {
+                hash: syncPayload.latestForkGenesisSnapshot.snapshotData
+                    .stateMachineStateHash
+            }
         );
         this.persistFinalizedPartsOfStateProof(syncPayload.stateProof);
         for (const snapshot of syncPayload.milestoneSnapshots)

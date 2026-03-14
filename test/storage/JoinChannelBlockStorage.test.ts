@@ -74,10 +74,10 @@ describe("MessageBlockStorage - inbound blocks", () => {
             };
             const secondHash = storage.store(secondBlock);
 
-            const blocks = storage.getMessageBlocksInRange(
-                secondHash,
-                mockMessageBlock.previousBlockHash as Hash
-            );
+            const blocks = storage.getMessageBlocksInRange({
+                fromBlockHash: secondHash,
+                toBlockHash: mockMessageBlock.previousBlockHash as Hash
+            });
             expect(blocks).to.have.length(2);
             expect(blocks[0]).to.deep.equal(mockMessageBlock);
             expect(blocks[1]).to.deep.equal(secondBlock);

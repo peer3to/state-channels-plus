@@ -8,6 +8,11 @@ type StoreOptions = {
     justPersist?: boolean; // if true, do not update latest block pointers
 };
 
+type GetRangeOptions = {
+    fromBlockHash?: Hash;
+    toBlockHash?: Hash;
+};
+
 export class MessageBlockStorage {
     private blockMap: Map<Hash, MessageBlockStruct>;
     private latestBlockHash?: Hash;
@@ -54,11 +59,13 @@ export class MessageBlockStorage {
 
     // [fromBlockHash, toBlockHash) - iterate backwards the blockchain
     *getIterator(
-        fromBlockHash: Hash,
-        toBlockHash?: Hash
+        options?: GetRangeOptions
     ): Generator<MessageBlockStruct, void, unknown> {
-        if (fromBlockHash == ZeroHash) return;
-        let currentHash = fromBlockHash;
+        const { fromBlockHash, toBlockHash } = options ?? {};
+        const startBlockHash = fromBlockHash ?? this.latestBlockHash;
+        if (!startBlockHash || startBlockHash == ZeroHash) return;
+
+        let currentHash = startBlockHash;
         while (currentHash != ZeroHash) {
             if (toBlockHash && currentHash === toBlockHash) break;
             const messageBlock = this.blockMap.get(currentHash);
@@ -71,15 +78,9 @@ export class MessageBlockStorage {
         }
     }
 
-    getMessageBlocksInRange(
-        fromBlockHash: Hash,
-        toBlockHash: Hash
-    ): MessageBlockStruct[] {
+    getMessageBlocksInRange(options?: GetRangeOptions): MessageBlockStruct[] {
         const blocks: MessageBlockStruct[] = [];
-        for (const messageBlock of this.getIterator(
-            fromBlockHash,
-            toBlockHash
-        )) {
+        for (const messageBlock of this.getIterator(options)) {
             blocks.unshift(messageBlock);
         }
         return blocks;
@@ -102,7 +103,9 @@ export class MessageBlockStorage {
         if (!this.latestBlockHash) return [];
 
         const blocks: MessageBlockStruct[] = [];
-        for (const messageBlock of this.getIterator(this.latestBlockHash)) {
+        for (const messageBlock of this.getIterator({
+            fromBlockHash: this.latestBlockHash
+        })) {
             blocks.push(messageBlock);
             if (limit !== undefined && blocks.length >= limit) break;
         }
