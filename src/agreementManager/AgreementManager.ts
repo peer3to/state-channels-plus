@@ -167,7 +167,6 @@ class AgreementManager {
                 signedBlocks.push(block.signedBlock);
 
                 if (
-                    block.height === 0 ||
                     block.stateSnapshotHash === previousThresholdSnapshot.hash
                 ) {
                     break;

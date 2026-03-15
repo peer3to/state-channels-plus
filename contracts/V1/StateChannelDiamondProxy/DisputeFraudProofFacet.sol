@@ -64,6 +64,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData) {
             return _handleDisputeLastMilestoneNotFinalAndNoAuditingData;
         }
+        if (proofType == DisputeFraudProofType.InvalidDisputeReason) {
+            return _handleInvalidDisputeReason;
+        }
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -123,6 +126,23 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
         bool isFinal = _isLastMilestoneFinalByEveryone(dispute);
         if (!isFinal) return _valid(dispute.input.disputer);
+        return _invalid();
+    }
+
+    function _handleInvalidDisputeReason(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        pure
+        returns (address)
+    {
+        abi.decode(encodedFraudProof, (InvalidDisputeReason));
+
+        bool hasTimeout = dispute.input.timeout.participant != address(0);
+        bool hasOnChainSlashes = dispute.input.onChainSlashes.length > 0;
+        bool hasSelfRemoval = dispute.input.selfRemoval;
+
+        if (!hasTimeout && !hasOnChainSlashes && !hasSelfRemoval) {
+            return _valid(dispute.input.disputer);
+        }
         return _invalid();
     }
 

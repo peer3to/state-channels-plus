@@ -182,6 +182,10 @@ export const DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType = `tup
     bool __
 )`;
 
+export const InvalidDisputeReasonProofEthersType = `tuple(
+    bool __
+)`;
+
 export const TimeoutParticipantNotNextProofEthersType = `tuple(
     ${StateSnapshotEthersType} latestStateSnapshot,
     bytes latestStateStateMachineState

@@ -442,6 +442,22 @@ export default class DisputeValidationService {
             }
         }
 
+        // [check] dispute has a legitimate enforcement basis
+        const hasTimeout =
+            dispute.input.timeout.participant !== ethers.ZeroAddress;
+
+        const hasOnChainSlashes = dispute.input.onChainSlashes.length > 0;
+
+        const hasSelfRemoval = dispute.input.selfRemoval;
+
+        if (!hasTimeout && !hasOnChainSlashes && !hasSelfRemoval) {
+            this.logger.warn("Dispute has no legitimate enforcement basis", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute)
+            });
+            this.disputeFraudProofService.createInvalidDisputeReason(dispute);
+            return false;
+        }
+
         const isOutputValid = await this.verifyDisputeOutput(
             dispute,
             disputeAuditingData
