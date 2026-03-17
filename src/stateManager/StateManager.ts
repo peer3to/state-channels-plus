@@ -1864,7 +1864,7 @@ class StateManager {
             );
             this.timeoutManager.scheduleTask(
                 () => {
-                    this.tryTimeoutParticipant(
+                    return this.tryTimeoutParticipant(
                         forkId,
                         blockHeight,
                         participantAddress
@@ -1908,7 +1908,7 @@ class StateManager {
                     );
                     this.timeoutManager.scheduleTask(
                         () => {
-                            this.tryTimeoutParticipant(
+                            return this.tryTimeoutParticipant(
                                 forkId,
                                 blockHeight,
                                 participantAddress
