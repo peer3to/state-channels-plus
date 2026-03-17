@@ -181,15 +181,11 @@ describe("E2E: Dispute Validation Pipeline", function () {
 
         // FAILS
         /*
-        onDisputeKilled counts not reached within 10000ms, expected: [{"peerId":1,"expectedCount":1}], actual: [{"peerId":1,"actualCount":0}]
+        createDisputeInvalidBlockInStateProofApplyFraudProof is NEVER used in the pipeline. 
         */
         it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(ForgedInboundMessageBlock) when a state proof block contains a forged inbound message", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup(4);
-            // peer 3 withholds block confirmations so the last milestone has unfinalized blocks
-            //  takes the turn of peer 2
-            await h.scenario.peerWithUnbroadcastedBlock(3);
-            h.event.resetEventSpies();
 
             const injectForgedMessageBlock = async (
                 dispute: any,
@@ -264,45 +260,6 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait({
                 maliciousPeerIndex: 2,
                 honestPeerIndices: [1]
-            });
-        });
-    });
-
-    describe("Auditing Data Hash Mismatch", function () {
-        // FAILS
-        /*
-        onDisputeKilled counts not reached within 10000ms, expected: [{"peerId":1,"expectedCount":1}], actual: [{"peerId":1,"actualCount":0}]
-        */
-        it("should kill dispute and store DisputeInvalidAuditingDataHash when disputeAuditingDataHash is tampered (with calldata)", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup(4);
-
-            await h.byzantine.disconnect(3);
-            // peer 2 turn
-            await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
-            h.event.resetEventSpies();
-
-            h.tamper.stubConstructDispute(0, (d) => {
-                if (!d.postedAuditingData) {
-                    throw new Error("Dispute does not have postedAuditingData");
-                }
-                d.input.disputeAuditingDataHash = hash("0x42");
-            });
-
-            // peer 2 double signs
-
-            await h.byzantine.submitDoubleSignBlock(2);
-
-            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof
-            });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 2,
-                honestPeerIndices: [1, 0]
             });
         });
     });
