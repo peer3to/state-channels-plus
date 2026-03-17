@@ -12,91 +12,65 @@ import type {
 
 PeerTestHarness.setDefaultLogLevel("error");
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Faulty block submission
-//
-// Each test needs a byzantine peer to submit an invalid block FIRST, so that
-// honest peers detect the fraud and autonomously raise disputes via the SDK.
-// We don't care which specific fraud variant triggers the first dispute — only
-// that the subsequent dispute validation pipeline detects the corrupted dispute.
-//
-// To add new faulty-block variants in the future, add an entry to
-// FAULTY_BLOCK_VARIANTS below.
-// ─────────────────────────────────────────────────────────────────────────────
-
-type FaultyBlockVariant =
-    | "invalidStateTransition"
-    | "doubleSign"
-    | "forgedInboundMessage";
-
-const FAULTY_BLOCK_VARIANTS: FaultyBlockVariant[] = [
-    "invalidStateTransition",
-    "doubleSign",
-    "forgedInboundMessage"
-];
-
-async function submitFaultyBlock(
-    h: PeerTestHarness,
-    byzantinePeerIndex: number,
-    variant?: FaultyBlockVariant,
-    options?: { forkId?: ForkId }
-): Promise<void> {
-    const chosen =
-        variant ??
-        FAULTY_BLOCK_VARIANTS[
-            Math.floor(Math.random() * FAULTY_BLOCK_VARIANTS.length)
-        ];
-
-    switch (chosen) {
-        case "invalidStateTransition":
-            await h.byzantine.submitInvalidStateTransitionBlock(
-                byzantinePeerIndex,
-                options
-            );
-            break;
-        case "doubleSign":
-            await h.byzantine.submitDoubleSignBlock(
-                byzantinePeerIndex,
-                options
-            );
-            break;
-        case "forgedInboundMessage":
-            await h.byzantine.submitForgedInboundMessageBlock(
-                byzantinePeerIndex,
-                options
-            );
-            break;
-        default: {
-            const _exhaustive: never = chosen;
-            throw new Error(`Unknown faulty block variant: ${_exhaustive}`);
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("E2E: Dispute Validation Pipeline", function () {
-    describe("Posted Auditing Data", function () {
-        it("should kill dispute and store DisputeInvalidStateProof when state proof fails", async function () {
+    describe("Invalid Latest State Proof (no calldata)", function () {
+        it("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (no-calldata path)", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
-            h.tamper.stubConstructDispute(0, (dispute) => {
+
+            // Stub peer 1's dispute construction to corrupt latestStateSnapshotHash.
+            // postedAuditingData remains false → no-calldata path.
+            h.tamper.stubConstructDispute(1, (dispute) => {
                 dispute.input.latestStateSnapshotHash = hash("0x42");
             });
-            await submitFaultyBlock(h, 1);
 
-            await h.event.waitForAllPeers("onDisputeKilled", 1, {
+            await h.byzantine.submitInvalidStateTransitionBlock(2);
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+        });
+    });
 
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1,
-                honestPeerIndices: [2]
+    describe("Posted Auditing Data (calldata path)", function () {
+        it.only("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (with calldata)", async function () {
+            const h = TestSession.getHarness();
+            // Setup: 4-peer channel, peer 2 leaves at block 2, then 2 post-leave blocks.
+            // After block 4, peer 0's isLastMilestoneFinalByEveryone=false → postedAuditingData=true naturally.
+            await h.scenario.preDisputeSetup(4);
+            //  peer 2 leaves
+            await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
+            //  peers 3,0 takes their turn
+            await h.transition.advanceState({
+                waitForPeers: [0, 1, 3],
+                count: 2
             });
+            //  next is peer 1 turn
+            h.event.resetEventSpies();
+
+            // Slow down peers 0, 1, 2 so the stubbed dispute from peer 3 is uploaded first
+            h.tamper.delayDisputeForPeers([0, 1], 2000);
+
+            // Peer 3 posts a tampered dispute directly via uploadDisputeWithCalldata
+            await h.tamper.stubConstructDispute(3, (d) => {
+                d.input.latestStateSnapshotHash = hash("0x42");
+            });
+
+            await h.byzantine.submitDoubleSignBlock(0);
+
+            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof
+            });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 3 });
         });
     });
 
@@ -134,7 +108,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
     });
 
     describe("State Proof Block Pipeline", function () {
-        // FLAKY
+        // FLAKY - need to slow down the dispute submission of the other peers (not the byzatine one)
+        //  to ensure the corrupted dispute is uploaded first
         it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(BlockInvalidStateTransition) when a milestone block has a corrupted encodedBlock", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup(4);
@@ -264,86 +239,85 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
+    describe("On-Chain Slashes Not Subset", function () {
+        it("should kill dispute and store DisputeOnChainSlashesNotSubset when onChainSlashes contains an address not actually slashed on-chain", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+
+            const fakeSlashedAddress = h.getPeer(0).address;
+            h.tamper.stubConstructDispute(1, async (dispute) => {
+                dispute.input.onChainSlashes = [
+                    ...dispute.input.onChainSlashes,
+                    fakeSlashedAddress
+                ];
+            });
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
+
+            await h.byzantine.submitForgedInboundMessageBlock(2);
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeOnChainSlashesNotSubset
+            });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+        });
+    });
+
+    describe("Balance Invariant", function () {
+        it("should kill dispute and store DisputeInvalidBalanceInvariant when the balance invariant fails", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+
+            // Corrupt snapshot store
+            h.tamper.corruptValidatorSnapshotForBalanceInvariant(2);
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.event.waitForAllPeers("onDisputeKilled", 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBalanceInvariant
+            });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+        });
+    });
+
+    describe("Dispute Not Latest State", function () {
+        it("should kill dispute and store DisputeNotLatestState when disputer posts state proof at an older block height than they have actually signed", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+
+            await h.transition.advanceState({ count: 3 });
+            //  now it is peer 2 turn, current block height is 4 (5 transactions done)
+
+            // Stub peer 0's constructDispute: truncate state proof to height 2 so the dispute
+            // shows latest at block 2, while peer 0 has actually signed block 4.
+            h.tamper.stubConstructDispute(0, (dispute) =>
+                h.tamper.truncateStateProofToHeight(dispute, 0, 2)
+            );
+
+            //  peer 1 submits a double sign block
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeNotLatestState
+            });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
+        });
+    });
+
     // TESTs BELOW ARE NOT DOEN YET (got stuck debugging the ones above)
 
     // ─────────────────────────────────────────────────────────────────────────────
-
-    // describe("Invalid Latest State Proof (no calldata)", function () {
-    //     it("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (no-calldata path)", async function () {
-    //         const h = TestSession.getHarness();
-    //         await h.scenario.preDisputeSetup();
-
-    //         // Stub peer 1's dispute construction to corrupt latestStateSnapshotHash.
-    //         // postedAuditingData remains false → no-calldata path.
-    //         h.tamper.stubConstructDispute(1, async (dispute) => {
-    //             dispute.input.latestStateSnapshotHash = hash("0x42");
-    //         });
-    //         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
-
-    //         await submitFaultyBlock(h, 1);
-
-    //         await h.event.waitForAllPeers("onDisputeKilled", 1, {
-    //             mode: "atLeast"
-    //         });
-    //         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-    //             disputeFraudProofType:
-    //                 DisputeFraudProofType.DisputeInvalidStateProof
-    //         });
-    //         await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 1 });
-    //         await h.assert.sync.forkChangedWait();
-    //     });
-    // });
-
-    // describe( "On-Chain Slashes Not Subset", function () {
-    //     it("should kill dispute and store DisputeOnChainSlashesNotSubset when onChainSlashes contains an address not actually slashed on-chain", async function () {
-    //         const h = TestSession.getHarness();
-    //         await h.scenario.preDisputeSetup();
-
-    //         // Stub peer 1's dispute construction to append a fake slashed address.
-    //         // All prior checks pass (stateProof and auditingDataHash are untouched).
-    //         const fakeSlashedAddress = ethers.Wallet.createRandom().address;
-    //         h.tamper.stubConstructDispute(1, async (dispute) => {
-    //             dispute.input.onChainSlashes = [
-    //                 ...dispute.input.onChainSlashes,
-    //                 fakeSlashedAddress
-    //             ];
-    //         });
-    //         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
-
-    //         await submitFaultyBlock(h, 1);
-
-    //         await h.event.waitForAllPeers("onDisputeKilled", 1, {
-    //             mode: "atLeast"
-    //         });
-    //         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-    //             disputeFraudProofType:
-    //                 DisputeFraudProofType.DisputeOnChainSlashesNotSubset
-    //         });
-    //         await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 1 });
-    //         await h.assert.sync.forkChangedWait();
-    //     });
-    // });
-
-    // describe("Balance Invariant", function () {
-    //     it.skip("should kill dispute and store DisputeInvalidBalanceInvariant when the balance invariant fails", async function () {
-    //         // TODO: verifyBalanceInvariantCheckSnapshot is called with values from
-    //         // LOCAL validator storage (not from the dispute struct itself).
-    //         // Making this fail while passing phases 1–3C requires corrupting the
-    //         // latestStateSnapshot snapshotData in a way that passes 3A and 3B but
-    //         // fails the balance invariant — which needs a dedicated harness action
-    //         // that corrupts the in-memory state snapshot store before validation.
-    //     });
-    // });
-
-    // describe("Dispute Not Latest State", function () {
-    //     it.skip("should kill dispute and store DisputeNotLatestState when disputer posts state proof at an older block height than they have actually signed", async function () {
-    //         // TODO: Requires rolling back the state proof to height N-1 while keeping
-    //         // disputeAuditingDataHash and latestStateSnapshotHash consistent with N-1
-    //         // (so 3A and 3B pass), while the agreementManager finds the disputer's
-    //         // signature on block N → DisputeNotLatestState.
-    //         // Needs a dedicated harness helper for consistent state-proof truncation.
-    //     });
-    // });
 
     // describe("Timeout Fraud Proofs", function () {
     //     it("should kill dispute and store TimeoutNotLinkedToLatestState when timeout.blockHeight does not equal latestBlockHeight + 1", async function () {
