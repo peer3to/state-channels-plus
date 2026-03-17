@@ -64,6 +64,18 @@ export class ScenarioActions {
         this.harness.contextApi.captureOriginalFork();
     }
 
+    async preDisputeSetupCalldataPath() {
+        await this.preDisputeSetup(4);
+        await this.harness.transition.advanceState({
+            txFn: (c) => c.leaveChannel()
+        });
+        await this.harness.transition.advanceState({
+            waitForPeers: [0, 1, 3],
+            count: 2
+        });
+        this.harness.event.resetEventSpies();
+    }
+
     async peerWithUnbroadcastedBlock(peerIndex: number = 1) {
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();

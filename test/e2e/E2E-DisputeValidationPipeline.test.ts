@@ -38,23 +38,12 @@ describe("E2E: Dispute Validation Pipeline", function () {
     });
 
     describe("Posted Auditing Data (calldata path)", function () {
-        it.only("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (with calldata)", async function () {
+        it("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (with calldata)", async function () {
             const h = TestSession.getHarness();
-            // Setup: 4-peer channel, peer 2 leaves at block 2, then 2 post-leave blocks.
-            // After block 4, peer 0's isLastMilestoneFinalByEveryone=false → postedAuditingData=true naturally.
-            await h.scenario.preDisputeSetup(4);
-            //  peer 2 leaves
-            await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
-            //  peers 3,0 takes their turn
-            await h.transition.advanceState({
-                waitForPeers: [0, 1, 3],
-                count: 2
-            });
-            //  next is peer 1 turn
-            h.event.resetEventSpies();
+            await h.scenario.preDisputeSetupCalldataPath();
 
             // Slow down peers 0, 1, 2 so the stubbed dispute from peer 3 is uploaded first
-            h.tamper.delayDisputeForPeers([0, 1], 2000);
+            h.tamper.delayDisputeForPeers([0, 1]);
 
             // Peer 3 posts a tampered dispute directly via uploadDisputeWithCalldata
             await h.tamper.stubConstructDispute(3, (d) => {
@@ -70,7 +59,10 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 3 });
+            await h.dispute.resolveDisputeWait({
+                maliciousPeerIndex: 3,
+                honestPeerIndices: [1]
+            });
         });
     });
 
