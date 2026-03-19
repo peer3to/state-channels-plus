@@ -177,7 +177,11 @@ export default class DisputeValidationService {
         const { auditingData: disputeAuditingData } =
             this.disputeManager.getAuditingData(
                 dispute.input.forkId,
-                dispute.input.stateProof
+                dispute.input.stateProof,
+                {
+                    disputeLatestInboundMessageBlockHash:
+                        dispute.input.latestInboundMessageBlockHash
+                }
             );
         // TODO move this check above and into its own fraud proof
         if (!postedAuditingData) {
@@ -380,19 +384,17 @@ export default class DisputeValidationService {
                     );
                     if (retrievedAddress == dispute.input.timeout.participant) {
                         // signature is valid, so extra time is forfeited
-                        previousTimestamp = previousBlock.currentTimestamp;
+                        previousTimestamp = previousBlock.timestamp;
                     } else {
                         // signature is invalid, so extra time is not forfeited
-                        previousTimestamp = previousBlock.getRelevantTimestamp(
-                            dispute.input.timeout.participant
-                        );
+                        previousTimestamp = previousBlock.currentTimestamp;
                     }
                 }
             }
             // previousTimestamp is now correctly set
-            // TODO - think if it's <= or <
+            // TODO - think if it's <= or < (in the contract it's <=)
             if (
-                timeoutTimestamp <
+                timeoutTimestamp <=
                 previousTimestamp +
                     this.stateManager.getTimeoutWaitTimeSeconds()
             ) {

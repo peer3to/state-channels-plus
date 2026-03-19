@@ -17,7 +17,7 @@ import {
     Signature
 } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
-import { Logger } from "@/utils";
+import { difference, Logger } from "@/utils";
 import { ZeroHash } from "ethers";
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { ReduceData } from "@/types";
@@ -144,8 +144,11 @@ class AgreementManager {
                     "Milestone built but corresponding snapshot not found"
                 );
             previousThresholdSnapshot = newSnapshot;
+        }
 
-            return {
+        let stateProof: StateProofStruct;
+        if (milestones.length != 0) {
+            stateProof = {
                 milestones,
                 // signedBlocks are empty since the milestone already accounted the latest state
                 signedBlocks: []
@@ -173,11 +176,34 @@ class AgreementManager {
 
             signedBlocks.reverse();
 
-            return {
+            stateProof = {
                 milestones,
                 signedBlocks
             };
         }
+
+        this.logger.verbose("Constructed state proof", {
+            forkId,
+            requestedBlockHeight: blockHeight,
+            latestStoredBlock: (() => {
+                const latestBlock = this.storage.blocks.getBlock(
+                    forkId,
+                    blockHeight
+                );
+
+                return latestBlock
+                    ? LoggerUtils.getBlockMetadata(latestBlock, this.storage)
+                    : undefined;
+            })(),
+            genesisSnapshot: LoggerUtils.getSnapshotMetadata(genesisSnapshot),
+            previousThresholdSnapshot: LoggerUtils.getSnapshotMetadata(
+                previousThresholdSnapshot
+            ),
+            participantChangeHeights,
+            stateProof: LoggerUtils.getStateProofMetadata(stateProof)
+        });
+
+        return stateProof;
     }
 
     /**
@@ -311,59 +337,43 @@ class AgreementManager {
         blockIterator: Generator<Block, void, unknown>,
         previousThresholdSnapshot: StateSnapshot
     ): MilestoneProofStruct | undefined {
-        const requiredSignersSet = new Set<Address>(
+        const collectedBlocks: Block[] = [];
+        const collectedSigners = new Set<Address>();
+        let thresholdBlock: Block | undefined;
+        let thresholdSigners = new Set<Address>(
             previousThresholdSnapshot.snapshotData.participants
         );
 
-        // Union of the previous snapshot and the resulting snapshot
-        // When executed in the context of an honest peer, it accounts for pending participants
-        // The honest peer verified the state transition of the join => the pending participat is in the resulting participant set
-        const expandRequiredParticipantsWithFirstBlockParticipants = (
-            firstBlock: Block
-        ) => {
-            const resultingSnapshot =
-                this.storage.stateSnapshots.getStateSnapshotByHash(
-                    firstBlock.stateSnapshotHash
-                );
-            if (!resultingSnapshot) {
-                return;
-            }
-            for (const participant of resultingSnapshot.snapshotData
-                .participants) {
-                requiredSignersSet.add(participant);
-            }
-        };
-
-        const filteredBlocks: Block[] = [];
-
         for (const currentBlock of blockIterator) {
-            const filteredBlock = Block.fromSignedBlock(
-                currentBlock.signedBlock
-            );
+            collectedBlocks.push(currentBlock);
 
-            if (filteredBlocks.length === 0) {
-                expandRequiredParticipantsWithFirstBlockParticipants(
-                    currentBlock
+            if (
+                !thresholdBlock ||
+                currentBlock.height < thresholdBlock.height
+            ) {
+                thresholdBlock = currentBlock;
+                thresholdSigners = this.getMilestoneThresholdSigners(
+                    previousThresholdSnapshot,
+                    thresholdBlock
                 );
             }
 
-            for (const signature of currentBlock.allSignatures) {
-                const participantAddress =
-                    currentBlock.signatureToAddress(signature);
-
-                if (
-                    participantAddress &&
-                    requiredSignersSet.has(participantAddress)
-                ) {
-                    requiredSignersSet.delete(participantAddress);
-                    // don't expand the confirmation signatures with the authors signature
-                    if (participantAddress !== currentBlock.author) {
-                        filteredBlock.expandSignatures([signature]);
-                    }
-                }
+            for (const signer of currentBlock.allSignerAddresses) {
+                collectedSigners.add(signer);
             }
 
-            filteredBlocks.push(filteredBlock);
+            if (difference(thresholdSigners, collectedSigners).size === 0) {
+                const filteredBlocks = this.filterBlocksForMilestoneThreshold(
+                    collectedBlocks,
+                    thresholdSigners
+                );
+
+                return {
+                    blockConfirmations: filteredBlocks
+                        .sort((a, b) => a.height - b.height)
+                        .map((block) => block.blockConfirmationStruct)
+                };
+            }
 
             // If this block commits to previousThresholdSnapshot, we can't build a milestone
             if (
@@ -372,17 +382,69 @@ class AgreementManager {
             ) {
                 break;
             }
-
-            if (requiredSignersSet.size === 0) {
-                return {
-                    blockConfirmations: filteredBlocks
-                        .sort((a, b) => a.height - b.height)
-                        .map((block) => block.blockConfirmationStruct)
-                };
-            }
         }
 
         return undefined;
+    }
+
+    private getMilestoneThresholdSigners(
+        previousThresholdSnapshot: StateSnapshot,
+        thresholdBlock: Block
+    ): Set<Address> {
+        const thresholdSigners = new Set<Address>(
+            previousThresholdSnapshot.snapshotData.participants
+        );
+
+        const resultingSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                thresholdBlock.stateSnapshotHash
+            );
+        if (!resultingSnapshot) {
+            return thresholdSigners;
+        }
+
+        for (const participant of resultingSnapshot.snapshotData.participants) {
+            thresholdSigners.add(participant);
+        }
+
+        return thresholdSigners;
+    }
+
+    private filterBlocksForMilestoneThreshold(
+        blocks: Block[],
+        thresholdSigners: Set<Address>
+    ): Block[] {
+        const remainingSigners = new Set<Address>(thresholdSigners);
+        const filteredBlocks: Block[] = [];
+
+        for (const block of blocks) {
+            const filteredBlock = Block.fromSignedBlock(block.signedBlock);
+
+            if (remainingSigners.has(block.author)) {
+                remainingSigners.delete(block.author);
+            }
+
+            for (const signature of block.confirmationSignatures) {
+                const participantAddress = block.signatureToAddress(signature);
+
+                if (!remainingSigners.has(participantAddress)) {
+                    continue;
+                }
+
+                filteredBlock.expandSignatures([signature]);
+                remainingSigners.delete(participantAddress);
+            }
+
+            filteredBlocks.push(filteredBlock);
+        }
+
+        if (remainingSigners.size !== 0) {
+            throw new Error(
+                `Not all threshold signers were covered by the provided blocks. Remaining signers: ${[...remainingSigners].join(", ")}`
+            );
+        }
+
+        return filteredBlocks;
     }
 
     /**
@@ -519,10 +581,11 @@ class AgreementManager {
             );
 
         const inboundMessageBlocksAppliedInReduce =
-            this.storage.inboundMessages.getMessageBlocksInRange(
-                reducedOutput.latestInboundMessageBlockHash,
-                reducedLatestStateSnapshot.latestInboundMessageBlockHash
-            );
+            this.storage.inboundMessages.getMessageBlocksInRange({
+                fromBlockHash: reducedOutput.latestInboundMessageBlockHash,
+                toBlockHash:
+                    reducedLatestStateSnapshot.latestInboundMessageBlockHash
+            });
         return {
             forkId: forkId,
             reducedOutput: reducedOutput,

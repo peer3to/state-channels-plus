@@ -1,5 +1,4 @@
 import axios from "axios";
-import https from "https";
 import { compressToBase64, encodeLogs } from "./logEncoder";
 import { LogStore } from "./logStore";
 import { ExclusiveLoggerContext, Logger, SharedLoggerContext } from ".";
@@ -13,6 +12,7 @@ import {
     sanitizeAxiosErrorForLogging
 } from "./uploadDiagnostics";
 import { sleep } from "..";
+import { isNodeRuntime } from "../config";
 
 export type LogUploaderOptions = {
     logUploader?: LogUploader;
@@ -29,17 +29,7 @@ export abstract class LogUploader {
     private destroyed = false;
     private uploadInitiated = false;
 
-    /**
-     * Dedicated HTTPS agent with keep-alive for log uploads.
-     * Reuses TCP+TLS connections across retries and uploads, avoiding
-     * repeated handshake overhead under concurrent burst.
-     */
-    private static readonly uploadAgent = new https.Agent({
-        keepAlive: true,
-        maxSockets: 6,
-        maxFreeSockets: 2,
-        timeout: 60_000
-    });
+    private static uploadAgent?: import("https").Agent;
 
     constructor(
         protected readonly logStore: LogStore,
@@ -61,6 +51,24 @@ export abstract class LogUploader {
 
     protected isEnabled(): boolean {
         return Boolean(this.config.uploadEndpoint);
+    }
+
+    private static getUploadAgent(): import("https").Agent | undefined {
+        if (!isNodeRuntime()) {
+            return undefined;
+        }
+
+        if (!LogUploader.uploadAgent) {
+            const { Agent } = require("https") as typeof import("https");
+            LogUploader.uploadAgent = new Agent({
+                keepAlive: true,
+                maxSockets: 6,
+                maxFreeSockets: 2,
+                timeout: 60_000
+            });
+        }
+
+        return LogUploader.uploadAgent;
     }
 
     public async uploadLogs(
@@ -119,7 +127,7 @@ export abstract class LogUploader {
                         {
                             headers,
                             timeout: 10_000,
-                            httpsAgent: LogUploader.uploadAgent
+                            httpsAgent: LogUploader.getUploadAgent()
                         }
                     ),
                 {

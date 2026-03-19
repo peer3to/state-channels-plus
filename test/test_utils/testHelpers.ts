@@ -94,8 +94,8 @@ export async function deployMathChannelProxyFixture(
         { name: "DisputeFraudProofFacet" },
         { name: "StateSnapshotFacet" },
         { name: "JoinChannelFacet" },
-        { name: "UtilityFacet" },
-        { name: "MathConsumerFacet" }
+        { name: "StateProofFacet" },
+        { name: "UtilityFacet" }
     ] as const;
 
     // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
@@ -118,6 +118,10 @@ export async function deployMathChannelProxyFixture(
     // Deploy all facets in parallel and get addresses in order
     const facetAddresses = await deployFacets(facetConfigs);
 
+    const mathConsumerFactory =
+        await _ethers.getContractFactory("MathConsumerFacet");
+    const mathConsumerFacet = await mathConsumerFactory.deploy();
+
     //State machine logic
     const mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
     const mathContactInstance = await mathSmFactory.deploy(500000);
@@ -129,6 +133,7 @@ export async function deployMathChannelProxyFixture(
     const mathStateChannelContactInstance = await mathSmcFactory.deploy(
         await mathContactInstance.getAddress(),
         ...facetAddresses,
+        await mathConsumerFacet.getAddress(),
         0,
         0,
         0,

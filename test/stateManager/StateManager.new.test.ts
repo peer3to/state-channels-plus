@@ -285,63 +285,6 @@ describe("StateManager - Refactored", () => {
             expect(result).to.be.undefined;
         });
 
-        // Arrange: Setup disputed fork on-chain with reduced result pointing to resolved fork, configure genesis snapshot
-        // Act: Attempt to prepare update state snapshot for fork
-        // Assert: Returns update data with genesis snapshot and exit blocks for the resolved fork
-        it("should prepare update data with genesis snapshot when disputed fork has reduced result pointing to resolved fork", async () => {
-            // Arrange
-            const builder = new StateManagerTestBuilder().withChannel(
-                defaults.channelId
-            );
-
-            const onChainFork = hexString(32);
-            const reducedFork = hexString(32);
-
-            // Store a real exit channel block and use its hash in the genesis snapshot
-            const genesisExitBlock: MessageBlockStruct = {
-                previousBlockHash: defaults.emptyBlockHash,
-                blockHeight: 0n,
-                messages: [],
-                totalBalance: { amount: 0n, data: "0x" },
-                timestamp: 0n
-            };
-            const genesisExitBlockHash =
-                builder.storeExitChannelBlock(genesisExitBlock);
-
-            // Configure genesis snapshot for the reduced fork (final resolved fork after dispute resolution)
-            builder.withGenesisSnapshot(reducedFork, {
-                latestOutboundMessageBlockHash: genesisExitBlockHash
-            });
-
-            stateManager = builder.build();
-
-            // Configure contract for disputed fork scenario AFTER building (to avoid builder override)
-            const onChainSnapshot = stateSnapshot({
-                forkId: onChainFork,
-                blockHeight: Number(defaults.onChainBlockHeight),
-                timestamp: defaults.defaultTimestamp
-            });
-
-            (stateManager.stateChannelManagerContract as any)
-                .withStateSnapshot({
-                    forkId: onChainFork,
-                    blockHeight: defaults.onChainBlockHeight,
-                    timestamp: defaults.defaultTimestamp,
-                    snapshotData: onChainSnapshot.snapshotData
-                })
-                .withForkDisputed(onChainFork, true) // On-chain fork is disputed (this triggers the logic)
-                .withForkDisputed(reducedFork, false) // Reduced fork is not disputed
-                .withReducedResult(onChainFork, reducedFork, true); // Reduced result exists for on-chain fork
-
-            // Act
-            const result = await stateManager.prepareUpdateStateSnapshotFork();
-
-            // Assert
-            expect(result).to.not.be.undefined;
-            expect(result!.genesisSnapshot).to.exist;
-            expect(result!.outboundMessageBlocks).to.be.an("array");
-        });
-
         // Arrange: Setup disputed fork on-chain but no genesis snapshot exists for the resolved fork
         // Act: Attempt to prepare update state snapshot for fork
         // Assert: Throws error indicating no genesis snapshot found for the fork

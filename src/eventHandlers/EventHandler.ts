@@ -26,6 +26,7 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import { isEqual } from "lodash";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import { Status } from "@/types";
+import { Block } from "@/models";
 
 export class EventHandler {
     private logger: Logger;
@@ -113,7 +114,9 @@ export class EventHandler {
             channelId,
             commitmentHash,
             sender,
-            blockHeight: signedBlock.encodedBlock
+            signedBlock: LoggerUtils.getBlockMetadata(
+                Block.fromSignedBlock(signedBlock)
+            )
         });
         this.storage.blockCalldata.storeBlockCalldata({
             signedBlock,
@@ -198,7 +201,11 @@ export class EventHandler {
                 const { isPartial, auditingData } =
                     this.stateManager.disputeManager.getAuditingData(
                         forkId,
-                        dispute.input.stateProof
+                        dispute.input.stateProof,
+                        {
+                            disputeLatestInboundMessageBlockHash:
+                                dispute.input.latestInboundMessageBlockHash
+                        }
                     );
                 if (isPartial)
                     throw new Error(
@@ -577,10 +584,12 @@ export class EventHandler {
                 `GenesisSnapshot not available for forkId: ${forkId}`
             );
         const inboundMessageBlocks =
-            this.storage.inboundMessages.getMessageBlocksInRange(
-                latestSnapshot.snapshotData.latestInboundMessageBlockHash,
-                genesisSnapshot.snapshotData.latestInboundMessageBlockHash
-            );
+            this.storage.inboundMessages.getMessageBlocksInRange({
+                fromBlockHash:
+                    latestSnapshot.snapshotData.latestInboundMessageBlockHash,
+                toBlockHash:
+                    genesisSnapshot.snapshotData.latestInboundMessageBlockHash
+            });
         const [snapshotData] =
             await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(
                 forkId,

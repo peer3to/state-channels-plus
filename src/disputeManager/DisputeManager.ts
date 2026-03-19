@@ -23,7 +23,7 @@ import {
 } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooks from "@/P2pEventHooks";
-import { Address, ChannelId, ForkId } from "../types/types";
+import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import { StateSnapshot } from "../models";
 import Storage from "@/storage";
 import ADiamondStateMachine from "../ADiamondStateMachine";
@@ -424,7 +424,10 @@ class DisputeManager {
 
     public getAuditingData(
         forkId: ForkId,
-        stateProof: StateProofStruct
+        stateProof: StateProofStruct,
+        options?: {
+            disputeLatestInboundMessageBlockHash?: Hash;
+        }
     ): { isPartial: boolean; auditingData: DisputeAuditingDataStruct } {
         let isPartial = false;
         // genesisStateSnapshot
@@ -478,17 +481,23 @@ class DisputeManager {
 
         // inbound message blocks
         const inboundMessageBlocks =
-            this.storage.inboundMessages.getMessageBlocksInRange(
-                latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
-                genesisStateSnapshot.snapshotData.latestInboundMessageBlockHash
-            );
+            this.storage.inboundMessages.getMessageBlocksInRange({
+                fromBlockHash: options?.disputeLatestInboundMessageBlockHash,
+                toBlockHash:
+                    latestStateSnapshot.snapshotData
+                        .latestInboundMessageBlockHash
+            });
 
         // outbound message blocks
         const outboundMessageBlocks =
-            this.storage.outboundMessages.getMessageBlocksInRange(
-                latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash,
-                genesisStateSnapshot.snapshotData.latestOutboundMessageBlockHash
-            );
+            this.storage.outboundMessages.getMessageBlocksInRange({
+                fromBlockHash:
+                    latestStateSnapshot.snapshotData
+                        .latestOutboundMessageBlockHash,
+                toBlockHash:
+                    genesisStateSnapshot.snapshotData
+                        .latestOutboundMessageBlockHash
+            });
 
         const auditingData = {
             isPartial,
@@ -499,7 +508,7 @@ class DisputeManager {
                 milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
                     snapshot.toStruct()
                 ),
-                inboundMessageBlocks: inboundMessageBlocks,
+                inboundMessageBlocks: inboundMessageBlocks ?? [],
                 outboundMessageBlocks: outboundMessageBlocks
             }
         };
