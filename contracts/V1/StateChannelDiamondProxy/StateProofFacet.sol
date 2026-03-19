@@ -69,12 +69,10 @@ contract StateProofFacet is StateChannelCommon {
         }
 
         if (!isCorrectLatestState(dispute, disputeAuditingData.genesisStateSnapshotData)) {
-            console.log("STATE PROOF 9");
             return false;
         }
 
         //check commitment to latestStateSnapshot
-        console.log("STATE PROOF 10");
         if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
             return false;
         }
@@ -98,7 +96,6 @@ contract StateProofFacet is StateChannelCommon {
             disputeAuditingData.milestoneSnapshots,
             genesisStateSnapshot
         ) returns (bool milestoneProofsValid) {
-            console.log("STATE PROOF 5");
             return milestoneProofsValid;
         } catch {
             return false;

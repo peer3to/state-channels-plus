@@ -3,6 +3,7 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash } from "@/utils";
 import Block from "@/models/Block";
 import { TestSession, PeerTestHarness } from "@test/harness";
+import * as factory from "@test/factory";
 import { ForkId, Hash } from "@/types/types";
 import Clock from "@/Clock";
 import type {
@@ -38,16 +39,87 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("Posted Auditing Data (calldata path)", function () {
+    describe("Verify State Proof (calldata path)", function () {
+        it("should kill dispute and store DisputeInvalidStateProof when stateProof has both milestones and signedBlocks", async function () {
+            const h = TestSession.getHarness();
+            // preDisputeSetupCalldataPath produces a milestones-only state proof.
+            await h.scenario.preDisputeSetupCalldataPath();
+
+            h.tamper.delayDisputeForPeers([0, 1, 2]);
+
+            // Inject a garbage signedBlock alongside the real milestones.
+            // verifyStateProof rejects any proof where both arrays are non-empty.
+            h.tamper.stubConstructDispute(3, (d) => {
+                if (d.input.stateProof.milestones.length === 0) {
+                    throw new Error(
+                        "Expected milestones in calldata-path state proof"
+                    );
+                }
+                const validSignedBlock = factory.signedBlock();
+                d.input.stateProof.signedBlocks = [
+                    {
+                        encodedBlock: validSignedBlock.encodedBlock,
+                        signature: validSignedBlock.signature
+                    }
+                ];
+            });
+
+            await h.byzantine.submitDoubleSignBlock(0);
+
+            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof
+            });
+            await h.dispute.resolveDisputeWait({
+                maliciousPeerIndex: 3,
+                honestPeerIndices: [1]
+            });
+        });
+
+        it("should kill dispute and store DisputeInvalidStateProof when a milestone has no blockConfirmations", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath();
+
+            h.tamper.delayDisputeForPeers([0, 1]);
+
+            // Empty blockConfirmations on the first milestone causes
+            // _isMilestoneFinalWithExpectedParticipants to return (false, 0)
+            // immediately, making _tryVerifyMilestones return false.
+            h.tamper.stubConstructDispute(3, (d) => {
+                if (d.input.stateProof.milestones.length === 0) {
+                    throw new Error(
+                        "Expected milestones in calldata-path state proof"
+                    );
+                }
+                d.input.stateProof.milestones[0].blockConfirmations = [];
+            });
+
+            await h.byzantine.submitDoubleSignBlock(0);
+
+            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof
+            });
+            await h.dispute.resolveDisputeWait({
+                maliciousPeerIndex: 3,
+                honestPeerIndices: [1]
+            });
+        });
+
         it("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (with calldata)", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
 
-            // Slow down peers 0, 1, 2 so the stubbed dispute from peer 3 is uploaded first
-            h.tamper.delayDisputeForPeers([0, 1]);
+            // Slow down peers 0, 1 so the stubbed dispute from peer 3 is uploaded first
+            h.tamper.delayDisputeForPeers([0, 1], 2000);
 
-            // Peer 3 posts a tampered dispute directly via uploadDisputeWithCalldata
-            await h.tamper.stubConstructDispute(3, (d) => {
+            h.tamper.stubConstructDispute(3, (d) => {
                 d.input.latestStateSnapshotHash = hash("0x42");
             });
 
@@ -376,7 +448,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
         });
 
-        it.only("should kill dispute and store TimeoutTooEarly when timeout dispute is posted before the timeout wait period has elapsed", async function () {
+        it("should kill dispute and store TimeoutTooEarly when timeout dispute is posted before the timeout wait period has elapsed", async function () {
             const h = TestSession.getHarness();
             // 2 transitions → peer 2 is next to write but never does.
             await h.scenario.preDisputeSetup();

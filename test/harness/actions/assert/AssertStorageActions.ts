@@ -145,7 +145,7 @@ export class AssertStorageActions {
                         dfp.proofType !==
                         toSolidityDisputeFraudProofType(disputeFraudProofType)
                     ) {
-                        const errorMessage = `Peer ${honestPeer.index} has a dispute fraud proof of type ${dfp.proofType} instead of ${disputeFraudProofType}`;
+                        const errorMessage = `Peer ${honestPeer.index} has a dispute fraud proof of type ${dfp.proofType} instead of ${toSolidityDisputeFraudProofType(disputeFraudProofType)}`;
                         console.log("[DEBUG]" + errorMessage);
                         throw new Error(errorMessage);
                     }
