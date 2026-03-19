@@ -75,6 +75,7 @@ export class ScenarioActions {
             waitForPeers: [0, 1, 3],
             count: 2
         });
+        this.harness.contextApi.captureOriginalFork();
         this.harness.event.resetEventSpies();
     }
 

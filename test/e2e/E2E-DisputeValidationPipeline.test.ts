@@ -145,19 +145,26 @@ describe("E2E: Dispute Validation Pipeline", function () {
             });
         });
 
-        // FAILS
-        /*
-        createDisputeInvalidBlockInStateProofApplyFraudProof is NEVER used in the pipeline. 
-        */
         it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(ForgedInboundMessageBlock) when a state proof block contains a forged inbound message", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup(4);
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+
+            h.tamper.delayDisputeForPeers([0, 1, 2]);
 
             const injectForgedMessageBlock = async (
                 dispute: any,
                 peerIndex: number
             ) => {
                 const stateProof = dispute.input.stateProof;
+
+                if (
+                    stateProof.milestones.length > 0 ||
+                    stateProof.signedBlocks.length === 0
+                ) {
+                    throw new Error(
+                        `Expected 0 milestones + signedBlocks, got milestones=${stateProof.milestones.length} signedBlocks=${stateProof.signedBlocks.length}`
+                    );
+                }
                 const localDiamond = h.getLocalDiamond(peerIndex);
                 const [hasBlock, latestBlock] =
                     await localDiamond.getLatestBlockFromStateProof(stateProof);
@@ -206,26 +213,25 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 latestBlock.messageBlocks = [
                     forgedMessageBlock as MessageBlockStructOutput
                 ];
-                stateProof.milestones
-                    .at(-1)!
-                    .blockConfirmations.at(-1)!.signedBlock.encodedBlock =
-                    Codec.encode(latestBlock, Type.Block);
+                stateProof.signedBlocks.at(-1)!.encodedBlock = Codec.encode(
+                    latestBlock,
+                    Type.Block
+                );
             };
-            h.tamper.stubConstructDispute(0, (d) =>
-                injectForgedMessageBlock(d, 0)
+            h.tamper.stubConstructDispute(3, (d) =>
+                injectForgedMessageBlock(d, 3)
             );
 
-            // peer 2 double signs
-            await h.byzantine.submitDoubleSignBlock(2);
+            // peer 1 double signs
+            await h.byzantine.submitDoubleSignBlock(1);
 
-            await h.event.waitForPeers("onDisputeKilled", [1], 1);
+            await h.event.waitForPeers("onDisputeKilled", [0], 1);
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
             await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 2,
-                honestPeerIndices: [1]
+                maliciousPeerIndex: 3
             });
         });
     });
@@ -310,114 +316,109 @@ describe("E2E: Dispute Validation Pipeline", function () {
 
     // ─────────────────────────────────────────────────────────────────────────────
 
-    // describe("Timeout Fraud Proofs", function () {
-    //     it("should kill dispute and store TimeoutNotLinkedToLatestState when timeout.blockHeight does not equal latestBlockHeight + 1", async function () {
-    //         const h = TestSession.getHarness();
-    //         await h.scenario.preDisputeSetup();
+    describe("Timeout Fraud Proofs", function () {
+        it.only("should kill dispute and store TimeoutNotLinkedToLatestState when timeout.blockHeight does not equal latestBlockHeight + 1", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
 
-    //         // Stub peer 1's dispute construction: set timeout.blockHeight to
-    //         // expectedHeight + 1 (off by one) so Phase 3F-1 fires.
-    //         const wrongParticipant = h.peers[2].address;
-    //         h.tamper.stubConstructDispute(1, async (dispute) => {
-    //             const localDiamond = h.getLocalDiamond(1);
-    //             const [hasBlock, latestBlock] =
-    //                 await localDiamond.getLatestBlockFromStateProof(
-    //                     dispute.input.stateProof
-    //                 );
-    //             const expectedHeight = hasBlock
-    //                 ? Number(latestBlock.transaction.header.transactionCnt) + 1
-    //                 : 0;
-    //             dispute.input.timeout.participant = wrongParticipant;
-    //             dispute.input.timeout.blockHeight = expectedHeight + 1;
-    //         });
-    //         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
+            h.tamper.stubConstructDispute(2, async (dispute) => {
+                const localDiamond = h.getLocalDiamond(1);
+                const [hasBlock, latestBlock] =
+                    await localDiamond.getLatestBlockFromStateProof(
+                        dispute.input.stateProof
+                    );
+                const expectedHeight = hasBlock
+                    ? Number(latestBlock.transaction.header.transactionCnt) + 1
+                    : 0;
+                dispute.input.timeout.blockHeight = expectedHeight + 1;
+                dispute.input.timeout.participant = h.peers[0].address;
+            });
 
-    //         await submitFaultyBlock(h, 1);
+            await h.byzantine.submitDoubleSignBlock(1);
 
-    //         await h.event.waitForAllPeers("onDisputeKilled", 1, {
-    //             mode: "atLeast"
-    //         });
-    //         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-    //             disputeFraudProofType:
-    //                 DisputeFraudProofType.TimeoutNotLinkedToLatestState
-    //         });
-    //         await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 1 });
-    //         await h.assert.sync.forkChangedWait();
-    //     });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.TimeoutNotLinkedToLatestState
+            });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+        });
 
-    //     it("should kill dispute and store TimeoutParticipantNotNext when timeout.participant is not the next peer to write", async function () {
-    //         const h = TestSession.getHarness();
-    //         await h.scenario.preDisputeSetup();
+        // it("should kill dispute and store TimeoutParticipantNotNext when timeout.participant is not the next peer to write", async function () {
+        //     const h = TestSession.getHarness();
+        //     await h.scenario.preDisputeSetup();
 
-    //         // Stub peer 0's dispute construction: set timeout.participant to
-    //         // peer[1].address (wrong next writer) with blockHeight = 2.
-    //         h.tamper.stubConstructDispute(0, async (dispute) => {
-    //             dispute.input.timeout.participant = h.peers[1].address;
-    //             dispute.input.timeout.blockHeight = 2;
-    //         });
-    //         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
+        //     // Stub peer 0's dispute construction: set timeout.participant to
+        //     // peer[1].address (wrong next writer) with blockHeight = 2.
+        //     h.tamper.stubConstructDispute(0, async (dispute) => {
+        //         dispute.input.timeout.participant = h.peers[1].address;
+        //         dispute.input.timeout.blockHeight = 2;
+        //     });
+        //     h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
 
-    //         await submitFaultyBlock(h, 0);
+        //     await submitFaultyBlock(h, 0);
 
-    //         await h.event.waitForAllPeers("onDisputeKilled", 1, {
-    //             mode: "atLeast"
-    //         });
-    //         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-    //             disputeFraudProofType:
-    //                 DisputeFraudProofType.TimeoutParticipantNotNext
-    //         });
-    //         await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
-    //         await h.assert.sync.forkChangedWait();
-    //     });
+        //     await h.event.waitForAllPeers("onDisputeKilled", 1, {
+        //         mode: "atLeast"
+        //     });
+        //     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+        //         disputeFraudProofType:
+        //             DisputeFraudProofType.TimeoutParticipantNotNext
+        //     });
+        //     await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
+        //     await h.assert.sync.forkChangedWait();
+        // });
 
-    //     it("should kill dispute and store TimeoutTooEarly when timeout dispute is posted before the timeout wait period has elapsed", async function () {
-    //         const h = TestSession.getHarness();
-    //         // preDisputeSetup uses timeoutSetup (evidenceTime: 3 seconds)
-    //         await h.scenario.preDisputeSetup();
-    //         h.event.resetEventSpies();
+        // it("should kill dispute and store TimeoutTooEarly when timeout dispute is posted before the timeout wait period has elapsed", async function () {
+        //     const h = TestSession.getHarness();
+        //     // preDisputeSetup uses timeoutSetup (evidenceTime: 3 seconds)
+        //     await h.scenario.preDisputeSetup();
+        //     h.event.resetEventSpies();
 
-    //         const nextPeer = await h.query.getNextPeerToWrite();
-    //         const forkId = h.activeForkId!;
-    //         const latestBlock = h
-    //             .getPeer(0)
-    //             .stateManager.storage.blocks.getLatestBlock(forkId);
-    //         const timeoutBlockHeight = latestBlock
-    //             ? latestBlock.height + 1
-    //             : 0;
+        //     const nextPeer = await h.query.getNextPeerToWrite();
+        //     const forkId = h.activeForkId!;
+        //     const latestBlock = h
+        //         .getPeer(0)
+        //         .stateManager.storage.blocks.getLatestBlock(forkId);
+        //     const timeoutBlockHeight = latestBlock
+        //         ? latestBlock.height + 1
+        //         : 0;
 
-    //         // Stub peer 1's dispute construction: set a correct participant and
-    //         // blockHeight but zero minTimeStamp so it submits immediately (before
-    //         // evidenceTime elapses) → Phase 3F-3: TimeoutTooEarly.
-    //         h.tamper.stubConstructDispute(1, async (dispute) => {
-    //             dispute.input.timeout.participant = nextPeer.address;
-    //             dispute.input.timeout.blockHeight = timeoutBlockHeight;
-    //             dispute.input.timeout.minTimeStamp = 0;
-    //         });
-    //         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
+        //     // Stub peer 1's dispute construction: set a correct participant and
+        //     // blockHeight but zero minTimeStamp so it submits immediately (before
+        //     // evidenceTime elapses) → Phase 3F-3: TimeoutTooEarly.
+        //     h.tamper.stubConstructDispute(1, async (dispute) => {
+        //         dispute.input.timeout.participant = nextPeer.address;
+        //         dispute.input.timeout.blockHeight = timeoutBlockHeight;
+        //         dispute.input.timeout.minTimeStamp = 0;
+        //     });
+        //     h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
 
-    //         await submitFaultyBlock(h, 1);
+        //     await submitFaultyBlock(h, 1);
 
-    //         await h.event.waitForAllPeers("onDisputeKilled", 1, {
-    //             mode: "atLeast"
-    //         });
-    //         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-    //             disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly
-    //         });
-    //         await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 1 });
-    //         await h.assert.sync.forkChangedWait();
-    //     });
+        //     await h.event.waitForAllPeers("onDisputeKilled", 1, {
+        //         mode: "atLeast"
+        //     });
+        //     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+        //         disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly
+        //     });
+        //     await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 1 });
+        //     await h.assert.sync.forkChangedWait();
+        // });
 
-    //     it.skip("should kill dispute and store TimeoutThreshold when all participants have already signed the block claimed as timed out", async function () {
-    //         // TODO: Requires the state proof to go to block N while block N+1 is
-    //         // already fully signed. Needs a harness helper for state-proof truncation
-    //         // that consistently re-hashes derived fields (3A, 3B).
-    //     });
+        // it.skip("should kill dispute and store TimeoutThreshold when all participants have already signed the block claimed as timed out", async function () {
+        //     // TODO: Requires the state proof to go to block N while block N+1 is
+        //     // already fully signed. Needs a harness helper for state-proof truncation
+        //     // that consistently re-hashes derived fields (3A, 3B).
+        // });
 
-    //     it.skip("should kill dispute and store TimeoutCalldataPosted when the block at timeout.blockHeight has been posted on-chain as calldata", async function () {
-    //         // TODO: Requires posting block calldata on-chain first, then waiting
-    //         // evidenceTime (to pass 3F-3) before submitting a tampered timeout dispute.
-    //     });
-    // });
+        // it.skip("should kill dispute and store TimeoutCalldataPosted when the block at timeout.blockHeight has been posted on-chain as calldata", async function () {
+        //     // TODO: Requires posting block calldata on-chain first, then waiting
+        //     // evidenceTime (to pass 3F-3) before submitting a tampered timeout dispute.
+        // });
+    });
 
     // describe("Invalid Output State", function () {
     //     it("should kill dispute and store DisputeInvalidOutputState when outputSnapshotDataHash is corrupted", async function () {
