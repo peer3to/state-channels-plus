@@ -1454,10 +1454,10 @@ class StateManager {
             const latestLocalExitBlockHash =
                 latestSnapshot.snapshotData.latestOutboundMessageBlockHash;
             const outboundMessageBlocks =
-                this.storage.outboundMessages.getMessageBlocksInRange(
-                    latestLocalExitBlockHash,
-                    currentOnChainExitBlockHash
-                );
+                this.storage.outboundMessages.getMessageBlocksInRange({
+                    fromBlockHash: latestLocalExitBlockHash,
+                    toBlockHash: currentOnChainExitBlockHash
+                });
 
             const sameForkCalldata =
                 this.stateChannelManagerContract.interface.encodeFunctionData(
@@ -1728,10 +1728,10 @@ class StateManager {
                 currentOnChainSnapshot.snapshotData
                     .latestOutboundMessageBlockHash;
             const outboundMessageBlocks =
-                this.storage.outboundMessages.getMessageBlocksInRange(
-                    latestOutboundBlockHash,
-                    currentOnChainOutboundBlockHash
-                );
+                this.storage.outboundMessages.getMessageBlocksInRange({
+                    fromBlockHash: latestOutboundBlockHash,
+                    toBlockHash: currentOnChainOutboundBlockHash
+                });
 
             this.logger.debug(
                 "prepareUpdateStateSnapshotFork - outbound message block range",
@@ -1863,8 +1863,8 @@ class StateManager {
                 }
             );
             this.timeoutManager.scheduleTask(
-                async () => {
-                    await this.tryTimeoutParticipant(
+                () => {
+                    return this.tryTimeoutParticipant(
                         forkId,
                         blockHeight,
                         participantAddress
@@ -1907,8 +1907,8 @@ class StateManager {
                         }
                     );
                     this.timeoutManager.scheduleTask(
-                        async () => {
-                            await this.tryTimeoutParticipant(
+                        () => {
+                            return this.tryTimeoutParticipant(
                                 forkId,
                                 blockHeight,
                                 participantAddress
@@ -2242,10 +2242,10 @@ class StateManager {
             return [];
         }
 
-        return this.storage.inboundMessages.getMessageBlocksInRange(
-            latestStoredHash,
-            previousHash ?? ethers.ZeroHash
-        );
+        return this.storage.inboundMessages.getMessageBlocksInRange({
+            fromBlockHash: latestStoredHash,
+            toBlockHash: previousHash ?? ethers.ZeroHash
+        });
     }
 
     private findBrokenInboundMessageChainBlock(
@@ -2417,6 +2417,14 @@ class StateManager {
             strategy?: AValidationStrategy;
         }
     ): Promise<void> {
+        // step 9 - potentially change status
+        // TODO - quick hack to account for union - should at a status `PENDING_PARTICIPANT`, so we don't abort the channel when we commited on-chain and waiting for inclusion
+        if (this.status === Status.SYNCED) {
+            const participants =
+                await this.diamondStateMachine.getParticipants();
+            const isParticipant = participants.includes(this.signerAddress);
+            if (isParticipant) this.setStatus(Status.PARTICIPATING);
+        }
         // step 1 - Confirm and Gossip // TODO - quick hack - cleaner code later
         if (
             (await this.shouldSignBlock(block)) &&
@@ -2481,14 +2489,6 @@ class StateManager {
 
         // step 8 - success callback
         successCallback();
-
-        // step 9 - potentially change status
-        if (this.status === Status.SYNCED) {
-            const participants =
-                await this.diamondStateMachine.getParticipants();
-            const isParticipant = participants.includes(this.signerAddress);
-            if (isParticipant) this.setStatus(Status.PARTICIPATING);
-        }
 
         // step 10 - Notify any event hooks
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();

@@ -155,7 +155,7 @@ describe("E2E: Spectate Service", function () {
                     p2pTime: 30,
                     agreementTime: 2,
                     chainFallbackTime: 2,
-                    evidenceTime: 10
+                    evidenceTime: 5
                 }
             });
             await h.transition.advanceState({ count: 5 });

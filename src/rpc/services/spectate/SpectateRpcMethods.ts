@@ -223,6 +223,11 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 isAvailable &&
                 genesisTimestamp ==
                     syncPayload.latestForkGenesisSnapshot.timestamp;
+            isCorrectGenesis =
+                isCorrectGenesis &&
+                syncPayload.latestForkGenesisSnapshot.snapshotData
+                    .stateMachineStateHash ===
+                    hash(syncPayload.latestForkGenesisEncodedState);
             if (!isCorrectGenesis) return this.service.abort(peerAddress);
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot

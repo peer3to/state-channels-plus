@@ -97,11 +97,13 @@ export class ContextActions {
         onChainSnapshotBefore: StateSnapshot
     ) {
         const outboundMessageBlocksForDelta =
-            peer.stateManager.storage.outboundMessages.getMessageBlocksInRange(
-                lastSnapshot.snapshotData.latestOutboundMessageBlockHash,
-                onChainSnapshotBefore.snapshotData
-                    .latestOutboundMessageBlockHash
-            );
+            peer.stateManager.storage.outboundMessages.getMessageBlocksInRange({
+                fromBlockHash:
+                    lastSnapshot.snapshotData.latestOutboundMessageBlockHash,
+                toBlockHash:
+                    onChainSnapshotBefore.snapshotData
+                        .latestOutboundMessageBlockHash
+            });
 
         const stateMachine = peer.stateManager.diamondStateMachine;
         const zeroBalance = await stateMachine.getZeroBalance();

@@ -44,7 +44,14 @@ describe("E2E: Timeouts", function () {
     describe("Network Disconnection Timeouts", function () {
         it("should handle timeout when non-author peer disconnects (calldata posting)", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.timeoutSetup(3);
+            await h.lifecycle.start(3, 0, {
+                timeConfig: {
+                    p2pTime: 1,
+                    agreementTime: 2,
+                    chainFallbackTime: 4,
+                    evidenceTime: 3
+                }
+            });
             await h.transition.advanceState({ rounds: 1 }); // All 3 peers write once
             h.event.resetEventSpies();
             await h.network.disconnectPeer(2);

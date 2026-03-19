@@ -76,6 +76,7 @@ export const DisputeWindowVerificationEthersType = `tuple(
 export const SyncPayloadEthersType = `tuple(
     ${DisputeWindowVerificationEthersType}[] disputeWindows,
     ${StateSnapshotEthersType} latestForkGenesisSnapshot,
+    bytes latestForkGenesisEncodedState,
     ${StateProofEthersType} stateProof,
     ${StateSnapshotEthersType}[] milestoneSnapshots,
     bytes latestFinalizedEncodedState,
