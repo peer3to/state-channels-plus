@@ -2417,13 +2417,15 @@ class StateManager {
             strategy?: AValidationStrategy;
         }
     ): Promise<void> {
-        // step 9 - potentially change status
-        // TODO - quick hack to account for union - should at a status `PENDING_PARTICIPANT`, so we don't abort the channel when we commited on-chain and waiting for inclusion
+        // step 9 - potentially change status: SYNCED → PENDING_PARTICIPANT
+        // Local state now includes us (inbound JOIN was processed), but we wait for
+        // on-chain snapshot confirmation before becoming fully PARTICIPATING.
+        // onStateSnapshotUpdated handles PENDING_PARTICIPANT → PARTICIPATING.
         if (this.status === Status.SYNCED) {
             const participants =
                 await this.diamondStateMachine.getParticipants();
             const isParticipant = participants.includes(this.signerAddress);
-            if (isParticipant) this.setStatus(Status.PARTICIPATING);
+            if (isParticipant) this.setStatus(Status.PENDING_PARTICIPANT);
         }
         // step 1 - Confirm and Gossip // TODO - quick hack - cleaner code later
         if (
@@ -2553,21 +2555,55 @@ class StateManager {
     ): Promise<void> {
         if (!participantChanges.left.has(this.signerAddress)) {
             // I didn't exit, nothing to do
-            // TODO - think about this
             return;
         }
 
+        this.logger.info(
+            `startMaybeExitOnChain - I left the channel at block ${block.height}, waiting agreementTime to attempt N/N exit`,
+            { blockHeight: block.height, forkId: block.forkId }
+        );
+
         this.timeoutManager.scheduleTask(
-            () => {
+            async () => {
                 if (this.agreementManager.didEveryoneSignBlock(block)) {
-                    // Update the snapshot with the BlockConfirmation proving the latest state to exit on-chain
-                    // Todo
-                    // https://trello.com/c/Nv7AGVyR
+                    // Happy path: everyone signed - post the snapshot on-chain to process withdrawal
+                    this.logger.info(
+                        `startMaybeExitOnChain - everyone signed block ${block.height}, posting state snapshot`,
+                        { blockHeight: block.height, forkId: block.forkId }
+                    );
+                    try {
+                        await this.postStateSnapshot(block.forkId);
+                    } catch (error) {
+                        this.logger.error(
+                            `startMaybeExitOnChain - failed to post state snapshot`,
+                            {
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error)
+                            }
+                        );
+                    }
                 } else {
-                    // Failure: create a dispute with the BlockConfirmation set as the latest state
-                    // and selfRemoval flag set to true
-                    // Todo
-                    // https://trello.com/c/qwpYPLj8
+                    // Slow path: not everyone signed - create a self-removal dispute
+                    this.logger.info(
+                        `startMaybeExitOnChain - not everyone signed block ${block.height}, creating self-removal dispute`,
+                        { blockHeight: block.height, forkId: block.forkId }
+                    );
+                    try {
+                        this.storage.forceExit.setForceExit(true);
+                        await this.disputeManager.dispute(block.forkId);
+                    } catch (error) {
+                        this.logger.error(
+                            `startMaybeExitOnChain - failed to create self-removal dispute`,
+                            {
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error)
+                            }
+                        );
+                    }
                 }
             },
             this.timeConfig.agreementTime * 1000,

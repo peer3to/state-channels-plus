@@ -76,6 +76,45 @@ export class EventHandler {
             stateSnapshot
         );
 
+        const signerAddress = this.stateManager.signerAddress;
+        const snapshotParticipants = stateSnapshot.snapshotData
+            .participants as Address[];
+        const status = this.stateManager.getStatus();
+
+        // Detect when we've been included in the on-chain snapshot: PENDING_PARTICIPANT → PARTICIPATING
+        if (status === Status.PENDING_PARTICIPANT) {
+            if (snapshotParticipants.includes(signerAddress)) {
+                this.logger.info(
+                    "onStateSnapshotUpdated - signer included in snapshot, transitioning PENDING_PARTICIPANT → PARTICIPATING",
+                    { channelId }
+                );
+                this.stateManager.setStatus(Status.PARTICIPATING);
+            }
+        }
+
+        // Detect when we've fully left the channel: PARTICIPATING → SYNCED
+        if (status === Status.PARTICIPATING) {
+            const pendingParticipants =
+                (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                    channelId
+                )) as Address[];
+            const localParticipants =
+                await this.stateManager.getParticipantsCurrent();
+            // Not in on-chain snapshot or pending participants or local state
+
+            if (
+                !snapshotParticipants.includes(signerAddress) &&
+                !pendingParticipants.includes(signerAddress) &&
+                !localParticipants.includes(signerAddress)
+            ) {
+                this.logger.info(
+                    "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
+                    { channelId }
+                );
+                this.stateManager.setStatus(Status.SYNCED);
+            }
+        }
+
         // Check if channel should be closed (0 participants remaining)
         if (stateSnapshot.snapshotData.participants.length === 0) {
             this.logger.info(

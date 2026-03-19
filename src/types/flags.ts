@@ -12,5 +12,6 @@ export enum Status {
     NOT_OPENED,
     OPENED,
     SYNCED,
+    PENDING_PARTICIPANT, // joined on-chain, waiting for inclusion in the on-chain snapshot
     PARTICIPATING
 }
