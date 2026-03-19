@@ -1,6 +1,7 @@
 import { ethers, ZeroHash } from "ethers";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash } from "@/utils";
+import Block from "@/models/Block";
 import { TestSession, PeerTestHarness } from "@test/harness";
 import { ForkId, Hash } from "@/types/types";
 import Clock from "@/Clock";
@@ -100,49 +101,47 @@ describe("E2E: Dispute Validation Pipeline", function () {
     });
 
     describe("State Proof Block Pipeline", function () {
-        // FLAKY - need to slow down the dispute submission of the other peers (not the byzatine one)
-        //  to ensure the corrupted dispute is uploaded first
-        it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(BlockInvalidStateTransition) when a milestone block has a corrupted encodedBlock", async function () {
+        it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(BlockInvalidStateTransition) when signedBlocks block has corrupted encodedBlock", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup(4);
-            await h.byzantine.disconnect(3);
-            // peer 2 turn
-            await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
-            h.event.resetEventSpies();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            // Stub peer 0's dispute construction to corrupt the unfinalized block's
-            // stateSnapshotHash so the state proof block pipeline fails.
-            h.tamper.stubConstructDispute(0, async (dispute) => {
+            h.tamper.delayDisputeForPeers([0, 1, 2]);
+
+            h.tamper.stubConstructDispute(3, async (dispute) => {
                 const stateProof = dispute.input.stateProof;
-                const localDiamond = h.getLocalDiamond(0);
-                const [hasBlock, latestBlock] =
-                    await localDiamond.getLatestBlockFromStateProof(stateProof);
-                if (!hasBlock) {
+                if (
+                    stateProof.milestones.length > 0 ||
+                    stateProof.signedBlocks.length === 0
+                ) {
                     throw new Error(
-                        "State proof has no block to corrupt for Phase 2 test"
+                        `Expected 0 milestones + signedBlocks, got milestones=${stateProof.milestones.length} signedBlocks=${stateProof.signedBlocks.length}`
                     );
                 }
-                latestBlock.stateSnapshotHash = ethers.ZeroHash;
-                stateProof.milestones
-                    .at(-1)!
-                    .blockConfirmations.at(-1)!.signedBlock.encodedBlock =
-                    Codec.encode(latestBlock, Type.Block);
+                const peer = h.getPeer(1);
+
+                const lastSigned = stateProof.signedBlocks.at(-1)!;
+                const block = Codec.decode(lastSigned.encodedBlock, Type.Block);
+
+                block.stateSnapshotHash = ZeroHash;
+                const blockInstance = await Block.fromBlockStruct(
+                    block,
+                    peer.signer
+                );
+                stateProof.signedBlocks[stateProof.signedBlocks.length - 1] =
+                    blockInstance.signedBlock;
             });
 
-            // peer 2 double signes
-            await h.byzantine.submitDoubleSignBlock(2);
+            await h.byzantine.submitDoubleSignBlock(1);
 
-            // wait for dispute to be killed by peer 1 (the only honest peer in the channel)
-            await h.event.waitForPeers("onDisputeKilled", [1], 1);
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
             await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 2,
-                // 0 is includes as a hack to assert that the new fork has 2 participants
-                //  need to adjust to have maliciousPeerIndices : (2, the double signer, 0, the byzantine disputer)
-                honestPeerIndices: [1, 0]
+                maliciousPeerIndex: 3
             });
         });
 

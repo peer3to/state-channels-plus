@@ -131,21 +131,22 @@ export class AssertStorageActions {
                 honestPeer.index
             );
             for (const dispute of disputes) {
-                const dpf =
+                const dfp =
                     peerStorage.disputeFraudProofs.getDisputeFraudProofForDispute(
                         dispute
                     );
-                if (!dpf)
+                const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+                if (!dfp)
                     throw new Error(
-                        `Peer ${honestPeer.index} has no dispute fraud proofs for dispute ${dispute}`
+                        `Peer ${honestPeer.index} has no dispute fraud proofs for dispute ${disputeHash}`
                     );
                 if (disputeFraudProofType) {
                     if (
-                        dpf.proofType !==
+                        dfp.proofType !==
                         toSolidityDisputeFraudProofType(disputeFraudProofType)
                     ) {
                         throw new Error(
-                            `Peer ${honestPeer.index} has a dispute fraud proof for dispute ${dispute}, but it is of type ${dpf.proofType} instead of ${disputeFraudProofType}`
+                            `Peer ${honestPeer.index} has a dispute fraud proof for dispute ${disputeHash}, but it is of type ${dfp.proofType} instead of ${disputeFraudProofType}`
                         );
                     }
                 }
