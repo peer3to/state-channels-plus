@@ -45,31 +45,25 @@ contract StateProofFacet is StateChannelCommon {
         virtual
         returns (bool)
     {
-        console.log("STATE PROOF 1");
+        // Not needed, done already in DisputeManagerFacet uploadDisputeWithCalldata
         require(
             dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData)),
             ErrorAuditingDataHashMismatch()
         );
-        console.log("STATE PROOF 2");
         if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, disputeAuditingData.genesisStateSnapshotData)) {
             return false;
         }
-        console.log("STATE PROOF 3");
         if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
             return false;
         }
-        console.log("STATE PROOF 4");
 
         if (!_tryVerifyMilestones(dispute, disputeAuditingData)) {
-            console.log("STATE PROOF 6");
             return false;
         }
 
         if (dispute.input.stateProof.signedBlocks.length != 0) {
-            console.log("STATE PROOF 7");
             // HACK: Pass bytes32(0) to skip the first block's linkage to genesis.
             if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, bytes32(0))) {
-                console.log("STATE PROOF 8");
                 return false;
             }
         }

@@ -84,6 +84,9 @@ export class DisputeTamperingActions {
         disputeConfirmation: DisputeConfirmationStruct;
     }> {
         const peer = this.harness.getPeer(authorPeerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: authorPeerIndex
+        });
         const targetForkId = forkId || this.harness.activeForkId!;
 
         const { dispute, disputeConfirmation, auditingData } =

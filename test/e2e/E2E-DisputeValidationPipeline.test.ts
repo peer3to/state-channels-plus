@@ -317,10 +317,15 @@ describe("E2E: Dispute Validation Pipeline", function () {
     // ─────────────────────────────────────────────────────────────────────────────
 
     describe("Timeout Fraud Proofs", function () {
-        it.only("should kill dispute and store TimeoutNotLinkedToLatestState when timeout.blockHeight does not equal latestBlockHeight + 1", async function () {
+        it("should kill dispute and store TimeoutNotLinkedToLatestState when timeout.blockHeight does not equal latestBlockHeight + 1", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
+            // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
+            await h.lifecycle.timeoutSetup(3);
+            await h.assert.sync.peersInSyncWait();
+            h.contextApi.captureOriginalFork();
+            h.event.resetEventSpies();
 
+            // Peer 2 submits a timeout dispute with the wrong blockHeight.
             h.tamper.stubConstructDispute(2, async (dispute) => {
                 const localDiamond = h.getLocalDiamond(1);
                 const [hasBlock, latestBlock] =
@@ -331,12 +336,12 @@ describe("E2E: Dispute Validation Pipeline", function () {
                     ? Number(latestBlock.transaction.header.transactionCnt) + 1
                     : 0;
                 dispute.input.timeout.blockHeight = expectedHeight + 1;
-                dispute.input.timeout.participant = h.peers[0].address;
             });
 
-            await h.byzantine.submitDoubleSignBlock(1);
-
-            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+            // No action needed — peer 0 never writes, so the timeout fires naturally.
+            // Peer 1 will upload a valid timeout dispute; peer 2's dispute is tampered
+            // and should be killed by peer 1 detecting TimeoutNotLinkedToLatestState.
+            await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
@@ -346,67 +351,64 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
         });
 
-        // it("should kill dispute and store TimeoutParticipantNotNext when timeout.participant is not the next peer to write", async function () {
-        //     const h = TestSession.getHarness();
-        //     await h.scenario.preDisputeSetup();
+        it("should kill dispute and store TimeoutParticipantNotNext when timeout.participant is not the next peer to write", async function () {
+            const h = TestSession.getHarness();
+            // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
+            await h.scenario.preDisputeSetup();
 
-        //     // Stub peer 0's dispute construction: set timeout.participant to
-        //     // peer[1].address (wrong next writer) with blockHeight = 2.
-        //     h.tamper.stubConstructDispute(0, async (dispute) => {
-        //         dispute.input.timeout.participant = h.peers[1].address;
-        //         dispute.input.timeout.blockHeight = 2;
-        //     });
-        //     h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
+            // Peer 0 submits a timeout dispute with the wrong participant.
+            h.tamper.stubConstructDispute(0, (dispute) => {
+                //  blame peer 1
+                dispute.input.timeout.participant = h.getPeer(1).address;
+            });
 
-        //     await submitFaultyBlock(h, 0);
+            // No action needed — peer 2 never writes, so the timeout fires naturally.
+            // Peer 1 will upload a valid timeout dispute; peer 0's dispute is tampered
+            // and should be killed by peer 1 detecting TimeoutNotLinkedToLatestState.
+            await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
+                mode: "atLeast"
+            });
 
-        //     await h.event.waitForAllPeers("onDisputeKilled", 1, {
-        //         mode: "atLeast"
-        //     });
-        //     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-        //         disputeFraudProofType:
-        //             DisputeFraudProofType.TimeoutParticipantNotNext
-        //     });
-        //     await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
-        //     await h.assert.sync.forkChangedWait();
-        // });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.TimeoutParticipantNotNext
+            });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
+        });
 
-        // it("should kill dispute and store TimeoutTooEarly when timeout dispute is posted before the timeout wait period has elapsed", async function () {
-        //     const h = TestSession.getHarness();
-        //     // preDisputeSetup uses timeoutSetup (evidenceTime: 3 seconds)
-        //     await h.scenario.preDisputeSetup();
-        //     h.event.resetEventSpies();
+        it.only("should kill dispute and store TimeoutTooEarly when timeout dispute is posted before the timeout wait period has elapsed", async function () {
+            const h = TestSession.getHarness();
+            // 2 transitions → peer 2 is next to write but never does.
+            await h.scenario.preDisputeSetup();
 
-        //     const nextPeer = await h.query.getNextPeerToWrite();
-        //     const forkId = h.activeForkId!;
-        //     const latestBlock = h
-        //         .getPeer(0)
-        //         .stateManager.storage.blocks.getLatestBlock(forkId);
-        //     const timeoutBlockHeight = latestBlock
-        //         ? latestBlock.height + 1
-        //         : 0;
+            //  Store timeout for peer 0 so constructDispute can build a valid dispute struct.
+            const forkId = h.activeForkId!;
+            const nextPeer = await h.query.getNextPeerToWrite();
+            const latestBlock = h
+                .getPeer(0)
+                .stateManager.storage.blocks.getLatestBlock(forkId)!;
+            const blockHeight = BigInt(Number(latestBlock.height) + 1);
+            h.getPeer(0).stateManager.storage.timeout.storeTimeout(forkId, {
+                participant: nextPeer.address,
+                blockHeight,
+                minTimeStamp: BigInt(Clock.getTimeInSeconds()),
+                isForced: false,
+                previousBlockProducer: ethers.ZeroAddress,
+                previousBlockProducerPostedCalldata: false,
+                participantSignatureOnPreviousBlock: "0x"
+            });
 
-        //     // Stub peer 1's dispute construction: set a correct participant and
-        //     // blockHeight but zero minTimeStamp so it submits immediately (before
-        //     // evidenceTime elapses) → Phase 3F-3: TimeoutTooEarly.
-        //     h.tamper.stubConstructDispute(1, async (dispute) => {
-        //         dispute.input.timeout.participant = nextPeer.address;
-        //         dispute.input.timeout.blockHeight = timeoutBlockHeight;
-        //         dispute.input.timeout.minTimeStamp = 0;
-        //     });
-        //     h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
+            // Post the dispute immediately
+            await h.tamper.postTamperedDispute(0, () => {});
 
-        //     await submitFaultyBlock(h, 1);
-
-        //     await h.event.waitForAllPeers("onDisputeKilled", 1, {
-        //         mode: "atLeast"
-        //     });
-        //     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-        //         disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly
-        //     });
-        //     await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 1 });
-        //     await h.assert.sync.forkChangedWait();
-        // });
+            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly
+            });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
+        });
 
         // it.skip("should kill dispute and store TimeoutThreshold when all participants have already signed the block claimed as timed out", async function () {
         //     // TODO: Requires the state proof to go to block N while block N+1 is
