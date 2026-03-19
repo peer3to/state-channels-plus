@@ -494,29 +494,26 @@ describe("E2E: Dispute Validation Pipeline", function () {
         // });
     });
 
-    // describe("Invalid Output State", function () {
-    //     it("should kill dispute and store DisputeInvalidOutputState when outputSnapshotDataHash is corrupted", async function () {
-    //         const h = TestSession.getHarness();
-    //         await h.scenario.preDisputeSetup();
+    describe("Invalid Output State", function () {
+        it.only("should kill dispute and store DisputeInvalidOutputState when outputSnapshotDataHash is corrupted", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
 
-    //         // Stub peer 1's dispute construction to corrupt outputSnapshotDataHash.
-    //         // All input fields remain intact so phases 3A–3F pass unchanged.
-    //         h.tamper.stubConstructDispute(1, async (dispute) => {
-    //             dispute.outputSnapshotDataHash = hash("0x42");
-    //         });
-    //         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
+            h.tamper.stubConstructDispute(2, async (dispute) => {
+                dispute.outputSnapshotDataHash = hash("0x42");
+            });
+            h.tamper.delayDisputeForPeers([0, 1]);
 
-    //         await submitFaultyBlock(h, 1);
+            await h.byzantine.submitDoubleSignBlock(1);
 
-    //         await h.event.waitForAllPeers("onDisputeKilled", 1, {
-    //             mode: "atLeast"
-    //         });
-    //         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-    //             disputeFraudProofType:
-    //                 DisputeFraudProofType.DisputeInvalidOutputState
-    //         });
-    //         await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 1 });
-    //         await h.assert.sync.forkChangedWait();
-    //     });
-    // });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidOutputState
+            });
+            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+        });
+    });
 });
