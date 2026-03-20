@@ -115,11 +115,36 @@ export class SyncCoordinator {
         const peerStates = peers.map((peer) => {
             const block =
                 peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            return `Peer ${peer.index}: ${block ? `hash=${block.hash} height=${block.height}` : "no_block"}`;
+            const base = block
+                ? `hash=${block.hash} height=${block.height}`
+                : "no_block";
+            const sigs =
+                waitForFinalization && block
+                    ? ` sigs=${block.allSignatures.size}`
+                    : "";
+            return `Peer ${peer.index}: ${base}${sigs}`;
         });
 
+        let reason = "";
+        if (expectedHeight !== undefined) {
+            const latest =
+                peers[0]?.stateManager.storage.blocks.getLatestBlock(forkId);
+            reason = ` (expected height ${expectedHeight}, have ${latest?.height ?? "?"})`;
+        }
+        if (waitForFinalization) {
+            try {
+                const participants =
+                    await peers[0].stateManager.diamondStateMachine.getParticipants();
+                const sigCount =
+                    peers[0].stateManager.storage.blocks.getLatestBlock(forkId)
+                        ?.allSignatures.size ?? "?";
+                reason += ` (finalization: ${sigCount}/${participants.length} signatures)`;
+            } catch {
+                reason += " (finalization: ?)";
+            }
+        }
         const syncError = new Error(
-            `Peers at indices [${peers.map((p) => p.index).join(", ")}] failed to synchronize within ${timeoutMs}ms. States: ${peerStates.join("; ")}`
+            `Peers at indices [${peers.map((p) => p.index).join(", ")}] failed to synchronize within ${timeoutMs}ms${reason}. States: ${peerStates.join("; ")}`
         ) as EventBarrierCapturedError;
         syncError.capturedBarrierStack = barrierError?.capturedBarrierStack;
         throw syncError;

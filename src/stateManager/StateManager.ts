@@ -224,6 +224,22 @@ class StateManager {
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
     }
+
+    public maybeNotifyBlockFinalized(block: Block): void {
+        try {
+            const participantsUnion = this.storage.getParticipantsUnion(
+                block.coordinates,
+                block.stateSnapshotHash
+            );
+            if (block.didEveryoneSign(participantsUnion)) {
+                this.p2pEventHooks.onBlockFinalized?.();
+            }
+        } catch (error) {
+            this.logger.debug("maybeNotifyBlockFinalized skipped", {
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }
     public setStatus(status: Status) {
         this.logger.debug("Status changed", {
             oldStatus: Status[this.status] ?? `UNKNOWN(${this.status})`,
@@ -2442,15 +2458,17 @@ class StateManager {
         if (
             this.status === Status.PARTICIPATING &&
             !(options?.strategy instanceof DisputeValidationStrategy)
-        )
+        ) {
             this.p2pManager.remoteRpc.stateTransitionService
                 .onBlockConfirmation(block.blockConfirmationStruct)
                 .broadcast();
+        }
 
         // step 2 - persist the block // TODO - quick hack - cleaner code later
         this.storage.blocks.storeBlock(block, {
             justPersist: options?.strategy instanceof DisputeValidationStrategy
         });
+        this.maybeNotifyBlockFinalized(block);
 
         // step 3 - persist the state snapshot
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
