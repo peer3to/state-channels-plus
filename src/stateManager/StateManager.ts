@@ -1,5 +1,5 @@
 // External libraries
-import { ethers } from "ethers";
+import { ethers, ZeroHash } from "ethers";
 
 // TypeChain types - Data types
 import {
@@ -86,7 +86,7 @@ import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { TransactionResponse } from "ethers";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
-const NULL = "0x00";
+const NULL = ZeroHash;
 
 type ParticipantChanges = {
     left: Set<Address>;
