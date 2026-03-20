@@ -4,7 +4,7 @@ import { expect } from "chai";
 PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Join/Leave Sequence", function () {
-    it("join/leave sequence and fork resolution", async function () {
+    it.only("join/leave sequence and fork resolution", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 0, {
@@ -18,56 +18,84 @@ describe("E2E: Join/Leave Sequence", function () {
         let peerIndices = [0, 1, 2, 3];
         let spectatorIndices = [];
 
+        // blocks 0, 1
         await h.transition.advanceState({ count: 2 });
 
-        // Leave peer 2
+        // Leave peer 2, block 2
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
+        //  hack until https://github.com/peer3to/state-channels-plus/pull/298 merged
+        await h.byzantine.disconnect(2);
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
         peerIndices = [0, 1, 3];
 
-        // turns of 3,0
-        await h.transition.advanceState({ count: 2 });
+        // turns of 3,0, blocks 3,4
+        await h.transition.advanceState({
+            count: 2,
+            waitForFinalization: true,
+            waitForPeers: peerIndices
+        });
 
         // Join peer 4 as spectator
         await h.addPeer(); // This adds peer index 4 as spectator
         await h.event.waitUntilEventOccurs("onConnection", 5000, [4]);
-        await h.assert.sync.peersInSyncWait();
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
         spectatorIndices = [4];
 
-        // turns of 1,3
+        // await sleep(1000)
+
+        // turns of 1,3, blocks 5,6
         await h.transition.advanceState({
             count: 2,
-            waitForPeers: peerIndices.concat(spectatorIndices)
+            waitForPeers: peerIndices.concat(spectatorIndices),
+            waitForFinalization: true
         });
 
-        // peer 0 is leaving the channel
+        // peer 0 is leaving the channel, block 7
 
         await h.transition.advanceState({
             txFn: (c) => c.leaveChannel(),
-            waitForPeers: peerIndices
+            waitForPeers: peerIndices.concat(spectatorIndices),
+            waitForFinalization: true
         });
+        //  hack until https://github.com/peer3to/state-channels-plus/pull/298 merged
+        await h.byzantine.disconnect(0);
+
         await h.assert.sync.participantCount({ expectedCount: 2 });
         peerIndices = [1, 3];
+        //  get next to write
+        let nextToWrite = await h.query.getNextPeerToWrite();
+        expect(nextToWrite.index).to.equal(1, "next to write should be peer 1");
+        // turns of 1,3, blocks 8,9
 
-        // turns of 1,3
+        // Fails with
+        /*
+        Error: NOT MY TURN: playTransaction start:  - myAddress: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+        - nextToWrite: 0x90F79bf6EB2c4f870365E785982E1f101E93b906
+        - txHeight: 9 - latestStoredHeight: 8 - nextStoredHeight: 9 -
+        */
+
+        //  I expect it to be resolved once a leaving partiapcnt triger snasphot update on chain which trigger status change to SYNCED
         await h.transition.advanceState({
             count: 2,
-            waitForPeers: peerIndices
+            waitForPeers: peerIndices.concat(spectatorIndices),
+            waitForFinalization: true
         });
 
         // Join peer 5 as spectator
         await h.addPeer();
         await h.event.waitUntilEventOccurs("onConnection", 5000, [5]);
-        await h.assert.sync.peersInSyncWait();
         await h.assert.sync.participantCount({ expectedCount: 2 });
         spectatorIndices = [4, 5];
+        //  get next to write
+        nextToWrite = await h.query.getNextPeerToWrite();
+        expect(nextToWrite.index).to.equal(1, "next to write should be peer 1");
 
         await h.transition.advanceState({
             count: 2,
-            waitForPeers: peerIndices.concat(spectatorIndices)
+            waitForPeers: peerIndices.concat(spectatorIndices),
+            waitForFinalization: true
         });
 
         // Capture the state before malicious action
