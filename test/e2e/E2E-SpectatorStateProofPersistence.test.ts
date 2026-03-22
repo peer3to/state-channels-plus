@@ -9,7 +9,7 @@ describe("E2E: Join/Leave Sequence", function () {
 
         await h.lifecycle.start(4, 0, {
             timeConfig: {
-                p2pTime: 30,
+                p2pTime: 5,
                 agreementTime: 2,
                 chainFallbackTime: 2,
                 evidenceTime: 10
