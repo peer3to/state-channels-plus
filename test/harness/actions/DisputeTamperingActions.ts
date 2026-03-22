@@ -2,7 +2,6 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger, SignatureUtils, Codec, Type, hash, sleep } from "@/utils";
 import { ForkId } from "@/types/types";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { BytesLike, Signer } from "ethers";
 import {
     DisputeStruct,
@@ -272,6 +271,7 @@ export class DisputeTamperingActions {
     ): Promise<void> {
         const peer = this.harness.getPeer(disputerPeerIndex);
         const stateProof = dispute.input.stateProof;
+        const localDiamond = this.harness.getLocalDiamond(disputerPeerIndex);
 
         const truncate = (): boolean => {
             if (stateProof.signedBlocks.length > 0) {
@@ -318,8 +318,10 @@ export class DisputeTamperingActions {
         };
 
         while (truncate()) {
-            const latest = this.getLatestBlockFromStateProof(stateProof);
-            if (!latest || Number(latest.height) <= targetHeight) break;
+            const [hasBlock, latestBlock] =
+                await localDiamond.getLatestBlockFromStateProof(stateProof);
+            const h = Number(latestBlock.transaction.header.transactionCnt);
+            if (!hasBlock || h <= targetHeight) break;
         }
 
         const { auditingData } =
@@ -338,33 +340,6 @@ export class DisputeTamperingActions {
         this.logger.debug(
             `Truncated state proof to height ${targetHeight} for disputer ${disputerPeerIndex}`
         );
-    }
-
-    private getLatestBlockFromStateProof(
-        stateProof: StateProofStruct
-    ): { height: number } | undefined {
-        if (
-            stateProof.milestones.length === 0 &&
-            stateProof.signedBlocks.length === 0
-        )
-            return undefined;
-        if (stateProof.signedBlocks.length > 0) {
-            const block = Codec.decode(
-                stateProof.signedBlocks[stateProof.signedBlocks.length - 1]!
-                    .encodedBlock,
-                Type.Block
-            );
-            return { height: Number(block.transaction.header.transactionCnt) };
-        }
-        const lastMilestone =
-            stateProof.milestones[stateProof.milestones.length - 1]!;
-        if (lastMilestone.blockConfirmations.length === 0) return undefined;
-        const lastBc =
-            lastMilestone.blockConfirmations[
-                lastMilestone.blockConfirmations.length - 1
-            ]!;
-        const block = Codec.decode(lastBc.signedBlock.encodedBlock, Type.Block);
-        return { height: Number(block.transaction.header.transactionCnt) };
     }
 
     private async resignDispute(
