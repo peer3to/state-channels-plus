@@ -45,7 +45,6 @@ contract StateProofFacet is StateChannelCommon {
         virtual
         returns (bool)
     {
-        // Not needed, done already in DisputeManagerFacet uploadDisputeWithCalldata
         require(
             dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData)),
             ErrorAuditingDataHashMismatch()
@@ -226,6 +225,7 @@ contract StateProofFacet is StateChannelCommon {
         console.log("_isMilestoneFinal: thresholdCount", thresholdCount);
         return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
     }
+
     //Return set length after tryInsert
 
     function _tryInsertAddressInThresholdSet(
