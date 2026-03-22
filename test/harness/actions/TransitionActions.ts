@@ -189,7 +189,7 @@ export class TransitionActions {
 
             const authorLatestBlock =
                 peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            const expectedHeight = authorLatestBlock?.height;
+            const minHeight = authorLatestBlock?.height;
 
             const peers = this.harness.getFilteredOrHonestPeers(
                 options.waitForPeers
@@ -198,7 +198,7 @@ export class TransitionActions {
                 peers,
                 forkId,
                 {
-                    expectedHeight,
+                    minHeight,
                     waitForFinalization: options.waitForFinalization
                 }
             );

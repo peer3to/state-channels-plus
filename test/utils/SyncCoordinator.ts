@@ -27,21 +27,21 @@ export class SyncCoordinator {
             timeoutMs?: number;
             blockHashInStorage?: Hash;
             waitForFinalization?: boolean;
-            expectedHeight?: number;
+            minHeight?: number;
         }
     ): Promise<void> {
         const {
             timeoutMs = 8000,
             blockHashInStorage,
             waitForFinalization = false,
-            expectedHeight
+            minHeight
         } = options || {};
         this.logger.verbose(`Waiting for ${peers.length} peers to sync`, {
             forkId,
             timeout: timeoutMs,
             peerIndices: peers.map((p) => p.index),
             useEventBarrier: !!this.eventBarrier,
-            expectedHeight: expectedHeight
+            minHeight
         });
 
         const checkSync = async () => {
@@ -72,7 +72,7 @@ export class SyncCoordinator {
 
             // If a minimum expected height was provided, ensure all peers have
             // reached at least that height before considering them synced.
-            if (expectedHeight !== undefined && firstHeight < expectedHeight) {
+            if (minHeight !== undefined && firstHeight < minHeight) {
                 return false;
             }
 
@@ -126,10 +126,10 @@ export class SyncCoordinator {
         });
 
         let reason = "";
-        if (expectedHeight !== undefined) {
+        if (minHeight !== undefined) {
             const latest =
                 peers[0]?.stateManager.storage.blocks.getLatestBlock(forkId);
-            reason = ` (expected height ${expectedHeight}, have ${latest?.height ?? "?"})`;
+            reason = ` (expected height ${minHeight}, have ${latest?.height ?? "?"})`;
         }
         if (waitForFinalization) {
             try {
