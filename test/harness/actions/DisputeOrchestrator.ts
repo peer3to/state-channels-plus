@@ -106,13 +106,12 @@ export class DisputeOrchestrator {
         if (options.assertMaliciousRemoved ?? true) {
             const maliciousAddress =
                 this.harness.getPeer(maliciousPeerIndex).address;
-            const participants = await this.harness
-                .getPeer(honestPeerIndices[0]!)
-                .stateManager.diamondStateMachine.getParticipants();
-            expect(participants).to.not.include(
-                maliciousAddress,
-                "malicious peer should be removed from channel participants"
-            );
+            for (const peer of honestPeers) {
+                const participants =
+                    await peer.stateManager.diamondStateMachine.getParticipants();
+                expect(participants).to.have.lengthOf(honestPeers.length);
+                expect(participants).to.not.include(maliciousAddress);
+            }
         }
 
         this.logger.debug(
