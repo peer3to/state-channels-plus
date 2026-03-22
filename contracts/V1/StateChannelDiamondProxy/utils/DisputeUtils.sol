@@ -127,3 +127,7 @@ function _hadParticipantPostedEvidence(DisputeWindow storage disputeWindow, addr
     }
     return false;
 }
+
+function _hasDisputeReason(DisputeInput memory input) pure returns (bool) {
+    return input.timeout.participant != address(0) || input.onChainSlashes.length > 0 || input.selfRemoval;
+}

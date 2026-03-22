@@ -329,6 +329,10 @@ contract LocalDiamond is StateChannelManagerProxy {
         return _getLatestBlock(stateProof);
     }
 
+    function hasDisputeReason(DisputeInput memory input) public pure returns (bool) {
+        return _hasDisputeReason(input);
+    }
+
     function getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory stateProof)
         public
         pure

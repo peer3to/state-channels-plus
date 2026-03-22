@@ -442,18 +442,19 @@ export default class DisputeValidationService {
             }
         }
 
-        // [check] dispute has a legitimate enforcement basis
-        const hasTimeout =
-            dispute.input.timeout.participant !== ethers.ZeroAddress;
+        // [check] dispute input states a reason (same rule as DisputeUtils / InvalidDisputeReason)
+        const hasReason =
+            await this.diamondStateMachine.localDiamondContract.hasDisputeReason(
+                dispute.input
+            );
 
-        const hasOnChainSlashes = dispute.input.onChainSlashes.length > 0;
-
-        const hasSelfRemoval = dispute.input.selfRemoval;
-
-        if (!hasTimeout && !hasOnChainSlashes && !hasSelfRemoval) {
-            this.logger.warn("Dispute has no legitimate enforcement basis", {
-                dispute: LoggerUtils.getDisputeMetadata(dispute)
-            });
+        if (!hasReason) {
+            this.logger.warn(
+                "Dispute input has no stated reason (timeout, slashes, or self-removal)",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
+            );
             this.disputeFraudProofService.createInvalidDisputeReason(dispute);
             return false;
         }

@@ -136,11 +136,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         abi.decode(encodedFraudProof, (InvalidDisputeReason));
 
-        bool hasTimeout = dispute.input.timeout.participant != address(0);
-        bool hasOnChainSlashes = dispute.input.onChainSlashes.length > 0;
-        bool hasSelfRemoval = dispute.input.selfRemoval;
-
-        if (!hasTimeout && !hasOnChainSlashes && !hasSelfRemoval) {
+        if (!_hasDisputeReason(dispute.input)) {
             return _valid(dispute.input.disputer);
         }
         return _invalid();
