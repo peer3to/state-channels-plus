@@ -58,9 +58,6 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         await h.assert.dispute.initiatedAndCommitedWait({
             allowByzantineInitiation: true
         });
-        //  this fails with a race condition, some peers see the fork as disputed and fail the validation pipleine on `isDisputedFork` check
-        //  which runs before the next-leader check -> they never store the fraud proof
-        //
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
@@ -79,8 +76,6 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitInvalidTimestampBlock(maliciousPeerIndex);
 
-        //  this fails with a race condition, some peers see the fork as disputed and fail the validation pipleine on `isDisputedFork` check
-        //  which runs before the subjective invalid timestamp check -> they never store the fraud proof
         await h.assert.dispute.initiatedAndCommitedWait({
             allowByzantineInitiation: true
         });
