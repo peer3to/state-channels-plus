@@ -112,9 +112,11 @@ export class SyncCoordinator {
         }
 
         // Enhanced error reporting on timeout
-        const peerStates = peers.map((peer) => {
-            const block =
-                peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        const blocks = peers.map((peer) =>
+            peer.stateManager.storage.blocks.getLatestBlock(forkId)
+        );
+        const peerStates = peers.map((peer, i) => {
+            const block = blocks[i];
             const base = block
                 ? `hash=${block.hash} height=${block.height}`
                 : "no_block";
@@ -126,18 +128,15 @@ export class SyncCoordinator {
         });
 
         let reason = "";
+        const latest = blocks[0];
         if (minHeight !== undefined) {
-            const latest =
-                peers[0]?.stateManager.storage.blocks.getLatestBlock(forkId);
             reason = ` (expected height ${minHeight}, have ${latest?.height ?? "?"})`;
         }
         if (waitForFinalization) {
             try {
                 const participants =
                     await peers[0].stateManager.diamondStateMachine.getParticipants();
-                const sigCount =
-                    peers[0].stateManager.storage.blocks.getLatestBlock(forkId)
-                        ?.allSignatures.size ?? "?";
+                const sigCount = latest?.allSignatures.size ?? "?";
                 reason += ` (finalization: ${sigCount}/${participants.length} signatures)`;
             } catch {
                 reason += " (finalization: ?)";
