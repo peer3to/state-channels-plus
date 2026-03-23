@@ -208,8 +208,7 @@ describe("E2E: Dispute Manager", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup(4);
             await h.byzantine.disconnect(3);
-            await h.transition.advanceState({ txFn: (c) => c.add(1) });
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
+            await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
             h.event.resetEventSpies();
 
             h.byzantine.stubDisputeConstruction({
@@ -308,8 +307,7 @@ describe("E2E: Dispute Manager", function () {
             await h.byzantine.disconnect(2);
             h.event.resetEventSpies();
 
-            await h.transition.advanceState({ waitForPeers: [0, 1] });
-            await h.transition.advanceState({ waitForPeers: [0, 1] });
+            await h.transition.advanceState({ waitForPeers: [0, 1], count: 2 });
             await h.event.waitForDisputeFromAnyPeer([0, 1]);
             await h.assert.snapshot.snapshotCountIncreasedSince(
                 2,
