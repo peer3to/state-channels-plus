@@ -11,7 +11,8 @@ import {
     BlockStruct,
     SnapshotDataStruct,
     MessageStruct,
-    MessageBlockStruct
+    MessageBlockStruct,
+    JoinChannelConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
@@ -225,11 +226,16 @@ class StateManager {
         this.p2pEventHooks = p2pEventHooks;
     }
     public setStatus(status: Status) {
+        const oldStatus = this.status;
+        if (oldStatus === status) {
+            return;
+        }
         this.logger.debug("Status changed", {
-            oldStatus: Status[this.status] ?? `UNKNOWN(${this.status})`,
+            oldStatus: Status[oldStatus] ?? `UNKNOWN(${oldStatus})`,
             newStatus: Status[status] ?? `UNKNOWN(${status})`
         });
         this.status = status;
+        this.p2pEventHooks.onStatusChanged?.(oldStatus, status);
     }
     public getStatus(): Status {
         return this.status;
@@ -618,6 +624,31 @@ class StateManager {
         this.storage.inboundMessages.store(messageBlock, {
             hash: messageBlockHash
         });
+    }
+
+    public async joinChannel(
+        confirmation: JoinChannelConfirmationStruct
+    ): Promise<void> {
+        if (this.status !== Status.SYNCED) return;
+
+        this.setStatus(Status.PENDING_PARTICIPANT);
+        this.logger.info(
+            "joinChannel - promoted to PENDING_PARTICIPANT on broadcast"
+        );
+
+        try {
+            const tx =
+                await this.stateChannelManagerContract.joinChannel(
+                    confirmation
+                );
+            await tx.wait();
+        } catch (error) {
+            this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            this.setStatus(Status.SYNCED);
+            throw error;
+        }
     }
 
     private async tryExecuteFromQueue() {
@@ -1360,7 +1391,7 @@ class StateManager {
 
                     throw error;
                 });
-            DetachedPromises.collect(txResponsePromise);
+            await txResponsePromise;
             return expectedSnapshot;
         } else {
             this.logger.debug("No state snapshot updates needed");
@@ -2565,8 +2596,13 @@ class StateManager {
 
         this.timeoutManager.scheduleTask(
             async () => {
-                if (this.agreementManager.didEveryoneSignBlock(block)) {
-                    // Happy path: everyone signed - post the snapshot on-chain to process withdrawal
+                const persistedBlock =
+                    this.storage.blocks.getBlock(block.forkId, block.height) ??
+                    block;
+                const everyoneSigned =
+                    this.agreementManager.didEveryoneSignBlock(persistedBlock);
+
+                if (everyoneSigned) {
                     this.logger.info(
                         `startMaybeExitOnChain - everyone signed block ${block.height}, posting state snapshot`,
                         { blockHeight: block.height, forkId: block.forkId }
@@ -2587,12 +2623,17 @@ class StateManager {
                 } else {
                     // Slow path: not everyone signed - create a self-removal dispute
                     this.logger.info(
-                        `startMaybeExitOnChain - not everyone signed block ${block.height}, creating self-removal dispute`,
-                        { blockHeight: block.height, forkId: block.forkId }
+                        `startMaybeExitOnChain - not everyone signed block ${persistedBlock.height}, creating self-removal dispute`,
+                        {
+                            blockHeight: persistedBlock.height,
+                            forkId: persistedBlock.forkId
+                        }
                     );
                     try {
                         this.storage.forceExit.setForceExit(true);
-                        await this.disputeManager.dispute(block.forkId);
+                        await this.disputeManager.dispute(
+                            persistedBlock.forkId
+                        );
                     } catch (error) {
                         this.logger.error(
                             `startMaybeExitOnChain - failed to create self-removal dispute`,

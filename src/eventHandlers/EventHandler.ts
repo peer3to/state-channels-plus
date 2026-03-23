@@ -21,7 +21,14 @@ import {
 } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { Codec, hash, Logger, tryDecodeCustomError, Type } from "@/utils";
+import {
+    addressesEqual,
+    Codec,
+    hash,
+    Logger,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { isEqual } from "lodash";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
@@ -81,9 +88,13 @@ export class EventHandler {
             .participants as Address[];
         const status = this.stateManager.getStatus();
 
+        const snapshotHasSigner = snapshotParticipants.some((p) =>
+            addressesEqual(p, signerAddress)
+        );
+
         // Detect when we've been included in the on-chain snapshot: PENDING_PARTICIPANT → PARTICIPATING
         if (status === Status.PENDING_PARTICIPANT) {
-            if (snapshotParticipants.includes(signerAddress)) {
+            if (snapshotHasSigner) {
                 this.logger.info(
                     "onStateSnapshotUpdated - signer included in snapshot, transitioning PENDING_PARTICIPANT → PARTICIPATING",
                     { channelId }
@@ -100,13 +111,13 @@ export class EventHandler {
                 )) as Address[];
             const localParticipants =
                 await this.stateManager.getParticipantsCurrent();
-            // Not in on-chain snapshot or pending participants or local state
-
-            if (
-                !snapshotParticipants.includes(signerAddress) &&
-                !pendingParticipants.includes(signerAddress) &&
-                !localParticipants.includes(signerAddress)
-            ) {
+            const inPending = pendingParticipants.some((p) =>
+                addressesEqual(p, signerAddress)
+            );
+            const inLocal = localParticipants.some((p) =>
+                addressesEqual(p, signerAddress)
+            );
+            if (!snapshotHasSigner && !inPending && !inLocal) {
                 this.logger.info(
                     "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
                     { channelId }
