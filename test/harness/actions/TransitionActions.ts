@@ -8,11 +8,42 @@ export type TransitionContract = MathStateMachine;
 
 export type TransitionOptions = {
     waitForSync?: boolean;
+    /**
+     * Only wait for tip agreement on these harness peer indices. Used when some peers are
+     * disconnected or out of scope for the scenario; they are not treated as part of this sync wait.
+     * When omitted, {@link waitForFinalization} defaults to true; when set, it defaults to false unless
+     * you pass {@link waitForFinalization}: true (e.g. remaining participants should still show full union signatures).
+     */
     waitForPeers?: number[];
     waitForTurn?: boolean;
     delayMs?: number;
+    /**
+     * Require `didEveryoneSignBlock` (full participant union on each waited peer’s view) after tip
+     * agreement; see {@link SyncCoordinator.waitForPeersToSync}. Omitted: false if {@link waitForPeers}
+     * is set, otherwise true.
+     */
     waitForFinalization?: boolean;
+    /**
+     * When true (default for single-step submits), pass the author’s post-tx tip height as
+     * `minHeight` to `SyncCoordinator.waitForPeersToSync` so the wait is anchored to that height.
+     * When false, only identical tips (same hash + height) are required. `advanceState` with
+     * `count`/`rounds` &gt; 1 sets this to false on every step but the last so only the final tx
+     * pins height (and finalization applies there when enabled).
+     */
+    pinAgreementHeightAfterTx?: boolean;
 };
+
+export function effectiveWaitForFinalization(
+    options: Pick<TransitionOptions, "waitForFinalization" | "waitForPeers">
+): boolean {
+    if (options.waitForFinalization !== undefined) {
+        return options.waitForFinalization;
+    }
+    if (options.waitForPeers !== undefined) {
+        return false;
+    }
+    return true;
+}
 
 /**
  * Handles state transition operations on the state machine
@@ -40,7 +71,8 @@ export class TransitionActions {
             waitForSync: options.waitForSync ?? true,
             waitForPeers: options.waitForPeers,
             waitForTurn: false, // already waited above
-            waitForFinalization: options.waitForFinalization
+            waitForFinalization: options.waitForFinalization,
+            pinAgreementHeightAfterTx: options.pinAgreementHeightAfterTx
         });
     }
 
@@ -56,18 +88,28 @@ export class TransitionActions {
         waitForPeers?: number[];
         waitForTurn?: boolean;
         waitForFinalization?: boolean;
+        pinAgreementHeightAfterTx?: boolean;
     }): Promise<void> {
         const count = options?.count ?? 1;
         const total = options?.rounds
             ? options.rounds * this.harness.peers.length
             : count;
 
+        // Only the last submit in a run uses the caller’s finalization policy (see
+        // effectiveWaitForFinalization) and pins author tip height as sync `minHeight`; earlier steps
+        // still wait for matching tips but do not pin height / require finalization between hops.
+        const pinHeightForStep = (i: number) =>
+            options?.pinAgreementHeightAfterTx !== undefined
+                ? options.pinAgreementHeightAfterTx
+                : i === total - 1 || total <= 1;
+
         if (options?.txFn) {
             for (let i = 0; i < total; i++) {
                 await this.submitNext(options.txFn, {
                     ...options,
                     waitForFinalization:
-                        i === total - 1 ? options?.waitForFinalization : false
+                        i === total - 1 ? options?.waitForFinalization : false,
+                    pinAgreementHeightAfterTx: pinHeightForStep(i)
                 });
             }
             return;
@@ -77,7 +119,8 @@ export class TransitionActions {
             await this.increment(1, {
                 ...options,
                 waitForFinalization:
-                    i === total - 1 ? options?.waitForFinalization : false
+                    i === total - 1 ? options?.waitForFinalization : false,
+                pinAgreementHeightAfterTx: pinHeightForStep(i)
             });
         }
     }
@@ -104,10 +147,12 @@ export class TransitionActions {
     ): Promise<void> {
         const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
 
+        // waitForPeers limits who we barrier on, but we still want union finalization on those peers.
         await this.submitNext(txFn, {
             waitForTurn: true,
             waitForPeers: honestIndices,
-            waitForSync: options?.waitForSync ?? true
+            waitForSync: options?.waitForSync ?? true,
+            waitForFinalization: true
         });
     }
 
@@ -125,7 +170,9 @@ export class TransitionActions {
             await this.submitNext(txFn, {
                 waitForTurn: true,
                 waitForPeers: honestIndices,
-                waitForSync: true
+                waitForSync: true,
+                // Same as fromHonestPeersOnly: filtered barrier, full finalization on waited peers.
+                waitForFinalization: true
             });
         }
     }
@@ -158,7 +205,9 @@ export class TransitionActions {
 
         await this.submitNext(txFn, {
             waitForPeers: includedPeers,
-            waitForSync: true
+            waitForSync: true,
+            // Exclude one peer from the sync barrier only; still require finalized tips on included peers.
+            waitForFinalization: true
         });
     }
 
@@ -168,11 +217,10 @@ export class TransitionActions {
     async submit(
         peer: TestPeer,
         txFn: (contract: TransitionContract) => Promise<any>,
-        options: TransitionOptions = {
-            waitForSync: true,
-            waitForFinalization: false
-        }
+        options: TransitionOptions = {}
     ): Promise<any> {
+        const waitForSync = options.waitForSync ?? true;
+
         if (options.waitForTurn) {
             await this.waitForTurn(peer);
         }
@@ -181,7 +229,7 @@ export class TransitionActions {
 
         const result = await txFn(peer.p2pInstance.p2pContractInstance);
 
-        if (options.waitForSync) {
+        if (waitForSync) {
             const forkId = this.harness.activeForkId;
             if (!forkId) {
                 throw new Error("No active fork ID - cannot wait for sync");
@@ -189,17 +237,23 @@ export class TransitionActions {
 
             const authorLatestBlock =
                 peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            const minHeight = authorLatestBlock?.height;
+            const pinAgreementHeight =
+                options.pinAgreementHeightAfterTx ?? true;
+            const minHeight =
+                pinAgreementHeight && authorLatestBlock?.height !== undefined
+                    ? authorLatestBlock.height
+                    : undefined;
 
             const peers = this.harness.getFilteredOrHonestPeers(
                 options.waitForPeers
             );
+            const waitForFinalization = effectiveWaitForFinalization(options);
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
                 forkId,
                 {
-                    minHeight,
-                    waitForFinalization: options.waitForFinalization
+                    ...(minHeight !== undefined ? { minHeight } : {}),
+                    waitForFinalization
                 }
             );
         }

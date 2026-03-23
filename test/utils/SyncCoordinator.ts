@@ -8,9 +8,11 @@ import type { Block } from "@/models";
  * Options for {@link SyncCoordinator.waitForPeersToSync}. Fields interact as follows:
  *
  * - **Tip for sync:** `blockHashInStorage` if set, otherwise each peer’s latest block on `forkId`.
- * - **`minHeight`:** Peers must have tip height ≥ this. If set **without** `blockHashInStorage`,
- *   finalization (when enabled) checks the block **at** `minHeight` when the tip is **above**
- *   `minHeight`; if the tip **equals** `minHeight`, the tip block is reused (no extra lookup).
+ * - **`minHeight`:** Target tip height the author (or caller) reached; every peer must have
+ *   tip height ≥ this and (with the same-tip rule) end up agreeing on that chain head. If set
+ *   **without** `blockHashInStorage`, finalization (when enabled) checks the block **at**
+ *   `minHeight` when the tip is **above** `minHeight`; if the tip **equals** `minHeight`, the tip
+ *   block is reused (no extra lookup).
  * - **`blockHashInStorage`:** Tip is fixed to that block; `minHeight` only asserts that block’s
  *   height is ≥ `minHeight`. Finalization uses that same block.
  */
@@ -28,8 +30,9 @@ export type WaitForPeersToSyncOptions = {
      */
     waitForFinalization?: boolean;
     /**
-     * Minimum tip height before success. Also pins which height is checked for finalization when
-     * `blockHashInStorage` is omitted and `waitForFinalization` is true; see type doc.
+     * Expected agreement height (typically the author’s post-tx tip). Peers must reach at least
+     * this height and share the same tip; when `waitForFinalization` is true, the block finalized
+     * is at this height unless the tip is higher (then the block at `minHeight` is loaded); see type doc.
      */
     minHeight?: number;
 };
@@ -48,8 +51,9 @@ export class SyncCoordinator {
     }
 
     /**
-     * Wait until all peers share the same tip (hash + height), optionally at least `minHeight`,
-     * and optionally until union agreement (`didEveryoneSignBlock`) on the agreement target.
+     * Wait until all peers share the same tip (hash + height), optionally anchored with `minHeight`,
+     * and optionally until union agreement (`didEveryoneSignBlock`) on the agreement target block
+     * at that height (when finalization is enabled).
      * @see {@link WaitForPeersToSyncOptions} for how options combine.
      */
     public async waitForPeersToSync(
@@ -60,7 +64,7 @@ export class SyncCoordinator {
         const {
             timeoutMs = 8000,
             blockHashInStorage,
-            waitForFinalization = false,
+            waitForFinalization = true,
             minHeight
         } = options || {};
 

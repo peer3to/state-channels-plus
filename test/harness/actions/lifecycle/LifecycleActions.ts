@@ -33,7 +33,7 @@ export class LifecycleActions {
         if (transitionCount > 0) {
             await this.harness.transition.advanceState({
                 count: transitionCount,
-                waitForFinalization: options?.waitForFinalization
+                waitForFinalization: options?.waitForFinalization ?? true
             });
         }
 
