@@ -19,18 +19,9 @@ export type TransitionOptions = {
     delayMs?: number;
     /**
      * Require `didEveryoneSignBlock` (full participant union on each waited peer’s view) after tip
-     * agreement; see {@link SyncCoordinator.waitForPeersToSync}. Omitted: false if {@link waitForPeers}
-     * is set, otherwise true.
+     * agreement. Omitted: false if {@link waitForPeers} is set, otherwise true.
      */
     waitForFinalization?: boolean;
-    /**
-     * When true (default for single-step submits), pass the author’s post-tx tip height as
-     * `minHeight` to `SyncCoordinator.waitForPeersToSync` so the wait is anchored to that height.
-     * When false, only identical tips (same hash + height) are required. `advanceState` with
-     * `count`/`rounds` &gt; 1 sets this to false on every step but the last so only the final tx
-     * pins height (and finalization applies there when enabled).
-     */
-    pinAgreementHeightAfterTx?: boolean;
 };
 
 export function effectiveWaitForFinalization(
@@ -71,8 +62,7 @@ export class TransitionActions {
             waitForSync: options.waitForSync ?? true,
             waitForPeers: options.waitForPeers,
             waitForTurn: false, // already waited above
-            waitForFinalization: options.waitForFinalization,
-            pinAgreementHeightAfterTx: options.pinAgreementHeightAfterTx
+            waitForFinalization: options.waitForFinalization
         });
     }
 
@@ -88,28 +78,18 @@ export class TransitionActions {
         waitForPeers?: number[];
         waitForTurn?: boolean;
         waitForFinalization?: boolean;
-        pinAgreementHeightAfterTx?: boolean;
     }): Promise<void> {
         const count = options?.count ?? 1;
         const total = options?.rounds
             ? options.rounds * this.harness.peers.length
             : count;
 
-        // Only the last submit in a run uses the caller’s finalization policy (see
-        // effectiveWaitForFinalization) and pins author tip height as sync `minHeight`; earlier steps
-        // still wait for matching tips but do not pin height / require finalization between hops.
-        const pinHeightForStep = (i: number) =>
-            options?.pinAgreementHeightAfterTx !== undefined
-                ? options.pinAgreementHeightAfterTx
-                : i === total - 1 || total <= 1;
-
         if (options?.txFn) {
             for (let i = 0; i < total; i++) {
                 await this.submitNext(options.txFn, {
                     ...options,
                     waitForFinalization:
-                        i === total - 1 ? options?.waitForFinalization : false,
-                    pinAgreementHeightAfterTx: pinHeightForStep(i)
+                        i === total - 1 ? options?.waitForFinalization : false
                 });
             }
             return;
@@ -119,8 +99,7 @@ export class TransitionActions {
             await this.increment(1, {
                 ...options,
                 waitForFinalization:
-                    i === total - 1 ? options?.waitForFinalization : false,
-                pinAgreementHeightAfterTx: pinHeightForStep(i)
+                    i === total - 1 ? options?.waitForFinalization : false
             });
         }
     }
@@ -237,12 +216,7 @@ export class TransitionActions {
 
             const authorLatestBlock =
                 peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            const pinAgreementHeight =
-                options.pinAgreementHeightAfterTx ?? true;
-            const minHeight =
-                pinAgreementHeight && authorLatestBlock?.height !== undefined
-                    ? authorLatestBlock.height
-                    : undefined;
+            const minHeight = authorLatestBlock?.height;
 
             const peers = this.harness.getFilteredOrHonestPeers(
                 options.waitForPeers
@@ -251,10 +225,7 @@ export class TransitionActions {
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
                 forkId,
-                {
-                    ...(minHeight !== undefined ? { minHeight } : {}),
-                    waitForFinalization
-                }
+                { minHeight, waitForFinalization }
             );
         }
 
