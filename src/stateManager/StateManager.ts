@@ -11,7 +11,8 @@ import {
     BlockStruct,
     SnapshotDataStruct,
     MessageStruct,
-    MessageBlockStruct
+    MessageBlockStruct,
+    JoinChannelConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Proof types
@@ -241,11 +242,16 @@ class StateManager {
         }
     }
     public setStatus(status: Status) {
+        const oldStatus = this.status;
+        if (oldStatus === status) {
+            return;
+        }
         this.logger.debug("Status changed", {
-            oldStatus: Status[this.status] ?? `UNKNOWN(${this.status})`,
+            oldStatus: Status[oldStatus] ?? `UNKNOWN(${oldStatus})`,
             newStatus: Status[status] ?? `UNKNOWN(${status})`
         });
         this.status = status;
+        this.p2pEventHooks.onStatusChanged?.(oldStatus, status);
     }
     public getStatus(): Status {
         return this.status;
@@ -634,6 +640,31 @@ class StateManager {
         this.storage.inboundMessages.store(messageBlock, {
             hash: messageBlockHash
         });
+    }
+
+    public async joinChannel(
+        confirmation: JoinChannelConfirmationStruct
+    ): Promise<void> {
+        if (this.status !== Status.SYNCED) return;
+
+        this.setStatus(Status.PENDING_PARTICIPANT);
+        this.logger.info(
+            "joinChannel - promoted to PENDING_PARTICIPANT on broadcast"
+        );
+
+        try {
+            const tx =
+                await this.stateChannelManagerContract.joinChannel(
+                    confirmation
+                );
+            await tx.wait();
+        } catch (error) {
+            this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            this.setStatus(Status.SYNCED);
+            throw error;
+        }
     }
 
     private async tryExecuteFromQueue() {
@@ -2434,8 +2465,10 @@ class StateManager {
             strategy?: AValidationStrategy;
         }
     ): Promise<void> {
-        // step 9 - potentially change status
-        // TODO - quick hack to account for union - should at a status `PENDING_PARTICIPANT`, so we don't abort the channel when we commited on-chain and waiting for inclusion
+        // step 9 - potentially change status: SYNCED → PENDING_PARTICIPANT
+        // Local state now includes us (inbound JOIN was processed), but we wait for
+        // on-chain snapshot confirmation before becoming fully PARTICIPATING.
+        // onStateSnapshotUpdated handles PENDING_PARTICIPANT → PARTICIPATING.
         if (this.status === Status.SYNCED) {
             const participants =
                 await this.diamondStateMachine.getParticipants();
@@ -2572,21 +2605,65 @@ class StateManager {
     ): Promise<void> {
         if (!participantChanges.left.has(this.signerAddress)) {
             // I didn't exit, nothing to do
-            // TODO - think about this
             return;
         }
 
+        this.logger.info(
+            `startMaybeExitOnChain - I left the channel at block ${block.height}, waiting agreementTime to attempt N/N exit`,
+            { blockHeight: block.height, forkId: block.forkId }
+        );
+
         this.timeoutManager.scheduleTask(
-            () => {
-                if (this.agreementManager.didEveryoneSignBlock(block)) {
-                    // Update the snapshot with the BlockConfirmation proving the latest state to exit on-chain
-                    // Todo
-                    // https://trello.com/c/Nv7AGVyR
+            async () => {
+                const persistedBlock =
+                    this.storage.blocks.getBlock(block.forkId, block.height) ??
+                    block;
+                const everyoneSigned =
+                    this.agreementManager.didEveryoneSignBlock(persistedBlock);
+
+                if (everyoneSigned) {
+                    this.logger.info(
+                        `startMaybeExitOnChain - everyone signed block ${block.height}, posting state snapshot`,
+                        { blockHeight: block.height, forkId: block.forkId }
+                    );
+                    try {
+                        await this.postStateSnapshot(block.forkId);
+                    } catch (error) {
+                        this.logger.error(
+                            `startMaybeExitOnChain - failed to post state snapshot`,
+                            {
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error)
+                            }
+                        );
+                    }
                 } else {
-                    // Failure: create a dispute with the BlockConfirmation set as the latest state
-                    // and selfRemoval flag set to true
-                    // Todo
-                    // https://trello.com/c/qwpYPLj8
+                    // Slow path: not everyone signed - create a self-removal dispute
+                    this.logger.info(
+                        `startMaybeExitOnChain - not everyone signed block ${persistedBlock.height}, creating self-removal dispute`,
+                        {
+                            blockHeight: persistedBlock.height,
+                            forkId: persistedBlock.forkId
+                        }
+                    );
+                    try {
+                        this.storage.forceExit.setForceExit(true);
+                        await this.disputeManager.dispute(
+                            persistedBlock.forkId
+                        );
+                    } catch (error) {
+                        this.logger.error(
+                            `startMaybeExitOnChain - failed to create self-removal dispute`,
+                            {
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error)
+                            }
+                        );
+                    }
                 }
             },
             this.timeConfig.agreementTime * 1000,

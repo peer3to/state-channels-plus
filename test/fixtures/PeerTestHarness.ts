@@ -329,6 +329,7 @@ export class PeerTestHarness<
             onConnection: sinon.spy(),
             onTurn: sinon.spy(),
             onSetState: sinon.spy(),
+            onStatusChanged: sinon.spy(),
             onPostingCalldata: sinon.spy(),
             onPostedCalldata: sinon.spy(),
             disputeStarted: sinon.spy(),
@@ -380,6 +381,15 @@ export class PeerTestHarness<
             onSetState: () => {
                 peerLogger.debug("State set", { component: "P2pEventHooks" });
                 eventSpies.onSetState?.();
+                this.eventCountsBarrier.signal();
+            },
+            onStatusChanged: (oldStatus, newStatus) => {
+                peerLogger.debug("Status changed (hook)", {
+                    component: "P2pEventHooks",
+                    oldStatus,
+                    newStatus
+                });
+                eventSpies.onStatusChanged?.(oldStatus, newStatus);
                 this.eventCountsBarrier.signal();
             },
             onPostingCalldata: () => {

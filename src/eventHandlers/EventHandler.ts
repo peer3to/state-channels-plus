@@ -21,7 +21,14 @@ import {
 } from "@/types/types";
 import Storage from "@/storage";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { Codec, hash, Logger, tryDecodeCustomError, Type } from "@/utils";
+import {
+    addressesEqual,
+    Codec,
+    hash,
+    Logger,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { isEqual } from "lodash";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
@@ -75,6 +82,40 @@ export class EventHandler {
             channelId,
             stateSnapshot
         );
+
+        const signerAddress = this.stateManager.signerAddress;
+        const snapshotParticipants = stateSnapshot.snapshotData
+            .participants as Address[];
+        const status = this.stateManager.getStatus();
+
+        const snapshotHasSigner = snapshotParticipants.some((p) =>
+            addressesEqual(p, signerAddress)
+        );
+
+        // Detect when we've fully left the channel: PARTICIPATING → SYNCED
+        if (status === Status.PARTICIPATING) {
+            const localParticipants =
+                await this.stateManager.getParticipantsCurrent();
+            const inLocal = localParticipants.some((p) =>
+                addressesEqual(p, signerAddress)
+            );
+            if (!snapshotHasSigner && !inLocal) {
+                const pendingParticipants =
+                    (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                        channelId
+                    )) as Address[];
+                const inPending = pendingParticipants.some((p) =>
+                    addressesEqual(p, signerAddress)
+                );
+                if (!inPending) {
+                    this.logger.info(
+                        "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
+                        { channelId }
+                    );
+                    this.stateManager.setStatus(Status.SYNCED);
+                }
+            }
+        }
 
         // Check if channel should be closed (0 participants remaining)
         if (stateSnapshot.snapshotData.participants.length === 0) {

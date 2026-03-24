@@ -112,6 +112,7 @@ export type EventSpies = {
     onConnection?: sinon.SinonSpy;
     onTurn?: sinon.SinonSpy;
     onSetState?: sinon.SinonSpy;
+    onStatusChanged?: sinon.SinonSpy;
     onPostingCalldata?: sinon.SinonSpy;
     onPostedCalldata?: sinon.SinonSpy;
     disputeStarted?: sinon.SinonSpy;

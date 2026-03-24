@@ -1,6 +1,9 @@
 import { ethers, Signer, TransactionResponse } from "ethers";
 
-import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    TransactionStruct,
+    JoinChannelConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
@@ -132,6 +135,12 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
         await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
 
         return this.p2pManager.tryOpenConnectionToChannel(channelId.toString());
+    }
+
+    public async joinChannel(
+        confirmation: JoinChannelConfirmationStruct
+    ): Promise<void> {
+        return this.p2pManager.stateManager.joinChannel(confirmation);
     }
 
     public disconnectFromPeers() {
