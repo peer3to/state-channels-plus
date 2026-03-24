@@ -92,37 +92,28 @@ export class EventHandler {
             addressesEqual(p, signerAddress)
         );
 
-        // Detect when we've been included in the on-chain snapshot: PENDING_PARTICIPANT → PARTICIPATING
-        if (status === Status.PENDING_PARTICIPANT) {
-            if (snapshotHasSigner) {
-                this.logger.info(
-                    "onStateSnapshotUpdated - signer included in snapshot, transitioning PENDING_PARTICIPANT → PARTICIPATING",
-                    { channelId }
-                );
-                this.stateManager.setStatus(Status.PARTICIPATING);
-            }
-        }
-
         // Detect when we've fully left the channel: PARTICIPATING → SYNCED
         if (status === Status.PARTICIPATING) {
-            const pendingParticipants =
-                (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
-                    channelId
-                )) as Address[];
             const localParticipants =
                 await this.stateManager.getParticipantsCurrent();
-            const inPending = pendingParticipants.some((p) =>
-                addressesEqual(p, signerAddress)
-            );
             const inLocal = localParticipants.some((p) =>
                 addressesEqual(p, signerAddress)
             );
-            if (!snapshotHasSigner && !inPending && !inLocal) {
-                this.logger.info(
-                    "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
-                    { channelId }
+            if (!snapshotHasSigner && !inLocal) {
+                const pendingParticipants =
+                    (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                        channelId
+                    )) as Address[];
+                const inPending = pendingParticipants.some((p) =>
+                    addressesEqual(p, signerAddress)
                 );
-                this.stateManager.setStatus(Status.SYNCED);
+                if (!inPending) {
+                    this.logger.info(
+                        "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
+                        { channelId }
+                    );
+                    this.stateManager.setStatus(Status.SYNCED);
+                }
             }
         }
 

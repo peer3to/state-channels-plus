@@ -2456,7 +2456,7 @@ class StateManager {
             const participants =
                 await this.diamondStateMachine.getParticipants();
             const isParticipant = participants.includes(this.signerAddress);
-            if (isParticipant) this.setStatus(Status.PENDING_PARTICIPANT);
+            if (isParticipant) this.setStatus(Status.PARTICIPATING);
         }
         // step 1 - Confirm and Gossip // TODO - quick hack - cleaner code later
         if (
