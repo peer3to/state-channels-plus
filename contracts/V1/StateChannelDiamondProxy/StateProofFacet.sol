@@ -45,42 +45,33 @@ contract StateProofFacet is StateChannelCommon {
         virtual
         returns (bool)
     {
-        console.log("STATE PROOF 1");
         require(
             dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData)),
             ErrorAuditingDataHashMismatch()
         );
-        console.log("STATE PROOF 2");
         if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, disputeAuditingData.genesisStateSnapshotData)) {
             return false;
         }
-        console.log("STATE PROOF 3");
         if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
             return false;
         }
-        console.log("STATE PROOF 4");
 
         if (!_tryVerifyMilestones(dispute, disputeAuditingData)) {
-            console.log("STATE PROOF 6");
             return false;
         }
 
         if (dispute.input.stateProof.signedBlocks.length != 0) {
-            console.log("STATE PROOF 7");
             // HACK: Pass bytes32(0) to skip the first block's linkage to genesis.
             if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, bytes32(0))) {
-                console.log("STATE PROOF 8");
                 return false;
             }
         }
 
         if (!isCorrectLatestState(dispute, disputeAuditingData.genesisStateSnapshotData)) {
-            console.log("STATE PROOF 9");
             return false;
         }
 
         //check commitment to latestStateSnapshot
-        console.log("STATE PROOF 10");
         if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
             return false;
         }
@@ -104,7 +95,6 @@ contract StateProofFacet is StateChannelCommon {
             disputeAuditingData.milestoneSnapshots,
             genesisStateSnapshot
         ) returns (bool milestoneProofsValid) {
-            console.log("STATE PROOF 5");
             return milestoneProofsValid;
         } catch {
             return false;
@@ -235,6 +225,7 @@ contract StateProofFacet is StateChannelCommon {
         console.log("_isMilestoneFinal: thresholdCount", thresholdCount);
         return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
     }
+
     //Return set length after tryInsert
 
     function _tryInsertAddressInThresholdSet(

@@ -64,6 +64,33 @@ export class ScenarioActions {
         this.harness.contextApi.captureOriginalFork();
     }
 
+    // 4 peers, peer 2 is leaving, next turn is peer 1
+    //  5 blocks in this pre-setp, block height is 4
+    async preDisputeSetupCalldataPath() {
+        await this.preDisputeSetup(4);
+        await this.harness.transition.advanceState({
+            txFn: (c) => c.leaveChannel()
+        });
+        await this.harness.transition.advanceState({
+            waitForPeers: [0, 1, 3],
+            count: 2
+        });
+        this.harness.contextApi.captureOriginalFork();
+        this.harness.event.resetEventSpies();
+    }
+
+    async preDisputeSetupDisconnectedPeer() {
+        await this.harness.lifecycle.timeoutSetup(4, 0);
+        await this.harness.network.disconnectPeer(2);
+        await this.harness.transition.advanceState({
+            waitForPeers: [0, 1, 3],
+            count: 2
+        });
+
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+    }
+
     async peerWithUnbroadcastedBlock(peerIndex: number = 1) {
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();

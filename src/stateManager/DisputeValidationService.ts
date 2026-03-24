@@ -282,8 +282,11 @@ export default class DisputeValidationService {
         }
 
         // isLatestState
+
+        // TODO
+        // should  this be  input.disputeAuditingDataHash or input.forkId??
         const result = this.agreementManager.getLatestSignedBlockByParticipant(
-            dispute.input.disputeAuditingDataHash,
+            dispute.input.forkId,
             dispute.input.disputer
         );
         if (result) {
