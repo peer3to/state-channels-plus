@@ -62,6 +62,12 @@ abstract contract StateChannelManagerInterface {
 
     function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public view virtual returns (bool);
 
+    function isSnapshotNewer(StateSnapshot memory newSnapshot, StateSnapshot memory currentSnapshot)
+        public
+        view
+        virtual
+        returns (bool);
+
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public virtual;
 
     function uploadDisputeWithCalldata(

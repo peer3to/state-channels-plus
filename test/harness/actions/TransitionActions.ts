@@ -11,6 +11,7 @@ export type TransitionOptions = {
     waitForPeers?: number[];
     waitForTurn?: boolean;
     delayMs?: number;
+    waitForFinalization?: boolean;
 };
 
 /**
@@ -38,7 +39,8 @@ export class TransitionActions {
         return this.submit(nextPeer, txFn, {
             waitForSync: options.waitForSync ?? true,
             waitForPeers: options.waitForPeers,
-            waitForTurn: false // already waited above
+            waitForTurn: false, // already waited above
+            waitForFinalization: options.waitForFinalization
         });
     }
 
@@ -53,27 +55,30 @@ export class TransitionActions {
         waitForSync?: boolean;
         waitForPeers?: number[];
         waitForTurn?: boolean;
+        waitForFinalization?: boolean;
     }): Promise<void> {
         const count = options?.count ?? 1;
         const total = options?.rounds
             ? options.rounds * this.harness.peers.length
             : count;
 
-        const transitionOptions = {
-            waitForSync: options?.waitForSync,
-            waitForPeers: options?.waitForPeers,
-            waitForTurn: options?.waitForTurn
-        };
-
         if (options?.txFn) {
             for (let i = 0; i < total; i++) {
-                await this.submitNext(options.txFn, transitionOptions);
+                await this.submitNext(options.txFn, {
+                    ...options,
+                    waitForFinalization:
+                        i === total - 1 ? options?.waitForFinalization : false
+                });
             }
             return;
         }
 
         for (let i = 0; i < total; i++) {
-            await this.increment(1, transitionOptions);
+            await this.increment(1, {
+                ...options,
+                waitForFinalization:
+                    i === total - 1 ? options?.waitForFinalization : false
+            });
         }
     }
 
@@ -163,7 +168,10 @@ export class TransitionActions {
     async submit(
         peer: TestPeer,
         txFn: (contract: TransitionContract) => Promise<any>,
-        options: TransitionOptions = { waitForSync: true }
+        options: TransitionOptions = {
+            waitForSync: true,
+            waitForFinalization: false
+        }
     ): Promise<any> {
         if (options.waitForTurn) {
             await this.waitForTurn(peer);
@@ -179,12 +187,20 @@ export class TransitionActions {
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
+            const authorLatestBlock =
+                peer.stateManager.storage.blocks.getLatestBlock(forkId);
+            const minHeight = authorLatestBlock?.height;
+
             const peers = this.harness.getFilteredOrHonestPeers(
                 options.waitForPeers
             );
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
-                forkId
+                forkId,
+                {
+                    minHeight,
+                    waitForFinalization: options.waitForFinalization
+                }
             );
         }
 

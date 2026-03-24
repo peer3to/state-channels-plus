@@ -2,6 +2,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
 import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
+import { Status } from "@/types/flags";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { ethers } from "@/index";
@@ -109,8 +110,13 @@ export class StateQueryActions {
      */
     async getNextPeerToWrite(): Promise<TestPeer> {
         try {
+            // Find the first participating peer to query
+            const participatingPeer = this.harness.peers.find(
+                (peer) => peer.stateManager.getStatus() === Status.PARTICIPATING
+            )!;
+
             const nextAddress =
-                await this.harness.peers[0].stateManager.diamondStateMachine.getNextToWrite();
+                await participatingPeer.stateManager.diamondStateMachine.getNextToWrite();
 
             this.logger.verbose(`getNextPeerToWrite returned: ${nextAddress}`);
 
@@ -123,10 +129,10 @@ export class StateQueryActions {
                 const peerAddresses = this.harness.peers.map((p) => p.address);
 
                 const latestBlock =
-                    this.harness.peers[0].stateManager.storage.blocks.getLatestBlock(
+                    participatingPeer.stateManager.storage.blocks.getLatestBlock(
                         this.harness.activeForkId!
                     );
-                const forkId = this.harness.peers[0].stateManager.forkId;
+                const forkId = participatingPeer.stateManager.forkId;
 
                 // Check participants on all peers for diagnostics
                 const participantStates = await Promise.all(

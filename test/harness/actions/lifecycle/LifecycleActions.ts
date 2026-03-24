@@ -25,13 +25,16 @@ export class LifecycleActions {
     async start(
         numPeers: number,
         transitionCount: number = 0,
-        options?: HarnessOptions
+        options?: HarnessOptions & { waitForFinalization?: boolean }
     ): Promise<ForkId> {
         await this.harness.setup(numPeers, options);
         const forkId = await this.openChannel();
 
-        for (let i = 0; i < transitionCount; i++) {
-            await this.harness.transition.increment(1);
+        if (transitionCount > 0) {
+            await this.harness.transition.advanceState({
+                count: transitionCount,
+                waitForFinalization: options?.waitForFinalization
+            });
         }
 
         return forkId;

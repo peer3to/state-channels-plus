@@ -83,32 +83,82 @@ export class AssertStorageActions {
         fraudProofType?: FraudProofType;
         peerIndices?: number[];
         maliciousPeerIndex: number;
+        atLeastOneHonestPeer?: boolean;
     }): void {
-        const { fraudProofType, peerIndices, maliciousPeerIndex } = options;
+        const {
+            fraudProofType,
+            peerIndices,
+            maliciousPeerIndex,
+            atLeastOneHonestPeer = true
+        } = options;
         const maliciousPeer = this.harness.getPeer(maliciousPeerIndex);
         const honestPeers = this.harness.getFilteredOrHonestPeers(peerIndices);
 
-        for (const honestPeer of honestPeers) {
-            const peerStorage = this.harness.query.getPeerStorage(
-                honestPeer.index
-            );
-            const fraudProof =
-                peerStorage.fraudProofs.getFraudProofForParticipant(
-                    maliciousPeer.address
-                );
-            if (!fraudProof)
-                throw new Error(
-                    `Peer ${honestPeer.index} has no fraud proofs for malicious peer ${maliciousPeerIndex}`
-                );
-            if (fraudProofType) {
-                if (
-                    fraudProof.proofType !==
-                    toSolidityFraudProofType(fraudProofType)
-                ) {
-                    throw new Error(
-                        `Peer ${honestPeer.index} has a fraud proof for malicious peer ${maliciousPeerIndex}, but it is of type ${fraudProof.proofType} instead of ${fraudProofType}`
+        if (atLeastOneHonestPeer) {
+            const failures: string[] = [];
+            for (const honestPeer of honestPeers) {
+                try {
+                    this.assertHonestPeerStoredFraudProofForMalicious({
+                        honestPeerIndex: honestPeer.index,
+                        maliciousPeerAddress: maliciousPeer.address,
+                        maliciousPeerIndex,
+                        fraudProofType
+                    });
+                    return;
+                } catch (err) {
+                    failures.push(
+                        err instanceof Error ? err.message : String(err)
                     );
                 }
+            }
+            const peerList = honestPeers.map((p) => p.index).join(", ");
+            throw new Error(
+                `Expected at least one honest peer among [${peerList}] to store fraud proof for malicious peer ${maliciousPeerIndex}` +
+                    (fraudProofType ? ` (type ${fraudProofType})` : "") +
+                    `. Per-peer: ${failures.join(" | ")}`
+            );
+        }
+
+        for (const honestPeer of honestPeers) {
+            this.assertHonestPeerStoredFraudProofForMalicious({
+                honestPeerIndex: honestPeer.index,
+                maliciousPeerAddress: maliciousPeer.address,
+                maliciousPeerIndex,
+                fraudProofType
+            });
+        }
+    }
+
+    private assertHonestPeerStoredFraudProofForMalicious(options: {
+        honestPeerIndex: number;
+        maliciousPeerAddress: string;
+        maliciousPeerIndex: number;
+        fraudProofType?: FraudProofType;
+    }): void {
+        const {
+            honestPeerIndex,
+            maliciousPeerAddress,
+            maliciousPeerIndex,
+            fraudProofType
+        } = options;
+        const peerStorage = this.harness.query.getPeerStorage(honestPeerIndex);
+        const fraudProof =
+            peerStorage.fraudProofs.getFraudProofForParticipant(
+                maliciousPeerAddress
+            );
+        if (!fraudProof) {
+            throw new Error(
+                `Peer ${honestPeerIndex} has no fraud proofs for malicious peer ${maliciousPeerIndex}`
+            );
+        }
+        if (fraudProofType) {
+            if (
+                fraudProof.proofType !==
+                toSolidityFraudProofType(fraudProofType)
+            ) {
+                throw new Error(
+                    `Peer ${honestPeerIndex} has a fraud proof for malicious peer ${maliciousPeerIndex}, but it is of type ${fraudProof.proofType} instead of ${fraudProofType}`
+                );
             }
         }
     }

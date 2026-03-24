@@ -322,7 +322,13 @@ export default class ValidationService {
                 return await strategy.notAllSingersAreParticipants(block);
             }
 
-            return await strategy.goodNewSignaturesOnExistingBlock(block);
+            const mergeResult =
+                await strategy.goodNewSignaturesOnExistingBlock(block);
+            const persisted = this.storage.blocks.getBlock(block.hash);
+            if (persisted) {
+                this.stateManager.maybeNotifyBlockFinalized(persisted);
+            }
+            return mergeResult;
         }
 
         return BlockValidationResult.SUCCESS;

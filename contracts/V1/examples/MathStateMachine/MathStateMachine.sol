@@ -21,14 +21,12 @@ contract MathStateMachine is AStateMachine {
     }
 
     event Addition(uint256 a, uint256 b, uint256 result);
-    event NextToPlay(address player);
 
     function add(uint256 _number) public returns (uint256) {
         require(_tx.header.participant == getNextToWrite(), "MathStateMachine: add only next player can write");
         emit Addition(state.number, _number, state.number + _number);
         state.number += _number;
         state.currentTurnIndex++;
-        emit NextToPlay(getNextToWrite());
         return state.number;
     }
 
@@ -77,11 +75,25 @@ contract MathStateMachine is AStateMachine {
                 // Store the participant's balance before removal
                 uint256 participantBalance = state.balances[i];
 
-                // Remove participant and their balance
-                state.participants[i] = state.participants[length - 1];
+                // Shift all participants and balances after the removed one
+                for (uint256 j = i; j < length - 1; j++) {
+                    state.participants[j] = state.participants[j + 1];
+                    state.balances[j] = state.balances[j + 1];
+                }
+
+                // Remove the last element
                 state.participants.pop();
-                state.balances[i] = state.balances[length - 1];
                 state.balances.pop();
+
+                // Adjust currentTurnIndex if necessary
+                uint256 currentIndex = state.currentTurnIndex % length;
+                if (i < currentIndex) {
+                    // If we removed someone before current turn, shift turn index back
+                    state.currentTurnIndex--;
+                } else if (i == currentIndex) {
+                    // If we removed the current turn holder, no adjustment needed
+                    // The next participant shifts into this position
+                }
 
                 // Create exit channel with the participant's balance
                 exitChannel.participant = adr;
@@ -141,7 +153,12 @@ contract MathStateMachine is AStateMachine {
         return balance1.amount == balance2.amount;
     }
 
-    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2) public pure override returns (bool) {
+    function isBalanceLesserThan(Balance memory balance1, Balance memory balance2)
+        public
+        pure
+        override
+        returns (bool)
+    {
         return balance1.amount < balance2.amount;
     }
 

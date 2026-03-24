@@ -433,6 +433,9 @@ export class PeerTestHarness<
                 );
                 this.rpcBarrier.signal();
                 this.eventCountsBarrier.signal();
+            },
+            onBlockFinalized: () => {
+                this.eventCountsBarrier.signal();
             }
         };
 

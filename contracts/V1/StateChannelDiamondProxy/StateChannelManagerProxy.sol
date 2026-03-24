@@ -467,6 +467,15 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(snapshot);
     }
 
+    function isSnapshotNewer(StateSnapshot memory newSnapshot, StateSnapshot memory currentSnapshot)
+        public
+        view
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        return UtilityFacet(utilityFacetAddress).isSnapshotNewer(newSnapshot, currentSnapshot);
+    }
+
     function isChannelOpen(bytes32 channelId) public view override returns (bool, StateSnapshot memory) {
         StateSnapshot memory snapshot = stateSnapshots[channelId];
         bool isOpen = snapshot.snapshotData.participants.length > 0;

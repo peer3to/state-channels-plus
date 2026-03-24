@@ -1,5 +1,5 @@
 // External libraries
-import { ethers } from "ethers";
+import { ethers, ZeroHash } from "ethers";
 
 // TypeChain types - Data types
 import {
@@ -86,7 +86,7 @@ import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { TransactionResponse } from "ethers";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
-const NULL = "0x00";
+const NULL = ZeroHash;
 
 type ParticipantChanges = {
     left: Set<Address>;
@@ -223,6 +223,22 @@ class StateManager {
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;
+    }
+
+    public maybeNotifyBlockFinalized(block: Block): void {
+        try {
+            const participantsUnion = this.storage.getParticipantsUnion(
+                block.coordinates,
+                block.stateSnapshotHash
+            );
+            if (block.didEveryoneSign(participantsUnion)) {
+                this.p2pEventHooks.onBlockFinalized?.();
+            }
+        } catch (error) {
+            this.logger.debug("maybeNotifyBlockFinalized skipped", {
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
     }
     public setStatus(status: Status) {
         this.logger.debug("Status changed", {
@@ -1418,8 +1434,12 @@ class StateManager {
                         "Milestone built but corresponding snapshot not found"
                     );
 
-                // Only include milestones that are newer than the current on-chain block height
-                if (snapshot.blockHeight > currentOnChainSnapshot.blockHeight) {
+                if (
+                    await this.diamondStateMachine.localDiamondContract.isSnapshotNewer(
+                        snapshot.toStruct(),
+                        currentOnChainSnapshot.toStruct()
+                    )
+                ) {
                     milestoneProofs.push(milestoneProof);
                     milestoneSnapshots.push(snapshot);
                 }
@@ -1434,10 +1454,7 @@ class StateManager {
                 milestoneSnapshots[milestoneSnapshots.length - 1];
 
             // Latest snapshot is the same as current on-chain
-            if (
-                latestSnapshot.blockHeight ===
-                currentOnChainSnapshot.blockHeight
-            ) {
+            if (latestSnapshot.hash === currentOnChainSnapshot.hash) {
                 return undefined;
             }
 
@@ -2441,15 +2458,17 @@ class StateManager {
         if (
             this.status === Status.PARTICIPATING &&
             !(options?.strategy instanceof DisputeValidationStrategy)
-        )
+        ) {
             this.p2pManager.remoteRpc.stateTransitionService
                 .onBlockConfirmation(block.blockConfirmationStruct)
                 .broadcast();
+        }
 
         // step 2 - persist the block // TODO - quick hack - cleaner code later
         this.storage.blocks.storeBlock(block, {
             justPersist: options?.strategy instanceof DisputeValidationStrategy
         });
+        this.maybeNotifyBlockFinalized(block);
 
         // step 3 - persist the state snapshot
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
