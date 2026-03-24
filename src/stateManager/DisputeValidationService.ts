@@ -445,6 +445,23 @@ export default class DisputeValidationService {
             }
         }
 
+        // [check] dispute input states a reason (same rule as DisputeUtils / InvalidDisputeReason)
+        const hasReason =
+            await this.diamondStateMachine.localDiamondContract.hasDisputeReason(
+                dispute.input
+            );
+
+        if (!hasReason) {
+            this.logger.warn(
+                "Dispute input has no stated reason (timeout, slashes, or self-removal)",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
+            );
+            this.disputeFraudProofService.createInvalidDisputeReason(dispute);
+            return false;
+        }
+
         const isOutputValid = await this.verifyDisputeOutput(
             dispute,
             disputeAuditingData

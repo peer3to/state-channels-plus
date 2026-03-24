@@ -31,7 +31,8 @@ import {
     TimeoutParticipantNotNextStruct,
     TimeoutThresholdStruct,
     TimeoutTooEarlyStruct,
-    DisputeLastMilestoneNotFinalAndNoAuditingDataStruct
+    DisputeLastMilestoneNotFinalAndNoAuditingDataStruct,
+    InvalidDisputeReasonStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import { BigNumberish, BytesLike } from "ethers";
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
@@ -213,6 +214,17 @@ export default class DisputeFraudProofService {
 
         return this.storeFraudProof(dispute, {
             type: DisputeFraudProofType.TimeoutTooEarly,
+            struct: proof
+        });
+    }
+
+    createInvalidDisputeReason(dispute: DisputeStruct): Hash {
+        const proof: InvalidDisputeReasonStruct = {
+            __: false
+        };
+
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.InvalidDisputeReason,
             struct: proof
         });
     }

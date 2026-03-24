@@ -287,11 +287,12 @@ export class EventHandler {
                 }
             );
 
-            // TODO - do a multicall here
-            await Promise.all([
-                this.stateManager.disputeManager.killDispute(dispute),
-                this.stateManager.disputeManager.dispute(forkId)
-            ]);
+            // Sequential: kill must mine first so the spammer appears in onChainSlashes,
+            // otherwise the counter-dispute would be constructed with onChainSlashes=[]
+            // and could itself be killed as InvalidDisputeReason.
+            //  TODO - should be multicall
+            await this.stateManager.disputeManager.killDispute(dispute);
+            await this.stateManager.disputeManager.dispute(forkId);
             return;
         }
 

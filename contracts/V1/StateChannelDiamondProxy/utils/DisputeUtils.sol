@@ -127,3 +127,10 @@ function _hadParticipantPostedEvidence(DisputeWindow storage disputeWindow, addr
     }
     return false;
 }
+
+function _hasDisputeReason(DisputeInput memory input, StateSnapshot memory latestStateSnapshot) pure returns (bool) {
+    bool isForcedInboundMessage =
+        input.lastInboundMessageBlockHeight > latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight;
+    return input.timeout.participant != address(0) || input.onChainSlashes.length > 0 || input.selfRemoval
+        || isForcedInboundMessage;
+}
