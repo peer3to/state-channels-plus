@@ -1391,7 +1391,7 @@ class StateManager {
 
                     throw error;
                 });
-            await txResponsePromise;
+            DetachedPromises.collect(txResponsePromise);
             return expectedSnapshot;
         } else {
             this.logger.debug("No state snapshot updates needed");
