@@ -27,10 +27,12 @@ export class AssertSyncActions {
         if (!forkId) {
             throw new Error("No active fork ID - cannot wait for sync");
         }
+        const effectiveWaitForFinaliztion =
+            peerIndices !== undefined ? false : waitForFinalization;
 
         await this.harness.syncCoordinator.waitForPeersToSync(peers, forkId, {
             timeoutMs: timeout,
-            waitForFinalization
+            waitForFinalization: effectiveWaitForFinaliztion
         });
 
         const firstPeerIndex = peers[0].index;
