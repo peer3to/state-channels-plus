@@ -91,5 +91,5 @@ struct DisputeLastMilestoneNotFinalAndNoAuditingData {
 }
 
 struct InvalidDisputeReason {
-    bool __;
+    StateSnapshot latestStateSnapshot;
 }

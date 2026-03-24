@@ -134,12 +134,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         pure
         returns (address)
     {
-        abi.decode(encodedFraudProof, (InvalidDisputeReason));
+        InvalidDisputeReason memory proof = abi.decode(encodedFraudProof, (InvalidDisputeReason));
 
-        if (!_hasDisputeReason(dispute.input)) {
-            return _valid(dispute.input.disputer);
+        if (!_isSnapshotLinkedToLatestBlock(dispute, proof.latestStateSnapshot)) {
+            return _invalid();
         }
-        return _invalid();
+
+        if (_hasDisputeReason(dispute.input, proof.latestStateSnapshot)) {
+            return _invalid();
+        }
+        return _valid(dispute.input.disputer);
     }
 
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
