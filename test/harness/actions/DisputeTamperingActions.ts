@@ -258,6 +258,9 @@ export class DisputeTamperingActions {
         storage.stateSnapshots.storeStateSnapshot(corruptedSnapshot, {
             hash: originalHash
         });
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: validatorPeerIndex
+        });
 
         this.logger.debug(
             `Corrupted validator ${validatorPeerIndex} snapshot for balance invariant (hash=${originalHash})`

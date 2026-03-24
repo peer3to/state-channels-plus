@@ -495,7 +495,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
     });
 
     describe("Invalid Output State", function () {
-        it.only("should kill dispute and store DisputeInvalidOutputState when outputSnapshotDataHash is corrupted", async function () {
+        it("should kill dispute and store DisputeInvalidOutputState when outputSnapshotDataHash is corrupted", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
