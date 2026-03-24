@@ -23,9 +23,9 @@ describe("E2E: State Snapshots", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3);
 
-        await h.transition.advanceState({ count: 1 });
+        await h.transition.advanceState();
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
-        await h.transition.advanceState({ count: 1 });
+        await h.transition.advanceState();
 
         await h.assert.sync.peersInSyncWait();
         h.event.resetEventSpies();

@@ -14,11 +14,26 @@ function parseCliArgs(argv) {
     const options = {
         logDir: DEFAULT_LOG_DIR,
         allowLogdirPurge: false,
-        workers: DEFAULT_WORKERS
+        workers: DEFAULT_WORKERS,
+        grep: undefined
     };
 
     for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];
+
+        if (arg === "--grep" || arg === "-g") {
+            const next = argv[i + 1];
+            if (next && !next.startsWith("-")) {
+                options.grep = next;
+                i++;
+            }
+            continue;
+        }
+
+        if (arg.startsWith("--grep=")) {
+            options.grep = arg.slice("--grep=".length);
+            continue;
+        }
 
         if (
             arg === "--logDir" ||
@@ -87,6 +102,34 @@ function getStringLiteralValue(node) {
     return null;
 }
 
+function isDescribeCallee(expression) {
+    const text = expression.getText();
+    return text === "describe" || text.startsWith("describe.");
+}
+
+/** Mocha full title: outer describe … inner describe … it (space-separated). */
+function collectDescribeTitlesFromIt(itCall) {
+    const titles = [];
+    let current = itCall.getParent();
+    while (current) {
+        if (current.getKind() === SyntaxKind.SourceFile) {
+            break;
+        }
+        if (current.getKind() === SyntaxKind.CallExpression) {
+            const expr = current.getExpression();
+            if (isDescribeCallee(expr)) {
+                const args = current.getArguments();
+                const name = getStringLiteralValue(args[0]);
+                if (name) {
+                    titles.unshift(name);
+                }
+            }
+        }
+        current = current.getParent();
+    }
+    return titles;
+}
+
 function extractE2ETests(filePath) {
     const project = new Project();
     const sourceFile = project.addSourceFileAtPath(filePath);
@@ -129,9 +172,16 @@ function extractE2ETests(filePath) {
                     if (isFunction) {
                         const testName = getStringLiteralValue(itArgs[0]);
                         if (testName) {
+                            const describeTitles =
+                                collectDescribeTitlesFromIt(itCall);
+                            const fullTitle = [
+                                ...describeTitles,
+                                testName.trim()
+                            ].join(" ");
                             tests.push({
                                 suite: suiteName.trim(),
-                                test: testName.trim()
+                                test: testName.trim(),
+                                fullTitle
                             });
                         }
                     }
@@ -295,10 +345,10 @@ async function main() {
         process.exit(1);
     }
 
-    const tasks = [];
+    let tasks = [];
     for (const f of files) {
         const tests = extractE2ETests(f);
-        for (const { suite, test } of tests) {
+        for (const { suite, test, fullTitle } of tests) {
             const grep = `^${escapeRegex(suite)}.*${escapeRegex(test)}$`;
             const logName = sanitizeFileName(
                 `${path.basename(f, path.extname(f))}__${suite}__${test}`
@@ -306,20 +356,40 @@ async function main() {
             tasks.push({
                 label: `test:${path.basename(f)}:${test}`,
                 args: ["hardhat", "test", "--no-compile", f, "--grep", grep],
-                logName
+                logName,
+                fullTitle
             });
         }
     }
 
+    if (cli.grep) {
+        let grepRe;
+        try {
+            grepRe = new RegExp(cli.grep);
+        } catch (e) {
+            console.error(`Invalid --grep RegExp: ${cli.grep}`, e);
+            process.exit(1);
+        }
+        tasks = tasks.filter((t) => grepRe.test(t.fullTitle));
+    }
+
     if (tasks.length === 0) {
-        console.error("No implemented tests found");
+        if (cli.grep) {
+            console.error(
+                `No E2E tests matched --grep ${JSON.stringify(cli.grep)}`
+            );
+        } else {
+            console.error("No implemented tests found");
+        }
         process.exit(1);
     }
 
     const workers = cli.workers;
 
     console.log(
-        `Running ${tasks.length} E2E task(s) with ${workers} worker(s)`
+        cli.grep
+            ? `Running ${tasks.length} E2E task(s) matching --grep ${JSON.stringify(cli.grep)} with ${workers} worker(s)`
+            : `Running ${tasks.length} E2E task(s) with ${workers} worker(s)`
     );
 
     const logDir = cli.logDir;

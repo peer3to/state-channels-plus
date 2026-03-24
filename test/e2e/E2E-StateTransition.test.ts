@@ -53,23 +53,11 @@ describe("E2E: State Transitions", function () {
                 }
             );
             await h.assert.dispute.initiatedAndCommitedWait();
-            const result = await h.dispute.resolveDisputeWait({
+            await h.dispute.resolveDisputeWait({
                 maliciousPeerIndex,
                 assertMaliciousRemoved: false
             });
-
-            await h.transition.submitNext((c) => c.add(1), {
-                waitForTurn: true,
-                waitForSync: true
-            });
-            await h.transition.submitNext((c) => c.add(2), {
-                waitForTurn: true,
-                waitForSync: true
-            });
-            await h.transition.submitNext((c) => c.add(3), {
-                waitForTurn: true,
-                waitForSync: true
-            });
+            await h.transition.advanceState({ count: 3 });
 
             await h.assert.sync.onlyHonestPeersInSync();
         });

@@ -17,12 +17,6 @@ PeerTestHarness.setDefaultLogLevel("error");
  */
 describe("E2E: Spectate Service", function () {
     describe("Guard Protection", function () {
-        // NOTE: This test verifies HandshakeCompletedGuard protects RPC endpoints.
-        // It remains imperative due to requiring low-level service/transport manipulation.
-        // The test is marked `.skip` due to inherent timing sensitivity - the guard's
-        // queuing logic for in-progress handshakes makes it difficult to reliably test
-        // the exact failure path without introducing unacceptable complexity/fragility.
-        // Guard functionality is better validated through integration behavior (normal flows work).
         it("should NOT allow spectate RPC before handshake completes", async function () {
             const harness = TestSession.getHarness();
             await harness.lifecycle.start(2, 0, {

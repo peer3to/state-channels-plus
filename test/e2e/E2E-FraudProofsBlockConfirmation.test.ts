@@ -50,7 +50,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
 
     it.skip("onBlockConfirmation pipeline: invalidStateTransitionDetected (unexpected next leader) creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 3, { waitForFinalization: true });
+        await h.lifecycle.start(3, 3);
 
         const maliciousPeerIndex = 1; // NOT the expected next leader
         await h.byzantine.submitUnexpectedNextLeaderBlock(maliciousPeerIndex);
@@ -69,7 +69,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
 
     it.skip("onBlockConfirmation pipeline: objectiveInvalidTimestampDetected creates dispute with InvalidTimestamp", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
 
         // Peer 2 submits a block with a timestamp before the previous block's
         // timestamp → objectiveInvalidTimestampDetected → InvalidTimestamp.
@@ -92,7 +92,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
     // Error: Peer 0 has no fraud proofs for malicious peer 2
     it.skip("onBlockConfirmation pipeline: findBrokenInboundMessageChainBlock creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
 
         // Peer 2 submits a block that includes a messageBlock whose
         // previousBlockHash does not chain from the stored inbound state
@@ -117,7 +117,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
     // Error: Peer 0 has no fraud proofs for malicious peer 2
     it.skip("onBlockConfirmation pipeline: forgedInboundMessageBlockDetected creates dispute with ForgedInboundMessageBlock", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
 
         // Peer 2 submits a block that contains a fabricated inbound message
         // block that was never actually sent by any peer
@@ -141,7 +141,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
     // Error: Peer 0 has no fraud proofs for malicious peer 2
     it.skip("onBlockConfirmation pipeline: applyTransaction failure creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
 
         // Peer 2 submits a block whose transaction body is malformed data that
         // the contract rejects; applyTransaction returns success=false
@@ -165,7 +165,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
     // Error: Peer 0 has no fraud proofs for malicious peer 2
     it.skip("onBlockConfirmation pipeline: stateSnapshotHash mismatch creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
 
         // Peer 2 submits a block with a valid transaction but a wrong
         // stateSnapshotHash (ZeroHash).
