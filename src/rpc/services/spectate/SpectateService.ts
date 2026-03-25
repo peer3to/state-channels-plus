@@ -3,8 +3,14 @@ import { Address, ChannelId, Timestamp, Hash, ForkId } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
-import { Codec, getChecksumAddress, tryDecodeCustomError, Type } from "@/utils";
-import { ethers } from "ethers";
+import {
+    Codec,
+    getChecksumAddress,
+    tryDecodeCustomError,
+    Type,
+    bytes32LikeEqual
+} from "@/utils";
+import { ethers, ZeroHash } from "ethers";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
@@ -229,9 +235,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const outboundMessageBlocksUpToLatestGenesis =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
                 fromBlockHash:
-                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash,
+                    currentOnChainSnapshot.latestOutboundMessageBlockHash,
                 toBlockHash:
-                    currentOnChainSnapshot.latestOutboundMessageBlockHash
+                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash
             });
 
         const latestBlockHeight =
@@ -391,13 +397,32 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         // check if we need to update the snapshot on the same fork
         if (syncPayload.milestoneSnapshots.length > 0) {
+            // Full list is genesis→head; on-chain may already be past genesis.
+            // _verifyOutboundMessageBlocks starts from onChain.latestOutboundMessageBlockHash.
+            const anchor =
+                onChainSnapshot.snapshotData.latestOutboundMessageBlockHash;
+            let outboundBlocksForSameFork =
+                syncPayload.outboundMessageBlocksOfTheLatestFork;
+            if (!bytes32LikeEqual(anchor, ZeroHash)) {
+                const startIndex = outboundBlocksForSameFork.findIndex((b) =>
+                    bytes32LikeEqual(b.previousBlockHash, anchor)
+                );
+                if (startIndex === -1) {
+                    // not found: nothing in the payload continues from this on-chain outbound head.
+                    // [] is not a valid proof to the milestone; staticCall reverts (reject sync).
+                    outboundBlocksForSameFork = [];
+                } else {
+                    outboundBlocksForSameFork =
+                        outboundBlocksForSameFork.slice(startIndex);
+                }
+            }
             const snapshotCalldata = contractInterface.encodeFunctionData(
                 "updateStateSnapshotSameFork",
                 [
                     channelId,
                     syncPayload.stateProof.milestones,
                     syncPayload.milestoneSnapshots,
-                    syncPayload.outboundMessageBlocksOfTheLatestFork
+                    outboundBlocksForSameFork
                 ]
             );
             calldata.push(snapshotCalldata);

@@ -204,6 +204,8 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             }
 
             // 2.6) verify final genesisSnapshot is correct -> abort otherwise
+            // Three checks: forkId resolves to this snapshot, forkId == keccak256(snapshotData)
+            // (the on-chain definition of genesis), and encoded state matches the declared hash.
             let isCorrectGenesis =
                 finalForkId == syncPayload.latestForkGenesisSnapshot.forkId;
             isCorrectGenesis =
@@ -211,18 +213,6 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 (await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
                     syncPayload.latestForkGenesisSnapshot
                 ));
-            const { isAvailable, timestamp: genesisTimestamp } =
-                await diamondStateMachine.localDiamondContract.getGenesisTimestamp(
-                    channelId,
-                    syncPayload.latestForkGenesisSnapshot.snapshotData
-                        .originForkId,
-                    finalForkId
-                );
-            isCorrectGenesis =
-                isCorrectGenesis &&
-                isAvailable &&
-                genesisTimestamp ==
-                    syncPayload.latestForkGenesisSnapshot.timestamp;
             isCorrectGenesis =
                 isCorrectGenesis &&
                 syncPayload.latestForkGenesisSnapshot.snapshotData
@@ -230,12 +220,13 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                     hash(syncPayload.latestForkGenesisEncodedState);
             if (!isCorrectGenesis) return this.service.abort(peerAddress);
 
-            // 2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot
+            // 2.7) verify outboundMessageBlocks from final genesisSnapshot to onChainSnapshot
+            // generateSyncPayload collects blocks from genesis → onChain (genesis is earlier/from)
             let areValidExitBlocks =
                 await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
                     syncPayload.outboundMessageBlocksUpToLatestGenesis,
-                    onChainSnapshot.snapshotData,
-                    syncPayload.latestForkGenesisSnapshot.snapshotData
+                    syncPayload.latestForkGenesisSnapshot.snapshotData,
+                    onChainSnapshot.snapshotData
                 );
             if (!areValidExitBlocks) return this.service.abort(peerAddress);
 
