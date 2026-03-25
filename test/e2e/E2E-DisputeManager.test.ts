@@ -109,7 +109,7 @@ describe("E2E: Dispute Manager", function () {
             });
         });
 
-        it.only("a dispute submitted with no calldata should not be killed even if the auditing data hash is tampered", async function () {
+        it("a dispute submitted with no calldata should not be killed even if the auditing data hash is tampered", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
