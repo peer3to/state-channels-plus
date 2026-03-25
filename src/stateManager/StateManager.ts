@@ -2465,11 +2465,11 @@ class StateManager {
             strategy?: AValidationStrategy;
         }
     ): Promise<void> {
-        // step 9 - potentially change status: SYNCED → PENDING_PARTICIPANT
-        // Local state now includes us (inbound JOIN was processed), but we wait for
-        // on-chain snapshot confirmation before becoming fully PARTICIPATING.
-        // onStateSnapshotUpdated handles PENDING_PARTICIPANT → PARTICIPATING.
-        if (this.status === Status.SYNCED) {
+        // step 9 - potentially change status: SYNCED | PENDING_PARTICIPANT → PARTICIPATING
+        if (
+            this.status === Status.SYNCED ||
+            this.status === Status.PENDING_PARTICIPANT
+        ) {
             const participants =
                 await this.diamondStateMachine.getParticipants();
             const isParticipant = participants.includes(this.signerAddress);
