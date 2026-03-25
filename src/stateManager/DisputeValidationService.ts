@@ -448,7 +448,8 @@ export default class DisputeValidationService {
         // [check] dispute input states a reason (same rule as DisputeUtils / InvalidDisputeReason)
         const hasReason =
             await this.diamondStateMachine.localDiamondContract.hasDisputeReason(
-                dispute.input
+                dispute.input,
+                disputeAuditingData.latestStateSnapshot
             );
 
         if (!hasReason) {
