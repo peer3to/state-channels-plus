@@ -109,7 +109,6 @@ export class ScenarioActions {
         });
         await this.harness.event.resetEventSpies();
         await this.harness.addPeer();
-        await this.harness.event.waitUntilEventOccurs("onConnection", 5000);
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, 3]
         });

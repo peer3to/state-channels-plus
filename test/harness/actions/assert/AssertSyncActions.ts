@@ -232,12 +232,14 @@ export class AssertSyncActions {
     }
 
     async onlyHonestPeersInSync(): Promise<void> {
-        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
-        if (!honestIndices || honestIndices.length === 0) {
-            throw new Error("No honest peers found");
+        const indices = this.harness
+            .getPeersForTransitionSyncBarrier()
+            .map((p) => p.index);
+        if (!indices || indices.length === 0) {
+            throw new Error("No peers for transition sync barrier");
         }
 
-        await this.peersInSyncWait({ peerIndices: honestIndices });
+        await this.peersInSyncWait({ peerIndices: indices });
     }
 
     async maliciousPeerExcluded(): Promise<void> {

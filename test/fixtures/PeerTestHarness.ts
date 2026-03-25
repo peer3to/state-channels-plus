@@ -9,6 +9,7 @@ import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import { MathStateMachine, StateChannelManagerProxy } from "@typechain-types";
 import { ForkId, ChannelId, Address, Hash } from "@/types/types";
+import { Status } from "@/types";
 
 import {
     createLogger,
@@ -252,9 +253,13 @@ export class PeerTestHarness<
 
     /**
      * Create a new peer after `setup()` has already run.
-     * If a channel is already open (i.e. `this.channelId` is set), the peer is also connected to that channel.
+     * If a channel is already open, connects to it and waits until that peer reaches `Status.SYNCED`
+     * (spectate path); the new node is appended to `peers` like any other harness peer.
      */
-    public async addPeer(signer?: Signer): Promise<TestPeer<TFactories>> {
+    public async addPeer(
+        signer?: Signer,
+        options?: { statusTimeoutMs?: number; statusTimeoutMessage?: string }
+    ): Promise<TestPeer<TFactories>> {
         if (!this.channelManager || !this.sharedDeployTx) {
             throw new Error("Harness not initialized; call setup() first");
         }
@@ -282,6 +287,13 @@ export class PeerTestHarness<
                 this.channelId,
                 peer.address
             );
+
+            await this.event.waitUntilPeerStatus(index, Status.SYNCED, {
+                timeoutMs: options?.statusTimeoutMs ?? 15000,
+                timeoutMessage:
+                    options?.statusTimeoutMessage ??
+                    `Spectator peer ${index} did not reach SYNCED after connect`
+            });
         }
 
         return peer as TestPeer<TFactories>;
@@ -682,6 +694,16 @@ export class PeerTestHarness<
         ]);
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
+
+    /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
+    getPeersForTransitionSyncBarrier(): TestPeer<TFactories>[] {
+        const exclude = new Set([
+            ...(this.context.leftChannelPeerIndices ?? []),
+            ...(this.context.maliciousPeerIndices ?? [])
+        ]);
+        return this.peers.filter((p) => !exclude.has(p.index));
+    }
+
     getFilteredOrHonestPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
         if (peerIndices) {
             return this.getFilteredPeers(peerIndices);
