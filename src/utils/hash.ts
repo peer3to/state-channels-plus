@@ -1,11 +1,7 @@
-import { ethers } from "ethers";
+import { ethers, BytesLike } from "ethers";
 
 export const hash = ethers.keccak256;
 
-/** Compare bytes32-like values (hex string, Uint8Array, etc.) after canonical hex normalization. */
-export function bytes32LikeEqual(
-    a: ethers.BytesLike,
-    b: ethers.BytesLike
-): boolean {
+export function bytes32LikeEqual(a: BytesLike, b: BytesLike): boolean {
     return ethers.hexlify(a) === ethers.hexlify(b);
 }
