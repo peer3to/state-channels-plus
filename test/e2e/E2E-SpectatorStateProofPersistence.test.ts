@@ -15,8 +15,6 @@ describe("E2E: Join/Leave Sequence", function () {
                 evidenceTime: 10
             }
         });
-        let peerIndices = [0, 1, 2, 3];
-        let spectatorIndices = [];
 
         // blocks 0, 1
         await h.transition.advanceState({ count: 2 });
@@ -27,8 +25,6 @@ describe("E2E: Join/Leave Sequence", function () {
 
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
-        peerIndices = [0, 1, 3];
-
         // turns of 3,0, blocks 3,4 — default sync excludes `leftChannelPeerIndices`
         await h.transition.advanceState({
             count: 2
@@ -38,8 +34,6 @@ describe("E2E: Join/Leave Sequence", function () {
         // Join peer 4 as spectator (`addPeer` waits for SYNCED)
         await h.addPeer();
         await h.assert.sync.participantCount({ expectedCount: 3 });
-
-        spectatorIndices = [4];
 
         // // turns of 1,3, blocks 5,6
         await h.transition.advanceState({

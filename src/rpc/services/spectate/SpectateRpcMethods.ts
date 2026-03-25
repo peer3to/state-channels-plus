@@ -205,7 +205,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
 
             // 2.6) verify final genesisSnapshot is correct -> abort otherwise
             // Three checks: forkId resolves to this snapshot, forkId == keccak256(snapshotData)
-            // (the on-chain definition of genesis), and encoded state matches the declared hash.
+            // and encoded state matches the declared hash.
             let isCorrectGenesis =
                 finalForkId == syncPayload.latestForkGenesisSnapshot.forkId;
             isCorrectGenesis =
