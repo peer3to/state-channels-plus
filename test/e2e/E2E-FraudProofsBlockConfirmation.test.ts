@@ -10,7 +10,7 @@ PeerTestHarness.setDefaultLogLevel("debug");
 describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating fraud proofs", function () {
     it("onBlockConfirmation pipeline: doubleSignDetected creates dispute with BlockDoubleSign", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
         const maliciousPeerIndex = 1;
         await h.byzantine.submitDoubleSignBlock(maliciousPeerIndex);
 
@@ -22,15 +22,13 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({
-            maliciousPeerIndex
-        });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("onBlockConfirmation pipeline: wrongGenesisDetected creates dispute with WrongGenesis", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
 
         // Peer 2 submits a competing block at height 0 with a wrong previousBlockHash.
         const maliciousPeerIndex = 2;
@@ -44,11 +42,11 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it.skip("onBlockConfirmation pipeline: invalidStateTransitionDetected (unexpected next leader) creates dispute with BlockInvalidStateTransition", async function () {
+    it("onBlockConfirmation pipeline: invalidStateTransitionDetected (unexpected next leader) creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);
 
@@ -63,11 +61,11 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it.skip("onBlockConfirmation pipeline: objectiveInvalidTimestampDetected creates dispute with InvalidTimestamp", async function () {
+    it("onBlockConfirmation pipeline: objectiveInvalidTimestampDetected creates dispute with InvalidTimestamp", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -84,13 +82,11 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    // fails
-    // Error: Peer 0 has no fraud proofs for malicious peer 2
-    it.skip("onBlockConfirmation pipeline: findBrokenInboundMessageChainBlock creates dispute with BlockInvalidStateTransition", async function () {
+    it("onBlockConfirmation pipeline: findBrokenInboundMessageChainBlock creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -109,13 +105,11 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    // fails
-    // Error: Peer 0 has no fraud proofs for malicious peer 2
-    it.skip("onBlockConfirmation pipeline: forgedInboundMessageBlockDetected creates dispute with ForgedInboundMessageBlock", async function () {
+    it("onBlockConfirmation pipeline: forgedInboundMessageBlockDetected creates dispute with ForgedInboundMessageBlock", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -134,12 +128,11 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
-    // fails
-    // Error: Peer 0 has no fraud proofs for malicious peer 2
-    it.skip("onBlockConfirmation pipeline: applyTransaction failure creates dispute with BlockInvalidStateTransition", async function () {
+
+    it("onBlockConfirmation pipeline: applyTransaction failure creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -157,13 +150,11 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    // fails
-    // Error: Peer 0 has no fraud proofs for malicious peer 2
-    it.skip("onBlockConfirmation pipeline: stateSnapshotHash mismatch creates dispute with BlockInvalidStateTransition", async function () {
+    it("onBlockConfirmation pipeline: stateSnapshotHash mismatch creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -180,7 +171,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 });
