@@ -197,6 +197,7 @@ export class TransitionActions {
 
     async participantLeave(
         options?: TransitionOptions & {
+            waitForStatus?: boolean;
             statusTimeoutMs?: number;
             statusTimeoutMessage?: string;
         }
@@ -212,20 +213,17 @@ export class TransitionActions {
             delayMs: options?.delayMs
         });
 
-        await this.harness.event.waitUntilPeerStatus(
-            leaverIndex,
-            Status.SYNCED,
-            {
-                timeoutMs: options?.statusTimeoutMs ?? 15000,
-                timeoutMessage:
-                    options?.statusTimeoutMessage ??
-                    "Exiting peer did not reach SYNCED after snapshot update"
-            }
-        );
-
-        const left = this.harness.context.leftChannelPeerIndices;
-        if (!left.includes(leaverIndex)) {
-            left.push(leaverIndex);
+        if (options?.waitForStatus ?? false) {
+            await this.harness.event.waitUntilPeerStatus(
+                leaverIndex,
+                Status.SYNCED,
+                {
+                    timeoutMs: options?.statusTimeoutMs ?? 15000,
+                    timeoutMessage:
+                        options?.statusTimeoutMessage ??
+                        "Exiting peer did not reach SYNCED after snapshot update"
+                }
+            );
         }
 
         return leaverIndex;

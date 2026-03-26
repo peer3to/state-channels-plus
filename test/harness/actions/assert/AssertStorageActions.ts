@@ -166,40 +166,97 @@ export class AssertStorageActions {
     honestPeersStoredDisputeFraudProof(options?: {
         disputeFraudProofType?: DisputeFraudProofType;
         disputes?: DisputeStruct[];
+        peerIndices?: number[];
+        atLeastOneHonestPeer?: boolean;
     }): void {
         const {
             disputeFraudProofType,
-            disputes = this.harness.context.tamperedDisputes
+            disputes = this.harness.context.tamperedDisputes,
+            peerIndices,
+            atLeastOneHonestPeer = true
         } = options || {};
-        const honestPeers = this.harness.getHonestPeers();
+        const honestPeers = this.harness.getFilteredOrHonestPeers(peerIndices);
         if (!disputes || disputes.length === 0)
             throw new Error(
                 "No disputes provided and no tampered disputes in context"
             );
-        for (const honestPeer of honestPeers) {
-            const peerStorage = this.harness.query.getPeerStorage(
-                honestPeer.index
-            );
+
+        if (atLeastOneHonestPeer) {
+            const failuresByDispute: string[] = [];
             for (const dispute of disputes) {
-                const dfp =
-                    peerStorage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                        dispute
-                    );
                 const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
-                if (!dfp)
-                    throw new Error(
-                        `Peer ${honestPeer.index} has no dispute fraud proofs for dispute ${disputeHash}`
-                    );
-                if (disputeFraudProofType) {
-                    if (
-                        dfp.proofType !==
-                        toSolidityDisputeFraudProofType(disputeFraudProofType)
-                    ) {
-                        const errorMessage = `Peer ${honestPeer.index} has a dispute fraud proof of type ${dfp.proofType} instead of ${toSolidityDisputeFraudProofType(disputeFraudProofType)}`;
-                        console.log("[DEBUG]" + errorMessage);
-                        throw new Error(errorMessage);
+                let stored = false;
+                const perPeerErrors: string[] = [];
+                for (const honestPeer of honestPeers) {
+                    try {
+                        this.assertPeerStoredDisputeFraudProof({
+                            honestPeerIndex: honestPeer.index,
+                            dispute,
+                            disputeFraudProofType
+                        });
+                        stored = true;
+                        break;
+                    } catch (err) {
+                        perPeerErrors.push(
+                            err instanceof Error ? err.message : String(err)
+                        );
                     }
                 }
+                if (!stored) {
+                    failuresByDispute.push(
+                        `dispute ${disputeHash}: ${perPeerErrors.join(" | ")}`
+                    );
+                }
+            }
+            if (failuresByDispute.length > 0) {
+                const peerList = honestPeers.map((p) => p.index).join(", ");
+                throw new Error(
+                    `Expected at least one honest peer among [${peerList}] to store each dispute fraud proof` +
+                        (disputeFraudProofType
+                            ? ` (type ${disputeFraudProofType})`
+                            : "") +
+                        `. Missing: ${failuresByDispute.join(" || ")}`
+                );
+            }
+            return;
+        }
+
+        for (const honestPeer of honestPeers) {
+            for (const dispute of disputes) {
+                this.assertPeerStoredDisputeFraudProof({
+                    honestPeerIndex: honestPeer.index,
+                    dispute,
+                    disputeFraudProofType
+                });
+            }
+        }
+    }
+
+    private assertPeerStoredDisputeFraudProof(options: {
+        honestPeerIndex: number;
+        dispute: DisputeStruct;
+        disputeFraudProofType?: DisputeFraudProofType;
+    }): void {
+        const { honestPeerIndex, dispute, disputeFraudProofType } = options;
+        const peerStorage = this.harness.query.getPeerStorage(honestPeerIndex);
+        const dfp =
+            peerStorage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                dispute
+            );
+        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
+        if (!dfp) {
+            throw new Error(
+                `Peer ${honestPeerIndex} has no dispute fraud proof for dispute ${disputeHash}`
+            );
+        }
+        if (disputeFraudProofType) {
+            if (
+                dfp.proofType !==
+                toSolidityDisputeFraudProofType(disputeFraudProofType)
+            ) {
+                throw new Error(
+                    `Peer ${honestPeerIndex} has dispute fraud proof type ${dfp.proofType} instead of ${toSolidityDisputeFraudProofType(disputeFraudProofType)} for dispute ${disputeHash}`
+                );
             }
         }
     }
@@ -207,6 +264,8 @@ export class AssertStorageActions {
     honestPeersStoredDisputeFraudProofWait(options?: {
         disputeFraudProofType?: DisputeFraudProofType;
         disputes?: DisputeStruct[];
+        peerIndices?: number[];
+        atLeastOneHonestPeer?: boolean;
         timeoutMs?: number;
     }): Promise<void> {
         const condition = () => {
@@ -220,7 +279,10 @@ export class AssertStorageActions {
 
         const promise = this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: options?.timeoutMs,
-            timeoutMessage: `Dispute fraud proof was not stored on all peers within ${options?.timeoutMs ?? 5000}ms`
+            timeoutMessage:
+                (options?.atLeastOneHonestPeer ?? true)
+                    ? `Dispute fraud proof was not stored by at least one honest peer within ${options?.timeoutMs ?? 5000}ms`
+                    : `Dispute fraud proof was not stored on all honest peers within ${options?.timeoutMs ?? 5000}ms`
         });
         return promise;
     }
@@ -228,6 +290,8 @@ export class AssertStorageActions {
     async honestPeersStoredDisputeFraudProofDetached(options?: {
         disputeFraudProofType?: DisputeFraudProofType;
         disputes?: DisputeStruct[];
+        peerIndices?: number[];
+        atLeastOneHonestPeer?: boolean;
         timeoutMs?: number;
     }): Promise<void> {
         const promise = this.honestPeersStoredDisputeFraudProofWait(options);

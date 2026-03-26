@@ -174,7 +174,7 @@ export class DisputeTamperingActions {
      * dispute (e.g. a stubbed/tampered one) is uploaded first.
     
      */
-    delayDisputeForPeers(peerIndices: number[], delayMs: number = 1000): void {
+    delayDisputeForPeers(peerIndices: number[], delayMs: number = 2000): void {
         for (const peerIndex of peerIndices) {
             this.restoreDisputeDelay(peerIndex);
 

@@ -141,7 +141,7 @@ export type CreateAndResolveDisputeResult<
 > = {
     originalForkId: ForkId;
     newForkId: ForkId;
-    maliciousPeerIndex: number;
+    maliciousPeerIndices: number[];
     honestPeerIndices: number[];
     honestPeers: Array<TestPeer<TFactories>>;
 };

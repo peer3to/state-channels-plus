@@ -4,11 +4,10 @@ import { Codec, Type, hash } from "@/utils";
 import Block from "@/models/Block";
 import { TestSession, PeerTestHarness } from "@test/harness";
 import * as factory from "@test/factory";
-import { ForkId, Hash } from "@/types/types";
+import { Hash } from "@/types/types";
 import Clock from "@/Clock";
 import type {
     MessageBlockStruct,
-    MessageBlockStructOutput,
     MessageStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
@@ -19,6 +18,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         it("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (no-calldata path)", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
+
+            h.tamper.delayDisputeForPeers([0, 2]);
 
             // Stub peer 1's dispute construction to corrupt latestStateSnapshotHash.
             // postedAuditingData remains false → no-calldata path.
@@ -35,7 +36,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+            await h.dispute.resolveDisputeWait();
         });
     });
 
@@ -45,7 +46,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             // preDisputeSetupCalldataPath produces a milestones-only state proof.
             await h.scenario.preDisputeSetupCalldataPath();
 
-            h.tamper.delayDisputeForPeers([0, 1, 2]);
+            h.tamper.delayDisputeForPeers([0, 1, 2], 3000);
 
             // Inject a garbage signedBlock alongside the real milestones.
             // verifyStateProof rejects any proof where both arrays are non-empty.
@@ -73,10 +74,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 3,
-                honestPeerIndices: [1]
-            });
+            await h.dispute.resolveDisputeWait();
         });
 
         it("should kill dispute and store DisputeInvalidStateProof when a milestone has no blockConfirmations", async function () {
@@ -106,10 +104,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 3,
-                honestPeerIndices: [1]
-            });
+            await h.dispute.resolveDisputeWait();
         });
 
         it("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (with calldata)", async function () {
@@ -117,7 +112,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.scenario.preDisputeSetupCalldataPath();
 
             // Slow down peers 0, 1 so the stubbed dispute from peer 3 is uploaded first
-            h.tamper.delayDisputeForPeers([0, 1], 2000);
+            h.tamper.delayDisputeForPeers([0, 1]);
 
             h.tamper.stubConstructDispute(3, (d) => {
                 d.input.latestStateSnapshotHash = hash("0x42");
@@ -132,10 +127,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 3,
-                honestPeerIndices: [1]
-            });
+            await h.dispute.resolveDisputeWait();
         });
     });
 
@@ -165,10 +157,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
             });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1,
-                honestPeerIndices: [0]
-            });
+            await h.dispute.resolveDisputeWait();
         });
     });
 
@@ -212,9 +201,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 3
-            });
+            await h.dispute.resolveDisputeWait();
         });
 
         it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(ForgedInboundMessageBlock) when a state proof block contains a forged inbound message", async function () {
@@ -223,12 +210,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
 
             h.tamper.delayDisputeForPeers([0, 1, 2]);
 
-            const injectForgedMessageBlock = async (
-                dispute: any,
-                peerIndex: number
-            ) => {
+            h.tamper.stubConstructDispute(3, async (dispute) => {
                 const stateProof = dispute.input.stateProof;
-
                 if (
                     stateProof.milestones.length > 0 ||
                     stateProof.signedBlocks.length === 0
@@ -237,62 +220,34 @@ describe("E2E: Dispute Validation Pipeline", function () {
                         `Expected 0 milestones + signedBlocks, got milestones=${stateProof.milestones.length} signedBlocks=${stateProof.signedBlocks.length}`
                     );
                 }
-                const localDiamond = h.getLocalDiamond(peerIndex);
-                const [hasBlock, latestBlock] =
-                    await localDiamond.getLatestBlockFromStateProof(stateProof);
-                if (!hasBlock) {
-                    throw new Error(
-                        "State proof has no block to corrupt for Phase 2 test"
-                    );
-                }
-                const peer = h.getPeer(peerIndex);
-                const forkId = latestBlock.transaction.header.forkId as ForkId;
-                const blockHeight = Number(
-                    latestBlock.transaction.header.transactionCnt
-                );
-                const previousStateSnapshot =
-                    peer.stateManager.storage.getPreviousStateSnapshot({
-                        forkId,
-                        height: blockHeight
-                    });
-                if (!previousStateSnapshot) {
-                    throw new Error(
-                        "No previous state snapshot for forged message block"
-                    );
-                }
-                const latestInboundHash = (previousStateSnapshot.snapshotData
-                    .latestInboundMessageBlockHash ?? ZeroHash) as Hash;
-                const latestInboundHeight = BigInt(
-                    previousStateSnapshot.snapshotData
-                        .latestInboundMessageBlockHeight ?? 0n
-                );
-                const forgedMessage: MessageStruct = {
+
+                const peer = h.getPeer(1);
+                const lastSigned = stateProof.signedBlocks.at(-1)!;
+                const block = Codec.decode(lastSigned.encodedBlock, Type.Block);
+
+                const fakeMessage: MessageStruct = {
                     messageType: ethers.hexlify(ethers.randomBytes(32)),
                     participant: peer.address,
                     balance: { amount: 1n, data: "0x" },
                     data: ethers.hexlify(ethers.randomBytes(32))
                 };
-                const forgedMessageBlock: MessageBlockStruct = {
-                    previousBlockHash: latestInboundHash || (ZeroHash as Hash),
-                    blockHeight: latestInboundHeight + 1n,
-                    messages: [forgedMessage],
-                    totalBalance: {
-                        amount: forgedMessage.balance.amount,
-                        data: "0x"
-                    },
+                const fakeMessageBlock: MessageBlockStruct = {
+                    previousBlockHash: ethers.ZeroHash as Hash,
+                    blockHeight: 1n,
+                    messages: [fakeMessage],
+                    totalBalance: { amount: 1n, data: "0x" },
                     timestamp: BigInt(Clock.getTimeInSeconds())
                 };
-                latestBlock.messageBlocks = [
-                    forgedMessageBlock as MessageBlockStructOutput
-                ];
-                stateProof.signedBlocks.at(-1)!.encodedBlock = Codec.encode(
-                    latestBlock,
-                    Type.Block
+
+                block.messageBlocks = [fakeMessageBlock];
+
+                const blockInstance = await Block.fromBlockStruct(
+                    block,
+                    peer.signer
                 );
-            };
-            h.tamper.stubConstructDispute(3, (d) =>
-                injectForgedMessageBlock(d, 3)
-            );
+                stateProof.signedBlocks[stateProof.signedBlocks.length - 1] =
+                    blockInstance.signedBlock;
+            });
 
             // peer 1 double signs
             await h.byzantine.submitDoubleSignBlock(1);
@@ -302,9 +257,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 3
-            });
+            await h.dispute.resolveDisputeWait();
         });
     });
 
@@ -331,7 +284,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeOnChainSlashesNotSubset
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+            await h.dispute.resolveDisputeWait();
         });
     });
 
@@ -339,6 +292,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         it("should kill dispute and store DisputeInvalidBalanceInvariant when the balance invariant fails", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
+
+            h.tamper.delayDisputeForPeers([0, 1]);
 
             // Corrupt snapshot store
             h.tamper.corruptValidatorSnapshotForBalanceInvariant(2);
@@ -352,7 +307,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidBalanceInvariant
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+            await h.dispute.resolveDisputeWait();
         });
     });
 
@@ -380,13 +335,9 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeNotLatestState
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
+            await h.dispute.resolveDisputeWait();
         });
     });
-
-    // TESTs BELOW ARE NOT DOEN YET (got stuck debugging the ones above)
-
-    // ─────────────────────────────────────────────────────────────────────────────
 
     describe("Timeout Fraud Proofs", function () {
         it("should kill dispute and store TimeoutNotLinkedToLatestState when timeout.blockHeight does not equal latestBlockHeight + 1", async function () {
@@ -420,7 +371,10 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.TimeoutNotLinkedToLatestState
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+            // mark peer 0 as malicious
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
+
+            await h.dispute.resolveDisputeWait();
         });
 
         it("should kill dispute and store TimeoutParticipantNotNext when timeout.participant is not the next peer to write", async function () {
@@ -445,7 +399,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.TimeoutParticipantNotNext
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
+            await h.dispute.resolveDisputeWait();
         });
 
         it("should kill dispute and store TimeoutTooEarly when timeout dispute is posted before the timeout wait period has elapsed", async function () {
@@ -479,7 +433,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 0 });
+            await h.dispute.resolveDisputeWait();
         });
 
         // it.skip("should kill dispute and store TimeoutThreshold when all participants have already signed the block claimed as timed out", async function () {
@@ -513,7 +467,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidOutputState
             });
-            await h.dispute.resolveDisputeWait({ maliciousPeerIndex: 2 });
+            await h.dispute.resolveDisputeWait();
         });
     });
 });

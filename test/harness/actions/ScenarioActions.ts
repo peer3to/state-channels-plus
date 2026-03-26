@@ -68,9 +68,7 @@ export class ScenarioActions {
     //  5 blocks in this pre-setp, block height is 4
     async preDisputeSetupCalldataPath() {
         await this.preDisputeSetup(4);
-        await this.harness.transition.advanceState({
-            txFn: (c) => c.leaveChannel()
-        });
+        await this.harness.transition.participantLeave();
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],
             count: 2
@@ -186,7 +184,7 @@ export class ScenarioActions {
         );
 
         const result = await this.harness.dispute.resolveDisputeWait({
-            maliciousPeerIndex: options.maliciousPeerIndex,
+            maliciousPeerIndices: [options.maliciousPeerIndex],
             forkId: originalForkId,
             honestPeerIndices,
             disputesCommittedTimeoutMs: options.disputesCommittedTimeoutMs,
