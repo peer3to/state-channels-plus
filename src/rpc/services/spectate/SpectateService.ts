@@ -234,9 +234,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         const outboundMessageBlocksUpToLatestGenesis =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                fromBlockHash:
+                upperBlockHash:
                     currentOnChainSnapshot.latestOutboundMessageBlockHash,
-                toBlockHash:
+                lowerBlockHash:
                     latestForkGenesisSnapshot.latestOutboundMessageBlockHash
             });
 
@@ -287,9 +287,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         const outboundMessageBlocksOfTheLatestFork =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                fromBlockHash:
+                upperBlockHash:
                     latestFinalizedSnapshot.latestOutboundMessageBlockHash,
-                toBlockHash:
+                lowerBlockHash:
                     latestForkGenesisSnapshot.latestOutboundMessageBlockHash
             });
         // Return payload with all available data

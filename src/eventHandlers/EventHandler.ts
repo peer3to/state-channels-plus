@@ -627,9 +627,9 @@ export class EventHandler {
             );
         const inboundMessageBlocks =
             this.storage.inboundMessages.getMessageBlocksInRange({
-                fromBlockHash:
+                upperBlockHash:
                     latestSnapshot.snapshotData.latestInboundMessageBlockHash,
-                toBlockHash:
+                lowerBlockHash:
                     genesisSnapshot.snapshotData.latestInboundMessageBlockHash
             });
         const [snapshotData] =

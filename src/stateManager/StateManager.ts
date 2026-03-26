@@ -1503,8 +1503,8 @@ class StateManager {
                 latestSnapshot.snapshotData.latestOutboundMessageBlockHash;
             const outboundMessageBlocks =
                 this.storage.outboundMessages.getMessageBlocksInRange({
-                    fromBlockHash: latestLocalExitBlockHash,
-                    toBlockHash: currentOnChainExitBlockHash
+                    upperBlockHash: latestLocalExitBlockHash,
+                    lowerBlockHash: currentOnChainExitBlockHash
                 });
 
             const sameForkCalldata =
@@ -1777,16 +1777,16 @@ class StateManager {
                     .latestOutboundMessageBlockHash;
             const outboundMessageBlocks =
                 this.storage.outboundMessages.getMessageBlocksInRange({
-                    fromBlockHash: latestOutboundBlockHash,
-                    toBlockHash: currentOnChainOutboundBlockHash
+                    upperBlockHash: latestOutboundBlockHash,
+                    lowerBlockHash: currentOnChainOutboundBlockHash
                 });
 
             this.logger.debug(
                 "prepareUpdateStateSnapshotFork - outbound message block range",
                 {
                     forkId: currentForkId,
-                    fromBlockHash: latestOutboundBlockHash,
-                    toBlockHash: currentOnChainOutboundBlockHash,
+                    upperBlockHash: latestOutboundBlockHash,
+                    lowerBlockHash: currentOnChainOutboundBlockHash,
                     blocksCount: outboundMessageBlocks.length
                 }
             );
@@ -2291,8 +2291,8 @@ class StateManager {
         }
 
         return this.storage.inboundMessages.getMessageBlocksInRange({
-            fromBlockHash: latestStoredHash,
-            toBlockHash: previousHash ?? ethers.ZeroHash
+            upperBlockHash: latestStoredHash,
+            lowerBlockHash: previousHash ?? ethers.ZeroHash
         });
     }
 

@@ -581,8 +581,8 @@ class AgreementManager {
 
         const inboundMessageBlocksAppliedInReduce =
             this.storage.inboundMessages.getMessageBlocksInRange({
-                fromBlockHash: reducedOutput.latestInboundMessageBlockHash,
-                toBlockHash:
+                upperBlockHash: reducedOutput.latestInboundMessageBlockHash,
+                lowerBlockHash:
                     reducedLatestStateSnapshot.latestInboundMessageBlockHash
             });
         return {

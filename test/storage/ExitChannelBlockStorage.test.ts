@@ -68,8 +68,8 @@ describe("MessageBlockStorage - outbound behavior", () => {
             const nextHash = storage.store(nextBlock);
 
             const blocks = storage.getMessageBlocksInRange({
-                fromBlockHash: nextHash,
-                toBlockHash: mockExitBlock.previousBlockHash as Hash
+                upperBlockHash: nextHash,
+                lowerBlockHash: mockExitBlock.previousBlockHash as Hash
             });
             expect(blocks).to.have.length(2);
             expect(blocks[1]).to.deep.equal(nextBlock);
