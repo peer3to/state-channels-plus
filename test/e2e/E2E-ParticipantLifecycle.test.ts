@@ -32,7 +32,9 @@ describe("E2E: Participant Lifecycle", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
 
-            const leaverIndex = await h.transition.participantLeave();
+            const leaverIndex = await h.transition.participantLeave({
+                waitForStatus: true
+            });
             expect(leaverIndex).to.equal(
                 2,
                 "expected peer 2 to leave given start(3,2) turn order"

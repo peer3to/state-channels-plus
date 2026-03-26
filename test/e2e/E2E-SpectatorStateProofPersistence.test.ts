@@ -20,7 +20,9 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.transition.advanceState({ count: 2 });
 
         // Leave peer 2, block 2
-        const leaverIndex = await h.transition.participantLeave();
+        const leaverIndex = await h.transition.participantLeave({
+            waitForStatus: true
+        });
         expect(leaverIndex).to.equal(2);
 
         await h.assert.sync.participantCount({ expectedCount: 3 });
