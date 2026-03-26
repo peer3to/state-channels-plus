@@ -119,13 +119,13 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function _derivePendingParticipantsFromInboundHash(
         bytes32 channelId,
-        bytes32 fromInboundHash,
-        bytes32 toInboundHash
+        bytes32 upperInboundHash,
+        bytes32 lowerInboundHash
     ) internal view returns (address[] memory pendingParticipants) {
         pendingParticipants = new address[](0);
-        bytes32 inboundHash = fromInboundHash;
+        bytes32 inboundHash = upperInboundHash;
 
-        while (inboundHash != bytes32(0) && inboundHash != toInboundHash) {
+        while (inboundHash != bytes32(0) && inboundHash != lowerInboundHash) {
             MessageBlock storage inboundBlock = inboundMessageBlockMap[channelId][inboundHash];
             if (inboundBlock.timestamp == 0 && inboundBlock.messages.length == 0) {
                 inboundHash = inboundBlock.previousBlockHash;
@@ -321,12 +321,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function _verifyOutboundMessageBlocks(
         MessageBlock[] memory outboundMessageBlocks,
-        SnapshotData memory fromSnapshot,
-        SnapshotData memory toSnapshot
+        SnapshotData memory lowerSnapshot,
+        SnapshotData memory upperSnapshot
     ) public view returns (bool) {
-        bytes32 previousBlockHash = fromSnapshot.latestOutboundMessageBlockHash;
-        Balance memory totalOutbound = fromSnapshot.totalWithdrawals;
-        uint256 expectedHeight = fromSnapshot.latestOutboundMessageBlockHeight;
+        bytes32 previousBlockHash = lowerSnapshot.latestOutboundMessageBlockHash;
+        Balance memory totalOutbound = lowerSnapshot.totalWithdrawals;
+        uint256 expectedHeight = lowerSnapshot.latestOutboundMessageBlockHeight;
 
         for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
             if (previousBlockHash != outboundMessageBlocks[i].previousBlockHash) {
@@ -342,14 +342,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             }
             previousBlockHash = keccak256(abi.encode(outboundMessageBlocks[i]));
         }
-        if (keccak256(abi.encode(totalOutbound)) != keccak256(abi.encode(toSnapshot.totalWithdrawals))) {
+        if (keccak256(abi.encode(totalOutbound)) != keccak256(abi.encode(upperSnapshot.totalWithdrawals))) {
             return false;
         }
-        if (expectedHeight != toSnapshot.latestOutboundMessageBlockHeight) {
+        if (expectedHeight != upperSnapshot.latestOutboundMessageBlockHeight) {
             return false;
         }
 
-        return previousBlockHash == toSnapshot.latestOutboundMessageBlockHash;
+        return previousBlockHash == upperSnapshot.latestOutboundMessageBlockHash;
     }
 
     function _isSnapshotLinkedToLatestBlock(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
