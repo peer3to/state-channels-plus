@@ -171,6 +171,8 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
             maliciousPeerIndex
         });
 
+        await h.assert.storage.storedDisputeConfirmationsWait();
+
         await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });

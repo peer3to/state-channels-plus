@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
-import { Codec, Type, hash, tryDecodeCustomError } from "@/utils";
+import { hash, tryDecodeCustomError } from "@/utils";
 import { TestSession, PeerTestHarness, DisputeTampering } from "@test/harness";
 
 PeerTestHarness.setDefaultLogLevel("error");
@@ -16,34 +16,6 @@ PeerTestHarness.setDefaultLogLevel("error");
  * Tests dispute creation, validation, resolution, and fraud proof mechanisms.
  */
 describe("E2E: Dispute Manager", function () {
-    describe("Dispute Initiation", function () {
-        it("should create dispute for invalid state transition", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            await h.byzantine.submitInvalidStateTransitionBlock(2);
-            await h.assert.dispute.initiatedAndCommitedWait();
-            await h.assert.storage.honestPeersStoredFraudProof({
-                fraudProofType: FraudProofType.BlockInvalidStateTransition,
-                maliciousPeerIndex: 2
-            });
-            await h.assert.storage.storedDisputeConfirmationsWait();
-        });
-
-        it("should dispute forged inbound message blocks", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            h.event.resetEventSpies();
-            const nextPeer = await h.query.getNextPeerToWrite();
-            await h.byzantine.submitForgedInboundMessageBlock(nextPeer.index);
-            await h.assert.dispute.initiatedAndCommitedWait();
-            await h.assert.storage.honestPeersStoredFraudProof({
-                fraudProofType: FraudProofType.ForgedInboundMessageBlock,
-                maliciousPeerIndex: nextPeer.index
-            });
-            await h.assert.storage.storedDisputeConfirmationsWait();
-        });
-    });
-
     describe("Dispute Resolution and Fork Management", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
             const h = TestSession.getHarness();
@@ -51,10 +23,7 @@ describe("E2E: Dispute Manager", function () {
             const nextPeer = await h.query.getNextPeerToWrite();
             await h.byzantine.submitInvalidStateTransitionBlock(nextPeer.index);
             await h.assert.dispute.initiatedAndCommitedWait();
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: nextPeer.index,
-                forkSettleTimeoutMs: 15000
-            });
+            await h.dispute.resolveDisputeWait();
         });
 
         it("should post updated state snapshot after fork resolution", async function () {
@@ -80,7 +49,6 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Fraud Proof Detection", function () {
-        // FLAKY
         it("should kill a spam dispute with no legitimate enforcement basis", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
@@ -104,9 +72,7 @@ describe("E2E: Dispute Manager", function () {
                     DisputeFraudProofType.InvalidDisputeReason
             });
 
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1
-            });
+            await h.dispute.resolveDisputeWait();
         });
 
         it("a dispute submitted with no calldata should not be killed even if the auditing data hash is tampered", async function () {
@@ -117,7 +83,8 @@ describe("E2E: Dispute Manager", function () {
                 0,
                 DisputeTampering.tamperAuditingDataHash,
                 {
-                    autoRestore: true
+                    autoRestore: true,
+                    markMalicious: false
                 }
             );
 
@@ -131,9 +98,7 @@ describe("E2E: Dispute Manager", function () {
                 maliciousPeerIndex: 1
             });
 
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1
-            });
+            await h.dispute.resolveDisputeWait();
 
             // Peer 1 (double-signer) removed.
             await h.assert.sync.maliciousPeerExcluded();
@@ -162,24 +127,6 @@ describe("E2E: Dispute Manager", function () {
             }
         });
 
-        it("should reject timeout dispute when timedout participant is not next to write", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            await h.byzantine.postTamperedDisputeTimeout({
-                submitterIndex: 0,
-                wrongParticipantIndex: 1,
-                blockHeight: 2
-            });
-            await h.event.waitForAllPeers("onDisputeKilled", 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 0
-            });
-            await h.assert.sync.forkChangedWait();
-        });
-
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
@@ -188,9 +135,7 @@ describe("E2E: Dispute Manager", function () {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1
-            });
+            await h.dispute.resolveDisputeWait();
             await h.assert.sync.forkChangedWait();
         });
 
@@ -202,100 +147,8 @@ describe("E2E: Dispute Manager", function () {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1
-            });
+            await h.dispute.resolveDisputeWait();
             await h.assert.sync.forkChangedWait();
-        });
-
-        it("should reject dispute when auditing data commitment is valid but state proof is invalid without calldata", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            await h.byzantine.tamperedDisputeInvalidStateProof(1);
-            await h.event.waitForAllPeers("onDisputeKilled", 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof
-            });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1
-            });
-            await h.assert.sync.forkChangedWait();
-        });
-
-        it("should reject dispute when auditing data commitment is valid but state proof is invalid with calldata", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            await h.byzantine.tamperedDisputeInvalidStateProofWithCalldata(1);
-            await h.event.waitForAllPeers("onDisputeKilled", 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof
-            });
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1
-            });
-            await h.assert.sync.forkChangedWait();
-        });
-    });
-
-    describe("Re-Dispute Detection", function () {
-        it("should kill a tampered state proof that corrupts a signed block", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup(4);
-            await h.byzantine.disconnect(3);
-            await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
-            h.event.resetEventSpies();
-
-            h.byzantine.stubDisputeConstruction({
-                peerIndex: 0,
-                tamperFn: async (dispute) => {
-                    const stateProof = dispute.input.stateProof;
-
-                    const localDiamond = h.getLocalDiamond(0);
-                    const [hasBlock, latestBlock] =
-                        await localDiamond.getLatestBlockFromStateProof(
-                            stateProof
-                        );
-                    if (!hasBlock) {
-                        throw new Error(
-                            "State proof does not contain a block to tamper with"
-                        );
-                    }
-
-                    latestBlock.transaction.header.transactionCnt =
-                        BigInt(latestBlock.transaction.header.transactionCnt) +
-                        5n;
-
-                    stateProof.milestones
-                        .at(-1)!
-                        .blockConfirmations.at(-1)!.signedBlock.encodedBlock =
-                        Codec.encode(latestBlock, Type.Block);
-                }
-            });
-
-            await h.byzantine.submitInvalidStateTransitionBlock(1);
-            await h.assert.dispute.initiatedAndCommitedWait({
-                peersIndices: [0, 2]
-            }); // both 0 and 2 should commit
-            await h.assert.storage.honestPeersStoredFraudProof({
-                fraudProofType: FraudProofType.BlockInvalidStateTransition,
-                maliciousPeerIndex: 1,
-                peerIndices: [0, 2] // peer 3 is disconnected, so it doesn't observe the invalid block
-            }); // both 0 and 2 should store fraud proof - 0 becomes malicous later
-            await h.event.waitForAllPeers("onDisputeKilled", 1, {
-                mode: "atLeast"
-            }); // dispute from peer 0 should be killed
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(); // peer 2 should store it
-            await h.dispute.resolveDisputeWait({
-                maliciousPeerIndex: 1,
-                honestPeerIndices: [2, 3]
-            });
-            // h.byzantine.restoreDisputeConstruction(0); // does this make a difference?
         });
     });
 

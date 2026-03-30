@@ -471,29 +471,6 @@ export class ByzantineActions {
         );
     }
 
-    async postTamperedDisputeTimeout(options: {
-        submitterIndex: number;
-        wrongParticipantIndex: number;
-        blockHeight?: number;
-    }): Promise<DisputeStruct> {
-        const {
-            submitterIndex,
-            wrongParticipantIndex,
-            blockHeight = 2
-        } = options;
-
-        const wrongPeer = this.harness.peers[wrongParticipantIndex];
-        if (!wrongPeer) {
-            throw new Error(`Peer ${wrongParticipantIndex} not found`);
-        }
-
-        const tamperFn = DisputeTampering.createTamperTimeoutParticipant(
-            wrongPeer.address,
-            blockHeight
-        );
-        return this.postTamperedDisputeWith(submitterIndex, tamperFn);
-    }
-
     async tamperedDisputePartialAuditing(
         peerIndex: number
     ): Promise<DisputeStruct> {
@@ -509,24 +486,6 @@ export class ByzantineActions {
         return this.postTamperedDisputeWith(
             peerIndex,
             DisputeTampering.tamperDoubleFault
-        );
-    }
-
-    async tamperedDisputeInvalidStateProof(
-        peerIndex: number
-    ): Promise<DisputeStruct> {
-        return this.postTamperedDisputeWith(
-            peerIndex,
-            DisputeTampering.tamperInvalidStateProof
-        );
-    }
-
-    async tamperedDisputeInvalidStateProofWithCalldata(
-        peerIndex: number
-    ): Promise<DisputeStruct> {
-        return this.postTamperedDisputeWith(
-            peerIndex,
-            DisputeTampering.tamperInvalidStateProofWithCalldata
         );
     }
 

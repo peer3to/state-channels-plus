@@ -1,5 +1,5 @@
 import { ethers, ZeroHash } from "ethers";
-import { DisputeFraudProofType } from "@/types/sol-enums";
+import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash } from "@/utils";
 import Block from "@/models/Block";
 import { TestSession, PeerTestHarness } from "@test/harness";
@@ -162,102 +162,172 @@ describe("E2E: Dispute Validation Pipeline", function () {
     });
 
     describe("State Proof Block Pipeline", function () {
-        it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(BlockInvalidStateTransition) when signedBlocks block has corrupted encodedBlock", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
+        describe("signedBlocks-only state proofs", function () {
+            it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(BlockInvalidStateTransition) when signedBlocks block has corrupted encodedBlock", async function () {
+                const h = TestSession.getHarness();
+                await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.delayDisputeForPeers([0, 1, 2]);
+                h.tamper.delayDisputeForPeers([0, 1, 2]);
 
-            h.tamper.stubConstructDispute(3, async (dispute) => {
-                const stateProof = dispute.input.stateProof;
-                if (
-                    stateProof.milestones.length > 0 ||
-                    stateProof.signedBlocks.length === 0
-                ) {
-                    throw new Error(
-                        `Expected 0 milestones + signedBlocks, got milestones=${stateProof.milestones.length} signedBlocks=${stateProof.signedBlocks.length}`
+                h.tamper.stubConstructDispute(3, async (dispute) => {
+                    const stateProof = dispute.input.stateProof;
+                    if (
+                        stateProof.milestones.length > 0 ||
+                        stateProof.signedBlocks.length === 0
+                    ) {
+                        throw new Error(
+                            `Expected 0 milestones + signedBlocks, got milestones=${stateProof.milestones.length} signedBlocks=${stateProof.signedBlocks.length}`
+                        );
+                    }
+                    const peer = h.getPeer(1);
+
+                    const lastSigned = stateProof.signedBlocks.at(-1)!;
+                    const block = Codec.decode(
+                        lastSigned.encodedBlock,
+                        Type.Block
                     );
-                }
-                const peer = h.getPeer(1);
 
-                const lastSigned = stateProof.signedBlocks.at(-1)!;
-                const block = Codec.decode(lastSigned.encodedBlock, Type.Block);
+                    block.stateSnapshotHash = ZeroHash;
+                    const blockInstance = await Block.fromBlockStruct(
+                        block,
+                        peer.signer
+                    );
+                    stateProof.signedBlocks[
+                        stateProof.signedBlocks.length - 1
+                    ] = blockInstance.signedBlock;
+                });
 
-                block.stateSnapshotHash = ZeroHash;
-                const blockInstance = await Block.fromBlockStruct(
-                    block,
-                    peer.signer
+                await h.byzantine.submitDoubleSignBlock(1);
+
+                await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                    mode: "atLeast"
+                });
+                await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
+                    {
+                        disputeFraudProofType:
+                            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+                    }
                 );
-                stateProof.signedBlocks[stateProof.signedBlocks.length - 1] =
-                    blockInstance.signedBlock;
+                await h.dispute.resolveDisputeWait();
             });
 
-            await h.byzantine.submitDoubleSignBlock(1);
+            it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(ForgedInboundMessageBlock) when a state proof block contains a forged inbound message", async function () {
+                const h = TestSession.getHarness();
+                await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
-                mode: "atLeast"
+                h.tamper.delayDisputeForPeers([0, 1, 2]);
+
+                h.tamper.stubConstructDispute(3, async (dispute) => {
+                    const stateProof = dispute.input.stateProof;
+                    if (
+                        stateProof.milestones.length > 0 ||
+                        stateProof.signedBlocks.length === 0
+                    ) {
+                        throw new Error(
+                            `Expected 0 milestones + signedBlocks, got milestones=${stateProof.milestones.length} signedBlocks=${stateProof.signedBlocks.length}`
+                        );
+                    }
+
+                    const peer = h.getPeer(1);
+                    const lastSigned = stateProof.signedBlocks.at(-1)!;
+                    const block = Codec.decode(
+                        lastSigned.encodedBlock,
+                        Type.Block
+                    );
+
+                    const fakeMessage: MessageStruct = {
+                        messageType: ethers.hexlify(ethers.randomBytes(32)),
+                        participant: peer.address,
+                        balance: { amount: 1n, data: "0x" },
+                        data: ethers.hexlify(ethers.randomBytes(32))
+                    };
+                    const fakeMessageBlock: MessageBlockStruct = {
+                        previousBlockHash: ethers.ZeroHash as Hash,
+                        blockHeight: 1n,
+                        messages: [fakeMessage],
+                        totalBalance: { amount: 1n, data: "0x" },
+                        timestamp: BigInt(Clock.getTimeInSeconds())
+                    };
+
+                    block.messageBlocks = [fakeMessageBlock];
+
+                    const blockInstance = await Block.fromBlockStruct(
+                        block,
+                        peer.signer
+                    );
+                    stateProof.signedBlocks[
+                        stateProof.signedBlocks.length - 1
+                    ] = blockInstance.signedBlock;
+                });
+
+                // peer 1 double signs
+                await h.byzantine.submitDoubleSignBlock(1);
+
+                await h.event.waitForPeers("onDisputeKilled", [0], 1);
+                await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
+                    {
+                        disputeFraudProofType:
+                            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+                    }
+                );
+                await h.dispute.resolveDisputeWait();
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
-            });
-            await h.dispute.resolveDisputeWait();
         });
 
-        it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(ForgedInboundMessageBlock) when a state proof block contains a forged inbound message", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
+        describe("milestone blockConfirmations path", function () {
+            it("should kill dispute when a milestone's last confirmation encodes an inconsistent block (re-dispute / wrong txn count)", async function () {
+                const h = TestSession.getHarness();
+                await h.scenario.preDisputeSetup(4);
+                await h.byzantine.disconnect(3);
+                await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
+                h.event.resetEventSpies();
 
-            h.tamper.delayDisputeForPeers([0, 1, 2]);
+                // Stagger constructDispute so tampered and honest disputes do not race the evidence window.
+                h.tamper.delayDisputeForPeers([1, 2, 3], 3000);
 
-            h.tamper.stubConstructDispute(3, async (dispute) => {
-                const stateProof = dispute.input.stateProof;
-                if (
-                    stateProof.milestones.length > 0 ||
-                    stateProof.signedBlocks.length === 0
-                ) {
-                    throw new Error(
-                        `Expected 0 milestones + signedBlocks, got milestones=${stateProof.milestones.length} signedBlocks=${stateProof.signedBlocks.length}`
-                    );
-                }
+                h.tamper.stubConstructDispute(0, async (dispute) => {
+                    const stateProof = dispute.input.stateProof;
 
-                const peer = h.getPeer(1);
-                const lastSigned = stateProof.signedBlocks.at(-1)!;
-                const block = Codec.decode(lastSigned.encodedBlock, Type.Block);
+                    const localDiamond = h.getLocalDiamond(0);
+                    const [hasBlock, latestBlock] =
+                        await localDiamond.getLatestBlockFromStateProof(
+                            stateProof
+                        );
+                    if (!hasBlock) {
+                        throw new Error(
+                            "State proof does not contain a block to tamper with"
+                        );
+                    }
 
-                const fakeMessage: MessageStruct = {
-                    messageType: ethers.hexlify(ethers.randomBytes(32)),
-                    participant: peer.address,
-                    balance: { amount: 1n, data: "0x" },
-                    data: ethers.hexlify(ethers.randomBytes(32))
-                };
-                const fakeMessageBlock: MessageBlockStruct = {
-                    previousBlockHash: ethers.ZeroHash as Hash,
-                    blockHeight: 1n,
-                    messages: [fakeMessage],
-                    totalBalance: { amount: 1n, data: "0x" },
-                    timestamp: BigInt(Clock.getTimeInSeconds())
-                };
+                    latestBlock.transaction.header.transactionCnt =
+                        BigInt(latestBlock.transaction.header.transactionCnt) +
+                        5n;
 
-                block.messageBlocks = [fakeMessageBlock];
+                    stateProof.milestones
+                        .at(-1)!
+                        .blockConfirmations.at(-1)!.signedBlock.encodedBlock =
+                        Codec.encode(latestBlock, Type.Block);
+                });
 
-                const blockInstance = await Block.fromBlockStruct(
-                    block,
-                    peer.signer
-                );
-                stateProof.signedBlocks[stateProof.signedBlocks.length - 1] =
-                    blockInstance.signedBlock;
+                await h.byzantine.submitInvalidStateTransitionBlock(1);
+                await h.assert.dispute.initiatedAndCommitedWait({
+                    peersIndices: [0, 2]
+                });
+                await h.assert.storage.honestPeersStoredFraudProof({
+                    fraudProofType: FraudProofType.BlockInvalidStateTransition,
+                    maliciousPeerIndex: 1,
+                    peerIndices: [0, 2]
+                });
+                await h.event.waitForAllPeers("onDisputeKilled", 1, {
+                    mode: "atLeast",
+                    timeoutMs: 25000
+                });
+                await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
+                await h.dispute.resolveDisputeWait({
+                    maliciousPeerIndices: [1],
+                    honestPeerIndices: [2, 3]
+                });
             });
-
-            // peer 1 double signs
-            await h.byzantine.submitDoubleSignBlock(1);
-
-            await h.event.waitForPeers("onDisputeKilled", [0], 1);
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
-            });
-            await h.dispute.resolveDisputeWait();
         });
     });
 
