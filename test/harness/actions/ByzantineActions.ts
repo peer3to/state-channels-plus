@@ -578,6 +578,21 @@ export class ByzantineActions {
         peer.stateManager.eventHandler.onBlockCalldataPosted = original;
     }
 
+    stubPendingInboundInclusion(peerIndex: number): () => void {
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const storage = peer.stateManager.storage.inboundMessages;
+        const original = storage.getLatestBlockHash.bind(storage);
+        storage.getLatestBlockHash = () => undefined;
+        return () => {
+            peer.stateManager.storage.inboundMessages.getLatestBlockHash =
+                original;
+        };
+    }
+
     stubBroadcast(peerIndex: number): void {
         const peer = this.harness.peers[peerIndex];
         if (!peer) {

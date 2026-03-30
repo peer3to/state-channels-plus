@@ -652,6 +652,16 @@ class StateManager {
             "joinChannel - promoted to PENDING_PARTICIPANT on broadcast"
         );
 
+        const joinSubmissionHeight =
+            this.storage.blocks.getNextBlockHeight(this.forkId) - 1;
+        this.storage.forceJoin.setJoinSubmissionBlockHeight(
+            joinSubmissionHeight
+        );
+        this.logger.info(
+            "joinChannel - recorded force join submission height",
+            { joinSubmissionHeight }
+        );
+
         try {
             const tx =
                 await this.stateChannelManagerContract.joinChannel(
@@ -663,6 +673,7 @@ class StateManager {
                 error: error instanceof Error ? error.message : String(error)
             });
             this.setStatus(Status.SYNCED);
+            this.storage.forceJoin.clear();
             throw error;
         }
     }
@@ -1864,6 +1875,24 @@ class StateManager {
         }));
     }
 
+    // Fires the force-join dispute exactly once when N turns have passed without the joiner being included
+    private async maybeInitiateForceJoinDispute(
+        block: Block,
+        participants: Address[]
+    ): Promise<void> {
+        const joinSubmissionHeight =
+            this.storage.forceJoin.getJoinSubmissionBlockHeight();
+        if (joinSubmissionHeight === undefined) return;
+        const N = participants.length + 1;
+        const fireOnBlockHeight = joinSubmissionHeight + N;
+        if (block.height !== fireOnBlockHeight) return;
+        this.logger.info(
+            "Force join dispute triggered: N turns passed without inclusion",
+            { N, forkId: this.forkId, blockHeight: block.height }
+        );
+        await this.disputeManager.dispute(this.forkId);
+    }
+
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
     private async tryTimeoutParticipant(
         forkId: ForkId,
@@ -2473,7 +2502,12 @@ class StateManager {
             const participants =
                 await this.diamondStateMachine.getParticipants();
             const isParticipant = participants.includes(this.signerAddress);
-            if (isParticipant) this.setStatus(Status.PARTICIPATING);
+            if (isParticipant) {
+                this.setStatus(Status.PARTICIPATING);
+                this.storage.forceJoin.clear();
+            } else if (this.status === Status.PENDING_PARTICIPANT) {
+                await this.maybeInitiateForceJoinDispute(block, participants);
+            }
         }
         // step 1 - Confirm and Gossip // TODO - quick hack - cleaner code later
         if (

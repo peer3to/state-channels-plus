@@ -1,13 +1,6 @@
 import { TestSession, PeerTestHarness } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
-import { SignatureUtils } from "@/utils";
-import Clock from "@/Clock";
-import type {
-    JoinChannelConfirmationStruct,
-    JoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import type { BytesLike } from "ethers";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -64,37 +57,16 @@ describe("E2E: Participant Lifecycle", function () {
             });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
-            // Build JoinChannelConfirmationStruct --------------------------
-            const jc: JoinChannelStruct = {
-                participant: spectator.address,
-                channelId: h.channelId,
-                balance: { amount: 500n, data: "0x00" },
-                deadlineTimestamp: BigInt(Clock.getTimeInSeconds() + 120)
-            };
-
-            // Joiner self-attestation
-            const joinerSigned = await SignatureUtils.signJoinChannel(
-                jc,
-                spectator.signer
+            const confirmation = await h.lifecycle.buildJoinChannelConfirmation(
+                {
+                    joiner: spectator,
+                    channelId: h.channelId,
+                    existingParticipantSigners: [
+                        h.peers[0].signer,
+                        h.peers[1].signer
+                    ]
+                }
             );
-
-            // Participant approvals
-            const [sig0, sig1] = await Promise.all([
-                SignatureUtils.signJoinChannel(jc, h.peers[0].signer),
-                SignatureUtils.signJoinChannel(jc, h.peers[1].signer)
-            ]);
-
-            const confirmation: JoinChannelConfirmationStruct = {
-                signedJoinChannel: {
-                    encodedJoinChannel: joinerSigned.encoded as BytesLike,
-                    signature: joinerSigned.signature as BytesLike
-                },
-                signatures: [
-                    sig0.signature as BytesLike,
-                    sig1.signature as BytesLike
-                ]
-            };
-            // --------------------------------------------------------------
 
             // Fire joinChannel WITHOUT awaiting — the synchronous portion of
             // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
