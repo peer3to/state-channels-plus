@@ -254,32 +254,39 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         }
 
         const stateManager = this.p2pManager.stateManager;
-        const isChannelOpenedStatus =
-            stateManager.getStatus() === Status.OPENED;
+        const localStatus = stateManager.getStatus();
         const isPeerParticipant =
-            await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
+            await stateManager.stateChannelManagerContract.canParticipateInDisputes(
                 stateManager.getChannelId(),
                 completedPeerAddress
             );
-        if (isChannelOpenedStatus) {
-            if (isPeerParticipant) {
-                this.logger.debug(
-                    `Initiating sync after handshake with peer ${completedPeerAddress}`
-                );
-                this.p2pManager.localRpc.spectateService.sync(
-                    completedPeerAddress,
-                    stateManager.getChannelId()
-                );
-            } else {
-                this.logger.debug(
-                    `Skipping sync after handshake with peer ${completedPeerAddress} - not a participant`
-                );
-            }
+        // Only pull state from on-chain participants when we are not already
+        // PARTICIPATING.
+        const channelOpen = localStatus !== Status.NOT_OPENED;
+        if (
+            channelOpen &&
+            isPeerParticipant &&
+            localStatus !== Status.PARTICIPATING
+        ) {
+            this.logger.debug(
+                `Initiating sync after handshake with peer ${completedPeerAddress}`
+            );
+            this.p2pManager.localRpc.spectateService.sync(
+                completedPeerAddress,
+                stateManager.getChannelId()
+            );
+        } else if (
+            channelOpen &&
+            (!isPeerParticipant || localStatus === Status.PARTICIPATING)
+        ) {
+            this.logger.debug(
+                `Skipping sync after handshake with peer ${completedPeerAddress} (isPeerParticipant=${isPeerParticipant}, localStatus=${Status[localStatus]})`
+            );
         }
 
         this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
             completedPeerAddress,
-            isChannelOpenedStatus
+            localStatus === Status.OPENED
         );
 
         // Allow guards to return early once handshake completes.

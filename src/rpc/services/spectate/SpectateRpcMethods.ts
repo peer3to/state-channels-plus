@@ -136,6 +136,7 @@ class SpectateServiceRpcMethods extends ARpcMethods {
 
             // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
             const stateManager = this.p2pManager.stateManager;
+            await stateManager.ensureLocalDiamondChainHistoryForSpectate();
             const diamondStateMachine = stateManager.diamondStateMachine;
 
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it

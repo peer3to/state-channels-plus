@@ -194,6 +194,69 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
+    describe("Spectator after dispute (persistSyncPayload / fork catch-up)", function () {
+        it("incremental build: spectator after dispute (persistSyncPayload)", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 10,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 5
+                }
+            });
+            expect(h.peers.length).to.equal(4);
+
+            await h.transition.advanceState({ count: 4 });
+            await h.assert.sync.blockHeight({ expectedHeight: 3 });
+
+            await h.addPeer();
+            await h.assert.sync.participantCount({
+                expectedCount: 4,
+                peerIndex: 4
+            });
+
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 2, 3, 4]
+            });
+
+            const preDisputeForkId = h.activeForkId!;
+            const maliciousPeerIndex = 0;
+            const honestParticipantIndices = [1, 2, 3];
+
+            h.event.resetEventSpies();
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.initiatedAndCommitedWait({
+                expectedCount: 1,
+                peersIndices: honestParticipantIndices,
+                timeoutMs: 15000,
+                nonInitiatorIgnoredIndices: [maliciousPeerIndex, 4]
+            });
+
+            await h.dispute.resolveDisputeWait({
+                honestPeerIndices: honestParticipantIndices,
+                forkSettleTimeoutMs: 90000,
+                disputesCommittedTimeoutMs: 30000
+            });
+
+            expect(preDisputeForkId).to.not.equal(
+                h.activeForkId,
+                "fork should change after dispute resolution"
+            );
+
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [1, 2, 3],
+                waitForFinalization: true
+            });
+
+            await h.addPeer(undefined, { statusTimeoutMs: 60000 });
+            expect(h.peers.length).to.equal(6);
+        });
+    });
+
     describe("block height 0 spectating", function () {
         it("should spectate successfully when joining at genesis state", async function () {
             const h = TestSession.getHarness();

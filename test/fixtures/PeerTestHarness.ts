@@ -695,6 +695,29 @@ export class PeerTestHarness<
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
 
+    /** Deepest honest chain on `forkId`, or `peers[0]` when still on genesis (no blocks). */
+    peerWithHighestBlock(forkId: ForkId): TestPeer {
+        const malicious = new Set(this.context.maliciousPeerIndices ?? []);
+        let best: TestPeer<TFactories> | undefined;
+        let bestHeight = Number.NEGATIVE_INFINITY;
+        for (const peer of this.peers) {
+            if (malicious.has(peer.index)) {
+                continue;
+            }
+            const latest =
+                peer.stateManager.storage.blocks.getLatestBlock(forkId);
+            const h = latest?.height;
+            if (h === undefined) {
+                continue;
+            }
+            if (h > bestHeight) {
+                bestHeight = h;
+                best = peer;
+            }
+        }
+        return best ?? this.peers[0];
+    }
+
     /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
     getPeersForTransitionSyncBarrier(): TestPeer<TFactories>[] {
         const exclude = new Set([

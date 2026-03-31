@@ -132,11 +132,12 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const forkId = _forkId || stateManager.forkId;
 
         // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
-        // We'll do all the computation on our local state. If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
+        // Anchor outbound block ranges to the same source the spectator uses in fetchAndPersistOnChainSnapshot
+        // (stateChannelManagerContract). LocalDiamond can lag or diverge slightly from RPC (e.g. late replay);
+        // using local getStateSnapshot here caused verifyOutboundMessageBlocks to fail against the verifier's chain snapshot.
 
-        // Get current on-chain snapshot to start the fork traversal
         const currentOnChainSnapshot = StateSnapshot.from(
-            await diamondStateMachine.localDiamondContract.getStateSnapshot(
+            await stateManager.stateChannelManagerContract.getStateSnapshot(
                 channelId
             )
         );
@@ -212,6 +213,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         if (currentForkId != forkId)
             throw new Error("Reduce and iterate didn't derive the latest fork");
 
+        // Re-fetch L1 head after walking dispute metadata. `stateSnapshots[channelId]`
+        // can still be on the **parent** fork after reduce commits until a participant
+        // submits `updateStateSnapshotFork`; local `forkId` is already the reduced fork.
+        // `outboundMessageBlocksUpToLatestGenesis` must bridge **new-fork genesis** (lower)
+        // to **this** L1 head (upper) — the same pair the spectator verifies in step 2.7
+        // using RPC `getStateSnapshot`, not `forkId === head.forkId`.
+        const resolvedOnChainSnapshot = StateSnapshot.from(
+            await stateManager.stateChannelManagerContract.getStateSnapshot(
+                channelId
+            )
+        );
+
         // -------- Collect what is needed to prove the latest possible state in the latest fork ---------
 
         // Get the latest fork genesis snapshot to include in the payload
@@ -235,7 +248,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const outboundMessageBlocksUpToLatestGenesis =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
                 upperBlockHash:
-                    currentOnChainSnapshot.latestOutboundMessageBlockHash,
+                    resolvedOnChainSnapshot.latestOutboundMessageBlockHash,
                 lowerBlockHash:
                     latestForkGenesisSnapshot.latestOutboundMessageBlockHash
             });
@@ -460,8 +473,15 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
         const localLatestBlock = storage.blocks.getLatestBlock(finalizedForkId);
         const localLatestHeight = localLatestBlock?.height ?? -1;
+        const syncStatus = this.p2pManager.stateManager.getStatus();
 
-        if (localLatestHeight >= finalizedHeight) {
+        // Height alone is not enough: a late joiner can already have matching block
+        // height in storage (e.g. gossip) while still OPENED; skipping would bypass
+        // setLatestState and never reach SYNCED.
+        if (
+            localLatestHeight >= finalizedHeight &&
+            syncStatus === Status.SYNCED
+        ) {
             this.logger.info(
                 "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
                 {
@@ -532,7 +552,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
-    public abort(peerAddress: string) {
+    public async abort(peerAddress: string) {
         // HandshakeCompletedGuard guarantees stable peer identity.
         // If we're not actively participating, treat this as a fatal sync failure.
         this.logger.warn(`Aborting spectate sync with peer ${peerAddress}`, {
@@ -540,6 +560,15 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             myStatus: Status[this.p2pManager.stateManager.getStatus()]
         });
         if (this.p2pManager.stateManager.getStatus() !== Status.PARTICIPATING) {
+            const st = this.p2pManager.stateManager.getStatus();
+            // Nodes still in OPENED have not finished first sync; L1 participant sets
+            // (canParticipateInDisputes / getSnapshotParticipants) can disagree with
+            // operational roles across fork transitions, so never partition the full mesh.
+            if (st === Status.OPENED) {
+                return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                    peerAddress
+                );
+            }
             this.p2pManager.disconnectAll();
             return;
         }

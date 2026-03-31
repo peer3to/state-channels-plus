@@ -12,6 +12,7 @@ export class AssertDisputeActions {
         /** If true, skip the check that non-honest peers did not initiate (e.g. when byzantine peer may receive its own broadcast). */
         allowByzantineInitiation?: boolean;
         initiatedWithAuditingData?: boolean;
+        nonInitiatorIgnoredIndices?: number[];
     }) {
         await this.initiatedWait(options);
         await this.committedWait(options);
@@ -23,12 +24,15 @@ export class AssertDisputeActions {
         /** If true, skip the check that non-honest peers did not initiate (e.g. when byzantine peer may receive its own broadcast). */
         allowByzantineInitiation?: boolean;
         initiatedWithAuditingData?: boolean;
+        /** Peers excluded from the "must not have initiated" assertion (e.g. malicious index, spectators). */
+        nonInitiatorIgnoredIndices?: number[];
     }): Promise<void> {
         const {
             peersIndices,
             timeoutMs = 5000,
             allowByzantineInitiation = false,
-            initiatedWithAuditingData
+            initiatedWithAuditingData,
+            nonInitiatorIgnoredIndices = []
         } = options || {};
 
         let peers = this.harness.getFilteredOrHonestPeers(peersIndices);
@@ -63,11 +67,13 @@ export class AssertDisputeActions {
             return;
         }
 
+        const ignoreNonInitiators = new Set(nonInitiatorIgnoredIndices);
         const nonInitiators = this.harness.peers.filter(
             (peer) => !peers.includes(peer)
         );
 
         for (const peer of nonInitiators) {
+            if (ignoreNonInitiators.has(peer.index)) continue;
             const count = this.harness.event.getEventCallCount(
                 peer.index,
                 "onInitiatingDispute"
