@@ -39,6 +39,31 @@ describe("E2E: Dispute Validation Pipeline", function () {
             });
             await h.dispute.resolveDisputeWait();
         });
+
+        it("should kill dispute and store DisputeInvalidStateProof when stateProof is empty but latestStateSnapshotHash is not genesis (no-calldata path)", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+
+            h.tamper.delayDisputeForPeers([0, 2]);
+
+            // Empty proof implies latest state is genesis; claiming a non-genesis hash is invalid.
+            h.tamper.stubConstructDispute(1, (dispute) => {
+                dispute.input.stateProof.milestones = [];
+                dispute.input.stateProof.signedBlocks = [];
+                dispute.input.latestStateSnapshotHash = hash("0x42");
+            });
+
+            await h.byzantine.submitInvalidStateTransitionBlock(2);
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof
+            });
+            await h.dispute.resolveDisputeWait();
+        });
     });
 
     describe("Verify State Proof (calldata path)", function () {
