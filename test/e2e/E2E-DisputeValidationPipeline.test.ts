@@ -55,6 +55,10 @@ describe("E2E: Dispute Validation Pipeline", function () {
 
             await h.byzantine.submitInvalidStateTransitionBlock(2);
 
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [1],
+                initiatedWithAuditingData: false
+            });
             await h.event.waitForPeers("onDisputeKilled", [0], 1, {
                 mode: "atLeast"
             });
@@ -147,6 +151,34 @@ describe("E2E: Dispute Validation Pipeline", function () {
 
             await h.byzantine.submitDoubleSignBlock(0);
 
+            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof
+            });
+            await h.dispute.resolveDisputeWait();
+        });
+
+        it("should kill dispute and store DisputeInvalidStateProof when stateProof is empty but latestStateSnapshotHash is not genesis (calldata path)", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath();
+
+            h.tamper.delayDisputeForPeers([0, 1]);
+
+            h.tamper.stubConstructDispute(3, (d) => {
+                d.input.stateProof.milestones = [];
+                d.input.stateProof.signedBlocks = [];
+                d.input.latestStateSnapshotHash = hash("0x42");
+            });
+
+            await h.byzantine.submitDoubleSignBlock(0);
+
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: true
+            });
             await h.event.waitForPeers("onDisputeKilled", [1], 1, {
                 mode: "atLeast"
             });
