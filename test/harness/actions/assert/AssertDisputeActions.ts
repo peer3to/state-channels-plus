@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 export class AssertDisputeActions {
     constructor(private readonly harness: PeerTestHarness) {}
@@ -10,6 +11,7 @@ export class AssertDisputeActions {
         peersIndices?: number[];
         /** If true, skip the check that non-honest peers did not initiate (e.g. when byzantine peer may receive its own broadcast). */
         allowByzantineInitiation?: boolean;
+        initiatedWithAuditingData?: boolean;
     }) {
         await this.initiatedWait(options);
         await this.committedWait(options);
@@ -20,11 +22,13 @@ export class AssertDisputeActions {
         timeoutMs?: number;
         /** If true, skip the check that non-honest peers did not initiate (e.g. when byzantine peer may receive its own broadcast). */
         allowByzantineInitiation?: boolean;
+        initiatedWithAuditingData?: boolean;
     }): Promise<void> {
         const {
             peersIndices,
             timeoutMs = 5000,
-            allowByzantineInitiation = false
+            allowByzantineInitiation = false,
+            initiatedWithAuditingData
         } = options || {};
 
         let peers = this.harness.getFilteredOrHonestPeers(peersIndices);
@@ -39,6 +43,21 @@ export class AssertDisputeActions {
             expectedCounts,
             timeoutMs
         );
+
+        if (initiatedWithAuditingData !== undefined) {
+            for (const peer of peers) {
+                const spy = peer.eventSpies.onInitiatingDispute;
+                expect(
+                    spy?.callCount,
+                    `Peer ${peer.index} should have onInitiatingDispute calls`
+                ).to.be.at.least(1);
+                const dispute = spy!.lastCall.args[1] as DisputeStruct;
+                expect(
+                    dispute.postedAuditingData,
+                    `Peer ${peer.index} dispute postedAuditingData`
+                ).to.equal(initiatedWithAuditingData);
+            }
+        }
 
         if (allowByzantineInitiation) {
             return;
