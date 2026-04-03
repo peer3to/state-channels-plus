@@ -2492,9 +2492,8 @@ class StateManager {
             strategy?: AValidationStrategy;
         }
     ): Promise<void> {
-        // step 9 - potentially change status: OPENED | SYNCED | PENDING_PARTICIPANT → PARTICIPATING
+        // step 9 - potentially change status:  SYNCED | PENDING_PARTICIPANT → PARTICIPATING
         if (
-            this.status === Status.OPENED ||
             this.status === Status.SYNCED ||
             this.status === Status.PENDING_PARTICIPANT
         ) {

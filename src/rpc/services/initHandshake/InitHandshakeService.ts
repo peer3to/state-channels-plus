@@ -256,7 +256,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         const stateManager = this.p2pManager.stateManager;
         const localStatus = stateManager.getStatus();
         const isPeerParticipant =
-            await stateManager.stateChannelManagerContract.canParticipateInDisputes(
+            await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
                 stateManager.getChannelId(),
                 completedPeerAddress
             );

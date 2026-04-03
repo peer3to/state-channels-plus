@@ -137,7 +137,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // using local getStateSnapshot here caused verifyOutboundMessageBlocks to fail against the verifier's chain snapshot.
 
         const currentOnChainSnapshot = StateSnapshot.from(
-            await stateManager.stateChannelManagerContract.getStateSnapshot(
+            await diamondStateMachine.localDiamondContract.getStateSnapshot(
                 channelId
             )
         );
@@ -213,18 +213,6 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         if (currentForkId != forkId)
             throw new Error("Reduce and iterate didn't derive the latest fork");
 
-        // Re-fetch L1 head after walking dispute metadata. `stateSnapshots[channelId]`
-        // can still be on the **parent** fork after reduce commits until a participant
-        // submits `updateStateSnapshotFork`; local `forkId` is already the reduced fork.
-        // `outboundMessageBlocksUpToLatestGenesis` must bridge **on-chain outbound head** (anchor)
-        // to **new-fork genesis outbound head** (tip). `getMessageBlocksInRange` walks backward
-        // from upper; upper must be the more recent hash
-        const resolvedOnChainSnapshot = StateSnapshot.from(
-            await stateManager.stateChannelManagerContract.getStateSnapshot(
-                channelId
-            )
-        );
-
         // -------- Collect what is needed to prove the latest possible state in the latest fork ---------
 
         // Get the latest fork genesis snapshot to include in the payload
@@ -250,7 +238,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 upperBlockHash:
                     latestForkGenesisSnapshot.latestOutboundMessageBlockHash,
                 lowerBlockHash:
-                    resolvedOnChainSnapshot.latestOutboundMessageBlockHash
+                    currentOnChainSnapshot.latestOutboundMessageBlockHash
             });
 
         const latestBlockHeight =
@@ -473,15 +461,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
         const localLatestBlock = storage.blocks.getLatestBlock(finalizedForkId);
         const localLatestHeight = localLatestBlock?.height ?? -1;
-        const syncStatus = this.p2pManager.stateManager.getStatus();
 
-        // Height alone is not enough: a late joiner can already have matching block
-        // height in storage (e.g. gossip) while still OPENED; skipping would bypass
-        // setLatestState and never reach SYNCED.
-        if (
-            localLatestHeight >= finalizedHeight &&
-            syncStatus === Status.SYNCED
-        ) {
+        if (localLatestHeight >= finalizedHeight) {
             this.logger.info(
                 "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
                 {
@@ -552,7 +533,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
-    public async abort(peerAddress: string) {
+    public abort(peerAddress: string) {
         // HandshakeCompletedGuard guarantees stable peer identity.
         // If we're not actively participating, treat this as a fatal sync failure.
         this.logger.warn(`Aborting spectate sync with peer ${peerAddress}`, {
@@ -560,15 +541,6 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             myStatus: Status[this.p2pManager.stateManager.getStatus()]
         });
         if (this.p2pManager.stateManager.getStatus() !== Status.PARTICIPATING) {
-            const st = this.p2pManager.stateManager.getStatus();
-            // Nodes still in OPENED have not finished first sync; L1 participant sets
-            // (canParticipateInDisputes / getSnapshotParticipants) can disagree with
-            // operational roles across fork transitions, so never partition the full mesh.
-            if (st === Status.OPENED) {
-                return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peerAddress
-                );
-            }
             this.p2pManager.disconnectAll();
             return;
         }

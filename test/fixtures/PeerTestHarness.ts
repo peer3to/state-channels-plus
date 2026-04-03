@@ -695,7 +695,6 @@ export class PeerTestHarness<
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
 
-    /** Deepest honest chain on `forkId`, or `peers[0]` when still on genesis (no blocks). */
     peerWithHighestBlock(forkId: ForkId): TestPeer {
         const malicious = new Set(this.context.maliciousPeerIndices ?? []);
         let best: TestPeer<TFactories> | undefined;
