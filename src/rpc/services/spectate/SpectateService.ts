@@ -132,9 +132,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const forkId = _forkId || stateManager.forkId;
 
         // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
-        // Anchor outbound block ranges to the same source the spectator uses in fetchAndPersistOnChainSnapshot
-        // (stateChannelManagerContract). LocalDiamond can lag or diverge slightly from RPC (e.g. late replay);
-        // using local getStateSnapshot here caused verifyOutboundMessageBlocks to fail against the verifier's chain snapshot.
+        // We'll do all the computation on our local state.
+        // If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
 
         const currentOnChainSnapshot = StateSnapshot.from(
             await diamondStateMachine.localDiamondContract.getStateSnapshot(
