@@ -199,10 +199,10 @@ describe("E2E: Spectate Service", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
                 timeConfig: {
-                    p2pTime: 10,
+                    p2pTime: 5,
                     agreementTime: 2,
                     chainFallbackTime: 2,
-                    evidenceTime: 5
+                    evidenceTime: 4
                 }
             });
 
@@ -222,8 +222,7 @@ describe("E2E: Spectate Service", function () {
             );
             await h.assert.dispute.initiatedAndCommitedWait({
                 expectedCount: 1,
-                peersIndices: honestPeerIndices,
-                nonInitiatorIgnoredIndices: [maliciousPeerIndex, 4]
+                peersIndices: honestPeerIndices
             });
 
             await h.dispute.resolveDisputeWait({
