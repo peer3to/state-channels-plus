@@ -136,7 +136,6 @@ class SpectateServiceRpcMethods extends ARpcMethods {
 
             // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
             const stateManager = this.p2pManager.stateManager;
-            await stateManager.ensureLocalDiamondChainHistoryForSpectate();
             const diamondStateMachine = stateManager.diamondStateMachine;
 
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
@@ -207,27 +206,29 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             // 2.6) verify final genesisSnapshot is correct -> abort otherwise
             // Three checks: forkId resolves to this snapshot, forkId == keccak256(snapshotData)
             // and encoded state matches the declared hash.
-            let isCorrectGenesis =
-                finalForkId == syncPayload.latestForkGenesisSnapshot.forkId;
-            isCorrectGenesis =
-                isCorrectGenesis &&
-                (await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
+            const finalForkIdMatchesGenesisForkId =
+                finalForkId === syncPayload.latestForkGenesisSnapshot.forkId;
+            const isGenesisValid =
+                await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
                     syncPayload.latestForkGenesisSnapshot
-                ));
-            isCorrectGenesis =
-                isCorrectGenesis &&
+                );
+            const stateHashMatch =
                 syncPayload.latestForkGenesisSnapshot.snapshotData
                     .stateMachineStateHash ===
-                    hash(syncPayload.latestForkGenesisEncodedState);
+                hash(syncPayload.latestForkGenesisEncodedState);
+            const isCorrectGenesis =
+                finalForkIdMatchesGenesisForkId &&
+                isGenesisValid &&
+                stateHashMatch;
+
             if (!isCorrectGenesis) return this.service.abort(peerAddress);
 
-            // 2.7) verify outboundMessageBlocks from final genesisSnapshot to onChainSnapshot
-            // generateSyncPayload collects blocks from genesis → onChain (genesis is earlier/from)
+            // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
             let areValidExitBlocks =
                 await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
                     syncPayload.outboundMessageBlocksUpToLatestGenesis,
-                    syncPayload.latestForkGenesisSnapshot.snapshotData,
-                    onChainSnapshot.snapshotData
+                    onChainSnapshot.snapshotData,
+                    syncPayload.latestForkGenesisSnapshot.snapshotData
                 );
             if (!areValidExitBlocks) return this.service.abort(peerAddress);
 

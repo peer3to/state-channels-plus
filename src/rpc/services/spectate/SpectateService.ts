@@ -216,9 +216,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // Re-fetch L1 head after walking dispute metadata. `stateSnapshots[channelId]`
         // can still be on the **parent** fork after reduce commits until a participant
         // submits `updateStateSnapshotFork`; local `forkId` is already the reduced fork.
-        // `outboundMessageBlocksUpToLatestGenesis` must bridge **new-fork genesis** (lower)
-        // to **this** L1 head (upper) — the same pair the spectator verifies in step 2.7
-        // using RPC `getStateSnapshot`, not `forkId === head.forkId`.
+        // `outboundMessageBlocksUpToLatestGenesis` must bridge **on-chain outbound head** (anchor)
+        // to **new-fork genesis outbound head** (tip). `getMessageBlocksInRange` walks backward
+        // from upper; upper must be the more recent hash
         const resolvedOnChainSnapshot = StateSnapshot.from(
             await stateManager.stateChannelManagerContract.getStateSnapshot(
                 channelId
@@ -248,9 +248,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const outboundMessageBlocksUpToLatestGenesis =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
                 upperBlockHash:
-                    resolvedOnChainSnapshot.latestOutboundMessageBlockHash,
+                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash,
                 lowerBlockHash:
-                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash
+                    resolvedOnChainSnapshot.latestOutboundMessageBlockHash
             });
 
         const latestBlockHeight =
