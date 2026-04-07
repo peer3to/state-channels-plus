@@ -1,6 +1,6 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
-import { Logger, sleep } from "@/utils";
+import { DetachedPromises, Logger, sleep } from "@/utils";
 import { MathStateMachine } from "@typechain-types/index";
 import { StateSnapshot } from "@/models";
 import { Status } from "@/types";
@@ -195,13 +195,7 @@ export class TransitionActions {
         });
     }
 
-    async participantLeave(
-        options?: TransitionOptions & {
-            waitForStatus?: boolean;
-            statusTimeoutMs?: number;
-            statusTimeoutMessage?: string;
-        }
-    ): Promise<number> {
+    async participantLeave(options?: TransitionOptions): Promise<number> {
         const leaver = await this.harness.query.getNextPeerToWrite();
         const leaverIndex = leaver.index;
 
@@ -213,19 +207,51 @@ export class TransitionActions {
             delayMs: options?.delayMs
         });
 
-        if (options?.waitForStatus ?? false) {
-            await this.harness.event.waitUntilPeerStatus(
-                leaverIndex,
-                Status.SYNCED,
-                {
-                    timeoutMs: options?.statusTimeoutMs ?? 15000,
-                    timeoutMessage:
-                        options?.statusTimeoutMessage ??
-                        "Exiting peer did not reach SYNCED after snapshot update"
-                }
-            );
-        }
+        return leaverIndex;
+    }
 
+    async participantLeaveWait(
+        options?: TransitionOptions & {
+            statusTimeoutMs?: number;
+            statusTimeoutMessage?: string;
+        }
+    ): Promise<number> {
+        const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
+            options ?? {};
+        const leaverIndex = await this.participantLeave(leaveOptions);
+        await this.harness.event.waitUntilPeerStatus(
+            leaverIndex,
+            Status.SYNCED,
+            {
+                timeoutMs: statusTimeoutMs ?? 15000,
+                timeoutMessage:
+                    statusTimeoutMessage ??
+                    "Exiting peer did not reach SYNCED after snapshot update"
+            }
+        );
+        return leaverIndex;
+    }
+
+    async participantLeaveDetached(
+        options?: TransitionOptions & {
+            statusTimeoutMs?: number;
+            statusTimeoutMessage?: string;
+        }
+    ): Promise<number> {
+        const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
+            options ?? {};
+        const leaverIndex = await this.participantLeave(leaveOptions);
+        const promise = this.harness.event.waitUntilPeerStatus(
+            leaverIndex,
+            Status.SYNCED,
+            {
+                timeoutMs: statusTimeoutMs ?? 15000,
+                timeoutMessage:
+                    statusTimeoutMessage ??
+                    "Exiting peer did not reach SYNCED after snapshot update"
+            }
+        );
+        DetachedPromises.collect(promise);
         return leaverIndex;
     }
 

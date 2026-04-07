@@ -25,9 +25,7 @@ describe("E2E: Participant Lifecycle", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
 
-            const leaverIndex = await h.transition.participantLeave({
-                waitForStatus: true
-            });
+            const leaverIndex = await h.transition.participantLeaveWait();
             expect(leaverIndex).to.equal(
                 2,
                 "expected peer 2 to leave given start(3,2) turn order"
@@ -50,7 +48,7 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.lifecycle.start(2);
 
-            const spectator = await h.join.addPeer({
+            const spectator = await h.join.addPeerWait({
                 statusTimeoutMs: 5000,
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });

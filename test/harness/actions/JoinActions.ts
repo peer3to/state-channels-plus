@@ -2,7 +2,11 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import hre from "hardhat";
 import { Signer, BytesLike } from "ethers";
 import { Status } from "@/types";
-import { LocalDiscoveryServer, SignatureUtils } from "@/utils";
+import {
+    DetachedPromises,
+    LocalDiscoveryServer,
+    SignatureUtils
+} from "@/utils";
 import {
     JoinChannelConfirmationStruct,
     JoinChannelStruct
@@ -55,15 +59,43 @@ export class JoinActions {
                 this.harness.channelId,
                 peer.address
             );
-
-            await this.harness.event.waitUntilPeerStatus(index, Status.SYNCED, {
-                timeoutMs: options?.statusTimeoutMs ?? 15000,
-                timeoutMessage:
-                    options?.statusTimeoutMessage ??
-                    `Spectator peer ${index} did not reach SYNCED after connect`
-            });
         }
 
+        return peer;
+    }
+
+    async addPeerWait(options?: AddPeerOptions): Promise<TestPeer> {
+        const peer = await this.addPeer(options);
+        if (this.harness.channelId) {
+            await this.harness.event.waitUntilPeerStatus(
+                peer.index,
+                Status.SYNCED,
+                {
+                    timeoutMs: options?.statusTimeoutMs ?? 15000,
+                    timeoutMessage:
+                        options?.statusTimeoutMessage ??
+                        `Spectator peer ${peer.index} did not reach SYNCED after connect`
+                }
+            );
+        }
+        return peer;
+    }
+
+    async addPeerDetached(options?: AddPeerOptions): Promise<TestPeer> {
+        const peer = await this.addPeer(options);
+        if (this.harness.channelId) {
+            const promise = this.harness.event.waitUntilPeerStatus(
+                peer.index,
+                Status.SYNCED,
+                {
+                    timeoutMs: options?.statusTimeoutMs ?? 15000,
+                    timeoutMessage:
+                        options?.statusTimeoutMessage ??
+                        `Spectator peer ${peer.index} did not reach SYNCED after connect`
+                }
+            );
+            DetachedPromises.collect(promise);
+        }
         return peer;
     }
 
