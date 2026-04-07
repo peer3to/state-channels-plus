@@ -195,7 +195,9 @@ export class TransitionActions {
         });
     }
 
-    async participantLeave(options?: TransitionOptions): Promise<number> {
+    private async participantLeave(
+        options?: TransitionOptions
+    ): Promise<number> {
         const leaver = await this.harness.query.getNextPeerToWrite();
         const leaverIndex = leaver.index;
 

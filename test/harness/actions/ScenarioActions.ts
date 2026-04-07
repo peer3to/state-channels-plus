@@ -68,7 +68,7 @@ export class ScenarioActions {
     //  5 blocks in this pre-setp, block height is 4
     async preDisputeSetupCalldataPath() {
         await this.preDisputeSetup(4);
-        await this.harness.transition.participantLeave();
+        await this.harness.transition.participantLeaveWait();
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],
             count: 2

@@ -30,7 +30,7 @@ export type BuildJoinChannelConfirmationParams = {
 export class JoinActions {
     constructor(private harness: PeerTestHarness) {}
 
-    async addPeer(options?: AddPeerOptions): Promise<TestPeer> {
+    private async addPeer(options?: AddPeerOptions): Promise<TestPeer> {
         if (!this.harness.canAddPeer) {
             throw new Error("Harness not initialized; call setup() first");
         }
