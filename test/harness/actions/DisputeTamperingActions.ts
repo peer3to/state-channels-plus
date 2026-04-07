@@ -25,6 +25,9 @@ export class DisputeTampering {
         dispute.input.disputeAuditingDataHash = hash("0x42");
         dispute.input.latestStateSnapshotHash = hash("0x43");
     }
+    static tamperInvalidStateProof(dispute: DisputeStruct): void {
+        dispute.input.latestStateSnapshotHash = hash("0x42");
+    }
 
     static tamperPartialAuditing(dispute: DisputeStruct): void {
         const tamperedStateProof = dispute.input.stateProof;

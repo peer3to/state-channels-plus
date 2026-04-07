@@ -2,7 +2,7 @@ import { ethers, ZeroHash } from "ethers";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash } from "@/utils";
 import Block from "@/models/Block";
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { TestSession, PeerTestHarness, DisputeTampering } from "@test/harness";
 import * as factory from "@test/factory";
 import { Hash } from "@/types/types";
 import Clock from "@/Clock";
@@ -23,9 +23,10 @@ describe("E2E: Dispute Validation Pipeline", function () {
 
             // Stub peer 1's dispute construction to corrupt latestStateSnapshotHash.
             // postedAuditingData remains false → no-calldata path.
-            h.tamper.stubConstructDispute(1, (dispute) => {
-                dispute.input.latestStateSnapshotHash = hash("0x42");
-            });
+            h.tamper.stubConstructDispute(
+                1,
+                DisputeTampering.tamperInvalidStateProof
+            );
 
             await h.byzantine.submitInvalidStateTransitionBlock(2);
 
@@ -114,9 +115,10 @@ describe("E2E: Dispute Validation Pipeline", function () {
             // Slow down peers 0, 1 so the stubbed dispute from peer 3 is uploaded first
             h.tamper.delayDisputeForPeers([0, 1]);
 
-            h.tamper.stubConstructDispute(3, (d) => {
-                d.input.latestStateSnapshotHash = hash("0x42");
-            });
+            h.tamper.stubConstructDispute(
+                3,
+                DisputeTampering.tamperInvalidStateProof
+            );
 
             await h.byzantine.submitDoubleSignBlock(0);
 
