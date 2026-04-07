@@ -391,13 +391,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         // check if we need to update the snapshot on the same fork
         if (syncPayload.milestoneSnapshots.length > 0) {
-            const anchor =
+            const lowerHash =
                 onChainSnapshot.snapshotData.latestOutboundMessageBlockHash;
 
             const outboundBlocksForSameFork =
                 await stateManager.diamondStateMachine.localDiamondContract.pruneOutboundMessageBlocks(
                     syncPayload.outboundMessageBlocksOfTheLatestFork,
-                    anchor
+                    lowerHash
                 );
             const snapshotCalldata = contractInterface.encodeFunctionData(
                 "updateStateSnapshotSameFork",
