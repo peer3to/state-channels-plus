@@ -79,6 +79,10 @@ describe("E2E: Participant Lifecycle", function () {
             // Wait for the tx to land on-chain
             await joinPromise;
 
+            // Ensure all honest peers have stored the inbound message before
+            // the block producer runs, so the join is included in the block
+            await h.assert.storage.honestPeersObserveInboundMessageWait();
+
             await h.transition.advanceState({ count: 1 });
 
             // Joiner is now PARTICIPATING — promoted inside success() when the first
