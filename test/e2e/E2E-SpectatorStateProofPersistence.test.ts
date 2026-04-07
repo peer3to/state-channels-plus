@@ -34,7 +34,7 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.assert.sync.blockHeight({ expectedHeight: 4 });
 
         // Join peer 4 as spectator (`addPeer` waits for SYNCED)
-        await h.addPeer();
+        await h.join.addPeer();
         // stays 3, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
@@ -61,7 +61,7 @@ describe("E2E: Join/Leave Sequence", function () {
         });
 
         // Join peer 5 as spectator
-        await h.addPeer();
+        await h.join.addPeer();
         // stays 2, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 2 });
         const spectatorIndices = [4, 5];

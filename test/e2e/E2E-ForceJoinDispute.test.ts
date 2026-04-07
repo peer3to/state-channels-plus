@@ -10,8 +10,7 @@ describe("E2E: Force Join Dispute", function () {
 
         await h.lifecycle.start(2, 2);
 
-        // Add peer 2 as spectator — waits for SYNCED
-        const joiner = await h.addPeer(undefined, {
+        const joiner = await h.join.addPeer({
             statusTimeoutMs: 5000,
             statusTimeoutMessage: "Joiner did not reach SYNCED"
         });
@@ -22,7 +21,7 @@ describe("E2E: Force Join Dispute", function () {
         const restoreInboundInclusion1 =
             h.byzantine.stubPendingInboundInclusion(1);
 
-        const confirmation = await h.lifecycle.buildJoinChannelConfirmation({
+        const confirmation = await h.join.buildJoinChannelConfirmation({
             joiner,
             channelId: h.channelId,
             existingParticipantSigners: [h.peers[0].signer, h.peers[1].signer]

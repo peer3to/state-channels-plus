@@ -9,7 +9,6 @@ import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import { MathStateMachine, StateChannelManagerProxy } from "@typechain-types";
 import { ForkId, ChannelId, Address, Hash } from "@/types/types";
-import { Status } from "@/types";
 
 import {
     createLogger,
@@ -26,6 +25,7 @@ import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
+import { JoinActions } from "@test/harness/actions/JoinActions";
 import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
 import { AssertActions } from "@test/harness";
@@ -94,6 +94,7 @@ export class PeerTestHarness<
 
     // action instances
     public readonly lifecycle!: LifecycleActions;
+    public readonly join!: JoinActions;
     public readonly transition!: TransitionActions;
     public readonly network!: NetworkController;
     public readonly assert!: AssertActions;
@@ -177,6 +178,7 @@ export class PeerTestHarness<
 
         // Initialize action instances
         this.lifecycle = new LifecycleActions(this, this.logger);
+        this.join = new JoinActions(this);
         this.transition = new TransitionActions(this, this.logger);
         this.network = new NetworkController(this, this.logger);
         this.assert = new AssertActions(this, this.logger);
@@ -251,52 +253,8 @@ export class PeerTestHarness<
         this.logger.updateSharedContext({ channelId: String(channelId) });
     }
 
-    /**
-     * Create a new peer after `setup()` has already run.
-     * If a channel is already open, connects to it and waits until that peer reaches `Status.SYNCED`
-     * (spectate path); the new node is appended to `peers` like any other harness peer.
-     */
-    public async addPeer(
-        signer?: Signer,
-        options?: { statusTimeoutMs?: number; statusTimeoutMessage?: string }
-    ): Promise<TestPeer<TFactories>> {
-        if (!this.channelManager || !this.sharedDeployTx) {
-            throw new Error("Harness not initialized; call setup() first");
-        }
-
-        const index = this.peers.length;
-        const signers = await hre.ethers.getSigners();
-        const resolvedSigner = signer ?? signers[index];
-        if (!resolvedSigner) {
-            throw new Error(
-                `No signer available to create peer at index ${index}`
-            );
-        }
-
-        await this.createPeer(index, resolvedSigner);
-        const peer = this.peers[index];
-        if (!peer) {
-            throw new Error(`Failed to create peer ${index}`);
-        }
-
-        // If a channel is already known, connect the new peer to it.
-        if (this.channelId) {
-            await peer.p2pInstance.p2pSigner.connectToChannel(this.channelId);
-            await LocalDiscoveryServer.connectToPeers(
-                peer.stateManager.p2pManager.self,
-                this.channelId,
-                peer.address
-            );
-
-            await this.event.waitUntilPeerStatus(index, Status.SYNCED, {
-                timeoutMs: options?.statusTimeoutMs ?? 15000,
-                timeoutMessage:
-                    options?.statusTimeoutMessage ??
-                    `Spectator peer ${index} did not reach SYNCED after connect`
-            });
-        }
-
-        return peer as TestPeer<TFactories>;
+    public get canAddPeer(): boolean {
+        return !!this.channelManager && !!this.sharedDeployTx;
     }
 
     private async deployContracts(): Promise<void> {
@@ -320,7 +278,7 @@ export class PeerTestHarness<
         this.channelManager = deployment.contract;
     }
 
-    private async createPeer(index: number, signer: Signer): Promise<void> {
+    public async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
 
         const peerLogger = createLogger(

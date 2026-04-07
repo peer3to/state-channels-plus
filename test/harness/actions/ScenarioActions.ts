@@ -106,7 +106,7 @@ export class ScenarioActions {
             count: initialTransitions
         });
         await this.harness.event.resetEventSpies();
-        await this.harness.addPeer();
+        await this.harness.join.addPeer();
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, 3]
         });

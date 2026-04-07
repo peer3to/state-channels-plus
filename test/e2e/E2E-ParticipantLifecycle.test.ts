@@ -50,23 +50,20 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.lifecycle.start(2);
 
-            // Add spectator — `addPeer` connects and waits for SYNCED
-            const spectator = await h.addPeer(undefined, {
+            const spectator = await h.join.addPeer({
                 statusTimeoutMs: 5000,
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
-            const confirmation = await h.lifecycle.buildJoinChannelConfirmation(
-                {
-                    joiner: spectator,
-                    channelId: h.channelId,
-                    existingParticipantSigners: [
-                        h.peers[0].signer,
-                        h.peers[1].signer
-                    ]
-                }
-            );
+            const confirmation = await h.join.buildJoinChannelConfirmation({
+                joiner: spectator,
+                channelId: h.channelId,
+                existingParticipantSigners: [
+                    h.peers[0].signer,
+                    h.peers[1].signer
+                ]
+            });
 
             // Fire joinChannel WITHOUT awaiting — the synchronous portion of
             // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
