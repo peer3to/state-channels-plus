@@ -402,7 +402,6 @@ describe("E2E: Dispute Validation Pipeline", function () {
                     fakeSlashedAddress
                 ];
             });
-            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
 
             await h.byzantine.submitForgedInboundMessageBlock(2);
 
