@@ -226,12 +226,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
 
+        const { lowerOutboundSnapshot, upperOutboundSnapshot } =
+            SpectateService.orderOutboundSnapshots(
+                currentOnChainSnapshot,
+                latestForkGenesisSnapshot
+            );
+
         const outboundMessageBlocksUpToLatestGenesis =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
                 upperBlockHash:
-                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash,
+                    upperOutboundSnapshot.latestOutboundMessageBlockHash,
                 lowerBlockHash:
-                    currentOnChainSnapshot.latestOutboundMessageBlockHash
+                    lowerOutboundSnapshot.latestOutboundMessageBlockHash
             });
 
         const latestBlockHeight =
@@ -515,6 +521,19 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
+    public static orderOutboundSnapshots(
+        a: StateSnapshot,
+        b: StateSnapshot
+    ): {
+        lowerOutboundSnapshot: StateSnapshot;
+        upperOutboundSnapshot: StateSnapshot;
+    } {
+        return a.latestOutboundMessageBlockHeight <=
+            b.latestOutboundMessageBlockHeight
+            ? { lowerOutboundSnapshot: a, upperOutboundSnapshot: b }
+            : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
+    }
+
     public abort(peerAddress: string) {
         // HandshakeCompletedGuard guarantees stable peer identity.
         // If we're not actively participating, treat this as a fatal sync failure.
