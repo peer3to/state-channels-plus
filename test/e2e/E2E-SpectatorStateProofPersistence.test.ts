@@ -86,18 +86,26 @@ describe("E2E: Join/Leave Sequence", function () {
             expectedCount: 1
         });
 
-        await h.dispute.resolveDisputeWait();
+        const { newForkId } = await h.dispute.resolveDisputeWait({
+            honestPeerIndices
+        });
 
-        const postDisputeForkId = h.activeForkId;
         expect(preDisputeForkId).to.not.equal(
-            postDisputeForkId,
+            newForkId,
             "Fork should have changed after dispute resolution"
         );
 
-        // spectators have movedto the new fork
         for (const i of spectatorIndices) {
+            // spectators disconnected from the channel when the dispute started
+            expect(
+                h.getPeer(i).stateManager.p2pManager.openConnections.length
+            ).to.equal(
+                0,
+                `spectator peer ${i} should have 0 open P2P connections after dispute`
+            );
+            // spectator should have stayes on the pre-dispute fork
             expect(h.getPeer(i).stateManager.forkId).to.equal(
-                postDisputeForkId,
+                preDisputeForkId,
                 `spectator peer ${i} should be on new fork`
             );
         }
