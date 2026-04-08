@@ -57,8 +57,18 @@ export class ScenarioActions {
         });
     }
 
-    async preDisputeSetup(peerCount: number = 3) {
-        await this.harness.lifecycle.timeoutSetup(peerCount, 2);
+    async preDisputeSetup(
+        peerCount: number = 3,
+        options?: {
+            timeConfig?: {
+                p2pTime?: number;
+                agreementTime?: number;
+                chainFallbackTime?: number;
+                evidenceTime?: number;
+            };
+        }
+    ) {
+        await this.harness.lifecycle.timeoutSetup(peerCount, 2, options);
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
@@ -66,8 +76,20 @@ export class ScenarioActions {
 
     // 4 peers, peer 2 is leaving, next turn is peer 1
     //  5 blocks in this pre-setp, block height is 4
-    async preDisputeSetupCalldataPath() {
-        await this.preDisputeSetup(4);
+    async preDisputeSetupCalldataPath(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        const timeConfig = {
+            evidenceTime: 6,
+            ...options?.timeConfig
+        };
+
+        await this.preDisputeSetup(4, { timeConfig, ...options });
         await this.harness.transition.participantLeaveDetached();
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],
@@ -78,7 +100,9 @@ export class ScenarioActions {
     }
 
     async preDisputeSetupDisconnectedPeer() {
-        await this.harness.lifecycle.timeoutSetup(4, 0);
+        await this.harness.lifecycle.timeoutSetup(4, 0, {
+            timeConfig: { evidenceTime: 6 }
+        });
         await this.harness.network.disconnectPeer(2);
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],

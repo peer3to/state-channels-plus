@@ -155,43 +155,6 @@ export class DisputeTamperingActions {
         this.logger.debug(`Restored constructDispute for peer ${peerIndex}`);
     }
 
-    /**
-     * Delays dispute initiation for the given peers so that another peer's
-     * dispute (e.g. a stubbed/tampered one) is uploaded first.
-    
-     */
-    delayDisputeForPeers(peerIndices: number[], delayMs: number = 2000): void {
-        for (const peerIndex of peerIndices) {
-            this.restoreDisputeDelay(peerIndex);
-
-            const peer = this.harness.getPeer(peerIndex);
-            const disputeManager = peer.stateManager.disputeManager;
-            const originalDispute = disputeManager.dispute.bind(disputeManager);
-
-            disputeManager.dispute = (forkId: ForkId) =>
-                sleep(delayMs).then(() => originalDispute(forkId));
-
-            this.disputeDelayRestoreByPeerIndex.set(peerIndex, () => {
-                disputeManager.dispute = originalDispute;
-            });
-
-            this.logger.debug(
-                `Delayed dispute for peer ${peerIndex} by ${delayMs}ms`
-            );
-        }
-    }
-
-    restoreDisputeDelay(peerIndex: number): void {
-        const restore = this.disputeDelayRestoreByPeerIndex.get(peerIndex);
-        if (!restore) {
-            return;
-        }
-
-        restore();
-        this.disputeDelayRestoreByPeerIndex.delete(peerIndex);
-        this.logger.debug(`Restored dispute delay for peer ${peerIndex}`);
-    }
-
     corruptValidatorSnapshotForBalanceInvariant(
         validatorPeerIndex: number,
         options?: { forkId?: ForkId }
