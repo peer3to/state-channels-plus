@@ -1,13 +1,6 @@
 import { TestSession, PeerTestHarness } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
-import { SignatureUtils } from "@/utils";
-import Clock from "@/Clock";
-import type {
-    JoinChannelConfirmationStruct,
-    JoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import type { BytesLike } from "ethers";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -22,8 +15,9 @@ PeerTestHarness.setDefaultLogLevel("error");
  * Covers:
  *   1. Exit path  — leaveChannel() → N/N snapshot after agreementTime (+ P2P signature window) →
  *                   exiter awaits receipt and becomes SYNCED; peers observe onStateSnapshotUpdated
- *   2. Join path  — PENDING_PARTICIPANT on broadcast; after join tx, peers sync then postSnapshot
- *                   so onStateSnapshotUpdated promotes the joiner to PARTICIPATING
+ *   2. Join path  — PENDING_PARTICIPANT on broadcast; once the first block whose
+ *                   resulting snapshot includes the joiner is processed (success()),
+ *                   the joiner is promoted to PARTICIPATING and starts signing.
  */
 describe("E2E: Participant Lifecycle", function () {
     describe("Exit path", function () {
@@ -31,23 +25,14 @@ describe("E2E: Participant Lifecycle", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
 
-            await h.transition.advanceState({
-                txFn: (c) => c.leaveChannel()
-            });
-
-            h.event.resetEventSpies();
-
-            await h.eventCountsBarrier.waitFor(
-                () => h.peers[2].stateManager.getStatus() === Status.SYNCED,
-                {
-                    timeoutMs: 15000,
-                    timeoutMessage:
-                        "Exiting peer did not reach SYNCED after snapshot update"
-                }
+            const leaverIndex = await h.transition.participantLeaveWait();
+            expect(leaverIndex).to.equal(
+                2,
+                "expected peer 2 to leave given start(3,2) turn order"
             );
 
             // Remaining participants are unaffected
-            const remaining = h.peers.filter((p) => p.index !== 2);
+            const remaining = h.peers.filter((p) => p.index !== leaverIndex);
             for (const p of remaining) {
                 expect(p.stateManager.getStatus()).to.equal(
                     Status.PARTICIPATING,
@@ -58,55 +43,25 @@ describe("E2E: Participant Lifecycle", function () {
     });
 
     describe("Join path", function () {
-        it("should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING after snapshot includes joiner", async function () {
+        it("should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block", async function () {
             const h = TestSession.getHarness();
 
             await h.lifecycle.start(2);
 
-            // Add spectator — connects but does NOT become a participant
-            const spectator = await h.addPeer();
-            await h.event.waitUntilEventOccurs("onConnection", 5000, [2]);
+            const spectator = await h.join.addPeerWait({
+                statusTimeoutMs: 5000,
+                statusTimeoutMessage: "Spectator did not reach SYNCED status"
+            });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
-            await h.eventCountsBarrier.waitFor(
-                () => spectator.stateManager.getStatus() === Status.SYNCED,
-                {
-                    timeoutMs: 5000,
-                    timeoutMessage: "Spectator did not reach SYNCED status"
-                }
-            );
-
-            // Build JoinChannelConfirmationStruct --------------------------
-            const jc: JoinChannelStruct = {
-                participant: spectator.address,
+            const confirmation = await h.join.buildJoinChannelConfirmation({
+                joiner: spectator,
                 channelId: h.channelId,
-                balance: { amount: 500n, data: "0x00" },
-                deadlineTimestamp: BigInt(Clock.getTimeInSeconds() + 120)
-            };
-
-            // Joiner self-attestation
-            const joinerSigned = await SignatureUtils.signJoinChannel(
-                jc,
-                spectator.signer
-            );
-
-            // Participant approvals
-            const [sig0, sig1] = await Promise.all([
-                SignatureUtils.signJoinChannel(jc, h.peers[0].signer),
-                SignatureUtils.signJoinChannel(jc, h.peers[1].signer)
-            ]);
-
-            const confirmation: JoinChannelConfirmationStruct = {
-                signedJoinChannel: {
-                    encodedJoinChannel: joinerSigned.encoded as BytesLike,
-                    signature: joinerSigned.signature as BytesLike
-                },
-                signatures: [
-                    sig0.signature as BytesLike,
-                    sig1.signature as BytesLike
+                existingParticipantSigners: [
+                    h.peers[0].signer,
+                    h.peers[1].signer
                 ]
-            };
-            // --------------------------------------------------------------
+            });
 
             // Fire joinChannel WITHOUT awaiting — the synchronous portion of
             // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
@@ -124,19 +79,17 @@ describe("E2E: Participant Lifecycle", function () {
             // Wait for the tx to land on-chain
             await joinPromise;
 
+            // Ensure all honest peers have stored the inbound message before
+            // the block producer runs, so the join is included in the block
+            await h.assert.storage.honestPeersObserveInboundMessageWait();
+
             await h.transition.advanceState({ count: 1 });
 
-            h.event.resetEventSpies();
-            await h.transition.postSnapshot({ peerIndex: 0 });
-
-            await h.eventCountsBarrier.waitFor(
-                () =>
-                    spectator.stateManager.getStatus() === Status.PARTICIPATING,
-                {
-                    timeoutMs: 15000,
-                    timeoutMessage:
-                        "Joiner did not reach PARTICIPATING after snapshot update"
-                }
+            // Joiner is now PARTICIPATING — promoted inside success() when the first
+            // block that includes them in the resulting participant set was processed.
+            expect(spectator.stateManager.getStatus()).to.equal(
+                Status.PARTICIPATING,
+                "Joiner should be PARTICIPATING after the first block that includes them"
             );
         });
     });

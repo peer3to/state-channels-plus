@@ -482,8 +482,8 @@ class DisputeManager {
         // inbound message blocks
         const inboundMessageBlocks =
             this.storage.inboundMessages.getMessageBlocksInRange({
-                fromBlockHash: options?.disputeLatestInboundMessageBlockHash,
-                toBlockHash:
+                upperBlockHash: options?.disputeLatestInboundMessageBlockHash,
+                lowerBlockHash:
                     latestStateSnapshot.snapshotData
                         .latestInboundMessageBlockHash
             });
@@ -491,10 +491,10 @@ class DisputeManager {
         // outbound message blocks
         const outboundMessageBlocks =
             this.storage.outboundMessages.getMessageBlocksInRange({
-                fromBlockHash:
+                upperBlockHash:
                     latestStateSnapshot.snapshotData
                         .latestOutboundMessageBlockHash,
-                toBlockHash:
+                lowerBlockHash:
                     genesisStateSnapshot.snapshotData
                         .latestOutboundMessageBlockHash
             });

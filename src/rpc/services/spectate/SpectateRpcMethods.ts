@@ -4,7 +4,7 @@ import SpectateService, { SyncRequest } from "./SpectateService";
 import { Bytes, ChannelId } from "@/types";
 import Clock from "@/Clock";
 import { Codec, hash, Type } from "@/utils";
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import type { DisputeWindowVerification } from "@/types";
 
 class SpectateServiceRpcMethods extends ARpcMethods {
@@ -204,39 +204,42 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             }
 
             // 2.6) verify final genesisSnapshot is correct -> abort otherwise
-            let isCorrectGenesis =
-                finalForkId == syncPayload.latestForkGenesisSnapshot.forkId;
-            isCorrectGenesis =
-                isCorrectGenesis &&
-                (await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
+            // Three checks: forkId resolves to this snapshot, forkId == keccak256(snapshotData)
+            // and encoded state matches the declared hash.
+            const finalForkIdMatchesGenesisForkId =
+                finalForkId === syncPayload.latestForkGenesisSnapshot.forkId;
+            const isGenesisValid =
+                await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
                     syncPayload.latestForkGenesisSnapshot
-                ));
-            const { isAvailable, timestamp: genesisTimestamp } =
-                await diamondStateMachine.localDiamondContract.getGenesisTimestamp(
-                    channelId,
-                    syncPayload.latestForkGenesisSnapshot.snapshotData
-                        .originForkId,
-                    finalForkId
                 );
-            isCorrectGenesis =
-                isCorrectGenesis &&
-                isAvailable &&
-                genesisTimestamp ==
-                    syncPayload.latestForkGenesisSnapshot.timestamp;
-            isCorrectGenesis =
-                isCorrectGenesis &&
+            const stateHashMatch =
                 syncPayload.latestForkGenesisSnapshot.snapshotData
                     .stateMachineStateHash ===
-                    hash(syncPayload.latestForkGenesisEncodedState);
+                hash(syncPayload.latestForkGenesisEncodedState);
+            const isCorrectGenesis =
+                finalForkIdMatchesGenesisForkId &&
+                isGenesisValid &&
+                stateHashMatch;
+
             if (!isCorrectGenesis) return this.service.abort(peerAddress);
 
-            // 2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot
+            // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
+            const genesisSnapshot = StateSnapshot.from(
+                syncPayload.latestForkGenesisSnapshot
+            );
+            const { lowerOutboundSnapshot, upperOutboundSnapshot } =
+                SpectateService.orderOutboundSnapshots(
+                    onChainSnapshot,
+                    genesisSnapshot
+                );
+
             let areValidExitBlocks =
                 await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
                     syncPayload.outboundMessageBlocksUpToLatestGenesis,
-                    onChainSnapshot.snapshotData,
-                    syncPayload.latestForkGenesisSnapshot.snapshotData
+                    lowerOutboundSnapshot.toStruct().snapshotData,
+                    upperOutboundSnapshot.toStruct().snapshotData
                 );
+
             if (!areValidExitBlocks) return this.service.abort(peerAddress);
 
             // 2.8) Depending are we syncing to the 'latest state' (spectating) or some requested state (forkId,blockHeight), verify that:
@@ -271,6 +274,20 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 syncPayload.milestoneSnapshots.length > 0
                     ? syncPayload.milestoneSnapshots.at(-1)!
                     : syncPayload.latestForkGenesisSnapshot;
+
+            // if the on-chain snapshot is on the same fork but more advanced
+            // than what peers proved → abort.
+            if (
+                onChainSnapshot.forkID ===
+                    syncPayload.latestForkGenesisSnapshot.forkId &&
+                onChainSnapshot.blockHeight >
+                    Number(latestFinalizedSnapshot.blockHeight)
+            ) {
+                this.service.logger.debug(
+                    `onSpectateResponse - on-chain block height (${onChainSnapshot.blockHeight}) exceeds proved height (${Number(latestFinalizedSnapshot.blockHeight)}); aborting`
+                );
+                return this.service.abort(peerAddress);
+            }
 
             if (
                 latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=

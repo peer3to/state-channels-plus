@@ -1,6 +1,7 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { EventSpies } from "../core/types";
 import { Logger } from "@/utils";
+import { Status } from "@/types";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -121,6 +122,28 @@ export class EventActions {
             timeoutMs,
             timeoutMessage: `Event ${String(eventName)} did not occur within ${timeoutMs}ms`
         });
+    }
+
+    async waitUntilPeerStatus(
+        peerIndex: number,
+        expectedStatus: Status,
+        options?: { timeoutMs?: number; timeoutMessage?: string }
+    ): Promise<void> {
+        const peer = this.harness.getPeer(peerIndex);
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+        const { timeoutMs = 15000, timeoutMessage } = options ?? {};
+        const statusName = Status[expectedStatus] ?? String(expectedStatus);
+        await this.harness.eventCountsBarrier.waitFor(
+            () => peer.stateManager.getStatus() === expectedStatus,
+            {
+                timeoutMs,
+                timeoutMessage:
+                    timeoutMessage ??
+                    `Peer ${peerIndex} did not reach ${statusName} within ${timeoutMs}ms`
+            }
+        );
     }
 
     async waitForAllPeers(

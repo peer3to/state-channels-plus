@@ -126,9 +126,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const forkId = _forkId || stateManager.forkId;
 
         // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
-        // We'll do all the computation on our local state. If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
+        // We'll do all the computation on our local state.
+        // If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
 
-        // Get current on-chain snapshot to start the fork traversal
         const currentOnChainSnapshot = StateSnapshot.from(
             await diamondStateMachine.localDiamondContract.getStateSnapshot(
                 channelId
@@ -226,12 +226,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
 
+        const { lowerOutboundSnapshot, upperOutboundSnapshot } =
+            SpectateService.orderOutboundSnapshots(
+                currentOnChainSnapshot,
+                latestForkGenesisSnapshot
+            );
+
         const outboundMessageBlocksUpToLatestGenesis =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                fromBlockHash:
-                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash,
-                toBlockHash:
-                    currentOnChainSnapshot.latestOutboundMessageBlockHash
+                upperBlockHash:
+                    upperOutboundSnapshot.latestOutboundMessageBlockHash,
+                lowerBlockHash:
+                    lowerOutboundSnapshot.latestOutboundMessageBlockHash
             });
 
         const latestBlockHeight =
@@ -281,9 +287,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         const outboundMessageBlocksOfTheLatestFork =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                fromBlockHash:
+                upperBlockHash:
                     latestFinalizedSnapshot.latestOutboundMessageBlockHash,
-                toBlockHash:
+                lowerBlockHash:
                     latestForkGenesisSnapshot.latestOutboundMessageBlockHash
             });
         // Return payload with all available data
@@ -391,13 +397,21 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         // check if we need to update the snapshot on the same fork
         if (syncPayload.milestoneSnapshots.length > 0) {
+            const lowerHash =
+                onChainSnapshot.snapshotData.latestOutboundMessageBlockHash;
+
+            const outboundBlocksForSameFork =
+                await stateManager.diamondStateMachine.localDiamondContract.pruneOutboundMessageBlocks(
+                    syncPayload.outboundMessageBlocksOfTheLatestFork,
+                    lowerHash
+                );
             const snapshotCalldata = contractInterface.encodeFunctionData(
                 "updateStateSnapshotSameFork",
                 [
                     channelId,
                     syncPayload.stateProof.milestones,
                     syncPayload.milestoneSnapshots,
-                    syncPayload.outboundMessageBlocksOfTheLatestFork
+                    outboundBlocksForSameFork
                 ]
             );
             calldata.push(snapshotCalldata);
@@ -507,6 +521,19 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
+    public static orderOutboundSnapshots(
+        a: StateSnapshot,
+        b: StateSnapshot
+    ): {
+        lowerOutboundSnapshot: StateSnapshot;
+        upperOutboundSnapshot: StateSnapshot;
+    } {
+        return a.latestOutboundMessageBlockHeight <=
+            b.latestOutboundMessageBlockHeight
+            ? { lowerOutboundSnapshot: a, upperOutboundSnapshot: b }
+            : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
+    }
+
     public abort(peerAddress: string) {
         // HandshakeCompletedGuard guarantees stable peer identity.
         // If we're not actively participating, treat this as a fatal sync failure.
@@ -516,6 +543,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         });
         if (this.p2pManager.stateManager.getStatus() !== Status.PARTICIPATING) {
             this.p2pManager.disconnectAll();
+            void this.p2pManager.stateManager.stateChannelEventListener.dispose();
             return;
         }
 

@@ -10,64 +10,56 @@ PeerTestHarness.setDefaultLogLevel("debug");
 describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating fraud proofs", function () {
     it("onBlockConfirmation pipeline: doubleSignDetected creates dispute with BlockDoubleSign", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
         const maliciousPeerIndex = 1;
         await h.byzantine.submitDoubleSignBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockDoubleSign,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({
-            maliciousPeerIndex
-        });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("onBlockConfirmation pipeline: wrongGenesisDetected creates dispute with WrongGenesis", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 2, { waitForFinalization: true });
+        await h.lifecycle.start(3, 2);
 
         // Peer 2 submits a competing block at height 0 with a wrong previousBlockHash.
         const maliciousPeerIndex = 2;
         await h.byzantine.submitWrongGenesisBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.WrongGenesis,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it.skip("onBlockConfirmation pipeline: invalidStateTransitionDetected (unexpected next leader) creates dispute with BlockInvalidStateTransition", async function () {
+    it("onBlockConfirmation pipeline: invalidStateTransitionDetected (unexpected next leader) creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);
 
         const maliciousPeerIndex = 1; // NOT the expected next leader
         await h.byzantine.submitUnexpectedNextLeaderBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it.skip("onBlockConfirmation pipeline: objectiveInvalidTimestampDetected creates dispute with InvalidTimestamp", async function () {
+    it("onBlockConfirmation pipeline: objectiveInvalidTimestampDetected creates dispute with InvalidTimestamp", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -76,21 +68,17 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitInvalidTimestampBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.InvalidTimestamp,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    // fails
-    // Error: Peer 0 has no fraud proofs for malicious peer 2
-    it.skip("onBlockConfirmation pipeline: findBrokenInboundMessageChainBlock creates dispute with BlockInvalidStateTransition", async function () {
+    it("onBlockConfirmation pipeline: findBrokenInboundMessageChainBlock creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -101,21 +89,17 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitBrokenInboundChainBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    // fails
-    // Error: Peer 0 has no fraud proofs for malicious peer 2
-    it.skip("onBlockConfirmation pipeline: forgedInboundMessageBlockDetected creates dispute with ForgedInboundMessageBlock", async function () {
+    it("onBlockConfirmation pipeline: forgedInboundMessageBlockDetected creates dispute with ForgedInboundMessageBlock", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -126,20 +110,17 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitForgedInboundMessageBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.ForgedInboundMessageBlock,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
-    // fails
-    // Error: Peer 0 has no fraud proofs for malicious peer 2
-    it.skip("onBlockConfirmation pipeline: applyTransaction failure creates dispute with BlockInvalidStateTransition", async function () {
+
+    it("onBlockConfirmation pipeline: applyTransaction failure creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -149,21 +130,17 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitInvalidTransactionDataBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    // fails
-    // Error: Peer 0 has no fraud proofs for malicious peer 2
-    it.skip("onBlockConfirmation pipeline: stateSnapshotHash mismatch creates dispute with BlockInvalidStateTransition", async function () {
+    it("onBlockConfirmation pipeline: stateSnapshotHash mismatch creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -172,15 +149,15 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait({ maliciousPeerIndex });
+        await h.assert.storage.storedDisputeConfirmationsWait();
+
+        await h.dispute.resolveDisputeWait();
         await h.assert.sync.onlyHonestPeersInSync();
     });
 });

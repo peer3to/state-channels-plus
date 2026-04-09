@@ -43,6 +43,7 @@ contract FraudProofFacet is StateChannelCommon {
         if (proofType == FraudProofType.BlockDoubleSign) return _handleBlockDoubleSign;
         if (proofType == FraudProofType.BlockInvalidStateTransition) return _handleBlockInvalidStateTransition;
         if (proofType == FraudProofType.WrongGenesis) return _handleWrongGenesis;
+        if (proofType == FraudProofType.InvalidTimestamp) return _handleInvalidTimestamp;
         if (proofType == FraudProofType.ForgedInboundMessageBlock) return _handleForgedInboundMessageBlock;
         return _handleInvalidFraudProofType;
     }
@@ -200,6 +201,72 @@ contract FraudProofFacet is StateChannelCommon {
         } // valid state transition
 
         return _valid(signer);
+    }
+
+    function _handleInvalidTimestamp(
+        FraudProof memory fraudProof,
+        FraudProofVerificationContext memory fraudProofVerificationContext
+    ) internal view returns (address) {
+        InvalidTimestampProof memory proof = abi.decode(fraudProof.encodedProof, (InvalidTimestampProof));
+
+        if (!isBlockAuthentic(proof.invalidBlock)) return _invalid();
+        Block memory fraudBlock = abi.decode(proof.invalidBlock.encodedBlock, (Block));
+        if (fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
+            return _invalid();
+        }
+
+        uint256 previousTimestamp;
+
+        if (fraudBlock.transaction.header.transactionCnt == 0) {
+            StateSnapshot memory previousStateSnapshot = proof.previousStateSnapshot;
+            if (fraudBlock.previousBlockHash != keccak256(abi.encode(previousStateSnapshot))) {
+                return _invalid();
+            }
+            previousTimestamp = previousStateSnapshot.timestamp;
+        } else {
+            if (!isBlockAuthentic(proof.previousBlock)) return _invalid();
+            Block memory previousBlock = abi.decode(proof.previousBlock.encodedBlock, (Block));
+            if (fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))) return _invalid();
+            previousTimestamp = previousBlock.transaction.header.timestamp;
+        }
+
+        uint256 relevantTimestamp = previousTimestamp;
+
+        if (fraudBlock.transaction.header.transactionCnt > 0) {
+            address fraudBlockAuthor = fraudBlock.transaction.header.participant;
+            bool hasForfeitedRightToExtraTime = false;
+
+            if (proof.participantSignatureOnPreviousBlock.length > 0) {
+                (address signerAddress, bool isValid) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+                    proof.previousBlock.encodedBlock, proof.participantSignatureOnPreviousBlock
+                );
+                if (signerAddress == fraudBlockAuthor && isValid) hasForfeitedRightToExtraTime = true;
+            }
+
+            if (!hasForfeitedRightToExtraTime) {
+                Block memory prevBlock = abi.decode(proof.previousBlock.encodedBlock, (Block));
+                bytes32 forkId = fraudBlock.transaction.header.forkId;
+                (bool found, bytes32 commitment) = getBlockCallDataCommitment(
+                    fraudProofVerificationContext.channelId,
+                    forkId,
+                    prevBlock.transaction.header.transactionCnt,
+                    prevBlock.transaction.header.participant
+                );
+                if (found) {
+                    if (proof.previousBlockOnChainTimestamp == 0) return _invalid();
+                    bytes32 _commitment =
+                        keccak256(abi.encode(proof.previousBlock, proof.previousBlockOnChainTimestamp));
+                    if (commitment != _commitment) return _invalid();
+                    relevantTimestamp = proof.previousBlockOnChainTimestamp;
+                }
+            }
+        }
+
+        bool isValidTimestamp = fraudBlock.transaction.header.timestamp >= previousTimestamp
+            && fraudBlock.transaction.header.timestamp <= relevantTimestamp + getP2pTime();
+
+        if (isValidTimestamp) return _invalid();
+        return _valid(fraudBlock.transaction.header.participant);
     }
 
     function _handleWrongGenesis(FraudProof memory fraudProof, FraudProofVerificationContext memory)

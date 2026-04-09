@@ -110,13 +110,15 @@ export class StateQueryActions {
      */
     async getNextPeerToWrite(): Promise<TestPeer> {
         try {
-            // Find the first participating peer to query
-            const participatingPeer = this.harness.peers.find(
-                (peer) => peer.stateManager.getStatus() === Status.PARTICIPATING
-            )!;
+            const forkId = this.harness.activeForkId;
+            if (!forkId) {
+                throw new Error("getNextPeerToWrite: no active fork ID");
+            }
+
+            const sourcePeer = this.harness.peerWithHighestBlock(forkId);
 
             const nextAddress =
-                await participatingPeer.stateManager.diamondStateMachine.getNextToWrite();
+                await sourcePeer.stateManager.diamondStateMachine.getNextToWrite();
 
             this.logger.verbose(`getNextPeerToWrite returned: ${nextAddress}`);
 
@@ -129,10 +131,10 @@ export class StateQueryActions {
                 const peerAddresses = this.harness.peers.map((p) => p.address);
 
                 const latestBlock =
-                    participatingPeer.stateManager.storage.blocks.getLatestBlock(
+                    sourcePeer.stateManager.storage.blocks.getLatestBlock(
                         this.harness.activeForkId!
                     );
-                const forkId = participatingPeer.stateManager.forkId;
+                const forkIdForDiag = sourcePeer.stateManager.forkId;
 
                 // Check participants on all peers for diagnostics
                 const participantStates = await Promise.all(
@@ -148,7 +150,7 @@ export class StateQueryActions {
                 );
 
                 throw new Error(
-                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${forkId}, StateHash: ${stateHash ?? "none"}, LatestBlockHeight: ${latestBlock?.height ?? "none"}. Participant states: ${participantStates.join(", ")}`
+                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${forkIdForDiag}, StateHash: ${stateHash ?? "none"}, LatestBlockHeight: ${latestBlock?.height ?? "none"}. Participant states: ${participantStates.join(", ")}`
                 );
             }
 

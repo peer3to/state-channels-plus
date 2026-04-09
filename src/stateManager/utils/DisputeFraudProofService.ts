@@ -218,9 +218,12 @@ export default class DisputeFraudProofService {
         });
     }
 
-    createInvalidDisputeReason(dispute: DisputeStruct): Hash {
+    createInvalidDisputeReason(
+        dispute: DisputeStruct,
+        latestStateSnapshot: StateSnapshotStruct
+    ): Hash {
         const proof: InvalidDisputeReasonStruct = {
-            __: false
+            latestStateSnapshot
         };
 
         return this.storeFraudProof(dispute, {

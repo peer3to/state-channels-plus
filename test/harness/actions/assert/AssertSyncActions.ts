@@ -232,12 +232,14 @@ export class AssertSyncActions {
     }
 
     async onlyHonestPeersInSync(): Promise<void> {
-        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
-        if (!honestIndices || honestIndices.length === 0) {
-            throw new Error("No honest peers found");
+        const indices = this.harness
+            .getPeersForTransitionSyncBarrier()
+            .map((p) => p.index);
+        if (!indices || indices.length === 0) {
+            throw new Error("No peers for transition sync barrier");
         }
 
-        await this.peersInSyncWait({ peerIndices: honestIndices });
+        await this.peersInSyncWait({ peerIndices: indices });
     }
 
     async maliciousPeerExcluded(): Promise<void> {
@@ -315,5 +317,32 @@ export class AssertSyncActions {
         const participants =
             await peer.stateManager.diamondStateMachine.getParticipants();
         expect(participants.length).to.equal(expectedCount);
+    }
+
+    async spectatorNoTransportToPeersWait(options: {
+        spectatorPeerIndex: number;
+        peerIndices: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { spectatorPeerIndex, peerIndices, timeoutMs = 15000 } = options;
+
+        await this.harness.disconnectionBarrier.waitFor(
+            () =>
+                peerIndices.every(
+                    (i) =>
+                        this.harness.query.getTransport(
+                            spectatorPeerIndex,
+                            i
+                        ) === undefined &&
+                        this.harness.query.getTransport(
+                            i,
+                            spectatorPeerIndex
+                        ) === undefined
+                ),
+            {
+                timeoutMs,
+                timeoutMessage: `Spectator ${spectatorPeerIndex} should have no transport to/from peers [${peerIndices.join(", ")}] within ${timeoutMs}ms`
+            }
+        );
     }
 }

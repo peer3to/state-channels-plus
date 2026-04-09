@@ -261,6 +261,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                 stateManager.getChannelId(),
                 completedPeerAddress
             );
+
         if (isChannelOpenedStatus) {
             if (isPeerParticipant) {
                 this.logger.debug(

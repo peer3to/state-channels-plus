@@ -1,8 +1,9 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
-import { Logger, sleep } from "@/utils";
+import { DetachedPromises, Logger, sleep } from "@/utils";
 import { MathStateMachine } from "@typechain-types/index";
 import { StateSnapshot } from "@/models";
+import { Status } from "@/types";
 
 export type TransitionContract = MathStateMachine;
 
@@ -124,12 +125,14 @@ export class TransitionActions {
         txFn: (contract: TransitionContract) => Promise<any>,
         options?: { waitForSync?: boolean }
     ): Promise<void> {
-        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
+        const syncIndices = this.harness
+            .getPeersForTransitionSyncBarrier()
+            .map((p) => p.index);
 
         // waitForPeers limits who we barrier on, but we still want union finalization on those peers.
         await this.submitNext(txFn, {
             waitForTurn: true,
-            waitForPeers: honestIndices,
+            waitForPeers: syncIndices,
             waitForSync: options?.waitForSync ?? true,
             waitForFinalization: true
         });
@@ -138,8 +141,10 @@ export class TransitionActions {
     async sequenceFromHonestPeers(
         txFns: Array<(contract: TransitionContract) => Promise<any>>
     ): Promise<void> {
-        const honestIndices = this.harness.getHonestPeers().map((p) => p.index);
-        if (!honestIndices) {
+        const syncIndices = this.harness
+            .getPeersForTransitionSyncBarrier()
+            .map((p) => p.index);
+        if (!syncIndices) {
             throw new Error(
                 "honestPeerIndices not set - resolve dispute context first"
             );
@@ -148,7 +153,7 @@ export class TransitionActions {
         for (const txFn of txFns) {
             await this.submitNext(txFn, {
                 waitForTurn: true,
-                waitForPeers: honestIndices,
+                waitForPeers: syncIndices,
                 waitForSync: true,
                 // Same as fromHonestPeersOnly: filtered barrier, full finalization on waited peers.
                 waitForFinalization: true
@@ -190,6 +195,68 @@ export class TransitionActions {
         });
     }
 
+    private async participantLeave(
+        options?: TransitionOptions
+    ): Promise<number> {
+        const leaver = await this.harness.query.getNextPeerToWrite();
+        const leaverIndex = leaver.index;
+
+        await this.submitNext((c) => c.leaveChannel(), {
+            waitForTurn: true,
+            waitForSync: options?.waitForSync ?? true,
+            waitForPeers: options?.waitForPeers,
+            waitForFinalization: options?.waitForFinalization ?? true,
+            delayMs: options?.delayMs
+        });
+
+        return leaverIndex;
+    }
+
+    async participantLeaveWait(
+        options?: TransitionOptions & {
+            statusTimeoutMs?: number;
+            statusTimeoutMessage?: string;
+        }
+    ): Promise<number> {
+        const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
+            options ?? {};
+        const leaverIndex = await this.participantLeave(leaveOptions);
+        await this.harness.event.waitUntilPeerStatus(
+            leaverIndex,
+            Status.SYNCED,
+            {
+                timeoutMs: statusTimeoutMs ?? 15000,
+                timeoutMessage:
+                    statusTimeoutMessage ??
+                    "Exiting peer did not reach SYNCED after snapshot update"
+            }
+        );
+        return leaverIndex;
+    }
+
+    async participantLeaveDetached(
+        options?: TransitionOptions & {
+            statusTimeoutMs?: number;
+            statusTimeoutMessage?: string;
+        }
+    ): Promise<number> {
+        const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
+            options ?? {};
+        const leaverIndex = await this.participantLeave(leaveOptions);
+        const promise = this.harness.event.waitUntilPeerStatus(
+            leaverIndex,
+            Status.SYNCED,
+            {
+                timeoutMs: statusTimeoutMs ?? 15000,
+                timeoutMessage:
+                    statusTimeoutMessage ??
+                    "Exiting peer did not reach SYNCED after snapshot update"
+            }
+        );
+        DetachedPromises.collect(promise);
+        return leaverIndex;
+    }
+
     /**
      * Submit a transaction from a specific peer
      */
@@ -218,9 +285,10 @@ export class TransitionActions {
                 peer.stateManager.storage.blocks.getLatestBlock(forkId);
             const minHeight = authorLatestBlock?.height;
 
-            const peers = this.harness.getFilteredOrHonestPeers(
-                options.waitForPeers
-            );
+            const peers =
+                options.waitForPeers !== undefined
+                    ? this.harness.getFilteredPeers(options.waitForPeers)
+                    : this.harness.getPeersForTransitionSyncBarrier();
             const waitForFinalization = effectiveWaitForFinalization(options);
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,

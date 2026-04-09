@@ -25,6 +25,7 @@ import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
 import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
+import { JoinActions } from "@test/harness/actions/JoinActions";
 import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
 import { AssertActions } from "@test/harness";
@@ -93,6 +94,7 @@ export class PeerTestHarness<
 
     // action instances
     public readonly lifecycle!: LifecycleActions;
+    public readonly join!: JoinActions;
     public readonly transition!: TransitionActions;
     public readonly network!: NetworkController;
     public readonly assert!: AssertActions;
@@ -176,6 +178,7 @@ export class PeerTestHarness<
 
         // Initialize action instances
         this.lifecycle = new LifecycleActions(this, this.logger);
+        this.join = new JoinActions(this);
         this.transition = new TransitionActions(this, this.logger);
         this.network = new NetworkController(this, this.logger);
         this.assert = new AssertActions(this, this.logger);
@@ -250,41 +253,8 @@ export class PeerTestHarness<
         this.logger.updateSharedContext({ channelId: String(channelId) });
     }
 
-    /**
-     * Create a new peer after `setup()` has already run.
-     * If a channel is already open (i.e. `this.channelId` is set), the peer is also connected to that channel.
-     */
-    public async addPeer(signer?: Signer): Promise<TestPeer<TFactories>> {
-        if (!this.channelManager || !this.sharedDeployTx) {
-            throw new Error("Harness not initialized; call setup() first");
-        }
-
-        const index = this.peers.length;
-        const signers = await hre.ethers.getSigners();
-        const resolvedSigner = signer ?? signers[index];
-        if (!resolvedSigner) {
-            throw new Error(
-                `No signer available to create peer at index ${index}`
-            );
-        }
-
-        await this.createPeer(index, resolvedSigner);
-        const peer = this.peers[index];
-        if (!peer) {
-            throw new Error(`Failed to create peer ${index}`);
-        }
-
-        // If a channel is already known, connect the new peer to it.
-        if (this.channelId) {
-            await peer.p2pInstance.p2pSigner.connectToChannel(this.channelId);
-            await LocalDiscoveryServer.connectToPeers(
-                peer.stateManager.p2pManager.self,
-                this.channelId,
-                peer.address
-            );
-        }
-
-        return peer as TestPeer<TFactories>;
+    public get canAddPeer(): boolean {
+        return !!this.channelManager && !!this.sharedDeployTx;
     }
 
     private async deployContracts(): Promise<void> {
@@ -308,7 +278,7 @@ export class PeerTestHarness<
         this.channelManager = deployment.contract;
     }
 
-    private async createPeer(index: number, signer: Signer): Promise<void> {
+    public async createPeer(index: number, signer: Signer): Promise<void> {
         const address = await signer.getAddress();
 
         const peerLogger = createLogger(
@@ -682,6 +652,38 @@ export class PeerTestHarness<
         ]);
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
+
+    peerWithHighestBlock(forkId: ForkId): TestPeer {
+        const malicious = new Set(this.context.maliciousPeerIndices ?? []);
+        let best: TestPeer<TFactories> | undefined;
+        let bestHeight = Number.NEGATIVE_INFINITY;
+        for (const peer of this.peers) {
+            if (malicious.has(peer.index)) {
+                continue;
+            }
+            const latest =
+                peer.stateManager.storage.blocks.getLatestBlock(forkId);
+            const h = latest?.height;
+            if (h === undefined) {
+                continue;
+            }
+            if (h > bestHeight) {
+                bestHeight = h;
+                best = peer;
+            }
+        }
+        return best ?? this.peers[0];
+    }
+
+    /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
+    getPeersForTransitionSyncBarrier(): TestPeer<TFactories>[] {
+        const exclude = new Set([
+            ...(this.context.leftChannelPeerIndices ?? []),
+            ...(this.context.maliciousPeerIndices ?? [])
+        ]);
+        return this.peers.filter((p) => !exclude.has(p.index));
+    }
+
     getFilteredOrHonestPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
         if (peerIndices) {
             return this.getFilteredPeers(peerIndices);
