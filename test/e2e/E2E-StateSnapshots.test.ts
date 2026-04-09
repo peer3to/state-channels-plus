@@ -135,7 +135,7 @@ describe("E2E: State Snapshots", function () {
         await h.assert.sync.blockHeight({ expectedHeight: 0 });
     });
 
-    it.only("should update on-chain snapshot to a new fork genesis after dispute resolution", async function () {
+    it("should update on-chain snapshot to a new fork genesis after dispute resolution", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 2);
