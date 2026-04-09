@@ -9,8 +9,8 @@ type StoreOptions = {
 };
 
 type GetRangeOptions = {
-    fromBlockHash?: Hash;
-    toBlockHash?: Hash;
+    upperBlockHash?: Hash; // newer/higher block (start of backwards traversal, inclusive)
+    lowerBlockHash?: Hash; // older/lower block (stop of backwards traversal, exclusive)
 };
 
 export class MessageBlockStorage {
@@ -57,17 +57,17 @@ export class MessageBlockStorage {
         return this.blockMap.get(blockHash);
     }
 
-    // [fromBlockHash, toBlockHash) - iterate backwards the blockchain
+    // [upperBlockHash, lowerBlockHash) - iterate backwards the blockchain
     *getIterator(
         options?: GetRangeOptions
     ): Generator<MessageBlockStruct, void, unknown> {
-        const { fromBlockHash, toBlockHash } = options ?? {};
-        const startBlockHash = fromBlockHash ?? this.latestBlockHash;
+        const { upperBlockHash, lowerBlockHash } = options ?? {};
+        const startBlockHash = upperBlockHash ?? this.latestBlockHash;
         if (!startBlockHash || startBlockHash == ZeroHash) return;
 
         let currentHash = startBlockHash;
         while (currentHash != ZeroHash) {
-            if (toBlockHash && currentHash === toBlockHash) break;
+            if (lowerBlockHash && currentHash === lowerBlockHash) break;
             const messageBlock = this.blockMap.get(currentHash);
             if (!messageBlock)
                 throw new Error(
@@ -104,7 +104,7 @@ export class MessageBlockStorage {
 
         const blocks: MessageBlockStruct[] = [];
         for (const messageBlock of this.getIterator({
-            fromBlockHash: this.latestBlockHash
+            upperBlockHash: this.latestBlockHash
         })) {
             blocks.push(messageBlock);
             if (limit !== undefined && blocks.length >= limit) break;

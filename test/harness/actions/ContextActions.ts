@@ -98,9 +98,9 @@ export class ContextActions {
     ) {
         const outboundMessageBlocksForDelta =
             peer.stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                fromBlockHash:
+                upperBlockHash:
                     lastSnapshot.snapshotData.latestOutboundMessageBlockHash,
-                toBlockHash:
+                lowerBlockHash:
                     onChainSnapshotBefore.snapshotData
                         .latestOutboundMessageBlockHash
             });

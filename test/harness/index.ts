@@ -82,8 +82,13 @@ if (
     });
 }
 
-// Action classes (for advanced usage)
+// Action classes
 export { LifecycleActions as ChannelActions } from "./actions/lifecycle/LifecycleActions";
+export {
+    JoinActions,
+    type AddPeerOptions,
+    type BuildJoinChannelConfirmationParams
+} from "./actions/JoinActions";
 export { TransitionActions } from "./actions/TransitionActions";
 export { NetworkController } from "./actions/NetworkController";
 export { DisputeOrchestrator } from "./actions/DisputeOrchestrator";

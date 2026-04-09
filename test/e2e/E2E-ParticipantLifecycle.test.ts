@@ -1,13 +1,6 @@
 import { TestSession, PeerTestHarness } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
-import { SignatureUtils } from "@/utils";
-import Clock from "@/Clock";
-import type {
-    JoinChannelConfirmationStruct,
-    JoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import type { BytesLike } from "ethers";
 
 PeerTestHarness.setDefaultLogLevel("error");
 
@@ -32,9 +25,7 @@ describe("E2E: Participant Lifecycle", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
 
-            const leaverIndex = await h.transition.participantLeave({
-                waitForStatus: true
-            });
+            const leaverIndex = await h.transition.participantLeaveWait();
             expect(leaverIndex).to.equal(
                 2,
                 "expected peer 2 to leave given start(3,2) turn order"
@@ -57,44 +48,20 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.lifecycle.start(2);
 
-            // Add spectator — `addPeer` connects and waits for SYNCED
-            const spectator = await h.addPeer(undefined, {
+            const spectator = await h.join.addPeerWait({
                 statusTimeoutMs: 5000,
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
-            // Build JoinChannelConfirmationStruct --------------------------
-            const jc: JoinChannelStruct = {
-                participant: spectator.address,
+            const confirmation = await h.join.buildJoinChannelConfirmation({
+                joiner: spectator,
                 channelId: h.channelId,
-                balance: { amount: 500n, data: "0x00" },
-                deadlineTimestamp: BigInt(Clock.getTimeInSeconds() + 120)
-            };
-
-            // Joiner self-attestation
-            const joinerSigned = await SignatureUtils.signJoinChannel(
-                jc,
-                spectator.signer
-            );
-
-            // Participant approvals
-            const [sig0, sig1] = await Promise.all([
-                SignatureUtils.signJoinChannel(jc, h.peers[0].signer),
-                SignatureUtils.signJoinChannel(jc, h.peers[1].signer)
-            ]);
-
-            const confirmation: JoinChannelConfirmationStruct = {
-                signedJoinChannel: {
-                    encodedJoinChannel: joinerSigned.encoded as BytesLike,
-                    signature: joinerSigned.signature as BytesLike
-                },
-                signatures: [
-                    sig0.signature as BytesLike,
-                    sig1.signature as BytesLike
+                existingParticipantSigners: [
+                    h.peers[0].signer,
+                    h.peers[1].signer
                 ]
-            };
-            // --------------------------------------------------------------
+            });
 
             // Fire joinChannel WITHOUT awaiting — the synchronous portion of
             // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
@@ -111,6 +78,10 @@ describe("E2E: Participant Lifecycle", function () {
 
             // Wait for the tx to land on-chain
             await joinPromise;
+
+            // Ensure all honest peers have stored the inbound message before
+            // the block producer runs, so the join is included in the block
+            await h.assert.storage.honestPeersObserveInboundMessageWait();
 
             await h.transition.advanceState({ count: 1 });
 
