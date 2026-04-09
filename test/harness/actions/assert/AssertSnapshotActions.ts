@@ -125,10 +125,13 @@ export class AssertSnapshotActions {
                 `No local snapshot found at height ${blockHeight} on fork ${forkId}`
             );
         }
+        //  at genesis, onChainSnapshot.blockHeight is 0, but blockHeight is -1
+        //  normalize blockHeight to 0 at genesis
+        const normalizedBlockHeight = Math.max(blockHeight, 0);
 
-        if (onChainSnapshot.blockHeight !== blockHeight) {
+        if (onChainSnapshot.blockHeight !== normalizedBlockHeight) {
             throw new Error(
-                `Expected on-chain snapshot height ${blockHeight}, but found ${onChainSnapshot.blockHeight}`
+                `Expected on-chain snapshot height ${normalizedBlockHeight}, but found ${onChainSnapshot.blockHeight}`
             );
         }
 
