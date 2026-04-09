@@ -9,8 +9,6 @@ export class AssertDisputeActions {
         expectedCount?: number;
         timeoutMs?: number;
         peersIndices?: number[];
-        /** If true, skip the check that non-honest peers did not initiate (e.g. when byzantine peer may receive its own broadcast). */
-        allowByzantineInitiation?: boolean;
         initiatedWithAuditingData?: boolean;
     }) {
         await this.initiatedWait(options);
@@ -20,14 +18,11 @@ export class AssertDisputeActions {
     async initiatedWait(options?: {
         peersIndices?: number[];
         timeoutMs?: number;
-        /** If true, skip the check that non-honest peers did not initiate (e.g. when byzantine peer may receive its own broadcast). */
-        allowByzantineInitiation?: boolean;
         initiatedWithAuditingData?: boolean;
     }): Promise<void> {
         const {
             peersIndices,
             timeoutMs = 5000,
-            allowByzantineInitiation = false,
             initiatedWithAuditingData
         } = options || {};
 
@@ -59,7 +54,7 @@ export class AssertDisputeActions {
             }
         }
 
-        if (allowByzantineInitiation) {
+        if (peersIndices !== undefined) {
             return;
         }
 

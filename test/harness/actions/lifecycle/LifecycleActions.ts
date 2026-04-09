@@ -1,27 +1,23 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger, sleep } from "@/utils";
 import { ForkId } from "@/types/types";
-import { BytesLike, Signer } from "ethers";
-import {
-    OpenChannelStruct,
-    JoinChannelConfirmationStruct,
-    JoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { BytesLike } from "ethers";
+import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import Clock from "@/Clock";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { NetworkController } from "../NetworkController";
 import { HarnessOptions } from "@test/harness/core/types";
-
-export type BuildJoinChannelConfirmationParams = {
-    joiner: { address: string; signer: Signer };
-    channelId: JoinChannelStruct["channelId"];
-    existingParticipantSigners: readonly Signer[];
-    jcOverrides?: Partial<JoinChannelStruct>;
+import { TimeConfig } from "@/types";
+const defaultTimeConfig: TimeConfig = {
+    p2pTime: 1,
+    agreementTime: 2,
+    chainFallbackTime: 2,
+    evidenceTime: 3
 };
 
 /**
- * Handles channel-related operations: open, join, verify
+ * Handles channel-related operations: open channel and bootstrap.
  */
 export class LifecycleActions {
     constructor(
@@ -51,14 +47,24 @@ export class LifecycleActions {
         return forkId;
     }
 
-    async timeoutSetup(peerCount: number = 3, transitionCount: number = 0) {
+    async timeoutSetup(
+        peerCount: number = 3,
+        transitionCount: number = 0,
+        options?: {
+            timeConfig?: {
+                p2pTime?: number;
+                agreementTime?: number;
+                chainFallbackTime?: number;
+                evidenceTime?: number;
+            };
+        }
+    ) {
+        const timeConfig = {
+            ...defaultTimeConfig,
+            ...options?.timeConfig
+        };
         await this.start(peerCount, transitionCount, {
-            timeConfig: {
-                p2pTime: 1,
-                agreementTime: 2,
-                chainFallbackTime: 2,
-                evidenceTime: 3
-            }
+            timeConfig
         });
     }
 
@@ -72,41 +78,6 @@ export class LifecycleActions {
         const openChannel = this.buildOpenChannelStruct();
         const signatures = await this.signOpenChannelStruct(openChannel);
         return this.submitOpenChannel(openChannel, signatures);
-    }
-
-    async buildJoinChannelConfirmation(
-        params: BuildJoinChannelConfirmationParams
-    ): Promise<JoinChannelConfirmationStruct> {
-        const { joiner, channelId, existingParticipantSigners, jcOverrides } =
-            params;
-        if (existingParticipantSigners.length === 0) {
-            throw new Error(
-                "buildJoinChannelConfirmation: existingParticipantSigners must include every current participant signer"
-            );
-        }
-        const jc: JoinChannelStruct = {
-            participant: joiner.address,
-            channelId,
-            balance: { amount: 500n, data: "0x00" },
-            deadlineTimestamp: BigInt(Clock.getTimeInSeconds() + 120),
-            ...jcOverrides
-        };
-        const { encoded, signature: joinerSignature } =
-            await SignatureUtils.signJoinChannel(jc, joiner.signer);
-        const confirmationSignatures = await Promise.all(
-            existingParticipantSigners.map((signer) =>
-                SignatureUtils.signJoinChannel(jc, signer).then(
-                    (s) => s.signature as BytesLike
-                )
-            )
-        );
-        return {
-            signedJoinChannel: {
-                encodedJoinChannel: encoded as BytesLike,
-                signature: joinerSignature as BytesLike
-            },
-            signatures: confirmationSignatures
-        };
     }
 
     // ************** PRIVATE HELPERS ****************

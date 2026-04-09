@@ -20,9 +20,7 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.transition.advanceState({ count: 2 });
 
         // Leave peer 2, block 2
-        const leaverIndex = await h.transition.participantLeave({
-            waitForStatus: true
-        });
+        const leaverIndex = await h.transition.participantLeaveWait();
         expect(leaverIndex).to.equal(2);
 
         await h.assert.sync.participantCount({ expectedCount: 3 });
@@ -34,7 +32,7 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.assert.sync.blockHeight({ expectedHeight: 4 });
 
         // Join peer 4 as spectator (`addPeer` waits for SYNCED)
-        await h.addPeer();
+        await h.join.addPeerWait();
         // stays 3, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
@@ -47,9 +45,7 @@ describe("E2E: Join/Leave Sequence", function () {
 
         // peer 0 is leaving the channel, block 7
 
-        const leaverIndex2 = await h.transition.participantLeave({
-            waitForStatus: true
-        });
+        const leaverIndex2 = await h.transition.participantLeaveWait();
         expect(leaverIndex2).to.equal(0);
 
         await h.assert.sync.participantCount({ expectedCount: 2 });
@@ -61,7 +57,7 @@ describe("E2E: Join/Leave Sequence", function () {
         });
 
         // Join peer 5 as spectator
-        await h.addPeer();
+        await h.join.addPeerWait();
         // stays 2, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 2 });
         const spectatorIndices = [4, 5];
