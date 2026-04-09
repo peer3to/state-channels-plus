@@ -8,9 +8,16 @@ import Clock from "@/Clock";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { NetworkController } from "../NetworkController";
 import { HarnessOptions } from "@test/harness/core/types";
+import { TimeConfig } from "@/types";
+const defaultTimeConfig: TimeConfig = {
+    p2pTime: 1,
+    agreementTime: 2,
+    chainFallbackTime: 2,
+    evidenceTime: 3
+};
 
 /**
- * Handles channel-related operations: open, join, verify
+ * Handles channel-related operations: open channel and bootstrap.
  */
 export class LifecycleActions {
     constructor(
@@ -40,14 +47,24 @@ export class LifecycleActions {
         return forkId;
     }
 
-    async timeoutSetup(peerCount: number = 3, transitionCount: number = 0) {
+    async timeoutSetup(
+        peerCount: number = 3,
+        transitionCount: number = 0,
+        options?: {
+            timeConfig?: {
+                p2pTime?: number;
+                agreementTime?: number;
+                chainFallbackTime?: number;
+                evidenceTime?: number;
+            };
+        }
+    ) {
+        const timeConfig = {
+            ...defaultTimeConfig,
+            ...options?.timeConfig
+        };
         await this.start(peerCount, transitionCount, {
-            timeConfig: {
-                p2pTime: 1,
-                agreementTime: 2,
-                chainFallbackTime: 2,
-                evidenceTime: 3
-            }
+            timeConfig
         });
     }
 

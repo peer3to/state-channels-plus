@@ -1,5 +1,5 @@
 // External libraries
-import { ethers, ZeroHash } from "ethers";
+import { ethers, ZeroHash, TransactionResponse } from "ethers";
 
 // TypeChain types - Data types
 import {
@@ -84,7 +84,6 @@ import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
-import { TransactionResponse } from "ethers";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
 const NULL = ZeroHash;
@@ -508,6 +507,48 @@ class StateManager {
         const expectedReducedForkId = ethers.keccak256(
             Codec.encode(reducedSnapshotData, Type.SnapshotData)
         );
+
+        // Pre-store the outbound message block so buildForkSnapshotCalldata can
+        // find it via getMessageBlocksInRange.
+        if (reducedOutboundMessageBlock) {
+            this.storage.outboundMessages.store(reducedOutboundMessageBlock, {
+                justPersist: true
+            });
+        }
+
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await this.stateChannelManagerContract.getStateSnapshot(
+                this.channelId
+            )
+        );
+        const reducedGenesisSnapshot = StateSnapshot.from({
+            forkId: expectedReducedForkId,
+            blockHeight: 0,
+            timestamp: Number(genesisTimestamp),
+            snapshotData: reducedSnapshotData
+        });
+        const { calldata: forkCalldata } = this.buildForkSnapshotCalldata(
+            reducedGenesisSnapshot,
+            currentOnChainSnapshot
+        );
+
+        const reduceCalldata =
+            this.stateChannelManagerContract.interface.encodeFunctionData(
+                "reduceAndFinalize",
+                [
+                    disputes,
+                    reduceData.latestStateSnapshot,
+                    reduceData.encodedStateMachineState,
+                    reduceData.inboundMessageBlocks,
+                    expectedReducedForkId
+                ]
+            );
+
+        this.logger.info("Reduction transaction submit", {
+            reducedForkId: expectedReducedForkId,
+            channelId: this.channelId
+        });
+
         let txResponse: TransactionResponse;
         this.logger.debug(
             `Submitting reduction transaction for fork ${LoggerUtils.formatHash(forkId)}`,
@@ -529,16 +570,7 @@ class StateManager {
         );
 
         const txResponsePromise = this.stateChannelManagerContract
-            .reduceAndFinalize(
-                disputes,
-                reduceData.latestStateSnapshot,
-                reduceData.encodedStateMachineState,
-                reduceData.inboundMessageBlocks,
-                expectedReducedForkId,
-                {
-                    gasLimit: 10_000_000
-                }
-            )
+            .multicall([reduceCalldata, forkCalldata], { gasLimit: 10_000_000 })
             .then((tx: TransactionResponse) => {
                 txResponse = tx;
                 const txReceiptPromise = tx.wait();
@@ -618,6 +650,30 @@ class StateManager {
             throw error;
         }
     }
+
+    private buildForkSnapshotCalldata(
+        reducedGenesisSnapshot: StateSnapshot,
+        currentOnChainSnapshot: StateSnapshot
+    ): { calldata: string; outboundMessageBlocks: MessageBlockStruct[] } {
+        // reducedGenesisSnapshot is  newer than currentOnChainSnapshot,
+        const outboundMessageBlocks =
+            this.storage.outboundMessages.getMessageBlocksInRange({
+                lowerBlockHash:
+                    currentOnChainSnapshot.latestOutboundMessageBlockHash,
+                upperBlockHash:
+                    reducedGenesisSnapshot.latestOutboundMessageBlockHash
+            });
+        const calldata =
+            this.stateChannelManagerContract.interface.encodeFunctionData(
+                "updateStateSnapshotFork",
+                [
+                    this.channelId,
+                    reducedGenesisSnapshot.toStruct(),
+                    outboundMessageBlocks
+                ]
+            );
+        return { calldata, outboundMessageBlocks };
+    }
     public getSignerAddress(): Address {
         return this.signerAddress;
     }
@@ -652,6 +708,16 @@ class StateManager {
             "joinChannel - promoted to PENDING_PARTICIPANT on broadcast"
         );
 
+        const joinSubmissionHeight =
+            this.storage.blocks.getNextBlockHeight(this.forkId) - 1;
+        this.storage.forceJoin.setJoinSubmissionBlockHeight(
+            joinSubmissionHeight
+        );
+        this.logger.info(
+            "joinChannel - recorded force join submission height",
+            { joinSubmissionHeight }
+        );
+
         try {
             const tx =
                 await this.stateChannelManagerContract.joinChannel(
@@ -663,6 +729,7 @@ class StateManager {
                 error: error instanceof Error ? error.message : String(error)
             });
             this.setStatus(Status.SYNCED);
+            this.storage.forceJoin.clear();
             throw error;
         }
     }
@@ -1429,9 +1496,11 @@ class StateManager {
         | undefined
     > {
         try {
-            // Get the current on-chain snapshot first
-            const currentOnChainSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+            const currentOnChainSnapshot = StateSnapshot.from(
+                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                    this.channelId
+                )
+            );
 
             if (!currentOnChainSnapshot) {
                 return undefined;
@@ -1769,43 +1838,26 @@ class StateManager {
                 );
             }
 
-            // Build exit blocks
-            const latestOutboundBlockHash =
-                genesisSnapshot.snapshotData.latestOutboundMessageBlockHash;
-            const currentOnChainOutboundBlockHash =
-                currentOnChainSnapshot.snapshotData
-                    .latestOutboundMessageBlockHash;
-            const outboundMessageBlocks =
-                this.storage.outboundMessages.getMessageBlocksInRange({
-                    upperBlockHash: latestOutboundBlockHash,
-                    lowerBlockHash: currentOnChainOutboundBlockHash
-                });
-
-            this.logger.debug(
-                "prepareUpdateStateSnapshotFork - outbound message block range",
-                {
-                    forkId: currentForkId,
-                    upperBlockHash: latestOutboundBlockHash,
-                    lowerBlockHash: currentOnChainOutboundBlockHash,
-                    blocksCount: outboundMessageBlocks.length
-                }
-            );
-
             if (genesisSnapshot.forkID !== this.forkId) {
                 throw new Error(
                     `Fork mismatch: update will result in fork ${genesisSnapshot.forkID}, but target fork is ${this.forkId}.`
                 );
             }
 
-            const forkCalldata =
-                this.stateChannelManagerContract.interface.encodeFunctionData(
-                    "updateStateSnapshotFork",
-                    [
-                        this.channelId,
-                        genesisSnapshot.toStruct(),
-                        outboundMessageBlocks
-                    ]
+            const { calldata: forkCalldata, outboundMessageBlocks } =
+                this.buildForkSnapshotCalldata(
+                    genesisSnapshot,
+                    currentOnChainSnapshot
                 );
+
+            this.logger.debug(
+                "prepareUpdateStateSnapshotFork - outbound message block range",
+                {
+                    forkId: currentForkId,
+                    blocksCount: outboundMessageBlocks.length
+                }
+            );
+
             callData.push(forkCalldata);
 
             if (callData.length === 0) {
@@ -1862,6 +1914,24 @@ class StateManager {
         return milestoneSnapshots.map((snapshot) => ({
             ThresholdSet: snapshot.snapshotData.participants
         }));
+    }
+
+    // Fires the force-join dispute exactly once when N turns have passed without the joiner being included
+    private async maybeInitiateForceJoinDispute(
+        block: Block,
+        participants: Address[]
+    ): Promise<void> {
+        const joinSubmissionHeight =
+            this.storage.forceJoin.getJoinSubmissionBlockHeight();
+        if (joinSubmissionHeight === undefined) return;
+        const N = participants.length + 1;
+        const fireOnBlockHeight = joinSubmissionHeight + N;
+        if (block.height !== fireOnBlockHeight) return;
+        this.logger.info(
+            "Force join dispute triggered: N turns passed without inclusion",
+            { N, forkId: this.forkId, blockHeight: block.height }
+        );
+        await this.disputeManager.dispute(this.forkId);
     }
 
     // Tries to timeout a participant by checking did the participant fail to transition the state within time - if successful -> creates a dispute
@@ -2473,7 +2543,12 @@ class StateManager {
             const participants =
                 await this.diamondStateMachine.getParticipants();
             const isParticipant = participants.includes(this.signerAddress);
-            if (isParticipant) this.setStatus(Status.PARTICIPATING);
+            if (isParticipant) {
+                this.setStatus(Status.PARTICIPATING);
+                this.storage.forceJoin.clear();
+            } else if (this.status === Status.PENDING_PARTICIPANT) {
+                await this.maybeInitiateForceJoinDispute(block, participants);
+            }
         }
         // step 1 - Confirm and Gossip // TODO - quick hack - cleaner code later
         if (

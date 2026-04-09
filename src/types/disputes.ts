@@ -99,7 +99,9 @@ export const BlockInvalidStateTransitionProofEthersType = `tuple(
 export const InvalidTimestampProofEthersType = `tuple(
             ${SignedBlockEthersType} invalidBlock,
             ${SignedBlockEthersType} previousBlock,
-            ${StateSnapshotEthersType} previousStateSnapshot
+            ${StateSnapshotEthersType} previousStateSnapshot,
+            bytes participantSignatureOnPreviousBlock,
+            uint256 previousBlockOnChainTimestamp
             )`;
 
 export const WrongGenesisProofEthersType = `tuple(
@@ -183,7 +185,7 @@ export const DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType = `tup
 )`;
 
 export const InvalidDisputeReasonProofEthersType = `tuple(
-    bool __
+    ${StateSnapshotEthersType} latestStateSnapshot
 )`;
 
 export const TimeoutParticipantNotNextProofEthersType = `tuple(
