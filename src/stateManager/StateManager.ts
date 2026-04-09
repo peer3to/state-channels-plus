@@ -1,5 +1,5 @@
 // External libraries
-import { ethers, ZeroHash } from "ethers";
+import { ethers, ZeroHash, TransactionResponse } from "ethers";
 
 // TypeChain types - Data types
 import {
@@ -84,7 +84,6 @@ import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
-import { TransactionResponse } from "ethers";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 
 const NULL = ZeroHash;
@@ -508,6 +507,48 @@ class StateManager {
         const expectedReducedForkId = ethers.keccak256(
             Codec.encode(reducedSnapshotData, Type.SnapshotData)
         );
+
+        // Pre-store the outbound message block so buildForkSnapshotCalldata can
+        // find it via getMessageBlocksInRange.
+        if (reducedOutboundMessageBlock) {
+            this.storage.outboundMessages.store(reducedOutboundMessageBlock, {
+                justPersist: true
+            });
+        }
+
+        const currentOnChainSnapshot = StateSnapshot.from(
+            await this.stateChannelManagerContract.getStateSnapshot(
+                this.channelId
+            )
+        );
+        const reducedGenesisSnapshot = StateSnapshot.from({
+            forkId: expectedReducedForkId,
+            blockHeight: 0,
+            timestamp: Number(genesisTimestamp),
+            snapshotData: reducedSnapshotData
+        });
+        const { calldata: forkCalldata } = this.buildForkSnapshotCalldata(
+            reducedGenesisSnapshot,
+            currentOnChainSnapshot
+        );
+
+        const reduceCalldata =
+            this.stateChannelManagerContract.interface.encodeFunctionData(
+                "reduceAndFinalize",
+                [
+                    disputes,
+                    reduceData.latestStateSnapshot,
+                    reduceData.encodedStateMachineState,
+                    reduceData.inboundMessageBlocks,
+                    expectedReducedForkId
+                ]
+            );
+
+        this.logger.info("Reduction transaction submit", {
+            reducedForkId: expectedReducedForkId,
+            channelId: this.channelId
+        });
+
         let txResponse: TransactionResponse;
         this.logger.debug(
             `Submitting reduction transaction for fork ${LoggerUtils.formatHash(forkId)}`,
@@ -529,16 +570,7 @@ class StateManager {
         );
 
         const txResponsePromise = this.stateChannelManagerContract
-            .reduceAndFinalize(
-                disputes,
-                reduceData.latestStateSnapshot,
-                reduceData.encodedStateMachineState,
-                reduceData.inboundMessageBlocks,
-                expectedReducedForkId,
-                {
-                    gasLimit: 10_000_000
-                }
-            )
+            .multicall([reduceCalldata, forkCalldata], { gasLimit: 10_000_000 })
             .then((tx: TransactionResponse) => {
                 txResponse = tx;
                 const txReceiptPromise = tx.wait();
@@ -617,6 +649,30 @@ class StateManager {
             });
             throw error;
         }
+    }
+
+    private buildForkSnapshotCalldata(
+        reducedGenesisSnapshot: StateSnapshot,
+        currentOnChainSnapshot: StateSnapshot
+    ): { calldata: string; outboundMessageBlocks: MessageBlockStruct[] } {
+        // reducedGenesisSnapshot is  newer than currentOnChainSnapshot,
+        const outboundMessageBlocks =
+            this.storage.outboundMessages.getMessageBlocksInRange({
+                lowerBlockHash:
+                    currentOnChainSnapshot.latestOutboundMessageBlockHash,
+                upperBlockHash:
+                    reducedGenesisSnapshot.latestOutboundMessageBlockHash
+            });
+        const calldata =
+            this.stateChannelManagerContract.interface.encodeFunctionData(
+                "updateStateSnapshotFork",
+                [
+                    this.channelId,
+                    reducedGenesisSnapshot.toStruct(),
+                    outboundMessageBlocks
+                ]
+            );
+        return { calldata, outboundMessageBlocks };
     }
     public getSignerAddress(): Address {
         return this.signerAddress;
@@ -1440,9 +1496,11 @@ class StateManager {
         | undefined
     > {
         try {
-            // Get the current on-chain snapshot first
-            const currentOnChainSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+            const currentOnChainSnapshot = StateSnapshot.from(
+                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                    this.channelId
+                )
+            );
 
             if (!currentOnChainSnapshot) {
                 return undefined;
@@ -1780,43 +1838,26 @@ class StateManager {
                 );
             }
 
-            // Build exit blocks
-            const latestOutboundBlockHash =
-                genesisSnapshot.snapshotData.latestOutboundMessageBlockHash;
-            const currentOnChainOutboundBlockHash =
-                currentOnChainSnapshot.snapshotData
-                    .latestOutboundMessageBlockHash;
-            const outboundMessageBlocks =
-                this.storage.outboundMessages.getMessageBlocksInRange({
-                    upperBlockHash: latestOutboundBlockHash,
-                    lowerBlockHash: currentOnChainOutboundBlockHash
-                });
-
-            this.logger.debug(
-                "prepareUpdateStateSnapshotFork - outbound message block range",
-                {
-                    forkId: currentForkId,
-                    upperBlockHash: latestOutboundBlockHash,
-                    lowerBlockHash: currentOnChainOutboundBlockHash,
-                    blocksCount: outboundMessageBlocks.length
-                }
-            );
-
             if (genesisSnapshot.forkID !== this.forkId) {
                 throw new Error(
                     `Fork mismatch: update will result in fork ${genesisSnapshot.forkID}, but target fork is ${this.forkId}.`
                 );
             }
 
-            const forkCalldata =
-                this.stateChannelManagerContract.interface.encodeFunctionData(
-                    "updateStateSnapshotFork",
-                    [
-                        this.channelId,
-                        genesisSnapshot.toStruct(),
-                        outboundMessageBlocks
-                    ]
+            const { calldata: forkCalldata, outboundMessageBlocks } =
+                this.buildForkSnapshotCalldata(
+                    genesisSnapshot,
+                    currentOnChainSnapshot
                 );
+
+            this.logger.debug(
+                "prepareUpdateStateSnapshotFork - outbound message block range",
+                {
+                    forkId: currentForkId,
+                    blocksCount: outboundMessageBlocks.length
+                }
+            );
+
             callData.push(forkCalldata);
 
             if (callData.length === 0) {

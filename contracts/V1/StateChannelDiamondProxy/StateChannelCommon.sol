@@ -319,6 +319,26 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return true;
     }
 
+    function _pruneOutboundMessageBlocks(MessageBlock[] memory outboundMessageBlocks, bytes32 lowerHash)
+        internal
+        pure
+        returns (MessageBlock[] memory)
+    {
+        if (lowerHash == bytes32(0)) {
+            return outboundMessageBlocks;
+        }
+        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+            if (outboundMessageBlocks[i].previousBlockHash == lowerHash) {
+                MessageBlock[] memory pruned = new MessageBlock[](outboundMessageBlocks.length - i);
+                for (uint256 j = 0; j < pruned.length; j++) {
+                    pruned[j] = outboundMessageBlocks[i + j];
+                }
+                return pruned;
+            }
+        }
+        return new MessageBlock[](0);
+    }
+
     function _verifyOutboundMessageBlocks(
         MessageBlock[] memory outboundMessageBlocks,
         SnapshotData memory lowerSnapshot,
