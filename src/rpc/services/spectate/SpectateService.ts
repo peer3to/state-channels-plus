@@ -541,6 +541,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         });
         if (this.p2pManager.stateManager.getStatus() !== Status.PARTICIPATING) {
             this.p2pManager.disconnectAll();
+            void this.p2pManager.stateManager.stateChannelEventListener.dispose();
             return;
         }
 

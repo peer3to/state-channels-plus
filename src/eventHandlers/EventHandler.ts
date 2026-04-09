@@ -238,13 +238,6 @@ export class EventHandler {
         }
 
         if (isFinal) {
-            const status = this.stateManager.getStatus();
-            if (
-                status !== Status.PARTICIPATING &&
-                status !== Status.PENDING_PARTICIPANT
-            )
-                return;
-
             if (!disputeAuditingData) {
                 const { isPartial, auditingData } =
                     this.stateManager.disputeManager.getAuditingData(

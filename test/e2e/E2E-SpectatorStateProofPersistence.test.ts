@@ -106,7 +106,7 @@ describe("E2E: Join/Leave Sequence", function () {
             // spectator should have stayes on the pre-dispute fork
             expect(h.getPeer(i).stateManager.forkId).to.equal(
                 preDisputeForkId,
-                `spectator peer ${i} should be on new fork`
+                `spectator peer ${i} should be on pre-dispute fork`
             );
         }
     });

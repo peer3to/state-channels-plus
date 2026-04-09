@@ -1440,8 +1440,11 @@ class StateManager {
         | undefined
     > {
         try {
-            const currentOnChainSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+            const currentOnChainSnapshot = StateSnapshot.from(
+                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                    this.channelId
+                )
+            );
 
             if (!currentOnChainSnapshot) {
                 return undefined;
