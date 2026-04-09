@@ -83,10 +83,12 @@ if (
 }
 
 // Action classes
+export { LifecycleActions as ChannelActions } from "./actions/lifecycle/LifecycleActions";
 export {
-    LifecycleActions as ChannelActions,
+    JoinActions,
+    type AddPeerOptions,
     type BuildJoinChannelConfirmationParams
-} from "./actions/lifecycle/LifecycleActions";
+} from "./actions/JoinActions";
 export { TransitionActions } from "./actions/TransitionActions";
 export { NetworkController } from "./actions/NetworkController";
 export { DisputeOrchestrator } from "./actions/DisputeOrchestrator";

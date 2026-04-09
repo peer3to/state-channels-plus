@@ -318,4 +318,31 @@ export class AssertSyncActions {
             await peer.stateManager.diamondStateMachine.getParticipants();
         expect(participants.length).to.equal(expectedCount);
     }
+
+    async spectatorNoTransportToPeersWait(options: {
+        spectatorPeerIndex: number;
+        peerIndices: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { spectatorPeerIndex, peerIndices, timeoutMs = 15000 } = options;
+
+        await this.harness.disconnectionBarrier.waitFor(
+            () =>
+                peerIndices.every(
+                    (i) =>
+                        this.harness.query.getTransport(
+                            spectatorPeerIndex,
+                            i
+                        ) === undefined &&
+                        this.harness.query.getTransport(
+                            i,
+                            spectatorPeerIndex
+                        ) === undefined
+                ),
+            {
+                timeoutMs,
+                timeoutMessage: `Spectator ${spectatorPeerIndex} should have no transport to/from peers [${peerIndices.join(", ")}] within ${timeoutMs}ms`
+            }
+        );
+    }
 }

@@ -68,6 +68,9 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot memory newSnapshot,
         MessageBlock[] memory outboundMessageBlocks
     ) internal {
+        outboundMessageBlocks = _pruneOutboundMessageBlocks(
+            outboundMessageBlocks, currentOnChainSnapshot.snapshotData.latestOutboundMessageBlockHash
+        );
         require(
             _verifyOutboundMessageBlocks(
                 outboundMessageBlocks, currentOnChainSnapshot.snapshotData, newSnapshot.snapshotData
