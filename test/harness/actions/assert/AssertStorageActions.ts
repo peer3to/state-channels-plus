@@ -79,6 +79,41 @@ export class AssertStorageActions {
         return promise;
     }
 
+    honestPeersObserveInboundMessageWait(options?: {
+        previousLatestHash?: Hash;
+        peerIndices?: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        const honestPeers = this.harness.getFilteredOrHonestPeers(
+            options?.peerIndices
+        );
+
+        const condition = () => {
+            for (const peer of honestPeers) {
+                const latestHash =
+                    peer.stateManager.storage.inboundMessages.getLatestBlockHash();
+                if (!latestHash || latestHash === options?.previousLatestHash) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        return this.harness.eventCountsBarrier.waitFor(condition, {
+            timeoutMs: options?.timeoutMs,
+            timeoutMessage: `Honest peers did not observe inbound message within ${options?.timeoutMs ?? 5000}ms`
+        });
+    }
+
+    async honestPeersObserveInboundMessageDetached(options?: {
+        previousLatestHash?: Hash;
+        peerIndices?: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        const promise = this.honestPeersObserveInboundMessageWait(options);
+        DetachedPromises.collect(promise);
+    }
+
     honestPeersStoredFraudProof(options: {
         fraudProofType?: FraudProofType;
         peerIndices?: number[];
