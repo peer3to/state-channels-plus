@@ -8,7 +8,7 @@ import { SyncPayload } from "@/types";
 PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Spectate stale-proof guard", function () {
-    it.only("aborts sync when on-chain snapshot is more advanced than what participant proved", async function () {
+    it("aborts sync when on-chain snapshot is more advanced than what participant proved", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(2, 0, {
