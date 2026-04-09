@@ -21,28 +21,12 @@ export class DisputeTampering {
         dispute.input.disputeAuditingDataHash = hash("0x42");
     }
 
-    static createTamperTimeoutParticipant(
-        wrongParticipantAddress: string,
-        blockHeight: number
-    ) {
-        return (dispute: DisputeStruct): void => {
-            dispute.input.timeout.participant = wrongParticipantAddress;
-            dispute.input.timeout.blockHeight = blockHeight;
-        };
-    }
-
     static tamperDoubleFault(dispute: DisputeStruct): void {
         dispute.input.disputeAuditingDataHash = hash("0x42");
         dispute.input.latestStateSnapshotHash = hash("0x43");
     }
-
     static tamperInvalidStateProof(dispute: DisputeStruct): void {
         dispute.input.latestStateSnapshotHash = hash("0x42");
-    }
-
-    static tamperInvalidStateProofWithCalldata(dispute: DisputeStruct): void {
-        DisputeTampering.tamperInvalidStateProof(dispute);
-        dispute.postedAuditingData = true;
     }
 
     static tamperPartialAuditing(dispute: DisputeStruct): void {
@@ -117,14 +101,16 @@ export class DisputeTamperingActions {
     stubConstructDispute(
         peerIndex: number,
         tamper: DisputeTamper,
-        options?: { autoRestore?: boolean }
+        options?: { autoRestore?: boolean; markMalicious?: boolean }
     ): void {
         const peer = this.harness.getPeer(peerIndex);
         const disputeManager: DisputeManager = peer.stateManager.disputeManager;
 
-        this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: peerIndex
-        });
+        if (options?.markMalicious ?? true) {
+            this.harness.contextApi.markMaliciousPeer({
+                maliciousPeerIndex: peerIndex
+            });
+        }
         this.restoreConstructDispute(peerIndex);
 
         const originalConstructDispute =
@@ -167,43 +153,6 @@ export class DisputeTamperingActions {
         restore();
         this.restoreByPeerIndex.delete(peerIndex);
         this.logger.debug(`Restored constructDispute for peer ${peerIndex}`);
-    }
-
-    /**
-     * Delays dispute initiation for the given peers so that another peer's
-     * dispute (e.g. a stubbed/tampered one) is uploaded first.
-    
-     */
-    delayDisputeForPeers(peerIndices: number[], delayMs: number = 1000): void {
-        for (const peerIndex of peerIndices) {
-            this.restoreDisputeDelay(peerIndex);
-
-            const peer = this.harness.getPeer(peerIndex);
-            const disputeManager = peer.stateManager.disputeManager;
-            const originalDispute = disputeManager.dispute.bind(disputeManager);
-
-            disputeManager.dispute = (forkId: ForkId) =>
-                sleep(delayMs).then(() => originalDispute(forkId));
-
-            this.disputeDelayRestoreByPeerIndex.set(peerIndex, () => {
-                disputeManager.dispute = originalDispute;
-            });
-
-            this.logger.debug(
-                `Delayed dispute for peer ${peerIndex} by ${delayMs}ms`
-            );
-        }
-    }
-
-    restoreDisputeDelay(peerIndex: number): void {
-        const restore = this.disputeDelayRestoreByPeerIndex.get(peerIndex);
-        if (!restore) {
-            return;
-        }
-
-        restore();
-        this.disputeDelayRestoreByPeerIndex.delete(peerIndex);
-        this.logger.debug(`Restored dispute delay for peer ${peerIndex}`);
     }
 
     corruptValidatorSnapshotForBalanceInvariant(

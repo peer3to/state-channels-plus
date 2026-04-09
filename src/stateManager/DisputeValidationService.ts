@@ -459,7 +459,10 @@ export default class DisputeValidationService {
                     dispute: LoggerUtils.getDisputeMetadata(dispute)
                 }
             );
-            this.disputeFraudProofService.createInvalidDisputeReason(dispute);
+            this.disputeFraudProofService.createInvalidDisputeReason(
+                dispute,
+                disputeAuditingData.latestStateSnapshot
+            );
             return false;
         }
 

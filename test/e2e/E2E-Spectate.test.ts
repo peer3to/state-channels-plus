@@ -169,7 +169,7 @@ describe("E2E: Spectate Service", function () {
             ]);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
 
-            await h.addPeer();
+            await h.join.addPeerWait();
             await h.assert.sync.peersInSyncWait({
                 peerIndices: [0, 1, 3, 4, 5]
             });
@@ -194,11 +194,67 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
+    describe("Spectators before and after dispute", function () {
+        it("pre-dispute spectator disconnects from participants after resolve; post-dispute joiner syncs", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 4
+                }
+            });
+
+            await h.transition.advanceState({ count: 4 });
+            //  peer index 4 is spectator
+            await h.join.addPeerWait();
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 2, 3, 4]
+            });
+
+            const maliciousPeerIndex = 0;
+            const honestPeerIndices = [1, 2, 3];
+
+            h.event.resetEventSpies();
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.initiatedAndCommitedWait({
+                expectedCount: 1,
+                peersIndices: honestPeerIndices
+            });
+
+            await h.dispute.resolveDisputeWait({
+                honestPeerIndices: honestPeerIndices
+            });
+
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: honestPeerIndices,
+                waitForFinalization: true
+            });
+
+            //  first joiner has observed the dispute and disconnected
+            await h.assert.sync.spectatorNoTransportToPeersWait({
+                spectatorPeerIndex: 4,
+                peerIndices: honestPeerIndices
+            });
+            //  add a new peer index 5 as spectator
+            await h.join.addPeerWait();
+            const spectatorIndex = [5];
+
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices.concat(spectatorIndex)
+            });
+        });
+    });
+
     describe("block height 0 spectating", function () {
         it("should spectate successfully when joining at genesis state", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0);
-            await h.addPeer();
+            await h.join.addPeerWait();
             await h.assert.sync.participantCount({
                 expectedCount: 2,
                 peerIndex: 2
@@ -216,7 +272,7 @@ describe("E2E: Spectate Service", function () {
             await h.lifecycle.start(2, 0);
             await h.transition.advanceState({ count: 1 });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
-            await h.addPeer();
+            await h.join.addPeerWait();
             await h.assert.sync.participantCount({
                 expectedCount: 2,
                 peerIndex: 2

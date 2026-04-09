@@ -57,8 +57,18 @@ export class ScenarioActions {
         });
     }
 
-    async preDisputeSetup(peerCount: number = 3) {
-        await this.harness.lifecycle.timeoutSetup(peerCount, 2);
+    async preDisputeSetup(
+        peerCount: number = 3,
+        options?: {
+            timeConfig?: {
+                p2pTime?: number;
+                agreementTime?: number;
+                chainFallbackTime?: number;
+                evidenceTime?: number;
+            };
+        }
+    ) {
+        await this.harness.lifecycle.timeoutSetup(peerCount, 2, options);
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
@@ -66,11 +76,21 @@ export class ScenarioActions {
 
     // 4 peers, peer 2 is leaving, next turn is peer 1
     //  5 blocks in this pre-setp, block height is 4
-    async preDisputeSetupCalldataPath() {
-        await this.preDisputeSetup(4);
-        await this.harness.transition.advanceState({
-            txFn: (c) => c.leaveChannel()
-        });
+    async preDisputeSetupCalldataPath(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        const timeConfig = {
+            evidenceTime: 6,
+            ...options?.timeConfig
+        };
+
+        await this.preDisputeSetup(4, { timeConfig, ...options });
+        await this.harness.transition.participantLeaveDetached();
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],
             count: 2
@@ -80,7 +100,9 @@ export class ScenarioActions {
     }
 
     async preDisputeSetupDisconnectedPeer() {
-        await this.harness.lifecycle.timeoutSetup(4, 0);
+        await this.harness.lifecycle.timeoutSetup(4, 0, {
+            timeConfig: { evidenceTime: 6 }
+        });
         await this.harness.network.disconnectPeer(2);
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],
@@ -108,7 +130,7 @@ export class ScenarioActions {
             count: initialTransitions
         });
         await this.harness.event.resetEventSpies();
-        await this.harness.addPeer();
+        await this.harness.join.addPeerWait();
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, 3]
         });
@@ -186,7 +208,7 @@ export class ScenarioActions {
         );
 
         const result = await this.harness.dispute.resolveDisputeWait({
-            maliciousPeerIndex: options.maliciousPeerIndex,
+            maliciousPeerIndices: [options.maliciousPeerIndex],
             forkId: originalForkId,
             honestPeerIndices,
             disputesCommittedTimeoutMs: options.disputesCommittedTimeoutMs,

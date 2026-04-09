@@ -613,10 +613,18 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function verifyOutboundMessageBlocks(
         MessageBlock[] memory outboundMessageBlocks,
-        SnapshotData memory fromSnapshot,
-        SnapshotData memory toSnapshot
+        SnapshotData memory lowerSnapshot,
+        SnapshotData memory upperSnapshot
     ) public view returns (bool) {
-        return _verifyOutboundMessageBlocks(outboundMessageBlocks, fromSnapshot, toSnapshot);
+        return _verifyOutboundMessageBlocks(outboundMessageBlocks, lowerSnapshot, upperSnapshot);
+    }
+
+    function pruneOutboundMessageBlocks(MessageBlock[] memory outboundMessageBlocks, bytes32 lowerHash)
+        public
+        pure
+        returns (MessageBlock[] memory)
+    {
+        return _pruneOutboundMessageBlocks(outboundMessageBlocks, lowerHash);
     }
 
     // Data provided from the latestStateSnapshot

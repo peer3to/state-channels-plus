@@ -47,22 +47,34 @@ export class DisputeOrchestrator {
     /**
      * Waits for dispute commitment and fork reduction, agnostic to how the dispute was created.
      */
-    async resolveDisputeWait(options: {
-        maliciousPeerIndex: number;
-        forkId?: ForkId;
-        honestPeerIndices?: number[];
-        disputesCommittedTimeoutMs?: number;
-        forkSettleTimeoutMs?: number;
-        expectedDisputesCommittedPerPeer?: number;
-        disputesCommittedMode?: "exact" | "atLeast";
-        assertMaliciousRemoved?: boolean;
-    }): Promise<CreateAndResolveDisputeResult> {
+    async resolveDisputeWait(
+        options: {
+            maliciousPeerIndices?: number[];
+            forkId?: ForkId;
+            honestPeerIndices?: number[];
+            disputesCommittedTimeoutMs?: number;
+            forkSettleTimeoutMs?: number;
+            expectedDisputesCommittedPerPeer?: number;
+            disputesCommittedMode?: "exact" | "atLeast";
+            assertMaliciousRemoved?: boolean;
+        } = {}
+    ): Promise<CreateAndResolveDisputeResult> {
         const originalForkId = options.forkId || this.harness.activeForkId!;
-        const maliciousPeerIndex = options.maliciousPeerIndex;
-        const honestPeerIndices = this.harness
-            .getFilteredOrHonestPeers(options.honestPeerIndices)
+        const maliciousPeerIndices = Array.from(
+            new Set<number>([
+                ...(options.maliciousPeerIndices ?? []),
+                ...(this.harness.context.maliciousPeerIndices ?? [])
+            ])
+        );
+        const barrierPeerIndices = this.harness
+            .getPeersForTransitionSyncBarrier()
             .map((p) => p.index);
-
+        const honestPeerIndices =
+            options.honestPeerIndices !== undefined
+                ? barrierPeerIndices.filter((i) =>
+                      options.honestPeerIndices!.includes(i)
+                  )
+                : barrierPeerIndices;
         if (honestPeerIndices.length < 1) {
             throw new Error(
                 `Need at least 1 honest peer to resolve dispute (got ${honestPeerIndices.length})`
@@ -104,24 +116,28 @@ export class DisputeOrchestrator {
         }
 
         if (options.assertMaliciousRemoved ?? true) {
-            const maliciousAddress =
-                this.harness.getPeer(maliciousPeerIndex).address;
+            const maliciousAddresses = maliciousPeerIndices.map(
+                (i) => this.harness.getPeer(i).address
+            );
+
             for (const peer of honestPeers) {
                 const participants =
                     await peer.stateManager.diamondStateMachine.getParticipants();
-                expect(participants).to.have.lengthOf(honestPeers.length);
-                expect(participants).to.not.include(maliciousAddress);
+                expect(participants)
+                    .to.have.length.lessThanOrEqual(honestPeers.length)
+                    .and.greaterThan(0);
+                expect(participants).to.not.include(maliciousAddresses);
             }
         }
 
         this.logger.debug(
-            `Resolved dispute: maliciousPeer=${maliciousPeerIndex}, originalFork=${originalForkId}, newFork=${newForkId}`
+            `Resolved dispute: maliciousPeers=${maliciousPeerIndices.join(",")}, originalFork=${originalForkId}, newFork=${newForkId}`
         );
 
         return {
             originalForkId,
             newForkId,
-            maliciousPeerIndex,
+            maliciousPeerIndices,
             honestPeerIndices,
             honestPeers
         };

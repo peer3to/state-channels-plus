@@ -12,7 +12,7 @@ import {
     ForgedInboundMessageBlockProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { Address, Hash } from "@/types/types";
+import { Address, Bytes, Hash, Signature } from "@/types/types";
 import { Logger } from "@/utils";
 import { Codec, FraudStruct } from "@/utils/Codec";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
@@ -125,6 +125,9 @@ export default class FraudProofService {
             block.coordinates
         );
 
+        let participantSignatureOnPreviousBlock = "0x" as Signature;
+        let previousBlockOnChainTimestamp = 0n;
+
         if (previousBlockOrSnapshot.block) {
             // Height > 0 case - we have a previous block
             const prevBlock = previousBlockOrSnapshot.block;
@@ -133,6 +136,16 @@ export default class FraudProofService {
                 this.storage.stateSnapshots.getStateSnapshotByHash(
                     prevBlock.stateSnapshotHash
                 )!;
+            const authorSignedPrevious = prevBlock.findSignature(block.author);
+            if (authorSignedPrevious) {
+                participantSignatureOnPreviousBlock = authorSignedPrevious;
+            } else {
+                if (prevBlock.onChainTimestamp !== undefined) {
+                    previousBlockOnChainTimestamp = BigInt(
+                        prevBlock.onChainTimestamp
+                    );
+                }
+            }
         } else {
             // Height === 0 case - we have genesis state snapshot
             prevSignedBlock = createEmptySignedBlock();
@@ -142,7 +155,10 @@ export default class FraudProofService {
         const proof: InvalidTimestampProofStruct = {
             invalidBlock: block.signedBlock,
             previousBlock: prevSignedBlock,
-            previousStateSnapshot: prevStateSnapshot.toStruct()
+            previousStateSnapshot: prevStateSnapshot.toStruct(),
+            participantSignatureOnPreviousBlock:
+                participantSignatureOnPreviousBlock as Bytes,
+            previousBlockOnChainTimestamp
         };
 
         return this.storeFraudProof(block.signerAddress, {
