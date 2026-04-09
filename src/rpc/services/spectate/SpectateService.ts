@@ -3,14 +3,8 @@ import { Address, ChannelId, Timestamp, Hash, ForkId } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
-import {
-    Codec,
-    getChecksumAddress,
-    tryDecodeCustomError,
-    Type,
-    bytes32LikeEqual
-} from "@/utils";
-import { ethers, ZeroHash } from "ethers";
+import { Codec, getChecksumAddress, tryDecodeCustomError, Type } from "@/utils";
+import { ethers } from "ethers";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
@@ -132,9 +126,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const forkId = _forkId || stateManager.forkId;
 
         // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
-        // We'll do all the computation on our local state. If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
+        // We'll do all the computation on our local state.
+        // If our local state is not synced we shouldn't even be syncing the spectator and we probably have bigger problems
 
-        // Get current on-chain snapshot to start the fork traversal
         const currentOnChainSnapshot = StateSnapshot.from(
             await diamondStateMachine.localDiamondContract.getStateSnapshot(
                 channelId
@@ -232,12 +226,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
 
+        const { lowerOutboundSnapshot, upperOutboundSnapshot } =
+            SpectateService.orderOutboundSnapshots(
+                currentOnChainSnapshot,
+                latestForkGenesisSnapshot
+            );
+
         const outboundMessageBlocksUpToLatestGenesis =
             stateManager.storage.outboundMessages.getMessageBlocksInRange({
                 upperBlockHash:
-                    currentOnChainSnapshot.latestOutboundMessageBlockHash,
+                    upperOutboundSnapshot.latestOutboundMessageBlockHash,
                 lowerBlockHash:
-                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash
+                    lowerOutboundSnapshot.latestOutboundMessageBlockHash
             });
 
         const latestBlockHeight =
@@ -397,25 +397,14 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         // check if we need to update the snapshot on the same fork
         if (syncPayload.milestoneSnapshots.length > 0) {
-            // Full list is genesis→head; on-chain may already be past genesis.
-            // _verifyOutboundMessageBlocks starts from onChain.latestOutboundMessageBlockHash.
-            const anchor =
+            const lowerHash =
                 onChainSnapshot.snapshotData.latestOutboundMessageBlockHash;
-            let outboundBlocksForSameFork =
-                syncPayload.outboundMessageBlocksOfTheLatestFork;
-            if (!bytes32LikeEqual(anchor, ZeroHash)) {
-                const startIndex = outboundBlocksForSameFork.findIndex((b) =>
-                    bytes32LikeEqual(b.previousBlockHash, anchor)
+
+            const outboundBlocksForSameFork =
+                await stateManager.diamondStateMachine.localDiamondContract.pruneOutboundMessageBlocks(
+                    syncPayload.outboundMessageBlocksOfTheLatestFork,
+                    lowerHash
                 );
-                if (startIndex === -1) {
-                    // not found: nothing in the payload continues from this on-chain outbound head.
-                    // [] is not a valid proof to the milestone; staticCall reverts (reject sync).
-                    outboundBlocksForSameFork = [];
-                } else {
-                    outboundBlocksForSameFork =
-                        outboundBlocksForSameFork.slice(startIndex);
-                }
-            }
             const snapshotCalldata = contractInterface.encodeFunctionData(
                 "updateStateSnapshotSameFork",
                 [
@@ -532,6 +521,19 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
     }
+    public static orderOutboundSnapshots(
+        a: StateSnapshot,
+        b: StateSnapshot
+    ): {
+        lowerOutboundSnapshot: StateSnapshot;
+        upperOutboundSnapshot: StateSnapshot;
+    } {
+        return a.latestOutboundMessageBlockHeight <=
+            b.latestOutboundMessageBlockHeight
+            ? { lowerOutboundSnapshot: a, upperOutboundSnapshot: b }
+            : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
+    }
+
     public abort(peerAddress: string) {
         // HandshakeCompletedGuard guarantees stable peer identity.
         // If we're not actively participating, treat this as a fatal sync failure.

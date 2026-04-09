@@ -14,9 +14,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 1;
         await h.byzantine.submitDoubleSignBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockDoubleSign,
             maliciousPeerIndex
@@ -34,9 +32,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitWrongGenesisBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.WrongGenesis,
             maliciousPeerIndex
@@ -53,9 +49,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 1; // NOT the expected next leader
         await h.byzantine.submitUnexpectedNextLeaderBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
@@ -74,9 +68,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitInvalidTimestampBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.InvalidTimestamp,
             maliciousPeerIndex
@@ -97,9 +89,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitBrokenInboundChainBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
@@ -120,9 +110,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitForgedInboundMessageBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.ForgedInboundMessageBlock,
             maliciousPeerIndex
@@ -142,9 +130,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitInvalidTransactionDataBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
@@ -163,9 +149,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         const maliciousPeerIndex = 2;
         await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
 
-        await h.assert.dispute.initiatedAndCommitedWait({
-            allowByzantineInitiation: true
-        });
+        await h.assert.dispute.initiatedAndCommitedWait();
         h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex

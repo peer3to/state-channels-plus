@@ -36,6 +36,8 @@ struct InvalidTimestampProof {
     SignedBlock invalidBlock;
     SignedBlock previousBlock;
     StateSnapshot previousStateSnapshot;
+    bytes participantSignatureOnPreviousBlock;
+    uint256 previousBlockOnChainTimestamp;
 }
 
 struct WrongGenesisProof {
