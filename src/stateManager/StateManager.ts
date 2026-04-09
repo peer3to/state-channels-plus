@@ -1440,13 +1440,10 @@ class StateManager {
         | undefined
     > {
         try {
-            const currentOnChainSnapshot = StateSnapshot.from(
-                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                    this.channelId
-                )
-            );
+            const currentOnChainSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
 
-            if (currentOnChainSnapshot.forkID !== forkId) {
+            if (!currentOnChainSnapshot) {
                 return undefined;
             }
             // Get the latest block height for this fork from storage

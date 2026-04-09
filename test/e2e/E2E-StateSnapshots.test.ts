@@ -77,8 +77,10 @@ describe("E2E: State Snapshots", function () {
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
         const h = TestSession.getHarness();
 
+        //  longer agreement time to prevent StateManger.startMaybeExitOnChain to update the on-chain snapshot
+        //  before this test doesit - the point of this test is to exercise the multicall path for fork updates
         await h.scenario.fourPeersDisputeResolution({
-            timeConfig: forkTimeConfig
+            timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
         await h.transition.fromHonestPeersOnly((c) => c.add(1));
         await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
