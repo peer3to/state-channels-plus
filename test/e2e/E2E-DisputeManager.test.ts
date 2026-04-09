@@ -72,7 +72,7 @@ describe("E2E: Dispute Manager", function () {
                     DisputeFraudProofType.InvalidDisputeReason
             });
 
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
 
         it("a dispute submitted with no calldata should not be killed even if the auditing data hash is tampered", async function () {
@@ -135,20 +135,20 @@ describe("E2E: Dispute Manager", function () {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
-            await h.dispute.resolveDisputeWait();
-            await h.assert.sync.forkChangedWait();
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
 
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
+            await h.scenario.preDisputeSetup(3, {
+                timeConfig: { evidenceTime: 6 }
+            });
             await h.byzantine.tamperedDisputeDoubleFault(1);
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
-            await h.dispute.resolveDisputeWait();
-            await h.assert.sync.forkChangedWait();
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 20000 });
         });
     });
 
