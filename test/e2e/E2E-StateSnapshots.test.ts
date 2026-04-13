@@ -25,11 +25,8 @@ describe("E2E: State Snapshots", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3);
 
-        await h.transition.advanceState();
-        await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
-        await h.transition.advanceState();
+        await h.transition.advanceState({ count: 3 });
 
-        await h.assert.sync.peersInSyncWait();
         h.event.resetEventSpies();
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
@@ -52,7 +49,6 @@ describe("E2E: State Snapshots", function () {
         });
 
         await h.transition.fromHonestPeersOnly((c) => c.add(1));
-        await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
         await h.transition.fromHonestPeersOnly((c) => c.add(3));
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
