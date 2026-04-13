@@ -468,18 +468,19 @@ class StateManager {
     public async performReduction(
         forkId: ForkId,
         genesisTimestamp: Timestamp,
-        diamondContract: StateChannelManagerProxy = this
-            .stateChannelManagerContract
+        cachedDisputes?: DisputeStruct[]
     ) {
         const now = Clock.getTimeInSeconds();
         this.logger.info(
             `Performing reduction for fork ${forkId} with genesis timestamp ${genesisTimestamp}, in (${genesisTimestamp - now}s)`
         );
-        const disputes = await this.agreementManager.getForkDisputes(
-            this.channelId,
-            forkId,
-            diamondContract
-        );
+        const disputes =
+            cachedDisputes ??
+            (await this.agreementManager.getForkDisputes(
+                this.channelId,
+                forkId,
+                this.stateChannelManagerContract
+            ));
 
         this.logger.debug(
             `Performing reduction on disputes for fork ${LoggerUtils.formatHash(forkId)}`,
@@ -487,7 +488,8 @@ class StateManager {
                 disputes: disputes.map((d) => LoggerUtils.getDisputeMetadata(d))
             }
         );
-        const reducedOutput = await diamondContract.reduce.staticCall(disputes);
+        const reducedOutput =
+            await this.stateChannelManagerContract.reduce.staticCall(disputes);
 
         const reduceData = await this.agreementManager.getReduceData(
             forkId,
@@ -1464,21 +1466,22 @@ class StateManager {
                     DetachedPromises.collect(txReceiptPromise);
                     return txReceiptPromise;
                 })
-                .catch((error) => {
-                    const custom = tryHandleEvmError(error, {
+                .catch(async (error) => {
+                    const success = await tryHandleEvmError(error, {
                         tx: transactionResponse!,
                         logger: this.logger,
                         signer: this.signer,
                         forkId
                     });
-                    this.logger.error("Error posting state snapshot", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
-                    });
-
-                    throw error;
+                    if (!success) {
+                        this.logger.error("Error posting state snapshot", {
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        });
+                        throw error;
+                    }
                 });
             DetachedPromises.collect(txResponsePromise);
             return expectedSnapshot;

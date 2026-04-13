@@ -162,14 +162,21 @@ class DisputeManager {
             );
             await txResponse.wait();
         } catch (error) {
-            const success = tryHandleEvmError(error, {
+            const success = await tryHandleEvmError(error, {
                 tx: txResponse,
                 logger: this.logger,
                 forkId,
                 signer: this.signer,
                 handlers: {
                     ErrorCantParticipateInDispute: () => {
-                        // No op -> malcious peer
+                        this.logger.info(
+                            "Dispute upload reverted: ErrorCantParticipateInDispute",
+                            {
+                                forkId: LoggerUtils.formatHash(forkId),
+                                signerAddress: this.signerAddress,
+                                channelId: this.channelId
+                            }
+                        );
                     }
                 }
             });
@@ -180,7 +187,7 @@ class DisputeManager {
                     signerAddress: this.signerAddress,
                     error:
                         error instanceof Error ? error.message : String(error),
-                    customErrorHandles: success
+                    evmErrorHandled: success
                 });
 
             this.storage.disputes.storeDisputedFork(forkId, false);

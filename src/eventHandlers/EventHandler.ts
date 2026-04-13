@@ -439,6 +439,33 @@ export class EventHandler {
         reductionTimestamp: Timestamp,
         reducer: Address
     ): Promise<void> {
+        const isRelevant = this.stateManager.forkId === forkId;
+
+        // Capture dispute window from local diamond BEFORE syncing it.
+        // localDiamondContract.onDisputeReducedResultCommitted clears the window,
+        // so we must read commitments first if we may need to run a local reduction.
+        let cachedDisputes: DisputeStruct[] | undefined;
+        if (
+            isRelevant &&
+            !this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                reducedForkId
+            )
+        ) {
+            try {
+                cachedDisputes =
+                    await this.stateManager.agreementManager.getForkDisputes(
+                        channelId,
+                        forkId,
+                        this.diamondStateMachine.localDiamondContract
+                    );
+            } catch (e) {
+                this.logger.warn(
+                    "onDisputeReducedResultCommitted: could not pre-cache disputes; local reduction will fall back to empty-window handling",
+                    { error: e instanceof Error ? e.message : String(e) }
+                );
+            }
+        }
+
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
@@ -448,8 +475,6 @@ export class EventHandler {
             reducer
         );
 
-        // if it's not part of the fork choice rule, ignore it - it's spam
-        const isRelevant = this.stateManager.forkId === forkId;
         if (!isRelevant) {
             return;
         }
@@ -465,7 +490,8 @@ export class EventHandler {
             await this.setForkIfLatestAndCurrent(
                 forkId,
                 reducedForkId,
-                reductionTimestamp
+                reductionTimestamp,
+                cachedDisputes
             );
             return;
         }
@@ -490,7 +516,8 @@ export class EventHandler {
         await this.setForkIfLatestAndCurrent(
             forkId,
             reducedForkId,
-            reductionTimestamp
+            reductionTimestamp,
+            cachedDisputes
         );
     }
 
@@ -660,7 +687,8 @@ export class EventHandler {
     private async setForkIfLatestAndCurrent(
         forkId: ForkId,
         reducedForkId: ForkId,
-        _reductionTimestamp: Timestamp
+        _reductionTimestamp: Timestamp,
+        cachedDisputes?: DisputeStruct[]
     ): Promise<void> {
         if (this.stateManager.forkId !== forkId) {
             return;
@@ -672,10 +700,6 @@ export class EventHandler {
             );
 
         if (!latestStateSnapshot) {
-            // We haven't reduced locally yet. The local diamond still has the dispute
-            // window data at this point — onChannelStorageCleared fires after
-            // onDisputeReducedResultCommitted in the same block, so we can still read
-            // commitments and run reduce.staticCall against the local EVM.
             const channelId = this.stateManager.channelId;
             const { killPeriodEnd } =
                 await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
@@ -693,7 +717,7 @@ export class EventHandler {
             await this.stateManager.performReduction(
                 forkId,
                 genesisTimestamp,
-                this.diamondStateMachine.localDiamondContract
+                cachedDisputes
             );
             return;
         }
