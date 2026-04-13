@@ -19,7 +19,7 @@ describe("E2E: Dispute Manager", function () {
     describe("Dispute Resolution and Fork Management", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup(4);
+            await h.scenario.preDisputeSetup({ peerCount: 4 });
             const nextPeer = await h.query.getNextPeerToWrite();
             await h.byzantine.submitInvalidStateTransitionBlock(nextPeer.index);
             await h.assert.dispute.initiatedAndCommitedWait();
@@ -28,14 +28,10 @@ describe("E2E: Dispute Manager", function () {
 
         it("should post updated state snapshot after fork resolution", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached();
-
-            await h.transition.fromHonestPeersOnly((c) => c.add(1));
-            await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
-            await h.transition.fromHonestPeersOnly((c) => c.add(3));
+            await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateWait();
 
             await h.assert.sync.onlyHonestPeersInSync();
-            await await h.assert.sync.onChainSnapshotAndPeersSameForkWait(); // await this to be sure that the post snapshot event bellow is not triggered by the detached update from above
+            await h.transition.fromHonestPeersOnly((c) => c.add(1));
             h.event.resetEventSpies();
             const expectedSnapshot2 = await h.transition.postSnapshot({
                 peerIndex: 0
@@ -51,8 +47,9 @@ describe("E2E: Dispute Manager", function () {
     describe("Fraud Proof Detection", function () {
         it("should kill a spam dispute with no legitimate enforcement basis", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 1 });
+            await h.scenario.preDisputeSetup({
+                timeConfig: { evidenceTime: 6 }
+            });
 
             // Post a dispute from peer 1 that is internally valid but has no legitimate
             // enforcement basis: no timeout, no on-chain slashes, no self-removal.
@@ -77,7 +74,9 @@ describe("E2E: Dispute Manager", function () {
 
         it("a dispute submitted with no calldata should not be killed even if the auditing data hash is tampered", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
+            await h.scenario.preDisputeSetup({
+                timeConfig: { evidenceTime: 6 }
+            });
 
             h.tamper.stubConstructDispute(
                 0,
@@ -140,7 +139,7 @@ describe("E2E: Dispute Manager", function () {
 
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup(3, {
+            await h.scenario.preDisputeSetup({
                 timeConfig: { evidenceTime: 6 }
             });
             await h.byzantine.tamperedDisputeDoubleFault(1);

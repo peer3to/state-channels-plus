@@ -1,4 +1,5 @@
 import { StateSnapshot } from "@/models";
+import { ForkId } from "@/types";
 import { DetachedPromises } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -28,12 +29,14 @@ export class AssertSnapshotActions {
         }
     }
     async onChainSnapshotChangedWait(options?: {
-        expectedForkId?: string;
+        expectedForkId?: ForkId;
+        previousForkId?: ForkId;
         expectedSnapshot?: StateSnapshot;
         timeoutMs?: number;
     }): Promise<void> {
         const {
             expectedForkId,
+            previousForkId,
             expectedSnapshot,
             timeoutMs = 8000
         } = options || {};
@@ -59,6 +62,8 @@ export class AssertSnapshotActions {
                     localSnapshot.forkID !== expectedForkId
                 )
                     return false;
+                if (previousForkId && localSnapshot.forkID === previousForkId)
+                    return false;
             }
 
             return true; // all honest peers observed a snapshot update event
@@ -69,6 +74,7 @@ export class AssertSnapshotActions {
             timeoutMessage: `On-chain snapshot did not change within ${timeoutMs}ms`,
             timeoutMeta: {
                 expectedForkId,
+                previousForkId,
                 expectedSnapshot: expectedSnapshot
                     ? LoggerUtils.getSnapshotMetadata(expectedSnapshot)
                     : undefined,
@@ -80,11 +86,11 @@ export class AssertSnapshotActions {
         return promise;
     }
 
-    async onChainSnapshotChangedDetached(options?: {
+    onChainSnapshotChangedDetached(options?: {
         expectedForkId?: string;
         expectedSnapshot?: StateSnapshot;
         timeoutMs?: number;
-    }): Promise<void> {
+    }): void {
         const detachedPromise = this.onChainSnapshotChangedWait(options);
         DetachedPromises.collect(detachedPromise);
     }
