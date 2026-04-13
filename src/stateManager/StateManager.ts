@@ -361,7 +361,7 @@ class StateManager {
         const handle = this.timeoutManager.scheduleTask(
             () => {
                 // Don't call reductionTriggerMap.delete(forkId) - race condition problem
-                this.tryReduce(forkId);
+                return this.tryReduce(forkId);
             },
             Math.max(0, (localTriggerTimestamp - now) * 1000),
             `reduction-${forkId}`
@@ -465,9 +465,11 @@ class StateManager {
         await this.performReduction(forkId, genesisTimestamp);
     }
 
-    private async performReduction(
+    public async performReduction(
         forkId: ForkId,
-        genesisTimestamp: Timestamp
+        genesisTimestamp: Timestamp,
+        diamondContract: StateChannelManagerProxy = this
+            .stateChannelManagerContract
     ) {
         const now = Clock.getTimeInSeconds();
         this.logger.info(
@@ -476,7 +478,7 @@ class StateManager {
         const disputes = await this.agreementManager.getForkDisputes(
             this.channelId,
             forkId,
-            this.stateChannelManagerContract
+            diamondContract
         );
 
         this.logger.debug(
@@ -485,8 +487,7 @@ class StateManager {
                 disputes: disputes.map((d) => LoggerUtils.getDisputeMetadata(d))
             }
         );
-        const reducedOutput =
-            await this.stateChannelManagerContract.reduce.staticCall(disputes);
+        const reducedOutput = await diamondContract.reduce.staticCall(disputes);
 
         const reduceData = await this.agreementManager.getReduceData(
             forkId,

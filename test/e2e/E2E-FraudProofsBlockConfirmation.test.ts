@@ -7,8 +7,8 @@ PeerTestHarness.setDefaultLogLevel("debug");
  * E2E Tests: Fraud Proofs — onBlockConfirmation (BlockValidationStrategy)
  */
 
-describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating fraud proofs", function () {
-    it("onBlockConfirmation pipeline: doubleSignDetected creates dispute with BlockDoubleSign", async function () {
+describe("E2E: Fraud Proofs - onBlockConfirmation pipeline", function () {
+    it("doubleSignDetected creates dispute with BlockDoubleSign", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
         const maliciousPeerIndex = 1;
@@ -24,7 +24,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it("onBlockConfirmation pipeline: wrongGenesisDetected creates dispute with WrongGenesis", async function () {
+    it("wrongGenesisDetected creates dispute with WrongGenesis", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -42,7 +42,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it("onBlockConfirmation pipeline: invalidStateTransitionDetected (unexpected next leader) creates dispute with BlockInvalidStateTransition", async function () {
+    it("invalidStateTransitionDetected (unexpected next leader) creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);
 
@@ -59,7 +59,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it("onBlockConfirmation pipeline: objectiveInvalidTimestampDetected creates dispute with InvalidTimestamp", async function () {
+    it("objectiveInvalidTimestampDetected creates dispute with InvalidTimestamp", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -78,7 +78,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it("onBlockConfirmation pipeline: findBrokenInboundMessageChainBlock creates dispute with BlockInvalidStateTransition", async function () {
+    it("findBrokenInboundMessageChainBlock creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -99,7 +99,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it("onBlockConfirmation pipeline: forgedInboundMessageBlockDetected creates dispute with ForgedInboundMessageBlock", async function () {
+    it("forgedInboundMessageBlockDetected creates dispute with ForgedInboundMessageBlock", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -120,7 +120,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it("onBlockConfirmation pipeline: applyTransaction failure creates dispute with BlockInvalidStateTransition", async function () {
+    it("applyTransaction failure creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 
@@ -140,7 +140,7 @@ describe("E2E: Fraud Proofs - onBlockConfirmation pipeline — dispute-creating 
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it("onBlockConfirmation pipeline: stateSnapshotHash mismatch creates dispute with BlockInvalidStateTransition", async function () {
+    it("stateSnapshotHash mismatch creates dispute with BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
 

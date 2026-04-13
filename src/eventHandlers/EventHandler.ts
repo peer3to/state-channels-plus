@@ -662,36 +662,46 @@ export class EventHandler {
         reducedForkId: ForkId,
         _reductionTimestamp: Timestamp
     ): Promise<void> {
-        // enough for now - this will change later
-        if (this.stateManager.forkId == forkId) {
-            // Get the latest state snapshot - it should be reduced locally if not we'll reduce it on the spot
-            const latestStateSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                    reducedForkId
-                );
-            if (!latestStateSnapshot) {
-                // TODO reduce localy
-                return;
-            }
-            const genesisStateMachineState =
-                this.storage.stateMachineStates.getStateMachineState(
-                    latestStateSnapshot.stateMachineStateHash
-                );
-
-            if (!genesisStateMachineState) {
-                // we need to compute it - should have computed it above while reducing
-                // TODO - solidity code that returns the encodedState
-            }
-            // Set fork and start building on it
-            // TODO
-            throw new Error(
-                "Not implemented yet - set fork for reduceCommitment"
-            );
-            // await this.stateManager.setGenesisState(
-            //     genesisStateMachineState!,
-            //     reducedForkId,
-            //     reductionTimestamp
-            // );
+        if (this.stateManager.forkId !== forkId) {
+            return;
         }
+
+        const latestStateSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                reducedForkId
+            );
+
+        if (!latestStateSnapshot) {
+            // We haven't reduced locally yet. The local diamond still has the dispute
+            // window data at this point — onChannelStorageCleared fires after
+            // onDisputeReducedResultCommitted in the same block, so we can still read
+            // commitments and run reduce.staticCall against the local EVM.
+            const channelId = this.stateManager.channelId;
+            const { killPeriodEnd } =
+                await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
+                    channelId,
+                    forkId
+                );
+            const genesisTimestamp =
+                Number(killPeriodEnd) +
+                this.stateManager.timeConfig.evidenceTime;
+
+            this.logger.info(
+                `setForkIfLatestAndCurrent: reducing locally for fork ${forkId} → ${reducedForkId}`,
+                { genesisTimestamp }
+            );
+            await this.stateManager.performReduction(
+                forkId,
+                genesisTimestamp,
+                this.diamondStateMachine.localDiamondContract
+            );
+            return;
+        }
+
+        // Genesis snapshot already in storage (we reduced before the event fired).
+        // setGenesisState was already called by performReduction — nothing left to do.
+        this.logger.debug(
+            `setForkIfLatestAndCurrent: genesis snapshot already present for ${reducedForkId}`
+        );
     }
 }
