@@ -468,7 +468,8 @@ class StateManager {
     public async performReduction(
         forkId: ForkId,
         genesisTimestamp: Timestamp,
-        cachedDisputes?: DisputeStruct[]
+        cachedDisputes?: DisputeStruct[],
+        skipOnChainSubmission?: boolean
     ) {
         const now = Clock.getTimeInSeconds();
         this.logger.info(
@@ -547,75 +548,87 @@ class StateManager {
                 ]
             );
 
-        this.logger.info("Reduction transaction submit", {
-            reducedForkId: expectedReducedForkId,
-            channelId: this.channelId
-        });
+        if (skipOnChainSubmission) {
+            this.logger.debug(
+                `Skipping on-chain submission for fork ${LoggerUtils.formatHash(forkId)} — reduction already committed by another peer`
+            );
+        } else {
+            this.logger.info("Reduction transaction submit", {
+                reducedForkId: expectedReducedForkId,
+                channelId: this.channelId
+            });
+        }
 
         let txResponse: TransactionResponse;
-        this.logger.debug(
-            `Submitting reduction transaction for fork ${LoggerUtils.formatHash(forkId)}`,
-            {
-                disputes: disputes.map((d) =>
-                    LoggerUtils.getDisputeMetadata(d)
-                ),
-                reduceData: {
-                    latestStateSnapshot: LoggerUtils.getSnapshotMetadata(
-                        StateSnapshot.from(reduceData.latestStateSnapshot)
+        if (!skipOnChainSubmission) {
+            this.logger.debug(
+                `Submitting reduction transaction for fork ${LoggerUtils.formatHash(forkId)}`,
+                {
+                    disputes: disputes.map((d) =>
+                        LoggerUtils.getDisputeMetadata(d)
                     ),
-                    encodedStateMachineState:
-                        reduceData.encodedStateMachineState,
-                    inboundMessageBlocks: reduceData.inboundMessageBlocks.map(
-                        (b) => LoggerUtils.getMessageBlockMetadata(b)
-                    )
+                    reduceData: {
+                        latestStateSnapshot: LoggerUtils.getSnapshotMetadata(
+                            StateSnapshot.from(reduceData.latestStateSnapshot)
+                        ),
+                        encodedStateMachineState:
+                            reduceData.encodedStateMachineState,
+                        inboundMessageBlocks:
+                            reduceData.inboundMessageBlocks.map((b) =>
+                                LoggerUtils.getMessageBlockMetadata(b)
+                            )
+                    }
                 }
-            }
-        );
+            );
 
-        const txResponsePromise = this.stateChannelManagerContract
-            .multicall([reduceCalldata, forkCalldata], { gasLimit: 10_000_000 })
-            .then((tx: TransactionResponse) => {
-                txResponse = tx;
-                const txReceiptPromise = tx.wait();
-                DetachedPromises.collect(txReceiptPromise);
-                return txReceiptPromise;
-            })
-            .then(() => {
-                this.logger.info(
-                    `Reduction complete (on-chain): transitioning from fork ${LoggerUtils.formatHash(forkId)}`
-                );
-            })
-            .catch(async (error: any) => {
-                const success = await tryHandleEvmError(error, {
-                    tx: txResponse!,
-                    forkId,
-                    logger: this.logger,
-                    handlers: {
-                        RaceConditionDisputeAlreadyReduced: () => {
-                            this.logger.debug(
-                                `Reduction already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionDisputeAlreadyReduced`
-                            );
+            const txResponsePromise = this.stateChannelManagerContract
+                .multicall([reduceCalldata, forkCalldata], {
+                    gasLimit: 10_000_000
+                })
+                .then((tx: TransactionResponse) => {
+                    txResponse = tx;
+                    const txReceiptPromise = tx.wait();
+                    DetachedPromises.collect(txReceiptPromise);
+                    return txReceiptPromise;
+                })
+                .then(() => {
+                    this.logger.info(
+                        `Reduction complete (on-chain): transitioning from fork ${LoggerUtils.formatHash(forkId)}`
+                    );
+                })
+                .catch(async (error: any) => {
+                    const success = await tryHandleEvmError(error, {
+                        tx: txResponse!,
+                        forkId,
+                        logger: this.logger,
+                        handlers: {
+                            RaceConditionDisputeAlreadyReduced: () => {
+                                this.logger.debug(
+                                    `Reduction already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionDisputeAlreadyReduced`
+                                );
+                            },
+                            RaceConditionReductionExpectationDoesntMatch:
+                                () => {
+                                    this.logger.error(
+                                        `Reduction expectation mismatch for fork ${LoggerUtils.formatHash(forkId)} -> expected ${LoggerUtils.formatHash(expectedReducedForkId)}`
+                                    );
+                                },
+                            RaceConditionBlockHeightTooOld: () => {
+                                this.logger.error(
+                                    `Update of on-chain snapshot already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionBlockHeightTooOld`
+                                );
+                            },
+                            ErrorCantParticipateInDispute: () => {
+                                // TODO -> ignore -> malicious peer
+                            }
                         },
-                        RaceConditionReductionExpectationDoesntMatch: () => {
-                            this.logger.error(
-                                `Reduction expectation mismatch for fork ${LoggerUtils.formatHash(forkId)} -> expected ${LoggerUtils.formatHash(expectedReducedForkId)}`
-                            );
-                        },
-                        RaceConditionBlockHeightTooOld: () => {
-                            this.logger.error(
-                                `Update of on-chain snapshot already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionBlockHeightTooOld`
-                            );
-                        },
-                        ErrorCantParticipateInDispute: () => {
-                            // TODO -> ignore -> malicious peer
-                        }
-                    },
-                    signer: this.signer
+                        signer: this.signer
+                    });
+
+                    if (!success) throw error;
                 });
-
-                if (!success) throw error;
-            });
-        DetachedPromises.collect(txResponsePromise);
+            DetachedPromises.collect(txResponsePromise);
+        }
 
         try {
             // Compute local state after reduction (optimistic - assume tx will succeed)

@@ -717,7 +717,8 @@ export class EventHandler {
             await this.stateManager.performReduction(
                 forkId,
                 genesisTimestamp,
-                cachedDisputes
+                cachedDisputes,
+                true // skip on-chain submission — another peer already committed this reduction
             );
             return;
         }
