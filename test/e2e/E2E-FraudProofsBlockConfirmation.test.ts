@@ -7,7 +7,7 @@ PeerTestHarness.setDefaultLogLevel("debug");
  * E2E Tests: Fraud Proofs — onBlockConfirmation (BlockValidationStrategy)
  */
 
-describe("E2E: Fraud Proofs - onBlockConfirmation pipeline", function () {
+describe("E2E: Fraud Proofs", function () {
     it("doubleSignDetected creates dispute with BlockDoubleSign", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
