@@ -173,8 +173,16 @@ class DisputeManager {
                             "Dispute upload reverted: ErrorCantParticipateInDispute",
                             {
                                 forkId: LoggerUtils.formatHash(forkId),
-                                signerAddress: this.signerAddress,
-                                channelId: this.channelId
+                                signerAddress: this.signerAddress
+                            }
+                        );
+                    },
+                    RaceConditionDisputeEvidencePeriodExpired: () => {
+                        this.logger.info(
+                            "Dispute upload reverted: RaceConditionDisputeEvidencePeriodExpired",
+                            {
+                                forkId: LoggerUtils.formatHash(forkId),
+                                signerAddress: this.signerAddress
                             }
                         );
                     }
