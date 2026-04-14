@@ -145,9 +145,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
                         break;
                     }
                 }
-                console.log("[DEBUG] slashParticipants.length: ", slashParticipants.length);
-                console.log("[DEBUG] slashCount: ", slashCount);
-                console.log("[DEBUG] isAlreadySlashed: ", isAlreadySlashed);
                 if (!isAlreadySlashed) {
                     slashParticipants[slashCount++] = dispute.input.onChainSlashes[j];
                 }
