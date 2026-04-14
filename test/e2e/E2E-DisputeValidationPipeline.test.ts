@@ -73,7 +73,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("Verify State Proof (calldata path)", function () {
+    describe("Verify State Proof- calldata path", function () {
         it("should kill dispute and store DisputeInvalidStateProof when stateProof has both milestones and signedBlocks", async function () {
             const h = TestSession.getHarness();
             // preDisputeSetupCalldataPath produces a milestones-only state proof.
@@ -152,8 +152,10 @@ describe("E2E: Dispute Validation Pipeline", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
 
-
-            h.tamper.stubConstructDispute(3, DisputeTampering.tamperInvalidStateProof);
+            h.tamper.stubConstructDispute(
+                3,
+                DisputeTampering.tamperInvalidStateProof
+            );
 
             await h.byzantine.submitDoubleSignBlock(0);
 
@@ -360,7 +362,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         describe("milestone blockConfirmations path", function () {
             it("should kill dispute when a milestone's last confirmation encodes an inconsistent block (re-dispute / wrong txn count)", async function () {
                 const h = TestSession.getHarness();
-                await h.scenario.preDisputeSetup(4, {
+                await h.scenario.preDisputeSetup({
+                    peerCount: 4,
                     timeConfig: { evidenceTime: 6 }
                 });
                 await h.byzantine.disconnect(3);
@@ -595,7 +598,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             });
 
             // Post the dispute immediately
-            await h.tamper.postTamperedDispute(0, () => { });
+            await h.tamper.postTamperedDispute(0, () => {});
 
             await h.event.waitForPeers("onDisputeKilled", [1], 1, {
                 mode: "atLeast"
