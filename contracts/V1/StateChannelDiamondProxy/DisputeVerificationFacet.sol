@@ -85,7 +85,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
                     if (disputeData.onChainSlashes[j].timestamp > disputeWindowExpirationTimestamp) continue;
                     address participant = disputeData.onChainSlashes[j].participant;
-                    if (!_inParticipantUnion(participant, snapshotParticipants, pendingParticipants)) continue;
+                    if (
+                        !UtilityFacet(utilityFacetAddress).inParticipantUnion(
+                            participant, snapshotParticipants, pendingParticipants
+                        )
+                    ) {
+                        continue;
+                    }
                     bool alreadySlashed = false;
                     for (uint256 k = 0; k < slashCount; k++) {
                         if (slashParticipants[k] == participant) {
@@ -530,20 +536,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
         disputeWindow.evidence.disputeCommitments.pop();
 
         emit DisputeKilled(dispute.input.channelId, forkId, dispute.input.disputer, commitment);
-    }
-
-    function _inParticipantUnion(
-        address participant,
-        address[] memory snapshotParticipants,
-        address[] memory pendingParticipants
-    ) internal pure returns (bool) {
-        for (uint256 i = 0; i < snapshotParticipants.length; i++) {
-            if (snapshotParticipants[i] == participant) return true;
-        }
-        for (uint256 i = 0; i < pendingParticipants.length; i++) {
-            if (pendingParticipants[i] == participant) return true;
-        }
-        return false;
     }
 
     function _calculateRemovals(DisputeInput memory disputeInput) internal pure returns (address[] memory removals) {

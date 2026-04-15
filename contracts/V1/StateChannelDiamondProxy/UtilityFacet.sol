@@ -80,6 +80,20 @@ contract UtilityFacet {
         return false;
     }
 
+    function inParticipantUnion(
+        address participant,
+        address[] memory snapshotParticipants,
+        address[] memory pendingParticipants
+    ) public pure returns (bool) {
+        for (uint256 i = 0; i < snapshotParticipants.length; i++) {
+            if (snapshotParticipants[i] == participant) return true;
+        }
+        for (uint256 i = 0; i < pendingParticipants.length; i++) {
+            if (pendingParticipants[i] == participant) return true;
+        }
+        return false;
+    }
+
     function insertBytesInByteArray(bytes memory b, bytes[] memory array) public pure returns (bytes[] memory) {
         bytes[] memory result = new bytes[](array.length + 1);
         for (uint256 i = 0; i < array.length; i++) {
