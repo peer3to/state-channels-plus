@@ -16,11 +16,10 @@ export class ScenarioActions {
             chainFallbackTime?: number;
             evidenceTime?: number;
         };
-    }) {
+    }): Promise<CreateAndResolveDisputeResult> {
         await this.harness.lifecycle.start(4, 2, options);
         await this.harness.assert.sync.peersInSyncWait();
-        await this.disputeWithReduction({ maliciousPeerIndex: 2 });
-        await this.harness.assert.sync.forkChangedWait();
+        return this.disputeWithReduction({ maliciousPeerIndex: 2 });
     }
 
     async fourPeersDisputeResolutionAndSnapshotUpdateDetached(options?: {
@@ -31,12 +30,9 @@ export class ScenarioActions {
             evidenceTime?: number;
         };
     }) {
-        await this.fourPeersDisputeResolution(options);
-        const expectedSnapshot = await this.harness.transition.postSnapshot({
-            peerIndex: 0
-        });
-        await this.harness.assert.snapshot.onChainSnapshotChangedDetached({
-            expectedSnapshot
+        const { newForkId } = await this.fourPeersDisputeResolution(options);
+        this.harness.assert.snapshot.onChainSnapshotChangedDetached({
+            expectedForkId: newForkId as string
         });
     }
 
@@ -48,27 +44,26 @@ export class ScenarioActions {
             evidenceTime?: number;
         };
     }) {
-        await this.fourPeersDisputeResolution(options);
-        const expectedSnapshot = await this.harness.transition.postSnapshot({
-            peerIndex: 0
-        });
+        const { newForkId } = await this.fourPeersDisputeResolution(options);
         await this.harness.assert.snapshot.onChainSnapshotChangedWait({
-            expectedSnapshot
+            expectedForkId: newForkId as string
         });
     }
 
-    async preDisputeSetup(
-        peerCount: number = 3,
-        options?: {
-            timeConfig?: {
-                p2pTime?: number;
-                agreementTime?: number;
-                chainFallbackTime?: number;
-                evidenceTime?: number;
-            };
-        }
-    ) {
-        await this.harness.lifecycle.timeoutSetup(peerCount, 2, options);
+    async preDisputeSetup(options?: {
+        peerCount?: number;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        await this.harness.lifecycle.timeoutSetup(
+            options?.peerCount ?? 3,
+            2,
+            options
+        );
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
@@ -89,7 +84,7 @@ export class ScenarioActions {
             ...options?.timeConfig
         };
 
-        await this.preDisputeSetup(4, { timeConfig, ...options });
+        await this.preDisputeSetup({ peerCount: 4, timeConfig });
         await this.harness.transition.participantLeaveDetached();
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],

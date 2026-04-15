@@ -598,6 +598,11 @@ class StateManager {
                                 `Reduction expectation mismatch for fork ${LoggerUtils.formatHash(forkId)} -> expected ${LoggerUtils.formatHash(expectedReducedForkId)}`
                             );
                         },
+                        RaceConditionBlockHeightTooOld: () => {
+                            this.logger.error(
+                                `Update of on-chain snapshot already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionBlockHeightTooOld`
+                            );
+                        },
                         ErrorCantParticipateInDispute: () => {
                             // TODO -> ignore -> malicious peer
                         }

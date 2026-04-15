@@ -30,7 +30,7 @@ contract StateSnapshotFacet is StateChannelCommon {
                 && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
         ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
-                _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks);
+                _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
                 updated = true;
                 break;
             }
@@ -59,14 +59,15 @@ contract StateSnapshotFacet is StateChannelCommon {
             ErrorInvalidStateProof()
         );
 
-        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks);
+        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);
     }
 
     function _updateStateSnapshot(
         bytes32 channelId,
         StateSnapshot memory currentOnChainSnapshot,
         StateSnapshot memory newSnapshot,
-        MessageBlock[] memory outboundMessageBlocks
+        MessageBlock[] memory outboundMessageBlocks,
+        bool shouldClearStorage
     ) internal {
         outboundMessageBlocks = _pruneOutboundMessageBlocks(
             outboundMessageBlocks, currentOnChainSnapshot.snapshotData.latestOutboundMessageBlockHash
@@ -92,7 +93,10 @@ contract StateSnapshotFacet is StateChannelCommon {
         }
 
         //check if last fork -> clearStorage
-        if (disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0) {
+        if (
+            disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0
+                && shouldClearStorage
+        ) {
             _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash);
         }
         emit StateSnapshotUpdated(channelId, newSnapshot);

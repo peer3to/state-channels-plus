@@ -13,9 +13,9 @@ import type {
 
 PeerTestHarness.setDefaultLogLevel("error");
 
-describe("E2E: Dispute Validation Pipeline", function () {
-    describe("Invalid Latest State Proof (no calldata)", function () {
-        it("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (no-calldata path)", async function () {
+describe("E2E: dispute validation", function () {
+    describe("No-calldata: invalid latest proof", function () {
+        it("DisputeInvalidStateProof: tampered latestStateSnapshotHash", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
@@ -44,7 +44,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait();
         });
 
-        it("should kill dispute and store DisputeInvalidStateProof when stateProof is empty but latestStateSnapshotHash is not genesis (no-calldata path)", async function () {
+        it("DisputeInvalidStateProof: empty proof, non-genesis snapshot hash", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
@@ -73,8 +73,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("Verify State Proof (calldata path)", function () {
-        it("should kill dispute and store DisputeInvalidStateProof when stateProof has both milestones and signedBlocks", async function () {
+    describe("Calldata path", function () {
+        it("DisputeInvalidStateProof: milestones and signedBlocks both non-empty", async function () {
             const h = TestSession.getHarness();
             // preDisputeSetupCalldataPath produces a milestones-only state proof.
             await h.scenario.preDisputeSetupCalldataPath();
@@ -114,7 +114,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait();
         });
 
-        it("should kill dispute and store DisputeInvalidStateProof when a milestone has no blockConfirmations", async function () {
+        it("DisputeInvalidStateProof: milestone has no blockConfirmations", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
 
@@ -148,12 +148,14 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait();
         });
 
-        it("should kill dispute and store DisputeInvalidStateProof when latestStateSnapshotHash is tampered (with calldata)", async function () {
+        it("DisputeInvalidStateProof: tampered latestStateSnapshotHash", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
 
-
-            h.tamper.stubConstructDispute(3, DisputeTampering.tamperInvalidStateProof);
+            h.tamper.stubConstructDispute(
+                3,
+                DisputeTampering.tamperInvalidStateProof
+            );
 
             await h.byzantine.submitDoubleSignBlock(0);
 
@@ -173,7 +175,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait();
         });
 
-        it("should kill dispute and store DisputeInvalidStateProof when stateProof is empty but latestStateSnapshotHash is not genesis (calldata path)", async function () {
+        it("DisputeInvalidStateProof: empty proof, non-genesis snapshot hash", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
 
@@ -201,8 +203,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("No Auditing Data — Last Milestone Not Final", function () {
-        it("should kill dispute and store DisputeLastMilestoneNotFinalAndNoAuditingData when disputer posts without auditing data and last milestone is not final", async function () {
+    describe("No auditing data, last milestone not final", function () {
+        it("DisputeLastMilestoneNotFinalAndNoAuditingData: without auditing data", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
@@ -237,9 +239,9 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("State Proof Block Pipeline", function () {
-        describe("signedBlocks-only state proofs", function () {
-            it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(BlockInvalidStateTransition) when signedBlocks block has corrupted encodedBlock", async function () {
+    describe("State proof block pipeline", function () {
+        describe("signedBlocks-only", function () {
+            it("DisputeInvalidBlockInStateProofApplyFraudProof: corrupted signedBlock encodedBlock", async function () {
                 const h = TestSession.getHarness();
                 await h.scenario.preDisputeSetupDisconnectedPeer();
 
@@ -290,7 +292,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
                 await h.dispute.resolveDisputeWait();
             });
 
-            it("should kill dispute and store DisputeInvalidBlockInStateProofApplyFraudProof(ForgedInboundMessageBlock) when a state proof block contains a forged inbound message", async function () {
+            it("DisputeInvalidBlockInStateProofApplyFraudProof: forged inbound message in block", async function () {
                 const h = TestSession.getHarness();
                 await h.scenario.preDisputeSetupDisconnectedPeer();
 
@@ -357,10 +359,11 @@ describe("E2E: Dispute Validation Pipeline", function () {
             });
         });
 
-        describe("milestone blockConfirmations path", function () {
-            it("should kill dispute when a milestone's last confirmation encodes an inconsistent block (re-dispute / wrong txn count)", async function () {
+        describe("Milestone blockConfirmations", function () {
+            it("DisputeInvalidBlockInStateProofApplyFraudProof: last confirmation block inconsistent (txn count)", async function () {
                 const h = TestSession.getHarness();
-                await h.scenario.preDisputeSetup(4, {
+                await h.scenario.preDisputeSetup({
+                    peerCount: 4,
                     timeConfig: { evidenceTime: 6 }
                 });
                 await h.byzantine.disconnect(3);
@@ -413,8 +416,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("On-Chain Slashes Not Subset", function () {
-        it("should kill dispute and store DisputeOnChainSlashesNotSubset when onChainSlashes contains an address not actually slashed on-chain", async function () {
+    describe("On-chain slashes not subset", function () {
+        it("DisputeOnChainSlashesNotSubset: claims slash for address not slashed on-chain", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
@@ -446,8 +449,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("Balance Invariant", function () {
-        it("should kill dispute and store DisputeInvalidBalanceInvariant when the balance invariant fails", async function () {
+    describe("Balance invariant", function () {
+        it("DisputeInvalidBalanceInvariant: corrupted validator snapshot", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
@@ -473,8 +476,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("Dispute Not Latest State", function () {
-        it("should kill dispute and store DisputeNotLatestState when disputer posts state proof at an older block height than they have actually signed", async function () {
+    describe("Not latest state", function () {
+        it("DisputeNotLatestState: proof height below last signed", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
@@ -507,8 +510,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         });
     });
 
-    describe("Timeout Fraud Proofs", function () {
-        it("should kill dispute and store TimeoutNotLinkedToLatestState when timeout.blockHeight does not equal latestBlockHeight + 1", async function () {
+    describe("Timeout fraud proofs", function () {
+        it("TimeoutNotLinkedToLatestState: blockHeight != latest + 1", async function () {
             const h = TestSession.getHarness();
             // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
             await h.lifecycle.timeoutSetup(3);
@@ -546,7 +549,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait();
         });
 
-        it("should kill dispute and store TimeoutParticipantNotNext when timeout.participant is not the next peer to write", async function () {
+        it("TimeoutParticipantNotNext: participant not next writer", async function () {
             const h = TestSession.getHarness();
             // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
             await h.scenario.preDisputeSetup();
@@ -572,7 +575,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             await h.dispute.resolveDisputeWait();
         });
 
-        it("should kill dispute and store TimeoutTooEarly when timeout dispute is posted before the timeout wait period has elapsed", async function () {
+        it("TimeoutTooEarly: posted before wait period elapses", async function () {
             const h = TestSession.getHarness();
             // 2 transitions → peer 2 is next to write but never does.
             await h.scenario.preDisputeSetup();
@@ -595,7 +598,7 @@ describe("E2E: Dispute Validation Pipeline", function () {
             });
 
             // Post the dispute immediately
-            await h.tamper.postTamperedDispute(0, () => { });
+            await h.tamper.postTamperedDispute(0, () => {});
 
             await h.event.waitForPeers("onDisputeKilled", [1], 1, {
                 mode: "atLeast"
@@ -619,8 +622,8 @@ describe("E2E: Dispute Validation Pipeline", function () {
         // });
     });
 
-    describe("Invalid Output State", function () {
-        it("should kill dispute and store DisputeInvalidOutputState when outputSnapshotDataHash is corrupted", async function () {
+    describe("Invalid output state", function () {
+        it("DisputeInvalidOutputState: corrupted outputSnapshotDataHash", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 

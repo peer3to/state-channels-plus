@@ -76,14 +76,31 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
             // ***** setup / first run *****
             if (maxSlashCount == 0) {
-                maxSlashCount =
-                    snapshotData.participants.length + getPendingParticipants(dispute.input.channelId).length;
+                address[] memory pendingParticipants = getPendingParticipants(dispute.input.channelId);
+                address[] memory snapshotParticipants = snapshotData.participants;
+                maxSlashCount = snapshotParticipants.length + pendingParticipants.length;
                 slashParticipants = new address[](maxSlashCount);
 
-                //populate initially with on-chain slashes up to the dispute window expiration timestamp
+                // On-chain slashes up to dispute window end: only participants in the snapshot ∪ pending set, deduped
                 for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
-                    if (disputeData.onChainSlashes[j].timestamp <= disputeWindowExpirationTimestamp) {
-                        slashParticipants[slashCount++] = disputeData.onChainSlashes[j].participant;
+                    if (disputeData.onChainSlashes[j].timestamp > disputeWindowExpirationTimestamp) continue;
+                    address participant = disputeData.onChainSlashes[j].participant;
+                    if (
+                        !UtilityFacet(utilityFacetAddress).inParticipantUnion(
+                            participant, snapshotParticipants, pendingParticipants
+                        )
+                    ) {
+                        continue;
+                    }
+                    bool alreadySlashed = false;
+                    for (uint256 k = 0; k < slashCount; k++) {
+                        if (slashParticipants[k] == participant) {
+                            alreadySlashed = true;
+                            break;
+                        }
+                    }
+                    if (!alreadySlashed) {
+                        slashParticipants[slashCount++] = participant;
                     }
                 }
                 // ***** reducedOutput.latestInboundMessageBlockHash *****

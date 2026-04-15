@@ -170,6 +170,9 @@ class DisputeManager {
                 handlers: {
                     ErrorCantParticipateInDispute: () => {
                         // No op -> malcious peer
+                    },
+                    RaceConditionDisputeEvidencePeriodExpired: () => {
+                        // No op -> ignore race condition
                     }
                 }
             });
