@@ -94,10 +94,19 @@ export class ScenarioActions {
         this.harness.event.resetEventSpies();
     }
 
-    async preDisputeSetupDisconnectedPeer() {
-        await this.harness.lifecycle.timeoutSetup(4, 0, {
-            timeConfig: { evidenceTime: 6 }
-        });
+    async preDisputeSetupDisconnectedPeer(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        const timeConfig = {
+            evidenceTime: 6,
+            ...options?.timeConfig
+        };
+        await this.harness.lifecycle.timeoutSetup(4, 0, { timeConfig });
         await this.harness.network.disconnectPeer(2);
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],

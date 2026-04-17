@@ -96,6 +96,7 @@ export {
     DisputeTampering,
     DisputeTamperingActions
 } from "./actions/DisputeTamperingActions";
+export { expectSignedBlocksOnlyStateProof } from "./stateProofTestUtils";
 export { AssertActions } from "./actions/assert/AssertActions";
 export { ByzantineActions } from "./actions/ByzantineActions";
 export { RPCActions } from "./actions/RPCActions";

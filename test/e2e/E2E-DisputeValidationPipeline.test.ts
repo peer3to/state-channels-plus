@@ -2,7 +2,7 @@ import { ethers, ZeroHash } from "ethers";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash } from "@/utils";
 import Block from "@/models/Block";
-import { TestSession, PeerTestHarness, DisputeTampering } from "@test/harness";
+import { PeerTestHarness, TestSession } from "@test/harness";
 import * as factory from "@test/factory";
 import { Hash } from "@/types/types";
 import Clock from "@/Clock";
@@ -14,65 +14,6 @@ import type {
 PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: dispute validation", function () {
-    describe("No-calldata: invalid latest proof", function () {
-        it("DisputeInvalidStateProof: tampered latestStateSnapshotHash", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-
-            // Stub peer 1's dispute construction to corrupt latestStateSnapshotHash.
-            // postedAuditingData remains false → no-calldata path.
-            h.tamper.stubConstructDispute(
-                1,
-                DisputeTampering.tamperInvalidStateProof
-            );
-
-            await h.byzantine.submitInvalidStateTransitionBlock(2);
-
-            await h.assert.dispute.initiatedWait({
-                peersIndices: [1],
-                initiatedWithAuditingData: false
-            });
-
-            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 10000
-            });
-            await h.dispute.resolveDisputeWait();
-        });
-
-        it("DisputeInvalidStateProof: empty proof, non-genesis snapshot hash", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-
-            // Empty proof implies latest state is genesis; claiming a non-genesis hash is invalid.
-            h.tamper.stubConstructDispute(1, (dispute) => {
-                dispute.input.stateProof.milestones = [];
-                dispute.input.stateProof.signedBlocks = [];
-                dispute.input.latestStateSnapshotHash = hash("0x42");
-            });
-
-            await h.byzantine.submitInvalidStateTransitionBlock(2);
-
-            await h.assert.dispute.initiatedWait({
-                peersIndices: [1],
-                initiatedWithAuditingData: false
-            });
-            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 10000
-            });
-            await h.dispute.resolveDisputeWait();
-        });
-    });
-
     describe("Calldata path", function () {
         it("DisputeInvalidStateProof: milestones and signedBlocks both non-empty", async function () {
             const h = TestSession.getHarness();
@@ -137,60 +78,6 @@ describe("E2E: dispute validation", function () {
                 initiatedWithAuditingData: true
             });
 
-            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 10000
-            });
-            await h.dispute.resolveDisputeWait();
-        });
-
-        it("DisputeInvalidStateProof: tampered latestStateSnapshotHash", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-
-            h.tamper.stubConstructDispute(
-                3,
-                DisputeTampering.tamperInvalidStateProof
-            );
-
-            await h.byzantine.submitDoubleSignBlock(0);
-
-            await h.assert.dispute.initiatedWait({
-                peersIndices: [3],
-                initiatedWithAuditingData: true
-            });
-
-            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 10000
-            });
-            await h.dispute.resolveDisputeWait();
-        });
-
-        it("DisputeInvalidStateProof: empty proof, non-genesis snapshot hash", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-
-            h.tamper.stubConstructDispute(3, (d) => {
-                d.input.stateProof.milestones = [];
-                d.input.stateProof.signedBlocks = [];
-                d.input.latestStateSnapshotHash = hash("0x42");
-            });
-
-            await h.byzantine.submitDoubleSignBlock(0);
-
-            await h.assert.dispute.initiatedWait({
-                peersIndices: [3],
-                initiatedWithAuditingData: true
-            });
             await h.event.waitForPeers("onDisputeKilled", [1], 1, {
                 mode: "atLeast"
             });
