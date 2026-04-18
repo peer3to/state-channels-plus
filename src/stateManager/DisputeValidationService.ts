@@ -783,6 +783,12 @@ export default class DisputeValidationService {
         dispute: DisputeStruct,
         disputeAuditingData: DisputeAuditingDataStruct
     ): void {
+        for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
+            this.storage.stateSnapshots.storeStateSnapshot(
+                StateSnapshot.from(milestoneSnapshot)
+            );
+        }
+
         const latestFinalizedSnapshot =
             this.agreementManager.getLatestFinalizedSnapshot(
                 dispute.input.stateProof,
@@ -795,12 +801,6 @@ export default class DisputeValidationService {
                 {
                     hash: latestFinalizedSnapshot.stateMachineStateHash
                 }
-            );
-        }
-
-        for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
-            this.storage.stateSnapshots.storeStateSnapshot(
-                StateSnapshot.from(milestoneSnapshot)
             );
         }
 
