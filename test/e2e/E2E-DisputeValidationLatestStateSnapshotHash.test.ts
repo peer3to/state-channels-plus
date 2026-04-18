@@ -2,6 +2,7 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import { hash } from "@/utils";
 import {
     DisputeTampering,
+    expectMilestonesOnlyStateProof,
     expectSignedBlocksOnlyStateProof,
     PeerTestHarness,
     TestSession
@@ -10,7 +11,7 @@ import {
 PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: latestStateSnapshotHash", function () {
-    describe("no calldataaaa", function () {
+    describe("no calldata", function () {
         describe("empty proof vs hash stub, non-signedBlocks", function () {
             it("DisputeInvalidStateProof: hash stub only (synced auditors)", async function () {
                 const h = TestSession.getHarness();
@@ -18,10 +19,10 @@ describe("E2E: latestStateSnapshotHash", function () {
 
                 // Stub peer 1's dispute construction to corrupt latestStateSnapshotHash.
                 // postedAuditingData remains false → no-calldata path.
-                h.tamper.stubConstructDispute(
-                    1,
-                    DisputeTampering.tamperInvalidStateProof
-                );
+                h.tamper.stubConstructDispute(1, (d) => {
+                    expectMilestonesOnlyStateProof(d.input.stateProof);
+                    DisputeTampering.tamperInvalidStateProof(d);
+                });
 
                 await h.byzantine.submitInvalidStateTransitionBlock(2);
 
@@ -141,7 +142,7 @@ describe("E2E: latestStateSnapshotHash", function () {
         });
     });
 
-    describe("calldata posteddd", function () {
+    describe("calldata posted", function () {
         describe("milestones, full auditors: hash stub | empty proof", function () {
             it("DisputeInvalidStateProof:  wrong hash, auditors complete (hash stub)", async function () {
                 const h = TestSession.getHarness();

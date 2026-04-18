@@ -40,6 +40,7 @@ import { ContextActions } from "@test/harness/actions/ContextActions";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { HarnessContext } from "@test/harness";
 import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
+import { HarnessDebug } from "./HarnessDebug";
 import { LogLevel } from "@/utils/logging/Logger";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 
@@ -107,6 +108,7 @@ export class PeerTestHarness<
     public readonly rpcStub!: RpcStubActions;
     public readonly contextApi!: ContextActions;
     public readonly scenario!: ScenarioActions;
+    public readonly debug: HarnessDebug;
 
     /**
      * First honest peer's fork ID is considered the active fork ID for the channel.
@@ -191,6 +193,7 @@ export class PeerTestHarness<
         this.rpcStub = new RpcStubActions(this, this.logger);
         this.contextApi = new ContextActions(this, this.logger);
         this.scenario = new ScenarioActions(this, this.logger);
+        this.debug = new HarnessDebug(this);
     }
 
     async setup(

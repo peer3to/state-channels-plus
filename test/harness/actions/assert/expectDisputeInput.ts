@@ -15,3 +15,19 @@ export function expectSignedBlocksOnlyStateProof(
         );
     }
 }
+
+export function expectMilestonesOnlyStateProof(
+    stateProof: StateProofStruct
+): void {
+    const { milestones, signedBlocks } = stateProof;
+    if (milestones.length === 0) {
+        throw new Error(
+            "expected non-empty milestones (milestones-only state proof)"
+        );
+    }
+    if (signedBlocks.length !== 0) {
+        throw new Error(
+            `expected empty signedBlocks for milestones-only proof, got signedBlocks=${signedBlocks.length}`
+        );
+    }
+}
