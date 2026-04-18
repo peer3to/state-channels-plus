@@ -224,4 +224,42 @@ export class EventActions {
             timeoutMessage: `None of peers ${peerIndices.join(", ")} initiated a dispute within ${timeoutMs}ms`
         });
     }
+
+    async waitWhileEventCountsStayAtMost(
+        eventName: keyof EventSpies,
+        peerIds: number[],
+        options: { durationMs: number; maxCount?: number }
+    ): Promise<void> {
+        const maxCount = options.maxCount ?? 0;
+        const { durationMs } = options;
+        const endAt = Date.now() + durationMs;
+
+        const deadlineTimer = setTimeout(
+            () => void this.harness.eventCountsBarrier.signal(),
+            durationMs
+        );
+
+        try {
+            await this.harness.eventCountsBarrier.waitFor(
+                () => {
+                    for (const peerId of peerIds) {
+                        const c = this.getEventCallCount(peerId, eventName);
+                        if (c > maxCount) {
+                            throw new Error(
+                                `peer ${peerId} ${String(eventName)} count ${c} > ${maxCount}`
+                            );
+                        }
+                    }
+                    return Date.now() >= endAt;
+                },
+                {
+                    timeoutMs: durationMs + 500,
+                    timeoutMessageFn: () =>
+                        `Within ${durationMs}ms, ${String(eventName)} for peers [${peerIds.join(", ")}] did not stay at <= ${maxCount}`
+                }
+            );
+        } finally {
+            clearTimeout(deadlineTimer);
+        }
+    }
 }

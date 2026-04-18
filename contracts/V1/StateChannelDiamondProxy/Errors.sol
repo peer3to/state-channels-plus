@@ -41,6 +41,10 @@ error ErrorDisputeAlreadyPosted();
 error ErrorCantParticipateInDispute();
 error ErrorAuditingDataHashMismatch();
 error ErrorDisputePostedAuditingDataMismatch();
+error ErrorDisputeLatestInboundMessageBlockHashInvalid();
+error ErrorDisputeLastInboundMessageBlockHeightInvalid();
+error ErrorDisputeStateProofHeaderChannelMismatch();
+error ErrorDisputeStateProofHeaderForkMismatch();
 
 //Reduce errors
 error ErrorNoDisputesProvided();

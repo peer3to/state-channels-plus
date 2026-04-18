@@ -49,7 +49,12 @@ export function tryDecodeCustomError(error: any): CustomEvmError | null {
     if (isCustomEvmError(error)) {
         return error;
     }
-    let errorData = error.data || error.error?.data || null;
+    let errorData =
+        error.data ||
+        error.error?.data ||
+        error.info?.error?.data ||
+        error.cause?.data ||
+        null;
     if (!errorData && error.execResult?.returnValue)
         errorData = ethers.hexlify(error.execResult.returnValue);
 

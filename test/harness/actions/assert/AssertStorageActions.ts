@@ -260,35 +260,6 @@ export class AssertStorageActions {
         );
     }
 
-    private assertPeerStoredDisputeFraudProof(options: {
-        honestPeerIndex: number;
-        dispute: DisputeStruct;
-        disputeFraudProofType?: DisputeFraudProofType;
-    }): void {
-        const { honestPeerIndex, dispute, disputeFraudProofType } = options;
-        const peerStorage = this.harness.query.getPeerStorage(honestPeerIndex);
-        const dfp =
-            peerStorage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                dispute
-            );
-        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
-        if (!dfp) {
-            throw new Error(
-                `Peer ${honestPeerIndex} has no dispute fraud proof for dispute ${disputeHash}`
-            );
-        }
-        if (disputeFraudProofType) {
-            if (
-                dfp.proofType !==
-                toSolidityDisputeFraudProofType(disputeFraudProofType)
-            ) {
-                throw new Error(
-                    `Peer ${honestPeerIndex} has dispute fraud proof type ${dfp.proofType} instead of ${toSolidityDisputeFraudProofType(disputeFraudProofType)} for dispute ${disputeHash}`
-                );
-            }
-        }
-    }
-
     storedTimeout(options: {
         timedoutParticipantIndex: number;
         peerToCheck?: number;

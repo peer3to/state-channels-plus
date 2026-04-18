@@ -555,7 +555,92 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         );
         return UtilityFacet(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
     }
-    // ???????
+
+    function _requireCanonicalLatestInboundMessageBlockHash(Dispute memory dispute) internal view {
+        bytes32 channelId = dispute.input.channelId;
+        bytes32 target = dispute.input.latestInboundMessageBlockHash;
+        bytes32 head = channelBalances[channelId].latestInboundMessageBlockHash;
+
+        if (target == bytes32(0)) {
+            require(head == bytes32(0), ErrorDisputeLatestInboundMessageBlockHashInvalid());
+            return;
+        }
+
+        bytes32 h = head;
+        while (h != bytes32(0)) {
+            if (h == target) {
+                return;
+            }
+            h = inboundMessageBlockMap[channelId][h].previousBlockHash;
+        }
+        revert ErrorDisputeLatestInboundMessageBlockHashInvalid();
+    }
+
+    function _requireCanonicalLastInboundMessageBlockHeight(Dispute memory dispute) internal view {
+        bytes32 channelId = dispute.input.channelId;
+        bytes32 target = dispute.input.latestInboundMessageBlockHash;
+        uint256 claimed = dispute.input.lastInboundMessageBlockHeight;
+
+        if (target == bytes32(0)) {
+            require(claimed == 0, ErrorDisputeLastInboundMessageBlockHeightInvalid());
+            return;
+        }
+
+        bytes32 h = channelBalances[channelId].latestInboundMessageBlockHash;
+        while (h != bytes32(0)) {
+            if (h == target) {
+                require(
+                    claimed == inboundMessageBlockMap[channelId][h].blockHeight,
+                    ErrorDisputeLastInboundMessageBlockHeightInvalid()
+                );
+                return;
+            }
+            h = inboundMessageBlockMap[channelId][h].previousBlockHash;
+        }
+        revert ErrorDisputeLastInboundMessageBlockHeightInvalid();
+    }
+
+    function _requireStateProofHeaderChannelMatchesInput(Dispute memory dispute) internal pure {
+        bytes32 channelId = dispute.input.channelId;
+        StateProof memory sp = dispute.input.stateProof;
+
+        for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
+            Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
+            if (b.transaction.header.channelId != channelId) {
+                revert ErrorDisputeStateProofHeaderChannelMismatch();
+            }
+        }
+        for (uint256 m = 0; m < sp.milestones.length; m++) {
+            BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
+            for (uint256 j = 0; j < bcs.length; j++) {
+                Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
+                if (mb.transaction.header.channelId != channelId) {
+                    revert ErrorDisputeStateProofHeaderChannelMismatch();
+                }
+            }
+        }
+    }
+
+    function _requireStateProofHeaderForkMatchesInput(Dispute memory dispute) internal pure {
+        bytes32 forkId = dispute.input.forkId;
+        StateProof memory sp = dispute.input.stateProof;
+
+        for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
+            Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
+            if (b.transaction.header.forkId != forkId) {
+                revert ErrorDisputeStateProofHeaderForkMismatch();
+            }
+        }
+        for (uint256 m = 0; m < sp.milestones.length; m++) {
+            BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
+            for (uint256 j = 0; j < bcs.length; j++) {
+                Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
+                if (mb.transaction.header.forkId != forkId) {
+                    revert ErrorDisputeStateProofHeaderForkMismatch();
+                }
+            }
+        }
+    }
 
     function _commitToDisputeReducedResult(
         bytes32 channelId,

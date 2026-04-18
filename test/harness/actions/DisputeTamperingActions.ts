@@ -1,8 +1,16 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { Logger, SignatureUtils, Codec, Type, hash, sleep } from "@/utils";
-import { ForkId } from "@/types/types";
+import {
+    Logger,
+    SignatureUtils,
+    Codec,
+    Type,
+    hash,
+    addressesEqual
+} from "@/utils";
+import { ForkId, Address } from "@/types/types";
 import StateSnapshot from "@/models/StateSnapshot";
-import { BytesLike, Signer } from "ethers";
+import Block from "@/models/Block";
+import { BytesLike, Signer, ZeroAddress } from "ethers";
 import {
     DisputeStruct,
     DisputeConfirmationStruct
@@ -10,6 +18,11 @@ import {
 import DisputeManager, {
     ConstructDisputeResult
 } from "@/disputeManager/DisputeManager";
+import type { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    expectMilestonesOnlyStateProof,
+    expectSignedBlocksOnlyStateProof
+} from "./assert/expectDisputeInput";
 
 export type DisputeTamper = (
     dispute: DisputeStruct,
@@ -46,6 +59,11 @@ export class DisputeTampering {
 
         block.stateSnapshotHash = hash("0xDEADBEEF");
         firstBc.signedBlock.encodedBlock = Codec.encode(block, Type.Block);
+    }
+    static junkSelfRemovalInconsistentOutputHash(dispute: DisputeStruct): void {
+        dispute.input.selfRemoval = true;
+        dispute.input.timeout.participant = ZeroAddress;
+        dispute.input.onChainSlashes = [];
     }
 }
 
@@ -292,6 +310,51 @@ export class DisputeTamperingActions {
         this.logger.debug(
             `Truncated state proof to height ${targetHeight} for disputer ${disputerPeerIndex}`
         );
+    }
+
+    async rewriteLastSignedBlockInDispute(
+        dispute: DisputeStruct,
+        mapStruct: (bs: BlockStruct) => BlockStruct
+    ): Promise<void> {
+        const proof = dispute.input.stateProof;
+        expectSignedBlocksOnlyStateProof(proof);
+        const lastIdx = proof.signedBlocks.length - 1;
+        const prev = Block.fromSignedBlock(proof.signedBlocks[lastIdx]);
+        const mapped = mapStruct(prev.blockStruct);
+        const participant = mapped.transaction.header.participant as Address;
+        const peer = this.harness.peers.find((p) =>
+            addressesEqual(p.address, participant)
+        );
+        if (!peer) {
+            throw new Error(`No harness peer for block author ${participant}`);
+        }
+        const nb = await Block.fromBlockStruct(mapped, peer.signer);
+        proof.signedBlocks[lastIdx] = nb.signedBlock;
+    }
+
+    async rewriteLastMilestoneSignedBlockInDispute(
+        dispute: DisputeStruct,
+        mapStruct: (bs: BlockStruct) => BlockStruct
+    ): Promise<void> {
+        const proof = dispute.input.stateProof;
+        expectMilestonesOnlyStateProof(proof);
+        const lastM = proof.milestones[proof.milestones.length - 1];
+        const lastIdx = lastM.blockConfirmations.length - 1;
+        const bc = lastM.blockConfirmations[lastIdx];
+        const prev = Block.fromSignedBlock(bc.signedBlock);
+        const mapped = mapStruct(prev.blockStruct);
+        const participant = mapped.transaction.header.participant as Address;
+        const peer = this.harness.peers.find((p) =>
+            addressesEqual(p.address, participant)
+        );
+        if (!peer) {
+            throw new Error(`No harness peer for block author ${participant}`);
+        }
+        const nb = await Block.fromBlockStruct(mapped, peer.signer);
+        lastM.blockConfirmations[lastIdx] = {
+            signedBlock: nb.signedBlock,
+            signatures: bc.signatures
+        };
     }
 
     private async resignDispute(

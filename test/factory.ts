@@ -32,7 +32,8 @@ import {
 } from "@/types/types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
-export const hash = () => ethers.hexlify(ethers.randomBytes(32));
+export const hash = (): `0x${string}` =>
+    ethers.hexlify(ethers.randomBytes(32)) as `0x${string}`;
 
 export const hexString = (length: number = 32): Bytes => {
     return ethers.hexlify(ethers.randomBytes(length));
@@ -143,6 +144,22 @@ export function block(
     };
 
     return Block.fromSignedBlock(signedBlockStruct);
+}
+
+/** Copy of `blockStruct` with `transaction.header` shallow-merged with `header`. */
+export function blockStructWithTransactionHeader(
+    bs: BlockStruct,
+    header: Partial<TransactionHeaderStruct>
+): BlockStruct {
+    return {
+        transaction: {
+            header: { ...bs.transaction.header, ...header },
+            body: { ...bs.transaction.body }
+        },
+        stateSnapshotHash: bs.stateSnapshotHash,
+        previousBlockHash: bs.previousBlockHash,
+        messageBlocks: [...bs.messageBlocks]
+    };
 }
 
 /**
