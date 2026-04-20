@@ -23,22 +23,26 @@ describe("E2E: dispute validation", function () {
             // verifyStateProof rejects any proof where both arrays are non-empty.
             // Copy a real milestone block so headers match dispute.input (upload reverts otherwise:
             // _requireStateProofHeaderChannelMatchesInput; factory.signedBlock uses dummy channelId).
-            h.tamper.stubConstructDispute(3, (d) => {
-                if (d.input.stateProof.milestones.length === 0) {
-                    throw new Error(
-                        "Expected milestones in calldata-path state proof"
-                    );
-                }
-                const src =
-                    d.input.stateProof.milestones[0].blockConfirmations[0]
-                        .signedBlock;
-                d.input.stateProof.signedBlocks = [
-                    {
-                        encodedBlock: src.encodedBlock,
-                        signature: src.signature
+            h.tamper.stubConstructDispute(
+                3,
+                (d) => {
+                    if (d.input.stateProof.milestones.length === 0) {
+                        throw new Error(
+                            "Expected milestones in calldata-path state proof"
+                        );
                     }
-                ];
-            });
+                    const src =
+                        d.input.stateProof.milestones[0].blockConfirmations[0]
+                            .signedBlock;
+                    d.input.stateProof.signedBlocks = [
+                        {
+                            encodedBlock: src.encodedBlock,
+                            signature: src.signature
+                        }
+                    ];
+                },
+                { markMalicious: false }
+            );
 
             await h.byzantine.submitDoubleSignBlock(0);
 
@@ -55,7 +59,9 @@ describe("E2E: dispute validation", function () {
                     DisputeFraudProofType.DisputeInvalidStateProof,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({
+                extraOnChainParticipants: 1
+            });
         });
 
         it("DisputeInvalidStateProof: milestone has no blockConfirmations", async function () {
@@ -65,14 +71,18 @@ describe("E2E: dispute validation", function () {
             // Empty blockConfirmations on the first milestone causes
             // _isMilestoneFinalWithExpectedParticipants to return (false, 0)
             // immediately, making _tryVerifyMilestones return false.
-            h.tamper.stubConstructDispute(3, (d) => {
-                if (d.input.stateProof.milestones.length === 0) {
-                    throw new Error(
-                        "Expected milestones in calldata-path state proof"
-                    );
-                }
-                d.input.stateProof.milestones[0].blockConfirmations = [];
-            });
+            h.tamper.stubConstructDispute(
+                3,
+                (d) => {
+                    if (d.input.stateProof.milestones.length === 0) {
+                        throw new Error(
+                            "Expected milestones in calldata-path state proof"
+                        );
+                    }
+                    d.input.stateProof.milestones[0].blockConfirmations = [];
+                },
+                { markMalicious: false }
+            );
 
             await h.byzantine.submitDoubleSignBlock(0);
 
@@ -89,7 +99,9 @@ describe("E2E: dispute validation", function () {
                     DisputeFraudProofType.DisputeInvalidStateProof,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({
+                extraOnChainParticipants: 1
+            });
         });
     });
 

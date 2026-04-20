@@ -69,8 +69,6 @@ export class ScenarioActions {
         this.harness.contextApi.captureOriginalFork();
     }
 
-    // 4 peers, peer 2 is leaving, next turn is peer 1
-    //  5 blocks in this pre-setp, block height is 4
     async preDisputeSetupCalldataPath(options?: {
         timeConfig?: {
             p2pTime?: number;
@@ -85,11 +83,9 @@ export class ScenarioActions {
         };
 
         await this.preDisputeSetup({ peerCount: 4, timeConfig });
-        await this.harness.transition.participantLeaveDetached();
-        await this.harness.transition.advanceState({
-            waitForPeers: [0, 1, 3],
-            count: 2
-        });
+        await this.harness.transition.advanceState({ count: 2 });
+        await this.harness.join.forceInboundJoinWait();
+
         this.harness.contextApi.captureOriginalFork();
         this.harness.event.resetEventSpies();
     }

@@ -57,6 +57,8 @@ export class DisputeOrchestrator {
             expectedDisputesCommittedPerPeer?: number;
             disputesCommittedMode?: "exact" | "atLeast";
             assertMaliciousRemoved?: boolean;
+            /** On-chain participants not represented as harness peers (e.g. `forceInboundJoin` random address). */
+            extraOnChainParticipants?: number;
         } = {}
     ): Promise<CreateAndResolveDisputeResult> {
         const originalForkId = options.forkId || this.harness.activeForkId!;
@@ -119,12 +121,14 @@ export class DisputeOrchestrator {
             const maliciousAddresses = maliciousPeerIndices.map(
                 (i) => this.harness.getPeer(i).address
             );
+            const maxOnChainParticipants =
+                honestPeers.length + (options.extraOnChainParticipants ?? 0);
 
             for (const peer of honestPeers) {
                 const participants =
                     await peer.stateManager.diamondStateMachine.getParticipants();
                 expect(participants)
-                    .to.have.length.lessThanOrEqual(honestPeers.length)
+                    .to.have.length.lessThanOrEqual(maxOnChainParticipants)
                     .and.greaterThan(0);
                 expect(participants).to.not.include(maliciousAddresses);
             }
