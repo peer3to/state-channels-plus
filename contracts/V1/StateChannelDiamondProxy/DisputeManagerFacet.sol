@@ -51,8 +51,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         require(canParticipateInDisputes(dispute.input.channelId, msg.sender), ErrorCantParticipateInDispute());
         _requireStateProofHeaderChannelMatchesInput(dispute);
         _requireStateProofHeaderForkMatchesInput(dispute);
-        _requireCanonicalLatestInboundMessageBlockHash(dispute);
-        _requireCanonicalLastInboundMessageBlockHeight(dispute);
+        _requireCanonicalDisputeInbound(dispute);
 
         // race condition checks
         _disputeRaceConditionCheck(dispute);

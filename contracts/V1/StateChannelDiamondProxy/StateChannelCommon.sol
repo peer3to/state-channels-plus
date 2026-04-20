@@ -556,48 +556,37 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return UtilityFacet(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
     }
 
-    function _requireCanonicalLatestInboundMessageBlockHash(Dispute memory dispute) internal view {
+    function _requireCanonicalDisputeInbound(Dispute memory dispute) internal view {
         bytes32 channelId = dispute.input.channelId;
-        bytes32 target = dispute.input.latestInboundMessageBlockHash;
-        bytes32 head = channelBalances[channelId].latestInboundMessageBlockHash;
+        bytes32 disputeLatestInboundHash = dispute.input.latestInboundMessageBlockHash;
+        uint256 disputeLastInboundHeight = dispute.input.lastInboundMessageBlockHeight;
+        ChannelBalance memory channelBalance = channelBalances[channelId];
+        bytes32 onChainInboundHeadHash = channelBalance.latestInboundMessageBlockHash;
 
-        if (target == bytes32(0)) {
-            require(head == bytes32(0), ErrorDisputeLatestInboundMessageBlockHashInvalid());
+        if (disputeLatestInboundHash == bytes32(0)) {
+            require(onChainInboundHeadHash == bytes32(0), ErrorDisputeLatestInboundMessageBlockHashInvalid());
+            require(disputeLastInboundHeight == 0, ErrorDisputeLastInboundMessageBlockHeightInvalid());
+            require(
+                channelBalance.latestInboundMessageBlockHeight == 0, ErrorDisputeLastInboundMessageBlockHeightInvalid()
+            );
             return;
         }
 
-        bytes32 h = head;
-        while (h != bytes32(0)) {
-            if (h == target) {
-                return;
-            }
-            h = inboundMessageBlockMap[channelId][h].previousBlockHash;
-        }
-        revert ErrorDisputeLatestInboundMessageBlockHashInvalid();
-    }
-
-    function _requireCanonicalLastInboundMessageBlockHeight(Dispute memory dispute) internal view {
-        bytes32 channelId = dispute.input.channelId;
-        bytes32 target = dispute.input.latestInboundMessageBlockHash;
-        uint256 claimed = dispute.input.lastInboundMessageBlockHeight;
-
-        if (target == bytes32(0)) {
-            require(claimed == 0, ErrorDisputeLastInboundMessageBlockHeightInvalid());
-            return;
-        }
-
-        bytes32 h = channelBalances[channelId].latestInboundMessageBlockHash;
-        while (h != bytes32(0)) {
-            if (h == target) {
+        bytes32 walkHash = onChainInboundHeadHash;
+        while (walkHash != bytes32(0)) {
+            if (walkHash == disputeLatestInboundHash) {
+                uint256 onChainHeightAtDisputeHash = (walkHash == onChainInboundHeadHash)
+                    ? channelBalance.latestInboundMessageBlockHeight
+                    : inboundMessageBlockMap[channelId][walkHash].blockHeight;
                 require(
-                    claimed == inboundMessageBlockMap[channelId][h].blockHeight,
+                    disputeLastInboundHeight == onChainHeightAtDisputeHash,
                     ErrorDisputeLastInboundMessageBlockHeightInvalid()
                 );
                 return;
             }
-            h = inboundMessageBlockMap[channelId][h].previousBlockHash;
+            walkHash = inboundMessageBlockMap[channelId][walkHash].previousBlockHash;
         }
-        revert ErrorDisputeLastInboundMessageBlockHeightInvalid();
+        revert ErrorDisputeLatestInboundMessageBlockHashInvalid();
     }
 
     function _requireStateProofHeaderChannelMatchesInput(Dispute memory dispute) internal pure {

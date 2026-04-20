@@ -3,7 +3,6 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash } from "@/utils";
 import Block from "@/models/Block";
 import { PeerTestHarness, TestSession } from "@test/harness";
-import * as factory from "@test/factory";
 import { Hash } from "@/types/types";
 import Clock from "@/Clock";
 import type {
@@ -20,19 +19,23 @@ describe("E2E: dispute validation", function () {
             // preDisputeSetupCalldataPath produces a milestones-only state proof.
             await h.scenario.preDisputeSetupCalldataPath();
 
-            // Inject a garbage signedBlock alongside the real milestones.
+            // Inject an extra signedBlock alongside the real milestones.
             // verifyStateProof rejects any proof where both arrays are non-empty.
+            // Copy a real milestone block so headers match dispute.input (upload reverts otherwise:
+            // _requireStateProofHeaderChannelMatchesInput; factory.signedBlock uses dummy channelId).
             h.tamper.stubConstructDispute(3, (d) => {
                 if (d.input.stateProof.milestones.length === 0) {
                     throw new Error(
                         "Expected milestones in calldata-path state proof"
                     );
                 }
-                const validSignedBlock = factory.signedBlock();
+                const src =
+                    d.input.stateProof.milestones[0].blockConfirmations[0]
+                        .signedBlock;
                 d.input.stateProof.signedBlocks = [
                     {
-                        encodedBlock: validSignedBlock.encodedBlock,
-                        signature: validSignedBlock.signature
+                        encodedBlock: src.encodedBlock,
+                        signature: src.signature
                     }
                 ];
             });
