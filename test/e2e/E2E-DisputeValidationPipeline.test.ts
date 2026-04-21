@@ -23,35 +23,31 @@ describe("E2E: dispute validation", function () {
             // verifyStateProof rejects any proof where both arrays are non-empty.
             // Copy a real milestone block so headers match dispute.input (upload reverts otherwise:
             // _requireStateProofHeaderChannelMatchesInput; factory.signedBlock uses dummy channelId).
-            h.tamper.stubConstructDispute(
-                3,
-                (d) => {
-                    if (d.input.stateProof.milestones.length === 0) {
-                        throw new Error(
-                            "Expected milestones in calldata-path state proof"
-                        );
+            h.tamper.stubConstructDispute(3, (d) => {
+                if (d.input.stateProof.milestones.length === 0) {
+                    throw new Error(
+                        "Expected milestones in calldata-path state proof"
+                    );
+                }
+                const src =
+                    d.input.stateProof.milestones[0].blockConfirmations[0]
+                        .signedBlock;
+                d.input.stateProof.signedBlocks = [
+                    {
+                        encodedBlock: src.encodedBlock,
+                        signature: src.signature
                     }
-                    const src =
-                        d.input.stateProof.milestones[0].blockConfirmations[0]
-                            .signedBlock;
-                    d.input.stateProof.signedBlocks = [
-                        {
-                            encodedBlock: src.encodedBlock,
-                            signature: src.signature
-                        }
-                    ];
-                },
-                { markMalicious: false }
-            );
+                ];
+            });
 
-            await h.byzantine.submitDoubleSignBlock(0);
+            await h.byzantine.submitDoubleSignBlock(1);
 
             await h.assert.dispute.initiatedWait({
                 peersIndices: [3],
                 initiatedWithAuditingData: true
             });
 
-            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
@@ -60,7 +56,7 @@ describe("E2E: dispute validation", function () {
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
-                extraOnChainParticipants: 1
+                syntheticOnChainParticipants: 1
             });
         });
 
@@ -71,27 +67,23 @@ describe("E2E: dispute validation", function () {
             // Empty blockConfirmations on the first milestone causes
             // _isMilestoneFinalWithExpectedParticipants to return (false, 0)
             // immediately, making _tryVerifyMilestones return false.
-            h.tamper.stubConstructDispute(
-                3,
-                (d) => {
-                    if (d.input.stateProof.milestones.length === 0) {
-                        throw new Error(
-                            "Expected milestones in calldata-path state proof"
-                        );
-                    }
-                    d.input.stateProof.milestones[0].blockConfirmations = [];
-                },
-                { markMalicious: false }
-            );
+            h.tamper.stubConstructDispute(3, (d) => {
+                if (d.input.stateProof.milestones.length === 0) {
+                    throw new Error(
+                        "Expected milestones in calldata-path state proof"
+                    );
+                }
+                d.input.stateProof.milestones[0].blockConfirmations = [];
+            });
 
-            await h.byzantine.submitDoubleSignBlock(0);
+            await h.byzantine.submitDoubleSignBlock(1);
 
             await h.assert.dispute.initiatedWait({
                 peersIndices: [3],
                 initiatedWithAuditingData: true
             });
 
-            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
@@ -100,7 +92,7 @@ describe("E2E: dispute validation", function () {
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
-                extraOnChainParticipants: 1
+                syntheticOnChainParticipants: 1
             });
         });
     });
@@ -448,7 +440,7 @@ describe("E2E: dispute validation", function () {
             // mark peer 0 as malicious
             h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
 
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
 
         it("TimeoutParticipantNotNext: participant not next writer", async function () {

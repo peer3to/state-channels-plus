@@ -150,18 +150,17 @@ describe("E2E: latestStateSnapshotHash", function () {
 
                 h.tamper.stubConstructDispute(
                     3,
-                    DisputeTampering.tamperInvalidStateProof,
-                    { markMalicious: false }
+                    DisputeTampering.tamperInvalidStateProof
                 );
 
-                await h.byzantine.submitDoubleSignBlock(0);
+                await h.byzantine.submitDoubleSignBlock(1);
 
                 await h.assert.dispute.initiatedWait({
                     peersIndices: [3],
                     initiatedWithAuditingData: true
                 });
 
-                await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                await h.event.waitForPeers("onDisputeKilled", [0], 1, {
                     mode: "atLeast"
                 });
                 await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
@@ -172,7 +171,7 @@ describe("E2E: latestStateSnapshotHash", function () {
                     }
                 );
                 await h.dispute.resolveDisputeWait({
-                    extraOnChainParticipants: 1
+                    syntheticOnChainParticipants: 1
                 });
             });
 
@@ -180,24 +179,20 @@ describe("E2E: latestStateSnapshotHash", function () {
                 const h = TestSession.getHarness();
                 await h.scenario.preDisputeSetupCalldataPath();
 
-                h.tamper.stubConstructDispute(
-                    3,
-                    (d) => {
-                        d.input.stateProof.milestones = [];
-                        d.input.stateProof.signedBlocks = [];
-                        d.input.latestStateSnapshotHash = hash("0x42");
-                    },
-                    { markMalicious: false }
-                );
+                h.tamper.stubConstructDispute(3, (d) => {
+                    d.input.stateProof.milestones = [];
+                    d.input.stateProof.signedBlocks = [];
+                    d.input.latestStateSnapshotHash = hash("0x42");
+                });
 
-                await h.byzantine.submitDoubleSignBlock(0);
+                await h.byzantine.submitDoubleSignBlock(1);
 
                 await h.assert.dispute.initiatedWait({
                     peersIndices: [3],
                     initiatedWithAuditingData: true
                 });
 
-                await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                await h.event.waitForPeers("onDisputeKilled", [0], 1, {
                     mode: "atLeast"
                 });
                 await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
@@ -208,8 +203,7 @@ describe("E2E: latestStateSnapshotHash", function () {
                     }
                 );
                 await h.dispute.resolveDisputeWait({
-                    extraOnChainParticipants: 1,
-                    forkSettleTimeoutMs: 20000
+                    syntheticOnChainParticipants: 1
                 });
             });
         });

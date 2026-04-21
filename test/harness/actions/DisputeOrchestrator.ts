@@ -3,18 +3,9 @@ import { CreateAndResolveDisputeResult } from "../core/types";
 import { Logger } from "@/utils";
 import { ForkId } from "@/types/types";
 import { ZeroHash } from "ethers";
-import { expect } from "chai";
 
 /**
  * DisputeOrchestrator - High-level dispute resolution workflows
- *
- * Orchestrates complex multi-step dispute scenarios:
- * - Create dispute
- * - Wait for on-chain commitment
- * - Wait for fork resolution
- * - Verify honest peer convergence
- *
- * These are test helpers, not core harness functionality.
  */
 export class DisputeOrchestrator {
     constructor(
@@ -57,8 +48,7 @@ export class DisputeOrchestrator {
             expectedDisputesCommittedPerPeer?: number;
             disputesCommittedMode?: "exact" | "atLeast";
             assertMaliciousRemoved?: boolean;
-            /** On-chain participants not represented as harness peers (e.g. `forceInboundJoin` random address). */
-            extraOnChainParticipants?: number;
+            syntheticOnChainParticipants?: number;
         } = {}
     ): Promise<CreateAndResolveDisputeResult> {
         const originalForkId = options.forkId || this.harness.activeForkId!;
@@ -83,17 +73,17 @@ export class DisputeOrchestrator {
             );
         }
 
+        const syncPeerIndices = [...barrierPeerIndices];
+
         const disputesCommittedTimeoutMs =
             options.disputesCommittedTimeoutMs ?? 5000;
-
-        const expectedDisputesCommittedPerPeer =
-            options.expectedDisputesCommittedPerPeer ?? 1;
+        const forkSettleTimeoutMs = options.forkSettleTimeoutMs ?? 10000;
 
         await this.harness.event.waitForEventCounts(
             "onDisputeCommitted",
-            honestPeerIndices.map((peerId) => ({
+            syncPeerIndices.map((peerId) => ({
                 peerId,
-                expectedCount: expectedDisputesCommittedPerPeer
+                expectedCount: options.expectedDisputesCommittedPerPeer ?? 1
             })),
             disputesCommittedTimeoutMs,
             { mode: options.disputesCommittedMode ?? "atLeast" }
@@ -102,8 +92,8 @@ export class DisputeOrchestrator {
         await this.harness.assert.sync.forkChangedWait({
             originalForkId,
             excludeForkIds: [originalForkId],
-            honestPeerIndices,
-            timeoutMs: options.forkSettleTimeoutMs ?? 10000
+            honestPeerIndices: syncPeerIndices,
+            timeoutMs: forkSettleTimeoutMs
         });
 
         const honestPeers = honestPeerIndices.map((idx) =>
@@ -121,16 +111,30 @@ export class DisputeOrchestrator {
             const maliciousAddresses = maliciousPeerIndices.map(
                 (i) => this.harness.getPeer(i).address
             );
-            const maxOnChainParticipants =
-                honestPeers.length + (options.extraOnChainParticipants ?? 0);
 
-            for (const peer of honestPeers) {
+            const cap =
+                honestPeers.length +
+                (options.syntheticOnChainParticipants ?? 0);
+
+            const settledPeers = syncPeerIndices
+                .map((i) => this.harness.getPeer(i))
+                .filter((p) => p.stateManager.forkId === newForkId);
+
+            for (const peer of settledPeers) {
                 const participants =
                     await peer.stateManager.diamondStateMachine.getParticipants();
-                expect(participants)
-                    .to.have.length.lessThanOrEqual(maxOnChainParticipants)
-                    .and.greaterThan(0);
-                expect(participants).to.not.include(maliciousAddresses);
+                if (participants.length > cap || participants.length === 0) {
+                    throw new Error(
+                        `Peer ${peer.index} has unexpected participant count ${participants.length} (expected 1..${cap}) on new fork ${newForkId}`
+                    );
+                }
+                for (const addr of maliciousAddresses) {
+                    if (participants.includes(addr)) {
+                        throw new Error(
+                            `Peer ${peer.index}: evicted address ${addr} still in getParticipants() on new fork ${newForkId}`
+                        );
+                    }
+                }
             }
         }
 

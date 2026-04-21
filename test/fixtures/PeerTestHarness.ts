@@ -556,6 +556,8 @@ export class PeerTestHarness<
                             transactionHashes
                         }
                     );
+
+                    void this.eventCountsBarrier.signal();
                 },
                 {
                     maxRetries: 30,

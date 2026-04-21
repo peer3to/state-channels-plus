@@ -83,7 +83,6 @@ export class ScenarioActions {
         };
 
         await this.preDisputeSetup({ peerCount: 4, timeConfig });
-        await this.harness.transition.advanceState({ count: 2 });
         await this.harness.join.forceInboundJoinWait();
 
         this.harness.contextApi.captureOriginalFork();
