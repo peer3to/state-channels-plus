@@ -13,20 +13,21 @@ import Block from "@/models/Block";
 import { BytesLike, Signer, ZeroAddress } from "ethers";
 import {
     DisputeStruct,
-    DisputeConfirmationStruct
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import DisputeManager, {
     ConstructDisputeResult
 } from "@/disputeManager/DisputeManager";
-import type { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import {
-    expectMilestonesOnlyStateProof,
-    expectSignedBlocksOnlyStateProof
-} from "./assert/expectDisputeInput";
+import type {
+    BlockStruct,
+    SignedBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 export type DisputeTamper = (
     dispute: DisputeStruct,
-    disputeConfirmation: DisputeConfirmationStruct
+    disputeConfirmation: DisputeConfirmationStruct,
+    auditingData?: DisputeAuditingDataStruct
 ) => void | Promise<void>;
 
 export class DisputeTampering {
@@ -95,7 +96,7 @@ export class DisputeTamperingActions {
                 targetForkId
             );
 
-        await tamper(dispute, disputeConfirmation);
+        await tamper(dispute, disputeConfirmation, auditingData);
         await this.resignDispute(peer.signer, dispute, disputeConfirmation);
 
         this.logger.debug(
@@ -139,7 +140,11 @@ export class DisputeTamperingActions {
         ): Promise<ConstructDisputeResult> => {
             const result = await originalConstructDispute(targetForkId);
 
-            await tamper(result.dispute, result.disputeConfirmation);
+            await tamper(
+                result.dispute,
+                result.disputeConfirmation,
+                result.auditingData
+            );
             await this.resignDispute(
                 peer.signer,
                 result.dispute,
@@ -314,47 +319,54 @@ export class DisputeTamperingActions {
 
     async rewriteLastSignedBlockInDispute(
         dispute: DisputeStruct,
-        mapStruct: (bs: BlockStruct) => BlockStruct
+        transformBlockStruct: (bs: BlockStruct) => BlockStruct
     ): Promise<void> {
         const proof = dispute.input.stateProof;
-        expectSignedBlocksOnlyStateProof(proof);
-        const lastIdx = proof.signedBlocks.length - 1;
-        const prev = Block.fromSignedBlock(proof.signedBlocks[lastIdx]);
-        const mapped = mapStruct(prev.blockStruct);
-        const participant = mapped.transaction.header.participant as Address;
-        const peer = this.harness.peers.find((p) =>
-            addressesEqual(p.address, participant)
+        const i = proof.signedBlocks.length - 1;
+        proof.signedBlocks[i] = await this.remapSignedBlock(
+            proof.signedBlocks[i],
+            transformBlockStruct
         );
-        if (!peer) {
-            throw new Error(`No harness peer for block author ${participant}`);
-        }
-        const nb = await Block.fromBlockStruct(mapped, peer.signer);
-        proof.signedBlocks[lastIdx] = nb.signedBlock;
     }
 
     async rewriteLastMilestoneSignedBlockInDispute(
         dispute: DisputeStruct,
-        mapStruct: (bs: BlockStruct) => BlockStruct
+        transformBlockStruct: (bs: BlockStruct) => BlockStruct
     ): Promise<void> {
         const proof = dispute.input.stateProof;
-        expectMilestonesOnlyStateProof(proof);
         const lastM = proof.milestones[proof.milestones.length - 1];
-        const lastIdx = lastM.blockConfirmations.length - 1;
-        const bc = lastM.blockConfirmations[lastIdx];
-        const prev = Block.fromSignedBlock(bc.signedBlock);
-        const mapped = mapStruct(prev.blockStruct);
-        const participant = mapped.transaction.header.participant as Address;
+        const i = lastM.blockConfirmations.length - 1;
+        const { signedBlock, signatures } = lastM.blockConfirmations[i];
+        lastM.blockConfirmations[i] = {
+            signedBlock: await this.remapSignedBlock(
+                signedBlock,
+                transformBlockStruct
+            ),
+            signatures
+        };
+    }
+
+    /** Re-encode and re-sign after `transformBlockStruct`, using the harness peer that matches the transformed block author. */
+    private async remapSignedBlock(
+        signedBlock: SignedBlockStruct,
+        transformBlockStruct: (bs: BlockStruct) => BlockStruct
+    ): Promise<SignedBlockStruct> {
+        const mapped = transformBlockStruct(
+            Block.fromSignedBlock(signedBlock).blockStruct
+        );
+        const author = mapped.transaction.header.participant as Address;
+        const peer = this.peerForBlockAuthor(author);
+        return (await Block.fromBlockStruct(mapped, peer.signer)).signedBlock;
+    }
+
+    private peerForBlockAuthor(participant: Address) {
         const peer = this.harness.peers.find((p) =>
             addressesEqual(p.address, participant)
         );
         if (!peer) {
             throw new Error(`No harness peer for block author ${participant}`);
         }
-        const nb = await Block.fromBlockStruct(mapped, peer.signer);
-        lastM.blockConfirmations[lastIdx] = {
-            signedBlock: nb.signedBlock,
-            signatures: bc.signatures
-        };
+        return peer;
     }
 
     private async resignDispute(

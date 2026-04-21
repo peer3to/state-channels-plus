@@ -1,5 +1,11 @@
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
-import { tryDecodeCustomError } from "@/utils";
+import {
+    tryDecodeCustomError,
+    Codec,
+    Type,
+    hash,
+    addressesEqual
+} from "@/utils";
 import {
     DisputeTampering,
     TestSession,
@@ -304,37 +310,147 @@ describe("E2E: dispute junk data", function () {
         });
     });
 
-    // TODO
-    describe.skip("stateProof milestones — [M1,M2] with different inbound hashes", function () {
-        it("M2 milestoneSnapshot has junk inboundMessageBlockHash → DisputeInvalidStateProof", async function () {
-            // Setup: 4+ peers, two participant transitions creating M1 and M2 (M1.inboundHash ≠ M2.inboundHash)
-            // Action: tamper auditingData.milestoneSnapshots[1].snapshotData.latestInboundMessageBlockHash = junk
-            // Expected: _deriveMilestoneUnionParticipants derives wrong pending set for M3 threshold
-            //           → verifyMilestones fails → DisputeInvalidStateProof kills the dispute
+    describe("stateProof milestones (auditing calldata)", function () {
+        it("M2 milestoneSnapshot junk latestInboundMessageBlockHash → DisputeInvalidStateProof", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.junkDataMilestoneMultiLeaveSetup();
+
+            await h.tamper.postTamperedDispute(0, (d, _dc, ad) => {
+                if (!ad) {
+                    throw new Error("expected calldata auditing data");
+                }
+                expect(
+                    d.input.stateProof.milestones.length,
+                    "need ≥2 milestones to target M2 snapshot"
+                ).to.be.greaterThanOrEqual(2);
+                expect(d.postedAuditingData).to.equal(true);
+                ad.milestoneSnapshots[1]!.snapshotData.latestInboundMessageBlockHash =
+                    randomHash();
+                d.input.disputeAuditingDataHash = hash(
+                    Codec.encode(ad, Type.DisputeAuditingData)
+                );
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
+                mode: "atLeast",
+                timeoutMs: 25000
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof,
+                timeoutMs: 15000,
+                peerIndices: [1, 3]
+            });
         });
 
-        it("M2 milestoneSnapshot inboundHash valid, stateSnapshot at M2 — honest case must NOT be killed", async function () {
-            // This is the positive/correct case: the dispute is honest.
-            // Expected: verifyStateProof passes, dispute survives and wins the window.
-        });
+        it("M2 auditing row shows M3 snapshot (skip-ahead) → DisputeInvalidStateProof", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.junkDataMilestoneMultiLeaveSetup();
 
-        it("M2 milestoneSnapshot inboundHash valid, stateSnapshot claims M3 (skip-ahead) → DisputeInvalidStateProof", async function () {
-            // Action: tamper auditingData.milestoneSnapshots[1] with M3's snapshotData
-            // Expected: verifyMilestones detects finalizedSnapshotHash mismatch → DisputeInvalidStateProof
+            await h.tamper.postTamperedDispute(
+                0,
+                (dispute, _dc, auditingData) => {
+                    if (!auditingData) {
+                        throw new Error("expected calldata auditing data");
+                    }
+                    expect(
+                        auditingData.milestoneSnapshots.length,
+                        "auditing must expose a snapshot per milestone proof"
+                    ).to.be.greaterThanOrEqual(3);
+                    // slot for M2 carries M3's full snapshot (hash won't match M2 proof's finalizedSnapshotHash).
+                    auditingData.milestoneSnapshots[1] =
+                        auditingData.milestoneSnapshots[2]!;
+                    dispute.input.disputeAuditingDataHash = hash(
+                        Codec.encode(auditingData, Type.DisputeAuditingData)
+                    );
+                }
+            );
+
+            await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
+                mode: "atLeast",
+                timeoutMs: 25000
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof,
+                timeoutMs: 15000,
+                peerIndices: [1, 3]
+            });
         });
 
         it("M2 milestoneSnapshot inboundHash valid, stateSnapshot claims M1 (stay-back) → DisputeInvalidStateProof", async function () {
-            // Action: tamper auditingData.milestoneSnapshots[1] with M1's snapshotData
-            // Expected: verifyMilestones detects finalizedSnapshotHash mismatch → DisputeInvalidStateProof
+            const h = TestSession.getHarness();
+            await h.scenario.junkDataMilestoneMultiLeaveSetup();
+
+            await h.tamper.postTamperedDispute(
+                0,
+                (dispute, _dc, auditingData) => {
+                    if (!auditingData) {
+                        throw new Error("expected calldata auditing data");
+                    }
+                    expect(
+                        auditingData.milestoneSnapshots.length,
+                        "auditing must expose a snapshot per milestone proof"
+                    ).to.be.greaterThanOrEqual(3);
+                    // slot for M2 carries M1's full snapshot (hash won't match M2 proof's finalizedSnapshotHash).
+                    auditingData.milestoneSnapshots[1] =
+                        auditingData.milestoneSnapshots[0]!;
+                    dispute.input.disputeAuditingDataHash = hash(
+                        Codec.encode(auditingData, Type.DisputeAuditingData)
+                    );
+                }
+            );
+
+            await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
+                mode: "atLeast",
+                timeoutMs: 25000
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof,
+                timeoutMs: 15000,
+                peerIndices: [1, 3]
+            });
         });
 
         it("M2 milestone confirmed without expanding participant set — pending joiner excluded (colluding participants)", async function () {
-            // Setup: peer joins on-chain between M1 and M2 (pending in inbound chain); M1 participants collude.
-            // Action: tamper milestoneSnapshots[1].snapshotData.participants to omit the pending joiner;
-            //         supply only original M1-participants' block confirmations (threshold appears met).
-            // Expected: _deriveMilestoneUnionParticipants reads on-chain inbound hash and includes the
-            //           pending joiner → supplied confirmations fall short of threshold
-            //           → verifyMilestones fails → DisputeInvalidStateProof
+            const h = TestSession.getHarness();
+            const { pendingJoin } =
+                await h.scenario.junkDataMilestoneM1InboundThenM2Setup();
+
+            await h.tamper.postTamperedDispute(0, (d, _dc, ad) => {
+                if (!ad) {
+                    throw new Error("expected calldata auditing data");
+                }
+                expect(
+                    d.input.stateProof.milestones.length,
+                    "need ≥2 milestones to target M2 snapshot"
+                ).to.be.greaterThanOrEqual(2);
+                expect(d.postedAuditingData).to.equal(true);
+                expect(
+                    ad.milestoneSnapshots.length,
+                    "auditing must align with milestone proofs"
+                ).to.be.greaterThanOrEqual(2);
+                const row = ad.milestoneSnapshots[1]!;
+                row.snapshotData.participants =
+                    row.snapshotData.participants.filter(
+                        (p) => !addressesEqual(p, pendingJoin)
+                    );
+                d.input.disputeAuditingDataHash = hash(
+                    Codec.encode(ad, Type.DisputeAuditingData)
+                );
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
+                mode: "atLeast",
+                timeoutMs: 25000
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof,
+                timeoutMs: 15000,
+                peerIndices: [1, 3]
+            });
         });
     });
 });

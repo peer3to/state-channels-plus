@@ -89,6 +89,105 @@ export class ScenarioActions {
         this.harness.event.resetEventSpies();
     }
 
+    /** Five peers, two opening moves; two leaves (detached), peer 3 then peer 0 add. */
+    async junkDataMilestoneMultiLeaveSetup(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        const timeConfig = {
+            p2pTime: 1,
+            agreementTime: 6,
+            chainFallbackTime: 2,
+            evidenceTime: 6,
+            ...options?.timeConfig
+        };
+
+        await this.harness.lifecycle.timeoutSetup(5, 2, { timeConfig });
+
+        // peer 2 leaves
+        const firstLeaver =
+            await this.harness.transition.participantLeaveDetached({
+                waitForPeers: [0, 1, 3, 4]
+            });
+
+        await this.harness.transition.advanceState({
+            waitForPeers: [0, 1, 3, 4],
+            count: 1
+        });
+
+        const secondLeaver =
+            await this.harness.transition.participantLeaveDetached({
+                waitForPeers: [0, 1, 3]
+            });
+
+        this.harness.context.leftChannelPeerIndices = [
+            firstLeaver,
+            secondLeaver
+        ];
+
+        await this.harness.transition.advanceState({
+            waitForPeers: [0, 1, 3],
+            count: 1
+        });
+
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+    }
+
+    async junkDataMilestoneM1InboundThenM2Setup(options?: {
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }): Promise<{ pendingJoin: string }> {
+        const timeConfig = {
+            p2pTime: 1,
+            agreementTime: 6,
+            chainFallbackTime: 2,
+            evidenceTime: 6,
+            ...options?.timeConfig
+        };
+
+        await this.harness.lifecycle.timeoutSetup(5, 2, { timeConfig });
+
+        const firstLeaver =
+            await this.harness.transition.participantLeaveDetached({
+                waitForPeers: [0, 1, 3, 4]
+            });
+
+        await this.harness.transition.advanceState({
+            waitForPeers: [0, 1, 3, 4],
+            count: 1
+        });
+
+        const { participant: pendingJoin } =
+            await this.harness.join.forceInboundJoinWait();
+
+        // Pending join counts toward union finalization on-chain but has no harness peer;
+        // do not require full union signatures on transitions after the join.
+        const secondLeaver =
+            await this.harness.transition.participantLeaveDetached({
+                waitForPeers: [0, 1, 3],
+                waitForFinalization: false
+            });
+
+        this.harness.context.leftChannelPeerIndices = [
+            firstLeaver,
+            secondLeaver
+        ];
+
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+
+        return { pendingJoin };
+    }
+
     async preDisputeSetupDisconnectedPeer(options?: {
         timeConfig?: {
             p2pTime?: number;
