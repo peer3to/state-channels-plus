@@ -162,8 +162,12 @@ export class EventBarrier {
      * Clear all pending waiters without resolving them.
      */
     clear(): void {
-        for (const waiter of this.waiters) {
-            clearTimeout(waiter.timeoutId);
+        const waiters = Array.from(this.waiters);
+        const clearedError = new Error(
+            "EventBarrier cleared while waitFor condition was still pending (expected during harness cleanup)"
+        );
+        for (const waiter of waiters) {
+            waiter.reject(clearedError);
         }
         this.waiters.clear();
     }

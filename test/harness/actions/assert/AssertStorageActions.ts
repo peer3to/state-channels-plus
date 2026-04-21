@@ -245,7 +245,8 @@ export class AssertStorageActions {
             },
             {
                 timeoutMs,
-                timeoutMessage: `Not all checked peers stored dispute fraud proof type ${disputeFraudProofType} within ${timeoutMs ?? 5000}ms`
+                timeoutMessage: `Not all checked peers stored dispute fraud proof type ${disputeFraudProofType} within ${timeoutMs ?? 5000}ms`,
+                label: `disputeFraudProofWait:${disputeFraudProofType}`
             }
         );
     }

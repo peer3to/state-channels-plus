@@ -35,10 +35,12 @@ if (
     globalThis.__peer3SessionHooksRegistered__ = true;
 
     beforeEach(async function () {
+        this.timeout(120000);
         await TestSession.reset();
     });
 
     afterEach(async function () {
+        this.timeout(120000);
         if (this.currentTest?.state === "passed") {
             console.trace(
                 `Test passed - awaiting any detached promises to surface before finishing test!`
