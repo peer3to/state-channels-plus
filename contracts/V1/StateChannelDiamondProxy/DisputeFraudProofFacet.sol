@@ -67,6 +67,12 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.InvalidDisputeReason) {
             return _handleInvalidDisputeReason;
         }
+        if (proofType == DisputeFraudProofType.DisputeStateProofForkMismatch) {
+            return _handleDisputeStateProofForkMismatch;
+        }
+        if (proofType == DisputeFraudProofType.DisputeInboundHashNotInChain) {
+            return _handleDisputeInboundHashNotInChain;
+        }
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -80,6 +86,23 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _handleInvalidDisputeFraudProofType(bytes memory, Dispute memory) internal pure returns (address) {
         return _invalid();
+    }
+
+    function _handleDisputeStateProofForkMismatch(bytes memory, Dispute memory dispute)
+        internal
+        pure
+        returns (address)
+    {
+        if (_hasStateProofHeaderForkMismatch(dispute)) return _valid(dispute.input.disputer);
+        return _invalid();
+    }
+
+    function _handleDisputeInboundHashNotInChain(bytes memory, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        return _isDisputeInboundHashValid(dispute) ? _invalid() : _valid(dispute.input.disputer);
     }
 
     function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -603,6 +626,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
         return _isLastMilestoneFinalByEveryone(dispute);
+    }
+
+    function hasStateProofForkMismatch(Dispute memory dispute) public pure returns (bool) {
+        return _hasStateProofHeaderForkMismatch(dispute);
+    }
+
+    function isDisputeInboundHashValid(Dispute memory dispute) public view returns (bool) {
+        return _isDisputeInboundHashValid(dispute);
     }
 
     function _deriveExpectedParticipantsForDispute(Dispute memory dispute)

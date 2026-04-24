@@ -556,37 +556,33 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return UtilityFacet(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
     }
 
-    function _requireCanonicalDisputeInbound(Dispute memory dispute) internal view {
-        bytes32 channelId = dispute.input.channelId;
-        bytes32 disputeLatestInboundHash = dispute.input.latestInboundMessageBlockHash;
-        uint256 disputeLastInboundHeight = dispute.input.lastInboundMessageBlockHeight;
-        ChannelBalance memory channelBalance = channelBalances[channelId];
-        bytes32 onChainInboundHeadHash = channelBalance.latestInboundMessageBlockHash;
+    function _isDisputeInboundHashValid(Dispute memory dispute) internal view returns (bool) {
+        bytes32 disputeInboundHash = dispute.input.latestInboundMessageBlockHash;
+        uint256 disputeInboundHeight = dispute.input.lastInboundMessageBlockHeight;
 
-        if (disputeLatestInboundHash == bytes32(0)) {
-            require(onChainInboundHeadHash == bytes32(0), ErrorDisputeLatestInboundMessageBlockHashInvalid());
-            require(disputeLastInboundHeight == 0, ErrorDisputeLastInboundMessageBlockHeightInvalid());
-            require(
-                channelBalance.latestInboundMessageBlockHeight == 0, ErrorDisputeLastInboundMessageBlockHeightInvalid()
-            );
-            return;
+        if (disputeInboundHash == bytes32(0)) {
+            return disputeInboundHeight == 0;
         }
 
-        bytes32 walkHash = onChainInboundHeadHash;
+        bytes32 channelId = dispute.input.channelId;
+        ChannelBalance memory channelBalance = channelBalances[channelId];
+        bytes32 walkHash = channelBalance.latestInboundMessageBlockHash;
+
+        // Follow inbound blocks from latest toward genesis until we find the dispute's hash.
         while (walkHash != bytes32(0)) {
-            if (walkHash == disputeLatestInboundHash) {
-                uint256 onChainHeightAtDisputeHash = (walkHash == onChainInboundHeadHash)
-                    ? channelBalance.latestInboundMessageBlockHeight
-                    : inboundMessageBlockMap[channelId][walkHash].blockHeight;
-                require(
-                    disputeLastInboundHeight == onChainHeightAtDisputeHash,
-                    ErrorDisputeLastInboundMessageBlockHeightInvalid()
-                );
-                return;
+            if (walkHash == disputeInboundHash) {
+                uint256 onChainHeight;
+                if (walkHash == channelBalance.latestInboundMessageBlockHash) {
+                    onChainHeight = channelBalance.latestInboundMessageBlockHeight;
+                } else {
+                    onChainHeight = inboundMessageBlockMap[channelId][walkHash].blockHeight;
+                }
+                return disputeInboundHeight == onChainHeight;
             }
             walkHash = inboundMessageBlockMap[channelId][walkHash].previousBlockHash;
         }
-        revert ErrorDisputeLatestInboundMessageBlockHashInvalid();
+
+        return false;
     }
 
     function _requireStateProofHeaderChannelMatchesInput(Dispute memory dispute) internal pure {
@@ -610,25 +606,22 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
     }
 
-    function _requireStateProofHeaderForkMatchesInput(Dispute memory dispute) internal pure {
+    function _hasStateProofHeaderForkMismatch(Dispute memory dispute) internal pure returns (bool) {
         bytes32 forkId = dispute.input.forkId;
         StateProof memory sp = dispute.input.stateProof;
 
         for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
             Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
-            if (b.transaction.header.forkId != forkId) {
-                revert ErrorDisputeStateProofHeaderForkMismatch();
-            }
+            if (b.transaction.header.forkId != forkId) return true;
         }
         for (uint256 m = 0; m < sp.milestones.length; m++) {
             BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
             for (uint256 j = 0; j < bcs.length; j++) {
                 Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
-                if (mb.transaction.header.forkId != forkId) {
-                    revert ErrorDisputeStateProofHeaderForkMismatch();
-                }
+                if (mb.transaction.header.forkId != forkId) return true;
             }
         }
+        return false;
     }
 
     function _commitToDisputeReducedResult(

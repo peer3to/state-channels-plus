@@ -184,6 +184,14 @@ export const DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType = `tup
     bool __
 )`;
 
+export const DisputeStateProofForkMismatchProofEthersType = `tuple(
+    bool __
+)`;
+
+export const DisputeInboundHashNotInChainProofEthersType = `tuple(
+    bool __
+)`;
+
 export const InvalidDisputeReasonProofEthersType = `tuple(
     ${StateSnapshotEthersType} latestStateSnapshot
 )`;

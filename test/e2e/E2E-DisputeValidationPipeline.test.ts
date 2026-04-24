@@ -2,7 +2,15 @@ import { ethers, ZeroHash } from "ethers";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash } from "@/utils";
 import Block from "@/models/Block";
-import { PeerTestHarness, TestSession } from "@test/harness";
+import {
+    PeerTestHarness,
+    TestSession,
+    expectSignedBlocksOnlyStateProof
+} from "@test/harness";
+import {
+    hash as randomHash,
+    blockStructWithTransactionHeader
+} from "@test/factory";
 import { Hash } from "@/types/types";
 import Clock from "@/Clock";
 import type {
@@ -516,6 +524,73 @@ describe("E2E: dispute validation", function () {
         // });
     });
 
+    describe("Fork mismatch", function () {
+        it("DisputeStateProofForkMismatch: input forkId ≠ signed proof headers", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+
+            h.tamper.stubConstructDispute(3, async (dispute) => {
+                expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
+                await h.tamper.rewriteLastSignedBlockInDispute(dispute, (bs) =>
+                    blockStructWithTransactionHeader(bs, {
+                        forkId: randomHash()
+                    })
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: false
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeStateProofForkMismatch,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait();
+        });
+
+        it("DisputeStateProofForkMismatch: milestone header forkId ≠ input", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath();
+
+            h.tamper.stubConstructDispute(3, async (dispute) => {
+                await h.tamper.rewriteLastMilestoneSignedBlockInDispute(
+                    dispute,
+                    (bs) =>
+                        blockStructWithTransactionHeader(bs, {
+                            forkId: randomHash()
+                        })
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: true
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeStateProofForkMismatch,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait({
+                syntheticOnChainParticipants: 1
+            });
+        });
+    });
+
     describe("Invalid output state", function () {
         it("DisputeInvalidOutputState: corrupted outputSnapshotDataHash", async function () {
             const h = TestSession.getHarness();
@@ -538,6 +613,61 @@ describe("E2E: dispute validation", function () {
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidOutputState,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait();
+        });
+    });
+
+    describe("Inbound hash not in chain", function () {
+        it("DisputeInboundHashNotInChain: junk hash", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+
+            h.tamper.stubConstructDispute(0, (d) => {
+                d.input.latestInboundMessageBlockHash = randomHash() as Hash;
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedAndCommitedWait({
+                peersIndices: [0],
+                initiatedWithAuditingData: false
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast",
+                timeoutMs: 10000
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInboundHashNotInChain,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait();
+        });
+
+        it("DisputeInboundHashNotInChain: genesis hash with non-zero height", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+
+            h.tamper.stubConstructDispute(0, (d) => {
+                d.input.latestInboundMessageBlockHash = ZeroHash as Hash;
+                d.input.lastInboundMessageBlockHeight = 999999n;
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedAndCommitedWait({
+                peersIndices: [0],
+                initiatedWithAuditingData: false
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast",
+                timeoutMs: 10000
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInboundHashNotInChain,
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait();

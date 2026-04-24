@@ -50,6 +50,30 @@ export default class DisputeValidationService {
         dispute: DisputeStruct,
         onChainDisputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<boolean> {
+        if (!(await this.isDisputeInboundHashValid(dispute))) {
+            this.logger.warn("Dispute inbound hash not in chain", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute)
+            });
+            this.disputeFraudProofService.createDisputeInboundHashNotInChain(
+                dispute
+            );
+            return false;
+        }
+
+        const hasForkMismatch =
+            await this.stateChannelManagerContract.hasStateProofForkMismatch.staticCall(
+                dispute
+            );
+        if (hasForkMismatch) {
+            this.logger.warn("Dispute has state proof fork mismatch", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute)
+            });
+            this.disputeFraudProofService.createDisputeStateProofForkMismatch(
+                dispute
+            );
+            return false;
+        }
+
         const postedAuditingData = this.hasPostedAuditingData(dispute);
 
         if (postedAuditingData) {
@@ -584,6 +608,14 @@ export default class DisputeValidationService {
         }
 
         return dispute.input.forkId === latestSnapshot.snapshotDataHash;
+    }
+
+    private async isDisputeInboundHashValid(
+        dispute: DisputeStruct
+    ): Promise<boolean> {
+        return this.stateChannelManagerContract.isDisputeInboundHashValid.staticCall(
+            dispute
+        );
     }
 
     private verifyInboundMessageBlocks(

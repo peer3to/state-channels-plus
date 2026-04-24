@@ -50,8 +50,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender());
         require(canParticipateInDisputes(dispute.input.channelId, msg.sender), ErrorCantParticipateInDispute());
         _requireStateProofHeaderChannelMatchesInput(dispute);
-        _requireStateProofHeaderForkMatchesInput(dispute);
-        _requireCanonicalDisputeInbound(dispute);
 
         // race condition checks
         _disputeRaceConditionCheck(dispute);

@@ -21,7 +21,9 @@ export enum DisputeFraudProofType {
     TimeoutTooEarly,
     DisputeInvalidBlockInStateProofApplyFraudProof,
     DisputeLastMilestoneNotFinalAndNoAuditingData,
-    InvalidDisputeReason
+    InvalidDisputeReason,
+    DisputeStateProofForkMismatch,
+    DisputeInboundHashNotInChain
 }
 
 export const toSolidityFraudProofType = (value: FraudProofType) => value % 100;

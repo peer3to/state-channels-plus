@@ -6,12 +6,7 @@ import {
     hash,
     addressesEqual
 } from "@/utils";
-import {
-    DisputeTampering,
-    TestSession,
-    PeerTestHarness,
-    expectSignedBlocksOnlyStateProof
-} from "@test/harness";
+import { DisputeTampering, TestSession, PeerTestHarness } from "@test/harness";
 import {
     hash as randomHash,
     blockStructWithTransactionHeader
@@ -128,92 +123,18 @@ describe("E2E: dispute junk data", function () {
                 { durationMs: 6000 }
             );
         });
-
-        it("input forkId ≠ signed proof headers → ErrorDisputeStateProofHeaderForkMismatch", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-
-            try {
-                await h.tamper.postTamperedDispute(1, (dispute) => {
-                    expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
-                    dispute.input.forkId = randomHash();
-                });
-                expect.fail("expected revert");
-            } catch (error: unknown) {
-                expectDecodedError(
-                    error,
-                    "ErrorDisputeStateProofHeaderForkMismatch",
-                    "expected ErrorDisputeStateProofHeaderForkMismatch"
-                );
-            }
-        });
-
-        it("milestone header fork ≠ input → ErrorDisputeStateProofHeaderForkMismatch", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-
-            try {
-                await h.tamper.postTamperedDispute(3, async (dispute) => {
-                    await h.tamper.rewriteLastMilestoneSignedBlockInDispute(
-                        dispute,
-                        (bs) =>
-                            blockStructWithTransactionHeader(bs, {
-                                forkId: randomHash()
-                            })
-                    );
-                });
-                expect.fail("expected revert");
-            } catch (error: unknown) {
-                expectDecodedError(
-                    error,
-                    "ErrorDisputeStateProofHeaderForkMismatch",
-                    "expected ErrorDisputeStateProofHeaderForkMismatch"
-                );
-            }
-        });
     });
 
     describe("latestInboundMessageBlockHash", function () {
-        it("junk hash → ErrorDisputeLatestInboundMessageBlockHashInvalid", async function () {
+        it("genesis hash (0x0) → accepted even when chain has inbound blocks", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 6 }
+            await h.scenario.preDisputeSetupCalldataPath();
+
+            // bytes32(0) is the genesis anchor — always valid at upload time.
+            await h.tamper.postTamperedDispute(1, (dispute) => {
+                dispute.input.latestInboundMessageBlockHash = ethers.ZeroHash;
+                dispute.input.lastInboundMessageBlockHeight = 0n;
             });
-
-            try {
-                await h.tamper.postTamperedDispute(1, (dispute) => {
-                    dispute.input.latestInboundMessageBlockHash = randomHash();
-                });
-                expect.fail("expected revert");
-            } catch (error: unknown) {
-                expectDecodedError(
-                    error,
-                    "ErrorDisputeLatestInboundMessageBlockHashInvalid",
-                    "expected ErrorDisputeLatestInboundMessageBlockHashInvalid"
-                );
-            }
-        });
-    });
-
-    describe("lastInboundMessageBlockHeight", function () {
-        it("junk height → ErrorDisputeLastInboundMessageBlockHeightInvalid", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 6 }
-            });
-
-            try {
-                await h.tamper.postTamperedDispute(1, (dispute) => {
-                    dispute.input.lastInboundMessageBlockHeight = 999999n;
-                });
-                expect.fail("expected revert");
-            } catch (error: unknown) {
-                expectDecodedError(
-                    error,
-                    "ErrorDisputeLastInboundMessageBlockHeightInvalid",
-                    "expected ErrorDisputeLastInboundMessageBlockHeightInvalid"
-                );
-            }
         });
     });
 
