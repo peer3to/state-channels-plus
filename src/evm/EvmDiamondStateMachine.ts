@@ -1,4 +1,4 @@
-import { createEvm } from "./EvmFactory";
+import { createEvm, type EvmFactoryOptions } from "./EvmFactory";
 import { ethers, Signer, hexlify, ContractDeployTransaction } from "ethers";
 import {
     StateChannelManagerProxy,
@@ -330,7 +330,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         contractInterface: ethers.Interface,
         signer: Signer,
         timeConfig: TimeConfig,
-        logger: Logger
+        logger: Logger,
+        customPrecompiles?: EvmFactoryOptions["customPrecompiles"]
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
@@ -338,7 +339,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         // since this is local deployment, we can allow unlimited contract size
         const evm = await createEvm(
             {
-                allowUnlimitedContractSize: true
+                allowUnlimitedContractSize: true,
+                customPrecompiles
             },
             logger
         );
@@ -412,6 +414,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             peerLogger?: Logger;
             rpcServiceFactories?: TFactories;
             config?: Partial<Config>;
+            customPrecompiles?: EvmFactoryOptions["customPrecompiles"];
         }
     ): Promise<P2pInstance<T, TFactories>> {
         // Initialize SDK config for this runtime (intended to be called once).
@@ -421,6 +424,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const pid = options?.peerId;
         const peerLogger = options?.peerLogger;
         const rpcServiceFactories = options?.rpcServiceFactories;
+        const customPrecompiles = options?.customPrecompiles;
 
         // Resolve signer address early for logger context
         const signerAddress = await signer.getAddress();
@@ -469,7 +473,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 stateMachineContractInstance.interface,
                 signer,
                 timeConfig,
-                logger
+                logger,
+                customPrecompiles
             );
 
         const storage = new Storage();

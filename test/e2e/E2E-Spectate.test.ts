@@ -169,7 +169,7 @@ describe("E2E: Spectate Service", function () {
             ]);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
 
-            await h.join.addPeerWait();
+            await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait({
                 peerIndices: [0, 1, 3, 4, 5]
             });
@@ -208,7 +208,7 @@ describe("E2E: Spectate Service", function () {
 
             await h.transition.advanceState({ count: 4 });
             //  peer index 4 is spectator
-            await h.join.addPeerWait();
+            await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait({
                 peerIndices: [0, 1, 2, 3, 4]
             });
@@ -241,7 +241,7 @@ describe("E2E: Spectate Service", function () {
                 peerIndices: honestPeerIndices
             });
             //  add a new peer index 5 as spectator
-            await h.join.addPeerWait();
+            await h.join.addSpectatorWait();
             const spectatorIndex = [5];
 
             await h.assert.sync.peersInSyncWait({
@@ -254,7 +254,7 @@ describe("E2E: Spectate Service", function () {
         it("should spectate successfully when joining at genesis state", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0);
-            await h.join.addPeerWait();
+            await h.join.addSpectatorWait();
             await h.assert.sync.participantCount({
                 expectedCount: 2,
                 peerIndex: 2
@@ -272,7 +272,7 @@ describe("E2E: Spectate Service", function () {
             await h.lifecycle.start(2, 0);
             await h.transition.advanceState({ count: 1 });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
-            await h.join.addPeerWait();
+            await h.join.addSpectatorWait();
             await h.assert.sync.participantCount({
                 expectedCount: 2,
                 peerIndex: 2

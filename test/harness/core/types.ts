@@ -5,7 +5,7 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes"
 import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
 import * as sinon from "sinon";
 import { Signer } from "ethers";
-import { P2pInstance } from "@/evm";
+import { P2pInstance, type EvmCustomPrecompile } from "@/evm";
 import StateManager from "@/stateManager";
 import { MathStateMachine } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
@@ -89,6 +89,7 @@ export type HarnessOptions<
     autoConnect?: boolean;
     configOverrides?: Partial<Config>; // Direct config overrides
     rpcServiceFactories?: TFactories;
+    customPrecompiles?: EvmCustomPrecompile[];
 };
 
 export type TestPeer<

@@ -68,7 +68,7 @@ describe("E2E: Spectate stale-proof guard", function () {
         // With stale proofs, the guard aborts every sync attempt, so SYNCED is never reached.
         let threwTimeout = false;
         try {
-            await h.join.addPeerWait({ statusTimeoutMs: 5000 });
+            await h.join.addSpectatorWait({ statusTimeoutMs: 5000 });
         } catch (e: any) {
             threwTimeout = true;
         }

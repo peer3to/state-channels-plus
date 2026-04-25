@@ -227,6 +227,7 @@ export class PeerTestHarness<
             gasLimit: options?.gasLimit || 500000,
             autoConnect: options?.autoConnect !== false,
             configOverrides: options?.configOverrides || {},
+            customPrecompiles: options?.customPrecompiles || [],
             rpcServiceFactories: (options?.rpcServiceFactories ??
                 {}) as TFactories
         };
@@ -434,6 +435,7 @@ export class PeerTestHarness<
             peerId: index,
             peerLogger: peerLogger,
             p2pEventHooks: hooks,
+            customPrecompiles: this.options.customPrecompiles,
             rpcServiceFactories: this.options.rpcServiceFactories,
             config: this.harnessConfig
         });

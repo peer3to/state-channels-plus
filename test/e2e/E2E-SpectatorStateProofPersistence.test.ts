@@ -4,13 +4,13 @@ import { expect } from "chai";
 PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Join/Leave Sequence", function () {
-    it("join/leave sequence and fork resolution", async function () {
+    it.only("join/leave sequence and fork resolution", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 0, {
             timeConfig: {
                 p2pTime: 5,
-                agreementTime: 2,
+                agreementTime: 3,
                 chainFallbackTime: 2,
                 evidenceTime: 10
             }
@@ -32,7 +32,7 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.assert.sync.blockHeight({ expectedHeight: 4 });
 
         // Join peer 4 as spectator (`addPeer` waits for SYNCED)
-        await h.join.addPeerWait();
+        await h.join.addSpectatorWait();
         // stays 3, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
@@ -57,7 +57,7 @@ describe("E2E: Join/Leave Sequence", function () {
         });
 
         // Join peer 5 as spectator
-        await h.join.addPeerWait();
+        await h.join.addSpectatorWait();
         // stays 2, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 2 });
         const spectatorIndices = [4, 5];

@@ -2,8 +2,9 @@ import ContractExecuter from "./ContractExecuter";
 import P2pInstance from "./P2pInstance";
 import P2pSigner from "./P2pSigner";
 import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
-import createEvm, { EvmFactoryOptions } from "./EvmFactory";
+import createEvm from "./EvmFactory";
 import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
+import type { EvmCustomPrecompile, EvmFactoryOptions } from "./EvmFactory";
 
 export {
     ContractExecuter,
@@ -11,7 +12,8 @@ export {
     P2pSigner,
     EvmDiamondStateMachine as EvmStateMachine,
     createEvm,
-    EvmFactoryOptions,
     CONSOLE_ADDRESS,
     createConsolePrecompile
 };
+
+export type { EvmCustomPrecompile, EvmFactoryOptions };

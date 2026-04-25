@@ -48,7 +48,7 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.lifecycle.start(2);
 
-            const spectator = await h.join.addPeerWait({
+            const spectator = await h.join.addSpectatorWait({
                 statusTimeoutMs: 5000,
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });

@@ -31,7 +31,7 @@ export type BuildJoinChannelConfirmationParams = {
 export class JoinActions {
     constructor(private harness: PeerTestHarness) {}
 
-    private async addPeer(options?: AddPeerOptions): Promise<TestPeer> {
+    private async addSpectator(options?: AddPeerOptions): Promise<TestPeer> {
         if (!this.harness.canAddPeer) {
             throw new Error("Harness not initialized; call setup() first");
         }
@@ -65,8 +65,8 @@ export class JoinActions {
         return peer;
     }
 
-    async addPeerWait(options?: AddPeerOptions): Promise<TestPeer> {
-        const peer = await this.addPeer(options);
+    async addSpectatorWait(options?: AddPeerOptions): Promise<TestPeer> {
+        const peer = await this.addSpectator(options);
         if (this.harness.channelId) {
             await this.harness.event.waitUntilPeerStatus(
                 peer.index,
@@ -82,8 +82,8 @@ export class JoinActions {
         return peer;
     }
 
-    async addPeerDetached(options?: AddPeerOptions): Promise<TestPeer> {
-        const peer = await this.addPeer(options);
+    async addSpectatorDetached(options?: AddPeerOptions): Promise<TestPeer> {
+        const peer = await this.addSpectator(options);
         if (this.harness.channelId) {
             const promise = this.harness.event.waitUntilPeerStatus(
                 peer.index,

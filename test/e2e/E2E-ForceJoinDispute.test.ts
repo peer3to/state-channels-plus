@@ -10,7 +10,7 @@ describe("E2E: Force Join Dispute", function () {
 
         await h.lifecycle.start(2, 2);
 
-        const joiner = await h.join.addPeerWait({
+        const joiner = await h.join.addSpectatorWait({
             statusTimeoutMs: 5000,
             statusTimeoutMessage: "Joiner did not reach SYNCED"
         });

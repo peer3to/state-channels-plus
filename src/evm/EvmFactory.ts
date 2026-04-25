@@ -5,6 +5,10 @@ import { Logger } from "@/utils";
 
 export interface EvmFactoryOptions extends EVMOpts {}
 
+export type EvmCustomPrecompile = NonNullable<
+    EvmFactoryOptions["customPrecompiles"]
+>[number];
+
 export async function createEvm(
     options: EvmFactoryOptions = {},
     logger: Logger
