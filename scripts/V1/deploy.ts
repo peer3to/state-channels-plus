@@ -39,6 +39,11 @@ export type DeploymentResult = {
     signer: Signer;
 };
 
+export type LocalStateMachineDeployer = (
+    evm: EVM,
+    signer: Signer
+) => Promise<Address>;
+
 function logDeployed(
     address: string,
     params: {
@@ -218,18 +223,31 @@ export async function deployFullStack(
     );
 }
 
+export function createLocalDeployerFromTx(
+    tx: ContractDeployTransaction
+): LocalStateMachineDeployer {
+    return async (evm: EVM, _signer: Signer) => deployLocalFromTx(tx, evm);
+}
+
 export async function deployLocalDiamond(
-    stateMachineTx: ContractDeployTransaction,
+    stateMachineDeployment:
+        | ContractDeployTransaction
+        | LocalStateMachineDeployer,
     evm: EVM,
     signer?: Signer,
     timeConfigOverrides?: TimeConfig
 ): Promise<DeploymentResult> {
     const usedSigner = signer || Wallet.createRandom();
 
+    const deployStateMachine =
+        typeof stateMachineDeployment === "function"
+            ? stateMachineDeployment
+            : createLocalDeployerFromTx(stateMachineDeployment);
+
     const facetAddresses = await deployFacetsLocal(evm, usedSigner);
 
     const stateMachineAddress = (
-        await deployLocalFromTx(stateMachineTx, evm)
+        await deployStateMachine(evm, usedSigner)
     ).toString();
 
     const timeConfig = getTimeConfig(timeConfigOverrides);

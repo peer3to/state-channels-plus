@@ -1,5 +1,5 @@
 import { createEvm, type EvmFactoryOptions } from "./EvmFactory";
-import { ethers, Signer, hexlify, ContractDeployTransaction } from "ethers";
+import { ethers, Signer, hexlify } from "ethers";
 import {
     StateChannelManagerProxy,
     AStateMachine as AStateMachineContract,
@@ -30,8 +30,8 @@ import {
 import Storage from "@/storage";
 import {
     deployLocalDiamond,
-    deployLocalFromTx,
-    DeploymentResult
+    DeploymentResult,
+    LocalStateMachineDeployer
 } from "scripts/V1/deploy";
 import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
@@ -321,12 +321,12 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
     /**
      * Creates a standalone EVM state machine
-     * @param deployStateMachineTx The transaction to deploy the state machine
+     * @param deployStateMachine A deployer that creates the replicated state machine locally
      * @param contractInterface The interface of the state machine contract
      * @returns A new EvmStateMachine instance
      */
     public static async createStandalone(
-        deployStateMachineTx: ContractDeployTransaction,
+        deployStateMachine: LocalStateMachineDeployer,
         contractInterface: ethers.Interface,
         signer: Signer,
         timeConfig: TimeConfig,
@@ -345,13 +345,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             logger
         );
 
-        const stateMachineAddress = await deployLocalFromTx(
-            deployStateMachineTx,
-            evm
-        );
+        const stateMachineAddress = await deployStateMachine(evm, signer);
 
         const diamondResult = await deployLocalDiamond(
-            deployStateMachineTx,
+            deployStateMachine,
             evm,
             signer,
             timeConfig
@@ -392,9 +389,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     /**
      * Sets up a P2P interaction environment with the state machine
      * @param signer The signer to use for transactions
-     * @param deployStateMachineTx Transaction to deploy the state machine
      * @param deployedStateChannelContractInstance The deployed state channel manager proxy
      * @param stateMachineContractInstance The state machine contract instance
+     * @param deployStateMachine A deployer that creates local state machine instances
      * @param p2pEventHooks Optional event hooks for P2P interactions
      * @param timeConfigOverride Optional time configuration override for testing
      * @returns Promise with the created P2P interaction object
@@ -405,9 +402,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         TFactories extends RpcServiceFactoryMap = {}
     >(
         signer: Signer,
-        deployStateMachineTx: any,
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
+        deployStateMachine: LocalStateMachineDeployer,
         options?: {
             p2pEventHooks?: P2pEventHooks;
             peerId?: number;
@@ -469,7 +466,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         // Pass the SCM contract so local diamond can sync its time config
         const { evmDiamondStateMachine } =
             await EvmDiamondStateMachine.createStandalone(
-                deployStateMachineTx,
+                deployStateMachine,
                 stateMachineContractInstance.interface,
                 signer,
                 timeConfig,

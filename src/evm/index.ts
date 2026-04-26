@@ -5,6 +5,8 @@ import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
 import createEvm from "./EvmFactory";
 import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
 import type { EvmCustomPrecompile, EvmFactoryOptions } from "./EvmFactory";
+import { createLocalDeployerFromTx } from "../../scripts/V1/deploy";
+import type { LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 
 export {
     ContractExecuter,
@@ -13,7 +15,12 @@ export {
     EvmDiamondStateMachine as EvmStateMachine,
     createEvm,
     CONSOLE_ADDRESS,
-    createConsolePrecompile
+    createConsolePrecompile,
+    createLocalDeployerFromTx
 };
 
-export type { EvmCustomPrecompile, EvmFactoryOptions };
+export type {
+    EvmCustomPrecompile,
+    EvmFactoryOptions,
+    LocalStateMachineDeployer
+};

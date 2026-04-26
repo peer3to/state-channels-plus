@@ -5,7 +5,8 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     deploy,
     deployLocalDiamond,
-    deployArtifact
+    deployArtifact,
+    createLocalDeployerFromTx
 } from "../../scripts/V1/deploy";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
@@ -29,9 +30,22 @@ describe("Universal Deployment", () => {
     });
 
     describe("Local Diamond", () => {
+        it("wraps a deploy tx as a local deployer", async () => {
+            const deployerFn = createLocalDeployerFromTx(
+                mathStateMachineDeployTx
+            );
+            const deployedAddress = await deployerFn(evm, deployer);
+
+            expect(deployedAddress.toString()).to.not.equal(ethers.ZeroAddress);
+            expect(deployedAddress.toString()).to.match(/^0x[a-fA-F0-9]{40}$/);
+        });
+
         it("deploys successfully", async () => {
+            const deployerFn = createLocalDeployerFromTx(
+                mathStateMachineDeployTx
+            );
             const { address: diamondAddress } = await deployLocalDiamond(
-                mathStateMachineDeployTx,
+                deployerFn,
                 evm,
                 deployer
             );

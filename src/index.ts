@@ -27,7 +27,11 @@ export type {
     Signer
 } from "ethers";
 
-export type { EvmCustomPrecompile, EvmFactoryOptions } from "@/evm";
+export type {
+    EvmCustomPrecompile,
+    EvmFactoryOptions,
+    LocalStateMachineDeployer
+} from "@/evm";
 
 export {
     Clock,

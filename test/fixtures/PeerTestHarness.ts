@@ -21,6 +21,10 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes"
 import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { deployFullStack } from "../../scripts/V1/deploy";
+import {
+    createLocalDeployerFromTx,
+    type LocalStateMachineDeployer
+} from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
@@ -71,7 +75,7 @@ export class PeerTestHarness<
 
     public peers: TestPeer<TFactories>[] = [];
     public channelManager!: StateChannelManagerProxy;
-    private sharedDeployTx!: unknown;
+    private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
     public options!: Required<HarnessOptions<TFactories>>;
     private harnessConfig!: Partial<Config>;
@@ -258,16 +262,17 @@ export class PeerTestHarness<
     }
 
     public get canAddPeer(): boolean {
-        return !!this.channelManager && !!this.sharedDeployTx;
+        return !!this.channelManager && !!this.sharedStateMachineDeployer;
     }
 
     private async deployContracts(): Promise<void> {
         const mathSMFactory =
             await hre.ethers.getContractFactory("MathStateMachine");
 
-        this.sharedDeployTx = await mathSMFactory.getDeployTransaction(
+        const deployTx = await mathSMFactory.getDeployTransaction(
             this.options.gasLimit
         );
+        this.sharedStateMachineDeployer = createLocalDeployerFromTx(deployTx);
 
         const [hardhatSigner] = await hre.ethers.getSigners();
 
@@ -431,14 +436,20 @@ export class PeerTestHarness<
         const p2pInstance = await EvmStateMachine.p2pSetup<
             MathStateMachine,
             TFactories
-        >(signer, this.sharedDeployTx, this.channelManager, mathInstance, {
-            peerId: index,
-            peerLogger: peerLogger,
-            p2pEventHooks: hooks,
-            customPrecompiles: this.options.customPrecompiles,
-            rpcServiceFactories: this.options.rpcServiceFactories,
-            config: this.harnessConfig
-        });
+        >(
+            signer,
+            this.channelManager,
+            mathInstance,
+            this.sharedStateMachineDeployer,
+            {
+                peerId: index,
+                peerLogger: peerLogger,
+                p2pEventHooks: hooks,
+                customPrecompiles: this.options.customPrecompiles,
+                rpcServiceFactories: this.options.rpcServiceFactories,
+                config: this.harnessConfig
+            }
+        );
 
         const peer: TestPeer<TFactories> = {
             index,

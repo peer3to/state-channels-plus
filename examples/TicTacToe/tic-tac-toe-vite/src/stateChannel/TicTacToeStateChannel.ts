@@ -1,7 +1,8 @@
 import {
     ethers,
     EvmStateMachine,
-    P2pEventHooks
+    P2pEventHooks,
+    createLocalDeployerFromTx
 } from "@peer3/state-channels-plus";
 import type { Signer } from "@peer3/state-channels-plus";
 import {
@@ -52,15 +53,16 @@ export const p2pSetup = async (
         TicTacToeStateChannelManagerInstance.runner
     ) as TicTacToeStateMachine__factory;
     let deployTx = await factory.getDeployTransaction(1_000_000); // this deployes the contract locally
+    const deployStateMachine = createLocalDeployerFromTx(deployTx);
 
     let p2p = await EvmStateMachine.p2pSetup<
         TicTacToeStateMachine,
         TicTacToeRpcFactories
     >(
         TicTacToeStateChannelManagerInstance.runner as Signer,
-        deployTx,
         TicTacToeStateChannelManagerInstance,
         TicTacToeSmInstance,
+        deployStateMachine,
         {
             p2pEventHooks,
             rpcServiceFactories: ticTacToeRpcServiceFactories,
