@@ -21,7 +21,7 @@ describe("E2E: State Snapshots", function () {
 
     it("should post updated state snapshot on-chain after 3 transitions", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3);
+        await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
 
         await h.transition.advanceState();
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
@@ -46,7 +46,7 @@ describe("E2E: State Snapshots", function () {
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
         const h = TestSession.getHarness();
         await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached({
-            timeConfig: forkTimeConfig
+            timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
 
         await h.transition.fromHonestPeersOnly((c) => c.add(1));
@@ -109,7 +109,7 @@ describe("E2E: State Snapshots", function () {
     it("should handle snapshot update at blockHeight = 0 (first snapshot) - edge case since genesis is also height 0", async function () {
         const h = TestSession.getHarness();
 
-        await h.lifecycle.start(3, 0);
+        await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
         await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
         await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
 
