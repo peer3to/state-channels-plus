@@ -14,7 +14,7 @@ const defaultTimeConfig: TimeConfig = {
     p2pTime: 1,
     agreementTime: 2,
     chainFallbackTime: 2,
-    evidenceTime: 3
+    evidenceTime: 8
 };
 
 /**
