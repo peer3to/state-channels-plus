@@ -1,11 +1,9 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import { Codec, Type } from "@/utils";
 import SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
 import { SyncPayload } from "@/types";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Spectate stale-proof guard", function () {
     it("aborts sync when on-chain snapshot is more advanced than what participant proved", async function () {

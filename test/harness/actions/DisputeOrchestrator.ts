@@ -9,31 +9,9 @@ import { ZeroHash } from "ethers";
  */
 export class DisputeOrchestrator {
     constructor(
-        private harness: PeerTestHarness,
-        private logger: Logger
+        protected harness: PeerTestHarness,
+        protected logger: Logger
     ) {}
-
-    /**
-     * Creates an invalid state transition dispute by broadcasting an invalid block.
-     */
-    async createInvalidStateTransitionDispute(
-        maliciousPeerIndex: number,
-        options?: {
-            forkId?: ForkId;
-            resetEventSpies?: boolean;
-        }
-    ): Promise<void> {
-        if (options?.resetEventSpies) {
-            this.harness.event.resetEventSpies();
-        }
-
-        await this.harness.byzantine.submitInvalidStateTransitionBlock(
-            maliciousPeerIndex,
-            {
-                forkId: options?.forkId
-            }
-        );
-    }
 
     /**
      * Waits for dispute commitment and fork reduction, agnostic to how the dispute was created.

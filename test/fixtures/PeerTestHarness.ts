@@ -1,14 +1,18 @@
-import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
-import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import { Signer } from "ethers";
+import { Signer, ethers } from "ethers";
 import * as sinon from "sinon";
 import * as dotenv from "dotenv";
 import hre from "hardhat";
 import { setImmediate } from "node:timers";
+import { Address as EthereumjsAddress } from "@ethereumjs/util";
 import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
-import { MathStateMachine, StateChannelManagerProxy } from "@typechain-types";
+import {
+    AStateMachine as AStateMachineContract,
+    StateChannelManagerProxy,
+    StateChannelManagerProxy__factory
+} from "@typechain-types";
 import { ForkId, ChannelId, Address, Hash } from "@/types/types";
+import { TimeConfig } from "@/types";
 
 import {
     createLogger,
@@ -20,11 +24,7 @@ import {
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
-import { deployFullStack } from "../../scripts/V1/deploy";
-import {
-    createLocalDeployerFromTx,
-    type LocalStateMachineDeployer
-} from "../../scripts/V1/deploy";
+import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
@@ -32,7 +32,7 @@ import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActio
 import { JoinActions } from "@test/harness/actions/JoinActions";
 import { TransitionActions } from "@test/harness/actions/TransitionActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
-import { AssertActions } from "@test/harness";
+import { AssertActions } from "@test/harness/actions/assert/AssertActions";
 import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
 import { EventActions } from "@test/harness/actions/EventActions";
 import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
@@ -42,8 +42,14 @@ import { RPCActions } from "@test/harness/actions/RPCActions";
 import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
 import { ContextActions } from "@test/harness/actions/ContextActions";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
-import { HarnessContext } from "@test/harness";
-import { TestPeer, EventSpies, HarnessOptions } from "@test/harness/core/types";
+import {
+    HarnessConstructorOptions,
+    HarnessDeploymentConfig,
+    HarnessContext,
+    TestPeer,
+    EventSpies,
+    HarnessOptions
+} from "@test/harness/core/types";
 import { HarnessDebug } from "./HarnessDebug";
 import { LogLevel } from "@/utils/logging/Logger";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
@@ -57,28 +63,16 @@ let last = performance.eventLoopUtilization();
  * Main test harness for E2E peer-to-peer testing
  */
 export class PeerTestHarness<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
+    TFactories extends RpcServiceFactoryMap = {},
+    TStateMachine extends AStateMachineContract = AStateMachineContract
 > {
-    public static defaultLogLevel?:
-        | "debug"
-        | "verbose"
-        | "info"
-        | "warn"
-        | "error";
-
-    public static setDefaultLogLevel(
-        level: "debug" | "verbose" | "info" | "warn" | "error" | undefined
-    ) {
-        PeerTestHarness.defaultLogLevel = level;
-    }
-
-    public peers: TestPeer<TFactories>[] = [];
+    public peers: TestPeer<TFactories, TStateMachine>[] = [];
     public channelManager!: StateChannelManagerProxy;
     private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
-    public options!: Required<HarnessOptions<TFactories>>;
+    public options!: HarnessOptions<TFactories>;
     private harnessConfig!: Partial<Config>;
+    private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
@@ -98,20 +92,20 @@ export class PeerTestHarness<
     public disconnectionBarrier: EventBarrier;
 
     // action instances
-    public readonly lifecycle!: LifecycleActions;
-    public readonly join!: JoinActions;
-    public readonly transition!: TransitionActions;
-    public readonly network!: NetworkController;
-    public readonly assert!: AssertActions;
-    public readonly byzantine!: ByzantineActions;
-    public readonly event!: EventActions;
-    public readonly query!: StateQueryActions;
-    public readonly dispute!: DisputeOrchestrator;
-    public readonly tamper!: DisputeTamperingActions;
-    public readonly rpc!: RPCActions;
-    public readonly rpcStub!: RpcStubActions;
-    public readonly contextApi!: ContextActions;
-    public readonly scenario!: ScenarioActions;
+    public lifecycle!: LifecycleActions;
+    public join!: JoinActions;
+    public transition!: TransitionActions;
+    public network!: NetworkController;
+    public assert!: AssertActions;
+    public byzantine!: ByzantineActions;
+    public event!: EventActions;
+    public query!: StateQueryActions;
+    public dispute!: DisputeOrchestrator;
+    public tamper!: DisputeTamperingActions;
+    public rpc!: RPCActions;
+    public rpcStub!: RpcStubActions;
+    public contextApi!: ContextActions;
+    public scenario!: ScenarioActions;
     public readonly debug: HarnessDebug;
 
     /**
@@ -129,7 +123,7 @@ export class PeerTestHarness<
         return honestPeers[0].stateManager.forkId;
     }
 
-    constructor() {
+    constructor({ deployment }: HarnessConstructorOptions<TStateMachine>) {
         // toJSON can't serialize BigInts, so we need to override it
         if (typeof (BigInt.prototype as any).toJSON !== "function") {
             (BigInt.prototype as any).toJSON = function () {
@@ -138,12 +132,16 @@ export class PeerTestHarness<
         }
         dotenv.config(); // use .env since it's gitignored and it's only for testing - not altering SDK usage
         createConfig(); // Ensure config is initialized for tests
+        this.deployment = deployment;
 
-        // Logger starts with default level - will be reconfigured in setup()
+        // Logger starts with config default and is reconfigured in setup().
         this.logger = createLogger(
             {},
             { component: "TestHarness" },
-            { level: config.LOG_LEVEL as LogLevel, attachErrorListener: false }
+            {
+                level: (config.LOG_LEVEL as LogLevel) ?? "error",
+                attachErrorListener: false
+            }
         );
         setInterval(() => {
             const elu = performance.eventLoopUtilization(last);
@@ -212,18 +210,18 @@ export class PeerTestHarness<
             ...(options?.configOverrides || {})
         };
 
+        const resolvedTimeConfig: TimeConfig = {
+            p2pTime: 1,
+            agreementTime: 2,
+            chainFallbackTime: 2,
+            evidenceTime: 3,
+            ...(options?.timeConfig || {})
+        };
+
         this.options = {
             logLevel:
-                options?.logLevel ??
-                (config.LOG_LEVEL as LogLevel) ??
-                PeerTestHarness.defaultLogLevel ??
-                "info", // Use global default if not specified
-            timeConfig: options?.timeConfig || {
-                p2pTime: 1,
-                agreementTime: 2,
-                chainFallbackTime: 2,
-                evidenceTime: 3
-            },
+                options?.logLevel ?? (config.LOG_LEVEL as LogLevel) ?? "error",
+            timeConfig: resolvedTimeConfig,
             channelId:
                 options?.channelId ||
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
@@ -236,7 +234,7 @@ export class PeerTestHarness<
                 {}) as TFactories
         };
         if (
-            !this.options.timeConfig.agreementTime ||
+            !this.options.timeConfig?.agreementTime ||
             this.options.timeConfig.agreementTime <= 1
         )
             throw new Error(
@@ -265,26 +263,49 @@ export class PeerTestHarness<
         return !!this.channelManager && !!this.sharedStateMachineDeployer;
     }
 
+    private createLocalStateMachineDeployer(
+        deployment: Pick<
+            HarnessDeploymentConfig<TStateMachine>,
+            "deployLocalStateMachine"
+        >
+    ): LocalStateMachineDeployer {
+        const { deployLocalStateMachine } = deployment;
+
+        return async (evm, signer) => {
+            const deployedAddress = await deployLocalStateMachine({
+                signer,
+                evm,
+                gasLimit: this.options.gasLimit!,
+                timeConfig: this.options.timeConfig as TimeConfig,
+                channelId: this.options.channelId!,
+                initialBalance: this.options.initialBalance!,
+                harnessConfig: this.harnessConfig
+            });
+
+            return EthereumjsAddress.fromString(deployedAddress);
+        };
+    }
+
     private async deployContracts(): Promise<void> {
-        const mathSMFactory =
-            await hre.ethers.getContractFactory("MathStateMachine");
-
-        const deployTx = await mathSMFactory.getDeployTransaction(
-            this.options.gasLimit
-        );
-        this.sharedStateMachineDeployer = createLocalDeployerFromTx(deployTx);
-
         const [hardhatSigner] = await hre.ethers.getSigners();
+        const deployment = this.deployment;
 
-        const deployment = await deployFullStack(hardhatSigner, {
-            stateMachineArtifact: MathStateMachineArtifact,
-            consumerFacetArtifact: MathConsumerFacetArtifact,
-            stateMachineArgs: [this.options.gasLimit],
-            consumerFacetArgs: [],
-            timeConfig: this.options.timeConfig
+        this.sharedStateMachineDeployer =
+            this.createLocalStateMachineDeployer(deployment);
+
+        const channelManagerAddress = await deployment.deployOnChainContracts({
+            signer: hardhatSigner,
+            gasLimit: this.options.gasLimit!,
+            timeConfig: this.options.timeConfig as TimeConfig,
+            channelId: this.options.channelId!,
+            initialBalance: this.options.initialBalance!,
+            harnessConfig: this.harnessConfig
         });
 
-        this.channelManager = deployment.contract;
+        this.channelManager = StateChannelManagerProxy__factory.connect(
+            channelManagerAddress,
+            hardhatSigner
+        );
     }
 
     public async createPeer(index: number, signer: Signer): Promise<void> {
@@ -428,30 +449,30 @@ export class PeerTestHarness<
             }
         };
 
-        // Deploy MathStateMachine for this peer
-        const mathSMFactory =
-            await hre.ethers.getContractFactory("MathStateMachine");
-        const mathInstance = await mathSMFactory.deploy(this.options.gasLimit);
+        const contractInstanceMock = this.deployment.connectSigner(
+            ethers.ZeroAddress,
+            signer
+        );
 
         const p2pInstance = await EvmStateMachine.p2pSetup<
-            MathStateMachine,
+            TStateMachine,
             TFactories
         >(
             signer,
             this.channelManager,
-            mathInstance,
+            contractInstanceMock,
             this.sharedStateMachineDeployer,
             {
                 peerId: index,
                 peerLogger: peerLogger,
                 p2pEventHooks: hooks,
-                customPrecompiles: this.options.customPrecompiles,
-                rpcServiceFactories: this.options.rpcServiceFactories,
+                customPrecompiles: this.options.customPrecompiles!,
+                rpcServiceFactories: this.options.rpcServiceFactories!,
                 config: this.harnessConfig
             }
         );
 
-        const peer: TestPeer<TFactories> = {
+        const peer: TestPeer<TFactories, TStateMachine> = {
             index,
             signer,
             address,
@@ -470,7 +491,9 @@ export class PeerTestHarness<
         this.logger.debug(`Peer ${index} created successfully`);
     }
 
-    private wrapEventHandlerWithSpies(peer: TestPeer<TFactories>): void {
+    private wrapEventHandlerWithSpies(
+        peer: TestPeer<TFactories, TStateMachine>
+    ): void {
         const eventHandler = peer.stateManager.eventHandler;
         const spies = peer.eventSpies;
         const eventCountsBarrier = this.eventCountsBarrier;
@@ -647,7 +670,7 @@ export class PeerTestHarness<
         this.logger.dispose();
     }
 
-    getPeer(index: number): TestPeer<TFactories> {
+    getPeer(index: number): TestPeer<TFactories, TStateMachine> {
         const peer = this.peers[index];
         if (!peer) throw new Error(`Peer ${index} not found`);
         return peer;
@@ -657,13 +680,17 @@ export class PeerTestHarness<
         return this.peers.map((p) => p.address);
     }
 
-    getFilteredPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
+    getFilteredPeers(
+        peerIndices?: number[]
+    ): TestPeer<TFactories, TStateMachine>[] {
         return peerIndices
             ? peerIndices.map((i) => this.getPeer(i))
             : this.peers;
     }
 
-    getHonestPeers(excludePeerIndices?: number[]): TestPeer<TFactories>[] {
+    getHonestPeers(
+        excludePeerIndices?: number[]
+    ): TestPeer<TFactories, TStateMachine>[] {
         const excludeSet = new Set<number>([
             ...(excludePeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? [])
@@ -671,9 +698,9 @@ export class PeerTestHarness<
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
 
-    peerWithHighestBlock(forkId: ForkId): TestPeer {
+    peerWithHighestBlock(forkId: ForkId): TestPeer<TFactories, TStateMachine> {
         const malicious = new Set(this.context.maliciousPeerIndices ?? []);
-        let best: TestPeer<TFactories> | undefined;
+        let best: TestPeer<TFactories, TStateMachine> | undefined;
         let bestHeight = Number.NEGATIVE_INFINITY;
         for (const peer of this.peers) {
             if (malicious.has(peer.index)) {
@@ -694,7 +721,7 @@ export class PeerTestHarness<
     }
 
     /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
-    getPeersForTransitionSyncBarrier(): TestPeer<TFactories>[] {
+    getPeersForTransitionSyncBarrier(): TestPeer<TFactories, TStateMachine>[] {
         const exclude = new Set([
             ...(this.context.leftChannelPeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? [])
@@ -702,7 +729,9 @@ export class PeerTestHarness<
         return this.peers.filter((p) => !exclude.has(p.index));
     }
 
-    getFilteredOrHonestPeers(peerIndices?: number[]): TestPeer<TFactories>[] {
+    getFilteredOrHonestPeers(
+        peerIndices?: number[]
+    ): TestPeer<TFactories, TStateMachine>[] {
         if (peerIndices) {
             return this.getFilteredPeers(peerIndices);
         }

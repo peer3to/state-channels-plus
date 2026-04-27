@@ -1,8 +1,6 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { StateSnapshot } from "@/models";
 import { expect } from "chai";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 /**
  * E2E Tests for State Snapshot Posting

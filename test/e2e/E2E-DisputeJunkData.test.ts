@@ -6,15 +6,16 @@ import {
     hash,
     addressesEqual
 } from "@/utils";
-import { DisputeTampering, TestSession, PeerTestHarness } from "@test/harness";
+import {
+    DisputeTampering,
+    MathTestSession as TestSession
+} from "@test/harness";
 import {
     hash as randomHash,
     blockStructWithTransactionHeader
 } from "@test/factory";
 import { expect } from "chai";
 import { ethers } from "ethers";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 function expectDecodedError(
     error: unknown,

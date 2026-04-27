@@ -3,8 +3,7 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash } from "@/utils";
 import Block from "@/models/Block";
 import {
-    PeerTestHarness,
-    TestSession,
+    MathTestSession as TestSession,
     expectSignedBlocksOnlyStateProof
 } from "@test/harness";
 import {
@@ -17,8 +16,6 @@ import type {
     MessageBlockStruct,
     MessageStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: dispute validation", function () {
     describe("Calldata path", function () {

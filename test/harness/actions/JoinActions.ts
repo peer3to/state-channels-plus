@@ -13,7 +13,6 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { TestPeer } from "@test/harness/core/types";
-import { MathConsumerFacet__factory } from "@typechain-types";
 
 export type AddPeerOptions = {
     signer?: Signer;
@@ -29,7 +28,7 @@ export type BuildJoinChannelConfirmationParams = {
 };
 
 export class JoinActions {
-    constructor(private harness: PeerTestHarness) {}
+    constructor(protected harness: PeerTestHarness) {}
 
     private async addSpectator(options?: AddPeerOptions): Promise<TestPeer> {
         if (!this.harness.canAddPeer) {
@@ -133,47 +132,5 @@ export class JoinActions {
             },
             signatures: confirmationSignatures
         };
-    }
-
-    async forceInboundJoinWait(options?: {
-        deposit?: bigint;
-        timeoutMs?: number;
-        waitForHonestPeersObserve?: boolean;
-    }): Promise<{ participant: string }> {
-        const deposit = options?.deposit ?? 250n;
-        const timeoutMs = options?.timeoutMs ?? 15000;
-        const waitForHonestPeersObserve =
-            options?.waitForHonestPeersObserve ?? true;
-
-        const submitter = this.harness.peers[0];
-        if (!submitter) {
-            throw new Error("forceInboundJoinWait: harness has no peers");
-        }
-
-        const participant = hre.ethers.Wallet.createRandom().address;
-        const previousLatestHash =
-            submitter.stateManager.storage.inboundMessages.getLatestBlockHash();
-
-        const consumerFacet = MathConsumerFacet__factory.connect(
-            await this.harness.channelManager.getAddress(),
-            submitter.signer
-        );
-        const tx = await consumerFacet.forceInboundJoin(
-            this.harness.channelId,
-            participant,
-            deposit
-        );
-        await tx.wait();
-
-        if (waitForHonestPeersObserve) {
-            await this.harness.assert.storage.honestPeersObserveInboundMessageWait(
-                {
-                    previousLatestHash: previousLatestHash ?? undefined,
-                    timeoutMs
-                }
-            );
-        }
-
-        return { participant };
     }
 }

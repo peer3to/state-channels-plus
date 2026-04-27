@@ -3,10 +3,17 @@ import { PeerTestHarness } from "../../fixtures/PeerTestHarness";
 export class TestSession {
     private static harness?: PeerTestHarness;
     private static firstDetachedError?: Error;
+
+    protected static createHarness(): PeerTestHarness {
+        throw new Error(
+            "TestSession.createHarness() must be implemented by a concrete test session"
+        );
+    }
+
     static async reset(): Promise<void> {
         await this.clear();
 
-        this.harness = new PeerTestHarness();
+        this.harness = this.createHarness();
         await this.harness.startAutoTimeAdvance({ intervalSeconds: 1 });
     }
 

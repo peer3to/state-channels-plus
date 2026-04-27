@@ -9,6 +9,7 @@ import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { NetworkController } from "../NetworkController";
 import { HarnessOptions } from "@test/harness/core/types";
 import { TimeConfig } from "@/types";
+
 const defaultTimeConfig: TimeConfig = {
     p2pTime: 1,
     agreementTime: 2,
@@ -21,8 +22,8 @@ const defaultTimeConfig: TimeConfig = {
  */
 export class LifecycleActions {
     constructor(
-        private harness: PeerTestHarness,
-        private logger: Logger
+        protected harness: PeerTestHarness,
+        protected logger: Logger
     ) {}
 
     /**
@@ -32,16 +33,17 @@ export class LifecycleActions {
     async start(
         numPeers: number,
         transitionCount: number = 0,
-        options?: HarnessOptions & { waitForFinalization?: boolean }
+        options?: HarnessOptions & {
+            waitForFinalization?: boolean;
+        }
     ): Promise<ForkId> {
         await this.harness.setup(numPeers, options);
         const forkId = await this.openChannel();
 
         if (transitionCount > 0) {
-            await this.harness.transition.advanceState({
-                count: transitionCount,
-                waitForFinalization: options?.waitForFinalization ?? true
-            });
+            throw new Error(
+                "LifecycleActions.start is generic; provide explicit transitions after start() or use a concrete harness lifecycle"
+            );
         }
 
         return forkId;

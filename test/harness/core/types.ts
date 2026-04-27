@@ -5,9 +5,10 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes"
 import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
 import * as sinon from "sinon";
 import { Signer } from "ethers";
+import type { EVM } from "@ethereumjs/evm";
 import { P2pInstance, type EvmCustomPrecompile } from "@/evm";
 import StateManager from "@/stateManager";
-import { MathStateMachine } from "@typechain-types";
+import { AStateMachine as AStateMachineContract } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
 import type { RpcServiceFactoryMap } from "@/rpc";
 import { TimeConfig } from "@/types";
@@ -56,6 +57,51 @@ export class HarnessContext {
         | undefined;
 }
 
+export type HarnessDeploymentParams = {
+    signer: Signer;
+    gasLimit: number;
+    timeConfig: TimeConfig;
+    channelId: string;
+    initialBalance: number;
+    harnessConfig: Partial<Config>;
+};
+
+export type HarnessOnChainContractsDeploymentParams = HarnessDeploymentParams;
+
+export type HarnessLocalStateMachineDeploymentParams =
+    HarnessDeploymentParams & {
+        evm: EVM;
+    };
+
+export type HarnessDeploymentConfig<
+    TContract extends AStateMachineContract = AStateMachineContract
+> = {
+    /**
+     * Deploy the on-chain state machine implementation, facets, and manager,
+     * then return the deployed manager address.
+     */
+    deployOnChainContracts: (
+        params: HarnessOnChainContractsDeploymentParams
+    ) => Promise<string>;
+    /**
+     * Deploy the state machine in the provided local EVM instance and return
+     * the deployed local state machine address.
+     */
+    deployLocalStateMachine: (
+        params: HarnessLocalStateMachineDeploymentParams
+    ) => Promise<string>;
+    /**
+     * Connect the provided signer to a state machine contract instance.
+     */
+    connectSigner: (address: string, signer: Signer) => TContract;
+};
+
+export type HarnessConstructorOptions<
+    TContract extends AStateMachineContract = AStateMachineContract
+> = {
+    deployment: HarnessDeploymentConfig<TContract>;
+};
+
 /**
  * Options for configuring the test harness
  */
@@ -78,7 +124,7 @@ export type HarnessOptions<
      * Scenario.startChannel(3, 0, { logLevel: "debug" })
      * ```
      *
-     * @default undefined (uses LOG_LEVEL env var or "info")
+     * @default undefined (uses LOG_LEVEL from config or "error")
      */
     logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
 
@@ -94,14 +140,15 @@ export type HarnessOptions<
 
 export type TestPeer<
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
+    TFactories extends RpcServiceFactoryMap = {},
+    TContract extends AStateMachineContract = AStateMachineContract
 > = {
     index: number;
     signer: Signer;
     address: string;
-    p2pInstance: P2pInstance<MathStateMachine, TFactories>;
+    p2pInstance: P2pInstance<TContract, TFactories>;
     stateManager: StateManager;
-    contractInstance: MathStateMachine;
+    contractInstance: TContract;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;
     logger: Logger;
@@ -138,11 +185,12 @@ export type EventSpies = {
 
 export type CreateAndResolveDisputeResult<
     // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
+    TFactories extends RpcServiceFactoryMap = {},
+    TContract extends AStateMachineContract = AStateMachineContract
 > = {
     originalForkId: ForkId;
     newForkId: ForkId;
     maliciousPeerIndices: number[];
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TFactories>>;
+    honestPeers: Array<TestPeer<TFactories, TContract>>;
 };

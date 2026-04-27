@@ -1,10 +1,8 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ATransport } from "@/transport";
 import { SyncRequest } from "@/rpc/services/spectate/SpectateService";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 /**
  * E2E Tests for Spectate Service

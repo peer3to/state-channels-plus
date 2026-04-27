@@ -4,11 +4,8 @@ import {
     DisputeTampering,
     expectMilestonesOnlyStateProof,
     expectSignedBlocksOnlyStateProof,
-    PeerTestHarness,
-    TestSession
+    MathTestSession as TestSession
 } from "@test/harness";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: latestStateSnapshotHash", function () {
     describe("no calldata", function () {

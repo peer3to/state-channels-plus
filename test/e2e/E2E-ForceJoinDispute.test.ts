@@ -1,8 +1,6 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Force Join Dispute", function () {
     it("should trigger force-join dispute after N turns of non-inclusion, then resolve with joiner PARTICIPATING", async function () {

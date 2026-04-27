@@ -1,7 +1,5 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
-import { TestSession, PeerTestHarness } from "@test/harness";
-
-PeerTestHarness.setDefaultLogLevel("error");
+import { MathTestSession as TestSession } from "@test/harness";
 
 /**
  * E2E Tests for Dispute Management

@@ -1,8 +1,6 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)

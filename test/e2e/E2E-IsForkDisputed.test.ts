@@ -1,7 +1,5 @@
-import { TestSession, PeerTestHarness, sleep } from "@test/harness";
+import { MathTestSession as TestSession, sleep } from "@test/harness";
 import { expect } from "chai";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 /**
  * E2E Tests for Fork Dispute Detection
@@ -129,7 +127,7 @@ describe("E2E: Is Fork Disputed", function () {
                 peerIndex: 1,
                 serviceName: "isForkDisputedService",
                 methodName: "onDisputeAcknowledgmentRequest",
-                stubbedMethod: async (_channelId, _forkId) => {
+                stubbedMethod: async (_channelId: string, _forkId: string) => {
                     called = true;
                 }
             });

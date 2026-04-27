@@ -1,11 +1,9 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
-import { DetachedPromises, Logger, sleep } from "@/utils";
-import { MathStateMachine } from "@typechain-types/index";
+import { Logger, sleep } from "@/utils";
+import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
+import type { RpcServiceFactoryMap } from "@/rpc";
 import { StateSnapshot } from "@/models";
-import { Status } from "@/types";
-
-export type TransitionContract = MathStateMachine;
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -25,6 +23,21 @@ export type TransitionOptions = {
     waitForFinalization?: boolean;
 };
 
+export type AdvanceStateBaseOptions = {
+    count?: number;
+    rounds?: number;
+    waitForSync?: boolean;
+    waitForPeers?: number[];
+    waitForTurn?: boolean;
+    waitForFinalization?: boolean;
+};
+
+export type AdvanceStateOptions<
+    TContract extends AStateMachineContract = AStateMachineContract
+> = AdvanceStateBaseOptions & {
+    txFn: (contract: TContract) => Promise<any>;
+};
+
 export function effectiveWaitForFinalization(
     options: Pick<TransitionOptions, "waitForFinalization" | "waitForPeers">
 ): boolean {
@@ -40,20 +53,27 @@ export function effectiveWaitForFinalization(
 /**
  * Handles state transition operations on the state machine
  */
-export class TransitionActions {
+export class TransitionActions<
+    TFactories extends RpcServiceFactoryMap = {},
+    TContract extends AStateMachineContract = AStateMachineContract
+> {
     constructor(
-        private harness: PeerTestHarness,
-        private logger: Logger
+        protected harness: PeerTestHarness<TFactories, TContract>,
+        protected logger: Logger
     ) {}
 
     /**
      * Submit a valid transaction from the next peer to write
      */
     async submitNext(
-        txFn: (contract: TransitionContract) => Promise<any>,
+        txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = { waitForTurn: true, waitForSync: true }
     ): Promise<any> {
-        const nextPeer = await this.harness.query.getNextPeerToWrite();
+        const nextPeer =
+            (await this.harness.query.getNextPeerToWrite()) as TestPeer<
+                TFactories,
+                TContract
+            >;
 
         if (options.waitForTurn) {
             await this.waitForTurn(nextPeer);
@@ -67,37 +87,14 @@ export class TransitionActions {
         });
     }
 
-    async increment(value: number = 1, options?: TransitionOptions) {
-        return this.submitNext((contract) => contract.add(value), options);
-    }
-
-    async advanceState(options?: {
-        count?: number;
-        rounds?: number;
-        txFn?: (contract: TransitionContract) => Promise<any>;
-        waitForSync?: boolean;
-        waitForPeers?: number[];
-        waitForTurn?: boolean;
-        waitForFinalization?: boolean;
-    }): Promise<void> {
+    async advanceState(options: AdvanceStateOptions<TContract>): Promise<void> {
         const count = options?.count ?? 1;
         const total = options?.rounds
             ? options.rounds * this.harness.peers.length
             : count;
 
-        if (options?.txFn) {
-            for (let i = 0; i < total; i++) {
-                await this.submitNext(options.txFn, {
-                    ...options,
-                    waitForFinalization:
-                        i === total - 1 ? options?.waitForFinalization : false
-                });
-            }
-            return;
-        }
-
         for (let i = 0; i < total; i++) {
-            await this.increment(1, {
+            await this.submitNext(options.txFn, {
                 ...options,
                 waitForFinalization:
                     i === total - 1 ? options?.waitForFinalization : false
@@ -105,24 +102,8 @@ export class TransitionActions {
         }
     }
 
-    async peerWrite(options: {
-        peer: number;
-        value?: number;
-        waitForPeers?: number[];
-    }): Promise<void> {
-        const { peer, value = 1, waitForPeers } = options;
-        const peerObj = this.harness.peers[peer];
-        if (!peerObj) {
-            throw new Error(`Peer ${peer} not found`);
-        }
-
-        await this.submit(peerObj, (contract) => contract.add(value), {
-            waitForPeers
-        });
-    }
-
     async fromHonestPeersOnly(
-        txFn: (contract: TransitionContract) => Promise<any>,
+        txFn: (contract: TContract) => Promise<any>,
         options?: { waitForSync?: boolean }
     ): Promise<void> {
         const syncIndices = this.harness
@@ -139,7 +120,7 @@ export class TransitionActions {
     }
 
     async sequenceFromHonestPeers(
-        txFns: Array<(contract: TransitionContract) => Promise<any>>
+        txFns: Array<(contract: TContract) => Promise<any>>
     ): Promise<void> {
         const syncIndices = this.harness
             .getPeersForTransitionSyncBarrier()
@@ -181,7 +162,7 @@ export class TransitionActions {
 
     async validWithoutPeer(
         excludePeer: number,
-        txFn: (contract: TransitionContract) => Promise<any>
+        txFn: (contract: TContract) => Promise<any>
     ): Promise<void> {
         const includedPeers = this.harness.peers
             .map((_: unknown, i: number) => i)
@@ -195,74 +176,12 @@ export class TransitionActions {
         });
     }
 
-    private async participantLeave(
-        options?: TransitionOptions
-    ): Promise<number> {
-        const leaver = await this.harness.query.getNextPeerToWrite();
-        const leaverIndex = leaver.index;
-
-        await this.submitNext((c) => c.leaveChannel(), {
-            waitForTurn: true,
-            waitForSync: options?.waitForSync ?? true,
-            waitForPeers: options?.waitForPeers,
-            waitForFinalization: options?.waitForFinalization ?? true,
-            delayMs: options?.delayMs
-        });
-
-        return leaverIndex;
-    }
-
-    async participantLeaveWait(
-        options?: TransitionOptions & {
-            statusTimeoutMs?: number;
-            statusTimeoutMessage?: string;
-        }
-    ): Promise<number> {
-        const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
-            options ?? {};
-        const leaverIndex = await this.participantLeave(leaveOptions);
-        await this.harness.event.waitUntilPeerStatus(
-            leaverIndex,
-            Status.SYNCED,
-            {
-                timeoutMs: statusTimeoutMs ?? 15000,
-                timeoutMessage:
-                    statusTimeoutMessage ??
-                    "Exiting peer did not reach SYNCED after snapshot update"
-            }
-        );
-        return leaverIndex;
-    }
-
-    async participantLeaveDetached(
-        options?: TransitionOptions & {
-            statusTimeoutMs?: number;
-            statusTimeoutMessage?: string;
-        }
-    ): Promise<number> {
-        const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
-            options ?? {};
-        const leaverIndex = await this.participantLeave(leaveOptions);
-        const promise = this.harness.event.waitUntilPeerStatus(
-            leaverIndex,
-            Status.SYNCED,
-            {
-                timeoutMs: statusTimeoutMs ?? 15000,
-                timeoutMessage:
-                    statusTimeoutMessage ??
-                    "Exiting peer did not reach SYNCED after snapshot update"
-            }
-        );
-        DetachedPromises.collect(promise);
-        return leaverIndex;
-    }
-
     /**
      * Submit a transaction from a specific peer
      */
     async submit(
-        peer: TestPeer,
-        txFn: (contract: TransitionContract) => Promise<any>,
+        peer: TestPeer<TFactories, TContract>,
+        txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = {}
     ): Promise<any> {
         const waitForSync = options.waitForSync ?? true;
@@ -303,7 +222,10 @@ export class TransitionActions {
     /**
      * Wait for a peer to receive their turn
      */
-    private async waitForTurn(peer: TestPeer, timeoutMs = 3000): Promise<void> {
+    private async waitForTurn(
+        peer: TestPeer<TFactories, TContract>,
+        timeoutMs = 3000
+    ): Promise<void> {
         try {
             await peer.turnBarrier.waitFor(
                 () => peer.stateManager.isMyTurn?.() ?? false,

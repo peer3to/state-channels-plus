@@ -2,7 +2,7 @@
 export * from "./core/types";
 
 import { DetachedPromises } from "@/utils";
-import { TestSession } from "./session/TestSession";
+import { MathTestSession } from "./session/MathTestSession";
 
 Error.stackTraceLimit = Infinity;
 
@@ -21,7 +21,7 @@ if (
     globalThis.__peer3UnhandledRejectionHookRegistered__ = true;
 
     process.prependListener("unhandledRejection", (reason) => {
-        TestSession.setFirstDetachedError(
+        MathTestSession.setFirstDetachedError(
             reason instanceof Error ? reason : new Error(String(reason))
         );
     });
@@ -36,7 +36,7 @@ if (
 
     beforeEach(async function () {
         this.timeout(120000);
-        await TestSession.reset();
+        await MathTestSession.reset();
     });
 
     afterEach(async function () {
@@ -49,11 +49,11 @@ if (
             console.trace(`All detached promises settled for passing test.`);
         }
         DetachedPromises.clear();
-        const firstDetachedError = TestSession.getFirstDetachedError();
+        const firstDetachedError = MathTestSession.getFirstDetachedError();
 
         if (this.currentTest?.state === "failed" || firstDetachedError) {
             console.trace(`Test failed - trying to upload logs!`);
-            const h = TestSession.getHarness();
+            const h = MathTestSession.getHarness();
             h.peers.forEach((peer, index) => {
                 const promise = peer.logger.uploadLogs(
                     `FAILED (Peer ${index}): ${this.currentTest?.title}`,
@@ -78,7 +78,7 @@ if (
         console.trace(
             `Test afterEach completed - all detached promises settled`
         );
-        await TestSession.clear();
+        await MathTestSession.clear();
         if (firstDetachedError) throw firstDetachedError;
         console.trace(`Test afterEach DONE`);
     });
@@ -108,6 +108,12 @@ export { RPCActions } from "./actions/RPCActions";
 export { RpcStubActions } from "./actions/rpcStubActions";
 export { ContextActions } from "./actions/ContextActions";
 export { ScenarioActions } from "./actions/ScenarioActions";
+export { MathTransitionActions } from "./actions/math/MathTransitionActions";
+export { MathJoinActions } from "./actions/math/MathJoinActions";
+export { MathLifecycleActions } from "./actions/math/MathLifecycleActions";
+export { MathScenarioActions } from "./actions/math/MathScenarioActions";
+export { MathByzantineActions } from "./actions/math/MathByzantineActions";
+export { MathDisputeOrchestrator } from "./actions/math/MathDisputeOrchestrator";
 
 // Re-export SyncCoordinator
 export { default as SyncCoordinator } from "@test/utils/SyncCoordinator";
@@ -115,6 +121,8 @@ export { sleep } from "@/utils";
 
 // Global test session singleton
 export { TestSession } from "./session/TestSession";
+export { MathTestSession } from "./session/MathTestSession";
 
 // Re-export the original harness for compatibility
 export { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+export { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";

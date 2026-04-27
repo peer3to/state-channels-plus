@@ -1,7 +1,5 @@
 import { FraudProofType } from "@/types/sol-enums";
-import { TestSession, PeerTestHarness } from "@test/harness";
-
-PeerTestHarness.setDefaultLogLevel("debug");
+import { MathTestSession as TestSession } from "@test/harness";
 
 /**
  * E2E Tests: Fraud Proofs — onBlockConfirmation (BlockValidationStrategy)

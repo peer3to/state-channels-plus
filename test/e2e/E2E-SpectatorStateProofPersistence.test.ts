@@ -1,7 +1,5 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Join/Leave Sequence", function () {
     it.only("join/leave sequence and fork resolution", async function () {

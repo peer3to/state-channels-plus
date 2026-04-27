@@ -1,7 +1,5 @@
 import { TransportType } from "@/transport/TransportType";
-import { TestSession, PeerTestHarness, sleep } from "@test/harness";
-
-PeerTestHarness.setDefaultLogLevel("error");
+import { MathTestSession as TestSession, sleep } from "@test/harness";
 
 /**
  * E2E Tests for Handshake Initialization
