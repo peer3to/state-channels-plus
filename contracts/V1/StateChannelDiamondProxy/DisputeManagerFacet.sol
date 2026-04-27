@@ -62,6 +62,10 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         //check if dispute window is created/opened for the disputed fork, otherwise create/open it
         if (disputeWindow.evidence.creationTimestamp == 0) {
+            uint256 throttleExpiry = disputerThrottle[dispute.input.channelId][msg.sender];
+            require(throttleExpiry == 0 || block.timestamp >= throttleExpiry, ErrorDisputeThrottled());
+            disputerThrottle[dispute.input.channelId][msg.sender] = block.timestamp + getEvidenceTime();
+
             //create the dispute window
             disputeWindow.forkId = forkId;
             disputeWindow.evidence.creationTimestamp = block.timestamp; // evidence period started

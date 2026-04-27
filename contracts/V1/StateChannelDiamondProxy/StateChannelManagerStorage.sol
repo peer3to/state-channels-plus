@@ -53,6 +53,9 @@ contract StateChannelManagerStorage {
     /// @dev disputeData[channelId] => DisputeData
     mapping(bytes32 channelId => DisputeData) disputeData;
 
+    /// @dev Per-channel per-address throttle: address may not open a new dispute window until block.timestamp >= this value (0 = never submitted)
+    mapping(bytes32 channelId => mapping(address disputer => uint256 throttleExpiry)) disputerThrottle;
+
     // ================== Modifiers ==================
 
     modifier onlySelf() {
