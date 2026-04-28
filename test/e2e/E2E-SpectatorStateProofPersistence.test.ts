@@ -97,6 +97,11 @@ describe("E2E: Join/Leave Sequence", function () {
                 0,
                 `spectator peer ${i} should have 0 open P2P connections after dispute`
             );
+            // spectator should have stayes on the pre-dispute fork
+            expect(h.getPeer(i).stateManager.forkId).to.equal(
+                preDisputeForkId,
+                `spectator peer ${i} should be on pre-dispute fork`
+            );
         }
     });
 });
