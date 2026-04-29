@@ -509,6 +509,43 @@ describe("E2E: dispute validation", function () {
             await h.dispute.resolveDisputeWait();
         });
 
+        it("TimeoutTooEarly NOT raised when timeout dispute is valid", async function () {
+            const h = TestSession.getHarness();
+            // 2 transitions → peer 2 is next to write but never does
+
+            await h.scenario.preDisputeSetup();
+            // Mark the non-writer up front so honest-peer barriers (committedWait,
+            // resolveDisputeWait) exclude peer 2.
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
+
+            // Natural timeout: peer 2 never authors.
+            await h.assert.dispute.initiatedAndCommitedWait({
+                peersIndices: [0, 1],
+                timeoutMs: 15000
+            });
+
+            // No honest peer should fire onDisputeKilled and none
+            // should store ANY dispute fraud proof
+            await h.event.waitWhileEventCountsStayAtMost(
+                "onDisputeKilled",
+                [0, 1],
+                { durationMs: 3000, maxCount: 0 }
+            );
+            for (const peer of [0, 1]) {
+                const proofs = h.query
+                    .getPeerStorage(peer)
+                    .disputeFraudProofs.getDisputeFraudProofs();
+                if (proofs.length > 0) {
+                    const types = proofs.map((p) => p.proofType).join(", ");
+                    throw new Error(
+                        `Peer ${peer} stored ${proofs.length} dispute fraud proof(s) on a valid timeout dispute (types: ${types}) — pipeline false positive`
+                    );
+                }
+            }
+
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        });
+
         // it.skip("should kill dispute and store TimeoutThreshold when all participants have already signed the block claimed as timed out", async function () {
         //     // TODO: Requires the state proof to go to block N while block N+1 is
         //     // already fully signed. Needs a harness helper for state-proof truncation

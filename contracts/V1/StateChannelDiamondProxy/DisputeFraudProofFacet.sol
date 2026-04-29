@@ -406,7 +406,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 }
             }
         }
-        if (timeoutTimestamp <= previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()) {
+        if (timeoutTimestamp < previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()) {
             return _valid(dispute.input.disputer);
         }
         return _invalid();

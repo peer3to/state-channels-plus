@@ -418,10 +418,8 @@ export default class DisputeValidationService {
                     }
                 }
             }
-            // previousTimestamp is now correctly set
-            // TODO - think if it's <= or < (in the contract it's <=)
             if (
-                timeoutTimestamp <=
+                timeoutTimestamp <
                 previousTimestamp +
                     this.stateManager.getTimeoutWaitTimeSeconds()
             ) {
