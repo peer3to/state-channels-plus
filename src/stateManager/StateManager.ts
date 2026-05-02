@@ -639,7 +639,7 @@ class StateManager {
             this.logger.info(
                 `Reduction complete (local): transitioning from fork ${LoggerUtils.formatHash(forkId)} to fork ${LoggerUtils.formatHash(reducedForkId)}`
             );
-            this.setGenesisState(
+            await this.setGenesisState(
                 snapshotData,
                 encodedStateMachineState,
                 reducedForkId,

@@ -22,6 +22,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     uint256 private constant DEFAULT_AGREEMENT_TIME = 5;
     uint256 private constant DEFAULT_CHAIN_FALLBACK_TIME = 30;
     uint256 private constant DEFAULT_EVIDENCE_TIME = 30;
+    uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 16_000_000;
 
     constructor(
         address _stateMachineImplementation,
@@ -53,7 +54,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         agreementTime = _agreementTime == 0 ? DEFAULT_AGREEMENT_TIME : _agreementTime;
         chainFallbackTime = _chainFallbackTime == 0 ? DEFAULT_CHAIN_FALLBACK_TIME : _chainFallbackTime;
         evidenceTime = _evidenceTime == 0 ? DEFAULT_EVIDENCE_TIME : _evidenceTime;
-        gasLimit = 3_000_000;
+        gasLimit = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT;
     }
 
     fallback() external {
@@ -117,9 +118,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
-        );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(
+                openChannelData.participants,
+                openChannelConfirmation.encodedOpenChannel,
+                openChannelConfirmation.signatures
+            );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -159,10 +163,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData,
-            forkId: forkId,
-            blockHeight: 0,
-            timestamp: block.timestamp
+            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
