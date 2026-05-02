@@ -31,7 +31,6 @@ import {
     StateProofStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { config } from "@/utils/config";
 import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -240,9 +239,8 @@ class DisputeManager {
                 forkId,
                 height: latestBlockHeight
             }),
-            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
-                this.channelId,
-                Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
+            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                this.channelId
             ),
             this.storage.getParticipantsUnion({
                 forkId,

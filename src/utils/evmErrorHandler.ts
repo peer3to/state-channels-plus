@@ -21,6 +21,7 @@ export type RaceConditionErrorName =
     | "RaceConditionDisputeTimeoutNotMinTimestamp"
     | "RaceConditionUnexpectedBlockCalldataPosted"
     | "RaceConditionGenesisTimestampNotAvailable"
+    | "RaceConditionOnChainSlashes"
     | "ErrorCantParticipateInDispute"
     | "ErrorDisputePostedAuditingDataMismatch";
 

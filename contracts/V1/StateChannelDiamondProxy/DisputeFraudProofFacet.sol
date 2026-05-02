@@ -246,10 +246,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (address)
     {
-        uint256 timestamp = StateChannelManagerProxy(address(this))
-            .getDisputeWindowCreationTimestamp(dispute.input.channelId, dispute.input.forkId);
-
-        address[] memory onChainSlashes = getOnChainSlashedParticipantsUpToTimestamp(dispute.input.channelId, timestamp);
+        address[] memory onChainSlashes = getOnChainSlashedParticipants(dispute.input.channelId);
         address[] memory disputeSlashes = dispute.input.onChainSlashes;
         for (uint256 i = 0; i < disputeSlashes.length; i++) {
             bool found = false;
@@ -262,7 +259,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             if (!found) return _valid(dispute.input.disputer);
         }
 
-        return _invalid();
+        revert RaceConditionOnChainSlashes();
     }
 
     function _handleTimeoutThreshold(bytes memory encodedFraudProof, Dispute memory dispute)

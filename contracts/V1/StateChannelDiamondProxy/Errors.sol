@@ -83,4 +83,5 @@ error RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
 error RaceConditionDisputeTimeoutNotMinTimestamp();
 error RaceConditionUnexpectedBlockCalldataPosted();
 error RaceConditionGenesisTimestampNotAvailable();
+error RaceConditionOnChainSlashes();
 error ErrorDisputeThrottled();

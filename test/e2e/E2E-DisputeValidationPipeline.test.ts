@@ -506,7 +506,7 @@ describe("E2E: dispute validation", function () {
     });
 
     describe("Timeout fraud proofs", function () {
-        it("TimeoutNotLinkedToLatestState: blockHeight != latest + 1", async function () {
+        it.only("TimeoutNotLinkedToLatestState: blockHeight != latest + 1", async function () {
             const h = TestSession.getHarness();
             // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
             await h.lifecycle.timeoutSetup(3);

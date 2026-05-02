@@ -237,25 +237,9 @@ export default class DisputeValidationService {
         );
 
         // (STATEFUL - view) check on-chain slashes
-        const disputeCreationTimestamp =
-            await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                dispute.input.channelId,
-                dispute.input.forkId
-            );
-        // This should always be synced since this was triggered by the on-chain event
-        if (Number(disputeCreationTimestamp) === 0) {
-            this.logger.error(
-                "Dispute creation timestamp = 0, in LocalDiamond",
-                {
-                    dispute: LoggerUtils.getDisputeMetadata(dispute)
-                }
-            );
-            return false;
-        }
         let onChainSlashes = new Set<Address>(
-            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
-                dispute.input.channelId,
-                disputeCreationTimestamp
+            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                dispute.input.channelId
             )
         );
         const disputeOnChainSlashes = new Set<Address>(
@@ -264,9 +248,8 @@ export default class DisputeValidationService {
         if (!isSubset(disputeOnChainSlashes, onChainSlashes)) {
             // double check with RPC node, maybe local state not synced
             onChainSlashes = new Set<Address>(
-                await this.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
-                    dispute.input.channelId,
-                    disputeCreationTimestamp
+                await this.stateChannelManagerContract.getOnChainSlashedParticipants(
+                    dispute.input.channelId
                 )
             );
             if (!isSubset(disputeOnChainSlashes, onChainSlashes)) {
