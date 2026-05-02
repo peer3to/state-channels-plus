@@ -21,9 +21,10 @@ export async function deployDefaultMathOnChainContracts(
     const deployment = await deployFullStack(params.signer, {
         stateMachineArtifact: MathStateMachineArtifact,
         consumerFacetArtifact: MathConsumerFacetArtifact,
-        stateMachineArgs: [params.gasLimit],
+        stateMachineArgs: [params.stateMachineGasLimit],
         consumerFacetArgs: [],
-        timeConfig: params.timeConfig
+        timeConfig: params.timeConfig,
+        disputeExecutionGasLimit: params.disputeExecutionGasLimit
     });
 
     return deployment.address;
@@ -37,7 +38,7 @@ export async function deployDefaultMathLocalStateMachine(
         params.signer
     );
     const deployTx = await stateMachineFactory.getDeployTransaction(
-        params.gasLimit
+        params.stateMachineGasLimit
     );
     const deployLocalStateMachine = createLocalDeployerFromTx(deployTx);
     const address = await deployLocalStateMachine(params.evm, params.signer);

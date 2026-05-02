@@ -1,19 +1,20 @@
 import { ethers } from "hardhat";
 import fs from "fs";
 import path from "path";
-import { deploy } from "@peer3/state-channels-plus";
+import {
+    DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
+    deploy
+} from "@peer3/state-channels-plus";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine,
     TicTacToeConsumerFacet
-} from "../typechain-types";
-import { Signer } from "ethers";
+} from "../tic-tac-toe-vite/src/stateChannel/typechain-types";
 
-const DEFAULT_GAS_LIMIT = 500000;
-
+const DEFAULT_STATE_MACHINE_GAS_LIMIT = 500000;
 const LOCALHOST_RPC_URL = process.env.PROVIDER_URL ?? "http://localhost:8545";
 
-const getLocalhostSigners = async (): Promise<Signer> => {
+const getLocalhostSigners = async () => {
     const provider = new ethers.JsonRpcProvider(LOCALHOST_RPC_URL);
 
     // Random signer: useful for the SDK demo flow where gas price is 0.
@@ -22,7 +23,7 @@ const getLocalhostSigners = async (): Promise<Signer> => {
     // NonceManager prevents tx replacement when multiple sends happen concurrently.
     const managedSigner = new ethers.NonceManager(randomSigner);
 
-    return managedSigner as unknown as Signer;
+    return managedSigner;
 };
 
 export async function deployTicTacToe(): Promise<
@@ -47,7 +48,7 @@ export async function deployTicTacToe(): Promise<
         deployer
     );
     const ticTacToeContactInstance = (await ticTacToeSmFactory.deploy(
-        DEFAULT_GAS_LIMIT
+        DEFAULT_STATE_MACHINE_GAS_LIMIT
     )) as unknown as TicTacToeStateMachine;
     await ticTacToeContactInstance.waitForDeployment();
     console.log(
@@ -80,7 +81,8 @@ export async function deployTicTacToe(): Promise<
             agreementTime: 3,
             chainFallbackTime: 3,
             evidenceTime: 5
-        }
+        },
+        DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
     );
 
     // Use the example project's ethers instance for typing + ABI formatting.

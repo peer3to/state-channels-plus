@@ -47,7 +47,9 @@ describe("Universal Deployment", () => {
             const { address: diamondAddress } = await deployLocalDiamond(
                 deployerFn,
                 evm,
-                deployer
+                deployer,
+                undefined,
+                12_000_000
             );
 
             expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
@@ -87,6 +89,19 @@ describe("Universal Deployment", () => {
 
             const times = await diamondContract.getAllTimes();
             expect(times).to.deep.equal([15n, 5n, 30n, 30n]);
+            expect(await diamondContract.getGasLimit()).to.equal(3_000_000n);
+        });
+
+        it("deploys with a custom dispute execution gas limit", async () => {
+            const { contract: diamondContract } = await deploy(
+                mathStateMachineAddress,
+                consumerFacetAddress,
+                deployer,
+                undefined,
+                12_000_000
+            );
+
+            expect(await diamondContract.getGasLimit()).to.equal(12_000_000n);
         });
 
         it("fails with invalid consumer facet", async () => {

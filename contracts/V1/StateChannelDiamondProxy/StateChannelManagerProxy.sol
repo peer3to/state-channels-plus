@@ -22,7 +22,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     uint256 private constant DEFAULT_AGREEMENT_TIME = 5;
     uint256 private constant DEFAULT_CHAIN_FALLBACK_TIME = 30;
     uint256 private constant DEFAULT_EVIDENCE_TIME = 30;
-    uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 16_000_000;
+    uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
     constructor(
         address _stateMachineImplementation,
@@ -38,7 +38,8 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         uint256 _p2pTime,
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
-        uint256 _evidenceTime
+        uint256 _evidenceTime,
+        uint256 _disputeExecutionGasLimit
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacetAddress = _disputeManagerFacet;
@@ -54,7 +55,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         agreementTime = _agreementTime == 0 ? DEFAULT_AGREEMENT_TIME : _agreementTime;
         chainFallbackTime = _chainFallbackTime == 0 ? DEFAULT_CHAIN_FALLBACK_TIME : _chainFallbackTime;
         evidenceTime = _evidenceTime == 0 ? DEFAULT_EVIDENCE_TIME : _evidenceTime;
-        gasLimit = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT;
+        gasLimit = _disputeExecutionGasLimit == 0 ? DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT : _disputeExecutionGasLimit;
     }
 
     fallback() external {

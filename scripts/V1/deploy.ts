@@ -150,6 +150,8 @@ export type TimeConfig = {
     evidenceTime?: number;
 };
 
+export const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
+
 export function getTimeConfig(overrides?: TimeConfig): TimeConfig {
     return {
         p2pTime: overrides?.p2pTime ?? 0,
@@ -165,13 +167,15 @@ export type DeployFullStackParams = {
     stateMachineArgs?: any[];
     consumerFacetArgs?: any[];
     timeConfig?: TimeConfig;
+    disputeExecutionGasLimit?: number;
 };
 
 export async function deploy(
     stateMachineAddress: string,
     consumerFacetAddress: string,
     signer: Signer,
-    timeConfigOverrides?: TimeConfig
+    timeConfigOverrides?: TimeConfig,
+    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
 ): Promise<{ address: string; contract: StateChannelManagerProxy }> {
     const facetAddresses = await deployFacets(signer);
     const timeConfig = getTimeConfig(timeConfigOverrides);
@@ -186,7 +190,8 @@ export async function deploy(
                 timeConfig.p2pTime,
                 timeConfig.agreementTime,
                 timeConfig.chainFallbackTime,
-                timeConfig.evidenceTime
+                timeConfig.evidenceTime,
+                disputeExecutionGasLimit
             ]
         }
     );
@@ -201,7 +206,8 @@ export async function deployFullStack(
         consumerFacetArtifact,
         stateMachineArgs,
         consumerFacetArgs,
-        timeConfig
+        timeConfig,
+        disputeExecutionGasLimit
     } = params;
 
     const stateMachinePromise = deployArtifact(stateMachineArtifact, signer, {
@@ -219,7 +225,8 @@ export async function deployFullStack(
         stateMachineAddress,
         consumerFacetAddress,
         signer,
-        timeConfig
+        timeConfig,
+        disputeExecutionGasLimit
     );
 }
 
@@ -235,7 +242,8 @@ export async function deployLocalDiamond(
         | LocalStateMachineDeployer,
     evm: EVM,
     signer?: Signer,
-    timeConfigOverrides?: TimeConfig
+    timeConfigOverrides?: TimeConfig,
+    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
 ): Promise<DeploymentResult> {
     const usedSigner = signer || Wallet.createRandom();
 
@@ -263,7 +271,8 @@ export async function deployLocalDiamond(
                 timeConfig.p2pTime,
                 timeConfig.agreementTime,
                 timeConfig.chainFallbackTime,
-                timeConfig.evidenceTime
+                timeConfig.evidenceTime,
+                disputeExecutionGasLimit
             ]
         }
     );

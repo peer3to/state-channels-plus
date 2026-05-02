@@ -331,6 +331,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         signer: Signer,
         timeConfig: TimeConfig,
         logger: Logger,
+        disputeExecutionGasLimit: number,
         customPrecompiles?: EvmFactoryOptions["customPrecompiles"]
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
@@ -351,7 +352,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             deployStateMachine,
             evm,
             signer,
-            timeConfig
+            timeConfig,
+            disputeExecutionGasLimit
         );
 
         const diamondExecuter = new ContractExecuter(
@@ -460,6 +462,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             chainFallbackTime: Number(configTimes[2]),
             evidenceTime: Number(configTimes[3])
         };
+        const disputeExecutionGasLimit = Number(
+            await deployedStateChannelContractInstance.getGasLimit()
+        );
         await LoggerUtils.logTimestamp(logger, "info", timeConfig);
 
         // Create the EvmStateMachine instance (which extends AStateMachine)
@@ -471,6 +476,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 signer,
                 timeConfig,
                 logger,
+                disputeExecutionGasLimit,
                 customPrecompiles
             );
 

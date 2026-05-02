@@ -59,7 +59,8 @@ export class HarnessContext {
 
 export type HarnessDeploymentParams = {
     signer: Signer;
-    gasLimit: number;
+    stateMachineGasLimit: number;
+    disputeExecutionGasLimit: number;
     timeConfig: TimeConfig;
     harnessConfig: Partial<Config>;
 };
@@ -129,7 +130,8 @@ export type HarnessOptions<
     timeConfig?: Partial<TimeConfig>;
     channelId?: string;
     initialBalance?: number;
-    gasLimit?: number;
+    stateMachineGasLimit?: number;
+    disputeExecutionGasLimit?: number;
     autoConnect?: boolean;
     configOverrides?: Partial<Config>; // Direct config overrides
     rpcServiceFactories?: TFactories;

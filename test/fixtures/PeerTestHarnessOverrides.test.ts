@@ -22,27 +22,35 @@ describe("PeerTestHarness deployment overrides", () => {
 
     it("uses custom deployment overrides during setup", async () => {
         const deployOnChainContracts = sinon.spy(
-            async ({ signer, gasLimit, timeConfig }) => {
+            async ({
+                signer,
+                stateMachineGasLimit,
+                disputeExecutionGasLimit,
+                timeConfig
+            }) => {
                 const deployment = await deployFullStack(signer, {
                     stateMachineArtifact: MathStateMachineArtifact,
                     consumerFacetArtifact: MathConsumerFacetArtifact,
-                    stateMachineArgs: [gasLimit],
+                    stateMachineArgs: [stateMachineGasLimit],
                     consumerFacetArgs: [],
-                    timeConfig
+                    timeConfig,
+                    disputeExecutionGasLimit
                 });
                 return deployment.address;
             }
         );
 
         const deployLocalStateMachine = sinon.spy(
-            async ({ signer, gasLimit, evm }) => {
+            async ({ signer, stateMachineGasLimit, evm }) => {
                 const stateMachineFactory =
                     await hre.ethers.getContractFactoryFromArtifact(
                         MathStateMachineArtifact,
                         signer
                     );
                 const deployTx =
-                    await stateMachineFactory.getDeployTransaction(gasLimit);
+                    await stateMachineFactory.getDeployTransaction(
+                        stateMachineGasLimit
+                    );
                 const deployLocalStateMachine =
                     createLocalDeployerFromTx(deployTx);
                 const address = await deployLocalStateMachine(evm, signer);
@@ -63,10 +71,14 @@ describe("PeerTestHarness deployment overrides", () => {
         });
 
         await harness.setup(2, {
-            logLevel: "error"
+            logLevel: "error",
+            disputeExecutionGasLimit: 12_000_000
         });
 
         expect(harness.peers).to.have.length(2);
+        expect(await harness.channelManager.getGasLimit()).to.equal(
+            12_000_000n
+        );
         expect(deployOnChainContracts.callCount).to.equal(1);
         expect(deployLocalStateMachine.callCount).to.equal(4);
         expect(connectSigner.callCount).to.equal(2);

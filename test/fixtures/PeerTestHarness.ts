@@ -24,7 +24,10 @@ import {
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
-import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
+import {
+    DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
+    type LocalStateMachineDeployer
+} from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
@@ -226,7 +229,10 @@ export class PeerTestHarness<
                 options?.channelId ||
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
             initialBalance: options?.initialBalance || 500,
-            gasLimit: options?.gasLimit || 500000,
+            stateMachineGasLimit: options?.stateMachineGasLimit ?? 500000,
+            disputeExecutionGasLimit:
+                options?.disputeExecutionGasLimit ??
+                DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
             autoConnect: options?.autoConnect !== false,
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],
@@ -275,7 +281,9 @@ export class PeerTestHarness<
             const deployedAddress = await deployLocalStateMachine({
                 signer,
                 evm,
-                gasLimit: this.options.gasLimit!,
+                stateMachineGasLimit: this.options.stateMachineGasLimit!,
+                disputeExecutionGasLimit:
+                    this.options.disputeExecutionGasLimit!,
                 timeConfig: this.options.timeConfig as TimeConfig,
                 harnessConfig: this.harnessConfig
             });
@@ -293,7 +301,8 @@ export class PeerTestHarness<
 
         const channelManagerAddress = await deployment.deployOnChainContracts({
             signer: hardhatSigner,
-            gasLimit: this.options.gasLimit!,
+            stateMachineGasLimit: this.options.stateMachineGasLimit!,
+            disputeExecutionGasLimit: this.options.disputeExecutionGasLimit!,
             timeConfig: this.options.timeConfig as TimeConfig,
             harnessConfig: this.harnessConfig
         });
