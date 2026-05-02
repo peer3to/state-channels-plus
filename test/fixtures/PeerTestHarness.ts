@@ -277,8 +277,6 @@ export class PeerTestHarness<
                 evm,
                 gasLimit: this.options.gasLimit!,
                 timeConfig: this.options.timeConfig as TimeConfig,
-                channelId: this.options.channelId!,
-                initialBalance: this.options.initialBalance!,
                 harnessConfig: this.harnessConfig
             });
 
@@ -297,8 +295,6 @@ export class PeerTestHarness<
             signer: hardhatSigner,
             gasLimit: this.options.gasLimit!,
             timeConfig: this.options.timeConfig as TimeConfig,
-            channelId: this.options.channelId!,
-            initialBalance: this.options.initialBalance!,
             harnessConfig: this.harnessConfig
         });
 

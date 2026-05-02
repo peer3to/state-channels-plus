@@ -52,6 +52,8 @@ export {
     getChecksumAddress
 };
 
+export { Address } from "@ethereumjs/util";
+
 export * from "@/utils/logging";
 
 export * from "../typechain-types";

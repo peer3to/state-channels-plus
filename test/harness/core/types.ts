@@ -61,8 +61,6 @@ export type HarnessDeploymentParams = {
     signer: Signer;
     gasLimit: number;
     timeConfig: TimeConfig;
-    channelId: string;
-    initialBalance: number;
     harnessConfig: Partial<Config>;
 };
 
