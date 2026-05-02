@@ -160,6 +160,37 @@ export class TransitionActions<
         return await peer.stateManager.postStateSnapshot(forkId);
     }
 
+    async postSnapshotWait(options?: {
+        peerIndex?: number;
+        forkId?: string;
+    }): Promise<StateSnapshot | undefined> {
+        const { peerIndex = 0 } = options || {};
+        const forkId = options?.forkId || this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const forkData =
+            await peer.stateManager.prepareUpdateStateSnapshotFork();
+        const sameForkData =
+            await peer.stateManager.prepareUpdateSnapshotSameFork(forkId);
+        const callData: string[] = [
+            ...(forkData?.callData ?? []),
+            ...(sameForkData?.callData ?? [])
+        ];
+        if (callData.length === 0) return undefined;
+
+        const channelManager = this.harness.channelManager.connect(peer.signer);
+        const tx = await channelManager.multicall(callData);
+        await tx.wait();
+        return sameForkData?.expectedSnapshot ?? forkData?.expectedSnapshot;
+    }
+
     async validWithoutPeer(
         excludePeer: number,
         txFn: (contract: TContract) => Promise<any>

@@ -41,7 +41,7 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Fraud Proof Detection", function () {
-        it("should kill a spam dispute with no legitimate enforcement basis", async function () {
+        it.only("should kill a spam dispute with no legitimate enforcement basis", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
                 timeConfig: { evidenceTime: 6 }

@@ -21,7 +21,9 @@ import DisputeManager, {
 } from "@/disputeManager/DisputeManager";
 import type {
     BlockStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    SnapshotDataStruct,
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export type DisputeTamper = (
@@ -29,6 +31,22 @@ export type DisputeTamper = (
     disputeConfirmation: DisputeConfirmationStruct,
     auditingData?: DisputeAuditingDataStruct
 ) => void | Promise<void>;
+
+export type ColludeOnFraudulentSnapshotMutate = (ctx: {
+    peerIndex: number;
+    originalSnapshotData: SnapshotDataStruct;
+    originalOutboundMessageBlock?: MessageBlockStruct;
+    blockTimestamp: number;
+}) => {
+    snapshotData: SnapshotDataStruct;
+    outboundMessageBlock?: MessageBlockStruct;
+    encodedStateMachineStateOverride?: string;
+};
+
+type CreateStateSnapshotResult = {
+    stateSnapshot: StateSnapshot;
+    outboundMessageBlock?: MessageBlockStruct;
+};
 
 export class DisputeTampering {
     static tamperAuditingDataHash(dispute: DisputeStruct): void {
@@ -237,6 +255,76 @@ export class DisputeTamperingActions {
         this.logger.debug(
             `Corrupted validator ${validatorPeerIndex} snapshot for balance invariant (hash=${originalHash})`
         );
+    }
+
+    colludeOnFraudulentSnapshot(options: {
+        peers?: number[];
+        mutate: ColludeOnFraudulentSnapshotMutate;
+    }): () => void {
+        const peerIndices =
+            options.peers ?? this.harness.peers.map((p) => p.index);
+
+        const restorers = peerIndices.map((peerIndex) => {
+            const sm = this.harness.getPeer(peerIndex).stateManager as any;
+            const storage = sm.storage.stateMachineStates;
+            const colludedBytesByHash = new Map<string, string>();
+
+            // 1) Substitute the snapshot every peer signs/recomputes for the
+            //    next block
+            const originalCreate = sm.createStateSnapshot.bind(sm);
+            sm.createStateSnapshot = async (
+                ...args: unknown[]
+            ): Promise<CreateStateSnapshotResult> => {
+                const result: CreateStateSnapshotResult = await originalCreate(
+                    ...args
+                );
+                const original = result.stateSnapshot.toStruct();
+                const mutated = options.mutate({
+                    peerIndex,
+                    originalSnapshotData: original.snapshotData,
+                    originalOutboundMessageBlock: result.outboundMessageBlock,
+                    blockTimestamp: Number(original.timestamp)
+                });
+                if (mutated.encodedStateMachineStateOverride !== undefined) {
+                    colludedBytesByHash.set(
+                        mutated.snapshotData.stateMachineStateHash as string,
+                        mutated.encodedStateMachineStateOverride
+                    );
+                }
+                return {
+                    stateSnapshot: StateSnapshot.from({
+                        ...original,
+                        snapshotData: mutated.snapshotData
+                    }),
+                    outboundMessageBlock:
+                        mutated.outboundMessageBlock ??
+                        result.outboundMessageBlock
+                };
+            };
+
+            // 2) Swap stored bytes for `encodedStateMachineStateOverride` so
+            //    spectators receive bytes that keccak to the inflated hash.
+            const originalStore = storage.storeStateMachineState.bind(storage);
+            storage.storeStateMachineState = (
+                encodedState: string,
+                opts?: { hash?: string }
+            ) => {
+                const colluded = opts?.hash
+                    ? colludedBytesByHash.get(opts.hash)
+                    : undefined;
+                return originalStore(colluded ?? encodedState, opts);
+            };
+
+            return () => {
+                sm.createStateSnapshot = originalCreate;
+                storage.storeStateMachineState = originalStore;
+            };
+        });
+
+        this.logger.debug(
+            `Colluding on fraudulent snapshot for peers [${peerIndices.join(", ")}]`
+        );
+        return () => restorers.forEach((r) => r());
     }
 
     async truncateStateProofToHeight(
