@@ -538,9 +538,6 @@ describe("E2E: dispute validation", function () {
                     DisputeFraudProofType.TimeoutNotLinkedToLatestState,
                 timeoutMs: 10000
             });
-            // mark peer 0 as malicious
-            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
-
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
 
