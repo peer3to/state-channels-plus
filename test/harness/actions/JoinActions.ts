@@ -3,9 +3,12 @@ import hre from "hardhat";
 import { Signer, BytesLike } from "ethers";
 import { Status } from "@/types";
 import {
+    Codec,
     DetachedPromises,
     LocalDiscoveryServer,
-    SignatureUtils
+    SignatureUtils,
+    Type,
+    hash
 } from "@/utils";
 import {
     JoinChannelConfirmationStruct,
@@ -109,11 +112,17 @@ export class JoinActions {
                 "buildJoinChannelConfirmation: existingParticipantSigners must include every current participant signer"
             );
         }
+        const onChainSnapshot =
+            await this.harness.channelManager.getStateSnapshot(channelId);
+        const latestStateSnapshotHash = hash(
+            Codec.encode(onChainSnapshot, Type.StateSnapshot)
+        );
         const jc: JoinChannelStruct = {
             participant: joiner.address,
             channelId,
             balance: { amount: 500n, data: "0x00" },
             deadlineTimestamp: BigInt(Clock.getTimeInSeconds() + 120),
+            latestStateSnapshotHash,
             ...jcOverrides
         };
         const { encoded, signature: joinerSignature } =

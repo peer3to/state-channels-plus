@@ -287,6 +287,34 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.transition.advanceState({ waitForSync: false });
     }
 
+    async syncSpectatorAndPrepareJoin(initialTransitions: number = 4) {
+        const h = this.harness;
+        await h.lifecycle.start(3, initialTransitions, {
+            timeConfig: {
+                p2pTime: 5,
+                agreementTime: 4,
+                chainFallbackTime: 2,
+                evidenceTime: 4
+            }
+        });
+
+        const joiner = await h.join.addSpectatorWait();
+        await h.assert.sync.peersInSyncWait();
+
+        const stateSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
+        );
+        const confirmation = await h.join.buildJoinChannelConfirmation({
+            joiner,
+            channelId: h.channelId,
+            existingParticipantSigners: h.peers
+                .filter((p) => p.index !== joiner.index)
+                .map((p) => p.signer)
+        });
+
+        return { joiner, stateSnapshot, confirmation };
+    }
+
     async spectatorJoinedAndSynced(
         initialTransitions: number = 3,
         options?: HarnessOptions

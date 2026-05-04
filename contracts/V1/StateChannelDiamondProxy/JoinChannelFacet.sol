@@ -19,6 +19,15 @@ contract JoinChannelFacet is StateChannelCommon {
 
         // Check deadline
         require(jc.deadlineTimestamp >= block.timestamp, RaceConditionJoinChannelExpired());
+        StateSnapshot memory currentSnapshot = getStateSnapshot(channelId);
+        require(
+            jc.latestStateSnapshotHash == keccak256(abi.encode(currentSnapshot)),
+            RaceConditionJoinChannelStaleSnapshot()
+        );
+        require(
+            !StateChannelManagerProxy(address(this)).isForkDisputed(channelId, currentSnapshot.forkId),
+            RaceConditionJoinChannelForkDisputed()
+        );
 
         //verify original signature
         (address retrievedAddress, bool isValidSignature) =

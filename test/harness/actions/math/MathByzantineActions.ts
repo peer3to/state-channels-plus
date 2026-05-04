@@ -1,7 +1,10 @@
 import { ethers, ZeroHash } from "ethers";
 
+import type { Logger } from "@/utils";
 import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
+import type { ColludeOnFraudulentSnapshotMutate } from "@test/harness/actions/DisputeTamperingActions";
 import type { TestPeer } from "@test/harness/core/types";
+import type MathPeerTestHarness from "@test/fixtures/MathPeerTestHarness";
 import { ForkId, Bytes, Hash } from "@/types/types";
 import Block from "@/models/Block";
 import Clock from "@/Clock";
@@ -16,6 +19,12 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export class MathByzantineActions extends ByzantineActions {
+    protected override harness!: MathPeerTestHarness;
+
+    constructor(harness: MathPeerTestHarness, logger: Logger) {
+        super(harness, logger);
+    }
+
     private encodeMathAdd(peer: TestPeer, value: number = 1): Bytes {
         return (
             peer.contractInstance as MathStateMachine
@@ -587,5 +596,25 @@ export class MathByzantineActions extends ByzantineActions {
             .broadcast();
 
         return invalidBlock;
+    }
+
+    async postFraudulentSnapshot(options: {
+        peers?: number[];
+        mutate: ColludeOnFraudulentSnapshotMutate;
+        poster?: number;
+    }): Promise<void> {
+        const peers = options.peers ?? this.harness.peers.map((p) => p.index);
+        const restore = this.harness.tamper.colludeOnFraudulentSnapshot({
+            peers,
+            mutate: options.mutate
+        });
+        try {
+            await this.harness.transition.advanceState({ waitForPeers: peers });
+            await this.harness.transition.postSnapshotWait({
+                peerIndex: options.poster ?? peers[0]
+            });
+        } finally {
+            restore();
+        }
     }
 }
