@@ -98,15 +98,20 @@ export class DisputeTamperingActions {
     async postTamperedDispute(
         authorPeerIndex: number,
         tamper: DisputeTamper,
-        forkId?: ForkId
+        options?: { forkId?: ForkId; markMalicious?: boolean }
     ): Promise<{
         dispute: DisputeStruct;
         disputeConfirmation: DisputeConfirmationStruct;
     }> {
+        const markMalicious = options?.markMalicious ?? true;
+        const forkId = options?.forkId;
+
         const peer = this.harness.getPeer(authorPeerIndex);
-        this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: authorPeerIndex
-        });
+        if (markMalicious) {
+            this.harness.contextApi.markMaliciousPeer({
+                maliciousPeerIndex: authorPeerIndex
+            });
+        }
         const targetForkId = forkId || this.harness.activeForkId!;
 
         const { dispute, disputeConfirmation, auditingData } =
@@ -329,9 +334,12 @@ export class DisputeTamperingActions {
 
     async truncateStateProofToHeight(
         dispute: DisputeStruct,
-        disputerPeerIndex: number,
-        targetHeight: number
-    ): Promise<void> {
+        options: {
+            disputerPeerIndex: number;
+            targetHeight: number;
+        }
+    ): Promise<DisputeAuditingDataStruct> {
+        const { disputerPeerIndex, targetHeight } = options;
         const peer = this.harness.getPeer(disputerPeerIndex);
         const stateProof = dispute.input.stateProof;
         const localDiamond = this.harness.getLocalDiamond(disputerPeerIndex);
@@ -403,6 +411,8 @@ export class DisputeTamperingActions {
         this.logger.debug(
             `Truncated state proof to height ${targetHeight} for disputer ${disputerPeerIndex}`
         );
+
+        return auditingData;
     }
 
     async rewriteLastSignedBlockInDispute(
@@ -410,9 +420,26 @@ export class DisputeTamperingActions {
         transformBlockStruct: (bs: BlockStruct) => BlockStruct
     ): Promise<void> {
         const proof = dispute.input.stateProof;
-        const i = proof.signedBlocks.length - 1;
-        proof.signedBlocks[i] = await this.remapSignedBlock(
-            proof.signedBlocks[i],
+        await this.rewriteSignedBlockAtIndex(
+            dispute,
+            proof.signedBlocks.length - 1,
+            transformBlockStruct
+        );
+    }
+
+    async rewriteSignedBlockAtIndex(
+        dispute: DisputeStruct,
+        index: number,
+        transformBlockStruct: (bs: BlockStruct) => BlockStruct
+    ): Promise<void> {
+        const proof = dispute.input.stateProof;
+        if (index < 0 || index >= proof.signedBlocks.length) {
+            throw new Error(
+                `rewriteSignedBlockAtIndex: index ${index} out of range (have ${proof.signedBlocks.length} signedBlocks)`
+            );
+        }
+        proof.signedBlocks[index] = await this.remapSignedBlock(
+            proof.signedBlocks[index],
             transformBlockStruct
         );
     }
@@ -422,10 +449,40 @@ export class DisputeTamperingActions {
         transformBlockStruct: (bs: BlockStruct) => BlockStruct
     ): Promise<void> {
         const proof = dispute.input.stateProof;
-        const lastM = proof.milestones[proof.milestones.length - 1];
-        const i = lastM.blockConfirmations.length - 1;
-        const { signedBlock, signatures } = lastM.blockConfirmations[i];
-        lastM.blockConfirmations[i] = {
+        const lastMilestoneIndex = proof.milestones.length - 1;
+        const lastM = proof.milestones[lastMilestoneIndex];
+        await this.rewriteMilestoneSignedBlockAtIndex(
+            dispute,
+            lastMilestoneIndex,
+            lastM.blockConfirmations.length - 1,
+            transformBlockStruct
+        );
+    }
+
+    async rewriteMilestoneSignedBlockAtIndex(
+        dispute: DisputeStruct,
+        milestoneIndex: number,
+        blockConfirmationIndex: number,
+        transformBlockStruct: (bs: BlockStruct) => BlockStruct
+    ): Promise<void> {
+        const proof = dispute.input.stateProof;
+        if (milestoneIndex < 0 || milestoneIndex >= proof.milestones.length) {
+            throw new Error(
+                `rewriteMilestoneSignedBlockAtIndex: milestoneIndex ${milestoneIndex} out of range (have ${proof.milestones.length} milestones)`
+            );
+        }
+        const milestone = proof.milestones[milestoneIndex];
+        if (
+            blockConfirmationIndex < 0 ||
+            blockConfirmationIndex >= milestone.blockConfirmations.length
+        ) {
+            throw new Error(
+                `rewriteMilestoneSignedBlockAtIndex: blockConfirmationIndex ${blockConfirmationIndex} out of range (have ${milestone.blockConfirmations.length} blockConfirmations in milestone ${milestoneIndex})`
+            );
+        }
+        const { signedBlock, signatures } =
+            milestone.blockConfirmations[blockConfirmationIndex];
+        milestone.blockConfirmations[blockConfirmationIndex] = {
             signedBlock: await this.remapSignedBlock(
                 signedBlock,
                 transformBlockStruct

@@ -264,16 +264,23 @@ export class MathScenarioActions extends ScenarioActions {
             chainFallbackTime?: number;
             evidenceTime?: number;
         };
+        count?: number;
+        disconnectedPeerIndex?: number;
     }) {
         const timeConfig = {
             evidenceTime: 6,
             ...options?.timeConfig
         };
+        const count = options?.count ?? 2;
+        const disconnectedPeerIndex = options?.disconnectedPeerIndex ?? 2;
         await this.harness.lifecycle.timeoutSetup(4, 0, { timeConfig });
-        await this.harness.network.disconnectPeer(2);
+        await this.harness.network.disconnectPeer(disconnectedPeerIndex);
+        const remainingPeerIndices = [0, 1, 2, 3].filter(
+            (i) => i !== disconnectedPeerIndex
+        );
         await this.harness.transition.advanceState({
-            waitForPeers: [0, 1, 3],
-            count: 2
+            waitForPeers: remainingPeerIndices,
+            count
         });
 
         this.harness.event.resetEventSpies();
