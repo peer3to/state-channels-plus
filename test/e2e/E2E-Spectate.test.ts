@@ -3,6 +3,7 @@ import { expect } from "chai";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ATransport } from "@/transport";
 import { SyncRequest } from "@/rpc/services/spectate/SpectateService";
+import { Status } from "@/types";
 
 /**
  * E2E Tests for Spectate Service
@@ -244,6 +245,94 @@ describe("E2E: Spectate Service", function () {
 
             await h.assert.sync.peersInSyncWait({
                 peerIndices: honestPeerIndices.concat(spectatorIndex)
+            });
+        });
+    });
+
+    describe("Spectator promoted to participant", function () {
+        it("via forceInboundJoin", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+
+            const spectator = await h.join.addSpectatorWait();
+            await h.assert.sync.participantCount({
+                expectedCount: 3,
+                peerIndex: 3
+            });
+
+            await h.join.forceInboundJoinWait({
+                participant: spectator.address
+            });
+            await h.transition.advanceState({ count: 1 });
+
+            await h.event.waitUntilPeerStatus(3, Status.PARTICIPATING);
+            await h.assert.sync.participantCount({
+                expectedCount: 4,
+                peerIndex: 3
+            });
+
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2, 3] });
+
+            h.assert.dispute.noDisputes();
+        });
+
+        it("via joinChannel RPC", async function () {
+            const h = TestSession.getHarness();
+            const joiner = await h.scenario.spectatorPromotedViaJoinRpc();
+            expect(joiner.stateManager.getStatus()).to.equal(
+                Status.PARTICIPATING
+            );
+        });
+
+        it("joinChannel RPC survives dispute on reduced fork", async function () {
+            const h = TestSession.getHarness();
+            const joiner = await h.scenario.spectatorPromotedViaJoinRpc();
+
+            const maliciousPeerIndex = 0;
+            const honestPeerIndices = [1, joiner.index];
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.initiatedAndCommitedWait({
+                expectedCount: 1,
+                peersIndices: honestPeerIndices
+            });
+
+            const { newForkId } = await h.dispute.resolveDisputeWait({
+                honestPeerIndices,
+                forkSettleTimeoutMs: 15000
+            });
+
+            const joinerPeer = h.getPeer(joiner.index);
+            expect(joinerPeer.stateManager.forkId).to.equal(
+                newForkId,
+                "Joiner must be on the post-dispute (reduced) fork"
+            );
+            expect(joinerPeer.stateManager.getStatus()).to.equal(
+                Status.PARTICIPATING,
+                "Joiner must remain PARTICIPATING after dispute resolution"
+            );
+
+            const joinerParticipants =
+                await joinerPeer.stateManager.diamondStateMachine.getParticipants();
+            expect(joinerParticipants).to.include(
+                joiner.address,
+                "Joiner must be in getParticipants() on the post-dispute fork"
+            );
+
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices
+            });
+
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: honestPeerIndices,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices
             });
         });
     });

@@ -7,6 +7,7 @@ export type ForceInboundJoinOptions = {
     deposit?: bigint;
     timeoutMs?: number;
     waitForHonestPeersObserve?: boolean;
+    participant?: string;
 };
 
 export class MathJoinActions extends JoinActions {
@@ -23,7 +24,8 @@ export class MathJoinActions extends JoinActions {
             throw new Error("forceInboundJoinWait: harness has no peers");
         }
 
-        const participant = hre.ethers.Wallet.createRandom().address;
+        const participant =
+            options?.participant ?? hre.ethers.Wallet.createRandom().address;
         const previousLatestHash =
             submitter.stateManager.storage.inboundMessages.getLatestBlockHash();
 

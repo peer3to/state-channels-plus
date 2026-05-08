@@ -1,8 +1,10 @@
 import { Logger } from "@/utils";
 import { ForkId } from "@/types/types";
+import { Status } from "@/types";
 import {
     CreateAndResolveDisputeResult,
-    HarnessOptions
+    HarnessOptions,
+    TestPeer
 } from "@test/harness/core/types";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { MathPeerTestHarness } from "test-harness";
@@ -320,6 +322,64 @@ export class MathScenarioActions extends ScenarioActions {
         });
 
         return { joiner, stateSnapshot, confirmation };
+    }
+    async spectatorPromotedViaJoinRpc(options?: {
+        initialPeers?: number;
+        initialTransitions?: number;
+        postPromotionTransitions?: number;
+        timeConfig?: HarnessOptions["timeConfig"];
+    }): Promise<TestPeer> {
+        const initialPeers = options?.initialPeers ?? 2;
+        const initialTransitions = options?.initialTransitions ?? 2;
+        const postPromotionTransitions = options?.postPromotionTransitions ?? 2;
+        const timeConfig = options?.timeConfig ?? {
+            p2pTime: 2,
+            agreementTime: 4,
+            chainFallbackTime: 4,
+            evidenceTime: 6
+        };
+
+        await this.harness.lifecycle.start(initialPeers, initialTransitions, {
+            timeConfig
+        });
+
+        const joiner = await this.harness.join.addSpectatorWait();
+        await this.harness.assert.sync.peersInSyncWait();
+
+        const confirmation =
+            await this.harness.join.buildJoinChannelConfirmation({
+                joiner,
+                channelId: this.harness.channelId,
+                existingParticipantSigners: this.harness.peers
+                    .slice(0, initialPeers)
+                    .map((p) => p.signer)
+            });
+
+        await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+        if (joiner.stateManager.getStatus() !== Status.PENDING_PARTICIPANT) {
+            throw new Error(
+                `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joiner.stateManager.getStatus()}`
+            );
+        }
+
+        await this.harness.transition.advanceState({ count: 2 });
+        await this.harness.event.waitUntilPeerStatus(
+            joiner.index,
+            Status.PARTICIPATING
+        );
+
+        if (postPromotionTransitions > 0) {
+            await this.harness.transition.advanceState({
+                count: postPromotionTransitions
+            });
+            await this.harness.assert.sync.peersInSyncWait();
+        }
+
+        this.harness.assert.dispute.noDisputes();
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+
+        return joiner;
     }
 
     async spectatorJoinedAndSynced(
