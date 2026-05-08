@@ -41,6 +41,38 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Fraud Proof Detection", function () {
+        it("updateStateSnapshotSameFork during active dispute does not call _clearDisputeData", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+
+            await h.tamper.postTamperedDispute(1, (dispute) => {
+                dispute.input.stateProof.milestones = [];
+                dispute.input.stateProof.signedBlocks = [];
+            });
+
+            // _updateStateSnapshot(shouldClearStorage=true) guards on creationTimestamp==0.
+            // If the guard failed, _clearStorage → _clearDisputeData would delete
+            // disputeWindowMap, and the kill TX below would revert (no dispute on-chain).
+            const expectedSnapshot =
+                await h.transition.postSameForkSnapshotOnlyWait({
+                    peerIndex: 0
+                });
+            await h.assert.snapshot.onChainSnapshotChangedWait({
+                expectedSnapshot
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof,
+                timeoutMs: 10000
+            });
+
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        });
+
         it("should kill a spam dispute with no legitimate enforcement basis", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
