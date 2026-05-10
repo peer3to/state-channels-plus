@@ -308,12 +308,12 @@ class StateManager {
 
         return this.status;
     }
-    public setChannelId(channelId: ChannelId) {
+    public async setChannelId(channelId: ChannelId): Promise<void> {
         this.logger.verbose("Setting channel ID", { channelId });
         this.channelId = channelId;
         this.logger.updateSharedContext({ channelId: String(channelId) });
-        this.stateChannelEventListener.setChannelId(channelId);
         this.disputeManager.setChannelId(channelId);
+        await this.stateChannelEventListener.setChannelId(channelId);
     }
     public getChannelId(): ChannelId {
         return this.channelId;
@@ -376,6 +376,7 @@ class StateManager {
             `Scheduled reduction timeout for fork ${forkId} at ${localTriggerTimestamp} (in ${localTriggerTimestamp - now}s)`
         );
     }
+
     private async tryReduce(forkId: ForkId) {
         // Ensure we're still on this fork
         if (this.forkId !== forkId) {
@@ -485,6 +486,14 @@ class StateManager {
                 disputes: disputes.map((d) => LoggerUtils.getDisputeMetadata(d))
             }
         );
+        if (disputes.length === 0) {
+            this.logger.warn(
+                `No disputes found while reducing disputed fork ${forkId}; initiating local dispute`
+            );
+            await this.disputeManager.dispute(forkId);
+            return;
+        }
+
         const reducedOutput =
             await this.stateChannelManagerContract.reduce.staticCall(disputes);
 
@@ -841,7 +850,8 @@ class StateManager {
                 nextToWrite,
                 turnTime,
                 this.timeConfig.agreementTime,
-                this.timeConfig.chainFallbackTime
+                this.timeConfig.chainFallbackTime,
+                normalizedGenesisTimestamp
             );
         } finally {
             this.mutex.unlock();
@@ -2555,7 +2565,7 @@ class StateManager {
                 await this.maybeInitiateForceJoinDispute(block, participants);
             }
         }
-        // step 1 - Confirm and Gossip // TODO - quick hack - cleaner code later
+        // step 1 - add my signature if appropriate
         if (
             (await this.shouldSignBlock(block)) &&
             !(options?.strategy instanceof DisputeValidationStrategy)
@@ -2566,15 +2576,6 @@ class StateManager {
                 block: LoggerUtils.getBlockMetadata(block)
             });
             block.expandSignatures([signature]);
-        }
-        // always broadcast if participating // TODO - quick hack - cleaner code later
-        if (
-            this.status === Status.PARTICIPATING &&
-            !(options?.strategy instanceof DisputeValidationStrategy)
-        ) {
-            this.p2pManager.remoteRpc.stateTransitionService
-                .onBlockConfirmation(block.blockConfirmationStruct)
-                .broadcast();
         }
 
         // step 2 - persist the block // TODO - quick hack - cleaner code later
@@ -2611,7 +2612,18 @@ class StateManager {
             );
         }
 
-        // step 7 - startMaybeExitOnChain
+        // step 7 - gossip after local persistence, so echoed confirmations are
+        // recognized as duplicates/signature updates instead of being replayed.
+        if (
+            this.status === Status.PARTICIPATING &&
+            !(options?.strategy instanceof DisputeValidationStrategy)
+        ) {
+            this.p2pManager.remoteRpc.stateTransitionService
+                .onBlockConfirmation(block.blockConfirmationStruct)
+                .broadcast();
+        }
+
+        // step 8 - startMaybeExitOnChain
         await this.startMaybeExitOnChain(
             block,
             stateSnapshot,
@@ -2619,7 +2631,7 @@ class StateManager {
             options?.outboundMessageBlock
         );
 
-        // step 8 - success callback
+        // step 9 - success callback
         successCallback();
 
         // step 10 - Notify any event hooks
@@ -2629,7 +2641,8 @@ class StateManager {
             nextToWrite,
             turnTime,
             this.timeConfig.agreementTime,
-            this.timeConfig.chainFallbackTime
+            this.timeConfig.chainFallbackTime,
+            block.getRelevantTimestamp(nextToWrite)
         );
 
         // step 11 - maybe post block on chain

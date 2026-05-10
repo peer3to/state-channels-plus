@@ -89,8 +89,10 @@ export class BrowserLogger extends Logger {
         ) {
             // eslint-disable-next-line no-console
             console.groupCollapsed(...this.fmt(logEntry));
-            // eslint-disable-next-line no-console
-            console[method](meta);
+            if (meta.length > 0) {
+                // eslint-disable-next-line no-console
+                console[method](...meta);
+            }
             // eslint-disable-next-line no-console
             console[method](logEntry.stack);
             // eslint-disable-next-line no-console
@@ -99,8 +101,11 @@ export class BrowserLogger extends Logger {
         }
 
         // Fallback when groups are not supported
-        // eslint-disable-next-line no-console
-        (console as any)[method](...this.fmt(logEntry), meta, logEntry.stack);
+        (console as any)[method](
+            ...this.fmt(logEntry),
+            ...meta,
+            logEntry.stack
+        );
     }
 
     private fmt(logEntry: LogEntry): any[] {

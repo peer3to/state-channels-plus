@@ -116,8 +116,8 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
         return this.signer.signTypedData(domain, types, value);
     }
 
-    setChannelId(channelId: Bytes) {
-        this.p2pManager.stateManager.setChannelId(channelId);
+    async setChannelId(channelId: Bytes): Promise<void> {
+        await this.p2pManager.stateManager.setChannelId(channelId);
     }
 
     public setIsLeader(value: boolean) {
@@ -129,7 +129,7 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
     }
 
     public async connectToChannel(channelId: Bytes) {
-        this.setChannelId(channelId);
+        await this.setChannelId(channelId);
 
         // Update status to NOT_OPENED/OPENED as soon as we know the channelId.
         await this.p2pManager.stateManager.refreshOpenedStatusFromChain();

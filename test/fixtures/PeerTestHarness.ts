@@ -24,10 +24,7 @@ import {
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
-import {
-    DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
-    type LocalStateMachineDeployer
-} from "../../scripts/V1/deploy";
+import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
@@ -61,6 +58,7 @@ import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 const h = monitorEventLoopDelay();
 h.enable();
 let last = performance.eventLoopUtilization();
+const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
 /**
  * Main test harness for E2E peer-to-peer testing
@@ -232,7 +230,7 @@ export class PeerTestHarness<
             stateMachineGasLimit: options?.stateMachineGasLimit ?? 500000,
             disputeExecutionGasLimit:
                 options?.disputeExecutionGasLimit ??
-                DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
+                DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT,
             autoConnect: options?.autoConnect !== false,
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],

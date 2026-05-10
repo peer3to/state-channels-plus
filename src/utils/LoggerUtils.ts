@@ -191,6 +191,7 @@ export class LoggerUtils {
         return {
             author: String(block.author),
             blockHash: String(block.hash),
+            stateSnapshotHash: String(block.stateSnapshotHash),
             blockHeight: block.height,
             timestamp: block.timestamp,
             onChainTimestamp: block.onChainTimestamp,

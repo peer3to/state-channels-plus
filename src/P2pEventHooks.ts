@@ -9,7 +9,8 @@ type P2pEventHooks = {
         address: Address,
         turnTime: number,
         agreementTime: number,
-        chainFallbackTime: number
+        chainFallbackTime: number,
+        turnStartedAtBlockTimestamp?: number
     ) => void;
     onSetState?: () => void;
     onStatusChanged?: (oldStatus: Status, newStatus: Status) => void;
