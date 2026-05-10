@@ -343,14 +343,12 @@ class StateManager {
 
         const existingHandle = this.reductionTriggerMap.get(forkId);
 
-        // If existing timeout exists, only replace if new timeout is further in the future
+        // If existing timeout exists, only replace if new timeout is further in the future or if it's reschduled (fix a bug where the rescheduled timeout isn't replaced and doesn't fire)
+        // TODO - probably has an edge-case related to the timestamp (think)
         if (existingHandle) {
-            if (existingHandle.triggerTimestamp > localTriggerTimestamp) {
-                return;
-            }
             if (
-                existingHandle.triggerTimestamp == localTriggerTimestamp &&
-                !isRescheduled
+                !isRescheduled &&
+                existingHandle.triggerTimestamp >= localTriggerTimestamp
             ) {
                 return;
             }
