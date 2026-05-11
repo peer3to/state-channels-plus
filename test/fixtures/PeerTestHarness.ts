@@ -430,11 +430,13 @@ export class PeerTestHarness<
                 eventSpies.onInitiatingDispute?.(disputeHash, dispute);
                 this.eventCountsBarrier.signal();
             },
-            onDisputeUpdate: (dispute: DisputeStruct) => {
+            onDisputeUpdate: (slashes: Address[], timeout?: Address) => {
                 peerLogger.info("Dispute updated", {
-                    component: "P2pEventHooks"
+                    component: "P2pEventHooks",
+                    slashes,
+                    timeout
                 });
-                eventSpies.onDisputeUpdate?.(dispute);
+                eventSpies.onDisputeUpdate?.(slashes, timeout);
                 this.eventCountsBarrier.signal();
             },
             onDisputeAcknowledgment: (addr: Address) => {

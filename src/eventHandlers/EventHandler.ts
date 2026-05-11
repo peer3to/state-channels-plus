@@ -24,6 +24,7 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import {
     addressesEqual,
     Codec,
+    getChecksumAddress,
     hash,
     Logger,
     tryDecodeCustomError,
@@ -333,13 +334,16 @@ export class EventHandler {
             // and could itself be killed as InvalidDisputeReason.
             //  TODO - should be multicall
             await this.stateManager.disputeManager.killDispute(dispute);
-            await this.stateManager.disputeManager.dispute(forkId);
+            // TODO, under the multicall pass the expectation who to slash (who will be killed) to dispute(),
+            // otherwise don't run dispute(forkId) here, since we pickup on-chain slashes from DisputeKilled event and here we might end up creating an empty dispute since we didn't observe on-chain slashes
+            // await this.stateManager.disputeManager.dispute(forkId);
             return;
         }
 
         this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
 
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+        await this.updateDisputeView(channelId, forkId);
 
         // this is like success - TODO - consider moving this to DisputeStrategy.success
         const canConstructMoreEvidence =
@@ -358,6 +362,93 @@ export class EventHandler {
             );
 
         this.stateManager.setReductionTimeout(forkId, Number(killPeriodEnd));
+    }
+
+    private async updateDisputeView(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<void> {
+        let disputeCommitments: Hash[];
+        try {
+            disputeCommitments =
+                await this.diamondStateMachine.localDiamondContract.getWindowCommitments(
+                    channelId,
+                    forkId
+                );
+        } catch (error) {
+            this.logger.debug("Skipping dispute update hook", {
+                channelId,
+                forkId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return;
+        }
+
+        const disputes: DisputeStruct[] = [];
+        for (const commitment of disputeCommitments) {
+            const dispute = this.storage.disputes.getDispute(commitment);
+            if (!dispute) {
+                this.logger.debug(
+                    "Skipping missing local dispute in dispute update hook",
+                    {
+                        channelId,
+                        forkId,
+                        commitment
+                    }
+                );
+                continue;
+            }
+
+            disputes.push(dispute);
+        }
+
+        if (disputes.length === 0) return;
+
+        const slashes = new Set<string>();
+        let timeout: { participant: string; minTimestamp: bigint } | undefined;
+
+        for (const dispute of disputes) {
+            for (const slash of dispute.input.onChainSlashes) {
+                const address = this.getNonZeroAddress(slash);
+                if (address) slashes.add(address);
+            }
+
+            const participant = this.getNonZeroAddress(
+                dispute.input.timeout.participant
+            );
+            if (!participant) continue;
+
+            const minTimestamp = BigInt(
+                dispute.input.timeout.minTimeStamp.toString()
+            );
+            if (!timeout || minTimestamp < timeout.minTimestamp) {
+                timeout = { participant, minTimestamp };
+            }
+        }
+
+        const slashList = Array.from(slashes);
+        try {
+            this.p2pEventHooks.onDisputeUpdate?.(
+                slashList,
+                slashList.length > 0 ? undefined : timeout?.participant
+            );
+        } catch (error) {
+            this.logger.debug("Dispute update hook failed", {
+                channelId,
+                forkId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }
+
+    private getNonZeroAddress(address: Address): string | undefined {
+        const normalized = getChecksumAddress(address);
+        return addressesEqual(
+            normalized,
+            "0x0000000000000000000000000000000000000000"
+        )
+            ? undefined
+            : normalized;
     }
 
     private async canConstructMoreEvidence(
