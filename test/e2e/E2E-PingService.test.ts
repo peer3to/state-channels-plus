@@ -1,294 +1,193 @@
-// import { expect } from "chai";
-// import { PeerTestHarness, TestPeer } from "@test/fixtures/PeerTestHarness";
-// import { MathStateMachine } from "@typechain-types/index";
+/**
+ * EXAMPLE: defining and using type-safe custom RPC services.
+ */
+import { expect } from "chai";
 
-// import ARpcMethods from "@/rpc/ARpcMethods";
-// import ARpcService from "@/rpc/ARpcService";
-// import { HandshakeCompletedGuard } from "@/rpc/guards";
-// import { defineRpcServices } from "@/rpc/registry";
-// import { ATransport } from "@/transport";
-// import type P2PManager from "@/P2PManager";
+import {
+    ARpcMethods,
+    ARpcService,
+    HandshakeCompletedGuard,
+    defineRpcServices
+} from "@/index";
+import type P2PManager from "@/P2PManager";
+import { ATransport } from "@/transport";
+import { sleep } from "@/utils";
 
-// type PingPongFactories = {
-//     pingService: (p2pManager: P2PManager<PingPongFactories>) => PingService;
-//     relayService: (p2pManager: P2PManager<PingPongFactories>) => RelayService;
-// };
+import { MathStateMachine } from "@typechain-types";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 
-// type PingPongP2PManager = P2PManager<PingPongFactories>;
+type PingPongFactories = {
+    pingService: (p2p: P2PManager<PingPongFactories>) => PingService;
+    relayService: (p2p: P2PManager<PingPongFactories>) => RelayService;
+};
 
-// class PingService extends ARpcService<PingRpcMethods, PingPongP2PManager> {
-//     public guardFailureCount = 0;
-//     public receivedPingNonces: string[] = [];
-//     public receivedPongNonces: string[] = [];
-//     private readonly onGuardFailure?: () => void;
+type PingPongP2P = P2PManager<PingPongFactories>;
 
-//     constructor(p2pManager: PingPongP2PManager, onGuardFailure?: () => void) {
-//         super(
-//             p2pManager,
-//             p2pManager.stateManager.logger.child({ module: "PingService" })
-//         );
+class PingService extends ARpcService<PingRpcMethods, PingPongP2P> {
+    public readonly receivedPings: string[] = [];
+    public readonly receivedPongs: string[] = [];
 
-//         this.onGuardFailure = onGuardFailure;
+    constructor(p2pManager: PingPongP2P) {
+        super(
+            p2pManager,
+            p2pManager.stateManager.logger.child({ module: "PingService" })
+        );
 
-//         this.guards = [
-//             new HandshakeCompletedGuard(this, {
-//                 onFailure: () => {
-//                     this.guardFailureCount++;
-//                     this.onGuardFailure?.();
-//                 }
-//             })
-//         ];
-//     }
+        this.guards = [new HandshakeCompletedGuard(this)];
+    }
 
-//     public createRPCMethods(transport: ATransport): PingRpcMethods {
-//         return new PingRpcMethods(transport, this);
-//     }
-// }
+    public createRPCMethods(transport: ATransport): PingRpcMethods {
+        return new PingRpcMethods(transport, this);
+    }
+}
 
-// class PingRpcMethods extends ARpcMethods<PingPongP2PManager> {
-//     private readonly service: PingService;
+class PingRpcMethods extends ARpcMethods<PingPongP2P> {
+    constructor(
+        transport: ATransport,
+        private readonly service: PingService
+    ) {
+        super(transport, service.p2pManager);
+    }
 
-//     constructor(transport: ATransport, service: PingService) {
-//         super(transport, service.p2pManager);
-//         this.service = service;
-//     }
+    public async ping(nonce: string): Promise<void> {
+        this.service.receivedPings.push(nonce);
 
-//     public async ping(nonce: string) {
-//         this.service.receivedPingNonces.push(nonce);
+        // Same-service reply (pingService -> pingService).
+        this.remoteRpc.pingService.pong(nonce).sendOne(this.senderTransport);
 
-//         // pingService -> pingService (pong)
-//         this.remoteRpc.pingService.pong(nonce).sendOne(this.senderTransport);
+        // Cross-service call (pingService -> relayService).
+        this.remoteRpc.relayService
+            .recordPing(nonce)
+            .sendOne(this.senderTransport);
+    }
 
-//         // pingService -> relayService (cross-service call)
-//         this.remoteRpc.relayService
-//             .recordPing(nonce)
-//             .sendOne(this.senderTransport);
-//     }
+    public async pong(nonce: string): Promise<void> {
+        this.service.receivedPongs.push(nonce);
+    }
+}
 
-//     public async pong(nonce: string) {
-//         this.service.receivedPongNonces.push(nonce);
-//     }
-// }
+class RelayService extends ARpcService<RelayRpcMethods, PingPongP2P> {
+    public readonly recordedPings: string[] = [];
 
-// class RelayService extends ARpcService<RelayRpcMethods, PingPongP2PManager> {
-//     public receivedRelayPingNonces: string[] = [];
+    constructor(p2pManager: PingPongP2P) {
+        super(
+            p2pManager,
+            p2pManager.stateManager.logger.child({ module: "RelayService" })
+        );
+    }
 
-//     constructor(p2pManager: PingPongP2PManager) {
-//         super(
-//             p2pManager,
-//             p2pManager.stateManager.logger.child({ module: "RelayService" })
-//         );
-//     }
+    public createRPCMethods(transport: ATransport): RelayRpcMethods {
+        return new RelayRpcMethods(transport, this);
+    }
+}
 
-//     public createRPCMethods(transport: ATransport): RelayRpcMethods {
-//         return new RelayRpcMethods(transport, this);
-//     }
-// }
+class RelayRpcMethods extends ARpcMethods<PingPongP2P> {
+    constructor(
+        transport: ATransport,
+        private readonly service: RelayService
+    ) {
+        super(transport, service.p2pManager);
+    }
 
-// class RelayRpcMethods extends ARpcMethods<PingPongP2PManager> {
-//     private readonly service: RelayService;
+    public async recordPing(nonce: string): Promise<void> {
+        this.service.recordedPings.push(nonce);
 
-//     constructor(transport: ATransport, service: RelayService) {
-//         super(transport, service.p2pManager);
-//         this.service = service;
-//     }
+        // Cross-service reply (relayService -> pingService).
+        this.remoteRpc.pingService.pong(nonce).sendOne(this.senderTransport);
+    }
+}
 
-//     public async recordPing(nonce: string) {
-//         this.service.receivedRelayPingNonces.push(nonce);
+describe("Example: type-safe custom RPC services", function () {
+    let harness:
+        | PeerTestHarness<PingPongFactories, MathStateMachine>
+        | undefined;
 
-//         // relayService -> pingService (cross-service call)
-//         this.remoteRpc.pingService.pong(nonce).sendOne(this.senderTransport);
-//     }
-// }
+    afterEach(async function () {
+        await harness?.cleanup();
+        harness = undefined;
+    });
 
-// describe("E2E: PingService (custom RPC)", function () {
-//     let harness: PeerTestHarness<MathStateMachine, any> | undefined;
+    it("delivers ping/pong and cross-service relay over an authenticated channel", async function () {
+        // `defineRpcServices` preserves literal keys so that
+        // `p2p.remoteRpc.pingService.ping(...)` is fully typed.
+        const rpcServiceFactories = defineRpcServices<PingPongFactories>({
+            pingService: (p2p) => new PingService(p2p),
+            relayService: (p2p) => new RelayService(p2p)
+        });
 
-//     afterEach(async function () {
-//         await harness?.cleanup();
-//     });
+        harness = new PeerTestHarness<PingPongFactories, MathStateMachine>({
+            deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
+        });
 
-//     const hasVerifiedProfile = (
-//         ownerPeer: TestPeer<MathStateMachine>,
-//         counterparty: TestPeer<MathStateMachine>
-//     ): boolean => {
-//         const profile =
-//             ownerPeer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-//                 counterparty.address
-//             );
-//         return !!profile;
-//     };
+        await harness.startAutoTimeAdvance({ intervalSeconds: 1 });
+        await harness.setup(2, {
+            autoConnect: true,
+            rpcServiceFactories,
+            timeConfig: { agreementTime: 5 }
+        });
+        await harness.lifecycle.openChannel();
 
-//     it("should block ping until handshake completes, then allow ping/pong", async function () {
-//         let peer1GuardFailureSignalCount = 0;
+        await harness.event.waitUntilEventOccurs("onConnection", 10000);
 
-//         const rpcServiceFactories = defineRpcServices<PingPongFactories>({
-//             pingService: (p2p) =>
-//                 new PingService(p2p, () => {
-//                     // This callback runs on the receiver when HandshakeCompletedGuard blocks.
-//                     peer1GuardFailureSignalCount++;
-//                 }),
-//             relayService: (p2p) => new RelayService(p2p)
-//         });
+        const peer0 = harness.getPeer(0);
+        const peer1 = harness.getPeer(1);
 
-//         const harness = new PeerTestHarness<
-//             MathStateMachine,
-//             typeof rpcServiceFactories
-//         >();
-//         await harness.setup(2, {
-//             autoConnect: false,
-//             rpcServiceFactories,
-//             timeConfig: {
-//                 agreementTime: 10 // seconds
-//             }
-//         });
+        await harness.connectionBarrier.waitFor(
+            () =>
+                harness!.rpc.isHandshakeCompleted(0, peer1.address) &&
+                harness!.rpc.isHandshakeCompleted(1, peer0.address),
+            {
+                timeoutMs: 10000,
+                timeoutMessage: "handshake did not complete"
+            }
+        );
 
-//         const peer0 = harness.peers[0];
-//         const peer1 = harness.peers[1];
+        const p2p0 = peer0.stateManager.p2pManager as PingPongP2P;
+        const p2p1 = peer1.stateManager.p2pManager as PingPongP2P;
 
-//         const p2p0 = peer0.p2pInstance.p2pSigner.p2pManager;
-//         const p2p1 = peer1.p2pInstance.p2pSigner.p2pManager;
+        // Local handles — the service instances on each peer.
+        const ping0 = p2p0.localRpc.pingService;
+        const ping1 = p2p1.localRpc.pingService;
+        const relay0 = p2p0.localRpc.relayService;
+        const relay1 = p2p1.localRpc.relayService;
 
-//         const ping0 = p2p0.localRpc.pingService;
-//         const ping1 = p2p1.localRpc.pingService;
-//         const relay0 = p2p0.localRpc.relayService;
-//         const relay1 = p2p1.localRpc.relayService;
+        // -------------------------------------------------------------------
+        // Type-safety surface (compile-time only).
+        //
+        // Uncomment any of the lines below and `yarn dev:tsc` will reject them:
+        //
+        //   p2p0.remoteRpc.pingService.ping(42);          // arg must be a string
+        //   p2p0.remoteRpc.relayService.recordPing(42);   // arg must be a string
+        //   p2p0.remoteRpc.doesNotExistService;           // unknown service
+        // -------------------------------------------------------------------
 
-//         // -------------------------------------------------------------
-//         // Type-safety demonstration (compile-time only)
-//         // -------------------------------------------------------------
-//         if (process.env.PEER3_TYPECHECK === "true") {
-//             p2p0.remoteRpc.pingService.ping("ok");
-//             p2p0.remoteRpc.relayService.recordPing("ok");
+        const nonce = `nonce-${Date.now()}`;
+        p2p0.remoteRpc.pingService.ping(nonce).sendOne(peer1.address);
 
-//             // @ts-expect-error - ping expects a string
-//             p2p0.remoteRpc.pingService.ping(123);
+        const roundTripDelivered = () =>
+            ping1.receivedPings.includes(nonce) &&
+            relay0.recordedPings.includes(nonce) &&
+            ping0.receivedPongs.includes(nonce) &&
+            ping1.receivedPongs.includes(nonce);
 
-//             // @ts-expect-error - recordPing expects a string
-//             p2p0.remoteRpc.relayService.recordPing(123);
+        const deadline = Date.now() + 10000;
+        while (!roundTripDelivered() && Date.now() < deadline) {
+            await sleep(25);
+        }
+        if (!roundTripDelivered()) {
+            throw new Error(
+                `expected full ping/pong/relay round-trip; got ping1.pings=${JSON.stringify(ping1.receivedPings)}, relay0.recorded=${JSON.stringify(relay0.recordedPings)}, ping0.pongs=${JSON.stringify(ping0.receivedPongs)}, ping1.pongs=${JSON.stringify(ping1.receivedPongs)}`
+            );
+        }
 
-//             // @ts-expect-error - service does not exist
-//             p2p0.remoteRpc.doesNotExistService;
+        expect(ping1.receivedPings).to.deep.equal([nonce]);
+        expect(relay0.recordedPings).to.deep.equal([nonce]);
+        expect(ping0.receivedPongs).to.deep.equal([nonce]);
+        expect(ping1.receivedPongs).to.deep.equal([nonce]);
 
-//             ping0.guardFailureCount;
-//             relay0.receivedRelayPingNonces;
-//         }
-
-//         // Ensure a deterministic "handshake incomplete" window on peer1 by
-//         // temporarily preventing it from initiating its own handshake.
-//         const peer0InitHandshakeService =
-//             peer0.stateManager.p2pManager.localRpc.initHandshakeService;
-//         const peer1InitHandshakeService =
-//             peer1.stateManager.p2pManager.localRpc.initHandshakeService;
-
-//         const originalPeer0InitHandshake =
-//             peer0InitHandshakeService.initHandshake.bind(
-//                 peer0InitHandshakeService
-//             );
-//         const originalPeer1InitHandshake =
-//             peer1InitHandshakeService.initHandshake.bind(
-//                 peer1InitHandshakeService
-//             );
-
-//         let capturedPeer0Transport: ATransport | undefined;
-//         let capturedPeer1Transport: ATransport | undefined;
-
-//         peer0InitHandshakeService.initHandshake = (transport: ATransport) => {
-//             capturedPeer1Transport = capturedPeer1Transport ?? transport;
-//             originalPeer0InitHandshake(transport);
-//         };
-
-//         peer1InitHandshakeService.initHandshake = (transport: ATransport) => {
-//             // intentionally noop
-//             capturedPeer0Transport = capturedPeer0Transport ?? transport;
-//         };
-
-//         await harness.openChannel();
-
-//         harness.connectAllPeers(); // don't await
-
-//         // Wait until we have transports on both sides. We need both so we can
-//         // later trigger peer1's handshake quickly (before peer0's ack-timeout).
-//         await harness.waitForCondition(
-//             () => !!capturedPeer0Transport && !!capturedPeer1Transport,
-//             5000,
-//             25
-//         );
-//         if (!capturedPeer0Transport) {
-//             throw new Error(
-//                 "Expected to capture peer0 transport during initHandshake"
-//             );
-//         }
-//         if (!capturedPeer1Transport) {
-//             throw new Error(
-//                 "Expected to capture peer1 transport during noop initHandshake"
-//             );
-//         }
-
-//         // Wait until peer1 responds to peer0
-//         let ok = await harness.waitForCondition(
-//             () => peer0InitHandshakeService.didRespond(capturedPeer1Transport!),
-//             5000,
-//             50
-//         );
-//         expect(ok).to.equal(true);
-//         expect(hasVerifiedProfile(peer0, peer1)).to.equal(false);
-
-//         // Send ping from peer0 -> peer1; it should arrive but be blocked by HandshakeCompletedGuard on peer1.
-//         const nonce1 = `nonce-${Date.now()}-1`;
-//         p2p0.remoteRpc.pingService.ping(nonce1).sendOne(capturedPeer1Transport);
-
-//         ok = await harness.waitForCondition(
-//             () =>
-//                 ping1.guardFailureCount >= 1 &&
-//                 peer1GuardFailureSignalCount >= 1,
-//             2000,
-//             25
-//         );
-//         expect(ok).to.equal(true);
-//         expect(ping1.receivedPingNonces).to.deep.equal([]);
-
-//         // Restore and force peer1 to initiate its own handshake so the guard will pass.
-//         peer1InitHandshakeService.initHandshake = originalPeer1InitHandshake;
-//         originalPeer1InitHandshake(capturedPeer0Transport);
-
-//         ok = await harness.waitForCondition(
-//             () => hasVerifiedProfile(peer0, peer1),
-//             5000,
-//             50
-//         );
-//         expect(ok).to.equal(true);
-
-//         ok = await harness.waitForCondition(
-//             () => hasVerifiedProfile(peer1, peer0),
-//             5000,
-//             50
-//         );
-//         expect(ok).to.equal(true);
-
-//         // Now ping should succeed and the cross-service calls should execute.
-//         const nonce2 = `nonce-${Date.now()}-2`;
-//         // Use the current profile transport after verification (it may differ from
-//         // the originally captured transport in some timing windows).
-//         const peer1To0Transport =
-//             peer1.stateManager.p2pManager.profileManager.getTransportByEvmAddress(
-//                 peer0.address
-//             ) ?? capturedPeer0Transport;
-
-//         p2p1.remoteRpc.pingService.ping(nonce2).sendOne(peer1To0Transport);
-
-//         const allSignalsReceived = await harness.waitForCondition(
-//             () =>
-//                 ping1.receivedPongNonces.includes(nonce2) &&
-//                 relay1.receivedRelayPingNonces.includes(nonce2) &&
-//                 ping0.receivedPongNonces.includes(nonce2),
-//             7000,
-//             50
-//         );
-//         expect(allSignalsReceived).to.equal(true);
-//         expect(ping1.guardFailureCount).to.be.at.least(1);
-//         expect(ping1.receivedPongNonces).to.include(nonce2);
-//         expect(relay1.receivedRelayPingNonces).to.include(nonce2);
-//         expect(ping0.receivedPongNonces).to.include(nonce2);
-//     });
-// });
+        // Nothing should have arrived on the opposite-side counterparts.
+        expect(ping0.receivedPings).to.deep.equal([]);
+        expect(relay1.recordedPings).to.deep.equal([]);
+    });
+});
