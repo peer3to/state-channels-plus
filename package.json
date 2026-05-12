@@ -80,6 +80,7 @@
     "dev:tsc": "tsc -w -p tsconfig.json",
     "generate-enums": "ts-node scripts/generate-enums.ts",
     "generate-artifacts": "node scripts/generate-artifacts.js",
+    "get-logs": "ts-node scripts/logging/fetch-logs.ts",
     "test": "yarn hardhat test --no-compile --grep '^(?!.*[Ee]2[Ee])'",
     "test:debug": "yarn hardhat test --no-compile",
     "test:all": "yarn hardhat test",

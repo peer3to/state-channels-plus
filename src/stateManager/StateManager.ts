@@ -70,8 +70,7 @@ import {
     ForkId,
     Hash,
     ReductionTimeoutHandle,
-    Timestamp,
-    UpdatedBlockWithCalldata
+    Timestamp
 } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
@@ -85,6 +84,7 @@ import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
+import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
 
 const NULL = ZeroHash;
 
@@ -92,6 +92,7 @@ type ParticipantChanges = {
     left: Set<Address>;
     joined: Set<Address>;
 };
+
 class StateManager {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
@@ -119,6 +120,7 @@ class StateManager {
     status: Status = Status.NOT_OPENED;
     timeoutManager: TimeoutManager;
     logger: Logger;
+    private readonly blockDataAvailabilityService: BlockDataAvailabilityService;
 
     constructor(
         signer: ethers.Signer,
@@ -149,6 +151,15 @@ class StateManager {
             this.self,
             this.p2pEventHooks,
             this.diamondStateMachine,
+            logger
+        );
+        this.blockDataAvailabilityService = new BlockDataAvailabilityService(
+            this.channelId,
+            this.stateChannelManagerContract,
+            this.eventHandler,
+            this.timeConfig,
+            this.timeoutManager,
+            () => this.tryExecuteFromQueue(),
             logger
         );
         this.stateChannelEventListener = new StateChannelEventListener(
@@ -183,6 +194,7 @@ class StateManager {
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
+            this.blockDataAvailabilityService,
             this.self,
             this.logger
         );
@@ -313,6 +325,7 @@ class StateManager {
         this.channelId = channelId;
         this.logger.updateSharedContext({ channelId: String(channelId) });
         this.disputeManager.setChannelId(channelId);
+        this.blockDataAvailabilityService.setChannelId(channelId);
         await this.stateChannelEventListener.setChannelId(channelId);
     }
     public getChannelId(): ChannelId {
@@ -903,7 +916,6 @@ class StateManager {
             onChainTimestamp?: Timestamp;
             validationStrategy?: AValidationStrategy;
             senderAddress?: string;
-            skipMutex?: boolean;
         }
     ): Promise<boolean> {
         const strategy =
@@ -911,9 +923,7 @@ class StateManager {
             this.getStrategyByStatus(this.status);
 
         try {
-            if (!options?.skipMutex) {
-                await this.mutex.lock();
-            }
+            await this.mutex.lock();
 
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
@@ -1028,6 +1038,9 @@ class StateManager {
                 );
             }
 
+            const stateBeforeTransitionValidation =
+                await this.diamondStateMachine.getState();
+
             const {
                 success,
                 encodedState,
@@ -1037,6 +1050,12 @@ class StateManager {
             } = await this.applyTransaction(block.tx);
 
             if (!success) {
+                await this.restoreStateAfterFailedValidation(
+                    stateBeforeTransitionValidation,
+                    "state transition failed",
+                    block
+                );
+
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
                 this.logger.warn(
@@ -1078,6 +1097,12 @@ class StateManager {
                 );
 
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
+                await this.restoreStateAfterFailedValidation(
+                    stateBeforeTransitionValidation,
+                    "state snapshot hash mismatch",
+                    block
+                );
+
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
                 this.logger.warn(
@@ -1161,9 +1186,37 @@ class StateManager {
             });
             throw error;
         } finally {
-            if (!options?.skipMutex) {
-                this.mutex.unlock();
-            }
+            this.mutex.unlock();
+        }
+    }
+
+    private async restoreStateAfterFailedValidation(
+        encodedState: Bytes,
+        reason: string,
+        block?: Block
+    ): Promise<void> {
+        try {
+            await this.diamondStateMachine.setState(encodedState);
+            this.logger.debug(
+                "onBlockConfirmation - restored local state after failed validation",
+                {
+                    reason,
+                    block: block
+                        ? LoggerUtils.getBlockMetadata(block, this.storage)
+                        : undefined
+                }
+            );
+        } catch (error) {
+            this.logger.error(
+                "onBlockConfirmation - failed to restore local state after failed validation",
+                {
+                    reason,
+                    block: block
+                        ? LoggerUtils.getBlockMetadata(block, this.storage)
+                        : undefined,
+                    error
+                }
+            );
         }
     }
 
@@ -2012,10 +2065,43 @@ class StateManager {
             previousBlockOrSnapshot.block &&
             !previousBlockOrSnapshot.block.onChainTimestamp
         ) {
-            const updatedPreviousBlock = await this.fetchUpdatedOnChainBlock(
+            const scheduleStatus =
+                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
+                    previousBlockOrSnapshot.block.forkId,
+                    previousBlockOrSnapshot.block.height,
+                    previousBlockOrSnapshot.block.author
+                );
+
+            if (
+                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                    scheduleStatus
+                )
+            ) {
+                this.logger.info(
+                    "tryTimeoutParticipant - waiting for previous on-chain block validation",
+                    {
+                        forkId,
+                        blockHeight,
+                        participantAddress,
+                        previousBlock: LoggerUtils.getBlockMetadata(
+                            previousBlockOrSnapshot.block,
+                            this.storage
+                        ),
+                        scheduleStatus
+                    }
+                );
+                this.scheduleTimeoutParticipantRetry(
+                    forkId,
+                    blockHeight,
+                    participantAddress,
+                    "previousOnChainBlockValidation"
+                );
+                return;
+            }
+
+            const updatedPreviousBlock = this.storage.blocks.getBlock(
                 previousBlockOrSnapshot.block.forkId,
-                previousBlockOrSnapshot.block.height,
-                previousBlockOrSnapshot.block.author
+                previousBlockOrSnapshot.block.height
             );
             if (updatedPreviousBlock?.onChainTimestamp) {
                 difference =
@@ -2073,15 +2159,40 @@ class StateManager {
         }
 
         // (race condition) check if current block posted on-chain
-        const updatedBlock = await this.fetchUpdatedOnChainBlock(
-            forkId,
-            blockHeight,
-            participantAddress
-        );
+        const scheduleStatus =
+            await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
+                forkId,
+                blockHeight,
+                participantAddress
+            );
+        if (
+            this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                scheduleStatus
+            )
+        ) {
+            this.logger.info(
+                "tryTimeoutParticipant - waiting for current on-chain block validation",
+                {
+                    forkId,
+                    blockHeight,
+                    participantAddress,
+                    scheduleStatus
+                }
+            );
+            this.scheduleTimeoutParticipantRetry(
+                forkId,
+                blockHeight,
+                participantAddress,
+                "currentOnChainBlockValidation"
+            );
+            return;
+        }
+
+        const updatedBlock = this.storage.blocks.getBlock(forkId, blockHeight);
         if (updatedBlock?.onChainTimestamp) {
             return; // block found and accepted
         }
-        // Check locally again - if fetchUpdatedOnChainBlock found a block -> local evm is synced
+        // Check locally again - if scheduled on-chain validation found a block -> local evm is synced
         commitment =
             await this.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
                 this.channelId,
@@ -2104,6 +2215,24 @@ class StateManager {
             blockHeight,
             participantAddress,
             false
+        );
+    }
+
+    private scheduleTimeoutParticipantRetry(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address,
+        reason: string
+    ): void {
+        this.timeoutManager.scheduleTask(
+            () =>
+                this.tryTimeoutParticipant(
+                    forkId,
+                    blockHeight,
+                    participantAddress
+                ),
+            1000,
+            `timeoutParticipantAfterOnChainValidation - ${reason} - fork ${forkId} - block ${blockHeight} - participant ${participantAddress}`
         );
     }
 
@@ -2776,123 +2905,6 @@ class StateManager {
             return this.blockValidationStrategy;
         }
         return this.spectatingValidationStrategy;
-    }
-
-    async fetchBlockCommitmentCalldata(
-        forkId: ForkId,
-        blockHeight: BlockHeight,
-        blockAuthor: Address,
-        blockCommitment: Hash,
-        options?: {
-            skipMutex?: boolean;
-        }
-    ): Promise<UpdatedBlockWithCalldata | undefined> {
-        try {
-            // filter BlockCalldataPosted calls by channelId and blockCalldataCommitment
-            const filter =
-                this.stateChannelManagerContract.filters.BlockCalldataPosted(
-                    this.channelId,
-                    blockCommitment
-                );
-
-            // Calculate how many blocks back should we look for the log on-chain
-            const latestBlock =
-                await this.stateChannelManagerContract.runner?.provider?.getBlockNumber();
-            if (!latestBlock) {
-                const message =
-                    "fetchBlockCommitmentCalldata - Unable to fetch latest block number from provider";
-                this.logger.error(message);
-                throw new Error(message);
-            }
-            const avgBlockTime = Clock.getAverageOnChainBlockTime();
-            const maxTime =
-                this.timeConfig.p2pTime +
-                this.timeConfig.agreementTime +
-                this.timeConfig.chainFallbackTime;
-            const blocksToLookBack = Math.ceil(maxTime / avgBlockTime) * 2; // *2 to be safe and account for some delay/failure
-            const fromBlock = Math.max(0, latestBlock - blocksToLookBack);
-
-            const logs = await this.stateChannelManagerContract.queryFilter(
-                filter,
-                fromBlock, // from block
-                "latest" // to block
-            );
-
-            // There should be a single log if the commitment exists or none
-            if (logs.length == 0) {
-                return undefined;
-            }
-            if (logs.length > 1) {
-                throw new Error(
-                    `Multiple logs found for commitment: ${blockCommitment} - logs: ${logs}`
-                );
-            }
-            // Create a mutable copy of signedBlock since logs[0].args is read-only
-            const signedBlock = {
-                encodedBlock: logs[0].args.signedBlock.encodedBlock,
-                signature: logs[0].args.signedBlock.signature
-            };
-            const timestamp = Number(logs[0].args.timestamp);
-
-            await this.eventHandler.onBlockCalldataPosted(
-                this.channelId,
-                blockCommitment,
-                blockAuthor,
-                signedBlock,
-                timestamp,
-                {
-                    skipMutex: options?.skipMutex
-                }
-            );
-
-            const updatedBlock = this.storage.blocks.getBlock(
-                forkId,
-                blockHeight
-            );
-
-            return {
-                signedBlock,
-                timestamp,
-                updatedBlock: updatedBlock
-            };
-        } catch (error) {
-            this.logger.error(`Error fetchBlockCommitmentCalldata:`, { error });
-            return undefined;
-        }
-    }
-
-    async fetchUpdatedOnChainBlock(
-        forkId: ForkId,
-        blockHeight: BlockHeight,
-        blockAuthor: Address,
-        options?: {
-            skipMutex?: boolean;
-        }
-    ): Promise<Block | undefined> {
-        try {
-            const commitmentResult =
-                await this.stateChannelManagerContract.getBlockCallDataCommitment(
-                    this.channelId,
-                    forkId,
-                    blockHeight,
-                    blockAuthor
-                );
-            if (!commitmentResult.found) {
-                return undefined;
-            }
-            return (
-                await this.fetchBlockCommitmentCalldata(
-                    forkId,
-                    blockHeight,
-                    blockAuthor,
-                    commitmentResult.blockCalldataCommitment,
-                    options
-                )
-            )?.updatedBlock;
-        } catch (error) {
-            this.logger.error(`Error fetchUpdatedOnChainBlock:`, { error });
-            return undefined;
-        }
     }
 }
 export default StateManager;

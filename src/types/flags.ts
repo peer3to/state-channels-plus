@@ -8,6 +8,13 @@ export enum BlockValidationResult {
     DUPLICATE
 }
 
+export enum OnChainBlockStatus {
+    NOT_FOUND,
+    ALREADY_SCHEDULED,
+    ALREADY_PROCESSED,
+    SCHEDULED
+}
+
 export enum Status {
     NOT_OPENED,
     OPENED,

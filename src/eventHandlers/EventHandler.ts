@@ -147,10 +147,7 @@ export class EventHandler {
         commitmentHash: Hash,
         sender: Address,
         signedBlock: SignedBlockStruct,
-        timestamp: Timestamp,
-        options?: {
-            skipMutex?: boolean;
-        }
+        timestamp: Timestamp
     ): Promise<void> {
         this.logger.verbose("Block calldata posted on-chain", {
             channelId,
@@ -179,7 +176,6 @@ export class EventHandler {
         };
         await this.stateManager.onBlockConfirmation(blockConfirmation, {
             onChainTimestamp: Number(timestamp),
-            skipMutex: options?.skipMutex,
             validationStrategy: new CalldataCommittedStrategy(
                 this.stateManager.disputeManager,
                 this.stateManager.blockValidationStrategy

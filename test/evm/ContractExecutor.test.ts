@@ -2,21 +2,23 @@ import { ethers } from "hardhat";
 import { expect } from "chai";
 import { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
-import { ContractExecuter } from "@/evm";
+import { ContractExecutor } from "@/evm";
+import Clock from "@/Clock";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import {
     getSimpleNumberStorageDeploymentTransaction,
     getSimpleNumberStorageFactory
 } from "../fixtures/SimpleNumberStorage.fixture";
 
-describe("ContractExecuter", function () {
+describe("ContractExecutor", function () {
     let evm: EVM;
     let contractAddress: Address;
-    let contractExecuter: ContractExecuter;
+    let contractExecutor: ContractExecutor;
     let SimpleNumberStorage: any; // Store the contract factory
 
     // Deploy the SimpleNumberStorage contract
     before(async function () {
+        await Clock.init(ethers.provider);
         evm = await EVM.create();
 
         SimpleNumberStorage = await getSimpleNumberStorageFactory(ethers);
@@ -32,7 +34,7 @@ describe("ContractExecuter", function () {
         expect(deploymentResult.createdAddress).to.not.be.undefined;
         contractAddress = deploymentResult.createdAddress!;
 
-        contractExecuter = new ContractExecuter(evm, contractAddress);
+        contractExecutor = new ContractExecutor(evm, contractAddress);
     });
 
     it("should successfully execute a call to get a value", async function () {
@@ -41,7 +43,7 @@ describe("ContractExecuter", function () {
         const getValueData =
             SimpleNumberStorage.interface.encodeFunctionData(getValueFunction);
 
-        const result = await contractExecuter.executeCall(getValueData);
+        const result = await contractExecutor.executeCall(getValueData);
 
         expect(result.returnValue).to.not.be.undefined;
         const returnValue = ethers.hexlify(result.returnValue);
@@ -62,7 +64,7 @@ describe("ContractExecuter", function () {
             [setValue]
         );
 
-        await contractExecuter.executeCall(setValueData);
+        await contractExecutor.executeCall(setValueData);
 
         // Get the value to verify it was set
         const getValueFunction =
@@ -70,7 +72,7 @@ describe("ContractExecuter", function () {
         const getValueData =
             SimpleNumberStorage.interface.encodeFunctionData(getValueFunction);
 
-        const result = await contractExecuter.executeCall(getValueData);
+        const result = await contractExecutor.executeCall(getValueData);
         const returnValue = ethers.hexlify(result.returnValue);
         const decodedValue = ethers.AbiCoder.defaultAbiCoder().decode(
             ["uint256"],
@@ -94,7 +96,7 @@ describe("ContractExecuter", function () {
             [encodedValue]
         );
 
-        await contractExecuter.executeCall(setStateData);
+        await contractExecutor.executeCall(setStateData);
 
         // Get the value to verify it was set
         const getValueFunction =
@@ -102,7 +104,7 @@ describe("ContractExecuter", function () {
         const getValueData =
             SimpleNumberStorage.interface.encodeFunctionData(getValueFunction);
 
-        const result = await contractExecuter.executeCall(getValueData);
+        const result = await contractExecutor.executeCall(getValueData);
         const returnValue = ethers.hexlify(result.returnValue);
         const decodedValue = ethers.AbiCoder.defaultAbiCoder().decode(
             ["uint256"],
@@ -111,12 +113,61 @@ describe("ContractExecuter", function () {
         expect(decodedValue[0]).to.equal(newValue);
     });
 
+    it("should serialize detached calls before entering evm.runCall", async function () {
+        const evmWithPatchedRunCall = evm as EVM & {
+            runCall: (...args: any[]) => ReturnType<EVM["runCall"]>;
+        };
+        const originalRunCall = evmWithPatchedRunCall.runCall.bind(evm);
+        let activeRunCalls = 0;
+        let maxActiveRunCalls = 0;
+
+        evmWithPatchedRunCall.runCall = async (...args: any[]) => {
+            activeRunCalls += 1;
+            maxActiveRunCalls = Math.max(maxActiveRunCalls, activeRunCalls);
+
+            try {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                return await originalRunCall(...args);
+            } finally {
+                activeRunCalls -= 1;
+            }
+        };
+
+        const getValueFunction =
+            SimpleNumberStorage.interface.getFunction("getValue");
+        const getValueData =
+            SimpleNumberStorage.interface.encodeFunctionData(getValueFunction);
+        const setValueFunction =
+            SimpleNumberStorage.interface.getFunction("setValue");
+
+        try {
+            const calls = Array.from({ length: 30 }, (_, index) => {
+                if (index % 3 === 0) {
+                    return contractExecutor.executeCall(getValueData);
+                }
+
+                const setValueData =
+                    SimpleNumberStorage.interface.encodeFunctionData(
+                        setValueFunction,
+                        [BigInt(index)]
+                    );
+                return contractExecutor.executeCall(setValueData);
+            });
+
+            await Promise.all(calls);
+        } finally {
+            evmWithPatchedRunCall.runCall = originalRunCall;
+        }
+
+        expect(maxActiveRunCalls).to.equal(1);
+    });
+
     it("should throw an error for invalid function calls", async function () {
         // Function signature that doesn't exist
         const invalidFunctionData = "0xffffffff";
 
         try {
-            await contractExecuter.executeCall(invalidFunctionData);
+            await contractExecutor.executeCall(invalidFunctionData);
             // Should not reach here
             expect.fail("Expected call to fail");
         } catch (error: any) {
@@ -136,7 +187,7 @@ describe("ContractExecuter", function () {
             ]);
 
         try {
-            await contractExecuter.executeCall(revertFunctionData);
+            await contractExecutor.executeCall(revertFunctionData);
             // Should not reach here
             expect.fail("Expected the function to revert");
         } catch (error: any) {
@@ -149,7 +200,7 @@ describe("ContractExecuter", function () {
                 errorMessage
             );
             expect(customError!.originalError.message).to.equal(
-                "EVM execution failed: revert"
+                "EVM execution failed: Error"
             );
         }
     });

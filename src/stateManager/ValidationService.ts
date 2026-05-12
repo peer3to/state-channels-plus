@@ -6,7 +6,7 @@ import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
 import { difference, isSubset, Logger } from "@/utils";
-import { BlockValidationResult, TimeConfig } from "@/types";
+import { BlockValidationResult, OnChainBlockStatus, TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
@@ -15,6 +15,14 @@ import type StateManager from "@/stateManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
+import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
+
+enum OnChainPostTiming {
+    NOT_READY,
+    NOT_POSTED,
+    ON_TIME,
+    TOO_LATE
+}
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -24,6 +32,7 @@ export default class ValidationService {
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
+        private readonly blockDataAvailabilityService: BlockDataAvailabilityService,
         private readonly stateManager: StateManager,
         logger: Logger
     ) {
@@ -512,15 +521,40 @@ export default class ValidationService {
                 return await strategy.objectiveInvalidTimestampDetected(block);
             }
 
-            // Try on-chain query to update previous block on-chain timestamp
-            const previousBlockOnChainTimestamp = (
-                await this.stateManager.fetchUpdatedOnChainBlock(
+            // Try on-chain query to schedule validation for the previous block.
+            const scheduleStatus =
+                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
                     previousBlock.forkId,
                     previousBlock.height,
-                    previousBlock.author,
-                    { skipMutex: true }
+                    previousBlock.author
+                );
+
+            if (
+                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                    scheduleStatus
                 )
-            )?.onChainTimestamp;
+            ) {
+                this.storage.queues.queueBlock(block);
+                this.logger.info(
+                    "validateTimeLogic - queued block while waiting for previous on-chain block validation",
+                    {
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.storage
+                        ),
+                        previousBlock: LoggerUtils.getBlockMetadata(
+                            previousBlock,
+                            this.storage
+                        ),
+                        scheduleStatus: OnChainBlockStatus[scheduleStatus]
+                    }
+                );
+                return BlockValidationResult.NOT_READY;
+            }
+
+            const previousBlockOnChainTimestamp =
+                this.storage.blocks.getBlock(previousBlock.hash)
+                    ?.onChainTimestamp ?? previousBlock.onChainTimestamp;
 
             // if previousBlockOnChainTimestamp not set/updated or less than previousTimestamp -> we have the best timestamp already -> safe to create a fraud proof
             if (
@@ -552,7 +586,15 @@ export default class ValidationService {
         }
 
         // OBJECTIVE: Check if block was posted too late on-chain
-        if (await this.isPostedOnChainTooLate(previousTimestamp, block)) {
+        const onChainPostTiming = await this.getOnChainPostTiming(
+            previousTimestamp,
+            block
+        );
+        if (onChainPostTiming === OnChainPostTiming.NOT_READY) {
+            return BlockValidationResult.NOT_READY;
+        }
+
+        if (onChainPostTiming === OnChainPostTiming.TOO_LATE) {
             // Block posted too late - create InvalidTimestamp fraud proof
             logTimeFailure({
                 validationResult: BlockValidationResult.DISPUTE,
@@ -566,8 +608,9 @@ export default class ValidationService {
             return await strategy.objectiveInvalidTimestampDetected(block);
         }
 
-        if (block.onChainTimestamp !== undefined)
+        if (onChainPostTiming === OnChainPostTiming.ON_TIME) {
             return BlockValidationResult.SUCCESS;
+        }
 
         // SUBJECTIVE: hasOnChainTimestamp check
         const receivedWithinAgreementTime =
@@ -621,22 +664,43 @@ export default class ValidationService {
         return participants;
     }
 
-    private async isPostedOnChainTooLate(
+    private async getOnChainPostTiming(
         previousTimestamp: Timestamp,
         block: Block
-    ): Promise<boolean> {
+    ): Promise<OnChainPostTiming> {
         // if doesn't have on-chain timestamp try and fetch it
         if (!block.onChainTimestamp) {
-            const onChainTimestamp = (
-                await this.stateManager.fetchUpdatedOnChainBlock(
+            const scheduleStatus =
+                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
                     block.forkId,
                     block.height,
-                    block.author,
-                    { skipMutex: true }
+                    block.author
+                );
+
+            if (
+                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                    scheduleStatus
                 )
-            )?.onChainTimestamp;
-            // if still doesn't have on-chain timestamp return false - not posted at all
-            if (!onChainTimestamp) return false;
+            ) {
+                this.storage.queues.queueBlock(block);
+                this.logger.info(
+                    "isPostedOnChainTooLate - queued block while waiting for current on-chain block validation",
+                    {
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.storage
+                        ),
+                        scheduleStatus: OnChainBlockStatus[scheduleStatus]
+                    }
+                );
+                return OnChainPostTiming.NOT_READY;
+            }
+
+            const onChainTimestamp =
+                this.storage.blocks.getBlock(block.hash)?.onChainTimestamp ??
+                block.onChainTimestamp;
+
+            if (!onChainTimestamp) return OnChainPostTiming.NOT_POSTED;
             block.onChainTimestamp = onChainTimestamp;
             this.storage.blocks.setOnChainTimestamp(
                 block.hash,
@@ -652,6 +716,10 @@ export default class ValidationService {
             this.timeConfig.agreementTime +
             this.timeConfig.chainFallbackTime;
 
-        return block.onChainTimestamp > maxAllowedTimestamp;
+        if (block.onChainTimestamp > maxAllowedTimestamp) {
+            return OnChainPostTiming.TOO_LATE;
+        }
+
+        return OnChainPostTiming.ON_TIME;
     }
 }
