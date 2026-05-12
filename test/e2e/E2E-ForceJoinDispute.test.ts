@@ -19,14 +19,10 @@ describe("E2E: Force Join Dispute", function () {
         const restoreInboundInclusion1 =
             h.byzantine.stubPendingInboundInclusion(1);
 
-        const confirmation = await h.join.buildJoinChannelConfirmation({
+        await h.join.joinChannelWait({
             joiner,
-            channelId: h.channelId,
             existingParticipantSigners: [h.peers[0].signer, h.peers[1].signer]
         });
-
-        // Fire joinChannel: status → PENDING_PARTICIPANT, joinSubmissionHeight recorded
-        await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
         expect(joiner.stateManager.getStatus()).to.equal(
             Status.PENDING_PARTICIPANT,
             "Joiner should be PENDING_PARTICIPANT after joinChannel"

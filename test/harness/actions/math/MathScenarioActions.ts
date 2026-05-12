@@ -323,7 +323,7 @@ export class MathScenarioActions extends ScenarioActions {
 
         return { joiner, stateSnapshot, confirmation };
     }
-    async spectatorPromotedViaJoinRpc(options?: {
+    async spectatorPromotedViaJoinChannelWait(options?: {
         initialPeers?: number;
         initialTransitions?: number;
         postPromotionTransitions?: number;
@@ -346,16 +346,12 @@ export class MathScenarioActions extends ScenarioActions {
         const joiner = await this.harness.join.addSpectatorWait();
         await this.harness.assert.sync.peersInSyncWait();
 
-        const confirmation =
-            await this.harness.join.buildJoinChannelConfirmation({
-                joiner,
-                channelId: this.harness.channelId,
-                existingParticipantSigners: this.harness.peers
-                    .slice(0, initialPeers)
-                    .map((p) => p.signer)
-            });
-
-        await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+        await this.harness.join.joinChannelWait({
+            joiner,
+            existingParticipantSigners: this.harness.peers
+                .slice(0, initialPeers)
+                .map((p) => p.signer)
+        });
         if (joiner.stateManager.getStatus() !== Status.PENDING_PARTICIPANT) {
             throw new Error(
                 `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joiner.stateManager.getStatus()}`
@@ -398,6 +394,46 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, 3]
         });
+    }
+
+    private async setupChannelWithSpectator(options?: {
+        initialPeers?: number;
+        initialTransitions?: number;
+        timeConfig?: HarnessOptions["timeConfig"];
+    }): Promise<{ spectator: TestPeer; initialPeers: number }> {
+        const initialPeers = options?.initialPeers ?? 3;
+        const initialTransitions = options?.initialTransitions ?? 2;
+        const timeConfig = options?.timeConfig ?? {
+            p2pTime: 2,
+            agreementTime: 4,
+            chainFallbackTime: 4,
+            evidenceTime: 6
+        };
+        await this.harness.lifecycle.start(initialPeers, initialTransitions, {
+            timeConfig
+        });
+        const spectator = await this.harness.join.addSpectatorWait();
+        await this.harness.assert.sync.peersInSyncWait();
+        return { spectator, initialPeers };
+    }
+
+    async spectatorPromotedViaForceInboundWait(options?: {
+        initialPeers?: number;
+        initialTransitions?: number;
+        timeConfig?: HarnessOptions["timeConfig"];
+    }): Promise<TestPeer> {
+        const { spectator } = await this.setupChannelWithSpectator(options);
+        await this.harness.join.forceInboundJoinWait({
+            participant: spectator.address
+        });
+        await this.harness.transition.advanceState({ count: 1 });
+        await this.harness.event.waitUntilPeerStatus(
+            spectator.index,
+            Status.PARTICIPATING
+        );
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+        return spectator;
     }
 
     async readyForRedispute() {

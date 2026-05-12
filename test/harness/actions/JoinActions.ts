@@ -102,6 +102,23 @@ export class JoinActions {
         return peer;
     }
 
+    async joinChannelWait(params: {
+        joiner: TestPeer;
+        existingParticipantSigners: readonly Signer[];
+        channelId?: JoinChannelStruct["channelId"];
+        jcOverrides?: Partial<JoinChannelStruct>;
+    }): Promise<JoinChannelConfirmationStruct> {
+        const channelId = params.channelId ?? this.harness.channelId;
+        const confirmation = await this.buildJoinChannelConfirmation({
+            joiner: params.joiner,
+            channelId,
+            existingParticipantSigners: params.existingParticipantSigners,
+            jcOverrides: params.jcOverrides
+        });
+        await params.joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+        return confirmation;
+    }
+
     async buildJoinChannelConfirmation(
         params: BuildJoinChannelConfirmationParams
     ): Promise<JoinChannelConfirmationStruct> {
