@@ -87,4 +87,5 @@ error RaceConditionOnChainSlashes();
 error RaceConditionJoinChannelStaleSnapshot();
 error RaceConditionPendingInboundNotConsumed();
 error RaceConditionJoinChannelForkDisputed();
+error RaceConditionForceInboundJoinForkDisputed();
 error ErrorDisputeThrottled();
