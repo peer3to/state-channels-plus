@@ -120,7 +120,6 @@ describe("Example: type-safe custom RPC services", function () {
             deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
         });
 
-        await harness.startAutoTimeAdvance({ intervalSeconds: 1 });
         await harness.setup(2, {
             autoConnect: true,
             rpcServiceFactories,
