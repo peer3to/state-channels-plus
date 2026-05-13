@@ -26,7 +26,9 @@ export type RaceConditionErrorName =
     | "RaceConditionGenesisTimestampNotAvailable"
     | "RaceConditionOnChainSlashes"
     | "ErrorCantParticipateInDispute"
-    | "ErrorDisputePostedAuditingDataMismatch";
+    | "ErrorDisputePostedAuditingDataMismatch"
+    | "ErrorDisputeChallengePeriodExpired"
+    | "ErrorDisputeCommitmentNotAvailable";
 
 export type RaceConditionErrorHandlers = Partial<
     Record<RaceConditionErrorName, () => void>

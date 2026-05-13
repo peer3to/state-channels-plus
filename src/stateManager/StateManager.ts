@@ -730,11 +730,27 @@ class StateManager {
                 );
             await tx.wait();
         } catch (error) {
+            this.setStatus(Status.SYNCED);
+            this.storage.forceJoin.clear();
+
+            const custom = tryDecodeCustomError(error);
+            switch (custom?.name) {
+                case "RaceConditionJoinChannelExpired":
+                case "RaceConditionJoinChannelStaleSnapshot":
+                case "RaceConditionJoinChannelForkDisputed":
+                    this.logger.warn(
+                        `joinChannel - race condition: ${custom.name}`,
+                        {
+                            name: custom.name,
+                            args: custom.errorDescription.args
+                        }
+                    );
+                    // Rethrown as CustomEvmError
+                    throw custom;
+            }
             this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
                 error: error instanceof Error ? error.message : String(error)
             });
-            this.setStatus(Status.SYNCED);
-            this.storage.forceJoin.clear();
             throw error;
         }
     }
@@ -1463,21 +1479,50 @@ class StateManager {
                     DetachedPromises.collect(txReceiptPromise);
                     return txReceiptPromise;
                 })
-                .catch((error) => {
-                    const custom = tryHandleEvmError(error, {
+                .catch(async (error) => {
+                    const success = await tryHandleEvmError(error, {
                         tx: transactionResponse!,
                         logger: this.logger,
                         signer: this.signer,
-                        forkId
+                        forkId,
+                        handlers: {
+                            RaceConditionSnapshotForkMismatch: () => {
+                                this.logger.warn(
+                                    "postStateSnapshot: snapshot fork mismatch — another peer's snapshot landed first",
+                                    { forkId }
+                                );
+                            },
+                            RaceConditionBlockHeightTooOld: () => {
+                                this.logger.warn(
+                                    "postStateSnapshot: block height too old — newer snapshot already on-chain",
+                                    { forkId }
+                                );
+                            },
+                            RaceConditionPendingInboundNotConsumed: () => {
+                                this.logger.warn(
+                                    "postStateSnapshot: pending inbound not consumed by our snapshot",
+                                    { forkId }
+                                );
+                            },
+                            RaceConditionReductionExpectationDoesntMatch:
+                                () => {
+                                    this.logger.warn(
+                                        "postStateSnapshot: reduction already finalized to a different forkId",
+                                        { forkId }
+                                    );
+                                }
+                        }
                     });
+                    if (success) return;
+                    const custom = tryDecodeCustomError(error);
                     this.logger.error("Error posting state snapshot", {
+                        custom,
                         error:
                             error instanceof Error
                                 ? error.message
                                 : String(error)
                     });
-
-                    throw error;
+                    // do NOT rethrow — detached chain;
                 });
             DetachedPromises.collect(txResponsePromise);
             return expectedSnapshot;
