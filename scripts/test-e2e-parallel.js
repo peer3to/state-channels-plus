@@ -407,8 +407,6 @@ async function main() {
         ]
             .filter(Boolean)
             .join(" "),
-        EVENT_BARRIER_TIMEOUT_SCALE:
-            process.env.EVENT_BARRIER_TIMEOUT_SCALE || "3",
         // CRASH_LOG_UPLOAD_ENDPOINT: "",
         // CRASH_LOG_API_TOKEN: "",
         STREAM_PARALLEL_CHILD_OUTPUT:
@@ -426,9 +424,6 @@ async function main() {
         CRASH_LOG_API_TOKEN: undefined
     };
 
-    console.log(
-        `Using EVENT_BARRIER_TIMEOUT_SCALE=${env.EVENT_BARRIER_TIMEOUT_SCALE}`
-    );
     console.log(`Failure log upload=off (empty upload endpoint)`);
     console.log(
         `Streaming child output=${env.STREAM_PARALLEL_CHILD_OUTPUT === "1" ? "on" : "off"}`
