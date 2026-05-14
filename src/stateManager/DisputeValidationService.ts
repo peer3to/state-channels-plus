@@ -597,6 +597,14 @@ export default class DisputeValidationService {
     private async isDisputeInboundHashValid(
         dispute: DisputeStruct
     ): Promise<boolean> {
+        if (
+            await this.diamondStateMachine.localDiamondContract.isDisputeInboundHashValid.staticCall(
+                dispute
+            )
+        ) {
+            return true;
+        }
+        // double check with RPC node, maybe local state not synced
         return this.stateChannelManagerContract.isDisputeInboundHashValid.staticCall(
             dispute
         );
