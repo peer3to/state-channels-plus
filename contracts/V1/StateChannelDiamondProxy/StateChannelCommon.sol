@@ -332,16 +332,24 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         if (lowerHash == bytes32(0)) {
             return outboundMessageBlocks;
         }
-        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+
+        uint256 n = outboundMessageBlocks.length;
+        uint256 startIndex = n;
+        for (uint256 i = 0; i < n; i++) {
             if (outboundMessageBlocks[i].previousBlockHash == lowerHash) {
-                MessageBlock[] memory pruned = new MessageBlock[](outboundMessageBlocks.length - i);
-                for (uint256 j = 0; j < pruned.length; j++) {
-                    pruned[j] = outboundMessageBlocks[i + j];
-                }
-                return pruned;
+                startIndex = i;
+                break;
             }
         }
-        return new MessageBlock[](0);
+
+        if (startIndex == 0) return outboundMessageBlocks;
+        if (startIndex == n) return new MessageBlock[](0);
+
+        MessageBlock[] memory pruned = new MessageBlock[](n - startIndex);
+        for (uint256 j = 0; j < pruned.length; j++) {
+            pruned[j] = outboundMessageBlocks[startIndex + j];
+        }
+        return pruned;
     }
 
     function _verifyOutboundMessageBlocks(
