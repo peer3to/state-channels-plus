@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../types/DisputeTypes.sol";
+import "./utils/GeneralUtils.sol";
 
 contract UtilityFacet {
     /**
@@ -74,10 +75,7 @@ contract UtilityFacet {
     }
 
     function isAddressInArray(address[] memory array, address adr) public pure returns (bool) {
-        for (uint256 i = 0; i < array.length; i++) {
-            if (array[i] == adr) return true;
-        }
-        return false;
+        return _isAddressInArray(array, adr);
     }
 
     function inParticipantUnion(

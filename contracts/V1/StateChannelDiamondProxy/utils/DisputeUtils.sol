@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "../../types/DisputeTypes.sol";
 import "./BlockUtils.sol";
+import "./GeneralUtils.sol";
 
 function _getDisputeChannel(Dispute memory dispute) pure returns (bytes32) {
     return dispute.input.channelId;
@@ -131,8 +132,15 @@ function _hadParticipantPostedEvidence(DisputeWindow storage disputeWindow, addr
 function _hasDisputeReason(DisputeInput memory input, StateSnapshot memory latestStateSnapshot) pure returns (bool) {
     bool isForcedInboundMessage =
         input.lastInboundMessageBlockHeight > latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight;
-    return input.timeout.participant != address(0) || input.onChainSlashes.length > 0 || input.selfRemoval
-        || isForcedInboundMessage;
+    // onChainSlashes counts as a reason only when every entry is still in
+    // latestStateSnapshot.participants — already-slashed (and thus removed)
+    // participants can't be slashed again.
+    bool hasValidOnChainSlash = input.onChainSlashes.length > 0;
+    for (uint256 i = 0; hasValidOnChainSlash && i < input.onChainSlashes.length; i++) {
+        hasValidOnChainSlash = _isAddressInArray(latestStateSnapshot.snapshotData.participants, input.onChainSlashes[i]);
+    }
+    return
+        input.timeout.participant != address(0) || hasValidOnChainSlash || input.selfRemoval || isForcedInboundMessage;
 }
 
 function _hasStateProofHeaderMismatch(Dispute memory dispute) pure returns (bool) {
