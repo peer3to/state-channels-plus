@@ -49,7 +49,6 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender());
         require(canParticipateInDisputes(dispute.input.channelId, msg.sender), ErrorCantParticipateInDispute());
-        _requireStateProofHeaderChannelMatchesInput(dispute);
 
         // race condition checks
         _disputeRaceConditionCheck(dispute);
@@ -171,10 +170,12 @@ contract DisputeManagerFacet is StateChannelCommon {
             return false;
         }
         address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
-        bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
-            .insertBytesInByteArray(disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures);
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
-            .verifyThresholdSigned(thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures);
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
+            disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
+        );
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
+        );
         return isThresholdFinal;
     }
 }

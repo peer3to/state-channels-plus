@@ -60,15 +60,18 @@ export default class DisputeValidationService {
             return false;
         }
 
-        const hasForkMismatch =
-            await this.stateChannelManagerContract.hasStateProofForkMismatch.staticCall(
+        const hasHeaderMismatch =
+            await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
                 dispute
             );
-        if (hasForkMismatch) {
-            this.logger.warn("Dispute has state proof fork mismatch", {
-                dispute: LoggerUtils.getDisputeMetadata(dispute)
-            });
-            this.disputeFraudProofService.createDisputeStateProofForkMismatch(
+        if (hasHeaderMismatch) {
+            this.logger.warn(
+                "DisputeStateProofHeaderMismatch: stateProof header channelId or forkId does not match dispute.input",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
+            );
+            this.disputeFraudProofService.createDisputeStateProofHeaderMismatch(
                 dispute
             );
             return false;

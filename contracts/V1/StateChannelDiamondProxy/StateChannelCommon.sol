@@ -590,45 +590,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return false;
     }
 
-    function _requireStateProofHeaderChannelMatchesInput(Dispute memory dispute) internal pure {
-        bytes32 channelId = dispute.input.channelId;
-        StateProof memory sp = dispute.input.stateProof;
-
-        for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
-            Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
-            if (b.transaction.header.channelId != channelId) {
-                revert ErrorDisputeStateProofHeaderChannelMismatch();
-            }
-        }
-        for (uint256 m = 0; m < sp.milestones.length; m++) {
-            BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
-            for (uint256 j = 0; j < bcs.length; j++) {
-                Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
-                if (mb.transaction.header.channelId != channelId) {
-                    revert ErrorDisputeStateProofHeaderChannelMismatch();
-                }
-            }
-        }
-    }
-
-    function _hasStateProofHeaderForkMismatch(Dispute memory dispute) internal pure returns (bool) {
-        bytes32 forkId = dispute.input.forkId;
-        StateProof memory sp = dispute.input.stateProof;
-
-        for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
-            Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
-            if (b.transaction.header.forkId != forkId) return true;
-        }
-        for (uint256 m = 0; m < sp.milestones.length; m++) {
-            BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
-            for (uint256 j = 0; j < bcs.length; j++) {
-                Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
-                if (mb.transaction.header.forkId != forkId) return true;
-            }
-        }
-        return false;
-    }
-
     function _commitToDisputeReducedResult(
         bytes32 channelId,
         DisputeWindow storage disputeWindow,

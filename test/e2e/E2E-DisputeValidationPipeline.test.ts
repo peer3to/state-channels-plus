@@ -27,8 +27,8 @@ describe("E2E: dispute validation", function () {
 
             // Inject an extra signedBlock alongside the real milestones.
             // verifyStateProof rejects any proof where both arrays are non-empty.
-            // Copy a real milestone block so headers match dispute.input (upload reverts otherwise:
-            // _requireStateProofHeaderChannelMatchesInput; factory.signedBlock uses dummy channelId).
+            // Copy a real milestone block so headers match dispute.input (factory.signedBlock
+            // uses a dummy channelId which would trigger DisputeStateProofHeaderMismatch).
             h.tamper.stubConstructDispute(3, (d) => {
                 if (d.input.stateProof.milestones.length === 0) {
                     throw new Error(
@@ -848,8 +848,39 @@ describe("E2E: dispute validation", function () {
         });
     });
 
-    describe("Fork mismatch", function () {
-        it("DisputeStateProofForkMismatch: input forkId ≠ signed proof headers", async function () {
+    describe("Header mismatch", function () {
+        it("DisputeStateProofHeaderMismatch: signedBlock header channelId ≠ input", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+
+            h.tamper.stubConstructDispute(3, async (dispute) => {
+                expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
+                await h.tamper.rewriteLastSignedBlockInDispute(dispute, (bs) =>
+                    blockStructWithTransactionHeader(bs, {
+                        channelId: randomHash()
+                    })
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: false
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait();
+        });
+
+        it("DisputeStateProofHeaderMismatch: signedBlock header forkId ≠ input", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
@@ -874,13 +905,47 @@ describe("E2E: dispute validation", function () {
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeStateProofForkMismatch,
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait();
         });
 
-        it("DisputeStateProofForkMismatch: milestone header forkId ≠ input", async function () {
+        it("DisputeStateProofHeaderMismatch: milestone header channelId ≠ input", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath();
+
+            h.tamper.stubConstructDispute(3, async (dispute) => {
+                await h.tamper.rewriteLastMilestoneSignedBlockInDispute(
+                    dispute,
+                    (bs) =>
+                        blockStructWithTransactionHeader(bs, {
+                            channelId: randomHash()
+                        })
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: true
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait({
+                syntheticOnChainParticipants: 1
+            });
+        });
+
+        it("DisputeStateProofHeaderMismatch: milestone header forkId ≠ input", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
 
@@ -906,7 +971,7 @@ describe("E2E: dispute validation", function () {
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeStateProofForkMismatch,
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({

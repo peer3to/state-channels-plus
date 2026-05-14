@@ -134,3 +134,22 @@ function _hasDisputeReason(DisputeInput memory input, StateSnapshot memory lates
     return input.timeout.participant != address(0) || input.onChainSlashes.length > 0 || input.selfRemoval
         || isForcedInboundMessage;
 }
+
+function _hasStateProofHeaderMismatch(Dispute memory dispute) pure returns (bool) {
+    bytes32 channelId = dispute.input.channelId;
+    bytes32 forkId = dispute.input.forkId;
+    StateProof memory sp = dispute.input.stateProof;
+
+    for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
+        Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
+        if (b.transaction.header.channelId != channelId || b.transaction.header.forkId != forkId) return true;
+    }
+    for (uint256 m = 0; m < sp.milestones.length; m++) {
+        BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
+        for (uint256 j = 0; j < bcs.length; j++) {
+            Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
+            if (mb.transaction.header.channelId != channelId || mb.transaction.header.forkId != forkId) return true;
+        }
+    }
+    return false;
+}

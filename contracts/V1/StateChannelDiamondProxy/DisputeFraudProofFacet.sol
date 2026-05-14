@@ -67,8 +67,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.InvalidDisputeReason) {
             return _handleInvalidDisputeReason;
         }
-        if (proofType == DisputeFraudProofType.DisputeStateProofForkMismatch) {
-            return _handleDisputeStateProofForkMismatch;
+        if (proofType == DisputeFraudProofType.DisputeStateProofHeaderMismatch) {
+            return _handleDisputeStateProofHeaderMismatch;
         }
         if (proofType == DisputeFraudProofType.DisputeInboundHashNotInChain) {
             return _handleDisputeInboundHashNotInChain;
@@ -88,16 +88,20 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _invalid();
     }
 
-    function _handleDisputeStateProofForkMismatch(bytes memory, Dispute memory dispute)
+    function _handleDisputeStateProofHeaderMismatch(bytes memory, Dispute memory dispute)
         internal
         pure
         returns (address)
     {
-        if (_hasStateProofHeaderForkMismatch(dispute)) return _valid(dispute.input.disputer);
+        if (_hasStateProofHeaderMismatch(dispute)) return _valid(dispute.input.disputer);
         return _invalid();
     }
 
-    function _handleDisputeInboundHashNotInChain(bytes memory, Dispute memory dispute) internal view returns (address) {
+    function _handleDisputeInboundHashNotInChain(bytes memory, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
         return _isDisputeInboundHashValid(dispute) ? _invalid() : _valid(dispute.input.disputer);
     }
 
@@ -170,9 +174,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         DisputeInvalidOutputState memory proof = abi.decode(encodedFraudProof, (DisputeInvalidOutputState));
-        if (!_isDataLinkedToDisputeInput(
+        if (
+            !_isDataLinkedToDisputeInput(
                 dispute, proof.latestStateSnapshot, proof.latestStateMachineState, proof.inboundMessageBlocks
-            )) return _invalid();
+            )
+        ) return _invalid();
 
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
@@ -220,9 +226,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         DisputeInvalidBalanceInvariant memory proof = abi.decode(encodedFraudProof, (DisputeInvalidBalanceInvariant));
-        if (!_isLatestFinalizedStateLinkedToLatestFinalizedBlock(
+        if (
+            !_isLatestFinalizedStateLinkedToLatestFinalizedBlock(
                 dispute, proof.latestStateSnapshot, proof.latestStateMachineState
-            )) {
+            )
+        ) {
             return _invalid();
         }
 
@@ -292,13 +300,12 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (!_isSnapshotLinkedToBlock(thresholdBlock, proof.thresholdStateSnapshot)) return _invalid();
 
         //check threshold
-        address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(
-                proof.latestStateSnapshot.snapshotData.participants,
-                proof.thresholdStateSnapshot.snapshotData.participants
-            );
-        bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
-            .insertBytesInByteArray(signedBlock.signature, proof.thresholdBlock.signatures);
+        address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            proof.latestStateSnapshot.snapshotData.participants, proof.thresholdStateSnapshot.snapshotData.participants
+        );
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
+            signedBlock.signature, proof.thresholdBlock.signatures
+        );
         (bool isValid,) =
             UtilityFacet(utilityFacetAddress).verifyThresholdSigned(thresholdParticipants, encodedBlock, signatures);
         if (!isValid) return _invalid();
@@ -355,8 +362,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // check is timeout set
         if (dispute.input.timeout.participant == address(0)) return _invalid();
 
-        uint256 timeoutTimestamp = StateChannelManagerProxy(address(this))
-            .getDisputeWindowCreationTimestamp(dispute.input.channelId, dispute.input.forkId);
+        uint256 timeoutTimestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
+            dispute.input.channelId, dispute.input.forkId
+        );
         uint256 previousTimestamp;
         (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
         bytes32 channelId = dispute.input.channelId;
@@ -376,10 +384,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // ****** check has forfeit right to extra time
             bool hasForfeitedRightToExtraTime = false;
             if (dispute.input.timeout.participantSignatureOnPreviousBlock.length > 0) {
-                (address signerAddress, bool isValid) = UtilityFacet(utilityFacetAddress)
-                    .retrieveSignerAddress(
-                        latestSignedBlock.encodedBlock, dispute.input.timeout.participantSignatureOnPreviousBlock
-                    );
+                (address signerAddress, bool isValid) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
+                    latestSignedBlock.encodedBlock, dispute.input.timeout.participantSignatureOnPreviousBlock
+                );
                 if (signerAddress == dispute.input.timeout.participant && isValid) hasForfeitedRightToExtraTime = true;
             }
             if (!hasForfeitedRightToExtraTime) {
@@ -438,9 +445,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         uint256 previousTimestamp;
         if (!hasBlock) {
             // genesis
-            if (!_isGenesisSnapshotDataLinkedToFork(
+            if (
+                !_isGenesisSnapshotDataLinkedToFork(
                     dispute.input.forkId, timeoutCalldataPostedProof.genesisStateSnapshotData
-                )) {
+                )
+            ) {
                 return _invalid();
             }
             (bool hasGenesis, uint256 genesisTimestamp) = getGenesisTimestamp(
@@ -498,8 +507,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         Message[] memory outboundMessages;
         (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
             .executeStateTransition(
-                dispute.input.channelId, timeoutCalldataPostedProof.latestStateStateMachineState, _block.transaction
-            );
+            dispute.input.channelId, timeoutCalldataPostedProof.latestStateStateMachineState, _block.transaction
+        );
         if (!isSuccess) {
             return _invalid();
         }
@@ -553,9 +562,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bytes memory encodedFraudProof,
         Dispute memory dispute
     ) internal returns (address) {
-        DisputeInvalidBlockInStateProofApplyFraudProof memory proof = abi.decode(
-            encodedFraudProof, (DisputeInvalidBlockInStateProofApplyFraudProof)
-        );
+        DisputeInvalidBlockInStateProofApplyFraudProof memory proof =
+            abi.decode(encodedFraudProof, (DisputeInvalidBlockInStateProofApplyFraudProof));
         BlockConfirmation[] memory blockConfirmations =
             _getUnfinalizedBlockConfirmationsFromStateProof(dispute.input.stateProof);
         uint256 blockIndexInUnfinalizedPartOfStateProof = proof.blockIndexInUnfinalizedPartOfStateProof;
@@ -616,8 +624,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _isLastMilestoneFinalByEveryone(dispute);
     }
 
-    function hasStateProofForkMismatch(Dispute memory dispute) public pure returns (bool) {
-        return _hasStateProofHeaderForkMismatch(dispute);
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public pure returns (bool) {
+        return _hasStateProofHeaderMismatch(dispute);
     }
 
     function isDisputeInboundHashValid(Dispute memory dispute) public view returns (bool) {
@@ -647,7 +655,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         SnapshotData memory thresholdSnapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
         thresholdSnapshotData.participants = expectedParticipants;
 
-        (isFinal,) = StateChannelManagerProxy(address(this))
-            .isMilestoneFinal(dispute.input.forkId, thresholdSnapshotData, lastMilestone);
+        (isFinal,) = StateChannelManagerProxy(address(this)).isMilestoneFinal(
+            dispute.input.forkId, thresholdSnapshotData, lastMilestone
+        );
     }
 }

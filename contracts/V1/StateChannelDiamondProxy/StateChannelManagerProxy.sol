@@ -342,9 +342,9 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool));
     }
 
-    function hasStateProofForkMismatch(Dispute memory dispute) public returns (bool) {
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public returns (bool) {
         bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.hasStateProofForkMismatch, (dispute))
+            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.hasStateProofHeaderMismatch, (dispute))
         );
         return abi.decode(result, (bool));
     }

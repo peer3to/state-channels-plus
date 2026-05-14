@@ -41,7 +41,6 @@ error ErrorDisputeAlreadyPosted();
 error ErrorCantParticipateInDispute();
 error ErrorAuditingDataHashMismatch();
 error ErrorDisputePostedAuditingDataMismatch();
-error ErrorDisputeStateProofHeaderChannelMismatch();
 
 //Reduce errors
 error ErrorNoDisputesProvided();
