@@ -628,10 +628,6 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _hasStateProofHeaderMismatch(dispute);
     }
 
-    function isDisputeInboundHashValid(Dispute memory dispute) public view returns (bool) {
-        return _isDisputeInboundHashValid(dispute);
-    }
-
     function _deriveExpectedParticipantsForDispute(Dispute memory dispute)
         internal
         view
