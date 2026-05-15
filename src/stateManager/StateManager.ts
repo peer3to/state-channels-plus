@@ -857,12 +857,11 @@ class StateManager {
             );
 
             this.p2pEventHooks.onSetState?.();
-            this.p2pEventHooks.onTurn?.(
+            this.signalTurn(
                 nextToWrite,
-                turnTime,
-                this.timeConfig.agreementTime,
-                this.timeConfig.chainFallbackTime,
-                normalizedGenesisTimestamp
+                nextTransactionCnt,
+                normalizedGenesisTimestamp,
+                Clock.getTimeInSeconds()
             );
         } finally {
             this.mutex.unlock();
@@ -1262,6 +1261,28 @@ class StateManager {
             ` - Current timestamp: ${Clock.getTimeInSeconds()}`;
         this.logger.info(message);
         return message;
+    }
+
+    private signalTurn(
+        nextToWrite: Address,
+        nextBlockHeight: BlockHeight,
+        relevantTimestamp: Timestamp,
+        currentTimestamp: Timestamp
+    ): void {
+        this.logger.info(`onTurn signal txHeight: ${nextBlockHeight}`, {
+            currentTimestamp,
+            nextToWrite,
+            nextBlockHeight,
+            relevantTimestamp
+        });
+
+        this.p2pEventHooks.onTurn?.(
+            nextToWrite,
+            this.timeConfig.p2pTime,
+            this.timeConfig.agreementTime,
+            this.timeConfig.chainFallbackTime,
+            relevantTimestamp
+        );
     }
 
     // Used when authoring a block - Executes the transaction and returns a signed block
@@ -2330,11 +2351,28 @@ class StateManager {
             );
         }
 
+        const latestLocalTimestamp = Clock.getTimeInSeconds();
+
+        if (latestLocalTimestamp > Number(tx.header.timestamp)) {
+            this.logger.verbose(
+                "Adjusting timestamp - reassigning to latest local time",
+                {
+                    forkId,
+                    txTimestamp: Number(tx.header.timestamp),
+                    latestLocalTimestamp,
+                    diff: latestLocalTimestamp - Number(tx.header.timestamp),
+                    newTimestamp: latestLocalTimestamp
+                }
+            );
+            tx.header.timestamp = BigInt(latestLocalTimestamp);
+        }
+
         if (Number(tx.header.timestamp) < previousTimestamp) {
             this.logger.verbose("Adjusting timestamp - was in the past", {
                 forkId,
                 txTimestamp: Number(tx.header.timestamp),
                 previousTimestamp,
+                diff: previousTimestamp - Number(tx.header.timestamp),
                 newTimestamp: previousTimestamp
             });
             tx.header.timestamp = BigInt(previousTimestamp);
@@ -2349,6 +2387,9 @@ class StateManager {
                 txTimestamp: Number(tx.header.timestamp),
                 previousRelativeTimestamp,
                 p2pTime: this.timeConfig.p2pTime,
+                diff:
+                    Number(tx.header.timestamp) -
+                    (previousRelativeTimestamp + this.timeConfig.p2pTime),
                 newTimestamp:
                     previousRelativeTimestamp + this.timeConfig.p2pTime
             });
@@ -2763,13 +2804,12 @@ class StateManager {
 
         // step 10 - Notify any event hooks
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
-        const turnTime = this.timeConfig.p2pTime;
-        this.p2pEventHooks.onTurn?.(
+        const relevantTimestamp = block.getRelevantTimestamp(nextToWrite);
+        this.signalTurn(
             nextToWrite,
-            turnTime,
-            this.timeConfig.agreementTime,
-            this.timeConfig.chainFallbackTime,
-            block.getRelevantTimestamp(nextToWrite)
+            block.height + 1,
+            relevantTimestamp,
+            Clock.getTimeInSeconds()
         );
 
         // step 11 - maybe post block on chain
