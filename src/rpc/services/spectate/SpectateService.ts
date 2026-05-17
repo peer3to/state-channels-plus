@@ -435,92 +435,132 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         return true;
     }
 
-    public async persistSyncPayload(syncPayload: SyncPayload) {
-        this.logger.debug(`Persisting sync payload`, syncPayload);
-        // TODO - check in the case of syncing to the requested (forkId, blockHeight), that storage stays consistent - what was already there should still be there
-        const storage = this.p2pManager.stateManager.storage;
+    public async persistSyncPayload(
+        syncPayload: SyncPayload
+    ): Promise<{ shouldAbort: boolean }> {
+        const stateManager = this.p2pManager.stateManager;
+        return await stateManager.withMutex(async () => {
+            this.logger.debug(`Persisting sync payload`, syncPayload);
+            const storage = stateManager.storage;
 
-        const latestFinalizedSnapshot =
-            syncPayload.milestoneSnapshots.length > 0
-                ? syncPayload.milestoneSnapshots.at(-1)!
-                : syncPayload.latestForkGenesisSnapshot;
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.length > 0
+                    ? syncPayload.milestoneSnapshots.at(-1)!
+                    : syncPayload.latestForkGenesisSnapshot;
 
-        const finalizedForkId = latestFinalizedSnapshot.forkId;
-        const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
-        const localLatestBlock = storage.blocks.getLatestBlock(finalizedForkId);
-        const localLatestHeight = localLatestBlock?.height ?? -1;
+            const finalizedForkId = latestFinalizedSnapshot.forkId;
+            const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
+            const localLatestBlock =
+                storage.blocks.getLatestBlock(finalizedForkId);
+            const localLatestHeight = localLatestBlock?.height ?? -1;
 
-        if (localLatestHeight >= finalizedHeight) {
-            this.logger.info(
-                "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
-                {
-                    finalizedForkId,
-                    finalizedHeight,
-                    localLatestHeight
+            if (localLatestHeight >= finalizedHeight) {
+                this.logger.info(
+                    "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
+                    {
+                        finalizedForkId,
+                        finalizedHeight,
+                        localLatestHeight
+                    }
+                );
+                return { shouldAbort: false };
+            }
+
+            for (const dw of syncPayload.disputeWindows) {
+                for (const dispute of dw.disputeConfirmations) {
+                    storage.disputes.storeDisputeConfirmation(dispute);
                 }
-            );
-            return;
-        }
-
-        for (const dw of syncPayload.disputeWindows) {
-            for (const dispute of dw.disputeConfirmations) {
-                storage.disputes.storeDisputeConfirmation(dispute);
+                storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(dw.latestStateSnapshot)
+                );
+                storage.stateMachineStates.storeStateMachineState(
+                    dw.latestEncodedStateMachineState
+                );
+                for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
+                    storage.inboundMessages.store(inboundBlock);
+                }
             }
             storage.stateSnapshots.storeStateSnapshot(
-                StateSnapshot.from(dw.latestStateSnapshot)
+                StateSnapshot.from(syncPayload.latestForkGenesisSnapshot)
             );
             storage.stateMachineStates.storeStateMachineState(
-                dw.latestEncodedStateMachineState
+                syncPayload.latestForkGenesisEncodedState,
+                {
+                    hash: syncPayload.latestForkGenesisSnapshot.snapshotData
+                        .stateMachineStateHash
+                }
             );
-            for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
-                storage.inboundMessages.store(inboundBlock);
+            if (
+                this.persistFinalizedPartsOfStateProof(syncPayload.stateProof)
+                    .shouldAbort
+            ) {
+                return { shouldAbort: true };
             }
-        }
-        storage.stateSnapshots.storeStateSnapshot(
-            StateSnapshot.from(syncPayload.latestForkGenesisSnapshot)
-        );
-        storage.stateMachineStates.storeStateMachineState(
-            syncPayload.latestForkGenesisEncodedState,
-            {
-                hash: syncPayload.latestForkGenesisSnapshot.snapshotData
-                    .stateMachineStateHash
-            }
-        );
-        this.persistFinalizedPartsOfStateProof(syncPayload.stateProof);
-        for (const snapshot of syncPayload.milestoneSnapshots)
-            storage.stateSnapshots.storeStateSnapshot(
-                StateSnapshot.from(snapshot)
-            );
-        for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
-            storage.outboundMessages.store(omb);
-        for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
-            storage.outboundMessages.store(omb);
+            for (const snapshot of syncPayload.milestoneSnapshots)
+                storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(snapshot)
+                );
+            for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
+                storage.outboundMessages.store(omb);
+            for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
+                storage.outboundMessages.store(omb);
 
-        await this.p2pManager.stateManager.setLatestState(
-            latestFinalizedSnapshot,
-            syncPayload.latestFinalizedEncodedState
-        );
-        this.logger.debug(`Finished persisting sync payload`);
+            await stateManager.unsafeSetLatestState(
+                latestFinalizedSnapshot,
+                syncPayload.latestFinalizedEncodedState
+            );
+            this.logger.debug(`Finished persisting sync payload`);
+            return { shouldAbort: false };
+        });
     }
-    public persistFinalizedPartsOfStateProof(stateProof: StateProofStruct) {
+    public persistFinalizedPartsOfStateProof(stateProof: StateProofStruct): {
+        shouldAbort: boolean;
+    } {
         const storage = this.p2pManager.stateManager.storage;
         // for all milestones except the last persist all blocks
         for (let i = 0; i < stateProof.milestones.length - 1; i++) {
             for (const blockConfirmation of stateProof.milestones[i]
                 .blockConfirmations) {
-                storage.blocks.storeBlock(
-                    Block.fromBlockConfirmation(blockConfirmation)
-                );
+                const block = Block.fromBlockConfirmation(blockConfirmation);
+                if (this.hasBlockConflict(block)) {
+                    return { shouldAbort: true };
+                }
+                storage.blocks.storeBlock(block);
             }
         }
         // for the last milestone persist just the first (finalized) block
         const lastMilestone = stateProof.milestones.at(-1);
-        if (lastMilestone) {
-            storage.blocks.storeBlock(
-                Block.fromBlockConfirmation(lastMilestone.blockConfirmations[0])
+        const finalizedBlockConfirmation = lastMilestone?.blockConfirmations[0];
+        if (finalizedBlockConfirmation) {
+            const block = Block.fromBlockConfirmation(
+                finalizedBlockConfirmation
             );
+            if (this.hasBlockConflict(block)) {
+                return { shouldAbort: true };
+            }
+            storage.blocks.storeBlock(block);
         }
+        return { shouldAbort: false };
     }
+
+    private hasBlockConflict(block: Block): boolean {
+        const existingBlock =
+            this.p2pManager.stateManager.storage.blocks.getBlock(
+                block.forkId,
+                block.height
+            );
+        if (existingBlock && !existingBlock.equals(block)) {
+            this.logger.warn("Spectate sync storage conflict", {
+                blockHash: block.hash,
+                existingBlockHash: existingBlock.hash,
+                forkId: block.forkId,
+                height: block.height
+            });
+            return true;
+        }
+        return false;
+    }
+
     public static orderOutboundSnapshots(
         a: StateSnapshot,
         b: StateSnapshot
@@ -541,7 +581,11 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             peerAddress,
             myStatus: Status[this.p2pManager.stateManager.getStatus()]
         });
-        if (this.p2pManager.stateManager.getStatus() !== Status.PARTICIPATING) {
+        const status = this.p2pManager.stateManager.getStatus();
+        if (
+            status !== Status.PARTICIPATING &&
+            status !== Status.PENDING_PARTICIPANT
+        ) {
             this.p2pManager.disconnectAll();
             void this.p2pManager.stateManager.stateChannelEventListener.dispose();
             return;
