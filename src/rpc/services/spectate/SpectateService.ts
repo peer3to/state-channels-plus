@@ -439,79 +439,85 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         syncPayload: SyncPayload
     ): Promise<{ shouldAbort: boolean }> {
         const stateManager = this.p2pManager.stateManager;
-        return await stateManager.withMutex(async () => {
-            this.logger.debug(`Persisting sync payload`, syncPayload);
-            const storage = stateManager.storage;
+        return await stateManager.withMutex(
+            async () => {
+                this.logger.debug(`Persisting sync payload`, syncPayload);
+                const storage = stateManager.storage;
 
-            const latestFinalizedSnapshot =
-                syncPayload.milestoneSnapshots.length > 0
-                    ? syncPayload.milestoneSnapshots.at(-1)!
-                    : syncPayload.latestForkGenesisSnapshot;
+                const latestFinalizedSnapshot =
+                    syncPayload.milestoneSnapshots.length > 0
+                        ? syncPayload.milestoneSnapshots.at(-1)!
+                        : syncPayload.latestForkGenesisSnapshot;
 
-            const finalizedForkId = latestFinalizedSnapshot.forkId;
-            const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
-            const localLatestBlock =
-                storage.blocks.getLatestBlock(finalizedForkId);
-            const localLatestHeight = localLatestBlock?.height ?? -1;
-
-            if (localLatestHeight >= finalizedHeight) {
-                this.logger.info(
-                    "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
-                    {
-                        finalizedForkId,
-                        finalizedHeight,
-                        localLatestHeight
-                    }
+                const finalizedForkId = latestFinalizedSnapshot.forkId;
+                const finalizedHeight = Number(
+                    latestFinalizedSnapshot.blockHeight
                 );
-                return { shouldAbort: false };
-            }
+                const localLatestBlock =
+                    storage.blocks.getLatestBlock(finalizedForkId);
+                const localLatestHeight = localLatestBlock?.height ?? -1;
 
-            for (const dw of syncPayload.disputeWindows) {
-                for (const dispute of dw.disputeConfirmations) {
-                    storage.disputes.storeDisputeConfirmation(dispute);
+                if (localLatestHeight >= finalizedHeight) {
+                    this.logger.info(
+                        "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
+                        {
+                            finalizedForkId,
+                            finalizedHeight,
+                            localLatestHeight
+                        }
+                    );
+                    return { shouldAbort: false };
+                }
+
+                for (const dw of syncPayload.disputeWindows) {
+                    for (const dispute of dw.disputeConfirmations) {
+                        storage.disputes.storeDisputeConfirmation(dispute);
+                    }
+                    storage.stateSnapshots.storeStateSnapshot(
+                        StateSnapshot.from(dw.latestStateSnapshot)
+                    );
+                    storage.stateMachineStates.storeStateMachineState(
+                        dw.latestEncodedStateMachineState
+                    );
+                    for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
+                        storage.inboundMessages.store(inboundBlock);
+                    }
                 }
                 storage.stateSnapshots.storeStateSnapshot(
-                    StateSnapshot.from(dw.latestStateSnapshot)
+                    StateSnapshot.from(syncPayload.latestForkGenesisSnapshot)
                 );
                 storage.stateMachineStates.storeStateMachineState(
-                    dw.latestEncodedStateMachineState
+                    syncPayload.latestForkGenesisEncodedState,
+                    {
+                        hash: syncPayload.latestForkGenesisSnapshot.snapshotData
+                            .stateMachineStateHash
+                    }
                 );
-                for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
-                    storage.inboundMessages.store(inboundBlock);
+                if (
+                    this.persistFinalizedPartsOfStateProof(
+                        syncPayload.stateProof
+                    ).shouldAbort
+                ) {
+                    return { shouldAbort: true };
                 }
-            }
-            storage.stateSnapshots.storeStateSnapshot(
-                StateSnapshot.from(syncPayload.latestForkGenesisSnapshot)
-            );
-            storage.stateMachineStates.storeStateMachineState(
-                syncPayload.latestForkGenesisEncodedState,
-                {
-                    hash: syncPayload.latestForkGenesisSnapshot.snapshotData
-                        .stateMachineStateHash
-                }
-            );
-            if (
-                this.persistFinalizedPartsOfStateProof(syncPayload.stateProof)
-                    .shouldAbort
-            ) {
-                return { shouldAbort: true };
-            }
-            for (const snapshot of syncPayload.milestoneSnapshots)
-                storage.stateSnapshots.storeStateSnapshot(
-                    StateSnapshot.from(snapshot)
-                );
-            for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
-                storage.outboundMessages.store(omb);
-            for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
-                storage.outboundMessages.store(omb);
+                for (const snapshot of syncPayload.milestoneSnapshots)
+                    storage.stateSnapshots.storeStateSnapshot(
+                        StateSnapshot.from(snapshot)
+                    );
+                for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
+                    storage.outboundMessages.store(omb);
+                for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
+                    storage.outboundMessages.store(omb);
 
-            await stateManager.unsafeSetLatestState(
-                latestFinalizedSnapshot,
-                syncPayload.latestFinalizedEncodedState
-            );
-            this.logger.debug(`Finished persisting sync payload`);
-            return { shouldAbort: false };
-        });
+                await stateManager.unsafeSetLatestState(
+                    latestFinalizedSnapshot,
+                    syncPayload.latestFinalizedEncodedState
+                );
+                this.logger.debug(`Finished persisting sync payload`);
+                return { shouldAbort: false };
+            },
+            { taskName: "persistSyncPayload" }
+        );
     }
     public persistFinalizedPartsOfStateProof(stateProof: StateProofStruct): {
         shouldAbort: boolean;

@@ -5,7 +5,8 @@ import {
     DisputeInputStruct,
     DisputeAuditingDataStruct,
     ReduceOutputStruct,
-    BlockStruct
+    BlockStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DisputeFraudProofStruct,
@@ -217,6 +218,27 @@ export class LoggerUtils {
             messageBlocks: blockStruct.messageBlocks.map((messageBlock) =>
                 this.getMessageBlockMetadata(messageBlock)
             )
+        };
+    }
+
+    static getBlockConfirmationStructMetadata(
+        blockConfirmation: BlockConfirmationStruct
+    ) {
+        const blockStruct = Codec.decode(
+            blockConfirmation.signedBlock.encodedBlock,
+            Type.Block
+        );
+
+        return {
+            blockConfirmationHash: String(
+                hash(Codec.encode(blockConfirmation, Type.BlockConfirmation))
+            ),
+            ...this.getBlockStructMetadata(blockStruct),
+            originalSignature: String(blockConfirmation.signedBlock.signature),
+            confirmationSignatures: blockConfirmation.signatures.map(
+                (signature) => String(signature)
+            ),
+            confirmationsCount: blockConfirmation.signatures.length
         };
     }
 

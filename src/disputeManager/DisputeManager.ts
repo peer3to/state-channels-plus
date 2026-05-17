@@ -53,7 +53,7 @@ class DisputeManager {
     self = config.DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
-    mutex: Mutex = new Mutex();
+    mutex: Mutex;
     private logger: Logger;
 
     constructor(
@@ -76,13 +76,16 @@ class DisputeManager {
         this.storage = storage;
         this.diamondStateMachine = diamondStateMachine;
         this.logger = logger.child({ component: "DisputeManager" });
+        this.mutex = new Mutex(
+            this.logger.child({ component: "DisputeManager:Mutex" })
+        );
         return this.self;
     }
 
     public async dispute(forkId: ForkId): Promise<void> {
         let txResponse;
         try {
-            await this.mutex.lock();
+            await this.mutex.lock({ taskName: "dispute" });
             if (this.storage.disputes.didIDispute(forkId)) {
                 this.logger.info(
                     `Already initiated dispute for forkId ${forkId}, skipping dispute attempt.`

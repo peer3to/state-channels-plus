@@ -60,6 +60,7 @@ import {
     DetachedPromises,
     createEthersResultProxy
 } from "@/utils";
+import type { MutexLockOptions } from "@/utils";
 // Types
 import { BlockValidationResult, Status, TimeConfig } from "@/types";
 import {
@@ -105,7 +106,7 @@ class StateManager {
     p2pManager: P2PManager;
     timeConfig: TimeConfig;
     channelId: ChannelId = NULL;
-    mutex: Mutex = new Mutex();
+    mutex: Mutex;
     self = config.DEBUG_STATE_MANAGER ? DebugProxy.createProxy(this) : this;
     isDisposed: boolean = false;
     validationService: ValidationService;
@@ -144,6 +145,9 @@ class StateManager {
         this.storage = storage;
 
         this.logger = logger.child({ component: "StateManager" });
+        this.mutex = new Mutex(
+            this.logger.child({ component: "StateManager:Mutex" })
+        );
         this.timeoutManager = new TimeoutManager(logger);
 
         this.eventHandler = new EventHandler(
@@ -779,17 +783,22 @@ class StateManager {
         encodedState: Bytes,
         outboundMessageBlock?: MessageBlockStruct
     ): Promise<void> {
-        await this.withMutex(() =>
-            this.unsafeSetLatestState(
-                stateSnapshot,
-                encodedState,
-                outboundMessageBlock
-            )
+        await this.withMutex(
+            () =>
+                this.unsafeSetLatestState(
+                    stateSnapshot,
+                    encodedState,
+                    outboundMessageBlock
+                ),
+            { taskName: "setLatestState" }
         );
     }
 
-    public async withMutex<T>(fn: () => T | Promise<T>): Promise<T> {
-        await this.mutex.lock();
+    public async withMutex<T>(
+        fn: () => T | Promise<T>,
+        options?: MutexLockOptions
+    ): Promise<T> {
+        await this.mutex.lock(options);
         try {
             return await fn();
         } finally {
@@ -934,7 +943,14 @@ class StateManager {
             this.getStrategyByStatus(this.status);
 
         try {
-            await this.mutex.lock();
+            await this.mutex.lock({
+                taskName: "onBlockConfirmation",
+                logMeta: {
+                    ...LoggerUtils.getBlockConfirmationStructMetadata(
+                        blockConfirmation
+                    )
+                }
+            });
 
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
@@ -1303,7 +1319,7 @@ class StateManager {
     public async playTransaction(
         tx: TransactionStruct
     ): Promise<BlockConfirmationStruct> {
-        await this.mutex.lock();
+        await this.mutex.lock({ taskName: "playTransaction" });
         const message = await this.logPlayTransaction(tx);
         try {
             if (!this.validationService.isChannelOpen(this.forkId)) {

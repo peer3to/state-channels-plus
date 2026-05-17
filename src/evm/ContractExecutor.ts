@@ -10,12 +10,15 @@ export default class ContractExecutor {
     private readonly evm: EVM;
     private readonly contractAddress: Address;
     private readonly logger?: Logger;
-    private readonly mutex = new Mutex();
+    private readonly mutex: Mutex;
 
     constructor(evm: EVM, contractAddress: Address, logger?: Logger) {
         this.evm = evm;
         this.contractAddress = contractAddress;
         this.logger = logger?.child({ component: "ContractExecutor" });
+        this.mutex = new Mutex(
+            this.logger?.child({ component: "ContractExecutor:Mutex" })
+        );
     }
 
     getContractAddress(): Address {
@@ -27,7 +30,7 @@ export default class ContractExecutor {
         caller?: Address,
         isSimulation = false
     ): Promise<ExecResult> {
-        await this.mutex.lock();
+        await this.mutex.lock({ taskName: "executeCall" });
 
         try {
             // set timestamp
