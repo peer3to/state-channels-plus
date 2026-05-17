@@ -669,8 +669,13 @@ export default class ValidationService {
         previousTimestamp: Timestamp,
         block: Block
     ): Promise<OnChainPostTiming> {
+        const storedOnChainTimestamp = this.getStoredOnChainTimestamp(block);
+        if (storedOnChainTimestamp !== undefined) {
+            block.onChainTimestamp = storedOnChainTimestamp;
+        }
+
         // if doesn't have on-chain timestamp try and fetch it
-        if (!block.onChainTimestamp) {
+        if (block.onChainTimestamp === undefined) {
             const scheduleStatus =
                 await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
                     block.forkId,
@@ -697,11 +702,11 @@ export default class ValidationService {
                 return OnChainPostTiming.NOT_READY;
             }
 
-            const onChainTimestamp =
-                this.storage.blocks.getBlock(block.hash)?.onChainTimestamp ??
-                block.onChainTimestamp;
+            const onChainTimestamp = this.getStoredOnChainTimestamp(block);
 
-            if (!onChainTimestamp) return OnChainPostTiming.NOT_POSTED;
+            if (onChainTimestamp === undefined) {
+                return OnChainPostTiming.NOT_POSTED;
+            }
             block.onChainTimestamp = onChainTimestamp;
             this.storage.blocks.setOnChainTimestamp(
                 block.hash,
@@ -722,5 +727,17 @@ export default class ValidationService {
         }
 
         return OnChainPostTiming.ON_TIME;
+    }
+
+    private getStoredOnChainTimestamp(block: Block): Timestamp | undefined {
+        return (
+            this.storage.blocks.getBlock(block.hash)?.onChainTimestamp ??
+            this.storage.blockCalldata.getBlockCalldata(
+                block.forkId,
+                block.height,
+                block.author
+            )?.onChainTimestamp ??
+            block.onChainTimestamp
+        );
     }
 }

@@ -1,12 +1,110 @@
 import { expect } from "chai";
+import Clock from "@/Clock";
+import { Block } from "@/models";
 import { FraudProofType } from "@/types/sol-enums";
-import { MathTestSession as TestSession } from "@test/harness";
+import { MathTestSession as TestSession, sleep } from "@test/harness";
 
 /**
  * E2E Tests: Fraud Proofs — onBlockConfirmation (BlockValidationStrategy)
  */
 
 describe("E2E: Block Fraud Proofs", function () {
+    it("queued future block accepts later calldata event and executes after predecessor", async function () {
+        this.timeout(90000);
+
+        const h = TestSession.getHarness();
+        const timeConfig = {
+            p2pTime: 3,
+            agreementTime: 2,
+            chainFallbackTime: 30,
+            evidenceTime: 8
+        };
+        await h.lifecycle.start(4, 0, { timeConfig });
+
+        const forkId = h.activeForkId;
+        expect(forkId).to.not.be.undefined;
+        for (const peer of h.peers) {
+            (peer.stateManager as any).maybePostBlockOnChain = () => {};
+        }
+
+        const observerIndex = 3;
+        const observer = h.getPeer(observerIndex);
+        await h.network.disconnectPeer(observerIndex);
+        const observerInitialSum = await observer.contractInstance.getSum();
+
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: false
+        });
+
+        const source = h.peerWithHighestBlock(forkId!);
+        const block1 = source.stateManager.storage.blocks.getBlock(forkId!, 0);
+        const block2 = source.stateManager.storage.blocks.getBlock(forkId!, 1);
+        expect(block1).to.not.be.undefined;
+        expect(block2).to.not.be.undefined;
+        expect(
+            observer.stateManager.storage.blocks.getNextBlockHeight(forkId!)
+        ).to.equal(0);
+
+        const keepConnection = await observer.stateManager.onBlockConfirmation(
+            block2!.blockConfirmationStruct
+        );
+        expect(keepConnection).to.equal(true);
+        expect(observer.stateManager.storage.blocks.getBlock(block2!.hash)).to
+            .be.undefined;
+
+        const postBlockCalldata = async (block: Block) => {
+            const author = h.peers.find(
+                (peer) =>
+                    peer.address.toLowerCase() ===
+                    String(block.author).toLowerCase()
+            );
+            expect(author).to.not.be.undefined;
+
+            const tx =
+                await author!.stateManager.stateChannelManagerContract.postBlockCalldata(
+                    block.signedBlock,
+                    Clock.getTimeInSeconds() + 1000
+                );
+            await tx.wait();
+        };
+
+        h.event.resetEventSpies(observerIndex);
+        await postBlockCalldata(block2!);
+        await h.event.waitUntilEventOccurs("onBlockCalldataPosted", 5000, [
+            observerIndex
+        ]);
+        expect(observer.stateManager.storage.blocks.getBlock(block2!.hash)).to
+            .be.undefined;
+
+        await sleep((timeConfig.agreementTime + 1) * 1000);
+
+        // maybePostBlockOnChain is stubbed ()=>{} + after AgreementTime the subjective check each peer does would fail, so if the block is accepted -> calldata path
+        await postBlockCalldata(block1!);
+
+        await h.eventCountsBarrier.waitFor(
+            () =>
+                observer.stateManager.storage.blocks.getBlock(block1!.hash) !==
+                    undefined &&
+                observer.stateManager.storage.blocks.getBlock(block2!.hash) !==
+                    undefined,
+            {
+                timeoutMs: 5000,
+                timeoutMessage:
+                    "Queued block did not execute after predecessor calldata event"
+            }
+        );
+
+        const storedBlock2 = observer.stateManager.storage.blocks.getBlock(
+            block2!.hash
+        );
+        expect(storedBlock2?.onChainTimestamp).to.not.be.undefined;
+        expect(await observer.contractInstance.getSum()).to.equal(
+            observerInitialSum + 2n
+        );
+    });
+
     it("queued duplicate block does not fall through to double sign", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);

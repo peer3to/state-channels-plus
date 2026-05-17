@@ -18,6 +18,9 @@ export class QueueStorage {
             const mergedSignaturesBlock = existingBlock.expandSignatures(
                 block.confirmationSignatures
             );
+            if (block.onChainTimestamp !== undefined) {
+                mergedSignaturesBlock.onChainTimestamp = block.onChainTimestamp;
+            }
             this.queuedBlocks.set(block.hash, mergedSignaturesBlock);
             return block.hash;
         }
@@ -68,6 +71,10 @@ export class QueueStorage {
             existingBlockConfirmation.expandSignatures(
                 block.confirmationSignatures
             );
+            if (block.onChainTimestamp !== undefined) {
+                existingBlockConfirmation.onChainTimestamp =
+                    block.onChainTimestamp;
+            }
             this.queuedBlocks.set(blockHash, existingBlockConfirmation);
         }
 

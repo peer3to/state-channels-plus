@@ -125,6 +125,54 @@ describe("QueueStorage", () => {
             expect(dequeued).to.have.lengthOf(1);
             expect(dequeued[0].confirmationSignatures.size).to.equal(2);
         });
+
+        it("should merge on-chain timestamp when queueing same block again", () => {
+            const onChainTimestamp = 1234567890;
+            storage.queueBlock(mockBlock);
+
+            storage.queueBlock(
+                Block.fromSignedBlock(mockSignedBlock, onChainTimestamp)
+            );
+
+            const dequeued = storage.tryDequeue(mockForkId, mockHeight);
+            expect(dequeued).to.have.lengthOf(1);
+            expect(dequeued[0].onChainTimestamp).to.equal(onChainTimestamp);
+        });
+
+        it("should merge on-chain timestamp when checking queued duplicate", () => {
+            const onChainTimestamp = 1234567890;
+            storage.queueBlock(mockBlock);
+
+            const blockPostedOnChain = Block.fromSignedBlock(
+                mockSignedBlock,
+                onChainTimestamp
+            );
+            expect(storage.isBlockQueued(blockPostedOnChain)).to.be.true;
+
+            const dequeued = storage.tryDequeue(mockForkId, mockHeight);
+            expect(dequeued).to.have.lengthOf(1);
+            expect(dequeued[0].onChainTimestamp).to.equal(onChainTimestamp);
+        });
+
+        it("should merge on-chain timestamp through storage proxy", () => {
+            const storageWithProxy = new Storage();
+            const onChainTimestamp = 1234567890;
+            storageWithProxy.queues.queueBlock(mockBlock);
+
+            const blockPostedOnChain = Block.fromSignedBlock(
+                mockSignedBlock,
+                onChainTimestamp
+            );
+            expect(storageWithProxy.queues.isBlockQueued(blockPostedOnChain)).to
+                .be.true;
+
+            const dequeued = storageWithProxy.queues.tryDequeue(
+                mockForkId,
+                mockHeight
+            );
+            expect(dequeued).to.have.lengthOf(1);
+            expect(dequeued[0].onChainTimestamp).to.equal(onChainTimestamp);
+        });
     });
 
     describe("Dequeue Operations", () => {
