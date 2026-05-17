@@ -1,3 +1,4 @@
+import { expect } from "chai";
 import { FraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
 
@@ -6,6 +7,29 @@ import { MathTestSession as TestSession } from "@test/harness";
  */
 
 describe("E2E: Block Fraud Proofs", function () {
+    it("queued duplicate block does not fall through to double sign", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+
+        const observer = h.getPeer(0);
+        const forkId = h.activeForkId;
+        expect(forkId).to.not.be.undefined;
+
+        const block = observer.stateManager.storage.blocks.getLatestBlock(
+            forkId!
+        );
+        expect(block).to.not.be.undefined;
+
+        observer.stateManager.storage.queues.queueBlock(block!);
+
+        const keepConnection = await observer.stateManager.onBlockConfirmation(
+            block!.blockConfirmationStruct
+        );
+
+        expect(keepConnection).to.equal(true);
+        expect(observer.eventSpies.onInitiatingDispute!.called).to.equal(false);
+    });
+
     it("double sign → BlockDoubleSign", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);

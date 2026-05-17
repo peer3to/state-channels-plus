@@ -266,29 +266,7 @@ export default class ValidationService {
         participants: Set<Address>,
         strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
-        // 1. Check if block is in queue
-        if (
-            this.storage.queues.isBlockQueued(block, {
-                hash: block.hash
-            })
-        ) {
-            const signerAddresses = block.confirmationSignerAddresses;
-            // TODO - This doesn't take into account the participant UNION, since the posterior state is not known, so a race condition is possible where the new participant signs, but is not accounted for
-            const areAllParticipants = isSubset(signerAddresses, participants);
-            if (!areAllParticipants) {
-                this.logger.warn(
-                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants",
-                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
-                );
-                return await strategy.notAllSingersAreParticipants(block);
-            }
-
-            // Store in queue (handles signature merging automatically)
-            this.storage.queues.queueBlock(block);
-            return BlockValidationResult.SUCCESS;
-        }
-
-        // 2. Check if block is in block storage
+        // 1. Check if block is in block storage
         const existingBlock = this.storage.blocks.getBlock(block.hash);
         if (existingBlock !== undefined) {
             const existingSignatures = existingBlock.confirmationSignatures;
@@ -338,6 +316,29 @@ export default class ValidationService {
                 this.stateManager.maybeNotifyBlockFinalized(persisted);
             }
             return mergeResult;
+        }
+
+        // 2. Check if block is in queue | skip if dispute strategy
+        if (
+            this.storage.queues.isBlockQueued(block, {
+                hash: block.hash
+            }) &&
+            !(strategy instanceof DisputeValidationStrategy)
+        ) {
+            const signerAddresses = block.confirmationSignerAddresses;
+            // TODO - This doesn't take into account the participant UNION, since the posterior state is not known, so a race condition is possible where the new participant signs, but is not accounted for
+            const areAllParticipants = isSubset(signerAddresses, participants);
+            if (!areAllParticipants) {
+                this.logger.warn(
+                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants",
+                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
+                );
+                return await strategy.notAllSingersAreParticipants(block);
+            }
+
+            // Store in queue (handles signature merging automatically)
+            this.storage.queues.queueBlock(block);
+            return BlockValidationResult.DUPLICATE;
         }
 
         return BlockValidationResult.SUCCESS;

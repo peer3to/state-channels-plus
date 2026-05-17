@@ -158,8 +158,6 @@ class StateManager {
             this.stateChannelManagerContract,
             this.eventHandler,
             this.timeConfig,
-            this.timeoutManager,
-            () => this.tryExecuteFromQueue(),
             logger
         );
         this.stateChannelEventListener = new StateChannelEventListener(
@@ -1186,6 +1184,8 @@ class StateManager {
             throw error;
         } finally {
             this.mutex.unlock();
+            // try signaling blocks in the queue (in case this block enabled them to be validated)
+            setTimeout(() => this.tryExecuteFromQueue(), 0);
         }
     }
 
@@ -1253,7 +1253,7 @@ class StateManager {
             `playTransaction start: ` +
             ` - myAddress: ${String(this.signerAddress)}` +
             ` - nextToWrite: ${String(nextToWrite)}` +
-            ` - txHeight: ${txHeight}` +
+            ` - txHeight: #${txHeight}` +
             ` - latestStoredHeight: ${String(latestStoredHeight)}` +
             ` - nextStoredHeight: ${nextStoredHeight}` +
             ` - forkId: ${forkId}` +
@@ -1269,7 +1269,7 @@ class StateManager {
         relevantTimestamp: Timestamp,
         currentTimestamp: Timestamp
     ): void {
-        this.logger.info(`onTurn signal txHeight: ${nextBlockHeight}`, {
+        this.logger.info(`onTurn signal txHeight: #${nextBlockHeight}`, {
             currentTimestamp,
             nextToWrite,
             nextBlockHeight,
@@ -2836,11 +2836,7 @@ class StateManager {
             `participantTimeout(onSuccess) - fork ${block.forkId} - block ${block.height + 1} - participant ${nextToWrite}`
         );
         // step 13 - try execute from queue
-        this.timeoutManager.scheduleTask(
-            () => this.tryExecuteFromQueue(),
-            0,
-            "tryExecuteFromQueue"
-        );
+        // Universally scheduled on mutex release
     }
 
     public async shouldSignBlock(block: Block): Promise<boolean> {

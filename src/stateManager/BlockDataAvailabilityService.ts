@@ -12,7 +12,6 @@ import {
     Hash
 } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
-import { TimeoutManager } from "@/utils/TimeoutManager";
 
 export default class BlockDataAvailabilityService {
     // Key format: `${forkId}:${blockHeight}:${lowercaseBlockAuthor}`.
@@ -25,8 +24,6 @@ export default class BlockDataAvailabilityService {
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly eventHandler: EventHandler,
         private readonly timeConfig: TimeConfig,
-        private readonly timeoutManager: TimeoutManager,
-        private readonly runValidationQueue: () => void | Promise<void>,
         logger: Logger
     ) {
         this.logger = logger.child({
@@ -112,7 +109,6 @@ export default class BlockDataAvailabilityService {
                         validationKey
                     );
                     this.processedOnChainBlockValidationKeys.add(validationKey);
-                    this.scheduleValidationQueue(forkId, blockHeight);
                 });
 
             DetachedPromises.collect(validationPromise);
@@ -190,16 +186,5 @@ export default class BlockDataAvailabilityService {
             this.logger.error(`Error fetchBlockCommitmentCalldata:`, { error });
             return undefined;
         }
-    }
-
-    private scheduleValidationQueue(
-        forkId: ForkId,
-        blockHeight: BlockHeight
-    ): void {
-        this.timeoutManager.scheduleTask(
-            this.runValidationQueue,
-            0,
-            `tryExecuteFromQueue(tryFetchOnChainBlockAndScheduleValidation) - fork ${forkId} - block ${blockHeight}`
-        );
     }
 }
