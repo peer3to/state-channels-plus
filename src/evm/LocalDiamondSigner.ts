@@ -46,10 +46,9 @@ class LocalDiamondSigner implements Signer {
             ? Address.fromString(tx.from.toString())
             : undefined;
         try {
-            const result = await this.diamondExecutor.executeCall(
+            const result = await this.diamondExecutor.simulateCall(
                 tx.data as Bytes,
-                caller,
-                true
+                caller
             );
             return hexlify(result.returnValue);
         } catch (error) {
