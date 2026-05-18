@@ -339,7 +339,7 @@ function formatResultLine({
 async function main() {
     const cli = parseCliArgs(process.argv);
     const e2eDir = path.resolve("test/e2e");
-    const files = globSync(path.join(e2eDir, "*.ts"));
+    const files = globSync(path.join(e2eDir, "**/*.test.ts"));
     if (files.length === 0) {
         console.error("No E2E test files found in test/e2e");
         process.exit(1);
