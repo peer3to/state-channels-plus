@@ -52,12 +52,7 @@ import {
 } from "@test/harness/core/types";
 import { HarnessDebug } from "./HarnessDebug";
 import { LogLevel } from "@/utils/logging/Logger";
-import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 
-// peformance monitoring
-const h = monitorEventLoopDelay();
-h.enable();
-let last = performance.eventLoopUtilization();
 const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
 /**
@@ -144,37 +139,7 @@ export class PeerTestHarness<
                 attachErrorListener: false
             }
         );
-        setInterval(() => {
-            const elu = performance.eventLoopUtilization(last);
-            last = performance.eventLoopUtilization();
-            const dMean = h.mean / 1e6; // convert to ms
-            const d50 = h.percentile(50) / 1e6;
-            const d90 = h.percentile(90) / 1e6;
-            const d99 = h.percentile(99) / 1e6;
-            const dMax = h.max / 1e6;
-            const shouldWarn =
-                elu.utilization > 0.8 ||
-                dMean > 200 ||
-                d50 > 200 ||
-                d90 > 200 ||
-                d99 > 200 ||
-                dMax > 200;
-            const logFn = shouldWarn
-                ? this.logger.warn.bind(this.logger)
-                : this.logger.verbose.bind(this.logger);
-            logFn(
-                `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${elu.utilization}`,
-                {
-                    dMean,
-                    d50,
-                    d90,
-                    d99,
-                    dMax,
-                    utilization: elu.utilization
-                }
-            );
-            h.reset();
-        }, 1000);
+        this.logger.startPerformanceMonitoring();
         LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
