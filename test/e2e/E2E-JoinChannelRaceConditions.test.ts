@@ -202,7 +202,7 @@ describe("E2E: Join channel race conditions", function () {
             });
 
             const remainingPeerIndices = h
-                .getPeersForTransitionSyncBarrier()
+                .getPeersExcludingMaliciousAndLeavers()
                 .map((p) => p.index);
             await h.assert.dispute.committedWait({
                 peersIndices: remainingPeerIndices,

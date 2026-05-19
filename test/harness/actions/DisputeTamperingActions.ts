@@ -79,7 +79,7 @@ export class DisputeTampering {
         block.stateSnapshotHash = hash("0xDEADBEEF");
         firstBc.signedBlock.encodedBlock = Codec.encode(block, Type.Block);
     }
-    static junkSelfRemovalInconsistentOutputHash(dispute: DisputeStruct): void {
+    static flipSelfRemovalWithoutOutputRecompute(dispute: DisputeStruct): void {
         dispute.input.selfRemoval = true;
         dispute.input.timeout.participant = ZeroAddress;
         dispute.input.onChainSlashes = [];
@@ -449,8 +449,18 @@ export class DisputeTamperingActions {
         transformBlockStruct: (bs: BlockStruct) => BlockStruct
     ): Promise<void> {
         const proof = dispute.input.stateProof;
+        if (proof.milestones.length === 0) {
+            throw new Error(
+                "rewriteLastMilestoneSignedBlockInDispute: stateProof.milestones is empty"
+            );
+        }
         const lastMilestoneIndex = proof.milestones.length - 1;
         const lastM = proof.milestones[lastMilestoneIndex];
+        if (lastM.blockConfirmations.length === 0) {
+            throw new Error(
+                "rewriteLastMilestoneSignedBlockInDispute: last milestone has no blockConfirmations"
+            );
+        }
         await this.rewriteMilestoneSignedBlockAtIndex(
             dispute,
             lastMilestoneIndex,

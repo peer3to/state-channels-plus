@@ -32,7 +32,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         });
 
         const remainingPeerIndices = h
-            .getPeersForTransitionSyncBarrier()
+            .getPeersExcludingMaliciousAndLeavers()
             .map((p) => p.index);
 
         // One dispute commits on-chain.
@@ -55,7 +55,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
 
         await h.assert.sync.participantCount({ expectedCount: 2 });
 
-        for (const peer of h.getPeersForTransitionSyncBarrier()) {
+        for (const peer of h.getPeersExcludingMaliciousAndLeavers()) {
             const participants =
                 await peer.stateManager.diamondStateMachine.getParticipants();
             expect(
@@ -71,13 +71,13 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
             timeConfig: { evidenceTime: 6 }
         });
 
-        // Tamper helper flipSelfRemovalWithoutOutputRecompute (legacy name:
-        // junkSelfRemovalInconsistentOutputHash) flips selfRemoval=!selfRemoval
-        // and zeroes timeout/onChainSlashes, but does NOT recompute the
-        // outputSnapshotDataHash — so the on-chain validator finds the output
-        // hash disagrees with the (now inconsistent) selfRemoval flag.
+        // Tamper helper flipSelfRemovalWithoutOutputRecompute flips
+        // selfRemoval=!selfRemoval and zeroes timeout/onChainSlashes, but does
+        // NOT recompute the outputSnapshotDataHash — so the on-chain validator
+        // finds the output hash disagrees with the (now inconsistent)
+        // selfRemoval flag.
         await h.tamper.postTamperedDispute(1, (dispute) => {
-            DisputeTampering.junkSelfRemovalInconsistentOutputHash(dispute);
+            DisputeTampering.flipSelfRemovalWithoutOutputRecompute(dispute);
         });
 
         await h.event.waitForAllPeers("onDisputeKilled", 1, {

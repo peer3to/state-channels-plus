@@ -726,7 +726,10 @@ export class PeerTestHarness<
     }
 
     /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
-    getPeersForTransitionSyncBarrier(): TestPeer<TFactories, TStateMachine>[] {
+    getPeersExcludingMaliciousAndLeavers(): TestPeer<
+        TFactories,
+        TStateMachine
+    >[] {
         const exclude = new Set([
             ...(this.context.leftChannelPeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? [])

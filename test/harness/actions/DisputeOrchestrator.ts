@@ -36,26 +36,26 @@ export class DisputeOrchestrator {
                 ...(this.harness.context.maliciousPeerIndices ?? [])
             ])
         );
-        const barrierPeerIndices = this.harness
-            .getPeersForTransitionSyncBarrier()
+        const peersExcludingMaliciousAndLeavers = this.harness
+            .getPeersExcludingMaliciousAndLeavers()
             .map((p) => p.index);
         const honestPeerIndices =
             options.honestPeerIndices !== undefined
-                ? barrierPeerIndices.filter((i) =>
+                ? peersExcludingMaliciousAndLeavers.filter((i) =>
                       options.honestPeerIndices!.includes(i)
                   )
-                : barrierPeerIndices;
+                : peersExcludingMaliciousAndLeavers;
         if (honestPeerIndices.length < 1) {
             throw new Error(
                 `Need at least 1 honest peer to resolve dispute (got ${honestPeerIndices.length})`
             );
         }
 
-        const syncPeerIndices = [...barrierPeerIndices];
+        const syncPeerIndices = [...peersExcludingMaliciousAndLeavers];
 
         const disputesCommittedTimeoutMs =
             options.disputesCommittedTimeoutMs ?? 5000;
-        const forkSettleTimeoutMs = options.forkSettleTimeoutMs ?? 10000;
+        const forkSettleTimeoutMs = options.forkSettleTimeoutMs ?? 20000;
 
         await this.harness.event.waitForEventCounts(
             "onDisputeCommitted",

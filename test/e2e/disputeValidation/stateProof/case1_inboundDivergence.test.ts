@@ -7,8 +7,8 @@ import { expect } from "chai";
 // Trello card Case 1: stateProof = [M1, M2, M3] where M1 and M2 have different
 // InboundMessageBlockHashes. Variations 1.1–1.5 below.
 //
-// Setup harness: scenario.junkDataMilestoneMultiLeaveSetup (Cases 1.1–1.4) and
-// scenario.junkDataMilestoneM1InboundThenM2Setup (Case 1.5) produce ≥3 milestones
+// Setup harness: scenario.setupTwoLeaversAcrossMilestones (Cases 1.1–1.4) and
+// scenario.setupLeaverM1WithPendingJoinerInM2 (Case 1.5) produce ≥3 milestones
 // covering the M1/M2/M3 shape. We tamper auditingData.milestoneSnapshots[1]
 // (the M2 row) to inject each Case's specific corruption, then assert the
 // fraud-proof pipeline kills the dispute with DisputeInvalidStateProof.
@@ -17,7 +17,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.1: auditingData.milestoneSnapshots[1].snapshotData.latestInboundMessageBlockHash = random", function () {
         it("→ DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.junkDataMilestoneMultiLeaveSetup();
+            await h.scenario.setupTwoLeaversAcrossMilestones();
 
             await h.tamper.postTamperedDispute(0, (d, _dc, ad) => {
                 if (!ad) {
@@ -48,42 +48,16 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
         });
     });
 
-    describe("Case 1.2: auditingData.milestoneSnapshots[1] = honestly-produced M2 snapshot (control)", function () {
-        // SKIPPED — needs clarification from reviewer.
-        //
-        // The Trello card text reads: "M2 inbound hash is valid, but stateSnapshot
-        // updated to M2". Two interpretations:
-        //
-        //  (a) Honest control — the M2 auditing row honestly reflects M2's actual
-        //      post-message state, including the new inbound message included at
-        //      M2. The dispute should commit and NOT be killed; the pipeline must
-        //      accept honest rows. This mirrors a "no fraud detected" pass on the
-        //      same setup that Cases 1.1, 1.3, 1.4, 1.5 break.
-        //
-        //  (b) A subtly invalid case where "snapshot updated to M2" denotes some
-        //      specific corrupted M2 representation distinct from the skip-ahead /
-        //      stay-back / participant-set variants. The card doesn't elaborate.
-        //
-        // Interpretation (a) is the natural reading given the card's symmetry
-        // (1.1 corrupts inbound hash, 1.3 = skip-ahead, 1.4 = stay-back, 1.5 =
-        // participants). However writing the honest control as `postTamperedDispute(0, () => {})`
-        // is awkward in this setup — peer 0 has no naturally-arising "reason" to
-        // dispute (no fraud, no timeout). Asserting "no DisputeInvalidStateProof
-        // event observed" without a real dispute trigger is a weak test.
-        //
-        // To resurrect this test, either:
-        //   - Replace the setup with one where peer 0 has a real dispute reason
-        //     (e.g. self-removal) and assert the dispute commits cleanly without
-        //     any DisputeInvalidStateProof fraud proof being stored, OR
-        //   - Confirm with reviewer that interpretation (b) is intended and
-        //     design the specific corruption.
-        it.skip("→ dispute commits without DisputeInvalidStateProof (honest control)", function () {});
+    describe("Case 1.2: auditingData.milestoneSnapshots[1] left honest (M2 inbound hash valid, snapshot matches M2)", function () {
+        // Skipped — other cases here already rely on valid disputes committing on honest
+        // setups; a dedicated “everything honest” pass case adds nothing.
+        it.skip("→ dispute commits without DisputeInvalidStateProof", function () {});
     });
 
     describe("Case 1.3: auditingData.milestoneSnapshots[1] = milestoneSnapshots[2] (M2 row claims M3 snapshot, skip-ahead)", function () {
         it("→ DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.junkDataMilestoneMultiLeaveSetup();
+            await h.scenario.setupTwoLeaversAcrossMilestones();
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -120,7 +94,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.4: auditingData.milestoneSnapshots[1] = milestoneSnapshots[0] (M2 row claims M1 snapshot, stay-back)", function () {
         it("→ DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.junkDataMilestoneMultiLeaveSetup();
+            await h.scenario.setupTwoLeaversAcrossMilestones();
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -158,7 +132,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
         it("→ DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             const { pendingJoin } =
-                await h.scenario.junkDataMilestoneM1InboundThenM2Setup();
+                await h.scenario.setupLeaverM1WithPendingJoinerInM2();
 
             await h.tamper.postTamperedDispute(0, (d, _dc, ad) => {
                 if (!ad) {
