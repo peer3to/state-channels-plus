@@ -19,21 +19,24 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
             const h = TestSession.getHarness();
             await h.scenario.setupTwoLeaversAcrossMilestones();
 
-            await h.tamper.postTamperedDispute(0, (d, _dc, ad) => {
-                if (!ad) {
-                    throw new Error("expected calldata auditing data");
+            await h.tamper.postTamperedDispute(
+                0,
+                (dispute, _disputeConfirmation, auditingData) => {
+                    if (!auditingData) {
+                        throw new Error("expected calldata auditing data");
+                    }
+                    expect(
+                        dispute.input.stateProof.milestones.length,
+                        "need ≥2 milestones to target M2 snapshot"
+                    ).to.be.greaterThanOrEqual(2);
+                    expect(dispute.postedAuditingData).to.equal(true);
+                    auditingData.milestoneSnapshots[1]!.snapshotData.latestInboundMessageBlockHash =
+                        randomHash();
+                    dispute.input.disputeAuditingDataHash = hash(
+                        Codec.encode(auditingData, Type.DisputeAuditingData)
+                    );
                 }
-                expect(
-                    d.input.stateProof.milestones.length,
-                    "need ≥2 milestones to target M2 snapshot"
-                ).to.be.greaterThanOrEqual(2);
-                expect(d.postedAuditingData).to.equal(true);
-                ad.milestoneSnapshots[1]!.snapshotData.latestInboundMessageBlockHash =
-                    randomHash();
-                d.input.disputeAuditingDataHash = hash(
-                    Codec.encode(ad, Type.DisputeAuditingData)
-                );
-            });
+            );
 
             await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
                 mode: "atLeast",
@@ -134,28 +137,31 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
             const { pendingJoin } =
                 await h.scenario.setupLeaverM1WithPendingJoinerInM2();
 
-            await h.tamper.postTamperedDispute(0, (d, _dc, ad) => {
-                if (!ad) {
-                    throw new Error("expected calldata auditing data");
-                }
-                expect(
-                    d.input.stateProof.milestones.length,
-                    "need ≥2 milestones to target M2 snapshot"
-                ).to.be.greaterThanOrEqual(2);
-                expect(d.postedAuditingData).to.equal(true);
-                expect(
-                    ad.milestoneSnapshots.length,
-                    "auditing must align with milestone proofs"
-                ).to.be.greaterThanOrEqual(2);
-                const row = ad.milestoneSnapshots[1]!;
-                row.snapshotData.participants =
-                    row.snapshotData.participants.filter(
-                        (p) => !addressesEqual(p, pendingJoin)
+            await h.tamper.postTamperedDispute(
+                0,
+                (dispute, _disputeConfirmation, auditingData) => {
+                    if (!auditingData) {
+                        throw new Error("expected calldata auditing data");
+                    }
+                    expect(
+                        dispute.input.stateProof.milestones.length,
+                        "need ≥2 milestones to target M2 snapshot"
+                    ).to.be.greaterThanOrEqual(2);
+                    expect(dispute.postedAuditingData).to.equal(true);
+                    expect(
+                        auditingData.milestoneSnapshots.length,
+                        "auditing must align with milestone proofs"
+                    ).to.be.greaterThanOrEqual(2);
+                    const row = auditingData.milestoneSnapshots[1]!;
+                    row.snapshotData.participants =
+                        row.snapshotData.participants.filter(
+                            (p) => !addressesEqual(p, pendingJoin)
+                        );
+                    dispute.input.disputeAuditingDataHash = hash(
+                        Codec.encode(auditingData, Type.DisputeAuditingData)
                     );
-                d.input.disputeAuditingDataHash = hash(
-                    Codec.encode(ad, Type.DisputeAuditingData)
-                );
-            });
+                }
+            );
 
             await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
                 mode: "atLeast",

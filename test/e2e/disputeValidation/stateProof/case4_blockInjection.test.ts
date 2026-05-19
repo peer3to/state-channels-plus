@@ -7,19 +7,12 @@ import {
     hash as randomHash,
     blockStructWithTransactionHeader
 } from "@test/factory";
+import { expect } from "chai";
 
-// Trello card Case 4: randomly inject blocks with different channelId and/or forkId
-// into the stateProof. The contract validates header.channelId/forkId against
-// dispute.input.channelId/forkId for every block in signedBlocks AND inside every
-// milestone's blockConfirmations, and reverts (kills the dispute via
-// DisputeStateProofHeaderMismatch) on any mismatch.
-//
-// Note: channelId and forkId mismatches were unified into a single fraud proof
-// (`DisputeStateProofHeaderMismatch`) — see commit 66f20850. We still test both
-// axes (channelId vs forkId) and both proof carriers (signedBlocks vs milestone
-// blockConfirmations) because the contract iterates both fields independently.
+// Randomly inject blocks with incorrect channelId and/or forkId
+// into the stateProof.
 
-describe("E2E: dispute validation / stateProof / Case 4 (block injection with wrong channelId/forkId)", function () {
+describe("E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId", function () {
     describe("signedBlocks", function () {
         it("stateProof.signedBlocks[-1].header.channelId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
@@ -150,6 +143,101 @@ describe("E2E: dispute validation / stateProof / Case 4 (block injection with wr
             });
             await h.dispute.resolveDisputeWait({
                 syntheticOnChainParticipants: 1
+            });
+        });
+    });
+
+    describe("dispute.input fields (channelId, forkId)", function () {
+        it.skip("dispute.input.channelId = random → upload fails → ErrorCantParticipateInDispute", function () {
+            // Covered in test/e2e/disputeValidation/uploadRevert/channelId.test.ts
+            // (reverts at upload; does not reach stateProof header checks).
+        });
+
+        it.skip("dispute.input.forkId = random (stateProof still on real fork) → junk fork ignored", function () {
+            // Covered in test/e2e/disputeValidation/disputeInputFields/forkId.test.ts
+            // (input-only tamper; stateProof headers still on the real fork).
+        });
+
+        describe("uniform junk forkId (dispute.input + entire stateProof)", function () {
+            it("signedBlocks: uniform junk forkId → committed, no kill, honest peers stay on current fork", async function () {
+                const h = TestSession.getHarness();
+                await h.scenario.preDisputeSetupDisconnectedPeer();
+                const originalForkId = h.context.originalForkId!;
+                const junkForkId = randomHash();
+
+                h.tamper.stubConstructDispute(3, async (dispute) => {
+                    expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
+                    await h.tamper.rewriteUniformForkIdInDispute(
+                        dispute,
+                        junkForkId
+                    );
+                });
+
+                await h.byzantine.submitDoubleSignBlock(1);
+
+                await h.assert.dispute.initiatedWait({
+                    peersIndices: [3],
+                    initiatedWithAuditingData: false
+                });
+
+                await h.assert.dispute.committedWait({
+                    peersIndices: h.getHonestPeers().map((p) => p.index),
+                    expectedCount: 1,
+                    timeoutMs: 10000
+                });
+
+                await h.event.waitWhileEventCountsStayAtMost(
+                    "onDisputeKilled",
+                    h.getHonestPeers().map((p) => p.index),
+                    { durationMs: 6000, maxCount: 0 }
+                );
+
+                for (const p of h.getHonestPeers()) {
+                    expect(
+                        p.stateManager.forkId,
+                        `peer ${p.index} forkId changed`
+                    ).to.equal(originalForkId);
+                }
+            });
+
+            it("milestones: uniform junk forkId → committed, no kill, honest peers stay on current fork", async function () {
+                const h = TestSession.getHarness();
+                await h.scenario.preDisputeSetupCalldataPath();
+                const originalForkId = h.context.originalForkId!;
+                const junkForkId = randomHash();
+
+                h.tamper.stubConstructDispute(3, async (dispute) => {
+                    await h.tamper.rewriteUniformForkIdInDispute(
+                        dispute,
+                        junkForkId
+                    );
+                });
+
+                await h.byzantine.submitDoubleSignBlock(1);
+
+                await h.assert.dispute.initiatedWait({
+                    peersIndices: [3],
+                    initiatedWithAuditingData: true
+                });
+
+                await h.assert.dispute.committedWait({
+                    peersIndices: h.getHonestPeers().map((p) => p.index),
+                    expectedCount: 1,
+                    timeoutMs: 10000
+                });
+
+                await h.event.waitWhileEventCountsStayAtMost(
+                    "onDisputeKilled",
+                    h.getHonestPeers().map((p) => p.index),
+                    { durationMs: 6000, maxCount: 0 }
+                );
+
+                for (const p of h.getHonestPeers()) {
+                    expect(
+                        p.stateManager.forkId,
+                        `peer ${p.index} forkId changed`
+                    ).to.equal(originalForkId);
+                }
             });
         });
     });

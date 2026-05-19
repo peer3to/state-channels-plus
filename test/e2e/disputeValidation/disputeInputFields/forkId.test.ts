@@ -28,12 +28,12 @@ describe("E2E: dispute validation / disputeInputFields / forkId", function () {
             timeoutMs: 10000
         });
 
-        // 2) After enough time, no honest peer has issued an onDisputeKilled
-        //    (the junk-fork dispute is unkillable — see project_dispute_gaps Gap 1).
+        // 2) No onDisputeKilled — honest peers are on genesis; the dispute targets a
+        //    random forkId they do not track, so they never run kill/fraud-proof on it.
         await h.event.waitWhileEventCountsStayAtMost(
             "onDisputeKilled",
             [0, 1, 2],
-            { durationMs: 6000 }
+            { durationMs: 6000, maxCount: 0 }
         );
 
         // 3) After waiting, honest peers still hold the original (genesis) forkId —

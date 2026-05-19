@@ -1,3 +1,4 @@
+import { blockStructWithTransactionHeader } from "@test/factory";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import {
     Logger,
@@ -413,6 +414,32 @@ export class DisputeTamperingActions {
         );
 
         return auditingData;
+    }
+
+    /** Set `dispute.input.forkId` and rewrite every block in stateProof to the same forkId. */
+    async rewriteUniformForkIdInDispute(
+        dispute: DisputeStruct,
+        forkId: ForkId
+    ): Promise<void> {
+        dispute.input.forkId = forkId;
+        const proof = dispute.input.stateProof;
+        const setForkId = (bs: BlockStruct) =>
+            blockStructWithTransactionHeader(bs, { forkId });
+
+        for (let i = 0; i < proof.signedBlocks.length; i++) {
+            await this.rewriteSignedBlockAtIndex(dispute, i, setForkId);
+        }
+        for (let m = 0; m < proof.milestones.length; m++) {
+            const bcs = proof.milestones[m]!.blockConfirmations;
+            for (let j = 0; j < bcs.length; j++) {
+                await this.rewriteMilestoneSignedBlockAtIndex(
+                    dispute,
+                    m,
+                    j,
+                    setForkId
+                );
+            }
+        }
     }
 
     async rewriteLastSignedBlockInDispute(
