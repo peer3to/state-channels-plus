@@ -19,14 +19,15 @@ import type {
 describe("E2E: Malicious updateSnapshot", function () {
     it("colluded over-withdrawal → updateStateSnapshotSameFork reverts with CantWithdrawMoreThanDeposits", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 0);
+        await h.lifecycle.start(3, 1);
 
         const initialBalance = h.options.initialBalance!;
         const totalDeposits = BigInt(initialBalance) * BigInt(h.peers.length);
         const inflatedAmount = totalDeposits + 500n;
         const recipient = h.getPeer(0).address;
 
-        const restore = h.tamper.colludeOnFraudulentSnapshot({
+        await h.tamper.forgeSubmitterSnapshot({
+            peerIndex: 0,
             mutate: ({ originalSnapshotData, blockTimestamp }) => {
                 const previousBlockHash =
                     originalSnapshotData.latestOutboundMessageBlockHash as string;
@@ -66,10 +67,6 @@ describe("E2E: Malicious updateSnapshot", function () {
             }
         });
 
-        // One transition: every  peer's storage now holds the fraudulent snapshot + outbound block.
-        await h.transition.advanceState();
-        restore();
-
         let revertError: unknown;
         try {
             await h.transition.postSnapshotWait({ peerIndex: 0 });
@@ -87,7 +84,73 @@ describe("E2E: Malicious updateSnapshot", function () {
         );
     });
 
-    it("colluded inflated stateMachineStateHash → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant", async function () {
+    it("outbound block messages sum exceeds snapshot.totalWithdrawals → updateStateSnapshotSameFork reverts with ErrorOutboundMessageBlocksInvalid", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+
+        const initialBalance = h.options.initialBalance!;
+        const totalDeposits = BigInt(initialBalance) * BigInt(h.peers.length);
+        const inflatedAmount = totalDeposits + 500n;
+        const recipient = h.getPeer(0).address;
+
+        await h.tamper.forgeSubmitterSnapshot({
+            peerIndex: 0,
+            mutate: ({ originalSnapshotData, blockTimestamp }) => {
+                const previousBlockHash =
+                    originalSnapshotData.latestOutboundMessageBlockHash as string;
+                const newHeight =
+                    BigInt(
+                        originalSnapshotData.latestOutboundMessageBlockHeight
+                    ) + 1n;
+                const fraudulentBalance: BalanceStruct = {
+                    amount: inflatedAmount,
+                    data: "0x"
+                };
+                const fakeMessage = {
+                    messageType: MESSAGE_TYPE_EXIT,
+                    participant: recipient,
+                    balance: fraudulentBalance,
+                    data: encodeExitChannelData(recipient, fraudulentBalance)
+                };
+
+                const block: MessageBlockStruct = {
+                    previousBlockHash,
+                    blockHeight: newHeight,
+                    messages: [fakeMessage],
+                    totalBalance: fraudulentBalance,
+                    timestamp: BigInt(blockTimestamp)
+                };
+                const blockHash = hash(Codec.encode(block, Type.MessageBlock));
+                const newSnapshotData: SnapshotDataStruct = {
+                    ...originalSnapshotData,
+                    latestOutboundMessageBlockHash: blockHash,
+                    latestOutboundMessageBlockHeight: newHeight
+                };
+                return {
+                    snapshotData: newSnapshotData,
+                    outboundMessageBlock: block
+                };
+            }
+        });
+
+        let revertError: unknown;
+        try {
+            await h.transition.postSnapshotWait({ peerIndex: 0 });
+            expect.fail(
+                "expected updateStateSnapshotSameFork to revert with ErrorOutboundMessageBlocksInvalid"
+            );
+        } catch (e) {
+            revertError = e;
+        }
+
+        const customError = tryDecodeCustomError(revertError);
+        expect(customError, "expected decodable custom error").to.not.be.null;
+        expect(customError!.errorDescription.name).to.equal(
+            "ErrorOutboundMessageBlocksInvalid"
+        );
+    });
+
+    it("colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(3, 1, {
@@ -131,7 +194,9 @@ describe("E2E: Malicious updateSnapshot", function () {
         const inflatedEncodedState = encodeMathState(inflatedDecoded);
         const inflatedHash = hash(inflatedEncodedState);
 
-        const restore = h.tamper.colludeOnFraudulentSnapshot({
+        await h.transition.advanceState();
+        await h.tamper.forgeSubmitterSnapshot({
+            peerIndex: 0,
             mutate: ({ originalSnapshotData }) => {
                 const newSnapshotData: SnapshotDataStruct = {
                     ...originalSnapshotData,
@@ -143,12 +208,6 @@ describe("E2E: Malicious updateSnapshot", function () {
                 };
             }
         });
-
-        // One colluded transition. After this, every peer's storage:
-        //   - has a snapshot whose stateMachineStateHash = keccak(inflatedEncoded)
-        //   - has the inflated bytes stored under that hash
-        await h.transition.advanceState();
-        restore();
 
         // Push the colluded snapshot on-chain. await the receipt; call expected to succeed.
         await h.transition.postSnapshotWait({ peerIndex: 0 });
@@ -162,7 +221,15 @@ describe("E2E: Malicious updateSnapshot", function () {
             "on-chain snapshot must commit to the inflated stateMachineStateHash"
         );
 
-        // Spectator joins. Each peer serves the inflated bytes.
+        // The spectator fetches stateMachine bytes via p2p, keyed by on-chain
+        // hash; every peer must serve the inflated bytes for the spectator to
+        // reach the balance-invariant check.
+        for (const p of h.peers) {
+            p.stateManager.storage.stateMachineStates.storeStateMachineState(
+                inflatedEncodedState,
+                { hash: inflatedHash }
+            );
+        }
 
         // We add the spectator via the private `addSpectator` so we can install spies
         // before sync starts and observe the abort directly.

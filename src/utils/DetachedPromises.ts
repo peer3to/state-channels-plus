@@ -29,6 +29,10 @@ export class DetachedPromises {
         return DetachedPromises.pending.length;
     }
 
+    public static last(): Promise<any> | undefined {
+        return DetachedPromises.pending.at(-1)?.promise;
+    }
+
     public static getAndClear(): Array<{
         id: number;
         promise: Promise<any>;

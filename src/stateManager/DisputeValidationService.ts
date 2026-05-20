@@ -404,6 +404,9 @@ export default class DisputeValidationService {
                     }
                 }
             }
+            // Strict `<` mirrors DisputeFraudProofFacet._handleTimeoutTooEarly:
+            // contract slashes when timeoutTimestamp < previousTimestamp + waitTime;
+            // at equality the contract accepts the timeout, so we must too.
             if (
                 timeoutTimestamp <
                 previousTimestamp +

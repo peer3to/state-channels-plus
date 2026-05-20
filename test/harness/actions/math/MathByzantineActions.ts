@@ -2,7 +2,7 @@ import { ethers, ZeroHash } from "ethers";
 
 import type { Logger } from "@/utils";
 import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
-import type { ColludeOnFraudulentSnapshotMutate } from "@test/harness/actions/DisputeTamperingActions";
+import type { ForgeSubmitterSnapshotMutate } from "@test/harness/actions/DisputeTamperingActions";
 import type { TestPeer } from "@test/harness/core/types";
 import type MathPeerTestHarness from "@test/fixtures/MathPeerTestHarness";
 import { ForkId, Bytes, Hash } from "@/types/types";
@@ -599,22 +599,17 @@ export class MathByzantineActions extends ByzantineActions {
     }
 
     async postFraudulentSnapshot(options: {
-        peers?: number[];
-        mutate: ColludeOnFraudulentSnapshotMutate;
+        mutate: ForgeSubmitterSnapshotMutate;
         poster?: number;
     }): Promise<void> {
-        const peers = options.peers ?? this.harness.peers.map((p) => p.index);
-        const restore = this.harness.tamper.colludeOnFraudulentSnapshot({
-            peers,
+        const poster = options.poster ?? 0;
+        await this.harness.transition.advanceState();
+        await this.harness.tamper.forgeSubmitterSnapshot({
+            peerIndex: poster,
             mutate: options.mutate
         });
-        try {
-            await this.harness.transition.advanceState({ waitForPeers: peers });
-            await this.harness.transition.postSnapshotWait({
-                peerIndex: options.poster ?? peers[0]
-            });
-        } finally {
-            restore();
-        }
+        await this.harness.transition.postSnapshotWait({
+            peerIndex: poster
+        });
     }
 }

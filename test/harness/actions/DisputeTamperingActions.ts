@@ -1,5 +1,6 @@
 import { blockStructWithTransactionHeader } from "@test/factory";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import Clock from "@/Clock";
 import {
     Logger,
     SignatureUtils,
@@ -8,6 +9,12 @@ import {
     hash,
     addressesEqual
 } from "@/utils";
+import type { DisputeFraudStruct } from "@/utils/Codec";
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ForkId, Address } from "@/types/types";
 import StateSnapshot from "@/models/StateSnapshot";
 import Block from "@/models/Block";
@@ -26,14 +33,13 @@ import type {
     SnapshotDataStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
 export type DisputeTamper = (
     dispute: DisputeStruct,
     disputeConfirmation: DisputeConfirmationStruct,
     auditingData?: DisputeAuditingDataStruct
 ) => void | Promise<void>;
 
-export type ColludeOnFraudulentSnapshotMutate = (ctx: {
+export type ForgeSubmitterSnapshotMutate = (ctx: {
     peerIndex: number;
     originalSnapshotData: SnapshotDataStruct;
     originalOutboundMessageBlock?: MessageBlockStruct;
@@ -42,11 +48,6 @@ export type ColludeOnFraudulentSnapshotMutate = (ctx: {
     snapshotData: SnapshotDataStruct;
     outboundMessageBlock?: MessageBlockStruct;
     encodedStateMachineStateOverride?: string;
-};
-
-type CreateStateSnapshotResult = {
-    stateSnapshot: StateSnapshot;
-    outboundMessageBlock?: MessageBlockStruct;
 };
 
 export class DisputeTampering {
@@ -141,6 +142,34 @@ export class DisputeTamperingActions {
         return { dispute, disputeConfirmation };
     }
 
+    async submitForgedFraudProof(
+        disputerIndex: number,
+        proofType: DisputeFraudProofType,
+        buildProof: (ctx: {
+            dispute: DisputeStruct;
+            genesisSnapshot: StateSnapshot;
+        }) => DisputeFraudStruct
+    ): Promise<void> {
+        const peer = this.harness.getPeer(disputerIndex);
+        const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
+            .args[1] as DisputeStruct;
+        const genesisSnapshot =
+            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                this.harness.activeForkId!
+            )!;
+        const proofStruct = buildProof({ dispute, genesisSnapshot });
+        const forged: DisputeFraudProofStruct = {
+            proofType: toSolidityDisputeFraudProofType(proofType),
+            participant: dispute.input.disputer,
+            dispute,
+            encodedProof: Codec.encode(proofStruct, proofType)
+        };
+        const tx = await this.harness.channelManager
+            .connect(peer.signer)
+            .applyDisputeFraudProofs([forged]);
+        await tx.wait();
+    }
+
     stubConstructDispute(
         peerIndex: number,
         tamper: DisputeTamper,
@@ -200,6 +229,28 @@ export class DisputeTamperingActions {
         restore();
         this.restoreByPeerIndex.delete(peerIndex);
         this.logger.debug(`Restored constructDispute for peer ${peerIndex}`);
+    }
+
+    async plantFreshTimeoutForNextWriter(disputerIndex: number): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error(
+                "plantFreshTimeoutForNextWriter: no active fork ID — channel must be opened first"
+            );
+        }
+        const peer = this.harness.getPeer(disputerIndex);
+        const nextPeer = await this.harness.query.getNextPeerToWrite();
+        const latestBlock =
+            peer.stateManager.storage.blocks.getLatestBlock(forkId)!;
+        peer.stateManager.storage.timeout.storeTimeout(forkId, {
+            participant: nextPeer.address,
+            blockHeight: BigInt(Number(latestBlock.height) + 1),
+            minTimeStamp: BigInt(Clock.getTimeInSeconds()),
+            isForced: false,
+            previousBlockProducer: ZeroAddress,
+            previousBlockProducerPostedCalldata: false,
+            participantSignatureOnPreviousBlock: "0x"
+        });
     }
 
     corruptValidatorSnapshotForBalanceInvariant(
@@ -263,74 +314,102 @@ export class DisputeTamperingActions {
         );
     }
 
-    colludeOnFraudulentSnapshot(options: {
-        peers?: number[];
-        mutate: ColludeOnFraudulentSnapshotMutate;
-    }): () => void {
-        const peerIndices =
-            options.peers ?? this.harness.peers.map((p) => p.index);
+    /** Forges + re-signs the latest block to match a mutated snapshot */
+    async forgeSubmitterSnapshot(options: {
+        peerIndex: number;
+        mutate: ForgeSubmitterSnapshotMutate;
+    }): Promise<void> {
+        const { peerIndex } = options;
+        const peer = this.harness.getPeer(peerIndex);
+        const storage = peer.stateManager.storage;
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("forgeSubmitterSnapshot: no active fork ID");
+        }
 
-        const restorers = peerIndices.map((peerIndex) => {
-            const sm = this.harness.getPeer(peerIndex).stateManager as any;
-            const storage = sm.storage.stateMachineStates;
-            const colludedBytesByHash = new Map<string, string>();
+        const latestBlock = storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) {
+            throw new Error(
+                `forgeSubmitterSnapshot: no latest block for fork ${forkId}`
+            );
+        }
 
-            // 1) Substitute the snapshot every peer signs/recomputes for the
-            //    next block
-            const originalCreate = sm.createStateSnapshot.bind(sm);
-            sm.createStateSnapshot = async (
-                ...args: unknown[]
-            ): Promise<CreateStateSnapshotResult> => {
-                const result: CreateStateSnapshotResult = await originalCreate(
-                    ...args
-                );
-                const original = result.stateSnapshot.toStruct();
-                const mutated = options.mutate({
-                    peerIndex,
-                    originalSnapshotData: original.snapshotData,
-                    originalOutboundMessageBlock: result.outboundMessageBlock,
-                    blockTimestamp: Number(original.timestamp)
-                });
-                if (mutated.encodedStateMachineStateOverride !== undefined) {
-                    colludedBytesByHash.set(
-                        mutated.snapshotData.stateMachineStateHash as string,
-                        mutated.encodedStateMachineStateOverride
-                    );
-                }
-                return {
-                    stateSnapshot: StateSnapshot.from({
-                        ...original,
-                        snapshotData: mutated.snapshotData
-                    }),
-                    outboundMessageBlock:
-                        mutated.outboundMessageBlock ??
-                        result.outboundMessageBlock
-                };
-            };
+        const originalSnapshot = storage.stateSnapshots.getStateSnapshotByHash(
+            latestBlock.stateSnapshotHash
+        );
+        if (!originalSnapshot) {
+            throw new Error(
+                `forgeSubmitterSnapshot: no snapshot for hash ${latestBlock.stateSnapshotHash}`
+            );
+        }
+        const originalStruct = originalSnapshot.toStruct();
+        const originalSnapshotHash = originalSnapshot.hash;
+        const originalBlockHash = latestBlock.hash;
+        const originalOutboundHash = originalStruct.snapshotData
+            .latestOutboundMessageBlockHash as string;
+        const originalOutboundBlock =
+            storage.outboundMessages.getMessageBlock(originalOutboundHash);
 
-            // 2) Swap stored bytes for `encodedStateMachineStateOverride` so
-            //    spectators receive bytes that keccak to the inflated hash.
-            const originalStore = storage.storeStateMachineState.bind(storage);
-            storage.storeStateMachineState = (
-                encodedState: string,
-                opts?: { hash?: string }
-            ) => {
-                const colluded = opts?.hash
-                    ? colludedBytesByHash.get(opts.hash)
-                    : undefined;
-                return originalStore(colluded ?? encodedState, opts);
-            };
-
-            return () => {
-                sm.createStateSnapshot = originalCreate;
-                storage.storeStateMachineState = originalStore;
-            };
+        const mutated = options.mutate({
+            peerIndex,
+            originalSnapshotData: originalStruct.snapshotData,
+            originalOutboundMessageBlock: originalOutboundBlock,
+            blockTimestamp: Number(originalStruct.timestamp)
         });
 
-        this.logger.debug(
-            `Colluding on fraudulent snapshot for peers [${peerIndices.join(", ")}]`
+        const forgedSnapshot = StateSnapshot.from({
+            ...originalStruct,
+            snapshotData: mutated.snapshotData
+        });
+        const forgedSnapshotHash = forgedSnapshot.hash;
+
+        // The submitter signs a block whose stateSnapshotHash must match the
+        // forged snapshot; rebuild and re-sign with full quorum.
+        const forgedBlockStruct: BlockStruct = {
+            ...latestBlock.blockStruct,
+            stateSnapshotHash: forgedSnapshotHash
+        };
+        const author = this.peerForBlockAuthor(latestBlock.author);
+        const forgedBlock = await Block.fromBlockStruct(
+            forgedBlockStruct,
+            author.signer
         );
-        return () => restorers.forEach((r) => r());
+        const confirmationSigs = await Promise.all(
+            this.harness.peers
+                .filter((p) => p !== author)
+                .map((p) => forgedBlock.sign(p.signer))
+        );
+        forgedBlock.expandSignatures(confirmationSigs);
+
+        storage.blocks.deleteBlock(originalBlockHash);
+        storage.blocks.storeBlock(forgedBlock);
+        storage.stateSnapshots.storeStateSnapshot(forgedSnapshot, {
+            hash: forgedSnapshotHash
+        });
+
+        const overrodeStateMachineBytes =
+            mutated.encodedStateMachineStateOverride !== undefined;
+        const overrideStateMachineHash = mutated.snapshotData
+            .stateMachineStateHash as string;
+        if (overrodeStateMachineBytes) {
+            storage.stateMachineStates.storeStateMachineState(
+                mutated.encodedStateMachineStateOverride!,
+                { hash: overrideStateMachineHash }
+            );
+        }
+
+        const forgedOutboundHash = mutated.outboundMessageBlock
+            ? (mutated.snapshotData.latestOutboundMessageBlockHash as string)
+            : undefined;
+        if (mutated.outboundMessageBlock && forgedOutboundHash) {
+            storage.outboundMessages.store(mutated.outboundMessageBlock, {
+                hash: forgedOutboundHash
+            });
+        }
+
+        this.logger.debug(
+            `Forged submitter ${peerIndex} snapshot (oldHash=${originalSnapshotHash} newHash=${forgedSnapshotHash})`
+        );
     }
 
     async truncateStateProofToHeight(

@@ -18,7 +18,6 @@ describe("E2E: Join channel race conditions", function () {
             } = await h.scenario.syncSpectatorAndPrepareJoin();
 
             await h.byzantine.postFraudulentSnapshot({
-                peers: [0, 1, 2],
                 mutate: ({ originalSnapshotData }) => {
                     const fraudulentEncoded = encodeMathState({
                         number: 999_999n,

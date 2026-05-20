@@ -1,7 +1,8 @@
-import { ethers } from "ethers";
+import { expect } from "chai";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
-import Clock from "@/Clock";
+import { tryDecodeCustomError, addressesEqual } from "@/utils";
+import { TimeoutTooEarlyStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 describe("E2E: dispute validation / disputeInputFields / timeout", function () {
     it("dispute.input.timeout.blockHeight != stateProof.latest + 1 → TimeoutNotLinkedToLatestState", async function () {
@@ -65,76 +66,124 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         await h.dispute.resolveDisputeWait();
     });
 
-    it("dispute.input.timeout posted before wait period elapses → TimeoutTooEarly", async function () {
-        const h = TestSession.getHarness();
-        // 2 transitions → peer 2 is next to write but never does.
-        await h.scenario.preDisputeSetup();
+    describe("TimeoutTooEarly", function () {
+        it("dispute.input.timeout posted before wait period elapses → honest peers store TimeoutTooEarly", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            // peer 2 is the silent non-writer → exclude from fork-change barrier.
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
 
-        //  Store timeout for peer 0 so constructDispute can build a valid dispute struct.
-        const forkId = h.activeForkId!;
-        const nextPeer = await h.query.getNextPeerToWrite();
-        const latestBlock = h
-            .getPeer(0)
-            .stateManager.storage.blocks.getLatestBlock(forkId)!;
-        const blockHeight = BigInt(Number(latestBlock.height) + 1);
-        h.getPeer(0).stateManager.storage.timeout.storeTimeout(forkId, {
-            participant: nextPeer.address,
-            blockHeight,
-            minTimeStamp: BigInt(Clock.getTimeInSeconds()),
-            isForced: false,
-            previousBlockProducer: ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: false,
-            participantSignatureOnPreviousBlock: "0x"
+            await h.tamper.plantFreshTimeoutForNextWriter(0);
+            await h.tamper.postTamperedDispute(0, () => {});
+
+            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly,
+                timeoutMs: 10000
+            });
+            // No resolveDisputeWait: the killed too-early dispute leaves no
+            // surviving dispute in the window, so the fork doesn't change.
         });
 
-        // Post the dispute immediately
-        await h.tamper.postTamperedDispute(0, () => {});
+        it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            // Mark the non-writer up front so honest-peer barriers (committedWait,
+            // resolveDisputeWait) exclude peer 2.
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
 
-        await h.event.waitForPeers("onDisputeKilled", [1], 1, {
-            mode: "atLeast"
-        });
-        await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-            disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly,
-            timeoutMs: 10000
-        });
-        await h.dispute.resolveDisputeWait();
-    });
+            // Natural timeout: peer 2 never authors.
+            await h.assert.dispute.initiatedAndCommitedWait({
+                peersIndices: [0, 1],
+                timeoutMs: 15000
+            });
 
-    it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
-        const h = TestSession.getHarness();
-        // 2 transitions → peer 2 is next to write but never does
-
-        await h.scenario.preDisputeSetup();
-        // Mark the non-writer up front so honest-peer barriers (committedWait,
-        // resolveDisputeWait) exclude peer 2.
-        h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
-
-        // Natural timeout: peer 2 never authors.
-        await h.assert.dispute.initiatedAndCommitedWait({
-            peersIndices: [0, 1],
-            timeoutMs: 15000
-        });
-
-        // No honest peer should fire onDisputeKilled and none
-        // should store ANY dispute fraud proof
-        await h.event.waitWhileEventCountsStayAtMost(
-            "onDisputeKilled",
-            [0, 1],
-            { durationMs: 3000, maxCount: 0 }
-        );
-        for (const peer of [0, 1]) {
-            const proofs = h.query
-                .getPeerStorage(peer)
-                .disputeFraudProofs.getDisputeFraudProofs();
-            if (proofs.length > 0) {
-                const types = proofs.map((p) => p.proofType).join(", ");
-                throw new Error(
-                    `Peer ${peer} stored ${proofs.length} dispute fraud proof(s) on a valid timeout dispute (types: ${types}) — pipeline false positive`
-                );
+            // No honest peer should fire onDisputeKilled and none
+            // should store ANY dispute fraud proof.
+            await h.event.waitWhileEventCountsStayAtMost(
+                "onDisputeKilled",
+                [0, 1],
+                { durationMs: 3000, maxCount: 0 }
+            );
+            for (const peer of [0, 1]) {
+                const proofs = h.query
+                    .getPeerStorage(peer)
+                    .disputeFraudProofs.getDisputeFraudProofs();
+                if (proofs.length > 0) {
+                    const types = proofs.map((p) => p.proofType).join(", ");
+                    throw new Error(
+                        `Peer ${peer} stored ${proofs.length} dispute fraud proof(s) on a valid timeout dispute (types: ${types}) — pipeline false positive`
+                    );
+                }
             }
-        }
 
-        await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        });
+
+        it("too-early timeout dispute posted on-chain → applyDisputeFraudProofs slashes disputer", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            // peer 2 is the silent non-writer → exclude from fork-change barrier.
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
+
+            const disputerAddress = h.getPeer(0).address;
+            const slashedBefore =
+                await h.channelManager.getOnChainSlashedParticipants(
+                    h.channelId
+                );
+
+            await h.tamper.plantFreshTimeoutForNextWriter(0);
+            await h.tamper.postTamperedDispute(0, () => {});
+
+            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
+                mode: "atLeast"
+            });
+
+            const slashedAfter =
+                await h.channelManager.getOnChainSlashedParticipants(
+                    h.channelId
+                );
+            expect(slashedAfter.length).to.be.greaterThan(slashedBefore.length);
+            expect(
+                slashedAfter.some((a: string) =>
+                    addressesEqual(a, disputerAddress)
+                )
+            ).to.equal(true);
+        });
+
+        it("forged TimeoutTooEarly against a legitimate timeout dispute → applyDisputeFraudProofs reverts ErrorInvalidFraudProof", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            // peer 2 does not write, so it will timeout naturally.
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
+
+            await h.assert.dispute.initiatedAndCommitedWait({
+                peersIndices: [0, 1],
+                timeoutMs: 15000
+            });
+
+            try {
+                await h.tamper.submitForgedFraudProof(
+                    0,
+                    DisputeFraudProofType.TimeoutTooEarly,
+                    ({ genesisSnapshot }): TimeoutTooEarlyStruct => ({
+                        genesisStateSnapshotData: genesisSnapshot.snapshotData,
+                        previousBlockOnChainTimestamp: 0
+                    })
+                );
+                expect.fail("expected revert");
+            } catch (error: unknown) {
+                const custom = tryDecodeCustomError(error);
+                expect(
+                    custom!.errorDescription.name,
+                    "expected ErrorInvalidFraudProof"
+                ).to.equal("ErrorInvalidFraudProof");
+            }
+
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        });
     });
 
     it("dispute.input.timeout.blockHeight = fully-signed block height; disputer left off-chain → TimeoutThreshold", async function () {
