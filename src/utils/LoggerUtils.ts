@@ -34,6 +34,7 @@ import {
 import Clock from "@/Clock";
 import { LogLevel } from "./logging/Logger";
 import { TimeConfig } from "@/types";
+import type Rpc from "@/rpc/Rpc";
 export class LoggerUtils {
     private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
         "0x9ce4e6bf06971600d59f74bebec9880ea91b2f4bdbfcc850572617eeaad2edc8":
@@ -82,6 +83,61 @@ export class LoggerUtils {
     // ====================================
     // LOGGING PATTERNS
     // ====================================
+
+    static getRpcLogMetadata(rpc: Rpc): Rpc {
+        return {
+            service: rpc.service,
+            method: rpc.method,
+            params: rpc.params.map((param) => this.redactRpcParam(param))
+        };
+    }
+
+    private static redactRpcParam(param: any): any {
+        if (!param || typeof param !== "object") return param;
+
+        if ("encodedBlock" in param) {
+            return {
+                ...param,
+                encodedBlock: this.getEncodedBlockLogMetadata(
+                    param.encodedBlock
+                )
+            };
+        }
+
+        if (
+            "signedBlock" in param &&
+            param.signedBlock &&
+            typeof param.signedBlock === "object" &&
+            "encodedBlock" in param.signedBlock
+        ) {
+            return {
+                ...param,
+                signedBlock: {
+                    ...param.signedBlock,
+                    encodedBlock: this.getEncodedBlockLogMetadata(
+                        param.signedBlock.encodedBlock
+                    )
+                }
+            };
+        }
+
+        return param;
+    }
+
+    private static getEncodedBlockLogMetadata(encodedBlock: unknown) {
+        return {
+            redacted: true,
+            byteLength:
+                typeof encodedBlock === "string"
+                    ? this.getHexByteLength(encodedBlock)
+                    : undefined
+        };
+    }
+
+    private static getHexByteLength(value: string): number | undefined {
+        if (!/^0x[0-9a-fA-F]*$/.test(value)) return undefined;
+        return (value.length - 2) / 2;
+    }
 
     static logDisputeInitiated(
         logger: Logger,

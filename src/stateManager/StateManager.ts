@@ -2541,7 +2541,7 @@ class StateManager {
             );
         }
 
-        const latestLocalTimestamp = Clock.getTimeInSeconds();
+        const latestLocalTimestamp = Clock.getTimeInSeconds() + 1; // allow 1s of execution time
 
         if (latestLocalTimestamp > Number(tx.header.timestamp)) {
             this.logger.verbose(

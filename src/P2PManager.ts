@@ -16,6 +16,7 @@ import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import type { RpcServiceFactoryMap, RpcServiceInstances } from "./rpc/registry";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 type LocalRpcRoot<TFactories extends RpcServiceFactoryMap> = MainRpcService &
     RpcServiceInstances<TFactories>;
@@ -93,7 +94,10 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
                 peerAddress: transport.peerAddress
             };
         });
-        this.logger.debug("broadcastRpc", { rpc, debugConnections });
+        this.logger.debug("broadcastRpc", {
+            rpc: LoggerUtils.getRpcLogMetadata(rpc),
+            debugConnections
+        });
         for (const transport of this.openConnections) {
             transport.send(rpc);
         }
@@ -102,7 +106,7 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
         try {
             const rpc = deserializeRpc(serializedRpc);
             this.logger.verbose("onRpc", {
-                rpc,
+                rpc: rpc ? LoggerUtils.getRpcLogMetadata(rpc) : undefined,
                 transportType: TransportType[transport.transportType],
                 peerAddress: transport.peerAddress
             });
