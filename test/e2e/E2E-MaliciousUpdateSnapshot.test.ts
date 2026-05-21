@@ -26,50 +26,53 @@ describe("E2E: Malicious updateSnapshot", function () {
         const inflatedAmount = totalDeposits + 500n;
         const recipient = h.getPeer(0).address;
 
-        await h.tamper.forgeSubmitterSnapshot({
-            peerIndex: 0,
-            mutate: ({ originalSnapshotData, blockTimestamp }) => {
-                const previousBlockHash =
-                    originalSnapshotData.latestOutboundMessageBlockHash as string;
-                const newHeight =
-                    BigInt(
-                        originalSnapshotData.latestOutboundMessageBlockHeight
-                    ) + 1n;
-                const fraudulentBalance: BalanceStruct = {
-                    amount: inflatedAmount,
-                    data: "0x"
-                };
-                const fakeMessage = {
-                    messageType: MESSAGE_TYPE_EXIT,
-                    participant: recipient,
-                    balance: fraudulentBalance,
-                    data: encodeExitChannelData(recipient, fraudulentBalance)
-                };
-
-                const block: MessageBlockStruct = {
-                    previousBlockHash,
-                    blockHeight: newHeight,
-                    messages: [fakeMessage],
-                    totalBalance: fraudulentBalance,
-                    timestamp: BigInt(blockTimestamp)
-                };
-                const blockHash = hash(Codec.encode(block, Type.MessageBlock));
-                const newSnapshotData: SnapshotDataStruct = {
-                    ...originalSnapshotData,
-                    totalWithdrawals: fraudulentBalance,
-                    latestOutboundMessageBlockHash: blockHash,
-                    latestOutboundMessageBlockHeight: newHeight
-                };
-                return {
-                    snapshotData: newSnapshotData,
-                    outboundMessageBlock: block
-                };
-            }
-        });
-
         let revertError: unknown;
         try {
-            await h.transition.postSnapshotWait({ peerIndex: 0 });
+            await h.byzantine.postFraudulentSnapshot({
+                poster: 0,
+                mutate: ({ originalSnapshotData, blockTimestamp }) => {
+                    const previousBlockHash =
+                        originalSnapshotData.latestOutboundMessageBlockHash as string;
+                    const newHeight =
+                        BigInt(
+                            originalSnapshotData.latestOutboundMessageBlockHeight
+                        ) + 1n;
+                    const fraudulentBalance: BalanceStruct = {
+                        amount: inflatedAmount,
+                        data: "0x"
+                    };
+                    const fakeMessage = {
+                        messageType: MESSAGE_TYPE_EXIT,
+                        participant: recipient,
+                        balance: fraudulentBalance,
+                        data: encodeExitChannelData(
+                            recipient,
+                            fraudulentBalance
+                        )
+                    };
+
+                    const block: MessageBlockStruct = {
+                        previousBlockHash,
+                        blockHeight: newHeight,
+                        messages: [fakeMessage],
+                        totalBalance: fraudulentBalance,
+                        timestamp: BigInt(blockTimestamp)
+                    };
+                    const blockHash = hash(
+                        Codec.encode(block, Type.MessageBlock)
+                    );
+                    const newSnapshotData: SnapshotDataStruct = {
+                        ...originalSnapshotData,
+                        totalWithdrawals: fraudulentBalance,
+                        latestOutboundMessageBlockHash: blockHash,
+                        latestOutboundMessageBlockHeight: newHeight
+                    };
+                    return {
+                        snapshotData: newSnapshotData,
+                        outboundMessageBlock: block
+                    };
+                }
+            });
             expect.fail(
                 "expected updateStateSnapshotSameFork to revert with CantWithdrawMoreThanDeposits"
             );
@@ -93,49 +96,52 @@ describe("E2E: Malicious updateSnapshot", function () {
         const inflatedAmount = totalDeposits + 500n;
         const recipient = h.getPeer(0).address;
 
-        await h.tamper.forgeSubmitterSnapshot({
-            peerIndex: 0,
-            mutate: ({ originalSnapshotData, blockTimestamp }) => {
-                const previousBlockHash =
-                    originalSnapshotData.latestOutboundMessageBlockHash as string;
-                const newHeight =
-                    BigInt(
-                        originalSnapshotData.latestOutboundMessageBlockHeight
-                    ) + 1n;
-                const fraudulentBalance: BalanceStruct = {
-                    amount: inflatedAmount,
-                    data: "0x"
-                };
-                const fakeMessage = {
-                    messageType: MESSAGE_TYPE_EXIT,
-                    participant: recipient,
-                    balance: fraudulentBalance,
-                    data: encodeExitChannelData(recipient, fraudulentBalance)
-                };
-
-                const block: MessageBlockStruct = {
-                    previousBlockHash,
-                    blockHeight: newHeight,
-                    messages: [fakeMessage],
-                    totalBalance: fraudulentBalance,
-                    timestamp: BigInt(blockTimestamp)
-                };
-                const blockHash = hash(Codec.encode(block, Type.MessageBlock));
-                const newSnapshotData: SnapshotDataStruct = {
-                    ...originalSnapshotData,
-                    latestOutboundMessageBlockHash: blockHash,
-                    latestOutboundMessageBlockHeight: newHeight
-                };
-                return {
-                    snapshotData: newSnapshotData,
-                    outboundMessageBlock: block
-                };
-            }
-        });
-
         let revertError: unknown;
         try {
-            await h.transition.postSnapshotWait({ peerIndex: 0 });
+            await h.byzantine.postFraudulentSnapshot({
+                poster: 0,
+                mutate: ({ originalSnapshotData, blockTimestamp }) => {
+                    const previousBlockHash =
+                        originalSnapshotData.latestOutboundMessageBlockHash as string;
+                    const newHeight =
+                        BigInt(
+                            originalSnapshotData.latestOutboundMessageBlockHeight
+                        ) + 1n;
+                    const fraudulentBalance: BalanceStruct = {
+                        amount: inflatedAmount,
+                        data: "0x"
+                    };
+                    const fakeMessage = {
+                        messageType: MESSAGE_TYPE_EXIT,
+                        participant: recipient,
+                        balance: fraudulentBalance,
+                        data: encodeExitChannelData(
+                            recipient,
+                            fraudulentBalance
+                        )
+                    };
+
+                    const block: MessageBlockStruct = {
+                        previousBlockHash,
+                        blockHeight: newHeight,
+                        messages: [fakeMessage],
+                        totalBalance: fraudulentBalance,
+                        timestamp: BigInt(blockTimestamp)
+                    };
+                    const blockHash = hash(
+                        Codec.encode(block, Type.MessageBlock)
+                    );
+                    const newSnapshotData: SnapshotDataStruct = {
+                        ...originalSnapshotData,
+                        latestOutboundMessageBlockHash: blockHash,
+                        latestOutboundMessageBlockHeight: newHeight
+                    };
+                    return {
+                        snapshotData: newSnapshotData,
+                        outboundMessageBlock: block
+                    };
+                }
+            });
             expect.fail(
                 "expected updateStateSnapshotSameFork to revert with ErrorOutboundMessageBlocksInvalid"
             );
@@ -195,8 +201,8 @@ describe("E2E: Malicious updateSnapshot", function () {
         const inflatedHash = hash(inflatedEncodedState);
 
         await h.transition.advanceState();
-        await h.tamper.forgeSubmitterSnapshot({
-            peerIndex: 0,
+        await h.byzantine.postFraudulentSnapshot({
+            poster: 0,
             mutate: ({ originalSnapshotData }) => {
                 const newSnapshotData: SnapshotDataStruct = {
                     ...originalSnapshotData,
@@ -208,9 +214,6 @@ describe("E2E: Malicious updateSnapshot", function () {
                 };
             }
         });
-
-        // Push the colluded snapshot on-chain. await the receipt; call expected to succeed.
-        await h.transition.postSnapshotWait({ peerIndex: 0 });
 
         // Sanity: the on-chain snapshot now has the colluded hash.
         const onChainSnapshot = await h.channelManager.getStateSnapshot(

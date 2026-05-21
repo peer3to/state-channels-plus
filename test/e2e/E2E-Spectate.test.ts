@@ -1,4 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
+import { tryDecodeCustomError } from "@/utils";
 import { expect } from "chai";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ATransport } from "@/transport";
@@ -332,15 +333,17 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Concurrent promotion", function () {
-        it("parallel joinChannel + forceInboundJoin", async function () {
+        const concurrentTimeConfig = {
+            p2pTime: 2,
+            agreementTime: 4,
+            chainFallbackTime: 4,
+            evidenceTime: 6
+        };
+
+        it("joinChannel before forceInboundJoin → both joiners participate", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2, {
-                timeConfig: {
-                    p2pTime: 2,
-                    agreementTime: 4,
-                    chainFallbackTime: 4,
-                    evidenceTime: 6
-                }
+                timeConfig: concurrentTimeConfig
             });
 
             const joinerA = await h.join.addSpectatorWait();
@@ -353,7 +356,7 @@ describe("E2E: Spectate Service", function () {
                     .slice(0, 3)
                     .map((p) => p.signer)
             });
-            await h.join.forceInboundJoinDetached({
+            await h.join.forceInboundJoinObserveDetached({
                 participant: joinerB.address
             });
 
@@ -382,6 +385,50 @@ describe("E2E: Spectate Service", function () {
                     joinerB.address.toLowerCase()
                 );
                 expect(localParticipants.length).to.equal(5);
+            }
+        });
+
+        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelInvalidSignature (pending participant did not sign confirmation)", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2, {
+                timeConfig: concurrentTimeConfig
+            });
+
+            const joinerA = await h.join.addSpectatorWait();
+            const joinerB = await h.join.addSpectatorWait();
+            await h.assert.sync.peersInSyncWait();
+
+            // joinerA pre-signs its confirmation while pending is empty.
+            const confirmation = await h.join.buildJoinChannelConfirmation({
+                joiner: joinerA,
+                channelId: h.channelId,
+                existingParticipantSigners: h.peers
+                    .slice(0, 3)
+                    .map((p) => p.signer)
+            });
+            const expectedSnapshotHash = await h.query.getOnChainSnapshotHash();
+
+            // forceInboundJoin lands first → joinerB enters the pending set →
+            // join threshold becomes {p0, p1, p2, joinerB}; joinerA's pre-signed
+            // confirmation has only 3 of 4 required signatures.
+            await h.join.forceInboundJoinObserveDetached({
+                participant: joinerB.address
+            });
+
+            try {
+                await joinerA.p2pInstance.p2pSigner.joinChannel(
+                    confirmation,
+                    expectedSnapshotHash
+                );
+                expect.fail(
+                    "expected joinChannel to revert: pending set changed between confirmation build and submission"
+                );
+            } catch (e) {
+                const customError = tryDecodeCustomError(e);
+                expect(customError).to.not.be.null;
+                expect(customError!.errorDescription.name).to.equal(
+                    "ErrorJoinChannelInvalidSignature"
+                );
             }
         });
     });

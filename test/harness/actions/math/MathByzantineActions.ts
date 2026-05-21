@@ -603,13 +603,37 @@ export class MathByzantineActions extends ByzantineActions {
         poster?: number;
     }): Promise<void> {
         const poster = options.poster ?? 0;
-        await this.harness.transition.advanceState();
-        await this.harness.tamper.forgeSubmitterSnapshot({
-            peerIndex: poster,
-            mutate: options.mutate
-        });
-        await this.harness.transition.postSnapshotWait({
-            peerIndex: poster
-        });
+
+        const forgedSnapshot = await this.harness.tamper.buildForgedSnapshot(
+            poster,
+            options.mutate
+        );
+
+        const outboundBlocks: MessageBlockStruct[] = forgedSnapshot.mutated
+            .outboundMessageBlock
+            ? [forgedSnapshot.mutated.outboundMessageBlock]
+            : [];
+
+        const submitter = this.harness.getPeer(poster);
+        const channelManager = this.harness.channelManager.connect(
+            submitter.signer
+        );
+        const callData = channelManager.interface.encodeFunctionData(
+            "updateStateSnapshotSameFork",
+            [
+                this.harness.channelId,
+                [
+                    {
+                        blockConfirmations: [
+                            forgedSnapshot.forgedBlock.blockConfirmationStruct
+                        ]
+                    }
+                ],
+                [forgedSnapshot.forgedSnapshot.toStruct()],
+                outboundBlocks
+            ]
+        );
+        const tx = await channelManager.multicall([callData]);
+        await tx.wait();
     }
 }

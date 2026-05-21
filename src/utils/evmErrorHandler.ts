@@ -11,7 +11,7 @@ export type RaceConditionErrorName =
     | "RaceConditionSnapshotForkMismatch"
     | "RaceConditionBlockHeightTooOld"
     | "RaceConditionJoinChannelExpired"
-    | "RaceConditionJoinChannelStaleSnapshot"
+    | "RaceConditionJoinChannelSnapshotMismatch"
     | "RaceConditionPendingInboundNotConsumed"
     | "RaceConditionJoinChannelForkDisputed"
     | "RaceConditionDisputeEvidencePeriodExpired"

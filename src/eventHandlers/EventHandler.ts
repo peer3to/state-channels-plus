@@ -675,13 +675,13 @@ export class EventHandler {
                                 );
                             },
                             ErrorDisputeChallengePeriodExpired: () => {
-                                this.logger.info(
+                                this.logger.error(
                                     "challengeDisputeReduction: challenge period expired",
                                     { forkId }
                                 );
                             },
                             ErrorDisputeCommitmentNotAvailable: () => {
-                                this.logger.info(
+                                this.logger.error(
                                     "challengeDisputeReduction: dispute commitment no longer available",
                                     { forkId }
                                 );
