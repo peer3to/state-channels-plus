@@ -22,6 +22,10 @@ type P2pEventHooks = {
     onCloseChannel?: (channelId: ChannelId) => void;
     onDisputeAcknowledgment?: (address: Address) => void;
     onBlockFinalized?: () => void;
+    onBlockConfirmationProcessed?: (
+        blockHash: Hash,
+        keepConnection: boolean
+    ) => void;
 };
 
 export default P2pEventHooks;

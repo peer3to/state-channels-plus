@@ -244,6 +244,11 @@ describe("E2E: Spectate Service", function () {
                 mutexLocked = false;
 
                 await Promise.allSettled([persistPromise, queuedBlockPromise]);
+                await h.event.waitForBlockConfirmationProcessed({
+                    peerIndex: spectator.index,
+                    blockHash: blockToQueue!.hash,
+                    keepConnection: true
+                });
                 expect(didValidateQueuedBlock).to.equal(true);
                 expect(didValidateQueuedBlockAgainstCorruptedState).to.equal(
                     false

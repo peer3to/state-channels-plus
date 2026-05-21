@@ -5,7 +5,7 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
-import { difference, isSubset, Logger } from "@/utils";
+import { Logger } from "@/utils";
 import { BlockValidationResult, OnChainBlockStatus, TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
@@ -77,20 +77,6 @@ export default class ValidationService {
             block,
             block.channelId
         );
-
-        // Check duplicate blocks
-        const duplicateResult = await this.checkDuplicateBlock(
-            block,
-            participants,
-            strategy
-        );
-
-        if (duplicateResult !== BlockValidationResult.SUCCESS) {
-            // this.logger.warn("validateBlockConfirmation - duplicate block", {
-            //     block
-            // });
-            return duplicateResult;
-        }
 
         // Author is a participant
         if (!participants.has(block.author)) {
@@ -261,89 +247,6 @@ export default class ValidationService {
         return prevBlock.hash === block.previousBlockHash;
     }
 
-    private async checkDuplicateBlock(
-        block: Block,
-        participants: Set<Address>,
-        strategy: AValidationStrategy
-    ): Promise<BlockValidationResult> {
-        // 1. Check if block is in block storage
-        const existingBlock = this.storage.blocks.getBlock(block.hash);
-        if (existingBlock !== undefined) {
-            const existingSignatures = existingBlock.confirmationSignatures;
-            const incomingSignatures = block.confirmationSignatures;
-            const newSignatures = difference(
-                incomingSignatures,
-                existingSignatures
-            );
-
-            if (block.onChainTimestamp) {
-                // Update the existing block's onChainTimestamp
-                this.storage.blocks.setOnChainTimestamp(
-                    block.hash,
-                    block.onChainTimestamp
-                );
-            }
-
-            // no new signatures
-            if (newSignatures.size === 0) {
-                return await strategy.noNewSignaturesOnExistingBlock(block);
-            }
-
-            // Validate new signatures are from participants
-            const newSignerAddresses: Set<Address> = new Set(
-                Array.from(newSignatures).map((sig) =>
-                    block.signatureToAddress(sig)
-                )
-            );
-
-            const areNewSignersParticipants = isSubset(
-                newSignerAddresses,
-                participants
-            );
-
-            if (!areNewSignersParticipants) {
-                this.logger.warn(
-                    "BlockConfirmation - checkDuplicateBlock - not all new signers are participants",
-                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
-                );
-                return await strategy.notAllSingersAreParticipants(block);
-            }
-
-            const mergeResult =
-                await strategy.goodNewSignaturesOnExistingBlock(block);
-            const persisted = this.storage.blocks.getBlock(block.hash);
-            if (persisted) {
-                this.stateManager.maybeNotifyBlockFinalized(persisted);
-            }
-            return mergeResult;
-        }
-
-        // 2. Check if block is in queue | skip if dispute strategy
-        if (
-            this.storage.queues.isBlockQueued(block, {
-                hash: block.hash
-            }) &&
-            !(strategy instanceof DisputeValidationStrategy)
-        ) {
-            const signerAddresses = block.confirmationSignerAddresses;
-            // TODO - This doesn't take into account the participant UNION, since the posterior state is not known, so a race condition is possible where the new participant signs, but is not accounted for
-            const areAllParticipants = isSubset(signerAddresses, participants);
-            if (!areAllParticipants) {
-                this.logger.warn(
-                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants",
-                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
-                );
-                return await strategy.notAllSingersAreParticipants(block);
-            }
-
-            // Store in queue (handles signature merging automatically)
-            this.storage.queues.queueBlock(block);
-            return BlockValidationResult.DUPLICATE;
-        }
-
-        return BlockValidationResult.SUCCESS;
-    }
-
     private async checkConflictingBlock(
         block: Block,
         strategy: AValidationStrategy
@@ -390,7 +293,7 @@ export default class ValidationService {
         return await strategy.conflictingButNotLinkedBlockDetected(block);
     }
 
-    private async isDisputedFork(
+    public async isDisputedFork(
         forkId: ForkId,
         channelId: ChannelId
     ): Promise<boolean> {
@@ -535,7 +438,10 @@ export default class ValidationService {
                     scheduleStatus
                 )
             ) {
-                this.storage.queues.queueBlock(block);
+                await this.stateManager.ingestBlockConfirmation(
+                    block.blockConfirmationStruct,
+                    { onChainTimestamp: block.onChainTimestamp }
+                );
                 this.logger.info(
                     "validateTimeLogic - queued block while waiting for previous on-chain block validation",
                     {
@@ -688,7 +594,10 @@ export default class ValidationService {
                     scheduleStatus
                 )
             ) {
-                this.storage.queues.queueBlock(block);
+                await this.stateManager.ingestBlockConfirmation(
+                    block.blockConfirmationStruct,
+                    { onChainTimestamp: block.onChainTimestamp }
+                );
                 this.logger.info(
                     "isPostedOnChainTooLate - queued block while waiting for current on-chain block validation",
                     {

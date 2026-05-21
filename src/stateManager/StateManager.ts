@@ -56,11 +56,13 @@ import {
     Type,
     hash,
     difference,
+    isSubset,
     Logger,
     DetachedPromises,
-    createEthersResultProxy
+    createEthersResultProxy,
+    getChecksumAddress
 } from "@/utils";
-import type { MutexLockOptions } from "@/utils";
+import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
 // Types
 import { BlockValidationResult, Status, TimeConfig } from "@/types";
 import {
@@ -86,6 +88,9 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
+import BlockQueueManager, {
+    IngestBlockConfirmationOptions
+} from "./BlockQueueManager";
 
 const NULL = ZeroHash;
 
@@ -122,6 +127,7 @@ class StateManager {
     timeoutManager: TimeoutManager;
     logger: Logger;
     private readonly blockDataAvailabilityService: BlockDataAvailabilityService;
+    blockQueueManager: BlockQueueManager;
 
     constructor(
         signer: ethers.Signer,
@@ -186,6 +192,12 @@ class StateManager {
             this.self,
             signer,
             rpcServiceFactories
+        );
+        this.blockQueueManager = new BlockQueueManager(
+            this.self,
+            this.timeConfig,
+            this.timeoutManager,
+            this.logger
         );
         this.fraudProofService = new FraudProofService(
             this.storage,
@@ -253,6 +265,16 @@ class StateManager {
                 error: error instanceof Error ? error.message : String(error)
             });
         }
+    }
+
+    public notifyBlockConfirmationProcessed(
+        blockHash: Hash,
+        keepConnection: boolean
+    ): void {
+        this.p2pEventHooks.onBlockConfirmationProcessed?.(
+            blockHash,
+            keepConnection
+        );
     }
     public setStatus(status: Status) {
         const oldStatus = this.status;
@@ -476,7 +498,20 @@ class StateManager {
         const genesisTimestamp =
             Number(onChainKillTimestamp) + this.timeConfig.evidenceTime;
         // Step 4: Perform reduction
-        await this.performReduction(forkId, genesisTimestamp);
+        try {
+            await this.performReduction(forkId, genesisTimestamp);
+        } catch (error) {
+            if (
+                error instanceof Error &&
+                error.message.startsWith("Missing Dispute in storage")
+            ) {
+                this.logger.error(
+                    `Skipping reduction for fork ${forkId} because local dispute data is unavailable`,
+                    { error: error.message }
+                );
+            }
+            throw error;
+        }
     }
 
     private async performReduction(
@@ -762,20 +797,7 @@ class StateManager {
     }
 
     private async tryExecuteFromQueue() {
-        const nextBlockHeight = this.storage.blocks.getNextBlockHeight(
-            this.forkId
-        );
-        const blockConfirmations = this.storage.queues.tryDequeue(
-            this.forkId,
-            nextBlockHeight
-        );
-
-        for (const blockConfirmation of blockConfirmations) {
-            const shouldDisconnect = await this.onBlockConfirmation(
-                blockConfirmation.blockConfirmationStruct
-            );
-            if (shouldDisconnect) break;
-        }
+        await this.blockQueueManager.tryExecuteFromQueue(this.forkId);
     }
 
     public async setLatestState(
@@ -796,13 +818,14 @@ class StateManager {
 
     public async withMutex<T>(
         fn: () => T | Promise<T>,
-        options?: MutexLockOptions
+        options?: MutexLockOptions,
+        unlockOptions?: MutexUnlockOptions
     ): Promise<T> {
         await this.mutex.lock(options);
         try {
             return await fn();
         } finally {
-            this.mutex.unlock();
+            this.mutex.unlock(unlockOptions);
         }
     }
 
@@ -919,12 +942,112 @@ class StateManager {
         );
     }
 
-    // Passes the signedBlock through a verification pipeline and returns shouldDisconnect flag
-    public onSignedBlock(signedBlock: SignedBlockStruct): Promise<boolean> {
-        return this.onBlockConfirmation({
-            signedBlock,
-            signatures: []
-        });
+    public ingestBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct,
+        options?: IngestBlockConfirmationOptions
+    ): Promise<boolean> {
+        return this.blockQueueManager.ingestBlockConfirmation(
+            blockConfirmation,
+            options
+        );
+    }
+
+    public async isBlockConfirmationAuthentic(
+        blockConfirmation: BlockConfirmationStruct
+    ): Promise<boolean> {
+        return this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
+            blockConfirmation.signedBlock
+        );
+    }
+
+    public async isForkDisputed(
+        forkId: ForkId,
+        channelId: ChannelId
+    ): Promise<boolean> {
+        return this.validationService.isDisputedFork(forkId, channelId);
+    }
+
+    public getActiveValidationStrategy(): AValidationStrategy {
+        return this.getStrategyByStatus(this.status);
+    }
+
+    public async tryMergeStoredBlockConfirmation(
+        block: Block,
+        strategy: AValidationStrategy,
+        senderAddress?: Address
+    ): Promise<BlockValidationResult | undefined> {
+        const existingBlock = this.storage.blocks.getBlock(block.hash);
+        if (!existingBlock) return undefined;
+
+        if (block.onChainTimestamp !== undefined) {
+            this.storage.blocks.setOnChainTimestamp(
+                block.hash,
+                block.onChainTimestamp
+            );
+        }
+
+        const existingSignatures = existingBlock.confirmationSignatures;
+        const incomingSignatures = block.confirmationSignatures;
+        const newSignatures = difference(
+            incomingSignatures,
+            existingSignatures
+        );
+
+        if (newSignatures.size === 0) {
+            return strategy.noNewSignaturesOnExistingBlock(block);
+        }
+
+        const participants = new Set<Address>(
+            this.storage
+                .getParticipantsUnion(
+                    existingBlock.coordinates,
+                    existingBlock.stateSnapshotHash
+                )
+                .map((participant) => getChecksumAddress(participant))
+        );
+
+        const newSignerAddresses = new Set<Address>(
+            Array.from(newSignatures).map((signature) =>
+                getChecksumAddress(block.signatureToAddress(signature))
+            )
+        );
+
+        if (!isSubset(newSignerAddresses, participants)) {
+            this.logger.warn(
+                "maybeMergeStoredBlockConfirmation - not all new signers are participants",
+                {
+                    strategy: strategy.name,
+                    senderAddress,
+                    block: LoggerUtils.getBlockMetadata(block, this.storage),
+                    newSignerAddresses: Array.from(newSignerAddresses),
+                    participants: Array.from(participants)
+                }
+            );
+            return strategy.notAllSingersAreParticipants(block);
+        }
+
+        this.storage.blocks.storeBlock(block);
+        const persisted = this.storage.blocks.getBlock(block.hash);
+        if (persisted) {
+            this.maybeNotifyBlockFinalized(persisted);
+            if (this.status === Status.PENDING_PARTICIPANT) {
+                const participants =
+                    await this.diamondStateMachine.getParticipants();
+                await this.maybeInitiateForceJoinDispute(
+                    persisted,
+                    participants
+                );
+            }
+        }
+
+        if (!(strategy instanceof DisputeValidationStrategy)) {
+            this.p2pManager.remoteRpc.stateTransitionService
+                .onBlockConfirmation(block.blockConfirmationStruct)
+                .broadcast();
+            return BlockValidationResult.BROADCAST;
+        }
+
+        return BlockValidationResult.DUPLICATE;
     }
 
     // Passes the block confirmation through a verification pipeline
@@ -938,27 +1061,37 @@ class StateManager {
             senderAddress?: string;
         }
     ): Promise<boolean> {
-        const strategy =
-            options?.validationStrategy ||
-            this.getStrategyByStatus(this.status);
+        let strategy: AValidationStrategy | undefined;
+        let block: Block | undefined;
+        let keepConnection: boolean | undefined;
 
         try {
-            await this.mutex.lock({
-                taskName: "onBlockConfirmation",
-                logMeta: {
-                    ...LoggerUtils.getBlockConfirmationStructMetadata(
-                        blockConfirmation
-                    )
-                }
-            });
+            await this.mutex.lock({ taskName: "onBlockConfirmation" });
+
+            strategy =
+                options?.validationStrategy ||
+                this.getStrategyByStatus(this.status);
+            block = Block.fromBlockConfirmation(
+                blockConfirmation,
+                options?.onChainTimestamp
+            );
+
+            if (this.storage.blocks.getBlock(block.hash)) {
+                this.blockQueueManager.scheduleStoredBlockConfirmationMerge(
+                    block,
+                    strategy,
+                    options?.senderAddress
+                        ? [options.senderAddress as Address]
+                        : []
+                );
+                return true;
+            }
 
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
 
             const isAuthentic =
-                await this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
-                    blockConfirmation.signedBlock
-                );
+                await this.isBlockConfirmationAuthentic(blockConfirmation);
 
             if (!isAuthentic) {
                 validationResult =
@@ -970,21 +1103,16 @@ class StateManager {
                         strategy: strategy.name,
                         validationResult:
                             BlockValidationResult[validationResult],
-                        blockHash: ethers.keccak256(
-                            blockConfirmation.signedBlock.encodedBlock
-                        )
+                        blockHash: block.hash
                     }
                 );
 
-                return await strategy.interpretFinalValidationResult(
-                    validationResult
-                );
+                keepConnection =
+                    await strategy.interpretFinalValidationResult(
+                        validationResult
+                    );
+                return keepConnection;
             }
-
-            const block = Block.fromBlockConfirmation(
-                blockConfirmation,
-                options?.onChainTimestamp
-            );
 
             validationResult =
                 await this.validationService.validateBlockConfirmation(
@@ -995,7 +1123,7 @@ class StateManager {
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
                 // handle all non-success actions
-                const keepConnection =
+                keepConnection =
                     await strategy.interpretFinalValidationResult(
                         validationResult
                     );
@@ -1037,9 +1165,11 @@ class StateManager {
                     validationResult: BlockValidationResult[validationResult],
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 });
-                return await strategy.interpretFinalValidationResult(
-                    validationResult
-                );
+                keepConnection =
+                    await strategy.interpretFinalValidationResult(
+                        validationResult
+                    );
+                return keepConnection;
             }
 
             const forgedInboundMessageBlock =
@@ -1060,9 +1190,11 @@ class StateManager {
                         block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
-                return await strategy.interpretFinalValidationResult(
-                    validationResult
-                );
+                keepConnection =
+                    await strategy.interpretFinalValidationResult(
+                        validationResult
+                    );
+                return keepConnection;
             }
 
             const stateBeforeTransitionValidation =
@@ -1094,9 +1226,11 @@ class StateManager {
                         block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
-                return await strategy.interpretFinalValidationResult(
-                    validationResult
-                );
+                keepConnection =
+                    await strategy.interpretFinalValidationResult(
+                        validationResult
+                    );
+                return keepConnection;
             }
 
             const { encodedState: stateAfterInbound } =
@@ -1141,9 +1275,11 @@ class StateManager {
                         block: LoggerUtils.getBlockMetadata(block, this.storage)
                     }
                 );
-                return await strategy.interpretFinalValidationResult(
-                    validationResult
-                );
+                keepConnection =
+                    await strategy.interpretFinalValidationResult(
+                        validationResult
+                    );
+                return keepConnection;
             }
 
             // Union on the participant set -> check signers
@@ -1157,6 +1293,20 @@ class StateManager {
             );
 
             if (unexpectedSigners.size > 0) {
+                const blockForSignatureRecovery = block;
+                const unexpectedSignatures = new Set(
+                    Array.from(block.allSignatures).filter((signature) =>
+                        unexpectedSigners.has(
+                            blockForSignatureRecovery.signatureToAddress(
+                                signature
+                            )
+                        )
+                    )
+                );
+                this.blockQueueManager.disconnectPeersForSignatures(
+                    block.hash,
+                    unexpectedSignatures
+                );
                 validationResult =
                     await strategy.notAllSingersAreParticipants(block);
                 this.logger.warn(
@@ -1173,9 +1323,11 @@ class StateManager {
                         allowedSigners: Array.from(allowedSigners)
                     }
                 );
-                return await strategy.interpretFinalValidationResult(
-                    validationResult
-                );
+                keepConnection =
+                    await strategy.interpretFinalValidationResult(
+                        validationResult
+                    );
+                return keepConnection;
             }
 
             // TODO - apply strategy here too
@@ -1199,23 +1351,31 @@ class StateManager {
                     block: blockMeta
                 }
             );
-            // success - no disconnect
-            return true;
+            keepConnection = true;
+            return keepConnection;
         } catch (error) {
             this.logger.error("onBlockConfirmation - error", {
-                strategy: strategy.name,
+                strategy: strategy?.name,
                 channelId: this.channelId,
-                blockHash: ethers.keccak256(
-                    blockConfirmation.signedBlock.encodedBlock
-                ),
+                blockHash: block?.hash,
                 error: error instanceof Error ? error.message : String(error),
                 stack: error instanceof Error ? error.stack : undefined
             });
             throw error;
         } finally {
-            this.mutex.unlock();
+            this.mutex.unlock({ scheduleNextAsMacroTask: true });
             // try signaling blocks in the queue (in case this block enabled them to be validated)
-            setTimeout(() => this.tryExecuteFromQueue(), 0);
+            this.timeoutManager.scheduleTask(
+                () => this.tryExecuteFromQueue(),
+                0,
+                "tryExecuteFromQueue"
+            );
+            if (block && keepConnection !== undefined) {
+                this.notifyBlockConfirmationProcessed(
+                    block.hash,
+                    keepConnection
+                );
+            }
         }
     }
 

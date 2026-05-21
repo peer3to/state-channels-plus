@@ -303,6 +303,7 @@ export class PeerTestHarness<
             disputeStarted: sinon.spy(),
             onInitiatingDispute: sinon.spy(),
             onDisputeUpdate: sinon.spy(),
+            onBlockConfirmationProcessed: sinon.spy(),
 
             // EventHandler method spies
             onChannelOpened: sinon.spy(),
@@ -415,6 +416,21 @@ export class PeerTestHarness<
                 this.eventCountsBarrier.signal();
             },
             onBlockFinalized: () => {
+                this.eventCountsBarrier.signal();
+            },
+            onBlockConfirmationProcessed: (
+                blockHash: Hash,
+                keepConnection: boolean
+            ) => {
+                peerLogger.verbose("Block confirmation processed", {
+                    component: "P2pEventHooks",
+                    blockHash,
+                    keepConnection
+                });
+                eventSpies.onBlockConfirmationProcessed?.(
+                    blockHash,
+                    keepConnection
+                );
                 this.eventCountsBarrier.signal();
             }
         };

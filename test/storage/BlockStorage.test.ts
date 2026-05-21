@@ -77,6 +77,21 @@ describe("BlockStorage", () => {
             );
         });
 
+        it("should overwrite on-chain timestamp on duplicate insert", () => {
+            storage.storeBlock(
+                Block.fromBlockConfirmation(mockBlockConfirmation, 20)
+            );
+
+            storage.storeBlock(
+                Block.fromBlockConfirmation(mockBlockConfirmation, 30),
+                { hash: mockBlockHash }
+            );
+
+            expect(storage.getBlock(mockBlockHash)?.onChainTimestamp).to.equal(
+                30
+            );
+        });
+
         it("should insert block confirmation with auto-computed keys", () => {
             const block = Block.fromBlockConfirmation(mockBlockConfirmation);
             const hash = storage.storeBlock(block);

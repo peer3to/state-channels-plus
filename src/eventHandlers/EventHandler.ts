@@ -174,7 +174,7 @@ export class EventHandler {
             signedBlock,
             signatures: []
         };
-        await this.stateManager.onBlockConfirmation(blockConfirmation, {
+        await this.stateManager.ingestBlockConfirmation(blockConfirmation, {
             onChainTimestamp: Number(timestamp),
             validationStrategy: new CalldataCommittedStrategy(
                 this.stateManager.disputeManager,
@@ -221,6 +221,8 @@ export class EventHandler {
         if (!isRelevant) {
             return;
         }
+
+        this.stateManager.blockQueueManager.clearFork(forkId);
 
         const isFirstOccurrence =
             this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
@@ -558,11 +560,52 @@ export class EventHandler {
         }
 
         // Not final - validate the reduction
-        const isValid = await this.validateDisputeReductionAndChallenge(
-            channelId,
-            forkId,
-            reducedForkId
-        );
+        let isValid: boolean;
+        try {
+            isValid = await this.validateDisputeReductionAndChallenge(
+                channelId,
+                forkId,
+                reducedForkId
+            );
+        } catch (error) {
+            if (
+                error instanceof Error &&
+                error.message.startsWith("Dispute not available for commitment")
+            ) {
+                const status = this.stateManager.getStatus();
+                if (
+                    status !== Status.PARTICIPATING &&
+                    status !== Status.PENDING_PARTICIPANT
+                ) {
+                    this.logger.debug(
+                        "Skipping dispute reduction validation and disconnecting from peers because dispute data is unavailable for non-participant",
+                        {
+                            channelId,
+                            forkId,
+                            reducedForkId,
+                            status,
+                            error: error.message
+                        }
+                    );
+                    this.stateManager.blockQueueManager.clearFork(forkId);
+                    this.stateManager.p2pManager.disconnectAll();
+                    // TODO - find a universal way to signal "we've left"
+                    return;
+                }
+
+                this.logger.error(
+                    "Unable to validate dispute reduction because dispute data is unavailable",
+                    {
+                        channelId,
+                        forkId,
+                        reducedForkId,
+                        status,
+                        error: error.message
+                    }
+                );
+            }
+            throw error;
+        }
 
         if (!isValid) {
             // Already challenged -> just discconect

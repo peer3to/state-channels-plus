@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import { ethers } from "ethers";
 import Clock from "@/Clock";
 import { Block } from "@/models";
 import { FraudProofType } from "@/types/sol-enums";
@@ -47,10 +48,12 @@ describe("E2E: Block Fraud Proofs", function () {
             observer.stateManager.storage.blocks.getNextBlockHeight(forkId!)
         ).to.equal(0);
 
-        const keepConnection = await observer.stateManager.onBlockConfirmation(
-            block2!.blockConfirmationStruct
-        );
-        expect(keepConnection).to.equal(true);
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observerIndex,
+            blockConfirmation: block2!.blockConfirmationStruct,
+            keepConnection: true,
+            waitForProcessed: false
+        });
         expect(observer.stateManager.storage.blocks.getBlock(block2!.hash)).to
             .be.undefined;
 
@@ -120,12 +123,106 @@ describe("E2E: Block Fraud Proofs", function () {
 
         observer.stateManager.storage.queues.queueBlock(block!);
 
-        const keepConnection = await observer.stateManager.onBlockConfirmation(
-            block!.blockConfirmationStruct
-        );
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observer.index,
+            blockConfirmation: block!.blockConfirmationStruct,
+            keepConnection: true,
+            waitForProcessed: true
+        });
 
-        expect(keepConnection).to.equal(true);
         expect(observer.eventSpies.onInitiatingDispute!.called).to.equal(false);
+    });
+
+    it("stored duplicate merges trusted timestamp without replaying transition", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+
+        const observer = h.getPeer(0);
+        const forkId = h.activeForkId;
+        expect(forkId).to.not.be.undefined;
+
+        const block = observer.stateManager.storage.blocks.getLatestBlock(
+            forkId!
+        );
+        expect(block).to.not.be.undefined;
+
+        const initialNextHeight =
+            observer.stateManager.storage.blocks.getNextBlockHeight(forkId!);
+        const initialSum = await observer.contractInstance.getSum();
+
+        const expectedTimestamp = block!.timestamp + 1000;
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observer.index,
+            blockConfirmation: {
+                signedBlock: block!.signedBlock,
+                signatures: []
+            },
+            ingestOptions: { onChainTimestamp: expectedTimestamp },
+            keepConnection: true,
+            processedKeepConnection: true
+        });
+
+        await h.eventCountsBarrier.waitFor(
+            () =>
+                observer.stateManager.storage.blocks.getBlock(block!.hash)
+                    ?.onChainTimestamp === expectedTimestamp,
+            {
+                timeoutMs: 5000,
+                timeoutMessage:
+                    "Stored duplicate timestamp was not merged into storage"
+            }
+        );
+        expect(
+            observer.stateManager.storage.blocks.getNextBlockHeight(forkId!)
+        ).to.equal(initialNextHeight);
+        expect(await observer.contractInstance.getSum()).to.equal(initialSum);
+        expect(
+            observer.stateManager.storage.blocks.getBlock(block!.hash)
+                ?.onChainTimestamp
+        ).to.equal(expectedTimestamp);
+    });
+
+    it("stored duplicate rejects a new signature from a non-participant", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+
+        const observer = h.getPeer(0);
+        const forkId = h.activeForkId;
+        expect(forkId).to.not.be.undefined;
+
+        const block = observer.stateManager.storage.blocks.getLatestBlock(
+            forkId!
+        );
+        expect(block).to.not.be.undefined;
+
+        const outsider = ethers.Wallet.createRandom();
+        const badSignature = await outsider.signMessage(
+            ethers.getBytes(block!.hash)
+        );
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observer.index,
+            blockConfirmation: {
+                signedBlock: block!.signedBlock,
+                signatures: [
+                    ...Array.from(block!.confirmationSignatures).map(
+                        (signature) => String(signature)
+                    ),
+                    badSignature
+                ]
+            },
+            ingestOptions: { senderAddress: h.getPeer(1).address },
+            keepConnection: true,
+            processedKeepConnection: false
+        });
+
+        expect(
+            observer.stateManager.p2pManager.isBlacklisted(h.getPeer(1).address)
+        ).to.equal(true);
+        expect(
+            observer.stateManager.storage.blocks
+                .getBlock(block!.hash)
+                ?.confirmationSignatures.has(badSignature)
+        ).to.equal(false);
     });
 
     it("double sign → BlockDoubleSign", async function () {

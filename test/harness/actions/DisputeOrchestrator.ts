@@ -51,7 +51,10 @@ export class DisputeOrchestrator {
             );
         }
 
-        const syncPeerIndices = [...barrierPeerIndices];
+        const syncPeerIndices =
+            options.honestPeerIndices !== undefined
+                ? [...honestPeerIndices]
+                : [...barrierPeerIndices];
 
         const disputesCommittedTimeoutMs =
             options.disputesCommittedTimeoutMs ?? 5000;

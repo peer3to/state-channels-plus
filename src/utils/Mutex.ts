@@ -2,6 +2,7 @@ import type { Logger } from "./logging/Logger";
 import Clock from "@/Clock";
 
 export type MutexLockOptions = { taskName?: string; logMeta?: any };
+export type MutexUnlockOptions = { scheduleNextAsMacroTask?: boolean };
 
 export class Mutex {
     private isLocked: boolean;
@@ -45,7 +46,7 @@ export class Mutex {
         });
     }
 
-    public unlock(): void {
+    public unlock(options?: MutexUnlockOptions): void {
         if (this.lockedAtMs !== undefined) {
             this.logger?.verbose("Mutex released", {
                 ...this.logMeta,
@@ -61,10 +62,18 @@ export class Mutex {
         if (this.queue.length > 0) {
             const next = this.queue.shift();
             if (next) {
-                next();
+                if (options?.scheduleNextAsMacroTask) {
+                    this.scheduleMacroTask(next);
+                } else {
+                    next();
+                }
             }
         } else {
             this.isLocked = false;
         }
+    }
+
+    private scheduleMacroTask(task: () => void): void {
+        setTimeout(task, 0);
     }
 }
