@@ -36,7 +36,7 @@ abstract class ATransport {
         this.p2pManager.logger.verbose("Sending RPC", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,
-            rpc
+            rpc: LoggerUtils.getRpcLogMetadata(rpc)
         });
         const serializedRPC = serializeRpc(rpc);
         this._send(serializedRPC);

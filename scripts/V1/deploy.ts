@@ -23,6 +23,9 @@ import { Artifact } from "hardhat/types";
 import { Address } from "@ethereumjs/util";
 import { config } from "@/utils/config";
 
+const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
+const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
+
 const facetArtifacts = [
     DisputeManagerFacetArtifact,
     DisputeVerificationFacetArtifact,
@@ -69,6 +72,7 @@ export async function deployArtifact<T>(
     options?: {
         libs?: Record<string, string>;
         args?: any[];
+        txOverrides?: ethers.TransactionRequest;
     }
 ): Promise<{ address: string; contract: T }> {
     const linkedArtifact = linkLibraries(artifact, options?.libs || {});
@@ -77,8 +81,15 @@ export async function deployArtifact<T>(
     const deployTx = await factory.getDeployTransaction(
         ...(options?.args || [])
     );
+    const gasLimit =
+        options?.txOverrides?.gasLimit ??
+        ((await signer.estimateGas(deployTx)) * 12n) / 10n;
 
-    const sentTx = await signer.sendTransaction(deployTx);
+    const sentTx = await signer.sendTransaction({
+        ...deployTx,
+        gasLimit,
+        ...options?.txOverrides
+    });
     const receipt = await sentTx.wait();
 
     const address = receipt?.contractAddress;
@@ -120,11 +131,16 @@ export async function deployFacets(
     signer: Signer,
     libs: Record<string, string> = {}
 ): Promise<string[]> {
+    const nextNonce = await signer.getNonce("pending");
     return Promise.all(
-        facetArtifacts.map((artifact) =>
-            deployArtifact(artifact, signer, { libs }).then(
-                ({ address }) => address
-            )
+        facetArtifacts.map((artifact, index) =>
+            deployArtifact(artifact, signer, {
+                libs,
+                txOverrides: {
+                    nonce: nextNonce + index,
+                    gasLimit: FACET_DEPLOY_GAS_LIMIT
+                }
+            }).then(({ address }) => address)
         )
     );
 }
@@ -149,8 +165,6 @@ export type TimeConfig = {
     chainFallbackTime?: number;
     evidenceTime?: number;
 };
-
-export const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
 export function getTimeConfig(overrides?: TimeConfig): TimeConfig {
     return {

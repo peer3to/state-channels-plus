@@ -35,6 +35,13 @@ export type LoggerDestroyOptions = {
     cascadeParent?: boolean;
 };
 
+export type LoggerPerformanceMonitorOptions = {
+    intervalMs?: number;
+    sampleIntervalMs?: number;
+    delayWarnThresholdMs?: number;
+    utilizationWarnThreshold?: number;
+};
+
 export abstract class Logger {
     public level?: LogLevel;
     protected context: ExclusiveLoggerContext;
@@ -44,6 +51,7 @@ export abstract class Logger {
     protected parent?: Logger;
     protected readonly children: Set<Logger> = new Set();
     private destroyed = false;
+    private performanceMonitorStop?: () => void;
 
     constructor(
         context: ExclusiveLoggerContext,
@@ -84,6 +92,7 @@ export abstract class Logger {
         }
 
         this.destroyed = true;
+        this.stopPerformanceMonitoring();
 
         if (options.cascadeChildren) {
             for (const child of Array.from(this.children)) {
@@ -152,6 +161,18 @@ export abstract class Logger {
         await this.logUploader?.uploadLogs();
     }
 
+    public startPerformanceMonitoring(
+        options: LoggerPerformanceMonitorOptions = {}
+    ): void {
+        this.stopPerformanceMonitoring();
+        this.performanceMonitorStop = this.createPerformanceMonitor(options);
+    }
+
+    public stopPerformanceMonitoring(): void {
+        this.performanceMonitorStop?.();
+        this.performanceMonitorStop = undefined;
+    }
+
     private linkChild(child: Logger): void {
         child.parent = this;
         this.children.add(child);
@@ -174,6 +195,9 @@ export abstract class Logger {
 
     protected abstract createChild(context: ExclusiveLoggerContext): Logger;
     protected abstract write(logEntry: LogEntry): void;
+    protected abstract createPerformanceMonitor(
+        options: LoggerPerformanceMonitorOptions
+    ): () => void;
     public abstract group(label?: string): void;
     public abstract groupEnd(): void;
 

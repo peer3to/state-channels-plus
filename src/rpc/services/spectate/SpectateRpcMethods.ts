@@ -323,7 +323,9 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             if (!isMulticallSuccess) return this.service.abort(peerAddress);
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            await this.service.persistSyncPayload(syncPayload);
+            const { shouldAbort } =
+                await this.service.persistSyncPayload(syncPayload);
+            if (shouldAbort) return this.service.abort(peerAddress);
 
             // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
             const blockConfirmations =

@@ -33,6 +33,7 @@ import {
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { TransactionResponse } from "ethers";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { isEqual } from "lodash";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import { Status } from "@/types";
@@ -149,10 +150,7 @@ export class EventHandler {
         commitmentHash: Hash,
         sender: Address,
         signedBlock: SignedBlockStruct,
-        timestamp: Timestamp,
-        options?: {
-            skipMutex?: boolean;
-        }
+        timestamp: Timestamp
     ): Promise<void> {
         this.logger.verbose("Block calldata posted on-chain", {
             channelId,
@@ -179,9 +177,8 @@ export class EventHandler {
             signedBlock,
             signatures: []
         };
-        await this.stateManager.onBlockConfirmation(blockConfirmation, {
+        await this.stateManager.ingestBlockConfirmation(blockConfirmation, {
             onChainTimestamp: Number(timestamp),
-            skipMutex: options?.skipMutex,
             validationStrategy: new CalldataCommittedStrategy(
                 this.stateManager.disputeManager,
                 this.stateManager.blockValidationStrategy
@@ -227,6 +224,8 @@ export class EventHandler {
         if (!isRelevant) {
             return;
         }
+
+        this.stateManager.blockQueueManager.clearFork(forkId);
 
         const isFirstOccurrence =
             this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
@@ -336,13 +335,23 @@ export class EventHandler {
             // and could itself be killed as InvalidDisputeReason.
             //  TODO - should be multicall
             await this.stateManager.disputeManager.killDispute(dispute);
-            await this.stateManager.disputeManager.dispute(forkId);
+            // TODO, under the multicall pass the expectation who to slash (who will be killed) to dispute(),
+            // otherwise don't run dispute(forkId) here, since we pickup on-chain slashes from DisputeKilled event and here we might end up creating an empty dispute since we didn't observe on-chain slashes
+            // await this.stateManager.disputeManager.dispute(forkId);
             return;
         }
 
         this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
 
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+        await P2pEventHooksUtils.notifyDisputeUpdate({
+            channelId,
+            forkId,
+            storage: this.storage,
+            p2pEventHooks: this.p2pEventHooks,
+            diamondStateMachine: this.diamondStateMachine,
+            logger: this.logger
+        });
 
         // this is like success - TODO - consider moving this to DisputeStrategy.success
         const canConstructMoreEvidence =
@@ -474,11 +483,52 @@ export class EventHandler {
         }
 
         // Not final - validate the reduction
-        const isValid = await this.validateDisputeReductionAndChallenge(
-            channelId,
-            forkId,
-            reducedForkId
-        );
+        let isValid: boolean;
+        try {
+            isValid = await this.validateDisputeReductionAndChallenge(
+                channelId,
+                forkId,
+                reducedForkId
+            );
+        } catch (error) {
+            if (
+                error instanceof Error &&
+                error.message.startsWith("Dispute not available for commitment")
+            ) {
+                const status = this.stateManager.getStatus();
+                if (
+                    status !== Status.PARTICIPATING &&
+                    status !== Status.PENDING_PARTICIPANT
+                ) {
+                    this.logger.debug(
+                        "Skipping dispute reduction validation and disconnecting from peers because dispute data is unavailable for non-participant",
+                        {
+                            channelId,
+                            forkId,
+                            reducedForkId,
+                            status,
+                            error: error.message
+                        }
+                    );
+                    this.stateManager.blockQueueManager.clearFork(forkId);
+                    this.stateManager.p2pManager.disconnectAll();
+                    // TODO - find a universal way to signal "we've left"
+                    return;
+                }
+
+                this.logger.error(
+                    "Unable to validate dispute reduction because dispute data is unavailable",
+                    {
+                        channelId,
+                        forkId,
+                        reducedForkId,
+                        status,
+                        error: error.message
+                    }
+                );
+            }
+            throw error;
+        }
 
         if (!isValid) {
             // Already challenged -> just discconect

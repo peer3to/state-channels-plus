@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, TransactionResponse } from "ethers";
 
 import Clock from "@/Clock";
 import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -7,6 +7,7 @@ import { HandshakeCompletedGuard } from "@/rpc/guards";
 import type ATransport from "@/transport/ATransport";
 import {
     Codec,
+    DetachedPromises,
     SignatureUtils,
     Type,
     getChecksumAddress,
@@ -257,28 +258,41 @@ export default class OpenChannelNegotiationService extends ARpcService<
             this.p2pManager.stateManager.signer
         );
 
-        try {
-            await this.p2pManager.stateManager.stateChannelManagerContract.open(
-                {
-                    encodedOpenChannel,
-                    signatures: [lowerSignature, signature.toString()]
-                }
-            );
-        } catch (e) {
-            const custom = tryDecodeCustomError(e);
-            if (custom?.name === "RaceConditionChannelAlreadyOpen") {
-                this.logger.info(
-                    "open race: channel already opened by peer; deferring to ChannelOpened event"
-                );
-            } else {
-                const msg = e instanceof Error ? e.message : String(e);
-                this.remoteRpc.openChannelNegotiationService
-                    .abort(`open failed: ${msg}`)
-                    .sendOne(peer);
-                this.resetNegotiation("open tx failed");
-            }
-        }
-
+        let txResponse: TransactionResponse;
+        const txResponsePromise =
+            this.p2pManager.stateManager.stateChannelManagerContract
+                .open(
+                    {
+                        encodedOpenChannel,
+                        signatures: [lowerSignature, signature.toString()]
+                    },
+                    { gasLimit: 5_000_000 }
+                )
+                .then((tx) => {
+                    txResponse = tx;
+                    const txReceiptPromise = tx.wait();
+                    DetachedPromises.collect(txReceiptPromise);
+                    return txReceiptPromise;
+                })
+                .catch((e) => {
+                    const custom = tryDecodeCustomError(e);
+                    if (custom?.name === "RaceConditionChannelAlreadyOpen") {
+                        this.logger.info(
+                            "open race: channel already opened by peer; deferring to ChannelOpened event"
+                        );
+                    } else {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        this.logger.error("Error opening channel", {
+                            custom,
+                            error: msg
+                        });
+                        this.remoteRpc.openChannelNegotiationService
+                            .abort(`open failed: ${msg}`)
+                            .sendOne(peer);
+                        this.resetNegotiation("open tx failed");
+                    }
+                });
+        DetachedPromises.collect(txResponsePromise);
         this.scheduleDeadlineCheck(deadlineSeconds, peer);
     }
 

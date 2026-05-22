@@ -3,7 +3,8 @@ import {
     Logger,
     ExclusiveLoggerContext,
     LogLevel,
-    SharedLoggerContext
+    SharedLoggerContext,
+    LoggerPerformanceMonitorOptions
 } from "../Logger";
 import { BrowserLogUploader } from "../LogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
@@ -89,8 +90,10 @@ export class BrowserLogger extends Logger {
         ) {
             // eslint-disable-next-line no-console
             console.groupCollapsed(...this.fmt(logEntry));
-            // eslint-disable-next-line no-console
-            console[method](meta);
+            if (meta.length > 0) {
+                // eslint-disable-next-line no-console
+                console[method](...meta);
+            }
             // eslint-disable-next-line no-console
             console[method](logEntry.stack);
             // eslint-disable-next-line no-console
@@ -99,8 +102,138 @@ export class BrowserLogger extends Logger {
         }
 
         // Fallback when groups are not supported
-        // eslint-disable-next-line no-console
-        (console as any)[method](...this.fmt(logEntry), meta, logEntry.stack);
+        (console as any)[method](
+            ...this.fmt(logEntry),
+            ...meta,
+            logEntry.stack
+        );
+    }
+
+    protected createPerformanceMonitor(
+        options: LoggerPerformanceMonitorOptions
+    ): () => void {
+        const intervalMs = options.intervalMs ?? 1000;
+        const sampleIntervalMs = options.sampleIntervalMs ?? 50;
+        const delayWarnThresholdMs = options.delayWarnThresholdMs ?? 200;
+        const utilizationWarnThreshold =
+            options.utilizationWarnThreshold ?? 0.8;
+
+        let delaySamples: number[] = [];
+        let longTaskDurations: number[] = [];
+        let lastSampleAt = this.nowMs();
+
+        const sampleTimer = setInterval(() => {
+            const now = this.nowMs();
+            const delayMs = Math.max(0, now - lastSampleAt - sampleIntervalMs);
+            lastSampleAt = now;
+            delaySamples.push(delayMs);
+        }, sampleIntervalMs);
+
+        const observer = this.tryStartLongTaskObserver((duration) => {
+            longTaskDurations.push(duration);
+        });
+
+        const reportTimer = setInterval(() => {
+            const stats = this.computeStats(delaySamples);
+            const longTaskStats = this.computeStats(longTaskDurations);
+            const blockedMs = delaySamples.reduce(
+                (sum, value) => sum + value,
+                0
+            );
+            const estimatedUtilization = Math.min(1, blockedMs / intervalMs);
+            const longTaskCount = longTaskDurations.length;
+            const shouldWarn =
+                estimatedUtilization > utilizationWarnThreshold ||
+                stats.dMean > delayWarnThresholdMs ||
+                stats.d50 > delayWarnThresholdMs ||
+                stats.d90 > delayWarnThresholdMs ||
+                stats.d99 > delayWarnThresholdMs ||
+                stats.dMax > delayWarnThresholdMs ||
+                longTaskStats.dMax > delayWarnThresholdMs;
+            const logFn = shouldWarn
+                ? this.warn.bind(this)
+                : this.verbose.bind(this);
+            logFn(
+                `Event Loop mean delay: ${stats.dMean}ms, max: ${stats.dMax}ms, estimated utilization: ${estimatedUtilization}`,
+                {
+                    runtime: "browser",
+                    dMean: stats.dMean,
+                    d50: stats.d50,
+                    d90: stats.d90,
+                    d99: stats.d99,
+                    dMax: stats.dMax,
+                    estimatedUtilization,
+                    longTaskCount,
+                    longTaskMean: longTaskStats.dMean,
+                    longTaskMax: longTaskStats.dMax
+                }
+            );
+
+            delaySamples = [];
+            longTaskDurations = [];
+        }, intervalMs);
+
+        return () => {
+            clearInterval(sampleTimer);
+            clearInterval(reportTimer);
+            observer?.disconnect();
+        };
+    }
+
+    private nowMs(): number {
+        return globalThis.performance?.now?.() ?? Date.now();
+    }
+
+    private computeStats(values: number[]) {
+        if (values.length === 0) {
+            return {
+                dMean: 0,
+                d50: 0,
+                d90: 0,
+                d99: 0,
+                dMax: 0
+            };
+        }
+
+        const sorted = [...values].sort((a, b) => a - b);
+        const dMean =
+            values.reduce((sum, value) => sum + value, 0) / values.length;
+        return {
+            dMean,
+            d50: this.percentile(sorted, 50),
+            d90: this.percentile(sorted, 90),
+            d99: this.percentile(sorted, 99),
+            dMax: sorted[sorted.length - 1]
+        };
+    }
+
+    private percentile(sortedValues: number[], percentile: number): number {
+        if (sortedValues.length === 0) return 0;
+        const index = Math.min(
+            sortedValues.length - 1,
+            Math.ceil((percentile / 100) * sortedValues.length) - 1
+        );
+        return sortedValues[index];
+    }
+
+    private tryStartLongTaskObserver(
+        onLongTask: (durationMs: number) => void
+    ): PerformanceObserver | undefined {
+        const Observer = globalThis.PerformanceObserver;
+        const supportedEntryTypes = Observer?.supportedEntryTypes ?? [];
+        if (!supportedEntryTypes.includes("longtask")) return undefined;
+
+        try {
+            const observer = new Observer((list) => {
+                for (const entry of list.getEntries()) {
+                    onLongTask(entry.duration);
+                }
+            });
+            observer.observe({ entryTypes: ["longtask"] });
+            return observer;
+        } catch {
+            return undefined;
+        }
     }
 
     private fmt(logEntry: LogEntry): any[] {

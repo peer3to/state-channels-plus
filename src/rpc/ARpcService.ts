@@ -33,11 +33,21 @@ abstract class ARpcService<
         const rpc_method = this.createRPCMethods(transport);
         if (!hasMethod(rpc_method, rpc.method)) return false;
         try {
-            rpc_method[rpc.method](...rpc.params);
+            void Promise.resolve(rpc_method[rpc.method](...rpc.params)).catch(
+                (e: unknown) => {
+                    this.logger.error("Unhandled async RPC handler exception", {
+                        method: rpc.method,
+                        error: e instanceof Error ? e.message : String(e),
+                        stack: e instanceof Error ? e.stack : undefined
+                    });
+                    this.p2pManager.disconnectConnection(transport);
+                }
+            );
         } catch (e) {
             this.logger.error("Unhandled RPC handler exception", {
                 method: rpc.method,
-                error: e
+                error: e instanceof Error ? e.message : String(e),
+                stack: e instanceof Error ? e.stack : undefined
             });
             return false;
         }

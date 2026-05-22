@@ -9,7 +9,8 @@ type P2pEventHooks = {
         address: Address,
         turnTime: number,
         agreementTime: number,
-        chainFallbackTime: number
+        chainFallbackTime: number,
+        turnStartedAtBlockTimestamp?: number
     ) => void;
     onSetState?: () => void;
     onStatusChanged?: (oldStatus: Status, newStatus: Status) => void;
@@ -17,10 +18,14 @@ type P2pEventHooks = {
     onPostedCalldata?: () => void;
     onDisputeStarted?: (maxDuration: number) => void;
     onInitiatingDispute?: (disputeHash: Hash, dispute: DisputeStruct) => void;
-    onDisputeUpdate?: (dispute: DisputeStruct) => void;
+    onDisputeUpdate?: (slashes: Address[], timeout?: Address) => void;
     onCloseChannel?: (channelId: ChannelId) => void;
     onDisputeAcknowledgment?: (address: Address) => void;
     onBlockFinalized?: () => void;
+    onBlockConfirmationProcessed?: (
+        blockHash: Hash,
+        keepConnection: boolean
+    ) => void;
 };
 
 export default P2pEventHooks;

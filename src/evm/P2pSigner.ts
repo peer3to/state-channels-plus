@@ -9,6 +9,7 @@ import type P2PManager from "@/P2PManager";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import { Address, Bytes } from "@/types/types";
 import { Status } from "@/types";
+import { Logger } from "..";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
@@ -18,7 +19,7 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
     signerAddress: Address;
     provider: ethers.Provider | null;
     p2pManager: P2PManager<TFactories>;
-
+    logger: Logger;
     //local profile
     isLeader: boolean;
 
@@ -32,6 +33,7 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
         this.provider = signer.provider;
         this.p2pManager = p2pManager;
         this.isLeader = false;
+        this.logger = p2pManager.logger.child({ component: "P2pSigner" });
     }
 
     connect(provider: ethers.Provider | null): Signer {
@@ -97,6 +99,9 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
             }
         };
 
+        this.logger.debug(
+            `Sending transaction #${Number(_tx.header.transactionCnt)} timestamp: ${Number(_tx.header.timestamp)}`
+        );
         const _blockConfirmation =
             await this.p2pManager.stateManager.playTransaction(_tx);
         // NOTE: playTransaction already broadcasts via success() method, no need to broadcast again here
@@ -116,8 +121,8 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
         return this.signer.signTypedData(domain, types, value);
     }
 
-    setChannelId(channelId: Bytes) {
-        this.p2pManager.stateManager.setChannelId(channelId);
+    async setChannelId(channelId: Bytes): Promise<void> {
+        await this.p2pManager.stateManager.setChannelId(channelId);
     }
 
     public setIsLeader(value: boolean) {
@@ -129,7 +134,7 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
     }
 
     public async connectToChannel(channelId: Bytes) {
-        this.setChannelId(channelId);
+        await this.setChannelId(channelId);
 
         // Update status to NOT_OPENED/OPENED as soon as we know the channelId.
         await this.p2pManager.stateManager.refreshOpenedStatusFromChain();

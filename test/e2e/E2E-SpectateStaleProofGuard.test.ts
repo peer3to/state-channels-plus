@@ -22,7 +22,7 @@ describe("E2E: Spectate stale-proof guard", function () {
             count: 4,
             waitForFinalization: true
         });
-        await h.transition.postSnapshot();
+        await h.transition.postSnapshotWait();
 
         const staleBlockHeight = 1;
 

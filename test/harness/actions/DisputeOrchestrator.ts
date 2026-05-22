@@ -51,7 +51,7 @@ export class DisputeOrchestrator {
             );
         }
 
-        const syncPeerIndices = [...peersExcludingMaliciousAndLeavers];
+        const syncPeerIndices = [...honestPeerIndices];
 
         const disputesCommittedTimeoutMs =
             options.disputesCommittedTimeoutMs ?? 5000;

@@ -1,16 +1,16 @@
 import { ethers, Signer, TransactionResponse, hexlify } from "ethers";
-import { ContractExecuter } from "@/evm";
+import { ContractExecutor } from "@/evm";
 import { Bytes } from "@/types/types";
 import { Address } from "@ethereumjs/util";
 class LocalDiamondSigner implements Signer {
     signer: Signer;
     provider: ethers.Provider | null;
-    private diamondExecuter: ContractExecuter;
+    private diamondExecutor: ContractExecutor;
 
-    constructor(signer: Signer, diamondExecuter: ContractExecuter) {
+    constructor(signer: Signer, diamondExecutor: ContractExecutor) {
         this.signer = signer;
         this.provider = signer.provider;
-        this.diamondExecuter = diamondExecuter;
+        this.diamondExecutor = diamondExecutor;
     }
 
     connect(provider: ethers.Provider | null): Signer {
@@ -46,10 +46,9 @@ class LocalDiamondSigner implements Signer {
             ? Address.fromString(tx.from.toString())
             : undefined;
         try {
-            const result = await this.diamondExecuter.executeCall(
+            const result = await this.diamondExecutor.simulateCall(
                 tx.data as Bytes,
-                caller,
-                true
+                caller
             );
             return hexlify(result.returnValue);
         } catch (error) {
@@ -80,7 +79,7 @@ class LocalDiamondSigner implements Signer {
             const caller = tx.from
                 ? Address.fromString(tx.from.toString())
                 : undefined;
-            await this.diamondExecuter.executeCall(tx.data as Bytes, caller);
+            await this.diamondExecutor.executeCall(tx.data as Bytes, caller);
 
             // Return a simple mock TransactionResponse since LocalDiamond doesn't return one
             const mockResponse = {
@@ -125,7 +124,7 @@ class LocalDiamondSigner implements Signer {
     }
 
     getDiamondAddress(): string {
-        return this.diamondExecuter.getContractAddress().toString();
+        return this.diamondExecutor.getContractAddress().toString();
     }
 }
 

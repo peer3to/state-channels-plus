@@ -2,6 +2,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { EventSpies } from "../core/types";
 import { Logger } from "@/utils";
 import { Status } from "@/types";
+import { Hash } from "@/types/types";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -122,6 +123,45 @@ export class EventActions {
             timeoutMs,
             timeoutMessage: `Event ${String(eventName)} did not occur within ${timeoutMs}ms`
         });
+    }
+
+    async waitForBlockConfirmationProcessed(options: {
+        peerIndex: number;
+        blockHash: Hash;
+        keepConnection?: boolean;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            peerIndex,
+            blockHash,
+            keepConnection,
+            timeoutMs = 5000
+        } = options;
+        const peer = this.harness.getPeer(peerIndex);
+
+        await this.harness.eventCountsBarrier.waitFor(
+            () => {
+                return (
+                    peer.eventSpies.onBlockConfirmationProcessed
+                        ?.getCalls()
+                        .some((call) => {
+                            const [
+                                processedBlockHash,
+                                processedKeepConnection
+                            ] = call.args;
+                            return (
+                                processedBlockHash === blockHash &&
+                                (keepConnection === undefined ||
+                                    processedKeepConnection === keepConnection)
+                            );
+                        }) ?? false
+                );
+            },
+            {
+                timeoutMs,
+                timeoutMessage: `Block confirmation ${blockHash} was not processed by peer ${peerIndex} within ${timeoutMs}ms`
+            }
+        );
     }
 
     async waitUntilPeerStatus(

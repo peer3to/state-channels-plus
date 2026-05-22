@@ -1,10 +1,7 @@
 import { ethers } from "hardhat";
 import fs from "fs";
 import path from "path";
-import {
-    DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
-    deploy
-} from "@peer3/state-channels-plus";
+import { deploy } from "@peer3/state-channels-plus";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine,
@@ -12,6 +9,7 @@ import {
 } from "../tic-tac-toe-vite/src/stateChannel/typechain-types";
 
 const DEFAULT_STATE_MACHINE_GAS_LIMIT = 500000;
+const TICTACTOE_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 const LOCALHOST_RPC_URL = process.env.PROVIDER_URL ?? "http://localhost:8545";
 
 const getLocalhostSigners = async () => {
@@ -82,7 +80,7 @@ export async function deployTicTacToe(): Promise<
             chainFallbackTime: 3,
             evidenceTime: 5
         },
-        DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
+        TICTACTOE_DISPUTE_EXECUTION_GAS_LIMIT
     );
 
     // Use the example project's ethers instance for typing + ABI formatting.

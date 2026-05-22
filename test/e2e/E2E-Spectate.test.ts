@@ -1,10 +1,13 @@
-import { MathTestSession as TestSession } from "@test/harness";
+import { MathTestSession as TestSession, sleep } from "@test/harness";
 import { tryDecodeCustomError } from "@/utils";
 import { expect } from "chai";
+import { ethers } from "ethers";
+import { Block } from "@/models";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { ATransport } from "@/transport";
 import { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import { Status } from "@/types";
+import { Codec, Type } from "@/utils";
 
 /**
  * E2E Tests for Spectate Service
@@ -138,6 +141,354 @@ describe("E2E: Spectate Service", function () {
                 peerIndex: 3
             });
             await h.assert.snapshot.onChainSnapshotOnFork();
+        });
+
+        it("spectate atomic persistence and setState", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 4, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 3,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const spectator = await h.join.addSpectatorWait();
+            const spectatorIndex = spectator.index;
+            const participantIndices = [0, 1, 2];
+            const forkId = h.activeForkId;
+            expect(forkId).to.not.be.undefined;
+
+            const staleNextToWrite =
+                await spectator.stateManager.diamondStateMachine.getNextToWrite();
+
+            await h.network.disconnectPeer(spectatorIndex);
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+
+            const sourcePeer = h.peerWithHighestBlock(forkId!);
+            const blockToQueue =
+                sourcePeer.stateManager.storage.blocks.getLatestBlock(forkId!);
+            expect(blockToQueue).to.not.be.undefined;
+            expect(blockToQueue!.author).to.not.equal(staleNextToWrite);
+
+            const syncPayload =
+                await sourcePeer.stateManager.p2pManager.localRpc.spectateService.generateSyncPayload(
+                    h.channelId!,
+                    forkId!,
+                    blockToQueue!.height - 1
+                );
+            expect(syncPayload).to.not.be.undefined;
+
+            const latestFinalizedSnapshot =
+                syncPayload!.milestoneSnapshots.at(-1) ??
+                syncPayload!.latestForkGenesisSnapshot;
+            expect(Number(latestFinalizedSnapshot.blockHeight)).to.equal(
+                blockToQueue!.height - 1
+            );
+
+            h.event.resetEventSpies();
+
+            const originalValidateBlockConfirmation =
+                spectator.stateManager.validationService.validateBlockConfirmation.bind(
+                    spectator.stateManager.validationService
+                );
+            let didValidateQueuedBlock = false;
+            let didValidateQueuedBlockAgainstCorruptedState = false;
+            spectator.stateManager.validationService.validateBlockConfirmation =
+                (async (
+                    ...args: Parameters<
+                        typeof spectator.stateManager.validationService.validateBlockConfirmation
+                    >
+                ) => {
+                    const [block] = args;
+                    if (block.hash === blockToQueue!.hash) {
+                        didValidateQueuedBlock = true;
+                        const nextBlockHeight =
+                            spectator.stateManager.storage.blocks.getNextBlockHeight(
+                                forkId!
+                            );
+                        const nextToWrite =
+                            await spectator.stateManager.diamondStateMachine.getNextToWrite();
+
+                        didValidateQueuedBlockAgainstCorruptedState =
+                            nextBlockHeight === blockToQueue!.height &&
+                            nextToWrite !== blockToQueue!.author;
+                    }
+
+                    return originalValidateBlockConfirmation(...args);
+                }) as typeof spectator.stateManager.validationService.validateBlockConfirmation;
+
+            let persistPromise: Promise<{ shouldAbort: boolean }> | undefined;
+            let queuedBlockPromise: Promise<boolean> | undefined;
+            let mutexLocked = false;
+
+            try {
+                await spectator.stateManager.mutex.lock();
+                mutexLocked = true;
+
+                queuedBlockPromise = spectator.stateManager.onBlockConfirmation(
+                    blockToQueue!.blockConfirmationStruct
+                );
+
+                persistPromise =
+                    spectator.stateManager.p2pManager.localRpc.spectateService.persistSyncPayload(
+                        syncPayload!
+                    );
+
+                // allow some time for stuff that's not depenendent on the mutex to execute
+                await sleep(100);
+                spectator.stateManager.mutex.unlock();
+                mutexLocked = false;
+
+                await Promise.allSettled([persistPromise, queuedBlockPromise]);
+                await h.event.waitForBlockConfirmationProcessed({
+                    peerIndex: spectator.index,
+                    blockHash: blockToQueue!.hash,
+                    keepConnection: true
+                });
+                expect(didValidateQueuedBlock).to.equal(true);
+                expect(didValidateQueuedBlockAgainstCorruptedState).to.equal(
+                    false
+                );
+                expect(
+                    spectator.eventSpies.onInitiatingDispute!.called
+                ).to.equal(false);
+            } finally {
+                if (mutexLocked) {
+                    spectator.stateManager.mutex.unlock();
+                }
+                spectator.stateManager.validationService.validateBlockConfirmation =
+                    originalValidateBlockConfirmation as typeof spectator.stateManager.validationService.validateBlockConfirmation;
+                await persistPromise?.catch(() => undefined);
+                await queuedBlockPromise?.catch(() => undefined);
+            }
+        });
+
+        it("skips latest state persistence when local storage is already ahead", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 4, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 3,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const spectator = await h.join.addSpectatorWait();
+            const forkId = h.activeForkId;
+            expect(forkId).to.not.be.undefined;
+
+            await h.transition.advanceState({
+                count: 3,
+                waitForFinalization: true
+            });
+
+            const localLatestBlock =
+                spectator.stateManager.storage.blocks.getLatestBlock(forkId!);
+            expect(localLatestBlock).to.not.be.undefined;
+            expect(localLatestBlock!.height).to.be.greaterThan(0);
+
+            const sourcePeer = h.peerWithHighestBlock(forkId!);
+            const syncPayload =
+                await sourcePeer.stateManager.p2pManager.localRpc.spectateService.generateSyncPayload(
+                    h.channelId!,
+                    forkId!,
+                    localLatestBlock!.height - 1
+                );
+            expect(syncPayload).to.not.be.undefined;
+
+            const originalUnsafeSetLatestState =
+                spectator.stateManager.unsafeSetLatestState.bind(
+                    spectator.stateManager
+                );
+            let didPersistLatestState = false;
+            spectator.stateManager.unsafeSetLatestState = (async (
+                ...args: Parameters<
+                    typeof spectator.stateManager.unsafeSetLatestState
+                >
+            ) => {
+                didPersistLatestState = true;
+                return originalUnsafeSetLatestState(...args);
+            }) as typeof spectator.stateManager.unsafeSetLatestState;
+
+            try {
+                const { shouldAbort } =
+                    await spectator.stateManager.p2pManager.localRpc.spectateService.persistSyncPayload(
+                        syncPayload!
+                    );
+
+                expect(shouldAbort).to.equal(false);
+                expect(didPersistLatestState).to.equal(false);
+                expect(
+                    spectator.stateManager.storage.blocks.getLatestBlock(
+                        forkId!
+                    )?.hash
+                ).to.equal(localLatestBlock!.hash);
+            } finally {
+                spectator.stateManager.unsafeSetLatestState =
+                    originalUnsafeSetLatestState as typeof spectator.stateManager.unsafeSetLatestState;
+            }
+        });
+
+        it("aborts spectating when a finalized sync block conflicts with storage", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 3,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+
+            const spectator = await h.join.addSpectatorWait();
+            const spectatorIndex = spectator.index;
+            const participantIndices = [0, 1, 2, 3];
+            const forkId = h.activeForkId;
+            expect(forkId).to.not.be.undefined;
+
+            const spectatorLatestBeforeDisconnect =
+                spectator.stateManager.storage.blocks.getLatestBlock(forkId!)
+                    ?.height ?? -1;
+
+            await h.network.disconnectPeer(spectatorIndex);
+            await h.transition.participantLeaveWait({
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+            await h.transition.advanceState({
+                count: 3,
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+
+            const sourcePeer = h.peerWithHighestBlock(forkId!);
+            const sourceLatestBlock =
+                sourcePeer.stateManager.storage.blocks.getLatestBlock(forkId!);
+            expect(sourceLatestBlock).to.not.be.undefined;
+
+            const syncPayload =
+                await sourcePeer.stateManager.p2pManager.localRpc.spectateService.generateSyncPayload(
+                    h.channelId!,
+                    forkId!,
+                    sourceLatestBlock!.height
+                );
+            expect(syncPayload).to.not.be.undefined;
+            expect(syncPayload!.stateProof.milestones.length).to.be.greaterThan(
+                1
+            );
+
+            const latestFinalizedSnapshot =
+                syncPayload!.milestoneSnapshots.at(-1) ??
+                syncPayload!.latestForkGenesisSnapshot;
+            const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
+            const finalizedBlocks = syncPayload!.stateProof.milestones.flatMap(
+                (milestone, index) => {
+                    if (
+                        index ===
+                        syncPayload!.stateProof.milestones.length - 1
+                    ) {
+                        const finalizedBlockConfirmation =
+                            milestone.blockConfirmations[0];
+                        return finalizedBlockConfirmation
+                            ? [
+                                  Block.fromBlockConfirmation(
+                                      finalizedBlockConfirmation
+                                  )
+                              ]
+                            : [];
+                    }
+
+                    return milestone.blockConfirmations.map(
+                        (blockConfirmation) =>
+                            Block.fromBlockConfirmation(blockConfirmation)
+                    );
+                }
+            );
+            const newFinalizedBlocks = finalizedBlocks.filter(
+                (block) =>
+                    block.height > spectatorLatestBeforeDisconnect &&
+                    block.height <= finalizedHeight
+            );
+            expect(newFinalizedBlocks.length).to.be.greaterThan(1);
+
+            const blockToConflict = newFinalizedBlocks.at(-1);
+            expect(blockToConflict).to.not.be.undefined;
+
+            const conflictingBlockStruct = Codec.decode(
+                blockToConflict!.encode(),
+                Type.Block
+            );
+            conflictingBlockStruct.stateSnapshotHash = ethers.keccak256(
+                ethers.toUtf8Bytes(`conflict-${blockToConflict!.hash}`)
+            );
+            const conflictingBlock = await Block.fromBlockStruct(
+                conflictingBlockStruct,
+                spectator.signer
+            );
+
+            expect(conflictingBlock.forkId).to.equal(blockToConflict!.forkId);
+            expect(conflictingBlock.height).to.equal(blockToConflict!.height);
+            expect(conflictingBlock.hash).to.not.equal(blockToConflict!.hash);
+
+            const storedConflictHash =
+                spectator.stateManager.storage.blocks.storeBlock(
+                    conflictingBlock,
+                    { justPersist: true }
+                );
+            expect(storedConflictHash).to.equal(conflictingBlock.hash);
+
+            const originalUnsafeSetLatestState =
+                spectator.stateManager.unsafeSetLatestState.bind(
+                    spectator.stateManager
+                );
+            let didPersistLatestState = false;
+            spectator.stateManager.unsafeSetLatestState = (async (
+                ...args: Parameters<
+                    typeof spectator.stateManager.unsafeSetLatestState
+                >
+            ) => {
+                didPersistLatestState = true;
+                return originalUnsafeSetLatestState(...args);
+            }) as typeof spectator.stateManager.unsafeSetLatestState;
+
+            try {
+                const { shouldAbort } =
+                    await spectator.stateManager.p2pManager.localRpc.spectateService.persistSyncPayload(
+                        syncPayload!
+                    );
+
+                expect(shouldAbort).to.equal(true);
+                expect(didPersistLatestState).to.equal(false);
+                for (const block of newFinalizedBlocks) {
+                    const storedBlock =
+                        spectator.stateManager.storage.blocks.getBlock(
+                            block.forkId,
+                            block.height
+                        );
+                    if (block.height === blockToConflict!.height) {
+                        expect(storedBlock?.hash).to.equal(
+                            conflictingBlock.hash
+                        );
+                    } else {
+                        expect(storedBlock).to.be.undefined;
+                    }
+                }
+            } finally {
+                spectator.stateManager.unsafeSetLatestState =
+                    originalUnsafeSetLatestState as typeof spectator.stateManager.unsafeSetLatestState;
+            }
         });
     });
 

@@ -3,7 +3,8 @@ import type {
     ExclusiveLoggerContext,
     SharedLoggerContext,
     LogLevel,
-    LoggerDestroyOptions
+    LoggerDestroyOptions,
+    LoggerPerformanceMonitorOptions
 } from "./Logger";
 import { Logger } from "./Logger";
 import { LogStore } from "./logStore";
@@ -17,7 +18,8 @@ export type {
     Logger,
     ExclusiveLoggerContext,
     SharedLoggerContext,
-    LoggerDestroyOptions
+    LoggerDestroyOptions,
+    LoggerPerformanceMonitorOptions
 };
 export { decodeLogs, decompressFromBase64 };
 
