@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 const { spawn } = require("child_process");
+const { createHash } = require("crypto");
 const fs = require("fs");
 const { globSync } = require("glob");
 const path = require("path");
@@ -195,8 +196,14 @@ function escapeRegex(text) {
     return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Failure logs are renamed to error_<name>.ansi (255-byte filename limit on Linux).
+const MAX_LOG_NAME_LEN = 255 - "error_".length - ".ansi".length;
+
 function sanitizeFileName(name) {
-    return name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+    const sanitized = name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+    if (sanitized.length <= MAX_LOG_NAME_LEN) return sanitized;
+    const suffix = createHash("sha256").update(name).digest("hex").slice(0, 8);
+    return `${sanitized.slice(0, MAX_LOG_NAME_LEN - suffix.length - 1)}_${suffix}`;
 }
 
 function safeEmptyDir(dirPath, allowLogdirPurge) {
@@ -339,7 +346,7 @@ function formatResultLine({
 async function main() {
     const cli = parseCliArgs(process.argv);
     const e2eDir = path.resolve("test/e2e");
-    const files = globSync(path.join(e2eDir, "*.ts"));
+    const files = globSync(path.join(e2eDir, "**/*.test.ts"));
     if (files.length === 0) {
         console.error("No E2E test files found in test/e2e");
         process.exit(1);

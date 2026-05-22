@@ -77,8 +77,7 @@ export const JoinChannelEthersType = `tuple(
 bytes32 channelId,
 address participant,
 uint deadlineTimestamp,
-${BalanceEthersType} balance,
-bytes32 latestStateSnapshotHash
+${BalanceEthersType} balance
 )`;
 
 export const OpenChannelEthersType = `tuple(

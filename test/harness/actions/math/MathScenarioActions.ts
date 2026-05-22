@@ -153,7 +153,7 @@ export class MathScenarioActions extends ScenarioActions {
         };
     }) {
         const timeConfig = {
-            evidenceTime: 6,
+            evidenceTime: 12,
             ...options?.timeConfig
         };
 
@@ -164,7 +164,7 @@ export class MathScenarioActions extends ScenarioActions {
         this.harness.event.resetEventSpies();
     }
 
-    async junkDataMilestoneMultiLeaveSetup(options?: {
+    async setupTwoLeaversAcrossMilestones(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -176,7 +176,7 @@ export class MathScenarioActions extends ScenarioActions {
             p2pTime: 1,
             agreementTime: 6,
             chainFallbackTime: 2,
-            evidenceTime: 6,
+            evidenceTime: 12,
             ...options?.timeConfig
         };
 
@@ -211,7 +211,7 @@ export class MathScenarioActions extends ScenarioActions {
         this.harness.contextApi.captureOriginalFork();
     }
 
-    async junkDataMilestoneM1InboundThenM2Setup(options?: {
+    async setupLeaverM1WithPendingJoinerInM2(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -223,7 +223,7 @@ export class MathScenarioActions extends ScenarioActions {
             p2pTime: 1,
             agreementTime: 6,
             chainFallbackTime: 2,
-            evidenceTime: 6,
+            evidenceTime: 12,
             ...options?.timeConfig
         };
 
@@ -270,7 +270,7 @@ export class MathScenarioActions extends ScenarioActions {
         disconnectedPeerIndex?: number;
     }) {
         const timeConfig = {
-            evidenceTime: 6,
+            evidenceTime: 12,
             ...options?.timeConfig
         };
         const count = options?.count ?? 2;

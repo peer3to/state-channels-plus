@@ -83,7 +83,7 @@ error RaceConditionDisputeTimeoutNotMinTimestamp();
 error RaceConditionUnexpectedBlockCalldataPosted();
 error RaceConditionGenesisTimestampNotAvailable();
 error RaceConditionOnChainSlashes();
-error RaceConditionJoinChannelStaleSnapshot();
+error RaceConditionJoinChannelSnapshotMismatch();
 error RaceConditionPendingInboundNotConsumed();
 error RaceConditionJoinChannelForkDisputed();
 error RaceConditionForceInboundJoinForkDisputed();

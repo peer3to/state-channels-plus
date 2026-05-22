@@ -61,17 +61,7 @@ contract UtilityFacet {
         pure
         returns (address, bool)
     {
-        bytes32 _hash = keccak256(encodedData);
-
-        // EIP-191 - This is what actually gets signed
-        bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash));
-
-        // Use tryRecover to handle invalid signatures (recover reverts if signature is invalid)
-        (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signature);
-        if (error != ECDSA.RecoverError.NoError) {
-            return (recovered, false);
-        }
-        return (recovered, true);
+        return _recoverSigner(encodedData, signature);
     }
 
     function isAddressInArray(address[] memory array, address adr) public pure returns (bool) {
