@@ -102,7 +102,6 @@ struct JoinChannel {
     address participant;
     uint256 deadlineTimestamp;
     Balance balance;
-    bytes32 latestStateSnapshotHash;
 }
 
 struct JoinChannelBlock {

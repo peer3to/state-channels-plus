@@ -85,7 +85,7 @@ export class MathJoinActions extends JoinActions {
 
         return { participant };
     }
-    async forceInboundJoinDetached(
+    async forceInboundJoinObserveDetached(
         options?: ForceInboundJoinOptions
     ): Promise<{ participant: string }> {
         const timeoutMs = options?.timeoutMs ?? 15000;
