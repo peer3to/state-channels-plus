@@ -5,7 +5,13 @@ import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/Data
 import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import type ATransport from "@/transport/ATransport";
-import { Codec, SignatureUtils, Type, getChecksumAddress } from "@/utils";
+import {
+    Codec,
+    SignatureUtils,
+    Type,
+    getChecksumAddress,
+    tryDecodeCustomError
+} from "@/utils";
 
 import OpenChannelNegotiationRpcMethods, {
     type OpenChannelNegotiationFactories,
@@ -259,11 +265,18 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 }
             );
         } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            this.remoteRpc.openChannelNegotiationService
-                .abort(`open failed: ${msg}`)
-                .sendOne(peer);
-            this.resetNegotiation("open tx failed");
+            const custom = tryDecodeCustomError(e);
+            if (custom?.name === "RaceConditionChannelAlreadyOpen") {
+                this.logger.info(
+                    "open race: channel already opened by peer; deferring to ChannelOpened event"
+                );
+            } else {
+                const msg = e instanceof Error ? e.message : String(e);
+                this.remoteRpc.openChannelNegotiationService
+                    .abort(`open failed: ${msg}`)
+                    .sendOne(peer);
+                this.resetNegotiation("open tx failed");
+            }
         }
 
         this.scheduleDeadlineCheck(deadlineSeconds, peer);

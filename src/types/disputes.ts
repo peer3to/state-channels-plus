@@ -184,7 +184,7 @@ export const DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType = `tup
     bool __
 )`;
 
-export const DisputeStateProofForkMismatchProofEthersType = `tuple(
+export const DisputeStateProofHeaderMismatchProofEthersType = `tuple(
     bool __
 )`;
 

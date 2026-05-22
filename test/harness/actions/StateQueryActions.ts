@@ -97,6 +97,13 @@ export class StateQueryActions {
               )?.hash || ethers.ZeroHash;
     }
 
+    public async getOnChainSnapshotHash(channelId?: Hash): Promise<Hash> {
+        const id = channelId ?? this.harness.channelId;
+        return StateSnapshot.from(
+            await this.harness.channelManager.getStateSnapshot(id)
+        ).hash;
+    }
+
     public async getLocalStateSnapshot(peer: TestPeer): Promise<StateSnapshot> {
         const stateManager = peer.stateManager;
         const localDiamond =

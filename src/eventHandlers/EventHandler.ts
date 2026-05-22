@@ -24,11 +24,14 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import {
     addressesEqual,
     Codec,
+    DetachedPromises,
     hash,
     Logger,
     tryDecodeCustomError,
     Type
 } from "@/utils";
+import { tryHandleEvmError } from "@/utils/evmErrorHandler";
+import { TransactionResponse } from "ethers";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { isEqual } from "lodash";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
@@ -646,12 +649,60 @@ export class EventHandler {
             reducedForkId;
         if (!isValid) {
             // while we have the context, use it, instead of returning false and having to generate it again
-            await this.stateManager.stateChannelManagerContract.challengeDisputeReduction(
-                disputes,
-                latestSnapshot,
-                state,
-                inboundMessageBlocks
-            );
+            let txResponse: TransactionResponse | undefined;
+            const txPromise = this.stateManager.stateChannelManagerContract
+                .challengeDisputeReduction(
+                    disputes,
+                    latestSnapshot,
+                    state,
+                    inboundMessageBlocks
+                )
+                .then(async (tx: TransactionResponse) => {
+                    txResponse = tx;
+                    await tx.wait();
+                })
+                .catch(async (error: any) => {
+                    const success = await tryHandleEvmError(error, {
+                        tx: txResponse,
+                        forkId,
+                        logger: this.logger,
+                        signer: this.stateManager.signer,
+                        handlers: {
+                            ErrorCantParticipateInDispute: () => {
+                                this.logger.warn(
+                                    "challengeDisputeReduction: signer cannot participate in dispute",
+                                    { forkId }
+                                );
+                            },
+                            ErrorDisputeChallengePeriodExpired: () => {
+                                this.logger.error(
+                                    "challengeDisputeReduction: challenge period expired",
+                                    { forkId }
+                                );
+                            },
+                            ErrorDisputeCommitmentNotAvailable: () => {
+                                this.logger.error(
+                                    "challengeDisputeReduction: dispute commitment no longer available",
+                                    { forkId }
+                                );
+                            }
+                        }
+                    });
+                    if (!success) {
+                        this.logger.error(
+                            "Unhandled error in challengeDisputeReduction",
+                            {
+                                forkId,
+                                error:
+                                    error instanceof Error
+                                        ? error.message
+                                        : String(error)
+                            }
+                        );
+                        // Do NOT rethrow — ancestor is the ethers listener with no catch.
+                    }
+                });
+            DetachedPromises.collect(txPromise);
             return false;
         }
         return true;

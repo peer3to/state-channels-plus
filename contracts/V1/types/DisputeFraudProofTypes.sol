@@ -17,7 +17,7 @@ contract DisputeFraudProofTypes {
         DisputeInvalidBlockInStateProofApplyFraudProof memory n,
         DisputeLastMilestoneNotFinalAndNoAuditingData memory o,
         InvalidDisputeReason memory p,
-        DisputeStateProofForkMismatch memory q,
+        DisputeStateProofHeaderMismatch memory q,
         DisputeInboundHashNotInChain memory r
     ) {}
 }
@@ -96,7 +96,7 @@ struct InvalidDisputeReason {
     StateSnapshot latestStateSnapshot;
 }
 
-struct DisputeStateProofForkMismatch {
+struct DisputeStateProofHeaderMismatch {
     bool __;
 }
 

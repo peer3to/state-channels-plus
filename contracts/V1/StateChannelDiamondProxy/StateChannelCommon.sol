@@ -234,11 +234,16 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         onlySelf
         returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
     {
-        StateSnapshot memory currentSnapshot = getStateSnapshot(channelId);
-        require(
-            !StateChannelManagerInterface(address(this)).isForkDisputed(channelId, currentSnapshot.forkId),
-            RaceConditionForceInboundJoinForkDisputed()
-        );
+        for (uint256 i = 0; i < messages.length; i++) {
+            if (messages[i].messageType == MESSAGE_TYPE_JOIN) {
+                StateSnapshot memory currentSnapshot = stateSnapshots[channelId];
+                require(
+                    !StateChannelManagerInterface(address(this)).isForkDisputed(channelId, currentSnapshot.forkId),
+                    RaceConditionForceInboundJoinForkDisputed()
+                );
+                break;
+            }
+        }
         return _appendInboundMessages(channelId, messages);
     }
 
@@ -332,16 +337,24 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         if (lowerHash == bytes32(0)) {
             return outboundMessageBlocks;
         }
-        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+
+        uint256 n = outboundMessageBlocks.length;
+        uint256 startIndex = n;
+        for (uint256 i = 0; i < n; i++) {
             if (outboundMessageBlocks[i].previousBlockHash == lowerHash) {
-                MessageBlock[] memory pruned = new MessageBlock[](outboundMessageBlocks.length - i);
-                for (uint256 j = 0; j < pruned.length; j++) {
-                    pruned[j] = outboundMessageBlocks[i + j];
-                }
-                return pruned;
+                startIndex = i;
+                break;
             }
         }
-        return new MessageBlock[](0);
+
+        if (startIndex == 0) return outboundMessageBlocks;
+        if (startIndex == n) return new MessageBlock[](0);
+
+        MessageBlock[] memory pruned = new MessageBlock[](n - startIndex);
+        for (uint256 j = 0; j < pruned.length; j++) {
+            pruned[j] = outboundMessageBlocks[startIndex + j];
+        }
+        return pruned;
     }
 
     function _verifyOutboundMessageBlocks(
@@ -587,45 +600,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             walkHash = inboundMessageBlockMap[channelId][walkHash].previousBlockHash;
         }
 
-        return false;
-    }
-
-    function _requireStateProofHeaderChannelMatchesInput(Dispute memory dispute) internal pure {
-        bytes32 channelId = dispute.input.channelId;
-        StateProof memory sp = dispute.input.stateProof;
-
-        for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
-            Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
-            if (b.transaction.header.channelId != channelId) {
-                revert ErrorDisputeStateProofHeaderChannelMismatch();
-            }
-        }
-        for (uint256 m = 0; m < sp.milestones.length; m++) {
-            BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
-            for (uint256 j = 0; j < bcs.length; j++) {
-                Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
-                if (mb.transaction.header.channelId != channelId) {
-                    revert ErrorDisputeStateProofHeaderChannelMismatch();
-                }
-            }
-        }
-    }
-
-    function _hasStateProofHeaderForkMismatch(Dispute memory dispute) internal pure returns (bool) {
-        bytes32 forkId = dispute.input.forkId;
-        StateProof memory sp = dispute.input.stateProof;
-
-        for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
-            Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
-            if (b.transaction.header.forkId != forkId) return true;
-        }
-        for (uint256 m = 0; m < sp.milestones.length; m++) {
-            BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
-            for (uint256 j = 0; j < bcs.length; j++) {
-                Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
-                if (mb.transaction.header.forkId != forkId) return true;
-            }
-        }
         return false;
     }
 

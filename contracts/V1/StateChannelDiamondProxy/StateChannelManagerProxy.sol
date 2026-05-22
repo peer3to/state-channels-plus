@@ -130,8 +130,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
                 channelId: openChannelData.channelId,
                 participant: openChannelData.participants[i],
                 deadlineTimestamp: openChannelData.deadlineTimestamp,
-                balance: openChannelData.balances[i],
-                latestStateSnapshotHash: bytes32(0)
+                balance: openChannelData.balances[i]
             });
         }
 
@@ -238,8 +237,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public override {
-        _delegatecall(joinChannelFacetAddress, abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations)));
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations, bytes32 expectedSnapshotHash)
+        public
+        override
+    {
+        _delegatecall(
+            joinChannelFacetAddress,
+            abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash))
+        );
     }
 
     // ********** public/external DIAMOND functions **********
@@ -342,9 +347,9 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool));
     }
 
-    function hasStateProofForkMismatch(Dispute memory dispute) public returns (bool) {
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public returns (bool) {
         bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.hasStateProofForkMismatch, (dispute))
+            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.hasStateProofHeaderMismatch, (dispute))
         );
         return abi.decode(result, (bool));
     }
@@ -421,6 +426,37 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         returns (bool)
     {
         return StateChannelCommon.hasInboundMessageBlock(channelId, messageBlockHash);
+    }
+
+    function isFirstBlockTimestampValid(uint256 blockTimestamp, uint256 previousStateSnapshotTimestamp)
+        public
+        view
+        returns (bool)
+    {
+        return _isFirstBlockTimestampValid(blockTimestamp, previousStateSnapshotTimestamp, getP2pTime());
+    }
+
+    function hasForfeitedRightToExtraTime(
+        Block memory previousBlock,
+        address nextBlockAuthor,
+        bytes memory signatureOnPreviousBlock
+    ) public pure returns (bool) {
+        return _hasForfeitedRightToExtraTime(previousBlock, nextBlockAuthor, signatureOnPreviousBlock);
+    }
+
+    function isBlockTimestampValid(
+        uint256 blockTimestamp,
+        uint256 previousBlockTimestamp,
+        bool hasForfeitedRightToExtraTime_,
+        uint256 previousBlockOnChainTimestamp
+    ) public view returns (bool) {
+        return _isBlockTimestampValid(
+            blockTimestamp,
+            previousBlockTimestamp,
+            hasForfeitedRightToExtraTime_,
+            previousBlockOnChainTimestamp,
+            getP2pTime()
+        );
     }
 
     function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
