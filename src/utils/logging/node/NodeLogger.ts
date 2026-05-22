@@ -3,7 +3,8 @@ import {
     Logger,
     ExclusiveLoggerContext,
     LogLevel,
-    SharedLoggerContext
+    SharedLoggerContext,
+    LoggerPerformanceMonitorOptions
 } from "../Logger";
 import { NodeLogUploader } from "../LogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
@@ -134,6 +135,83 @@ export class NodeLogger extends Logger {
         // Fallback when groups are not supported
         // eslint-disable-next-line no-console
         console.log(formattedMessage, formattedMeta, logEntry.stack);
+    }
+
+    protected createPerformanceMonitor(
+        options: LoggerPerformanceMonitorOptions
+    ): () => void {
+        let stopped = false;
+        let stopMonitor: (() => void) | undefined;
+
+        void import("node:perf_hooks")
+            .then(({ monitorEventLoopDelay, performance }) => {
+                if (stopped) return;
+
+                const intervalMs = options.intervalMs ?? 1000;
+                const delayWarnThresholdMs =
+                    options.delayWarnThresholdMs ?? 200;
+                const utilizationWarnThreshold =
+                    options.utilizationWarnThreshold ?? 0.8;
+                const h = monitorEventLoopDelay();
+                h.enable();
+                let last = performance.eventLoopUtilization();
+
+                const toMs = (nanoseconds: number) => {
+                    const ms = nanoseconds / 1e6;
+                    return Number.isFinite(ms) ? ms : 0;
+                };
+
+                const timer = setInterval(() => {
+                    const elu = performance.eventLoopUtilization(last);
+                    last = performance.eventLoopUtilization();
+                    const dMean = toMs(h.mean);
+                    const d50 = toMs(h.percentile(50));
+                    const d90 = toMs(h.percentile(90));
+                    const d99 = toMs(h.percentile(99));
+                    const dMax = toMs(h.max);
+                    const utilization = elu.utilization;
+                    const shouldWarn =
+                        utilization > utilizationWarnThreshold ||
+                        dMean > delayWarnThresholdMs ||
+                        d50 > delayWarnThresholdMs ||
+                        d90 > delayWarnThresholdMs ||
+                        d99 > delayWarnThresholdMs ||
+                        dMax > delayWarnThresholdMs;
+                    const logFn = shouldWarn
+                        ? this.warn.bind(this)
+                        : this.verbose.bind(this);
+                    logFn(
+                        `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${utilization}`,
+                        {
+                            runtime: "node",
+                            dMean,
+                            d50,
+                            d90,
+                            d99,
+                            dMax,
+                            utilization
+                        }
+                    );
+                    h.reset();
+                }, intervalMs);
+
+                stopMonitor = () => {
+                    clearInterval(timer);
+                    h.disable();
+                };
+            })
+            .catch((error) => {
+                if (stopped) return;
+                this.warn("Event loop performance monitoring unavailable", {
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            });
+
+        return () => {
+            stopped = true;
+            stopMonitor?.();
+        };
     }
 
     public group(label?: string): void {

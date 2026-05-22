@@ -1,4 +1,4 @@
-import ContractExecuter from "./ContractExecuter";
+import ContractExecutor from "./ContractExecutor";
 import P2pInstance from "./P2pInstance";
 import P2pSigner from "./P2pSigner";
 import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
@@ -9,7 +9,7 @@ import { createLocalDeployerFromTx } from "../../scripts/V1/deploy";
 import type { LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 
 export {
-    ContractExecuter,
+    ContractExecutor,
     P2pInstance,
     P2pSigner,
     EvmDiamondStateMachine as EvmStateMachine,

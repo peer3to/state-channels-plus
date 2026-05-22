@@ -51,6 +51,7 @@ export {
     ATransport,
     getChecksumAddress
 };
+export { Status } from "@/types";
 
 export { Address } from "@ethereumjs/util";
 

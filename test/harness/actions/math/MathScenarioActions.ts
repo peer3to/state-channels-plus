@@ -174,7 +174,7 @@ export class MathScenarioActions extends ScenarioActions {
             p2pTime: 1,
             agreementTime: 6,
             chainFallbackTime: 2,
-            evidenceTime: 6,
+            evidenceTime: 8,
             ...options?.timeConfig
         };
 

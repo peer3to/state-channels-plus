@@ -24,10 +24,7 @@ import {
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
-import {
-    DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
-    type LocalStateMachineDeployer
-} from "../../scripts/V1/deploy";
+import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 
@@ -55,12 +52,8 @@ import {
 } from "@test/harness/core/types";
 import { HarnessDebug } from "./HarnessDebug";
 import { LogLevel } from "@/utils/logging/Logger";
-import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 
-// peformance monitoring
-const h = monitorEventLoopDelay();
-h.enable();
-let last = performance.eventLoopUtilization();
+const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
 /**
  * Main test harness for E2E peer-to-peer testing
@@ -146,37 +139,7 @@ export class PeerTestHarness<
                 attachErrorListener: false
             }
         );
-        setInterval(() => {
-            const elu = performance.eventLoopUtilization(last);
-            last = performance.eventLoopUtilization();
-            const dMean = h.mean / 1e6; // convert to ms
-            const d50 = h.percentile(50) / 1e6;
-            const d90 = h.percentile(90) / 1e6;
-            const d99 = h.percentile(99) / 1e6;
-            const dMax = h.max / 1e6;
-            const shouldWarn =
-                elu.utilization > 0.8 ||
-                dMean > 200 ||
-                d50 > 200 ||
-                d90 > 200 ||
-                d99 > 200 ||
-                dMax > 200;
-            const logFn = shouldWarn
-                ? this.logger.warn.bind(this.logger)
-                : this.logger.verbose.bind(this.logger);
-            logFn(
-                `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${elu.utilization}`,
-                {
-                    dMean,
-                    d50,
-                    d90,
-                    d99,
-                    dMax,
-                    utilization: elu.utilization
-                }
-            );
-            h.reset();
-        }, 1000);
+        this.logger.startPerformanceMonitoring();
         LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
@@ -232,7 +195,7 @@ export class PeerTestHarness<
             stateMachineGasLimit: options?.stateMachineGasLimit ?? 500000,
             disputeExecutionGasLimit:
                 options?.disputeExecutionGasLimit ??
-                DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
+                DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT,
             autoConnect: options?.autoConnect !== false,
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],
@@ -340,6 +303,7 @@ export class PeerTestHarness<
             disputeStarted: sinon.spy(),
             onInitiatingDispute: sinon.spy(),
             onDisputeUpdate: sinon.spy(),
+            onBlockConfirmationProcessed: sinon.spy(),
 
             // EventHandler method spies
             onChannelOpened: sinon.spy(),
@@ -432,11 +396,13 @@ export class PeerTestHarness<
                 eventSpies.onInitiatingDispute?.(disputeHash, dispute);
                 this.eventCountsBarrier.signal();
             },
-            onDisputeUpdate: (dispute: DisputeStruct) => {
+            onDisputeUpdate: (slashes: Address[], timeout?: Address) => {
                 peerLogger.info("Dispute updated", {
-                    component: "P2pEventHooks"
+                    component: "P2pEventHooks",
+                    slashes,
+                    timeout
                 });
-                eventSpies.onDisputeUpdate?.(dispute);
+                eventSpies.onDisputeUpdate?.(slashes, timeout);
                 this.eventCountsBarrier.signal();
             },
             onDisputeAcknowledgment: (addr: Address) => {
@@ -450,6 +416,21 @@ export class PeerTestHarness<
                 this.eventCountsBarrier.signal();
             },
             onBlockFinalized: () => {
+                this.eventCountsBarrier.signal();
+            },
+            onBlockConfirmationProcessed: (
+                blockHash: Hash,
+                keepConnection: boolean
+            ) => {
+                peerLogger.verbose("Block confirmation processed", {
+                    component: "P2pEventHooks",
+                    blockHash,
+                    keepConnection
+                });
+                eventSpies.onBlockConfirmationProcessed?.(
+                    blockHash,
+                    keepConnection
+                );
                 this.eventCountsBarrier.signal();
             }
         };

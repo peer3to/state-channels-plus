@@ -102,6 +102,7 @@ describe("E2E: Join/Leave Sequence", function () {
                 preDisputeForkId,
                 `spectator peer ${i} should be on pre-dispute fork`
             );
+            // TODO - don't forget to rethink this
         }
     });
 });

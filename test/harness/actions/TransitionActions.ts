@@ -3,7 +3,9 @@ import type { TestPeer } from "@test/harness/core/types";
 import { Logger, sleep } from "@/utils";
 import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
 import type { RpcServiceFactoryMap } from "@/rpc";
-import { StateSnapshot } from "@/models";
+import { Block, StateSnapshot } from "@/models";
+import type { IngestBlockConfirmationOptions } from "@/stateManager/BlockQueueManager";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -248,6 +250,55 @@ export class TransitionActions<
         }
 
         return result;
+    }
+
+    async ingestBlockConfirmationWait(options: {
+        peerIndex: number;
+        blockConfirmation: BlockConfirmationStruct;
+        ingestOptions?: IngestBlockConfirmationOptions;
+        keepConnection?: boolean;
+        waitForProcessed?: boolean;
+        processedKeepConnection?: boolean;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            peerIndex,
+            blockConfirmation,
+            ingestOptions,
+            keepConnection: expectedKeepConnection,
+            waitForProcessed = true,
+            processedKeepConnection,
+            timeoutMs
+        } = options;
+        const peer = this.harness.getPeer(peerIndex);
+        const block = Block.fromBlockConfirmation(
+            blockConfirmation,
+            ingestOptions?.onChainTimestamp
+        );
+        const keepConnection = await peer.stateManager.ingestBlockConfirmation(
+            blockConfirmation,
+            ingestOptions
+        );
+
+        if (
+            expectedKeepConnection !== undefined &&
+            keepConnection !== expectedKeepConnection
+        ) {
+            throw new Error(
+                `Expected ingestBlockConfirmation keepConnection=${expectedKeepConnection}, got ${keepConnection}`
+            );
+        }
+
+        if (!keepConnection || !waitForProcessed) {
+            return;
+        }
+
+        await this.harness.event.waitForBlockConfirmationProcessed({
+            peerIndex,
+            blockHash: block.hash,
+            keepConnection: processedKeepConnection,
+            timeoutMs
+        });
     }
 
     /**

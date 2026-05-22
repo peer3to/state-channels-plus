@@ -20,7 +20,7 @@ import {
 } from "@/utils";
 import P2pEventHooks from "@/P2pEventHooks";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { P2pInstance, ContractExecuter } from "@/evm";
+import { P2pInstance, ContractExecutor } from "@/evm";
 import P2pSigner from "./P2pSigner";
 import { Address, Bytes } from "@/types/types";
 import {
@@ -45,22 +45,22 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
  * Also serves as the implementation of AStateMachine
  */
 class EvmDiamondStateMachine extends ADiamondStateMachine {
-    readonly stateMachineContractExecuter: ContractExecuter;
-    readonly diamondContractExecuter: ContractExecuter;
+    readonly stateMachineContractExecutor: ContractExecutor;
+    readonly diamondContractExecutor: ContractExecutor;
     readonly contractInterface: ethers.Interface;
     private p2pContractInstance?: AStateMachineContract;
     public stateManager?: StateManager;
 
     constructor(
-        stateMachineContractExecuter: ContractExecuter,
+        stateMachineContractExecutor: ContractExecutor,
         contractInterface: ethers.Interface,
-        diamondContractExecuter: ContractExecuter,
+        diamondContractExecutor: ContractExecutor,
         localDiamondContract: LocalDiamond
     ) {
         super(localDiamondContract);
-        this.stateMachineContractExecuter = stateMachineContractExecuter;
+        this.stateMachineContractExecutor = stateMachineContractExecutor;
         this.contractInterface = contractInterface;
-        this.diamondContractExecuter = diamondContractExecuter;
+        this.diamondContractExecutor = diamondContractExecutor;
     }
 
     private getEncodedCalldata(
@@ -122,7 +122,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             const result =
-                await this.stateMachineContractExecuter.executeCall(
+                await this.stateMachineContractExecutor.executeCall(
                     encodedData
                 );
             // Decode the return values: (bool success, Message[] outboundMessages)
@@ -150,7 +150,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
     async runView(tx: ethers.TransactionRequest): Promise<string> {
         try {
-            const result = await this.stateMachineContractExecuter.executeCall(
+            const result = await this.stateMachineContractExecutor.simulateCall(
                 tx.data as Bytes
             );
             return hexlify(result.returnValue);
@@ -163,7 +163,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getParticipants");
 
         const addresses = Codec.decodeEvmResult<Address[]>(
-            await this.stateMachineContractExecuter.executeCall(callData),
+            await this.stateMachineContractExecutor.simulateCall(callData),
             "address[]"
         );
         return addresses;
@@ -173,7 +173,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getNextToWrite");
         try {
             return Codec.decodeEvmResult<Address>(
-                await this.stateMachineContractExecuter.executeCall(callData),
+                await this.stateMachineContractExecutor.simulateCall(callData),
                 "address"
             );
         } catch (error) {
@@ -195,7 +195,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         ]);
 
         try {
-            await this.stateMachineContractExecuter.executeCall(encodedData);
+            await this.stateMachineContractExecutor.executeCall(encodedData);
             return true;
         } catch (error) {
             throw this.createContextError("setState", error);
@@ -207,7 +207,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<Bytes>(
-                await this.stateMachineContractExecuter.executeCall(callData),
+                await this.stateMachineContractExecutor.simulateCall(callData),
                 "bytes"
             );
         } catch (error) {
@@ -220,7 +220,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<BalanceStruct>(
-                await this.stateMachineContractExecuter.executeCall(callData),
+                await this.stateMachineContractExecutor.simulateCall(callData),
                 BalanceEthersType
             );
         } catch (error) {
@@ -239,7 +239,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<BalanceStruct>(
-                await this.stateMachineContractExecuter.executeCall(callData),
+                await this.stateMachineContractExecutor.simulateCall(callData),
                 BalanceEthersType
             );
         } catch (error) {
@@ -258,7 +258,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<BalanceStruct>(
-                await this.stateMachineContractExecuter.executeCall(callData),
+                await this.stateMachineContractExecutor.simulateCall(callData),
                 BalanceEthersType
             );
         } catch (error) {
@@ -277,7 +277,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<boolean>(
-                await this.stateMachineContractExecuter.executeCall(callData),
+                await this.stateMachineContractExecutor.simulateCall(callData),
                 "bool"
             );
         } catch (error) {
@@ -292,7 +292,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             const result =
-                await this.stateMachineContractExecuter.executeCall(callData);
+                await this.stateMachineContractExecutor.executeCall(callData);
             const hexResult = hexlify(result.returnValue);
             const [success] = ethers.AbiCoder.defaultAbiCoder().decode(
                 ["bool"],
@@ -310,7 +310,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<BalanceStruct>(
-                await this.stateMachineContractExecuter.executeCall(callData),
+                await this.stateMachineContractExecutor.simulateCall(callData),
                 BalanceEthersType,
                 { useObjectConversion: true }
             );
@@ -356,14 +356,14 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             disputeExecutionGasLimit
         );
 
-        const diamondExecuter = new ContractExecuter(
+        const diamondExecutor = new ContractExecutor(
             evm,
             diamondResult.address,
             logger
         );
         const localDiamondSigner = new LocalDiamondSigner(
             signer,
-            diamondExecuter
+            diamondExecutor
         );
 
         // Create LocalDiamond contract instance
@@ -379,9 +379,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         return {
             evmDiamondStateMachine: new EvmDiamondStateMachine(
-                new ContractExecuter(evm, stateMachineAddress, logger),
+                new ContractExecutor(evm, stateMachineAddress, logger),
                 contractInterface,
-                diamondExecuter,
+                diamondExecutor,
                 proxiedLocalDiamond
             ),
             deploymentResult: diamondResult
