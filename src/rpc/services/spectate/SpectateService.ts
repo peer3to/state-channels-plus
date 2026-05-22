@@ -469,6 +469,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     return { shouldAbort: false };
                 }
 
+                const finalizedBlocks = this.getFinalizedBlocksFromStateProof(
+                    syncPayload.stateProof
+                );
+                if (this.hasAnyBlockConflict(finalizedBlocks)) {
+                    return { shouldAbort: true };
+                }
+
                 for (const dw of syncPayload.disputeWindows) {
                     for (const dispute of dw.disputeConfirmations) {
                         storage.disputes.storeDisputeConfirmation(dispute);
@@ -493,13 +500,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                             .stateMachineStateHash
                     }
                 );
-                if (
-                    this.persistFinalizedPartsOfStateProof(
-                        syncPayload.stateProof
-                    ).shouldAbort
-                ) {
-                    return { shouldAbort: true };
-                }
+                this.persistFinalizedBlocks(finalizedBlocks);
                 for (const snapshot of syncPayload.milestoneSnapshots)
                     storage.stateSnapshots.storeStateSnapshot(
                         StateSnapshot.from(snapshot)
@@ -519,19 +520,17 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             { taskName: "persistSyncPayload" }
         );
     }
-    public persistFinalizedPartsOfStateProof(stateProof: StateProofStruct): {
-        shouldAbort: boolean;
-    } {
-        const storage = this.p2pManager.stateManager.storage;
+
+    private getFinalizedBlocksFromStateProof(
+        stateProof: StateProofStruct
+    ): Block[] {
+        const finalizedBlocks: Block[] = [];
         // for all milestones except the last persist all blocks
         for (let i = 0; i < stateProof.milestones.length - 1; i++) {
             for (const blockConfirmation of stateProof.milestones[i]
                 .blockConfirmations) {
                 const block = Block.fromBlockConfirmation(blockConfirmation);
-                if (this.hasBlockConflict(block)) {
-                    return { shouldAbort: true };
-                }
-                storage.blocks.storeBlock(block);
+                finalizedBlocks.push(block);
             }
         }
         // for the last milestone persist just the first (finalized) block
@@ -541,12 +540,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             const block = Block.fromBlockConfirmation(
                 finalizedBlockConfirmation
             );
-            if (this.hasBlockConflict(block)) {
-                return { shouldAbort: true };
-            }
-            storage.blocks.storeBlock(block);
+            finalizedBlocks.push(block);
         }
-        return { shouldAbort: false };
+        return finalizedBlocks;
+    }
+
+    private hasAnyBlockConflict(blocks: Block[]): boolean {
+        return blocks.some((block) => this.hasBlockConflict(block));
+    }
+
+    private persistFinalizedBlocks(blocks: Block[]): void {
+        const storage = this.p2pManager.stateManager.storage;
+        for (const block of blocks) storage.blocks.storeBlock(block);
     }
 
     private hasBlockConflict(block: Block): boolean {

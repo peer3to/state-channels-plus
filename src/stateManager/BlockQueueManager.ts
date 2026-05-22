@@ -3,6 +3,7 @@ import { BlockValidationResult, TimeConfig } from "@/types";
 import { Address, ForkId, Hash, Signature, Timestamp } from "@/types/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import Clock from "@/Clock";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
@@ -14,10 +15,6 @@ import type AValidationStrategy from "./validationStrategy/AValidationStrategy";
 export type IngestBlockConfirmationOptions = {
     onChainTimestamp?: Timestamp;
     validationStrategy?: AValidationStrategy;
-    senderAddress?: Address;
-};
-
-type QueueBlockForLaterOptions = {
     senderAddress?: Address;
 };
 
@@ -40,95 +37,92 @@ export default class BlockQueueManager {
         blockConfirmation: BlockConfirmationStruct,
         options?: IngestBlockConfirmationOptions
     ): Promise<boolean> {
-        const strategy =
-            options?.validationStrategy ||
-            this.stateManager.getActiveValidationStrategy();
+        try {
+            const strategy =
+                options?.validationStrategy ||
+                this.stateManager.getActiveValidationStrategy();
 
-        const isAuthentic =
-            await this.stateManager.isBlockConfirmationAuthentic(
-                blockConfirmation
+            const isAuthentic =
+                await this.stateManager.isBlockConfirmationAuthentic(
+                    blockConfirmation
+                );
+
+            if (!isAuthentic) {
+                const validationResult =
+                    await strategy.authenticateBlockFailed(blockConfirmation);
+                this.logger.warn(
+                    "ingestBlockConfirmation - authentication failed",
+                    {
+                        strategy: strategy.name,
+                        validationResult:
+                            BlockValidationResult[validationResult],
+                        block: LoggerUtils.getBlockConfirmationStructMetadata(
+                            blockConfirmation
+                        )
+                    }
+                );
+                return strategy.interpretFinalValidationResult(
+                    validationResult
+                );
+            }
+
+            const block = Block.fromBlockConfirmation(
+                blockConfirmation,
+                options?.onChainTimestamp
             );
 
-        if (!isAuthentic) {
-            const validationResult =
-                await strategy.authenticateBlockFailed(blockConfirmation);
-            this.logger.warn(
-                "ingestBlockConfirmation - authentication failed",
-                {
-                    strategy: strategy.name,
-                    validationResult: BlockValidationResult[validationResult],
-                    block: LoggerUtils.getBlockConfirmationStructMetadata(
-                        blockConfirmation
-                    )
-                }
-            );
-            return strategy.interpretFinalValidationResult(validationResult);
-        }
-
-        const block = Block.fromBlockConfirmation(
-            blockConfirmation,
-            options?.onChainTimestamp
-        );
-
-        if (this.isBlockStored(block)) {
-            this.scheduleStoredBlockConfirmationMerge(
-                block,
-                strategy,
-                options?.senderAddress ? [options.senderAddress] : []
-            );
-            return true;
-        }
-
-        if (!this.isBlockForThisChannel(block)) {
-            this.logger.warn("ingestBlockConfirmation - wrong channel", {
-                expectedChannelId: String(this.stateManager.channelId),
-                blockChannelId: String(block.channelId),
-                senderAddress: options?.senderAddress,
-                block: LoggerUtils.getBlockMetadata(
+            if (this.isBlockStored(block)) {
+                this.scheduleStoredBlockConfirmationMerge(
                     block,
-                    this.stateManager.storage
-                )
-            });
-            return !options?.senderAddress;
-        }
+                    strategy,
+                    options?.senderAddress ? [options.senderAddress] : []
+                );
+                return true;
+            }
 
-        if (
-            await this.stateManager.isForkDisputed(
-                block.forkId,
-                block.channelId
-            )
-        ) {
-            this.clearFork(block.forkId);
-            this.logger.verbose(
-                "ingestBlockConfirmation - ignoring unstored block on disputed fork",
-                {
+            if (!this.isBlockForThisChannel(block)) {
+                this.logger.warn("ingestBlockConfirmation - wrong channel", {
+                    expectedChannelId: String(this.stateManager.channelId),
+                    blockChannelId: String(block.channelId),
+                    senderAddress: options?.senderAddress,
                     block: LoggerUtils.getBlockMetadata(
                         block,
                         this.stateManager.storage
                     )
-                }
-            );
+                });
+                return !options?.senderAddress;
+            }
+
+            if (
+                await this.stateManager.isForkDisputed(
+                    block.forkId,
+                    block.channelId
+                )
+            ) {
+                this.clearFork(block.forkId);
+                this.logger.verbose(
+                    "ingestBlockConfirmation - ignoring unstored block on disputed fork",
+                    {
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.stateManager.storage
+                        )
+                    }
+                );
+                return true;
+            }
+
+            const hash = this.stateManager.storage.queues.queueBlock(block, {
+                senderAddress: options?.senderAddress
+            });
+            this.scheduleQueueTimeout(hash);
+            this.scheduleQueueExecution(block.forkId);
+
             return true;
+        } catch (error) {
+            this.logger.error(`Error ingesting block confirmation:`, { error });
+            return false;
         }
-
-        this.queueBlock(block, {
-            senderAddress: options?.senderAddress
-        });
-
-        return true;
-    }
-
-    private queueBlock(
-        block: Block,
-        options?: QueueBlockForLaterOptions
-    ): Hash {
-        const hash = this.stateManager.storage.queues.queueBlock(
-            block,
-            options
-        );
-        this.scheduleQueueTimeout(hash);
-        this.scheduleQueueExecution(block.forkId);
-        return hash;
     }
 
     public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
@@ -202,7 +196,7 @@ export default class BlockQueueManager {
         );
 
         if (entry.block.height > nextHeight) {
-            this.requestSyncIfFuture(entry);
+            this.requestSync(entry);
             return;
         }
 
@@ -322,19 +316,19 @@ export default class BlockQueueManager {
 
         const shouldKeepConnection =
             await strategy.interpretFinalValidationResult(validationResult);
-        const shouldDisconnect = !shouldKeepConnection;
 
-        if (shouldDisconnect) {
+        if (!shouldKeepConnection) {
             for (const peer of sourcePeers) {
                 this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                     peer
                 );
             }
         }
-        this.stateManager.notifyBlockConfirmationProcessed(
-            block.hash,
-            shouldKeepConnection
-        );
+        P2pEventHooksUtils.notifyBlockConfirmationProcessed({
+            blockHash: block.hash,
+            keepConnection: shouldKeepConnection,
+            p2pEventHooks: this.stateManager.p2pEventHooks
+        });
     }
 
     private async executeQueuedEntry(entry: QueuedBlockEntry): Promise<void> {
@@ -382,12 +376,8 @@ export default class BlockQueueManager {
         this.timeoutHandles.delete(blockHash);
     }
 
-    private requestSyncIfFuture(entry: QueuedBlockEntry): void {
+    private requestSync(entry: QueuedBlockEntry): void {
         const block = entry.block;
-        const nextHeight = this.stateManager.storage.blocks.getNextBlockHeight(
-            block.forkId
-        );
-        if (block.height <= nextHeight) return;
 
         const peers = new Set<Address>();
         for (const sourcePeer of entry.sourcePeers) peers.add(sourcePeer);

@@ -107,10 +107,6 @@ export class QueueStorage {
         return this.queuedBlocks.get(blockHash);
     }
 
-    getQueuedBlock(blockHash: Hash): Block | undefined {
-        return this.queuedBlocks.get(blockHash)?.block;
-    }
-
     getSignatureSources(
         blockHash: Hash,
         signature: Signature
@@ -118,10 +114,6 @@ export class QueueStorage {
         return this.queuedBlocks
             .get(blockHash)
             ?.signatureSources.get(signature);
-    }
-
-    getSourcePeers(blockHash: Hash): Set<Address> {
-        return this.queuedBlocks.get(blockHash)?.sourcePeers ?? new Set();
     }
 
     removeBlock(blockHash: Hash): QueuedBlockEntry | undefined {

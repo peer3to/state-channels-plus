@@ -414,11 +414,14 @@ describe("E2E: Spectate Service", function () {
                     );
                 }
             );
-            const blockToConflict = finalizedBlocks.find(
+            const newFinalizedBlocks = finalizedBlocks.filter(
                 (block) =>
                     block.height > spectatorLatestBeforeDisconnect &&
-                    block.height < finalizedHeight
+                    block.height <= finalizedHeight
             );
+            expect(newFinalizedBlocks.length).to.be.greaterThan(1);
+
+            const blockToConflict = newFinalizedBlocks.at(-1);
             expect(blockToConflict).to.not.be.undefined;
 
             const conflictingBlockStruct = Codec.decode(
@@ -439,7 +442,8 @@ describe("E2E: Spectate Service", function () {
 
             const storedConflictHash =
                 spectator.stateManager.storage.blocks.storeBlock(
-                    conflictingBlock
+                    conflictingBlock,
+                    { justPersist: true }
                 );
             expect(storedConflictHash).to.equal(conflictingBlock.hash);
 
@@ -465,6 +469,20 @@ describe("E2E: Spectate Service", function () {
 
                 expect(shouldAbort).to.equal(true);
                 expect(didPersistLatestState).to.equal(false);
+                for (const block of newFinalizedBlocks) {
+                    const storedBlock =
+                        spectator.stateManager.storage.blocks.getBlock(
+                            block.forkId,
+                            block.height
+                        );
+                    if (block.height === blockToConflict!.height) {
+                        expect(storedBlock?.hash).to.equal(
+                            conflictingBlock.hash
+                        );
+                    } else {
+                        expect(storedBlock).to.be.undefined;
+                    }
+                }
             } finally {
                 spectator.stateManager.unsafeSetLatestState =
                     originalUnsafeSetLatestState as typeof spectator.stateManager.unsafeSetLatestState;

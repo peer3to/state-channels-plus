@@ -85,6 +85,7 @@ import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidat
 import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import type { RpcServiceFactoryMap } from "@/rpc/registry";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
@@ -251,31 +252,6 @@ class StateManager {
         this.p2pEventHooks = p2pEventHooks;
     }
 
-    public maybeNotifyBlockFinalized(block: Block): void {
-        try {
-            const participantsUnion = this.storage.getParticipantsUnion(
-                block.coordinates,
-                block.stateSnapshotHash
-            );
-            if (block.didEveryoneSign(participantsUnion)) {
-                this.p2pEventHooks.onBlockFinalized?.();
-            }
-        } catch (error) {
-            this.logger.debug("maybeNotifyBlockFinalized skipped", {
-                error: error instanceof Error ? error.message : String(error)
-            });
-        }
-    }
-
-    public notifyBlockConfirmationProcessed(
-        blockHash: Hash,
-        keepConnection: boolean
-    ): void {
-        this.p2pEventHooks.onBlockConfirmationProcessed?.(
-            blockHash,
-            keepConnection
-        );
-    }
     public setStatus(status: Status) {
         const oldStatus = this.status;
         if (oldStatus === status) {
@@ -904,12 +880,15 @@ class StateManager {
         );
 
         this.p2pEventHooks.onSetState?.();
-        this.signalTurn(
+        P2pEventHooksUtils.notifyTurn({
             nextToWrite,
-            nextTransactionCnt,
-            normalizedGenesisTimestamp,
-            Clock.getTimeInSeconds()
-        );
+            nextBlockHeight: nextTransactionCnt,
+            relevantTimestamp: normalizedGenesisTimestamp,
+            currentTimestamp: Clock.getTimeInSeconds(),
+            timeConfig: this.timeConfig,
+            p2pEventHooks: this.p2pEventHooks,
+            logger: this.logger
+        });
     }
 
     public async setGenesisState(
@@ -1029,15 +1008,12 @@ class StateManager {
         this.storage.blocks.storeBlock(block);
         const persisted = this.storage.blocks.getBlock(block.hash);
         if (persisted) {
-            this.maybeNotifyBlockFinalized(persisted);
-            if (this.status === Status.PENDING_PARTICIPANT) {
-                const participants =
-                    await this.diamondStateMachine.getParticipants();
-                await this.maybeInitiateForceJoinDispute(
-                    persisted,
-                    participants
-                );
-            }
+            P2pEventHooksUtils.maybeNotifyBlockFinalized({
+                block: persisted,
+                storage: this.storage,
+                p2pEventHooks: this.p2pEventHooks,
+                logger: this.logger
+            });
         }
 
         if (!(strategy instanceof DisputeValidationStrategy)) {
@@ -1371,10 +1347,11 @@ class StateManager {
                 "tryExecuteFromQueue"
             );
             if (block && keepConnection !== undefined) {
-                this.notifyBlockConfirmationProcessed(
-                    block.hash,
-                    keepConnection
-                );
+                P2pEventHooksUtils.notifyBlockConfirmationProcessed({
+                    blockHash: block.hash,
+                    keepConnection,
+                    p2pEventHooks: this.p2pEventHooks
+                });
             }
         }
     }
@@ -1451,28 +1428,6 @@ class StateManager {
             ` - Current timestamp: ${Clock.getTimeInSeconds()}`;
         this.logger.info(message);
         return message;
-    }
-
-    private signalTurn(
-        nextToWrite: Address,
-        nextBlockHeight: BlockHeight,
-        relevantTimestamp: Timestamp,
-        currentTimestamp: Timestamp
-    ): void {
-        this.logger.info(`onTurn signal txHeight: #${nextBlockHeight}`, {
-            currentTimestamp,
-            nextToWrite,
-            nextBlockHeight,
-            relevantTimestamp
-        });
-
-        this.p2pEventHooks.onTurn?.(
-            nextToWrite,
-            this.timeConfig.p2pTime,
-            this.timeConfig.agreementTime,
-            this.timeConfig.chainFallbackTime,
-            relevantTimestamp
-        );
     }
 
     // Used when authoring a block - Executes the transaction and returns a signed block
@@ -2940,7 +2895,12 @@ class StateManager {
         this.storage.blocks.storeBlock(block, {
             justPersist: options?.strategy instanceof DisputeValidationStrategy
         });
-        this.maybeNotifyBlockFinalized(block);
+        P2pEventHooksUtils.maybeNotifyBlockFinalized({
+            block,
+            storage: this.storage,
+            p2pEventHooks: this.p2pEventHooks,
+            logger: this.logger
+        });
 
         // step 3 - persist the state snapshot
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
@@ -2995,12 +2955,15 @@ class StateManager {
         // step 10 - Notify any event hooks
         const nextToWrite = await this.diamondStateMachine.getNextToWrite();
         const relevantTimestamp = block.getRelevantTimestamp(nextToWrite);
-        this.signalTurn(
+        P2pEventHooksUtils.notifyTurn({
             nextToWrite,
-            block.height + 1,
+            nextBlockHeight: block.height + 1,
             relevantTimestamp,
-            Clock.getTimeInSeconds()
-        );
+            currentTimestamp: Clock.getTimeInSeconds(),
+            timeConfig: this.timeConfig,
+            p2pEventHooks: this.p2pEventHooks,
+            logger: this.logger
+        });
 
         // step 11 - maybe post block on chain
         if (block.author === this.signerAddress) {
