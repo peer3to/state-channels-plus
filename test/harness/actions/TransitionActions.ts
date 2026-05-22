@@ -1,6 +1,6 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
-import { Logger, sleep } from "@/utils";
+import { DetachedPromises, Logger, sleep } from "@/utils";
 import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
 import type { RpcServiceFactoryMap } from "@/rpc";
 import { StateSnapshot } from "@/models";
@@ -164,31 +164,10 @@ export class TransitionActions<
         peerIndex?: number;
         forkId?: string;
     }): Promise<StateSnapshot | undefined> {
-        const { peerIndex = 0 } = options || {};
-        const forkId = options?.forkId || this.harness.activeForkId;
-        if (!forkId) {
-            throw new Error("No active fork ID - channel must be opened first");
-        }
-
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const forkData =
-            await peer.stateManager.prepareUpdateStateSnapshotFork();
-        const sameForkData =
-            await peer.stateManager.prepareUpdateSnapshotSameFork(forkId);
-        const callData: string[] = [
-            ...(forkData?.callData ?? []),
-            ...(sameForkData?.callData ?? [])
-        ];
-        if (callData.length === 0) return undefined;
-
-        const channelManager = this.harness.channelManager.connect(peer.signer);
-        const tx = await channelManager.multicall(callData);
-        await tx.wait();
-        return sameForkData?.expectedSnapshot ?? forkData?.expectedSnapshot;
+        const expectedSnapshot = await this.postSnapshot(options);
+        const last = DetachedPromises.last();
+        if (last) await last;
+        return expectedSnapshot;
     }
 
     async postSameForkSnapshotOnlyWait(options?: {

@@ -61,8 +61,7 @@ contract MathConsumerFacet is AConsumerFacet {
             channelId: channelId,
             participant: participant,
             deadlineTimestamp: block.timestamp + 1 hours,
-            balance: Balance({amount: amount, data: ""}),
-            latestStateSnapshotHash: bytes32(0)
+            balance: Balance({amount: amount, data: ""})
         });
 
         Message[] memory messages = new Message[](1);

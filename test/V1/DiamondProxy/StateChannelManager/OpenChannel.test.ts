@@ -9,6 +9,7 @@ import {
     createOpenChannelTestObject
 } from "@test/test_utils/testHelpers";
 import { SignatureUtils } from "@/utils";
+import StateSnapshot from "@/models/StateSnapshot";
 import {
     StateChannelManagerProxy,
     MathStateMachine,
@@ -174,13 +175,22 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("2 participants invalid signature length - fail", async function () {
-            const resultPromise = mathChannelManager.joinChannel({
-                signedJoinChannel: {
-                    encodedJoinChannel: jc1Signed.encoded,
-                    signature: jc1Signed.signature as Bytes
+            const expectedSnapshotHash = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(jc1.channelId)
+            ).hash;
+            const resultPromise = mathChannelManager.joinChannel(
+                {
+                    signedJoinChannel: {
+                        encodedJoinChannel: jc1Signed.encoded,
+                        signature: jc1Signed.signature as Bytes
+                    },
+                    signatures: [
+                        jc1Signed.signature,
+                        jc2Signed.signature + "00"
+                    ]
                 },
-                signatures: [jc1Signed.signature, jc2Signed.signature + "00"]
-            });
+                expectedSnapshotHash
+            );
             await expect(resultPromise)
                 .to.be.revertedWithCustomError(
                     {
@@ -288,14 +298,20 @@ describe("StateChannelManagerProxy", function () {
             jc1Signed = await SignatureUtils.signJoinChannel(jc1, firstSigner);
             jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
+            const expectedSnapshotHash = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(jc1.channelId)
+            ).hash;
             await expect(
-                mathChannelManager.joinChannel({
-                    signedJoinChannel: {
-                        encodedJoinChannel: jc1Signed.encoded,
-                        signature: jc1Signed.signature as Bytes
+                mathChannelManager.joinChannel(
+                    {
+                        signedJoinChannel: {
+                            encodedJoinChannel: jc1Signed.encoded,
+                            signature: jc1Signed.signature as Bytes
+                        },
+                        signatures: [jc1Signed.signature, jc2Signed.signature]
                     },
-                    signatures: [jc1Signed.signature, jc2Signed.signature]
-                })
+                    expectedSnapshotHash
+                )
             ).to.be.revertedWithCustomError(
                 {
                     interface: new ethers.Interface([
@@ -436,16 +452,24 @@ describe("StateChannelManagerProxy", function () {
                     firstSigner
                 );
 
-            const res = mathChannelManager.joinChannel({
-                signedJoinChannel: {
-                    encodedJoinChannel: invalidJoinChannelSigned.encoded,
-                    signature: invalidJoinChannelSigned.signature as Bytes
+            const expectedSnapshotHash = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(
+                    invalidJoinChannel.channelId
+                )
+            ).hash;
+            const res = mathChannelManager.joinChannel(
+                {
+                    signedJoinChannel: {
+                        encodedJoinChannel: invalidJoinChannelSigned.encoded,
+                        signature: invalidJoinChannelSigned.signature as Bytes
+                    },
+                    signatures: [
+                        invalidJoinChannelSigned.signature,
+                        jc2Signed.signature
+                    ]
                 },
-                signatures: [
-                    invalidJoinChannelSigned.signature,
-                    jc2Signed.signature
-                ]
-            });
+                expectedSnapshotHash
+            );
             await expect(res).to.be.revertedWithCustomError(
                 {
                     interface: new ethers.Interface([

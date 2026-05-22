@@ -704,7 +704,8 @@ class StateManager {
     }
 
     public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Bytes
     ): Promise<void> {
         if (this.status !== Status.SYNCED) return;
 
@@ -724,10 +725,10 @@ class StateManager {
         );
 
         try {
-            const tx =
-                await this.stateChannelManagerContract.joinChannel(
-                    confirmation
-                );
+            const tx = await this.stateChannelManagerContract.joinChannel(
+                confirmation,
+                expectedSnapshotHash
+            );
             await tx.wait();
         } catch (error) {
             this.setStatus(Status.SYNCED);
@@ -736,7 +737,7 @@ class StateManager {
             const custom = tryDecodeCustomError(error);
             switch (custom?.name) {
                 case "RaceConditionJoinChannelExpired":
-                case "RaceConditionJoinChannelStaleSnapshot":
+                case "RaceConditionJoinChannelSnapshotMismatch":
                 case "RaceConditionJoinChannelForkDisputed":
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
@@ -1522,7 +1523,7 @@ class StateManager {
                                 ? error.message
                                 : String(error)
                     });
-                    // do NOT rethrow — detached chain;
+                    throw error;
                 });
             DetachedPromises.collect(txResponsePromise);
             return expectedSnapshot;

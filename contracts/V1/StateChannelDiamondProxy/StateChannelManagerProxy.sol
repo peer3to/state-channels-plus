@@ -130,8 +130,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
                 channelId: openChannelData.channelId,
                 participant: openChannelData.participants[i],
                 deadlineTimestamp: openChannelData.deadlineTimestamp,
-                balance: openChannelData.balances[i],
-                latestStateSnapshotHash: bytes32(0)
+                balance: openChannelData.balances[i]
             });
         }
 
@@ -238,8 +237,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public override {
-        _delegatecall(joinChannelFacetAddress, abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations)));
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations, bytes32 expectedSnapshotHash)
+        public
+        override
+    {
+        _delegatecall(
+            joinChannelFacetAddress,
+            abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash))
+        );
     }
 
     // ********** public/external DIAMOND functions **********
