@@ -42,7 +42,6 @@ export class EventBarrier {
             timeoutMetaFn
         } = options;
         const capturedStack = new Error("EventBarrier.waitFor called").stack;
-        const effectiveTimeoutMs = this.getEffectiveTimeoutMs(timeoutMs);
 
         // Fast path: resolve immediately if condition already satisfied.
         if (await condition()) {
@@ -55,7 +54,7 @@ export class EventBarrier {
                 const timeoutDetail = timeoutMessageFn
                     ? await timeoutMessageFn()
                     : timeoutMessage || "Condition not met";
-                const errorMessage = `EventBarrier timeout after ${effectiveTimeoutMs}ms: ${timeoutDetail}`;
+                const errorMessage = `EventBarrier timeout after ${timeoutMs}ms: ${timeoutDetail}`;
 
                 const error = this.createErrorWithCapturedStack(
                     errorMessage,
@@ -65,11 +64,10 @@ export class EventBarrier {
                 this.logger.error(errorMessage, {
                     timeoutMeta: timeoutMetaFn ? timeoutMetaFn() : timeoutMeta,
                     timeoutMs,
-                    effectiveTimeoutMs,
                     capturedStack: waiter.capturedStack
                 });
                 reject(error);
-            }, effectiveTimeoutMs);
+            }, timeoutMs);
 
             const waiter: Waiter = {
                 condition,
@@ -89,18 +87,6 @@ export class EventBarrier {
 
             this.waiters.add(waiter);
         });
-    }
-
-    private getEffectiveTimeoutMs(timeoutMs: number): number {
-        const raw =
-            typeof process !== "undefined" && process?.env
-                ? process.env.EVENT_BARRIER_TIMEOUT_SCALE
-                : undefined;
-        const scale = raw ? Number(raw) : 1;
-        if (!Number.isFinite(scale) || scale <= 0) {
-            return timeoutMs;
-        }
-        return Math.ceil(timeoutMs * scale);
     }
 
     /**

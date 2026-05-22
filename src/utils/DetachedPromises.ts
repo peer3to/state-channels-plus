@@ -1,15 +1,6 @@
 export class DetachedPromises {
-    private static readonly DEFAULT_AWAIT_TIMEOUT_MS = 30000;
+    private static readonly AWAIT_ALL_TIMEOUT_MS = 30000;
     private static nextId = 1;
-
-    /** Longer than scaled EventBarrier waits when EVENT_BARRIER_TIMEOUT_SCALE is set (e.g. parallel E2E). */
-    private static getAwaitAllTimeoutMs(): number {
-        const scale = Number(process?.env?.EVENT_BARRIER_TIMEOUT_SCALE) || 1;
-        return Math.max(
-            DetachedPromises.DEFAULT_AWAIT_TIMEOUT_MS,
-            Math.ceil(25000 * scale) + 5000
-        );
-    }
     private static pending: Array<{
         id: number;
         promise: Promise<any>;
@@ -36,6 +27,10 @@ export class DetachedPromises {
 
     public static size(): number {
         return DetachedPromises.pending.length;
+    }
+
+    public static last(): Promise<any> | undefined {
+        return DetachedPromises.pending.at(-1)?.promise;
     }
 
     public static getAndClear(): Array<{
@@ -87,7 +82,7 @@ export class DetachedPromises {
             })
         );
 
-        const awaitTimeoutMs = DetachedPromises.getAwaitAllTimeoutMs();
+        const awaitTimeoutMs = DetachedPromises.AWAIT_ALL_TIMEOUT_MS;
 
         return new Promise<PromiseSettledResult<any>[]>((resolve, reject) => {
             let timedOut = false;

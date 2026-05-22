@@ -7,7 +7,7 @@ import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
 import { difference, isSubset, Logger } from "@/utils";
 import { BlockValidationResult, TimeConfig } from "@/types";
-import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
+import { Address, Bytes, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
@@ -471,27 +471,35 @@ export default class ValidationService {
         }
 
         // OBJECTIVE: isValidTimestamp check
-
-        // Check if block timestamp is not in the past
-        const isNotInPast = block.timestamp - previousOriginalTimestamp >= 0;
-
-        // Check if block timestamp is within P2P time window
-        const isWithinP2PTimeWindow =
-            block.timestamp - previousTimestamp <= this.timeConfig.p2pTime;
-
-        const isValidTimestamp = isNotInPast && isWithinP2PTimeWindow;
+        const localDiamond = this.diamondStateMachine.localDiamondContract;
+        let isValidTimestamp: boolean;
+        if (previousBlock) {
+            const signature = previousBlock.findSignature(block.author);
+            const hasForfeited = signature
+                ? await localDiamond.hasForfeitedRightToExtraTime.staticCall(
+                      previousBlock.blockStruct,
+                      block.author,
+                      signature as Bytes
+                  )
+                : false;
+            isValidTimestamp =
+                await localDiamond.isBlockTimestampValid.staticCall(
+                    block.timestamp,
+                    previousBlock.timestamp,
+                    hasForfeited,
+                    BigInt(previousBlock.onChainTimestamp ?? 0)
+                );
+        } else {
+            isValidTimestamp =
+                await localDiamond.isFirstBlockTimestampValid.staticCall(
+                    block.timestamp,
+                    previousStateSnapshot!.timestamp
+                );
+        }
 
         if (!isValidTimestamp) {
-            // Determine which rule was violated
-            let violatedRule: string;
-            if (!isNotInPast) {
-                violatedRule = "timestamp >= previousOriginalTimestamp";
-            } else if (!isWithinP2PTimeWindow) {
-                violatedRule = "timestamp <= previousTimestamp + p2pTime";
-            } else {
-                violatedRule =
-                    "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
-            }
+            const violatedRule =
+                "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
 
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
             if (

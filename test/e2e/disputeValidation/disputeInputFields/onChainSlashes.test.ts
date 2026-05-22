@@ -1,0 +1,88 @@
+import { ethers } from "ethers";
+import { DisputeFraudProofType } from "@/types/sol-enums";
+import { MathTestSession as TestSession } from "@test/harness";
+
+describe("E2E: dispute validation / disputeInputFields / onChainSlashes", function () {
+    it("dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.preDisputeSetup();
+
+        const fakeSlashedAddress = h.getPeer(0).address;
+        h.tamper.stubConstructDispute(1, async (dispute) => {
+            dispute.input.onChainSlashes = [
+                ...dispute.input.onChainSlashes,
+                fakeSlashedAddress
+            ];
+        });
+
+        await h.byzantine.submitForgedInboundMessageBlock(2);
+
+        await h.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [1],
+            initiatedWithAuditingData: false
+        });
+
+        await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+            mode: "atLeast"
+        });
+
+        await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            disputeFraudProofType:
+                DisputeFraudProofType.DisputeOnChainSlashesNotSubset,
+            timeoutMs: 10000
+        });
+        await h.dispute.resolveDisputeWait();
+    });
+
+    it("dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason", async function () {
+        const h = TestSession.getHarness();
+
+        await h.lifecycle.start(4, 2, {
+            timeConfig: { evidenceTime: 8 }
+        });
+
+        // peer 1 misbehaves and gets slashed. After fork resolution, peer 1's
+        // address is in the on-chain onChainSlashes registry, but NOT in
+        // the new snapshot's participants.
+        const slashedAddress = h.getPeer(1).address;
+        await h.scenario.disputeAndResolve({
+            maliciousPeerIndex: 1,
+            forkSettleTimeoutMs: 15000,
+            disputesCommittedTimeoutMs: 10000
+        });
+        await h.assert.snapshot.onChainSnapshotChangedWait({
+            previousForkId: h.activeForkId!,
+            timeoutMs: 15000
+        });
+
+        await h.transition.advanceState({
+            waitForPeers: [0, 2, 3]
+        });
+        h.event.resetEventSpies();
+        h.contextApi.captureOriginalFork();
+
+        h.tamper.stubConstructDispute(3, async (dispute) => {
+            dispute.input.timeout.participant = ethers.ZeroAddress;
+            dispute.input.selfRemoval = false;
+            dispute.input.onChainSlashes = [slashedAddress];
+        });
+
+        await h.byzantine.submitInvalidStateTransitionBlock(2);
+
+        await h.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [3],
+            initiatedWithAuditingData: false
+        });
+
+        await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+            mode: "atLeast"
+        });
+        await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            disputeFraudProofType: DisputeFraudProofType.InvalidDisputeReason,
+            timeoutMs: 10000
+        });
+        await h.dispute.resolveDisputeWait({
+            forkSettleTimeoutMs: 15000
+        });
+    });
+});

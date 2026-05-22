@@ -24,7 +24,11 @@ const config: HardhatUserConfig = {
             url: "http://srbpi.duckdns.org:8545"
         }
     },
-    mocha: {},
+    mocha: {
+        // hardhat-toolbox default is 40s; slowest E2E paths (e.g. setupTwoLeaversAcrossMilestones
+        // + dispute fraud-proof waits) are ~35–45s sequential, a bit more under parallel CI load.
+        timeout: 90000
+    },
     solidity: {
         version: "0.8.34",
         settings: {
