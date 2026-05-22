@@ -234,11 +234,16 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         onlySelf
         returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
     {
-        StateSnapshot memory currentSnapshot = getStateSnapshot(channelId);
-        require(
-            !StateChannelManagerInterface(address(this)).isForkDisputed(channelId, currentSnapshot.forkId),
-            RaceConditionForceInboundJoinForkDisputed()
-        );
+        for (uint256 i = 0; i < messages.length; i++) {
+            if (messages[i].messageType == MESSAGE_TYPE_JOIN) {
+                StateSnapshot memory currentSnapshot = stateSnapshots[channelId];
+                require(
+                    !StateChannelManagerInterface(address(this)).isForkDisputed(channelId, currentSnapshot.forkId),
+                    RaceConditionForceInboundJoinForkDisputed()
+                );
+                break;
+            }
+        }
         return _appendInboundMessages(channelId, messages);
     }
 

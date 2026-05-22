@@ -2,7 +2,7 @@ import { ethers, ZeroHash } from "ethers";
 
 import type { Logger } from "@/utils";
 import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
-import type { ColludeOnFraudulentSnapshotMutate } from "@test/harness/actions/DisputeTamperingActions";
+import type { ForgeSubmitterSnapshotMutate } from "@test/harness/actions/DisputeTamperingActions";
 import type { TestPeer } from "@test/harness/core/types";
 import type MathPeerTestHarness from "@test/fixtures/MathPeerTestHarness";
 import { ForkId, Bytes, Hash } from "@/types/types";
@@ -599,22 +599,41 @@ export class MathByzantineActions extends ByzantineActions {
     }
 
     async postFraudulentSnapshot(options: {
-        peers?: number[];
-        mutate: ColludeOnFraudulentSnapshotMutate;
+        mutate: ForgeSubmitterSnapshotMutate;
         poster?: number;
     }): Promise<void> {
-        const peers = options.peers ?? this.harness.peers.map((p) => p.index);
-        const restore = this.harness.tamper.colludeOnFraudulentSnapshot({
-            peers,
-            mutate: options.mutate
-        });
-        try {
-            await this.harness.transition.advanceState({ waitForPeers: peers });
-            await this.harness.transition.postSnapshotWait({
-                peerIndex: options.poster ?? peers[0]
-            });
-        } finally {
-            restore();
-        }
+        const poster = options.poster ?? 0;
+
+        const forgedSnapshot = await this.harness.tamper.buildForgedSnapshot(
+            poster,
+            options.mutate
+        );
+
+        const outboundBlocks: MessageBlockStruct[] = forgedSnapshot.mutated
+            .outboundMessageBlock
+            ? [forgedSnapshot.mutated.outboundMessageBlock]
+            : [];
+
+        const submitter = this.harness.getPeer(poster);
+        const channelManager = this.harness.channelManager.connect(
+            submitter.signer
+        );
+        const callData = channelManager.interface.encodeFunctionData(
+            "updateStateSnapshotSameFork",
+            [
+                this.harness.channelId,
+                [
+                    {
+                        blockConfirmations: [
+                            forgedSnapshot.forgedBlock.blockConfirmationStruct
+                        ]
+                    }
+                ],
+                [forgedSnapshot.forgedSnapshot.toStruct()],
+                outboundBlocks
+            ]
+        );
+        const tx = await channelManager.multicall([callData]);
+        await tx.wait();
     }
 }
