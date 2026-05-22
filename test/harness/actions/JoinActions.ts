@@ -3,12 +3,9 @@ import hre from "hardhat";
 import { Signer, BytesLike } from "ethers";
 import { Status } from "@/types";
 import {
-    Codec,
     DetachedPromises,
     LocalDiscoveryServer,
-    SignatureUtils,
-    Type,
-    hash
+    SignatureUtils
 } from "@/utils";
 import {
     JoinChannelConfirmationStruct,
@@ -102,6 +99,28 @@ export class JoinActions {
         return peer;
     }
 
+    async joinChannelWait(params: {
+        joiner: TestPeer;
+        existingParticipantSigners: readonly Signer[];
+        channelId?: JoinChannelStruct["channelId"];
+        jcOverrides?: Partial<JoinChannelStruct>;
+    }): Promise<JoinChannelConfirmationStruct> {
+        const channelId = params.channelId ?? this.harness.channelId;
+        const confirmation = await this.buildJoinChannelConfirmation({
+            joiner: params.joiner,
+            channelId,
+            existingParticipantSigners: params.existingParticipantSigners,
+            jcOverrides: params.jcOverrides
+        });
+        const expectedSnapshotHash =
+            await this.harness.query.getOnChainSnapshotHash(channelId);
+        await params.joiner.p2pInstance.p2pSigner.joinChannel(
+            confirmation,
+            expectedSnapshotHash
+        );
+        return confirmation;
+    }
+
     async buildJoinChannelConfirmation(
         params: BuildJoinChannelConfirmationParams
     ): Promise<JoinChannelConfirmationStruct> {
@@ -112,17 +131,11 @@ export class JoinActions {
                 "buildJoinChannelConfirmation: existingParticipantSigners must include every current participant signer"
             );
         }
-        const onChainSnapshot =
-            await this.harness.channelManager.getStateSnapshot(channelId);
-        const latestStateSnapshotHash = hash(
-            Codec.encode(onChainSnapshot, Type.StateSnapshot)
-        );
         const jc: JoinChannelStruct = {
             participant: joiner.address,
             channelId,
             balance: { amount: 500n, data: "0x00" },
             deadlineTimestamp: BigInt(Clock.getTimeInSeconds() + 120),
-            latestStateSnapshotHash,
             ...jcOverrides
         };
         const { encoded, signature: joinerSignature } =

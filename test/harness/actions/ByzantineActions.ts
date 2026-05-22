@@ -207,7 +207,7 @@ export class ByzantineActions {
         const { dispute } = await this.harness.tamper.postTamperedDispute(
             peerIndex,
             tamperFn,
-            forkId
+            { forkId }
         );
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex

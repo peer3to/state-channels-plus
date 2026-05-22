@@ -25,7 +25,7 @@ export class HarnessContext {
     /** Indices of malicious peers in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
     maliciousPeerIndices: number[] = [];
 
-    /** Excluded from `getPeersForTransitionSyncBarrier` (see `participantLeave`). */
+    /** Excluded from `getPeersExcludingMaliciousAndLeavers` (see `participantLeave`). */
     leftChannelPeerIndices: number[] = [];
 
     /** Last tampered dispute object (set by Byzantine blocks) */
