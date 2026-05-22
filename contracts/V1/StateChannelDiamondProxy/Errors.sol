@@ -41,7 +41,6 @@ error ErrorDisputeAlreadyPosted();
 error ErrorCantParticipateInDispute();
 error ErrorAuditingDataHashMismatch();
 error ErrorDisputePostedAuditingDataMismatch();
-error ErrorDisputeStateProofHeaderChannelMismatch();
 
 //Reduce errors
 error ErrorNoDisputesProvided();
@@ -84,7 +83,7 @@ error RaceConditionDisputeTimeoutNotMinTimestamp();
 error RaceConditionUnexpectedBlockCalldataPosted();
 error RaceConditionGenesisTimestampNotAvailable();
 error RaceConditionOnChainSlashes();
-error RaceConditionJoinChannelStaleSnapshot();
+error RaceConditionJoinChannelSnapshotMismatch();
 error RaceConditionPendingInboundNotConsumed();
 error RaceConditionJoinChannelForkDisputed();
 error RaceConditionForceInboundJoinForkDisputed();

@@ -161,17 +161,23 @@ class DisputeManager {
             );
             await txResponse.wait();
         } catch (error) {
-            const success = tryHandleEvmError(error, {
+            const success = await tryHandleEvmError(error, {
                 tx: txResponse,
                 logger: this.logger,
                 forkId,
                 signer: this.signer,
                 handlers: {
                     ErrorCantParticipateInDispute: () => {
-                        // No op -> malcious peer
+                        this.logger.warn(
+                            "dispute: signer cannot participate in dispute",
+                            { forkId, channelId: this.channelId }
+                        );
                     },
                     RaceConditionDisputeEvidencePeriodExpired: () => {
-                        // No op -> ignore race condition
+                        this.logger.info(
+                            "dispute: evidence period already expired",
+                            { forkId, channelId: this.channelId }
+                        );
                     }
                 }
             });
@@ -193,6 +199,7 @@ class DisputeManager {
     public async killDispute(dispute: DisputeStruct): Promise<void> {
         const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
         const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
+        let txResponse;
         try {
             // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
             const disputeFraudProof =
@@ -202,22 +209,51 @@ class DisputeManager {
             if (!disputeFraudProof) {
                 throw new Error("No dispute fraud proof found for dispute");
             }
-            const txRespone =
+            txResponse =
                 await this.stateChannelManagerContract.applyDisputeFraudProofs([
                     disputeFraudProof
                 ]);
 
-            await txRespone.wait();
+            await txResponse.wait();
             this.logger.info(
                 `✅ Dispute killed successfully: ${formattedHash}`
             );
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
-                disputeMeta,
-                custom,
-                error: error instanceof Error ? error.message : String(error)
+            const success = await tryHandleEvmError(error, {
+                tx: txResponse,
+                logger: this.logger,
+                forkId: dispute.input.forkId,
+                signer: this.signer,
+                handlers: {
+                    RaceConditionOnChainSlashes: () => {
+                        this.logger.info(
+                            `killDispute no-op: on-chain slashes already cover dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    },
+                    RaceConditionGenesisTimestampNotAvailable: () => {
+                        this.logger.info(
+                            `killDispute no-op: genesis timestamp not available for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    },
+                    RaceConditionUnexpectedBlockCalldataPosted: () => {
+                        this.logger.info(
+                            `killDispute no-op: unexpected block calldata posted for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    }
+                }
             });
+            if (!success) {
+                const custom = tryDecodeCustomError(error);
+                this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
+                    disputeMeta,
+                    custom,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
         }
     }
 

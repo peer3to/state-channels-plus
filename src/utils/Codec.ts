@@ -45,7 +45,7 @@ import {
     DisputeInvalidBalanceInvariantProofEthersType,
     DisputeOnChainSlashesNotSubsetProofEthersType,
     DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType,
-    DisputeStateProofForkMismatchProofEthersType,
+    DisputeStateProofHeaderMismatchProofEthersType,
     DisputeInboundHashNotInChainProofEthersType,
     InvalidDisputeReasonProofEthersType,
     TimeoutThresholdProofEthersType,
@@ -79,7 +79,7 @@ import {
     TimeoutTooEarlyStruct,
     DisputeLastMilestoneNotFinalAndNoAuditingDataStruct,
     InvalidDisputeReasonStruct,
-    DisputeStateProofForkMismatchStruct
+    DisputeStateProofHeaderMismatchStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 export type FraudStruct =
@@ -103,7 +103,7 @@ export type DisputeFraudStruct =
     | DisputeInvalidBlockInStateProofApplyFraudProofStruct
     | DisputeLastMilestoneNotFinalAndNoAuditingDataStruct
     | InvalidDisputeReasonStruct
-    | DisputeStateProofForkMismatchStruct;
+    | DisputeStateProofHeaderMismatchStruct;
 
 type StructType =
     | FraudStruct
@@ -226,8 +226,8 @@ export class Codec {
             InvalidDisputeReasonProofEthersType
         ],
         [
-            DisputeFraudProofType.DisputeStateProofForkMismatch,
-            DisputeStateProofForkMismatchProofEthersType
+            DisputeFraudProofType.DisputeStateProofHeaderMismatch,
+            DisputeStateProofHeaderMismatchProofEthersType
         ],
         [
             DisputeFraudProofType.DisputeInboundHashNotInChain,
