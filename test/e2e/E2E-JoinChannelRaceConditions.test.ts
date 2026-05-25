@@ -1,5 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
-import { hash, tryDecodeCustomError } from "@/utils";
+import { DetachedPromises, hash, tryDecodeCustomError } from "@/utils";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import {
@@ -10,7 +10,6 @@ import { expect } from "chai";
 
 describe("E2E: Join channel race conditions", function () {
     describe("Snapshot vs join race", function () {
-        // fails in detached promises -> existing PARTICIPATING peers throw on the byzantine snapshot via EventHandler's unknown-snapshot check.
         it("new on-chain snapshot causes join confirmation to revert with RaceConditionJoinChannelSnapshotMismatch", async function () {
             const h = TestSession.getHarness();
             const {
@@ -76,10 +75,21 @@ describe("E2E: Join channel race conditions", function () {
             expect(
                 onChainParticipants.map((a) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
+
+            // existing PARTICIPATING peers observe the byzantine snapshot and
+            // throw via EventHandler's unknown-snapshot fraud detection.
+            // the throw fires inside an ethers event listener (not collected
+            // by DetachedPromises) -> poll for the unhandledRejection to dispatch.
+            const detachedError =
+                await TestSession.consumeFirstDetachedError(3000);
+            expect(
+                detachedError,
+                "expected detached throw from EventHandler.onStateSnapshotUpdated"
+            ).to.exist;
+            expect(detachedError!.message).to.include("unknown snapshot");
         });
 
-        // fails in detached promises -> postStateSnapshot now throws on RaceConditionPendingInboundNotConsumed (fatal: our snapshot omitted an inbound the chain required).
-        it("pending inbound unconsumed → SDK absorbs RaceConditionPendingInboundNotConsumed; on-chain snapshot unchanged", async function () {
+        it("pending inbound unconsumed → postStateSnapshot throws RaceConditionPendingInboundNotConsumed (fatal); on-chain snapshot unchanged", async function () {
             const h = TestSession.getHarness();
             const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
@@ -101,9 +111,36 @@ describe("E2E: Join channel race conditions", function () {
             const snapshotBefore = await h.channelManager.getStateSnapshot(
                 h.channelId
             );
-            // postStateSnapshot silently absorbs RaceConditionPendingInboundNotConsumed
-            // via tryHandleEvmError; assert the chain did not advance the snapshot.
-            await h.transition.postSnapshotWait({ peerIndex: 0 });
+
+            // postSnapshotWait times out -> chain rejects with
+            // RaceConditionPendingInboundNotConsumed
+            let waitError: unknown;
+            try {
+                await h.transition.postSnapshotWait({
+                    peerIndex: 0,
+                    timeoutMs: 5000
+                });
+                expect.fail(
+                    "expected postSnapshotWait to time out: chain should reject the snapshot"
+                );
+            } catch (e) {
+                waitError = e;
+            }
+            expect((waitError as Error).message).to.include(
+                "honest peers did not observe expected snapshot"
+            );
+
+            await DetachedPromises.awaitAllAndClear();
+            const detachedError =
+                await TestSession.consumeFirstDetachedError(2000);
+            expect(
+                detachedError,
+                "expected detached throw from postStateSnapshot"
+            ).to.exist;
+            expect(detachedError!.message).to.include(
+                "pending inbound not consumed"
+            );
+
             const snapshotAfter = await h.channelManager.getStateSnapshot(
                 h.channelId
             );
