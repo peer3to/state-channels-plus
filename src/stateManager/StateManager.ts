@@ -1733,9 +1733,12 @@ class StateManager {
                                 );
                             },
                             RaceConditionPendingInboundNotConsumed: () => {
-                                this.logger.warn(
+                                this.logger.error(
                                     "postStateSnapshot: pending inbound not consumed by our snapshot",
                                     { forkId }
+                                );
+                                throw new Error(
+                                    `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
                                 );
                             },
                             RaceConditionReductionExpectationDoesntMatch:

@@ -78,6 +78,7 @@ describe("E2E: Join channel race conditions", function () {
             ).to.not.include(joiner.address.toLowerCase());
         });
 
+        // fails in detached promises -> postStateSnapshot now throws on RaceConditionPendingInboundNotConsumed (fatal: our snapshot omitted an inbound the chain required).
         it("pending inbound unconsumed → SDK absorbs RaceConditionPendingInboundNotConsumed; on-chain snapshot unchanged", async function () {
             const h = TestSession.getHarness();
             const { joiner, confirmation } =

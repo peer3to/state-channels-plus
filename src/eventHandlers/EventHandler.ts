@@ -763,11 +763,17 @@ export class EventHandler {
                                     "challengeDisputeReduction: challenge period expired",
                                     { forkId }
                                 );
+                                throw new Error(
+                                    `challengeDisputeReduction: challenge period expired for forkId=${forkId}`
+                                );
                             },
                             ErrorDisputeCommitmentNotAvailable: () => {
                                 this.logger.error(
                                     "challengeDisputeReduction: dispute commitment no longer available",
                                     { forkId }
+                                );
+                                throw new Error(
+                                    `challengeDisputeReduction: dispute commitment not available for forkId=${forkId}`
                                 );
                             }
                         }
