@@ -13,10 +13,11 @@ import {
 describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash", function () {
     describe("no calldata", function () {
         describe("(1) stateProof empty — genesis (no milestones, no signedBlocks)", function () {
-            describe("peers synced to dispute.input.latestStateSnapshot", function () {
+            describe("all peers are in sync", function () {
                 it("[no calldata] dispute.input.stateProof = {} AND dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetup();
+                    await h.assert.sync.peersInSyncWait();
 
                     h.tamper.stubConstructDispute(1, (dispute) => {
                         dispute.input.stateProof.milestones = [];
@@ -47,10 +48,11 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
         });
 
         describe("(3) stateProof.milestones only — last milestone block commits to hash", function () {
-            describe("peers synced to dispute.input.latestStateSnapshot", function () {
+            describe("all peers are in sync", function () {
                 it("[no calldata] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetup();
+                    await h.assert.sync.peersInSyncWait();
 
                     h.tamper.stubConstructDispute(1, (d) => {
                         expectMilestonesOnlyStateProof(d.input.stateProof);
@@ -186,10 +188,11 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
 
     describe("calldata posted", function () {
         describe("(1) stateProof empty — genesis (no milestones, no signedBlocks)", function () {
-            describe("peers synced to dispute.input.latestStateSnapshot", function () {
+            describe("all peers are in sync", function () {
                 it("[calldata posted] dispute.input.stateProof = {} AND dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupCalldataPath();
+                    await h.assert.sync.peersInSyncWait();
 
                     h.tamper.stubConstructDispute(3, (d) => {
                         d.input.stateProof.milestones = [];
@@ -222,10 +225,11 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
         });
 
         describe("(3) stateProof.milestones only — last milestone block commits to hash", function () {
-            describe("peers synced to dispute.input.latestStateSnapshot", function () {
+            describe("all peers are in sync", function () {
                 it("[calldata posted] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupCalldataPath();
+                    await h.assert.sync.peersInSyncWait();
 
                     h.tamper.stubConstructDispute(3, (d) => {
                         d.input.latestStateSnapshotHash = randomHash();
