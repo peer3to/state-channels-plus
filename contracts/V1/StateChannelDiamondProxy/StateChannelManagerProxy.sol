@@ -328,6 +328,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
+    function hasInvalidTimestamp(InvalidTimestampProof memory proof) public returns (bool) {
+        bytes memory result =
+            _delegatecall(fraudProofFacetAddress, abi.encodeCall(FraudProofFacet.hasInvalidTimestamp, (proof)));
+        return abi.decode(result, (bool));
+    }
+
     function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
         public
         returns (bytes memory maliciousDisputesEncoded)
@@ -426,37 +432,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         returns (bool)
     {
         return StateChannelCommon.hasInboundMessageBlock(channelId, messageBlockHash);
-    }
-
-    function isFirstBlockTimestampValid(uint256 blockTimestamp, uint256 previousStateSnapshotTimestamp)
-        public
-        view
-        returns (bool)
-    {
-        return _isFirstBlockTimestampValid(blockTimestamp, previousStateSnapshotTimestamp, getP2pTime());
-    }
-
-    function hasForfeitedRightToExtraTime(
-        Block memory previousBlock,
-        address nextBlockAuthor,
-        bytes memory signatureOnPreviousBlock
-    ) public pure returns (bool) {
-        return _hasForfeitedRightToExtraTime(previousBlock, nextBlockAuthor, signatureOnPreviousBlock);
-    }
-
-    function isBlockTimestampValid(
-        uint256 blockTimestamp,
-        uint256 previousBlockTimestamp,
-        bool hasForfeitedRightToExtraTime_,
-        uint256 previousBlockOnChainTimestamp
-    ) public view returns (bool) {
-        return _isBlockTimestampValid(
-            blockTimestamp,
-            previousBlockTimestamp,
-            hasForfeitedRightToExtraTime_,
-            previousBlockOnChainTimestamp,
-            getP2pTime()
-        );
     }
 
     function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
