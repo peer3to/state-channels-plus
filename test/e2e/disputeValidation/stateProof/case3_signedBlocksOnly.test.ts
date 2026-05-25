@@ -22,7 +22,7 @@ import { expect } from "chai";
 
 describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", function () {
     describe("stateProof.signedBlocks[-1].encodedBlock.stateSnapshotHash = ZeroHash (stateSnapshotHash mismatch)", function () {
-        it("→ DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
+        it("stateSnapshotHash = ZeroHash → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
@@ -69,7 +69,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
     });
 
     describe("stateProof.signedBlocks[-1].encodedBlock.messageBlocks injected with forged inbound message", function () {
-        it("→ DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
+        it("messageBlocks injected with forged inbound message → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
@@ -137,7 +137,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
         // applyFraudProof handler currently rejects with ErrorInvalidFraudProof — the
         // off-chain pipeline and on-chain handler disagree on the apply step for linkage
         // failures. Keeping the test in place so the failure surfaces continuously.
-        it("→ DisputeInvalidStateProof", async function () {
+        it("signedBlocks[1].previousBlockHash = random → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 

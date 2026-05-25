@@ -15,7 +15,7 @@ import { expect } from "chai";
 
 describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence)", function () {
     describe("Case 1.1: auditingData.milestoneSnapshots[1].snapshotData.latestInboundMessageBlockHash = random", function () {
-        it("→ DisputeInvalidStateProof", async function () {
+        it("Case 1.1 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.setupTwoLeaversAcrossMilestones();
 
@@ -58,7 +58,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     });
 
     describe("Case 1.3: auditingData.milestoneSnapshots[1] = milestoneSnapshots[2] (M2 row claims M3 snapshot, skip-ahead)", function () {
-        it("→ DisputeInvalidStateProof", async function () {
+        it("Case 1.3 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.setupTwoLeaversAcrossMilestones();
 
@@ -95,7 +95,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     });
 
     describe("Case 1.4: auditingData.milestoneSnapshots[1] = milestoneSnapshots[0] (M2 row claims M1 snapshot, stay-back)", function () {
-        it("→ DisputeInvalidStateProof", async function () {
+        it("Case 1.4 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.setupTwoLeaversAcrossMilestones();
 
@@ -132,7 +132,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     });
 
     describe("Case 1.5: auditingData.milestoneSnapshots[1].snapshotData.participants omits pending joiner (M1 colluding on M2)", function () {
-        it("→ DisputeInvalidStateProof", async function () {
+        it("Case 1.5 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             const { pendingJoin } =
                 await h.scenario.setupLeaverM1WithPendingJoinerInM2();
