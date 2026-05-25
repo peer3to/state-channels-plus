@@ -757,8 +757,6 @@ describe("E2E: Spectate Service", function () {
                     .slice(0, 3)
                     .map((p) => p.signer)
             });
-            const expectedSnapshotHash = await h.query.getOnChainSnapshotHash();
-
             // forceInboundJoin lands first → joinerB enters the pending set →
             // join threshold becomes {p0, p1, p2, joinerB}; joinerA's pre-signed
             // confirmation has only 3 of 4 required signatures.
@@ -767,10 +765,7 @@ describe("E2E: Spectate Service", function () {
             });
 
             try {
-                await joinerA.p2pInstance.p2pSigner.joinChannel(
-                    confirmation,
-                    expectedSnapshotHash
-                );
+                await joinerA.p2pInstance.p2pSigner.joinChannel(confirmation);
                 expect.fail(
                     "expected joinChannel to revert: pending set changed between confirmation build and submission"
                 );

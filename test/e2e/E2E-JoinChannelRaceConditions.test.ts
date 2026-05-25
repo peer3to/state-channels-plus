@@ -10,6 +10,7 @@ import { expect } from "chai";
 
 describe("E2E: Join channel race conditions", function () {
     describe("Snapshot vs join race", function () {
+        // fails in detached promises -> existing PARTICIPATING peers throw on the byzantine snapshot via EventHandler's unknown-snapshot check.
         it("new on-chain snapshot causes join confirmation to revert with RaceConditionJoinChannelSnapshotMismatch", async function () {
             const h = TestSession.getHarness();
             const {
@@ -46,12 +47,15 @@ describe("E2E: Join channel race conditions", function () {
                 "on-chain snapshot S' must differ from S before submitting the join confirmation built against S"
             );
 
+            const channelManager =
+                joiner.stateManager.stateChannelManagerContract;
             let revertError: unknown;
             try {
-                await joiner.p2pInstance.p2pSigner.joinChannel(
+                const tx = await channelManager.joinChannel(
                     confirmation,
                     expectedSnapshotHash
                 );
+                await tx.wait();
                 expect.fail(
                     "expected joinChannel to revert: spectator built confirmation against snapshot S, but on-chain snapshot is now the mismatched S'"
                 );
@@ -76,18 +80,14 @@ describe("E2E: Join channel race conditions", function () {
 
         it("pending inbound unconsumed → SDK absorbs RaceConditionPendingInboundNotConsumed; on-chain snapshot unchanged", async function () {
             const h = TestSession.getHarness();
-            const { joiner, stateSnapshot, confirmation } =
+            const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
-            const expectedSnapshotHash = StateSnapshot.from(stateSnapshot).hash;
 
             // Existing peers ignore the join's inbound message.
             for (const i of [0, 1, 2])
                 h.byzantine.stubPendingInboundInclusion(i);
 
-            await joiner.p2pInstance.p2pSigner.joinChannel(
-                confirmation,
-                expectedSnapshotHash
-            );
+            await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
             expect(joiner.stateManager.getStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );
@@ -113,19 +113,15 @@ describe("E2E: Join channel race conditions", function () {
     describe("Dispute vs join race", function () {
         it("join on disputed fork reverts", async function () {
             const h = TestSession.getHarness();
-            const { joiner, stateSnapshot, confirmation } =
+            const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
-            const expectedSnapshotHash = StateSnapshot.from(stateSnapshot).hash;
 
             // Existing peers open a dispute on the latest fork
             await h.tamper.postTamperedDispute(0, async () => {});
 
             let revertError: unknown;
             try {
-                await joiner.p2pInstance.p2pSigner.joinChannel(
-                    confirmation,
-                    expectedSnapshotHash
-                );
+                await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
                 expect.fail(
                     "expected joinChannel to revert: spectator built confirmation against a fork that is now disputed"
                 );
@@ -179,14 +175,10 @@ describe("E2E: Join channel race conditions", function () {
 
         it("pending joiner participates after dispute reduction", async function () {
             const h = TestSession.getHarness();
-            const { joiner, stateSnapshot, confirmation } =
+            const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
-            const expectedSnapshotHash = StateSnapshot.from(stateSnapshot).hash;
 
-            await joiner.p2pInstance.p2pSigner.joinChannel(
-                confirmation,
-                expectedSnapshotHash
-            );
+            await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
             expect(joiner.stateManager.getStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );

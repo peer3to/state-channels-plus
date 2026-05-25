@@ -1,7 +1,6 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
-import { Codec, Type, hash } from "@/utils";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)
@@ -53,9 +52,6 @@ describe("E2E: Participant Lifecycle", function () {
             });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
-            const stateSnapshot = await h.channelManager.getStateSnapshot(
-                h.channelId
-            );
             const confirmation = await h.join.buildJoinChannelConfirmation({
                 joiner: spectator,
                 channelId: h.channelId,
@@ -64,18 +60,13 @@ describe("E2E: Participant Lifecycle", function () {
                     h.peers[1].signer
                 ]
             });
-            const expectedSnapshotHash = hash(
-                Codec.encode(stateSnapshot, Type.StateSnapshot)
-            );
 
             // Fire joinChannel WITHOUT awaiting — the synchronous portion of
             // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
             // before the first `await`, so the promotion is observable
             // immediately after the call starts.
-            const joinPromise = spectator.p2pInstance.p2pSigner.joinChannel(
-                confirmation,
-                expectedSnapshotHash
-            );
+            const joinPromise =
+                spectator.p2pInstance.p2pSigner.joinChannel(confirmation);
 
             // Status must already be PENDING_PARTICIPANT — no await needed
             expect(spectator.stateManager.getStatus()).to.equal(

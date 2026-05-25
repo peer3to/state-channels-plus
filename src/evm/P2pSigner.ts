@@ -143,13 +143,9 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
     }
 
     public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct,
-        expectedSnapshotHash: Bytes
+        confirmation: JoinChannelConfirmationStruct
     ): Promise<void> {
-        return this.p2pManager.stateManager.joinChannel(
-            confirmation,
-            expectedSnapshotHash
-        );
+        return this.p2pManager.stateManager.joinChannel(confirmation);
     }
 
     public disconnectFromPeers() {

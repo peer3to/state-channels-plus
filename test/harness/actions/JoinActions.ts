@@ -112,12 +112,7 @@ export class JoinActions {
             existingParticipantSigners: params.existingParticipantSigners,
             jcOverrides: params.jcOverrides
         });
-        const expectedSnapshotHash =
-            await this.harness.query.getOnChainSnapshotHash(channelId);
-        await params.joiner.p2pInstance.p2pSigner.joinChannel(
-            confirmation,
-            expectedSnapshotHash
-        );
+        await params.joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
         return confirmation;
     }
 

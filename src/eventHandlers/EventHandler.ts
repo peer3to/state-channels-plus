@@ -37,7 +37,7 @@ import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { isEqual } from "lodash";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import { Status } from "@/types";
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 
 export class EventHandler {
     private logger: Logger;
@@ -81,6 +81,40 @@ export class EventHandler {
         stateSnapshot: StateSnapshotStruct
     ): Promise<void> {
         //TODO - make sure snapshots are in ascending order if events can be collected in random order - e.g we have the latest one always
+
+        const updatedSnapshot = StateSnapshot.from(stateSnapshot);
+        const knownSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                updatedSnapshot.hash
+            );
+        if (!knownSnapshot) {
+            const status = this.stateManager.getStatus();
+            if (status === Status.SYNCED) {
+                // TODO: replace with general abort() once it exists outside spectate
+
+                this.logger.warn(
+                    "onStateSnapshotUpdated - unknown snapshot while SYNCED, should abort + resync",
+                    { channelId, hash: updatedSnapshot.hash }
+                );
+                return;
+            }
+            if (
+                status === Status.PENDING_PARTICIPANT ||
+                status === Status.PARTICIPATING
+            ) {
+                this.logger.error(
+                    "onStateSnapshotUpdated - unknown snapshot while participant/pending, fatal",
+                    {
+                        channelId,
+                        status,
+                        hash: updatedSnapshot.hash
+                    }
+                );
+                throw new Error(
+                    `onStateSnapshotUpdated: unknown snapshot ${updatedSnapshot.hash} while status=${status}`
+                );
+            }
+        }
 
         await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
