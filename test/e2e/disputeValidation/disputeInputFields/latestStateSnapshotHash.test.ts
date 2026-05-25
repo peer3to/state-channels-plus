@@ -77,6 +77,43 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.dispute.resolveDisputeWait();
                 });
             });
+
+            describe("auditor peer 3 disconnected — local storage stale, pipeline still kills", function () {
+                it("[no calldata] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 3)", async function () {
+                    const h = TestSession.getHarness();
+                    await h.scenario.preDisputeSetup({ peerCount: 4 });
+
+                    const disconnectedAuditorIndex = 3;
+                    await h.network.disconnectPeer(disconnectedAuditorIndex);
+
+                    h.tamper.stubConstructDispute(1, (d) => {
+                        expectMilestonesOnlyStateProof(d.input.stateProof);
+                        d.input.latestStateSnapshotHash = randomHash();
+                    });
+
+                    await h.byzantine.submitInvalidStateTransitionBlock(2);
+
+                    await h.assert.dispute.initiatedWait({
+                        peersIndices: [1],
+                        initiatedWithAuditingData: false
+                    });
+                    // peer 3 lacks post-disconnect state locally but still audits via on-chain events.
+                    await h.event.waitForPeers(
+                        "onDisputeKilled",
+                        [disconnectedAuditorIndex],
+                        1,
+                        { mode: "atLeast" }
+                    );
+                    await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
+                        {
+                            disputeFraudProofType:
+                                DisputeFraudProofType.DisputeInvalidStateProof,
+                            timeoutMs: 10000
+                        }
+                    );
+                    await h.dispute.resolveDisputeWait();
+                });
+            });
         });
 
         describe("(2) stateProof.signedBlocks only — last signedBlock commits to hash", function () {
