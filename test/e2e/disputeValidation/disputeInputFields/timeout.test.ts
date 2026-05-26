@@ -279,7 +279,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
 
         // Peer 3 withholds confirms → incomplete union → author posts calldata.
-        h.byzantine.stubBroadcast(3);
+        await h.byzantine.stubBroadcast(3);
 
         // peer1 write the next block
         await h.transition.advanceState({

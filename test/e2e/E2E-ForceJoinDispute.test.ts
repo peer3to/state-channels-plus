@@ -15,9 +15,9 @@ describe("E2E: Force Join Dispute", function () {
         await h.assert.sync.peersInSyncWait();
 
         const restoreInboundInclusion0 =
-            h.byzantine.stubPendingInboundInclusion(0);
+            await h.byzantine.stubPendingInboundInclusion(0);
         const restoreInboundInclusion1 =
-            h.byzantine.stubPendingInboundInclusion(1);
+            await h.byzantine.stubPendingInboundInclusion(1);
 
         await h.join.joinChannelWait({
             joiner,
@@ -36,8 +36,8 @@ describe("E2E: Force Join Dispute", function () {
         // Restore stubs before canConstructMoreEvidence runs: peers 0/1 now read
         // the real getLatestBlockHash() (join message hash) so their constructDispute
         // matches the joiner's committed dispute → canConstructMoreEvidence = false
-        restoreInboundInclusion0();
-        restoreInboundInclusion1();
+        await restoreInboundInclusion0();
+        await restoreInboundInclusion1();
 
         await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
 

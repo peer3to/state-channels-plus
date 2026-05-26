@@ -1,4 +1,5 @@
 import { MathTestSession as TestSession, sleep } from "@test/harness";
+import { registerTemporaryRpcStubHandler } from "@test/harness/worker-handlers/rpc-stub-handlers";
 import { expect } from "chai";
 
 /**
@@ -122,21 +123,33 @@ describe("E2E: Is Fork Disputed", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2);
 
+            // step 1 - test-local toggle. genuinely scoped to this case ->
+            // ephemeral registration (no worker round-trip; inline only).
             let called = false;
-            const restore = h.rpcStub.stubServiceCreateRpcMethod({
-                peerIndex: 1,
-                serviceName: "isForkDisputedService",
-                methodName: "onDisputeAcknowledgmentRequest",
-                stubbedMethod: async (_channelId: string, _forkId: string) => {
+            const handlerId = "test.E2E-IsForkDisputed.stubAckRequest";
+            const unregister = registerTemporaryRpcStubHandler(
+                handlerId,
+                async () => {
                     called = true;
                 }
-            });
+            );
 
-            await h.rpc.sendFakeDisputeRequest({ fromPeer: 0, toPeer: 1 });
+            try {
+                const restore = await h.rpcStub.installNamedStub({
+                    peerIndex: 1,
+                    serviceName: "isForkDisputedService",
+                    methodName: "onDisputeAcknowledgmentRequest",
+                    handlerId
+                });
 
-            expect(called).to.equal(true);
+                await h.rpc.sendFakeDisputeRequest({ fromPeer: 0, toPeer: 1 });
 
-            restore();
+                expect(called).to.equal(true);
+
+                await restore();
+            } finally {
+                unregister();
+            }
         });
     });
 });

@@ -23,7 +23,7 @@ describe("E2E: dispute validation / futureBlock", function () {
         const forkId = h.activeForkId!;
 
         // Suppress peer 3's outbound block broadcast
-        h.byzantine.stubBroadcast(3);
+        await h.byzantine.stubBroadcast(3);
         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 3 });
 
         await h.transition.peerWrite({ peer: 3, waitForPeers: [3] });

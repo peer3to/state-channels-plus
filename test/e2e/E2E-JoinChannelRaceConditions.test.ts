@@ -91,7 +91,7 @@ describe("E2E: Join channel race conditions", function () {
 
             // Existing peers ignore the join's inbound message.
             for (const i of [0, 1, 2])
-                h.byzantine.stubPendingInboundInclusion(i);
+                await h.byzantine.stubPendingInboundInclusion(i);
 
             await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
             expect(joiner.stateManager.getStatus()).to.equal(
