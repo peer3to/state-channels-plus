@@ -60,3 +60,16 @@ export const DEFAULT_MATH_HARNESS_DEPLOYMENT: HarnessDeploymentConfig<MathStateM
         deployLocalStateMachine: deployDefaultMathLocalStateMachine,
         connectSigner: connectDefaultMathSigner
     };
+
+// W5 - canonical key + worker-side registration. workers import this module
+// via the bundle manifest; the side-effect below puts the deployer in the
+// shared registry so resolveDeployment(DEFAULT_MATH_HARNESS_DEPLOYMENT_KEY)
+// works in the worker isolate.
+export const DEFAULT_MATH_HARNESS_DEPLOYMENT_KEY = "default-math";
+import { registerDeployment, hasDeployment } from "./deploymentRegistry";
+if (!hasDeployment(DEFAULT_MATH_HARNESS_DEPLOYMENT_KEY)) {
+    registerDeployment(
+        DEFAULT_MATH_HARNESS_DEPLOYMENT_KEY,
+        DEFAULT_MATH_HARNESS_DEPLOYMENT
+    );
+}
