@@ -1,6 +1,11 @@
 // Core types and interfaces
 export * from "./core/types";
 
+// step 1 - side-effect: register every shipped named rpc-stub handler +
+// disconnect filter into the orchestrator isolate. inline backend resolves
+// handler ids against this same table.
+import "./worker-handlers";
+
 import { MathTestSession } from "./session/MathTestSession";
 import { registerTestSessionHooks } from "./session/registerTestSessionHooks";
 

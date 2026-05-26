@@ -1,6 +1,9 @@
 import { MathStateMachine } from "@typechain-types";
 
-import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
+import {
+    DEFAULT_MATH_HARNESS_DEPLOYMENT,
+    DEFAULT_MATH_HARNESS_DEPLOYMENT_KEY
+} from "@test/harness/core/defaultMathHarnessDeployment";
 import { MathTransitionActions } from "@test/harness/actions/math/MathTransitionActions";
 import { MathJoinActions } from "@test/harness/actions/math/MathJoinActions";
 import { MathLifecycleActions } from "@test/harness/actions/math/MathLifecycleActions";
@@ -22,7 +25,15 @@ export class MathPeerTestHarness extends PeerTestHarness<
     declare public dispute: MathDisputeOrchestrator;
 
     constructor() {
-        super({ deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT });
+        super({
+            deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT,
+            deploymentName: DEFAULT_MATH_HARNESS_DEPLOYMENT_KEY,
+            workerBundleManifest: [
+                // step 1 - side-effect import: registers the deployer in the
+                // worker's deploymentRegistry.
+                "@test/harness/core/defaultMathHarnessDeployment"
+            ]
+        });
         this.transition = new MathTransitionActions(this, this.logger);
         this.join = new MathJoinActions(this);
         this.lifecycle = new MathLifecycleActions(this, this.logger);

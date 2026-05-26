@@ -71,6 +71,12 @@ export class LocalDiscoveryServer {
     /** Prevent reconnect loops during/after cleanup */
     private static _cleanupRequested: boolean = false;
 
+    // W2 D-17 - expose the kernel-picked registry port so orchestrators can
+    // ship it to worker isolates (workers have their own null static).
+    public static getDiscoveryPort(): number | null {
+        return this.discoveryPort;
+    }
+
     private constructor() {}
 
     private static createOutboundWebSocket(options: {
@@ -526,7 +532,12 @@ export class LocalDiscoveryServer {
     public static async connectToPeers(
         p2pManager: P2PManager,
         channelId: ChannelId,
-        myPeerAddress: string
+        myPeerAddress: string,
+        // W2 D-17 - explicit registry port for cross-isolate callers. workers
+        // have their own (null) static `discoveryPort` -> orchestrator ships
+        // the resolved port over workerData. inline callers still rely on
+        // the static set by tryStart().
+        registryPortOverride?: number
     ): Promise<void> {
         const peerLog = {
             mode: "peer" as const,
@@ -575,27 +586,18 @@ export class LocalDiscoveryServer {
         });
 
         // 2. Connect to Registry
-        if (!this.discoveryPort) {
+        // step 1 - prefer the explicit override (worker-isolate path) -> fall back
+        // to the static set by tryStart() (inline path).
+        const registryPort = registryPortOverride ?? this.discoveryPort;
+        if (!registryPort) {
             throw new Error(
                 "Discovery server not started. Call tryStart() before connectToPeers()."
             );
         }
-        const registryPort = this.discoveryPort;
         const registryUrl = `ws://${LOCAL_WS_HOST}:${registryPort}`;
 
         const connectRegistry = (attempt: number) => {
             if (this._cleanupRequested) {
-                return;
-            }
-            if (!this.discoveryPort) {
-                this.logger.warn(
-                    "Discovery server port missing; cannot connect",
-                    {
-                        ...peerLog,
-                        myPeerPort: port,
-                        registryPort: this.discoveryPort
-                    }
-                );
                 return;
             }
 
@@ -605,7 +607,7 @@ export class LocalDiscoveryServer {
                     {
                         ...peerLog,
                         myPeerPort: port,
-                        registryPort: this.discoveryPort,
+                        registryPort,
                         attempts: attempt - 1
                     }
                 );
@@ -615,7 +617,7 @@ export class LocalDiscoveryServer {
             const log = {
                 ...peerLog,
                 myPeerPort: port,
-                registryPort: this.discoveryPort,
+                registryPort,
                 attempt
             };
 
@@ -628,7 +630,7 @@ export class LocalDiscoveryServer {
                     ws.send(JSON.stringify({ port, channelId }));
                     this.logger.debug("Connected to discovery registry", {
                         ...peerLog,
-                        registryPort: this.discoveryPort,
+                        registryPort,
                         myPeerPort: port,
                         attempt
                     });
@@ -653,7 +655,7 @@ export class LocalDiscoveryServer {
                     this.activeDiscoveryConnections.delete(discoveryWs);
                     this.logger.debug("Discovery connection closed", {
                         ...peerLog,
-                        registryPort: this.discoveryPort,
+                        registryPort,
                         myPeerPort: port
                     });
                 },
@@ -661,7 +663,7 @@ export class LocalDiscoveryServer {
                     // Note: connect failures are handled via onConnectFailure; this is for post-open errors.
                     this.logger.warn("Discovery connection error", {
                         ...peerLog,
-                        registryPort: this.discoveryPort,
+                        registryPort,
                         myPeerPort: port,
                         message: err?.message
                     });
@@ -673,7 +675,7 @@ export class LocalDiscoveryServer {
                         {
                             ...peerLog,
                             myPeerPort: port,
-                            registryPort: this.discoveryPort,
+                            registryPort,
                             attempt,
                             reason,
                             ...(details ?? {})

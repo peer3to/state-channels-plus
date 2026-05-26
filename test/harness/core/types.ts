@@ -45,16 +45,6 @@ export class HarnessContext {
 
     /** Dynamic snapshot count storage for peers - indexed by peer index (set by Context blocks) */
     [key: `peer${number}SnapshotCountBefore`]: number;
-
-    /** Original calldata handler for peers - stored before stubbing (set by Byzantine.stubCalldataHandler) */
-    [key: `peer${number}OriginalCalldataHandler`]:
-        | ((...args: any[]) => Promise<void>)
-        | undefined;
-
-    /** Original broadcast function for peers - stored before stubbing (set by Byzantine.stubBroadcast) */
-    [key: `peer${number}OriginalBroadcast`]:
-        | ((...args: any[]) => any)
-        | undefined;
 }
 
 export type HarnessDeploymentParams = {
@@ -96,6 +86,12 @@ export type HarnessConstructorOptions<
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     deployment: HarnessDeploymentConfig<TContract>;
+    // W5 - deployment registry key + worker bundle manifest. when
+    // dedicatedPeerThread=true the worker resolves the deployer by name from
+    // the shared registry; bundleManifest lists the module paths to import at
+    // boot so the registry entry is populated in the worker isolate.
+    deploymentName?: string;
+    workerBundleManifest?: string[];
 };
 
 /**
@@ -132,6 +128,7 @@ export type HarnessOptions<TCustomRpc extends MainRpcService = MainRpcService> =
         customRpc?: CustomRpcConstructor<any, any>;
         customRpcOptions?: any;
         customPrecompiles?: EvmCustomPrecompileManifest[];
+        dedicatedPeerThread?: boolean;
     };
 
 export type TestPeer<

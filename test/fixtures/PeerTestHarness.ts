@@ -49,6 +49,16 @@ import {
     EventSpies,
     HarnessOptions
 } from "@test/harness/core/types";
+import { InlinePeer } from "@test/harness/core/InlinePeer";
+import type { PeerHandle } from "@test/harness/core/PeerHandle";
+import { WorkerPeer } from "@test/harness/core/WorkerPeer";
+import {
+    SpyMirror,
+    makeWorkerEventSpy,
+    type WorkerEventSpy
+} from "@test/harness/core/SpyMirror";
+import { PeerWorker } from "@test/harness/threaded/PeerWorker";
+import { HttpHardhatNode } from "@test/harness/threaded/HttpHardhatNode";
 import { HarnessDebug } from "./HarnessDebug";
 import { LogLevel } from "@/utils/logging/Logger";
 
@@ -62,17 +72,25 @@ export class PeerTestHarness<
     TStateMachine extends AStateMachineContract = AStateMachineContract
 > {
     public peers: TestPeer<TCustomRpc, TStateMachine>[] = [];
+    public peerHandles: PeerHandle[] = [];
     public channelManager!: StateChannelManagerProxy;
     private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
     public options!: HarnessOptions<TCustomRpc>;
     private harnessConfig!: Partial<Config>;
     private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
+    // Worker boot: deployment registry name and module manifest.
+    private readonly deploymentName?: string;
+    private readonly workerBundleManifest: string[];
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
     private autoTimeAdvanceTickInProgress = false;
     private restoreAutomineOnCleanup = false;
+    // Started when dedicatedPeerThread; workers dial chainProviderUrl.
+    private httpHardhatNode?: HttpHardhatNode;
+    private chainProviderUrl?: string;
+    private spawnedWorkers: PeerWorker[] = [];
 
     /**
      * Test context for cross-block state sharing
@@ -115,11 +133,19 @@ export class PeerTestHarness<
             );
         }
 
+        if (this.options.dedicatedPeerThread) {
+            // Worker peers have no inline stateManager; forkId comes from the handle cache.
+            return this.peerHandles[honestPeers[0].index]?.forkId;
+        }
         return honestPeers[0].stateManager.forkId;
     }
 
-    constructor({ deployment }: HarnessConstructorOptions<TStateMachine>) {
-        // toJSON can't serialize BigInts, so we need to override it
+    constructor({
+        deployment,
+        deploymentName,
+        workerBundleManifest
+    }: HarnessConstructorOptions<TStateMachine>) {
+        // JSON.stringify cannot serialize BigInt.
         if (typeof (BigInt.prototype as any).toJSON !== "function") {
             (BigInt.prototype as any).toJSON = function () {
                 return Number(this);
@@ -128,6 +154,8 @@ export class PeerTestHarness<
         dotenv.config(); // use .env since it's gitignored and it's only for testing - not altering SDK usage
         createConfig(testConfig); // Ensure config is initialized for tests
         this.deployment = deployment;
+        this.deploymentName = deploymentName;
+        this.workerBundleManifest = workerBundleManifest ?? [];
 
         // Logger starts with config default and is reconfigured in setup().
         this.logger = createLogger(
@@ -199,7 +227,11 @@ export class PeerTestHarness<
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],
             customRpc: options?.customRpc,
-            customRpcOptions: options?.customRpcOptions
+            customRpcOptions: options?.customRpcOptions,
+
+            dedicatedPeerThread:
+                options?.dedicatedPeerThread ??
+                process.env.HARNESS_DEDICATED_PEER_THREAD === "true"
         };
         if (
             !this.options.timeConfig?.agreementTime ||
@@ -214,6 +246,12 @@ export class PeerTestHarness<
         );
 
         await this.deployContracts();
+        if (this.options.dedicatedPeerThread) {
+            this.httpHardhatNode = new HttpHardhatNode();
+            const { url } = await this.httpHardhatNode.start();
+            this.chainProviderUrl = url;
+            await LocalDiscoveryServer.tryStart();
+        }
         const signers = await hre.ethers.getSigners();
         for (let i = 0; i < numPeers; i++) {
             await this.createPeer(i, signers[i]);
@@ -433,12 +471,29 @@ export class PeerTestHarness<
             }
         };
 
-        const contractInstanceMock = this.deployment.connectSigner(
-            ethers.ZeroAddress,
-            signer
-        );
+        // Worker peers run p2pSetup in-process; skip here to avoid discovery registry races.
+        let peer: TestPeer<TCustomRpc, TStateMachine>;
+        if (this.options.dedicatedPeerThread) {
+            peer = {
+                index,
+                signer,
+                address,
+                p2pInstance: undefined as never,
+                stateManager: undefined as never,
+                contractInstance: undefined as never,
+                eventSpies,
+                turnBarrier: peerTurnBarrier,
+                logger: peerLogger
+            };
+            // Worker events arrive via SpyMirror instead of these hooks.
+            void hooks;
+        } else {
+            const contractInstanceMock = this.deployment.connectSigner(
+                ethers.ZeroAddress,
+                signer
+            );
 
-        const p2pInstance = await EvmStateMachine.p2pSetup<
+            const p2pInstance = await EvmStateMachine.p2pSetup<
             TStateMachine,
             TCustomRpc,
             any
@@ -458,7 +513,7 @@ export class PeerTestHarness<
             }
         );
 
-        const peer: TestPeer<TCustomRpc, TStateMachine> = {
+        peer = {
             index,
             signer,
             address,
@@ -470,11 +525,123 @@ export class PeerTestHarness<
             logger: peerLogger
         };
 
-        // Wrap EventHandler methods with spies (without replacing the original functionality)
-        this.wrapEventHandlerWithSpies(peer);
+            this.wrapEventHandlerWithSpies(peer);
+        }
 
         this.peers.push(peer);
+        this.peerHandles.push(await this.createPeerHandle(peer));
+
         this.logger.debug(`Peer ${index} created successfully`);
+    }
+
+    private async createPeerHandle(
+        peer: TestPeer<TCustomRpc, TStateMachine>
+    ): Promise<PeerHandle> {
+        if (!this.options.dedicatedPeerThread) {
+            return new InlinePeer(peer as unknown as TestPeer);
+        }
+        if (!this.chainProviderUrl) {
+            throw new Error(
+                "PeerTestHarness: dedicatedPeerThread set but chainProviderUrl missing"
+            );
+        }
+        const registryPort = LocalDiscoveryServer.getDiscoveryPort();
+        if (!registryPort) {
+            throw new Error(
+                "PeerTestHarness: LocalDiscoveryServer.tryStart() did not produce a port"
+            );
+        }
+        const pk = await this.resolveSignerPk(peer.index);
+        const worker = await PeerWorker.spawn({
+            index: peer.index,
+            signerPk: pk,
+            channelId: this.options.channelId!,
+            discoveryRegistryPort: registryPort,
+            channelManagerAddress: this.channelManager.target as string,
+            deploymentName: this.requireDeploymentName(),
+            harnessConfig: {
+                timeConfig: this.options.timeConfig as never,
+                configOverrides: this.harnessConfig as Record<string, unknown>,
+                stateMachineGasLimit: this.options.stateMachineGasLimit!,
+                disputeExecutionGasLimit:
+                    this.options.disputeExecutionGasLimit!,
+                channelId: this.options.channelId!,
+                initialBalance: this.options.initialBalance!
+            },
+            logConfig: { level: this.options.logLevel!, peerIndex: peer.index },
+            testTitle: this.requireDeploymentName(),
+            bundleManifest: this.workerBundleManifest,
+            chainProviderUrl: this.chainProviderUrl
+        });
+        this.spawnedWorkers.push(worker);
+        const mirror = new SpyMirror(this.eventCountsBarrier);
+        worker.getRpcClient().on("spy", (payload: unknown) => {
+            mirror.ingest(payload as Parameters<SpyMirror["ingest"]>[0]);
+        });
+        // Orchestrator sinon spies never fire in worker mode; mirror-backed spies report pushed counts.
+        const workerSpies = peer.eventSpies as unknown as Record<
+            string,
+            WorkerEventSpy
+        >;
+        for (const name of Object.keys(peer.eventSpies)) {
+            workerSpies[name] = makeWorkerEventSpy(mirror, peer.index, name);
+        }
+        return new WorkerPeer({
+            index: peer.index,
+            address: peer.address as never,
+            signer: peer.signer,
+            logger: peer.logger,
+            eventSpies: peer.eventSpies,
+            turnBarrier: peer.turnBarrier,
+            rpc: worker.getRpcClient(),
+            mirror,
+            onDispose: async () => {
+                await worker.dispose();
+            }
+        });
+    }
+
+    private requireDeploymentName(): string {
+        if (!this.deploymentName) {
+            throw new Error(
+                "PeerTestHarness: dedicatedPeerThread requires deploymentName + workerBundleManifest on the harness ctor"
+            );
+        }
+        return this.deploymentName;
+    }
+
+    // Derive the same private key Hardhat uses for getSigners()[i].
+    private async resolveSignerPk(peerIndex: number): Promise<string> {
+        const network = hre.network.config as unknown as {
+            accounts?: { mnemonic?: string } | string[];
+        };
+        const acc = network.accounts;
+        if (Array.isArray(acc)) {
+            const pk = acc[peerIndex];
+            if (!pk)
+                throw new Error(
+                    `PeerTestHarness.resolveSignerPk: no account at index ${peerIndex}`
+                );
+            return pk;
+        }
+        const mnemonic = acc?.mnemonic;
+        if (!mnemonic) {
+            throw new Error(
+                "PeerTestHarness.resolveSignerPk: hre.network.config.accounts.mnemonic missing"
+            );
+        }
+        const wallet = ethers.HDNodeWallet.fromPhrase(
+            mnemonic,
+            undefined,
+            `m/44'/60'/0'/0/${peerIndex}`
+        );
+        return wallet.privateKey;
+    }
+
+    getPeerHandle(index: number): PeerHandle {
+        const handle = this.peerHandles[index];
+        if (!handle) throw new Error(`PeerHandle ${index} not found`);
+        return handle;
     }
 
     private wrapEventHandlerWithSpies(
@@ -506,13 +673,10 @@ export class PeerTestHarness<
             }
         });
 
-        // Replace the eventHandler in both the stateManager and stateChannelEventListener with our proxy
         peer.stateManager.eventHandler = eventHandlerProxy;
         peer.stateManager.stateChannelEventListener.eventHandler =
             eventHandlerProxy;
     }
-
-    // ===== PRIVATE HELPERS =====
 
     /**
      * Starts automatic blockchain time advancement to simulate natural time passing.
@@ -625,7 +789,9 @@ export class PeerTestHarness<
                     component: "TestHarness"
                 });
 
-                disposePromises.push(peer.p2pInstance.dispose());
+                if (peer.p2pInstance) {
+                    disposePromises.push(peer.p2pInstance.dispose());
+                }
 
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
@@ -643,9 +809,23 @@ export class PeerTestHarness<
 
         await Promise.allSettled(disposePromises);
 
+        // Dispose workers before the HTTP node so RPC sockets release first.
+        if (this.spawnedWorkers.length) {
+            await Promise.allSettled(
+                this.spawnedWorkers.map((w) => w.dispose())
+            );
+            this.spawnedWorkers = [];
+        }
+        if (this.httpHardhatNode) {
+            await this.httpHardhatNode.close();
+            this.httpHardhatNode = undefined;
+            this.chainProviderUrl = undefined;
+        }
+
         await new Promise((resolve) => setImmediate(resolve));
 
         this.peers = [];
+        this.peerHandles = [];
 
         // Fully reset the context object to ensure no properties leak between tests
         this.context = new HarnessContext();
