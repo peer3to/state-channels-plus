@@ -239,7 +239,8 @@ class StateManager {
             await Promise.all([
                 this.timeoutManager.dispose(),
                 this.stateChannelEventListener.dispose(),
-                this.p2pManager.dispose()
+                this.p2pManager.dispose(),
+                this.diamondStateMachine.dispose()
             ]);
         } finally {
             this.logger.dispose({

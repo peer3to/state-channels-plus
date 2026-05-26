@@ -425,11 +425,10 @@ describe("StateChannelManagerProxy", function () {
             await res.wait();
 
             // Check that the channel was opened successfully
-            expect(
-                await mathChannelManager.isChannelOpen(
-                    openChannelWithZeroBalance.channelId
-                )
-            ).to.be.true;
+            const [isOpen] = await mathChannelManager.isChannelOpen(
+                openChannelWithZeroBalance.channelId
+            );
+            expect(isOpen).to.be.true;
 
             // Check that the total deposits in the state snapshot is 0
             const stateSnapshot = await mathChannelManager.getStateSnapshot(

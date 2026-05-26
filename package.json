@@ -42,6 +42,7 @@
     "husky": "^8.0.3",
     "lint-staged": "^14.0.1",
     "nyc": "^15.1.0",
+    "playwright": "^1.55.0",
     "prettier": "^3.2.5",
     "rimraf": "^6.0.1",
     "sinon": "^20.0.0",
@@ -53,6 +54,7 @@
     "tsconfig-paths": "^4.2.0",
     "typechain": "^8.3.0",
     "typescript": "^5.3.3",
+    "vite": "^7.1.5",
     "web3": "4.5.0"
   },
   "dependencies": {
@@ -82,6 +84,7 @@
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "get-logs": "ts-node scripts/logging/fetch-logs.ts",
     "test": "yarn hardhat test --no-compile $(find test/V1 test/evm test/models test/storage -name '*.test.ts')",
+    "test:browser:worker": "yarn build:browser && node test/browser/run-worker-contract-executor.mjs",
     "test:debug": "yarn hardhat test --no-compile $(find test -name '*.test.ts')",
     "test:all": "yarn hardhat test $(find test -name '*.test.ts')",
     "test:compile": "yarn compile && yarn test",
@@ -101,7 +104,8 @@
     "test:profile:e2e:clinic:doctor": "LOG_LEVEL=verbose npx clinic doctor --dest ./profiles/clinic -- node ./node_modules/hardhat/internal/cli/cli.js test $(find test/e2e -name '*.test.ts')",
     "test:profile:e2e:v8": "LOG_LEVEL=verbose node --prof --enable-source-maps ./node_modules/hardhat/internal/cli/cli.js test $(find test/e2e -name '*.test.ts')",
     "test:profile:e2e:v8:process": "node --prof-process isolate-*.log > ./profiles/v8-prof.txt",
-    "build": "yarn compile && rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && npm pack && node rename-pack.js",
+    "build:browser": "rimraf dist/browser && tsc -p tsconfig.browser.json && tsc-alias -p tsconfig.browser.json",
+    "build": "yarn compile && rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && yarn build:browser && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:fix": "eslint src/**/*.ts test/**/*.ts --fix",
@@ -125,6 +129,8 @@
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",
+      "browser": "./dist/browser/src/index.js",
+      "node": "./dist/src/index.js",
       "import": "./dist/src/index.js",
       "default": "./dist/src/index.js"
     },

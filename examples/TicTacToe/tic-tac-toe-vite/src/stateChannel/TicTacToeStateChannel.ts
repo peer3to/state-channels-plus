@@ -1,8 +1,7 @@
 import {
     ethers,
     EvmStateMachine,
-    P2pEventHooks,
-    createLocalDeployerFromTx
+    P2pEventHooks
 } from "@peer3/state-channels-plus";
 import type { Signer } from "@peer3/state-channels-plus";
 import {
@@ -47,13 +46,23 @@ export const p2pSetup = async (
     p2pEventHooks: P2pEventHooks = {}
 ) => {
     //P2P setup;
-    let factory = new ethers.ContractFactory(
-        TicTacToeStateMachineJSON.abi,
-        TicTacToeStateMachineJSON.bytecode,
-        TicTacToeStateChannelManagerInstance.runner
-    ) as TicTacToeStateMachine__factory;
-    let deployTx = await factory.getDeployTransaction(1_000_000); // this deployes the contract locally
-    const deployStateMachine = createLocalDeployerFromTx(deployTx);
+    const deployStateMachine = async (signer: Signer) => {
+        const factory = new ethers.ContractFactory(
+            TicTacToeStateMachineJSON.abi,
+            TicTacToeStateMachineJSON.bytecode,
+            signer
+        ) as TicTacToeStateMachine__factory;
+        const response = await signer.sendTransaction(
+            await factory.getDeployTransaction(1_000_000)
+        );
+        const receipt = await response.wait();
+        if (!receipt?.contractAddress) {
+            throw new Error(
+                "Local TicTacToeStateMachine deployment failed: missing contractAddress"
+            );
+        }
+        return receipt.contractAddress;
+    };
 
     let p2p = await EvmStateMachine.p2pSetup<
         TicTacToeStateMachine,

@@ -5,8 +5,7 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes"
 import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
 import * as sinon from "sinon";
 import { Signer } from "ethers";
-import type { EVM } from "@ethereumjs/evm";
-import { P2pInstance, type EvmCustomPrecompile } from "@/evm";
+import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
 import StateManager from "@/stateManager";
 import { AStateMachine as AStateMachineContract } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
@@ -67,10 +66,7 @@ export type HarnessDeploymentParams = {
 
 export type HarnessOnChainContractsDeploymentParams = HarnessDeploymentParams;
 
-export type HarnessLocalStateMachineDeploymentParams =
-    HarnessDeploymentParams & {
-        evm: EVM;
-    };
+export type HarnessLocalStateMachineDeploymentParams = HarnessDeploymentParams;
 
 export type HarnessDeploymentConfig<
     TContract extends AStateMachineContract = AStateMachineContract
@@ -135,7 +131,7 @@ export type HarnessOptions<
     autoConnect?: boolean;
     configOverrides?: Partial<Config>; // Direct config overrides
     rpcServiceFactories?: TFactories;
-    customPrecompiles?: EvmCustomPrecompile[];
+    customPrecompiles?: EvmCustomPrecompileManifest[];
 };
 
 export type TestPeer<

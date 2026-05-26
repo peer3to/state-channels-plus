@@ -3,7 +3,6 @@ import * as sinon from "sinon";
 import * as dotenv from "dotenv";
 import hre from "hardhat";
 import { setImmediate } from "node:timers";
-import { Address as EthereumjsAddress } from "@ethereumjs/util";
 import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import {
@@ -127,7 +126,7 @@ export class PeerTestHarness<
             };
         }
         dotenv.config(); // use .env since it's gitignored and it's only for testing - not altering SDK usage
-        createConfig(); // Ensure config is initialized for tests
+        createConfig(testConfig); // Ensure config is initialized for tests
         this.deployment = deployment;
 
         // Logger starts with config default and is reconfigured in setup().
@@ -240,10 +239,9 @@ export class PeerTestHarness<
     ): LocalStateMachineDeployer {
         const { deployLocalStateMachine } = deployment;
 
-        return async (evm, signer) => {
+        return async (signer) => {
             const deployedAddress = await deployLocalStateMachine({
                 signer,
-                evm,
                 stateMachineGasLimit: this.options.stateMachineGasLimit!,
                 disputeExecutionGasLimit:
                     this.options.disputeExecutionGasLimit!,
@@ -251,7 +249,7 @@ export class PeerTestHarness<
                 harnessConfig: this.harnessConfig
             });
 
-            return EthereumjsAddress.fromString(deployedAddress);
+            return deployedAddress;
         };
     }
 

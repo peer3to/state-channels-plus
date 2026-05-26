@@ -64,7 +64,7 @@ import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { SyncPayloadEthersType } from "@/types";
 import type { SyncPayload } from "@/types";
-import { ExecResult } from "@ethereumjs/evm";
+import type { ContractExecutionResult } from "@/evm/contractExecutor";
 import {
     DisputeInvalidBalanceInvariantStruct,
     DisputeOnChainSlashesNotSubsetStruct,
@@ -144,6 +144,8 @@ export enum Type {
 }
 
 export class Codec {
+    private static readonly abiCoder = ethers.AbiCoder.defaultAbiCoder();
+
     private static readonly structToEthersType = new Map<
         Type | FraudProofType | DisputeFraudProofType,
         string
@@ -235,19 +237,48 @@ export class Codec {
         ]
     ]);
 
+    private static readonly abiTypesCache = new Map<
+        Type | FraudProofType | DisputeFraudProofType,
+        readonly [ethers.ParamType]
+    >();
+
+    private static readonly evmAbiTypesCache = new Map<
+        string,
+        readonly [ethers.ParamType]
+    >();
+
+    private static getAbiTypes(
+        type: Type | FraudProofType | DisputeFraudProofType
+    ): readonly [ethers.ParamType] {
+        let abiTypes = this.abiTypesCache.get(type);
+        if (!abiTypes) {
+            const ethersType = this.structToEthersType.get(type);
+            if (!ethersType) {
+                throw new Error(`No ethers type mapping found for ${type}`);
+            }
+            abiTypes = [ethers.ParamType.from(ethersType)];
+            this.abiTypesCache.set(type, abiTypes);
+        }
+        return abiTypes;
+    }
+
+    private static getEvmAbiTypes(
+        ethersType: string
+    ): readonly [ethers.ParamType] {
+        let abiTypes = this.evmAbiTypesCache.get(ethersType);
+        if (!abiTypes) {
+            abiTypes = [ethers.ParamType.from(ethersType)];
+            this.evmAbiTypesCache.set(ethersType, abiTypes);
+        }
+        return abiTypes;
+    }
+
     public static encode(
         struct: StructType,
         type: Type | FraudProofType | DisputeFraudProofType
     ): Bytes {
-        const ethersType = this.structToEthersType.get(type);
-        if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${type}`);
-        }
         try {
-            return ethers.AbiCoder.defaultAbiCoder().encode(
-                [ethersType],
-                [struct]
-            );
+            return this.abiCoder.encode(this.getAbiTypes(type), [struct]);
         } catch (error) {
             const preview =
                 typeof struct === "object"
@@ -315,15 +346,7 @@ export class Codec {
         encoded: Bytes,
         type: Type | FraudProofType | DisputeFraudProofType
     ): T {
-        const ethersType = this.structToEthersType.get(type);
-        if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${type}`);
-        }
-
-        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
-            [ethersType],
-            encoded
-        );
+        const decoded = this.abiCoder.decode(this.getAbiTypes(type), encoded);
         return this.ethersResultToObjectRecursive(decoded[0]) as T;
     }
 
@@ -352,7 +375,7 @@ export class Codec {
     }
 
     public static decodeEvmResult<T>(
-        execResult: ExecResult,
+        execResult: ContractExecutionResult,
         ethersType: string,
         options: {
             useObjectConversion: boolean;
@@ -360,8 +383,8 @@ export class Codec {
             useObjectConversion: false
         }
     ): T {
-        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
-            [ethersType],
+        const decoded = this.abiCoder.decode(
+            this.getEvmAbiTypes(ethersType),
             execResult.returnValue
         );
 

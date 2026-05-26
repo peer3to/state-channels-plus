@@ -1,0 +1,37 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "declaration": false,
+        "module": "es2020",
+        "moduleResolution": "node",
+        "outDir": "./dist/browser",
+        "paths": {
+            "@/*": ["src/*"],
+            "@platform/createLogger": [
+                "src/utils/logging/browser/createLogger"
+            ],
+            "@platform/contractExecutorWorkerRuntime": [
+                "src/evm/contractExecutor/browser/ContractExecutorWorkerRuntime"
+            ],
+            "@platform/DeployUtils": ["src/utils/browser/DeployUtils"],
+            "@platform/LocalDiscoveryServer": [
+                "src/utils/browser/LocalDiscoveryServer"
+            ],
+            "@platform/precompileModuleLoader": [
+                "src/evm/browser/precompileModuleLoader"
+            ],
+            "@test/*": ["test/*"],
+            "@typechain-types/*": ["typechain-types/*"],
+            "@typechain-types": ["typechain-types/index"]
+        }
+    },
+    "exclude": [
+        "examples",
+        "dist",
+        "node_modules",
+        "src/evm/node",
+        "src/evm/contractExecutor/node",
+        "src/utils/node",
+        "src/utils/logging/node"
+    ]
+}

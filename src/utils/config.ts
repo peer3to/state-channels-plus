@@ -13,6 +13,8 @@ export type Config = {
     LOG_EXCLUDE_TAGS: string;
     EXCLUDE_LOG_TAGS: string;
     HOLEPUNCH_RELAYER_URLS: string[];
+    VM_DEDICATED_THREAD: boolean;
+    EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
@@ -32,6 +34,8 @@ const DEFAULT_CONFIG: Config = {
     LOG_EXCLUDE_TAGS: "",
     EXCLUDE_LOG_TAGS: "",
     HOLEPUNCH_RELAYER_URLS: [],
+    VM_DEDICATED_THREAD: false,
+    EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",

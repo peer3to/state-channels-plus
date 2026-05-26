@@ -1,11 +1,4 @@
-import {
-    ContractFactory,
-    Signer,
-    ContractDeployTransaction,
-    Wallet,
-    ethers
-} from "ethers";
-import { EVM } from "@ethereumjs/evm";
+import { ContractFactory, Signer, ethers } from "ethers";
 
 import DisputeVerificationFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol/DisputeVerificationFacet.json";
 import DisputeManagerFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol/DisputeManagerFacet.json";
@@ -20,8 +13,8 @@ import UtilityFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamo
 
 import { StateChannelManagerProxy } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
-import { Address } from "@ethereumjs/util";
 import { config } from "@/utils/config";
+import type { Address } from "@/types/types";
 
 const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
@@ -42,10 +35,7 @@ export type DeploymentResult = {
     signer: Signer;
 };
 
-export type LocalStateMachineDeployer = (
-    evm: EVM,
-    signer: Signer
-) => Promise<Address>;
+export type LocalStateMachineDeployer = (signer: Signer) => Promise<Address>;
 
 function logDeployed(
     address: string,
@@ -108,7 +98,6 @@ export async function deployArtifact<T>(
 
 async function deployArtifactLocal(
     artifact: Artifact,
-    evm: EVM,
     signer: Signer,
     options?: {
         libs?: Record<string, string>;
@@ -121,10 +110,17 @@ async function deployArtifactLocal(
         linkedArtifact.bytecode,
         signer
     );
-    const deployTx = await factory.getDeployTransaction(
-        ...(options?.args || [])
+    const response = await signer.sendTransaction(
+        await factory.getDeployTransaction(...(options?.args || []))
     );
-    return deployLocalFromTx(deployTx, evm);
+    const receipt = await response.wait();
+    const address = receipt?.contractAddress;
+    if (!address) {
+        throw new Error(
+            `Local deployment failed: missing contractAddress in receipt for ${artifact.contractName}`
+        );
+    }
+    return address as Address;
 }
 
 export async function deployFacets(
@@ -146,13 +142,12 @@ export async function deployFacets(
 }
 
 export async function deployFacetsLocal(
-    evm: EVM,
     signer: Signer,
     libs: Record<string, string> = {}
 ): Promise<string[]> {
     return Promise.all(
         facetArtifacts.map((artifact) =>
-            deployArtifactLocal(artifact, evm, signer, { libs }).then((a) =>
+            deployArtifactLocal(artifact, signer, { libs }).then((a) =>
                 a.toString()
             )
         )
@@ -244,40 +239,21 @@ export async function deployFullStack(
     );
 }
 
-export function createLocalDeployerFromTx(
-    tx: ContractDeployTransaction
-): LocalStateMachineDeployer {
-    return async (evm: EVM, _signer: Signer) => deployLocalFromTx(tx, evm);
-}
-
 export async function deployLocalDiamond(
-    stateMachineDeployment:
-        | ContractDeployTransaction
-        | LocalStateMachineDeployer,
-    evm: EVM,
-    signer?: Signer,
+    deployStateMachine: LocalStateMachineDeployer,
+    signer: Signer,
     timeConfigOverrides?: TimeConfig,
     disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
 ): Promise<DeploymentResult> {
-    const usedSigner = signer || Wallet.createRandom();
+    const facetAddresses = await deployFacetsLocal(signer);
 
-    const deployStateMachine =
-        typeof stateMachineDeployment === "function"
-            ? stateMachineDeployment
-            : createLocalDeployerFromTx(stateMachineDeployment);
-
-    const facetAddresses = await deployFacetsLocal(evm, usedSigner);
-
-    const stateMachineAddress = (
-        await deployStateMachine(evm, usedSigner)
-    ).toString();
+    const stateMachineAddress = (await deployStateMachine(signer)).toString();
 
     const timeConfig = getTimeConfig(timeConfigOverrides);
 
     const diamondAddress = await deployArtifactLocal(
         LocalDiamondArtifact,
-        evm,
-        usedSigner,
+        signer,
         {
             args: [
                 stateMachineAddress,
@@ -291,40 +267,7 @@ export async function deployLocalDiamond(
         }
     );
 
-    return { address: diamondAddress, signer: usedSigner };
-}
-
-// Counter for unique deployments
-let deploymentCounter = 0;
-
-export async function deployLocalFromTx(
-    tx: ContractDeployTransaction,
-    evm: EVM
-): Promise<Address> {
-    // Create a deterministic but unique caller address for each deployment
-    const counterHex = deploymentCounter.toString(16).padStart(8, "0");
-    const caller = Address.fromString(`0x${"0".repeat(32)}${counterHex}`);
-    deploymentCounter++;
-
-    const deploymentResult = await evm.runCall({
-        data: ethers.getBytes(tx.data as string),
-        caller: caller,
-        origin: caller
-    });
-
-    if (deploymentResult.execResult.exceptionError) {
-        throw new Error(
-            `Failed to deploy tx: ${JSON.stringify(
-                deploymentResult.execResult.exceptionError
-            )}`
-        );
-    }
-
-    if (!deploymentResult.createdAddress) {
-        throw new Error(`No contract address created for tx`);
-    }
-
-    return deploymentResult.createdAddress;
+    return { address: diamondAddress, signer };
 }
 
 export function linkLibraries(

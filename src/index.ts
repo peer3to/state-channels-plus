@@ -1,5 +1,12 @@
 import Clock from "@/Clock";
-import { EvmStateMachine, P2pSigner } from "@/evm";
+import {
+    AContractExecutor,
+    ContractExecutor,
+    EvmStateMachine,
+    LocalDiamondSigner,
+    P2pSigner,
+    createContractExecutorFactory
+} from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
 import {
@@ -28,14 +35,24 @@ export type {
 } from "ethers";
 
 export type {
+    ContractExecutionLog,
+    ContractExecutionResult,
+    ContractExecutorFactory,
+    ContractExecutorFactoryOptions,
     EvmCustomPrecompile,
+    EvmCustomPrecompileFactory,
+    EvmCustomPrecompileManifest,
     EvmFactoryOptions,
+    EvmNativeCustomPrecompile,
     LocalStateMachineDeployer
 } from "@/evm";
 
 export {
+    AContractExecutor,
     Clock,
+    ContractExecutor,
     EvmStateMachine,
+    LocalDiamondSigner,
     P2pSigner,
     P2PManager,
     P2pEventHooks,
@@ -49,7 +66,8 @@ export {
     HandshakeCompletedGuard,
     defineRpcServices,
     ATransport,
-    getChecksumAddress
+    getChecksumAddress,
+    createContractExecutorFactory
 };
 export { Status } from "@/types";
 
