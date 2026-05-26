@@ -8,7 +8,7 @@ import { expect } from "chai";
 // InboundMessageBlockHashes. Variations 1.1–1.5 below.
 //
 // Setup harness: scenario.setupTwoLeaversAcrossMilestones (Cases 1.1–1.4) and
-// scenario.setupLeaverM1WithPendingJoinerInM2 (Case 1.5) produce ≥3 milestones
+// scenario.setupTwoLeaversWithPendingJoinerAcrossMilestones (Case 1.5) produce ≥3 milestones
 // covering the M1/M2/M3 shape. We tamper auditingData.milestoneSnapshots[1]
 // (the M2 row) to inject each Case's specific corruption, then assert the
 // fraud-proof pipeline kills the dispute with DisputeInvalidStateProof.
@@ -135,7 +135,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
         it("Case 1.5 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             const { pendingJoin } =
-                await h.scenario.setupLeaverM1WithPendingJoinerInM2();
+                await h.scenario.setupTwoLeaversWithPendingJoinerAcrossMilestones();
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -172,6 +172,13 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                     DisputeFraudProofType.DisputeInvalidStateProof,
                 timeoutMs: 15000,
                 peerIndices: [1, 3]
+            });
+
+            // setup leaves pendingJoin's inbound unconsumed -> postStateSnapshot races throw RaceConditionPendingInboundNotConsumed (fatal); absorb the expected detached throw.
+            await TestSession.expectFirstDetachedError({
+                includes: "pending inbound not consumed",
+                timeoutMs: 5000,
+                required: false
             });
         });
     });

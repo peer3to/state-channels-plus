@@ -211,7 +211,7 @@ export class MathScenarioActions extends ScenarioActions {
         this.harness.contextApi.captureOriginalFork();
     }
 
-    async setupLeaverM1WithPendingJoinerInM2(options?: {
+    async setupTwoLeaversWithPendingJoinerAcrossMilestones(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -236,7 +236,8 @@ export class MathScenarioActions extends ScenarioActions {
 
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3, 4],
-            count: 1
+            count: 1,
+            waitForFinalization: true
         });
 
         const { participant: pendingJoin } =
