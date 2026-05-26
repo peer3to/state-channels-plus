@@ -3,10 +3,10 @@ import { PeerTestHarness } from "../../fixtures/PeerTestHarness";
 export class TestSession {
     private static harness?: PeerTestHarness;
     private static firstDetachedError?: Error;
-    // one-shot notifier: setFirstDetachedError fires it so consumers waiting
-    // on the error (e.g. for an expected detached throw from an event listener)
-    // wake up immediately.
+    // Wakes expectFirstDetachedError waiters when the first detached error lands.
     private static detachedErrorNotify?: () => void;
+    // Expected error substrings; matching unhandledRejections are ignored (multi-peer dupes).
+    private static detachedErrorAllowlist: string[] = [];
 
     protected static createHarness(): PeerTestHarness {
         throw new Error(
@@ -38,10 +38,17 @@ export class TestSession {
 
         await this.harness.cleanup();
         this.firstDetachedError = undefined;
+        this.detachedErrorAllowlist = [];
         this.harness = undefined;
     }
 
     static setFirstDetachedError(error: Error): void {
+        // drop errors a test has already claimed (multi-peer same-throw case)
+        if (
+            this.detachedErrorAllowlist.some((s) => error.message.includes(s))
+        ) {
+            return;
+        }
         if (this.firstDetachedError) return;
         this.firstDetachedError = error;
         // wake any consumer waiting on this error
@@ -54,11 +61,7 @@ export class TestSession {
         return this.firstDetachedError;
     }
 
-    // read + clear the first detached error in one step.
-    // tests use this to declare "i expect this detached throw" so the
-    // afterEach hook doesn't re-throw it.
-    // pass timeoutMs to wait - useful when the throw fires inside an ethers
-    // event listener and the unhandledRejection event hasn't dispatched yet.
+    // Take and clear the first detached error; optional wait for async listener throws.
     static async consumeFirstDetachedError(
         timeoutMs = 0
     ): Promise<Error | undefined> {
@@ -80,6 +83,31 @@ export class TestSession {
         const err = this.firstDetachedError;
         this.firstDetachedError = undefined;
         return err;
+    }
+
+    // Expect a detached error matching `includes`; mismatch rethrows, timeout fails if required.
+    static async expectFirstDetachedError(options: {
+        includes: string;
+        timeoutMs?: number;
+        required?: boolean;
+    }): Promise<void> {
+        // Allowlist pattern so duplicate peer throws are ignored.
+        this.detachedErrorAllowlist.push(options.includes);
+
+        const err = await this.consumeFirstDetachedError(
+            options.timeoutMs ?? 0
+        );
+        if (!err) {
+            if (options.required ?? true) {
+                throw new Error(
+                    `expected detached error including "${options.includes}", got none`
+                );
+            }
+            return;
+        }
+        if (!err.message.includes(options.includes)) {
+            throw err;
+        }
     }
 }
 

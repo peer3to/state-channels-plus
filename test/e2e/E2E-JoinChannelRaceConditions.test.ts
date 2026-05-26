@@ -78,15 +78,10 @@ describe("E2E: Join channel race conditions", function () {
 
             // existing PARTICIPATING peers observe the byzantine snapshot and
             // throw via EventHandler's unknown-snapshot fraud detection.
-            // the throw fires inside an ethers event listener (not collected
-            // by DetachedPromises) -> poll for the unhandledRejection to dispatch.
-            const detachedError =
-                await TestSession.consumeFirstDetachedError(3000);
-            expect(
-                detachedError,
-                "expected detached throw from EventHandler.onStateSnapshotUpdated"
-            ).to.exist;
-            expect(detachedError!.message).to.include("unknown snapshot");
+            await TestSession.expectFirstDetachedError({
+                includes: "unknown snapshot",
+                timeoutMs: 3000
+            });
         });
 
         it("pending inbound unconsumed → postStateSnapshot throws RaceConditionPendingInboundNotConsumed (fatal); on-chain snapshot unchanged", async function () {
@@ -131,15 +126,10 @@ describe("E2E: Join channel race conditions", function () {
             );
 
             await DetachedPromises.awaitAllAndClear();
-            const detachedError =
-                await TestSession.consumeFirstDetachedError(2000);
-            expect(
-                detachedError,
-                "expected detached throw from postStateSnapshot"
-            ).to.exist;
-            expect(detachedError!.message).to.include(
-                "pending inbound not consumed"
-            );
+            await TestSession.expectFirstDetachedError({
+                includes: "pending inbound not consumed",
+                timeoutMs: 2000
+            });
 
             const snapshotAfter = await h.channelManager.getStateSnapshot(
                 h.channelId
