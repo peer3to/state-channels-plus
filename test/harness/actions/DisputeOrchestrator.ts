@@ -77,9 +77,16 @@ export class DisputeOrchestrator {
         const honestPeers = honestPeerIndices.map((idx) =>
             this.harness.getPeer(idx)
         );
-        const newForkId = honestPeers[0]!.stateManager.forkId;
+        // step 1 - forkId via PeerHandle cached scalar (D-12).
+        const newForkId = this.harness.getPeerHandle(
+            honestPeers[0]!.index
+        ).forkId;
 
-        if (newForkId === originalForkId || newForkId === ZeroHash) {
+        if (
+            newForkId === undefined ||
+            newForkId === originalForkId ||
+            newForkId === ZeroHash
+        ) {
             throw new Error(
                 `Expected new forkId after reduction (got ${newForkId})`
             );
@@ -96,7 +103,10 @@ export class DisputeOrchestrator {
 
             const settledPeers = syncPeerIndices
                 .map((i) => this.harness.getPeer(i))
-                .filter((p) => p.stateManager.forkId === newForkId);
+                .filter(
+                    (p) =>
+                        this.harness.getPeerHandle(p.index).forkId === newForkId
+                );
 
             for (const peer of settledPeers) {
                 const participants =

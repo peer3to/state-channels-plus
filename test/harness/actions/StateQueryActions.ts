@@ -1,8 +1,8 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
+import { InlinePeer } from "@test/harness/core/InlinePeer";
 import { Logger } from "@/utils";
 import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
-import { Status } from "@/types/flags";
 import { ATransport } from "@/transport";
 import PeerProfile from "@/PeerProfile";
 import { ethers } from "@/index";
@@ -18,6 +18,14 @@ import { StateSnapshot } from "@/models";
  * - Determine next peer to write
  *
  * NO MUTATIONS - read-only operations only
+ *
+ * step 1 - W1 §6 - migration status. several methods return live objects
+ * (Storage, ATransport, PeerProfile, StateMachineState) that the sub-handle
+ * surface intentionally does not carry (W1 §3.1 "what *is not* on PeerHandle").
+ * those reads stay as-is for inline mode via the handle's record; their
+ * worker-mode equivalents land with the named-handler / queryStorageSnapshot
+ * migrations in W1 §6 bucket (iii) and the deferred queryStorageSnapshot shape
+ * pinning. dedicatedPeerThread=true is W5-blocked anyway so these are inert.
  */
 export class StateQueryActions {
     constructor(
@@ -25,18 +33,22 @@ export class StateQueryActions {
         private logger: Logger
     ) {}
 
+    // step 1 - bucket-(iii) deferred. live storage is not on PeerHandle;
+    // inline mode reads through the record. worker-mode equivalent lands with
+    // queryStorageSnapshot once shape is pinned (W1 appendix A bucket i).
     public getPeerStorage(peerIndex: number) {
-        const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.storage;
+        const handle = this.harness.getPeerHandle(peerIndex) as InlinePeer;
+        return handle.record.stateManager.storage;
     }
 
     /**
      * Get the latest state machine state hash for a peer - ONLY if it exists in storage
      */
     public getLatestStateMachineStateHash(peerIndex: number): Hash | null {
-        const peer = this.harness.getPeer(peerIndex);
-        const storage = peer.stateManager.storage;
-        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
+        // step 1 - bucket-(iii) deferred; live state snapshots/machine states
+        // aren't on PeerHandle. inline path reads through the record.
+        const handle = this.harness.getPeerHandle(peerIndex) as InlinePeer;
+        const storage = handle.record.stateManager.storage;
 
         const latestBlock = storage.blocks.getLatestBlock(
             this.harness.activeForkId!
@@ -223,9 +235,13 @@ export class StateQueryActions {
     /**
      * Get the number of open connections for a peer
      */
-    getConnectionCount(peerIndex: number): number {
-        const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.p2pManager.openConnections.length;
+    // step 1 - bucket (ii) - routes through queryInternals.connectionCount.
+    // inline body reads peer.stateManager.p2pManager.openConnections.length
+    // in-process (see InlineP2pInternalsHandle).
+    async getConnectionCount(peerIndex: number): Promise<number> {
+        return this.harness
+            .getPeerHandle(peerIndex)
+            .queryInternals.connectionCount();
     }
 
     /**

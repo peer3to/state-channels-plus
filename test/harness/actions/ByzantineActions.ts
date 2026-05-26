@@ -1,16 +1,14 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { rejectClosureInWorkerMode } from "@test/harness/core/namedOpGuards";
 import { Logger, Codec, Type } from "@/utils";
 import { ForkId, Bytes, Hash, BlockHeight } from "@/types/types";
 import Block from "@/models/Block";
 import {
     BlockStruct,
     TransactionStruct,
-    MessageBlockStruct,
-    MessageStruct,
-    BalanceStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ethers, ZeroHash } from "ethers";
+import { ethers } from "ethers";
 import Clock from "@/Clock";
 import { hash } from "@/utils";
 import {
@@ -19,6 +17,11 @@ import {
 } from "@test/harness/actions/DisputeTamperingActions";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
+// step 1 - action class composes orchestrator-side block construction with the
+// peer sub-handles (W1 §6). every internal access goes through PeerHandle:
+// peerHandle.byzantine.* for state-manager mutations, peerHandle.queryLatestBlock
+// for read-through, peerHandle.signer for orchestrator-side block signing,
+// harness.channelManager.connect(signer) for on-chain writes (W0 D-15).
 export class ByzantineActions {
     constructor(
         protected harness: PeerTestHarness,
@@ -38,7 +41,7 @@ export class ByzantineActions {
         conflictingBlock: Block;
         originalBlock: Block;
     }> {
-        const peer = this.harness.getPeer(peerIndex);
+        const peerHandle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
@@ -48,8 +51,12 @@ export class ByzantineActions {
             `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
         );
 
-        const originalBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        // step 1 - read the latest block via the data-path query. inline mode
+        // returns the live Block instance; worker mode returns a serialised
+        // summary (out of scope until W5).
+        const originalBlock = (await peerHandle.queryLatestBlock(forkId)) as
+            | Block
+            | undefined;
         if (!originalBlock) {
             throw new Error(`No block found for fork ${forkId}`);
         }
@@ -58,7 +65,8 @@ export class ByzantineActions {
             `Original block found: height=${originalBlock.height}, hash=${originalBlock.hash}`
         );
 
-        // Create conflicting block with same coordinates but different content
+        // step 2 - construct conflicting block orchestrator-side. signer is
+        // orchestrator-side per D-15.
         const conflictingTransactionData: Bytes =
             options?.transactionData ||
             (ethers.hexlify(ethers.randomBytes(64)) as Bytes);
@@ -88,17 +96,19 @@ export class ByzantineActions {
 
         const conflictingBlock = await Block.fromBlockStruct(
             conflictingBlockStruct,
-            peer.signer
+            peerHandle.signer
         );
 
         this.logger.info(
             `Peer ${peerIndex} broadcasting double-sign block: height=${conflictingBlock.height}, hash=${conflictingBlock.hash}`
         );
 
-        // Broadcast
-        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(conflictingBlock.blockConfirmationStruct)
-            .broadcast();
+        // step 3 - broadcast via sub-handle. inline body runs the same
+        // remoteRpc.stateTransitionService.onBlockConfirmation(...).broadcast()
+        // call the today-action used to inline.
+        await peerHandle.byzantine.submitDoubleSignBlock({
+            signedBlockConfirmation: conflictingBlock.blockConfirmationStruct
+        });
 
         this.logger.info(`Double-sign block broadcasted by peer ${peerIndex}`);
 
@@ -120,14 +130,22 @@ export class ByzantineActions {
         }
     ): Promise<BlockStruct> {
         const peer = this.harness.getPeer(peerIndex);
+        const peerHandle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
         const forkId = options.forkId || this.harness.activeForkId!;
         const height = options.height;
 
-        const previousBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        // step 1 - storage reads are bucket-(i) reads on PeerHandle in spirit;
+        // until queryStorageSnapshot shape is pinned, the orchestrator-side
+        // query helpers take TestPeer (they too live behind PeerHandle via
+        // InlinePeer.record in inline mode). this stays the orchestrator
+        // path per W1 appendix A: "storage reads come from queryInternals /
+        // queryStorageSnapshot" (queryStorageSnapshot deferred to next agent).
+        const previousBlock = (await peerHandle.queryLatestBlock(forkId)) as
+            | Block
+            | undefined;
         const previousBlockHash = this.harness.query.getPreviousBlockHash(
             peer,
             forkId
@@ -144,8 +162,8 @@ export class ByzantineActions {
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: peer.stateManager.getChannelId(),
-                participant: peer.address,
+                channelId: this.harness.channelId,
+                participant: peerHandle.address,
                 forkId: forkId,
                 transactionCnt: BigInt(height),
                 timestamp: BigInt(Clock.getTimeInSeconds())
@@ -163,11 +181,11 @@ export class ByzantineActions {
             messageBlocks: []
         };
 
-        // Create invalid signature by corrupting the hash
+        // step 2 - corrupt the hash to produce an invalid signature.
         const encodedBlock = Codec.encode(blockStruct, Type.Block);
         const blockHash = hash(encodedBlock);
         const corruptedBlockHash = hash(blockHash);
-        const invalidSignature = await peer.signer.signMessage(
+        const invalidSignature = await peerHandle.signer.signMessage(
             ethers.getBytes(corruptedBlockHash)
         );
 
@@ -183,11 +201,16 @@ export class ByzantineActions {
             { forkId }
         );
 
-        const tx =
-            await peer.stateManager.stateChannelManagerContract.postBlockCalldata(
-                signedBlock,
-                maxTimestamp
-            );
+        // step 3 - on-chain write is orchestrator-side per D-15. connect the
+        // harness's channelManager to the peer's signer (the audit says: no
+        // worker rpc on this path).
+        const channelManager = this.harness.channelManager.connect(
+            peerHandle.signer
+        );
+        const tx = await channelManager.postBlockCalldata(
+            signedBlock,
+            maxTimestamp
+        );
         await tx.wait();
 
         this.logger.info(`Junk calldata posted on-chain by peer ${peerIndex}`);
@@ -199,6 +222,13 @@ export class ByzantineActions {
         peerIndex: number,
         tamperFn: DisputeTamper
     ): Promise<DisputeStruct> {
+        // step 1 - tamperFn is a closure over orchestrator-side dispute state;
+        // can't cross worker boundary (W0 D-22). worker-mode migration target
+        // is a named-tamper id resolved against a worker-side registry.
+        rejectClosureInWorkerMode(
+            "ByzantineActions.postTamperedDisputeWith(tamperFn)",
+            this.harness.getPeerHandle(peerIndex)
+        );
         const forkId = this.harness.activeForkId;
         if (!forkId) {
             throw new Error("No active fork ID - channel must be opened first");
@@ -246,6 +276,12 @@ export class ByzantineActions {
         peerIndex: number;
         tamperFn: DisputeTamper;
     }): void {
+        // step 1 - tamperFn is a lambda over orchestrator state; named-tamper
+        // migration target per W0 D-22.
+        rejectClosureInWorkerMode(
+            "ByzantineActions.stubDisputeConstruction(tamperFn)",
+            this.harness.getPeerHandle(options.peerIndex)
+        );
         this.harness.tamper.stubConstructDispute(
             options.peerIndex,
             options.tamperFn
@@ -260,70 +296,32 @@ export class ByzantineActions {
         await this.harness.network.disconnectPeer(peerIndex);
     }
 
-    stubCalldataHandler(peerIndex: number): void {
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const eventHandler = peer.stateManager.eventHandler;
-        const original = eventHandler.onBlockCalldataPosted.bind(eventHandler);
-        this.harness.context[`peer${peerIndex}OriginalCalldataHandler`] =
-            original;
-        eventHandler.onBlockCalldataPosted = async () => {};
+    // step 1 - sub-handle owns the saved-ref state. action class is composition.
+    async stubCalldataHandler(peerIndex: number): Promise<void> {
+        await this.harness
+            .getPeerHandle(peerIndex)
+            .byzantine.stubCalldataHandler();
     }
 
-    restoreCalldataHandler(peerIndex: number): void {
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const original =
-            this.harness.context[`peer${peerIndex}OriginalCalldataHandler`];
-        if (!original) {
-            throw new Error(
-                `No original calldata handler found for peer ${peerIndex}`
-            );
-        }
-
-        peer.stateManager.eventHandler.onBlockCalldataPosted = original;
+    async restoreCalldataHandler(peerIndex: number): Promise<void> {
+        await this.harness
+            .getPeerHandle(peerIndex)
+            .byzantine.restoreCalldataHandler();
     }
 
-    stubPendingInboundInclusion(peerIndex: number): () => void {
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const storage = peer.stateManager.storage.inboundMessages;
-        const original = storage.getLatestBlockHash.bind(storage);
-        storage.getLatestBlockHash = () => undefined;
-        return () => {
-            peer.stateManager.storage.inboundMessages.getLatestBlockHash =
-                original;
+    // step 1 - paired with restorePendingInboundInclusion. tests today bind a
+    // thunk for the restore -> wrap it to keep the existing call shape.
+    async stubPendingInboundInclusion(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const handle = this.harness.getPeerHandle(peerIndex);
+        await handle.byzantine.stubPendingInboundInclusion();
+        return async () => {
+            await handle.byzantine.restorePendingInboundInclusion();
         };
     }
 
-    stubBroadcast(peerIndex: number): void {
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const remoteRpc = peer.stateManager.p2pManager.remoteRpc;
-        this.harness.context[`peer${peerIndex}OriginalBroadcast`] =
-            remoteRpc.stateTransitionService.onBlockConfirmation;
-
-        remoteRpc.stateTransitionService.onBlockConfirmation = (
-            _blockConfirmation: unknown
-        ) => {
-            peer.logger.info("Suppressed broadcast from peer " + peerIndex);
-            return {
-                broadcast: () => {},
-                sendOne: () => {},
-                sendMultiple: () => {}
-            } as any;
-        };
+    async stubBroadcast(peerIndex: number): Promise<void> {
+        await this.harness.getPeerHandle(peerIndex).byzantine.stubBroadcast();
     }
 }

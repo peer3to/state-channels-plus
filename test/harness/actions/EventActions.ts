@@ -175,8 +175,11 @@ export class EventActions {
         }
         const { timeoutMs = 15000, timeoutMessage } = options ?? {};
         const statusName = Status[expectedStatus] ?? String(expectedStatus);
+        // step 1 - status read via peer.queryStatus(). inline mode reads
+        // stateManager.getStatus() in-process; worker mode goes over rpc.
+        const handle = this.harness.getPeerHandle(peerIndex);
         await this.harness.eventCountsBarrier.waitFor(
-            () => peer.stateManager.getStatus() === expectedStatus,
+            async () => (await handle.queryStatus()) === expectedStatus,
             {
                 timeoutMs,
                 timeoutMessage:

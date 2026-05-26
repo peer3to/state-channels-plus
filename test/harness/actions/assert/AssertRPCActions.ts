@@ -12,12 +12,13 @@ export class AssertRPCActions {
         const { peerIndex, expectedFinalCount, timeoutMs = 5000 } = options;
 
         await this.harness.disconnectionBarrier.waitFor(
-            () =>
-                this.harness.query.getConnectionCount(peerIndex) ===
+            async () =>
+                (await this.harness.query.getConnectionCount(peerIndex)) ===
                 expectedFinalCount,
             {
                 timeoutMs,
-                timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms, actual: ${this.harness.query.getConnectionCount(peerIndex)}`
+                timeoutMessageFn: async () =>
+                    `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms, actual: ${await this.harness.query.getConnectionCount(peerIndex)}`
             }
         );
     }

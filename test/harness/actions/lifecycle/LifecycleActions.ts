@@ -121,11 +121,13 @@ export class LifecycleActions {
         this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
-        // Connect peers to the channel
+        // step 1 - connect every peer to the channel via the lifecycle
+        // sub-handle. inline path runs P2pSigner.connectToChannel in-process;
+        // worker path routes to `lifecycle.connectToChannel`.
         for (const peer of this.harness.peers) {
-            await peer.p2pInstance.p2pSigner.connectToChannel(
-                openChannel.channelId
-            );
+            await this.harness
+                .getPeerHandle(peer.index)
+                .lifecycle.connectToChannel(openChannel.channelId.toString());
             peer.logger.verbose(
                 `Connected to channel ${openChannel.channelId}`,
                 { component: "ChannelActions" }
@@ -154,8 +156,12 @@ export class LifecycleActions {
         const isValidForkId = (forkId: ForkId | undefined): boolean =>
             !!forkId && forkId !== "0x00" && forkId !== "0x0";
 
+        // step 1 - forkId is a cached scalar on PeerHandle (D-12). worker mode
+        // keeps it fresh via W4 `fork.changed` push; inline reads through.
         const getPeerForkIds = () =>
-            this.harness.peers.map((peer) => peer.stateManager.forkId);
+            this.harness.peers.map(
+                (peer) => this.harness.getPeerHandle(peer.index).forkId
+            );
 
         this.logger.debug("Waiting for fork ID to be set on all peers...");
 

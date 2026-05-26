@@ -51,14 +51,27 @@ export class JoinActions {
         }
 
         if (this.harness.channelId) {
-            await peer.p2pInstance.p2pSigner.connectToChannel(
-                this.harness.channelId
-            );
-            await LocalDiscoveryServer.connectToPeers(
-                peer.stateManager.p2pManager.self,
-                this.harness.channelId,
-                peer.address
-            );
+            // step 1 - peer-side connect via lifecycle sub-handle. inline path
+            // runs P2pSigner.connectToChannel in-process; worker mode routes
+            // through `lifecycle.connectToChannel`.
+            await this.harness
+                .getPeerHandle(index)
+                .lifecycle.connectToChannel(this.harness.channelId.toString());
+            // step 2 - orchestrator-side discovery wiring. inline path passes
+            // the live P2PManager. worker mode already dials inside p2pSetup
+            // (entry.ts:324 LocalDiscoveryServer.connectToPeers from the
+            // worker) -> skip the orchestrator-side dial when peer is worker.
+            const handle = this.harness.getPeerHandle(index);
+            const isWorker =
+                (handle as unknown as { __workerBackend?: boolean })
+                    .__workerBackend === true;
+            if (!isWorker) {
+                await LocalDiscoveryServer.connectToPeers(
+                    peer.stateManager.p2pManager.self,
+                    this.harness.channelId,
+                    peer.address
+                );
+            }
         }
 
         return peer;
@@ -112,7 +125,11 @@ export class JoinActions {
             existingParticipantSigners: params.existingParticipantSigners,
             jcOverrides: params.jcOverrides
         });
-        await params.joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+        const expectedSnapshotHash =
+            await this.harness.query.getOnChainSnapshotHash(channelId);
+        await this.harness
+            .getPeerHandle(params.joiner.index)
+            .lifecycle.joinChannel(confirmation);
         return confirmation;
     }
 

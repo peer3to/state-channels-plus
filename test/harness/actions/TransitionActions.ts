@@ -6,6 +6,7 @@ import { MainRpcService } from "@/rpc";
 import { Block, StateSnapshot } from "@/models";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/BlockQueueManager";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { rejectClosureInWorkerMode } from "@test/harness/core/namedOpGuards";
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -241,6 +242,13 @@ export class TransitionActions<
         txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = {}
     ): Promise<any> {
+        // step 1 - lambda over the in-peer contract instance cannot cross the
+        // worker boundary (W0 D-11/D-22). worker mode -> migrate test source
+        // to a named-op shape; runtime guard for fast failure.
+        rejectClosureInWorkerMode(
+            "TransitionActions.submit(txFn)",
+            this.harness.getPeerHandle(peer.index)
+        );
         const waitForSync = options.waitForSync ?? true;
 
         if (options.waitForTurn) {

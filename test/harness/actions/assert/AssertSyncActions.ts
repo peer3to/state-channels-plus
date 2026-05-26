@@ -109,9 +109,14 @@ export class AssertSyncActions {
             originalForkId
         ]);
 
+        // step 1 - forkId via PeerHandle (cached scalar D-12; worker mode
+        // refreshes via W4 push).
         const peerForks = peers
-            .map((p) => p.stateManager.forkId)
-            .filter((fid) => !excludeSet.has(fid));
+            .map((p) => this.harness.getPeerHandle(p.index).forkId)
+            .filter(
+                (fid): fid is ForkId =>
+                    fid !== undefined && !excludeSet.has(fid)
+            );
 
         if (peerForks.length != peers.length)
             throw new Error(
@@ -218,12 +223,12 @@ export class AssertSyncActions {
         }
 
         const forkUnchanged = this.harness.peers.every(
-            (p) => p.stateManager.forkId === originalForkId
+            (p) => this.harness.getPeerHandle(p.index).forkId === originalForkId
         );
 
         if (!forkUnchanged) {
             const forkIds = this.harness.peers.map(
-                (p) => p.stateManager.forkId
+                (p) => this.harness.getPeerHandle(p.index).forkId
             );
             throw new Error(
                 `Expected fork to remain ${originalForkId}, but found: ${JSON.stringify(forkIds)}`
