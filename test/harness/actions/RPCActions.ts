@@ -414,13 +414,15 @@ export class RPCActions {
         }
 
         const requestingPeerHandle = this.harness.getPeerHandle(requestingPeer);
-        const service = this.getIsForkDisputedService(respondingPeer);
-
-        await service.respondToDisputeAcknowledgment(
-            requestingPeerHandle.address.toString(),
-            this.harness.channelId!,
-            activeForkId
-        );
+        const respondingHandle = this.harness.getPeerHandle(respondingPeer);
+        await respondingHandle.queryInternals.isForkDisputedService({
+            op: "respondToDisputeAcknowledgment",
+            args: [
+                requestingPeerHandle.address.toString(),
+                this.harness.channelId!,
+                activeForkId
+            ]
+        });
     }
 
     async requestFakeDisputeWithSpiedDisconnect(options: {
