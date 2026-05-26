@@ -182,6 +182,7 @@ describe("E2E: Join channel race conditions", function () {
             ).to.not.include(joiner.address.toLowerCase());
         });
 
+        // Fails: Race condition guard was removed from appendInboundMessages in commit 029c6a82b6f76e233af191b9b88c2e22dfef595f
         it("forceInboundJoin on disputed fork reverts", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
