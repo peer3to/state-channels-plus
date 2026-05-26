@@ -464,6 +464,220 @@ export function registerSubHandleRoutes(
         return await bound(opArgs);
     });
 
+    // step 2 - queryInternals.callServiceWithTransport. resolves the live
+    // transport by otherAddr in-thread, then calls
+    // `<svc>.createRPCMethods(transport).<method>(...args)`. lets orchestrator
+    // poke service endpoints (init handshake, etc.) that take an ATransport.
+    server.register("queryInternals.callServiceWithTransport", async (args) => {
+        const sm = ctx.getStateManager();
+        const {
+            serviceName,
+            methodName,
+            otherAddr,
+            args: callArgs
+        } = (args ?? {}) as {
+            serviceName?: string;
+            methodName?: string;
+            otherAddr?: string;
+            args?: unknown[];
+        };
+        if (!serviceName || !methodName || !otherAddr)
+            throw new Error(
+                "queryInternals.callServiceWithTransport: missing required args"
+            );
+        const pmAny = sm.p2pManager as unknown as {
+            openConnections: Iterable<unknown>;
+            profileManager: {
+                getProfileByTransport: (
+                    t: unknown
+                ) => { evmAddress?: string } | undefined;
+            };
+            localRpc: Record<string, unknown>;
+        };
+        const target = String(otherAddr).toLowerCase();
+        let resolvedTransport: unknown;
+        for (const t of pmAny.openConnections) {
+            const profile = pmAny.profileManager.getProfileByTransport(t);
+            if (String(profile?.evmAddress ?? "").toLowerCase() === target) {
+                resolvedTransport = t;
+                break;
+            }
+        }
+        if (!resolvedTransport)
+            throw new Error(
+                `queryInternals.callServiceWithTransport: no transport to ${otherAddr}`
+            );
+        const svc = pmAny.localRpc[serviceName] as
+            | {
+                  createRPCMethods: (
+                      t: unknown
+                  ) => Record<string, (...a: unknown[]) => unknown>;
+              }
+            | undefined;
+        if (!svc)
+            throw new Error(
+                `queryInternals.callServiceWithTransport: missing service '${serviceName}'`
+            );
+        const methods = svc.createRPCMethods(resolvedTransport);
+        const fn = methods[methodName];
+        if (typeof fn !== "function")
+            throw new Error(
+                `queryInternals.callServiceWithTransport: '${serviceName}.${methodName}' not a function`
+            );
+        // step 1 - bind to methods object so instance methods see `this`
+        return await (fn as (...a: unknown[]) => unknown).apply(
+            methods,
+            callArgs ?? []
+        );
+    });
+
+    // step 3 - queryInternals.callServiceMethodWithTransport. resolves the
+    // live transport by otherAddr, then calls `<svc>.<method>(transport, ...args)`.
+    // for service-level methods that take ATransport as first arg.
+    server.register(
+        "queryInternals.callServiceMethodWithTransport",
+        async (args) => {
+            const sm = ctx.getStateManager();
+            const {
+                serviceName,
+                methodName,
+                otherAddr,
+                args: callArgs
+            } = (args ?? {}) as {
+                serviceName?: string;
+                methodName?: string;
+                otherAddr?: string;
+                args?: unknown[];
+            };
+            if (!serviceName || !methodName || !otherAddr)
+                throw new Error(
+                    "queryInternals.callServiceMethodWithTransport: missing required args"
+                );
+            const pmAny = sm.p2pManager as unknown as {
+                openConnections: Iterable<unknown>;
+                profileManager: {
+                    getProfileByTransport: (
+                        t: unknown
+                    ) => { evmAddress?: string } | undefined;
+                };
+                localRpc: Record<string, unknown>;
+            };
+            const target = String(otherAddr).toLowerCase();
+            let resolvedTransport: unknown;
+            for (const t of pmAny.openConnections) {
+                const profile = pmAny.profileManager.getProfileByTransport(t);
+                if (
+                    String(profile?.evmAddress ?? "").toLowerCase() === target
+                ) {
+                    resolvedTransport = t;
+                    break;
+                }
+            }
+            if (!resolvedTransport)
+                throw new Error(
+                    `queryInternals.callServiceMethodWithTransport: no transport to ${otherAddr}`
+                );
+            const svc = pmAny.localRpc[serviceName] as
+                | Record<string, (...a: unknown[]) => unknown>
+                | undefined;
+            if (!svc)
+                throw new Error(
+                    `queryInternals.callServiceMethodWithTransport: missing service '${serviceName}'`
+                );
+            const fn = svc[methodName];
+            if (typeof fn !== "function")
+                throw new Error(
+                    `queryInternals.callServiceMethodWithTransport: '${serviceName}.${methodName}' not a function`
+                );
+            return await (fn as (...a: unknown[]) => unknown).apply(svc, [
+                resolvedTransport,
+                ...(callArgs ?? [])
+            ]);
+        }
+    );
+
+    server.register("queryInternals.getPreferredTransportType", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            p2pManager: { preferredTransport: number };
+        };
+        return sm.p2pManager.preferredTransport;
+    });
+
+    // step 5 - shared helper for transport resolution by peer addr
+    const resolveTransport = (otherAddr: string): unknown => {
+        const sm = ctx.getStateManager();
+        const pmAny = sm.p2pManager as unknown as {
+            openConnections: Iterable<unknown>;
+            profileManager: {
+                getProfileByTransport: (
+                    t: unknown
+                ) => { evmAddress?: string } | undefined;
+            };
+        };
+        const target = String(otherAddr).toLowerCase();
+        for (const t of pmAny.openConnections) {
+            const profile = pmAny.profileManager.getProfileByTransport(t);
+            if (String(profile?.evmAddress ?? "").toLowerCase() === target)
+                return t;
+        }
+        return undefined;
+    };
+
+    server.register("queryInternals.getInitChallenge", async (args) => {
+        const { otherAddr } = (args ?? {}) as { otherAddr?: string };
+        if (!otherAddr)
+            throw new Error(
+                "queryInternals.getInitChallenge: missing otherAddr"
+            );
+        const t = resolveTransport(otherAddr);
+        if (!t) return undefined;
+        const sm = ctx.getStateManager();
+        const svc = sm.p2pManager.localRpc["initHandshakeService"] as
+            | {
+                  getChallenge: (
+                      t: unknown
+                  ) =>
+                      | { randomChallengeHash: string; initTime: number }
+                      | undefined;
+              }
+            | undefined;
+        const c = svc?.getChallenge(t);
+        if (!c) return undefined;
+        return {
+            randomChallengeHash: c.randomChallengeHash,
+            initTime: c.initTime
+        };
+    });
+
+    server.register("queryInternals.clearInitChallenge", async (args) => {
+        const { otherAddr } = (args ?? {}) as { otherAddr?: string };
+        if (!otherAddr)
+            throw new Error(
+                "queryInternals.clearInitChallenge: missing otherAddr"
+            );
+        const t = resolveTransport(otherAddr);
+        if (!t) return {};
+        const sm = ctx.getStateManager();
+        const svc = sm.p2pManager.localRpc["initHandshakeService"] as
+            | { mapTransportToChallenge: Map<unknown, unknown> }
+            | undefined;
+        svc?.mapTransportToChallenge.delete(t);
+        return {};
+    });
+
+    server.register("queryInternals.getTransportStatus", async (args) => {
+        const { otherAddr } = (args ?? {}) as { otherAddr?: string };
+        if (!otherAddr)
+            throw new Error(
+                "queryInternals.getTransportStatus: missing otherAddr"
+            );
+        const t = resolveTransport(otherAddr) as
+            | { isClosed?: boolean }
+            | undefined;
+        if (!t) return { present: false };
+        return { present: true, isClosed: t.isClosed };
+    });
+
     // step 1 - network.* (mirrors NetworkController.ts + RPCActions disconnect filter)
 
     server.register("network.disconnectAll", async () => {

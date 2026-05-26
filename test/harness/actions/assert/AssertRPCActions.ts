@@ -148,11 +148,12 @@ export class AssertRPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.query
-            .waitForPeerTransport(fromPeer, toPeer, 1000)
-            .catch(() => null);
-
-        if (transport && !transport.isClosed) {
+        // step 1 - serialisable status read; worker-safe replacement for the
+        // prior `waitForPeerTransport(...).isClosed` read on the live ref.
+        const handle = this.harness.getPeerHandle(fromPeer);
+        const toAddr = this.harness.getPeerHandle(toPeer).address;
+        const status = await handle.queryInternals.getTransportStatus(toAddr);
+        if (status.present && status.isClosed !== true) {
             throw new Error(
                 `Expected transport from peer ${fromPeer} to peer ${toPeer} to be closed, but it is still open`
             );

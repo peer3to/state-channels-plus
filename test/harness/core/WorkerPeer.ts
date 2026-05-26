@@ -144,6 +144,56 @@ class WorkerP2pInternalsHandle implements P2pInternalsHandle {
     initHandshakeService(req: { op: string; args: unknown }): Promise<unknown> {
         return this.rpc.call("queryInternals.initHandshakeService", req);
     }
+    callServiceWithTransport(req: {
+        serviceName: string;
+        methodName: string;
+        otherAddr: Address;
+        args: unknown[];
+    }): Promise<unknown> {
+        return this.rpc.call("queryInternals.callServiceWithTransport", req);
+    }
+    callServiceMethodWithTransport(req: {
+        serviceName: string;
+        methodName: string;
+        otherAddr: Address;
+        args: unknown[];
+    }): Promise<unknown> {
+        return this.rpc.call(
+            "queryInternals.callServiceMethodWithTransport",
+            req
+        );
+    }
+    getPreferredTransportType(): Promise<number> {
+        return this.rpc.call(
+            "queryInternals.getPreferredTransportType",
+            {}
+        ) as Promise<number>;
+    }
+    getInitChallenge(otherAddr: Address): Promise<
+        | {
+              randomChallengeHash: string;
+              initTime: number;
+          }
+        | undefined
+    > {
+        return this.rpc.call("queryInternals.getInitChallenge", {
+            otherAddr
+        }) as Promise<
+            { randomChallengeHash: string; initTime: number } | undefined
+        >;
+    }
+    clearInitChallenge(otherAddr: Address): Promise<void> {
+        return this.rpc.call("queryInternals.clearInitChallenge", {
+            otherAddr
+        }) as Promise<void>;
+    }
+    getTransportStatus(
+        otherAddr: Address
+    ): Promise<{ present: boolean; isClosed?: boolean }> {
+        return this.rpc.call("queryInternals.getTransportStatus", {
+            otherAddr
+        }) as Promise<{ present: boolean; isClosed?: boolean }>;
+    }
 }
 
 class WorkerTransitionHandle implements TransitionHandle {

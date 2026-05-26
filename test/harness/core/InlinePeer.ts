@@ -317,6 +317,196 @@ class InlineP2pInternalsHandle implements P2pInternalsHandle {
         return this.runLocalRpcOp("initHandshakeService", req.op, req.args);
     }
 
+    // step 3 - call `<svc>.<method>(transport, ...args)` for service-level
+    // methods that take a live ATransport as the first arg (e.g.
+    // InitHandshakeService.initHandshake / mapTransportToChallenge.delete).
+    async callServiceMethodWithTransport(req: {
+        serviceName: string;
+        methodName: string;
+        otherAddr: Address;
+        args: unknown[];
+    }): Promise<unknown> {
+        const { serviceName, methodName, otherAddr, args } = req;
+        const pm = this.record.stateManager.p2pManager;
+        const pmAny = pm as unknown as {
+            openConnections: Iterable<unknown>;
+            profileManager: {
+                getProfileByTransport: (
+                    t: unknown
+                ) => { evmAddress?: string } | undefined;
+            };
+            localRpc: Record<string, unknown>;
+        };
+        const target = String(otherAddr).toLowerCase();
+        let resolvedTransport: unknown;
+        for (const t of pmAny.openConnections) {
+            const profile = pmAny.profileManager.getProfileByTransport(t);
+            if (String(profile?.evmAddress ?? "").toLowerCase() === target) {
+                resolvedTransport = t;
+                break;
+            }
+        }
+        if (!resolvedTransport)
+            throw new Error(
+                `InlinePeer.callServiceMethodWithTransport: no transport to ${otherAddr}`
+            );
+        const svc = pmAny.localRpc[serviceName] as
+            | Record<string, (...a: unknown[]) => unknown>
+            | undefined;
+        if (!svc)
+            throw new Error(
+                `InlinePeer.callServiceMethodWithTransport: missing service '${serviceName}'`
+            );
+        const fn = svc[methodName];
+        if (typeof fn !== "function")
+            throw new Error(
+                `InlinePeer.callServiceMethodWithTransport: '${serviceName}.${methodName}' not a function`
+            );
+        return await (fn as (...a: unknown[]) => unknown).apply(svc, [
+            resolvedTransport,
+            ...args
+        ]);
+    }
+
+    // step 4 - peer scalar
+    async getPreferredTransportType(): Promise<number> {
+        const pm = this.record.stateManager.p2pManager as unknown as {
+            preferredTransport: number;
+        };
+        return pm.preferredTransport;
+    }
+
+    // step 5 - InitHandshakeService.getChallenge(transport) by peer addr.
+    async getInitChallenge(otherAddr: Address): Promise<
+        | {
+              randomChallengeHash: string;
+              initTime: number;
+          }
+        | undefined
+    > {
+        const t = this.resolveTransportByAddr(otherAddr);
+        if (!t) return undefined;
+        const svc = (
+            this.record.stateManager.p2pManager as unknown as {
+                localRpc: Record<string, unknown>;
+            }
+        ).localRpc["initHandshakeService"] as
+            | {
+                  getChallenge: (
+                      t: unknown
+                  ) =>
+                      | { randomChallengeHash: string; initTime: number }
+                      | undefined;
+              }
+            | undefined;
+        const c = svc?.getChallenge(t);
+        if (!c) return undefined;
+        return {
+            randomChallengeHash: c.randomChallengeHash,
+            initTime: c.initTime
+        };
+    }
+
+    // step 6 - clear challenge for transport to otherAddr.
+    async clearInitChallenge(otherAddr: Address): Promise<void> {
+        const t = this.resolveTransportByAddr(otherAddr);
+        if (!t) return;
+        const svc = (
+            this.record.stateManager.p2pManager as unknown as {
+                localRpc: Record<string, unknown>;
+            }
+        ).localRpc["initHandshakeService"] as
+            | { mapTransportToChallenge: Map<unknown, unknown> }
+            | undefined;
+        svc?.mapTransportToChallenge.delete(t);
+    }
+
+    // step 7 - transport status (presence + isClosed) by addr
+    async getTransportStatus(
+        otherAddr: Address
+    ): Promise<{ present: boolean; isClosed?: boolean }> {
+        const t = this.resolveTransportByAddr(otherAddr) as
+            | { isClosed?: boolean }
+            | undefined;
+        if (!t) return { present: false };
+        return { present: true, isClosed: t.isClosed };
+    }
+
+    // step 8 - helper. shared by step-5/6/etc.
+    private resolveTransportByAddr(addr: Address): unknown {
+        const pmAny = this.record.stateManager.p2pManager as unknown as {
+            openConnections: Iterable<unknown>;
+            profileManager: {
+                getProfileByTransport: (
+                    t: unknown
+                ) => { evmAddress?: string } | undefined;
+            };
+        };
+        const target = String(addr).toLowerCase();
+        for (const t of pmAny.openConnections) {
+            const profile = pmAny.profileManager.getProfileByTransport(t);
+            if (String(profile?.evmAddress ?? "").toLowerCase() === target)
+                return t;
+        }
+        return undefined;
+    }
+
+    // step 2 - in-thread resolve transport by peer evm address, then call
+    // `<svc>.createRPCMethods(transport).<method>(...args)`. mirror of the
+    // worker route. inline body lets RPCActions.send* migrate off live refs.
+    async callServiceWithTransport(req: {
+        serviceName: string;
+        methodName: string;
+        otherAddr: Address;
+        args: unknown[];
+    }): Promise<unknown> {
+        const { serviceName, methodName, otherAddr, args } = req;
+        const pm = this.record.stateManager.p2pManager;
+        const pmAny = pm as unknown as {
+            openConnections: Iterable<unknown>;
+            profileManager: {
+                getProfileByTransport: (
+                    t: unknown
+                ) => { evmAddress?: string } | undefined;
+            };
+            localRpc: Record<string, unknown>;
+        };
+        const target = String(otherAddr).toLowerCase();
+        let resolvedTransport: unknown;
+        for (const t of pmAny.openConnections) {
+            const profile = pmAny.profileManager.getProfileByTransport(t);
+            if (String(profile?.evmAddress ?? "").toLowerCase() === target) {
+                resolvedTransport = t;
+                break;
+            }
+        }
+        if (!resolvedTransport) {
+            throw new Error(
+                `InlinePeer.callServiceWithTransport: no transport to ${otherAddr}`
+            );
+        }
+        const svc = pmAny.localRpc[serviceName] as
+            | {
+                  createRPCMethods: (
+                      t: unknown
+                  ) => Record<string, (...a: unknown[]) => unknown>;
+              }
+            | undefined;
+        if (!svc)
+            throw new Error(
+                `InlinePeer.callServiceWithTransport: missing service '${serviceName}'`
+            );
+        const methods = svc.createRPCMethods(resolvedTransport);
+        const fn = methods[methodName];
+        if (typeof fn !== "function")
+            throw new Error(
+                `InlinePeer.callServiceWithTransport: '${serviceName}.${methodName}' not a function`
+            );
+        // step 1 - bind to the methods object -> instance methods (e.g.
+        // InitHandshakeRpcMethods.onInitHandshakeRequest) keep `this`.
+        return await (fn as (...a: unknown[]) => unknown).apply(methods, args);
+    }
+
     private async runLocalRpcOp(
         svcName: string,
         opName: string,

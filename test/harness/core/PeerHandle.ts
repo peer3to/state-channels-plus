@@ -110,6 +110,45 @@ export interface P2pInternalsHandle {
             | "clearChallenge";
         args: unknown;
     }): Promise<unknown>;
+    // step 2 - invoke a `<service>.createRPCMethods(transport).<method>(...args)`
+    // chain where transport is resolved in-thread by the other peer's evm
+    // address. lets worker mode reach the live ATransport that orchestrator
+    // cannot reference across the thread boundary (W1 D-23 §transport-id).
+    callServiceWithTransport(req: {
+        serviceName: string;
+        methodName: string;
+        otherAddr: Address;
+        args: unknown[];
+    }): Promise<unknown>;
+    // step 3 - call `<service>.<method>(transport, ...args)` where transport
+    // is resolved in-thread by otherAddr. for service-level methods that take
+    // a live ATransport as the first arg (e.g. InitHandshakeService.initHandshake).
+    callServiceMethodWithTransport(req: {
+        serviceName: string;
+        methodName: string;
+        otherAddr: Address;
+        args: unknown[];
+    }): Promise<unknown>;
+    // step 4 - peer scalar: preferred transport type enum (number).
+    getPreferredTransportType(): Promise<number>;
+    // step 5 - InitHandshakeService challenge lookup by peer addr. resolves
+    // transport in-thread; returns serialisable { randomChallengeHash, initTime }
+    // or undefined if no challenge stored for that peer's transport.
+    getInitChallenge(otherAddr: Address): Promise<
+        | {
+              randomChallengeHash: string;
+              initTime: number;
+          }
+        | undefined
+    >;
+    // step 6 - clear the InitHandshakeService challenge for the transport to
+    // otherAddr. mirrors `service.mapTransportToChallenge.delete(transport)`.
+    clearInitChallenge(otherAddr: Address): Promise<void>;
+    // step 7 - serialisable transport status: present + isClosed.
+    getTransportStatus(otherAddr: Address): Promise<{
+        present: boolean;
+        isClosed?: boolean;
+    }>;
 }
 
 export interface NetworkHandle {
