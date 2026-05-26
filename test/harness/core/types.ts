@@ -9,7 +9,8 @@ import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
 import StateManager from "@/stateManager";
 import { AStateMachine as AStateMachineContract } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
-import type { RpcServiceFactoryMap } from "@/rpc";
+import type { CustomRpcConstructor } from "@/rpc";
+import MainRpcService from "@/rpc/MainRpcService";
 import { TimeConfig } from "@/types";
 import { Config } from "@/utils";
 
@@ -100,50 +101,48 @@ export type HarnessConstructorOptions<
 /**
  * Options for configuring the test harness
  */
-export type HarnessOptions<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
-    /**
-     * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
-     *
-     * Set to "error" to suppress verbose logs during tests.
-     * Set to "debug" or "verbose" for detailed debugging.
-     *
-     * @example
-     * ```ts
-     * // Quiet tests (recommended for CI/passing tests)
-     * Scenario.startChannel(3, 0, { logLevel: "error" })
-     *
-     * // Verbose debugging (when investigating failures)
-     * Scenario.startChannel(3, 0, { logLevel: "debug" })
-     * ```
-     *
-     * @default undefined (uses LOG_LEVEL from config or "error")
-     */
-    logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
+export type HarnessOptions<TCustomRpc extends MainRpcService = MainRpcService> =
+    {
+        /**
+         * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
+         *
+         * Set to "error" to suppress verbose logs during tests.
+         * Set to "debug" or "verbose" for detailed debugging.
+         *
+         * @example
+         * ```ts
+         * // Quiet tests (recommended for CI/passing tests)
+         * Scenario.startChannel(3, 0, { logLevel: "error" })
+         *
+         * // Verbose debugging (when investigating failures)
+         * Scenario.startChannel(3, 0, { logLevel: "debug" })
+         * ```
+         *
+         * @default undefined (uses LOG_LEVEL from config or "error")
+         */
+        logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
 
-    timeConfig?: Partial<TimeConfig>;
-    channelId?: string;
-    initialBalance?: number;
-    stateMachineGasLimit?: number;
-    disputeExecutionGasLimit?: number;
-    autoConnect?: boolean;
-    configOverrides?: Partial<Config>; // Direct config overrides
-    rpcServiceFactories?: TFactories;
-    customPrecompiles?: EvmCustomPrecompileManifest[];
-};
+        timeConfig?: Partial<TimeConfig>;
+        channelId?: string;
+        initialBalance?: number;
+        stateMachineGasLimit?: number;
+        disputeExecutionGasLimit?: number;
+        autoConnect?: boolean;
+        configOverrides?: Partial<Config>; // Direct config overrides
+        customRpc?: CustomRpcConstructor<any, any>;
+        customRpcOptions?: any;
+        customPrecompiles?: EvmCustomPrecompileManifest[];
+    };
 
 export type TestPeer<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {},
+    TCustomRpc extends MainRpcService = MainRpcService,
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     index: number;
     signer: Signer;
     address: string;
-    p2pInstance: P2pInstance<TContract, TFactories>;
-    stateManager: StateManager;
+    p2pInstance: P2pInstance<TContract, TCustomRpc>;
+    stateManager: StateManager<TCustomRpc>;
     contractInstance: TContract;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;
@@ -181,13 +180,12 @@ export type EventSpies = {
 };
 
 export type CreateAndResolveDisputeResult<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {},
+    TCustomRpc extends MainRpcService = MainRpcService,
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     originalForkId: ForkId;
     newForkId: ForkId;
     maliciousPeerIndices: number[];
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TFactories, TContract>>;
+    honestPeers: Array<TestPeer<TCustomRpc, TContract>>;
 };

@@ -25,7 +25,7 @@ import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
 
 import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
 import { JoinActions } from "@test/harness/actions/JoinActions";
@@ -58,14 +58,14 @@ const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
  * Main test harness for E2E peer-to-peer testing
  */
 export class PeerTestHarness<
-    TFactories extends RpcServiceFactoryMap = {},
+    TCustomRpc extends MainRpcService = MainRpcService,
     TStateMachine extends AStateMachineContract = AStateMachineContract
 > {
-    public peers: TestPeer<TFactories, TStateMachine>[] = [];
+    public peers: TestPeer<TCustomRpc, TStateMachine>[] = [];
     public channelManager!: StateChannelManagerProxy;
     private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
-    public options!: HarnessOptions<TFactories>;
+    public options!: HarnessOptions<TCustomRpc>;
     private harnessConfig!: Partial<Config>;
     private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
     public logger: Logger;
@@ -165,7 +165,7 @@ export class PeerTestHarness<
 
     async setup(
         numPeers: number,
-        options?: HarnessOptions<TFactories>
+        options?: HarnessOptions<TCustomRpc>
     ): Promise<void> {
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
@@ -198,8 +198,8 @@ export class PeerTestHarness<
             autoConnect: options?.autoConnect !== false,
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],
-            rpcServiceFactories: (options?.rpcServiceFactories ??
-                {}) as TFactories
+            customRpc: options?.customRpc,
+            customRpcOptions: options?.customRpcOptions
         };
         if (
             !this.options.timeConfig?.agreementTime ||
@@ -440,7 +440,8 @@ export class PeerTestHarness<
 
         const p2pInstance = await EvmStateMachine.p2pSetup<
             TStateMachine,
-            TFactories
+            TCustomRpc,
+            any
         >(
             signer,
             this.channelManager,
@@ -451,12 +452,13 @@ export class PeerTestHarness<
                 peerLogger: peerLogger,
                 p2pEventHooks: hooks,
                 customPrecompiles: this.options.customPrecompiles!,
-                rpcServiceFactories: this.options.rpcServiceFactories!,
+                customRpc: this.options.customRpc,
+                customRpcOptions: this.options.customRpcOptions,
                 config: this.harnessConfig
             }
         );
 
-        const peer: TestPeer<TFactories, TStateMachine> = {
+        const peer: TestPeer<TCustomRpc, TStateMachine> = {
             index,
             signer,
             address,
@@ -476,7 +478,7 @@ export class PeerTestHarness<
     }
 
     private wrapEventHandlerWithSpies(
-        peer: TestPeer<TFactories, TStateMachine>
+        peer: TestPeer<TCustomRpc, TStateMachine>
     ): void {
         const eventHandler = peer.stateManager.eventHandler;
         const spies = peer.eventSpies;
@@ -654,7 +656,7 @@ export class PeerTestHarness<
         this.logger.dispose();
     }
 
-    getPeer(index: number): TestPeer<TFactories, TStateMachine> {
+    getPeer(index: number): TestPeer<TCustomRpc, TStateMachine> {
         const peer = this.peers[index];
         if (!peer) throw new Error(`Peer ${index} not found`);
         return peer;
@@ -666,7 +668,7 @@ export class PeerTestHarness<
 
     getFilteredPeers(
         peerIndices?: number[]
-    ): TestPeer<TFactories, TStateMachine>[] {
+    ): TestPeer<TCustomRpc, TStateMachine>[] {
         return peerIndices
             ? peerIndices.map((i) => this.getPeer(i))
             : this.peers;
@@ -674,7 +676,7 @@ export class PeerTestHarness<
 
     getHonestPeers(
         excludePeerIndices?: number[]
-    ): TestPeer<TFactories, TStateMachine>[] {
+    ): TestPeer<TCustomRpc, TStateMachine>[] {
         const excludeSet = new Set<number>([
             ...(excludePeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? [])
@@ -682,9 +684,9 @@ export class PeerTestHarness<
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
 
-    peerWithHighestBlock(forkId: ForkId): TestPeer<TFactories, TStateMachine> {
+    peerWithHighestBlock(forkId: ForkId): TestPeer<TCustomRpc, TStateMachine> {
         const malicious = new Set(this.context.maliciousPeerIndices ?? []);
-        let best: TestPeer<TFactories, TStateMachine> | undefined;
+        let best: TestPeer<TCustomRpc, TStateMachine> | undefined;
         let bestHeight = Number.NEGATIVE_INFINITY;
         for (const peer of this.peers) {
             if (malicious.has(peer.index)) {
@@ -706,7 +708,7 @@ export class PeerTestHarness<
 
     /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
     getPeersExcludingMaliciousAndLeavers(): TestPeer<
-        TFactories,
+        TCustomRpc,
         TStateMachine
     >[] {
         const exclude = new Set([
@@ -718,7 +720,7 @@ export class PeerTestHarness<
 
     getFilteredOrHonestPeers(
         peerIndices?: number[]
-    ): TestPeer<TFactories, TStateMachine>[] {
+    ): TestPeer<TCustomRpc, TStateMachine>[] {
         if (peerIndices) {
             return this.getFilteredPeers(peerIndices);
         }

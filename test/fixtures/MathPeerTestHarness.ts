@@ -8,8 +8,12 @@ import { MathScenarioActions } from "@test/harness/actions/math/MathScenarioActi
 import { MathByzantineActions } from "@test/harness/actions/math/MathByzantineActions";
 import { MathDisputeOrchestrator } from "@test/harness/actions/math/MathDisputeOrchestrator";
 import PeerTestHarness from "./PeerTestHarness";
+import { MainRpcService } from "@/rpc";
 
-export class MathPeerTestHarness extends PeerTestHarness<{}, MathStateMachine> {
+export class MathPeerTestHarness extends PeerTestHarness<
+    MainRpcService,
+    MathStateMachine
+> {
     declare public transition: MathTransitionActions;
     declare public join: MathJoinActions;
     declare public lifecycle: MathLifecycleActions;

@@ -42,7 +42,8 @@ import LocalDiamondSigner from "./LocalDiamondSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
 import { createConfig, config, Config } from "@/utils/config";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
+import type { CustomRpcConstructor } from "@/rpc/registry";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 /**
@@ -422,8 +423,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      */
     public static async p2pSetup<
         T extends AStateMachineContract,
-        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-        TFactories extends RpcServiceFactoryMap = {}
+        TCustomRpc extends MainRpcService = MainRpcService,
+        TCustomRpcOptions = undefined
     >(
         signer: Signer,
         deployedStateChannelContractInstance: StateChannelManagerProxy,
@@ -433,18 +434,20 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             p2pEventHooks?: P2pEventHooks;
             peerId?: number;
             peerLogger?: Logger;
-            rpcServiceFactories?: TFactories;
+            customRpc?: CustomRpcConstructor<TCustomRpc, TCustomRpcOptions>;
+            customRpcOptions?: TCustomRpcOptions;
             config?: Partial<Config>;
             customPrecompiles?: EvmCustomPrecompileManifest[];
         }
-    ): Promise<P2pInstance<T, TFactories>> {
+    ): Promise<P2pInstance<T, TCustomRpc>> {
         // Initialize SDK config for this runtime (intended to be called once).
         const activeConfig = createConfig(options?.config);
 
         const p2pEventHooks = options?.p2pEventHooks;
         const pid = options?.peerId;
         const peerLogger = options?.peerLogger;
-        const rpcServiceFactories = options?.rpcServiceFactories;
+        const customRpc = options?.customRpc;
+        const customRpcOptions = options?.customRpcOptions;
         const customPrecompiles = options?.customPrecompiles;
 
         // Resolve signer address early for logger context
@@ -505,7 +508,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         const storage = new Storage();
 
-        const stateManager = new StateManager(
+        const stateManager = new StateManager<TCustomRpc, TCustomRpcOptions>(
             signer,
             signerAddress,
             deployedStateChannelContractInstance,
@@ -514,7 +517,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             p2pEventHooks || {},
             storage,
             logger,
-            rpcServiceFactories
+            customRpc,
+            customRpcOptions
         );
 
         // Set state manager on P2P communication manager
@@ -529,9 +533,9 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
 
         const typedP2pSigner = stateManager.p2pManager
-            .p2pSigner as unknown as P2pSigner<TFactories>;
+            .p2pSigner as unknown as P2pSigner<TCustomRpc>;
 
-        return new P2pInstance<T, TFactories>(
+        return new P2pInstance<T, TCustomRpc>(
             p2pContractInstance,
             typedP2pSigner,
             logger

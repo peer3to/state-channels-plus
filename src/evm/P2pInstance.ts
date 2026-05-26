@@ -1,21 +1,20 @@
 import P2pSigner from "./P2pSigner";
 import { AStateMachine } from "@typechain-types";
 import P2pEventHooks from "@/P2pEventHooks";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
 import { Logger } from "@/utils";
 
 export default class P2pInstance<
     T extends AStateMachine,
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
+    TCustomRpc extends MainRpcService = MainRpcService
 > {
     p2pContractInstance: T;
-    p2pSigner: P2pSigner<TFactories>;
+    p2pSigner: P2pSigner<TCustomRpc>;
     logger: Logger;
 
     constructor(
         p2pContractInstance: T,
-        p2pSigner: P2pSigner<TFactories>,
+        p2pSigner: P2pSigner<TCustomRpc>,
         logger: Logger
     ) {
         this.p2pContractInstance = p2pContractInstance;

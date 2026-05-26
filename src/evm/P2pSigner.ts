@@ -6,19 +6,18 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
 import { Address, Bytes } from "@/types/types";
 import { Status } from "@/types";
 import { Logger } from "..";
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
+class P2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     implements Signer
 {
     signer: Signer;
     signerAddress: Address;
     provider: ethers.Provider | null;
-    p2pManager: P2PManager<TFactories>;
+    p2pManager: P2PManager<TCustomRpc>;
     logger: Logger;
     //local profile
     isLeader: boolean;
@@ -26,7 +25,7 @@ class P2pSigner<TFactories extends RpcServiceFactoryMap = {}>
     constructor(
         signer: Signer,
         signerAddress: Address,
-        p2pManager: P2PManager<TFactories>
+        p2pManager: P2PManager<TCustomRpc>
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;

@@ -86,7 +86,8 @@ import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
+import type { CustomRpcConstructor } from "@/rpc/registry";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
 import BlockQueueManager, {
@@ -100,7 +101,10 @@ type ParticipantChanges = {
     joined: Set<Address>;
 };
 
-class StateManager {
+class StateManager<
+    TCustomRpc extends MainRpcService = MainRpcService,
+    TCustomRpcOptions = undefined
+> {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
     signer: ethers.Signer;
@@ -109,7 +113,7 @@ class StateManager {
     stateChannelEventListener: StateChannelEventListener;
     disputeManager: DisputeManager;
     stateChannelManagerContract: StateChannelManagerProxy;
-    p2pManager: P2PManager;
+    p2pManager: P2PManager<TCustomRpc>;
     timeConfig: TimeConfig;
     channelId: ChannelId = NULL;
     mutex: Mutex;
@@ -139,7 +143,8 @@ class StateManager {
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
         logger: Logger,
-        rpcServiceFactories?: RpcServiceFactoryMap
+        customRpc?: CustomRpcConstructor<TCustomRpc, TCustomRpcOptions>,
+        customRpcOptions?: TCustomRpcOptions
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
@@ -189,10 +194,11 @@ class StateManager {
             this.diamondStateMachine,
             logger
         );
-        this.p2pManager = new P2PManager<RpcServiceFactoryMap>(
+        this.p2pManager = new P2PManager<TCustomRpc>(
             this.self,
             signer,
-            rpcServiceFactories
+            customRpc,
+            customRpcOptions
         );
         this.blockQueueManager = new BlockQueueManager(
             this.self,

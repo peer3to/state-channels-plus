@@ -2,7 +2,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import { DetachedPromises, Logger, sleep } from "@/utils";
 import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
-import type { RpcServiceFactoryMap } from "@/rpc";
+import { MainRpcService } from "@/rpc";
 import { Block, StateSnapshot } from "@/models";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/BlockQueueManager";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -56,11 +56,11 @@ export function effectiveWaitForFinalization(
  * Handles state transition operations on the state machine
  */
 export class TransitionActions<
-    TFactories extends RpcServiceFactoryMap = {},
+    TCustomRpc extends MainRpcService = MainRpcService,
     TContract extends AStateMachineContract = AStateMachineContract
 > {
     constructor(
-        protected harness: PeerTestHarness<TFactories, TContract>,
+        protected harness: PeerTestHarness<TCustomRpc, TContract>,
         protected logger: Logger
     ) {}
 
@@ -73,7 +73,7 @@ export class TransitionActions<
     ): Promise<any> {
         const nextPeer =
             (await this.harness.query.getNextPeerToWrite()) as TestPeer<
-                TFactories,
+                TCustomRpc,
                 TContract
             >;
 
@@ -218,7 +218,7 @@ export class TransitionActions<
      * Submit a transaction from a specific peer
      */
     async submit(
-        peer: TestPeer<TFactories, TContract>,
+        peer: TestPeer<TCustomRpc, TContract>,
         txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = {}
     ): Promise<any> {
@@ -310,7 +310,7 @@ export class TransitionActions<
      * Wait for a peer to receive their turn
      */
     private async waitForTurn(
-        peer: TestPeer<TFactories, TContract>,
+        peer: TestPeer<TCustomRpc, TContract>,
         timeoutMs = 3000
     ): Promise<void> {
         try {

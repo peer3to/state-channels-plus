@@ -83,7 +83,7 @@
     "generate-enums": "ts-node scripts/generate-enums.ts",
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "get-logs": "ts-node scripts/logging/fetch-logs.ts",
-    "test": "yarn hardhat test --no-compile $(find test/V1 test/evm test/models test/storage -name '*.test.ts')",
+    "test": "yarn hardhat test --no-compile $(find test -name '*.test.ts' -not -path 'test/e2e/*')",
     "test:browser:worker": "yarn build:browser && node test/browser/run-worker-contract-executor.mjs",
     "test:debug": "yarn hardhat test --no-compile $(find test -name '*.test.ts')",
     "test:all": "yarn hardhat test $(find test -name '*.test.ts')",

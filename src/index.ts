@@ -20,10 +20,11 @@ import {
 
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
+import MainRpcService from "@/rpc/MainRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { defineRpcServices } from "@/rpc/registry";
 import { ATransport } from "@/transport";
 export * from "@/rpc/services";
+export type { CustomRpcConstructor } from "@/rpc";
 
 export { ethers } from "ethers";
 export type {
@@ -63,8 +64,8 @@ export {
     config as config,
     ARpcMethods,
     ARpcService,
+    MainRpcService,
     HandshakeCompletedGuard,
-    defineRpcServices,
     ATransport,
     getChecksumAddress,
     createContractExecutorFactory

@@ -3,7 +3,10 @@ import {
     EvmStateMachine,
     P2pEventHooks
 } from "@peer3/state-channels-plus";
-import type { Signer } from "@peer3/state-channels-plus";
+import type {
+    Signer,
+    StateChannelManagerProxy
+} from "@peer3/state-channels-plus";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine,
@@ -11,8 +14,7 @@ import {
 } from "./typechain-types";
 import TicTacToeStateMachineJSON from "../TicTacToeStateMachine.json";
 import ContractsJSON from "../contracts.json";
-import { ticTacToeRpcServiceFactories } from "./CustomRpc";
-import type { TicTacToeRpcFactories } from "./CustomRpc";
+import { TicTacToeRpc } from "./CustomRpc";
 import peer3Config from "../peer3.config";
 
 const PROVIDER_URL = "http://localhost:8545";
@@ -66,15 +68,15 @@ export const p2pSetup = async (
 
     let p2p = await EvmStateMachine.p2pSetup<
         TicTacToeStateMachine,
-        TicTacToeRpcFactories
+        TicTacToeRpc
     >(
         TicTacToeStateChannelManagerInstance.runner as Signer,
-        TicTacToeStateChannelManagerInstance,
+        TicTacToeStateChannelManagerInstance as unknown as StateChannelManagerProxy,
         TicTacToeSmInstance,
         deployStateMachine,
         {
             p2pEventHooks,
-            rpcServiceFactories: ticTacToeRpcServiceFactories,
+            customRpc: TicTacToeRpc,
             config: peer3Config
         }
     );

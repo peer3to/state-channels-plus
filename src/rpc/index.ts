@@ -7,5 +7,4 @@ export { ARpcService };
 import MainRpcService from "./MainRpcService";
 
 export { MainRpcService };
-export { defineRpcServices } from "./registry";
-export type { RpcServiceFactoryMap, RpcServiceInstances } from "./registry";
+export type { CustomRpcConstructor } from "./registry";

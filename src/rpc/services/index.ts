@@ -16,7 +16,7 @@ export { default as IsForkDisputedRpcMethods } from "./isForkDisputedService/IsF
 export { default as OpenChannelNegotiationService } from "./openChannelNegotiation/OpenChannelNegotiationService";
 export { default as OpenChannelNegotiationRpcMethods } from "./openChannelNegotiation/OpenChannelNegotiationRpcMethods";
 export type {
-    OpenChannelNegotiationFactories,
+    OpenChannelNegotiationCustomRpc,
     OpenChannelNegotiationP2PManager
 } from "./openChannelNegotiation/OpenChannelNegotiationRpcMethods";
 export * from "./openChannelNegotiation/OpenChannelNegotiationHelpers";

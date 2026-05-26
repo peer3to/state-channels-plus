@@ -15,26 +15,18 @@ import { Address } from "./types/types";
 import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
-import type { RpcServiceFactoryMap, RpcServiceInstances } from "./rpc/registry";
+import type { CustomRpcConstructor } from "./rpc/registry";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
-type LocalRpcRoot<TFactories extends RpcServiceFactoryMap> = MainRpcService &
-    RpcServiceInstances<TFactories>;
-
-type RemoteRpcRoot<TFactories extends RpcServiceFactoryMap> =
-    RemoteRpcProxyType<MainRpcService> &
-        RemoteRpcProxyType<RpcServiceInstances<TFactories>>;
-
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
+class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     implements IOnMessage
 {
-    stateManager: StateManager;
+    stateManager: StateManager<TCustomRpc>;
     logger: Logger;
-    p2pSigner: P2pSigner<TFactories>;
+    p2pSigner: P2pSigner<TCustomRpc>;
     profileManager = new ProfileManager();
-    localRpc: LocalRpcRoot<TFactories>;
-    remoteRpc: RemoteRpcRoot<TFactories>;
+    localRpc: TCustomRpc;
+    remoteRpc: RemoteRpcProxyType<TCustomRpc>;
     //TODO - map EVM address to websocket
     openConnections: ATransport[] = [];
     holepunch: Holepunch;
@@ -42,9 +34,10 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     constructor(
-        stateManager: StateManager,
+        stateManager: StateManager<TCustomRpc>,
         signer: ethers.Signer,
-        rpcServiceFactories?: TFactories
+        customRpc?: CustomRpcConstructor<TCustomRpc, any>,
+        customRpcOptions?: any
     ) {
         this.stateManager = stateManager;
         this.logger = stateManager.logger.child({ component: "P2PManager" });
@@ -57,28 +50,22 @@ class P2PManager<TFactories extends RpcServiceFactoryMap = {}>
             this.self
         );
 
-        const builtInRoot = new MainRpcService(this.self);
-        const customServices: Partial<RpcServiceInstances<TFactories>> = {};
-
-        if (rpcServiceFactories) {
-            for (const [serviceName, factory] of Object.entries(
-                rpcServiceFactories
-            )) {
-                if (typeof factory !== "function") continue;
-                (customServices as any)[serviceName] = (factory as any)(
-                    this.self
+        if (customRpc) {
+            this.localRpc = new customRpc(
+                this.self,
+                customRpcOptions
+            ) as TCustomRpc;
+        } else {
+            if (customRpcOptions !== undefined) {
+                throw new Error(
+                    "customRpcOptions requires customRpc to be configured"
                 );
             }
+            this.localRpc = new MainRpcService(this.self) as TCustomRpc;
         }
-
-        this.localRpc = Object.assign(
-            builtInRoot,
-            customServices
-        ) as LocalRpcRoot<TFactories>;
-
         this.remoteRpc = RemoteRpcProxy.createProxy(
             this.localRpc
-        ) as unknown as RemoteRpcRoot<TFactories>;
+        ) as unknown as RemoteRpcProxyType<TCustomRpc>;
         this.holepunch = new Holepunch(this.self);
         return this.self;
     }
