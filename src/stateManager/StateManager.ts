@@ -1743,9 +1743,12 @@ class StateManager {
                             },
                             RaceConditionReductionExpectationDoesntMatch:
                                 () => {
-                                    this.logger.warn(
+                                    this.logger.error(
                                         "postStateSnapshot: reduction already finalized to a different forkId",
                                         { forkId }
+                                    );
+                                    throw new Error(
+                                        `postStateSnapshot: reduction already finalized to a different forkId for forkId=${forkId}`
                                     );
                                 }
                         }
