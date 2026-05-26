@@ -449,7 +449,6 @@ export class RPCActions {
         const { requestingPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
         const requestingPeerHandle = this.harness.getPeerHandle(requestingPeer);
-        const service = this.getIsForkDisputedService(requestingPeer);
 
         for (let i = 0; i < this.harness.peers.length; i++) {
             if (i === requestingPeer) continue;
@@ -460,9 +459,12 @@ export class RPCActions {
             });
         }
 
-        service.requestDisputeAcknowledgment(
-            this.harness.channelId!,
-            fakeForkId
-        );
+        // step 2 - dispatch through queryInternals -> in worker mode this rpc
+        // forwards to the in-thread service; inline runs the body locally.
+        // args is an array -> dispatcher spreads positionally.
+        await requestingPeerHandle.queryInternals.isForkDisputedService({
+            op: "requestDisputeAcknowledgment",
+            args: [this.harness.channelId!, fakeForkId]
+        });
     }
 }

@@ -433,7 +433,10 @@ export function registerSubHandleRoutes(
         const fn = svc[op];
         if (typeof fn !== "function")
             throw new Error(`isForkDisputedService.${op} not a function`);
-        return await fn(opArgs);
+        // step 1 - bind to svc so `this` resolves; spread array, else single
+        const bound = fn.bind(svc);
+        if (Array.isArray(opArgs)) return await bound(...opArgs);
+        return await bound(opArgs);
     });
 
     server.register("queryInternals.initHandshakeService", async (args) => {
@@ -455,7 +458,10 @@ export function registerSubHandleRoutes(
         const fn = svc[op];
         if (typeof fn !== "function")
             throw new Error(`initHandshakeService.${op} not a function`);
-        return await fn(opArgs);
+        // step 1 - bind to svc so `this` resolves; spread array, else single
+        const bound = fn.bind(svc);
+        if (Array.isArray(opArgs)) return await bound(...opArgs);
+        return await bound(opArgs);
     });
 
     // step 1 - network.* (mirrors NetworkController.ts + RPCActions disconnect filter)

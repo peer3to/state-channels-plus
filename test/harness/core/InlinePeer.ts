@@ -233,9 +233,7 @@ class InlineP2pInternalsHandle implements P2pInternalsHandle {
     ): Promise<ProfileSummary | undefined> {
         const pm = this.record.stateManager.p2pManager as unknown as {
             profileManager?: {
-                getProfileByEvmAddress?: (
-                    a: Address
-                ) =>
+                getProfileByEvmAddress?: (a: Address) =>
                     | {
                           evmAddress?: string;
                           transport?: { connectionId?: string };
@@ -330,14 +328,18 @@ class InlineP2pInternalsHandle implements P2pInternalsHandle {
             }
         ).localRpc;
         const svc = localRpc[svcName] as
-            | Record<string, (a: unknown) => unknown>
+            | Record<string, (...a: unknown[]) => unknown>
             | undefined;
         if (!svc) throw new Error(`${svcName} not present on localRpc`);
         const fn = svc[opName];
         if (typeof fn !== "function") {
             throw new Error(`${svcName}.${opName} not a function`);
         }
-        return await fn(opArgs);
+        // step 1 - bind to svc so `this` resolves -> service methods reach
+        // their own fields. opArgs as array -> spread positional; else single.
+        const bound = fn.bind(svc);
+        if (Array.isArray(opArgs)) return await bound(...opArgs);
+        return await bound(opArgs);
     }
 }
 

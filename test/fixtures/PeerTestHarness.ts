@@ -576,7 +576,26 @@ export class PeerTestHarness<
         this.spawnedWorkers.push(worker);
         const mirror = new SpyMirror(this.eventCountsBarrier);
         worker.getRpcClient().on("spy", (payload: unknown) => {
-            mirror.ingest(payload as Parameters<SpyMirror["ingest"]>[0]);
+            const frame = payload as Parameters<SpyMirror["ingest"]>[0];
+            mirror.ingest(frame);
+            // step 1 - fan-out to the per-event harness barriers so the same
+            // waitFor surface inline mode uses (connection, disconnection,
+            // rpc, peerTurn) wakes on worker-side events. mirrors the
+            // hook-side signal() calls at PeerTestHarness.ts:376-397.
+            switch (frame.name) {
+                case "onConnection":
+                    void this.connectionBarrier.signal();
+                    break;
+                case "onDisconnection":
+                    void this.disconnectionBarrier.signal();
+                    break;
+                case "onTurn":
+                    void peer.turnBarrier.signal();
+                    break;
+                // step 1 - rpcBarrier signal sites are inline-only (assert/sync
+                // paths); no worker-side hook produces them today. add when a
+                // worker test requires it.
+            }
         });
         // Orchestrator sinon spies never fire in worker mode; mirror-backed spies report pushed counts.
         const workerSpies = peer.eventSpies as unknown as Record<
