@@ -6,6 +6,17 @@ export type SerializedError = {
     name: string;
     message: string;
     stack?: string;
+    // preserve CustomEvmError discriminator + parsed solidity error description
+    // so the orchestrator-side tryDecodeCustomError / isCustomEvmError still
+    // recognise an error that crossed the worker boundary. plain Errors omit
+    // both fields.
+    isCustomError?: boolean;
+    customError?: {
+        name: string;
+        args: readonly unknown[];
+        signature?: string;
+        selector?: string;
+    };
 };
 
 export type Req = {
