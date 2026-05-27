@@ -7,6 +7,7 @@ import { describe, it, beforeEach } from "mocha";
 
 import { RpcClient } from "../rpc-client";
 import { RpcServer } from "../rpc-server";
+import { attach } from "../rpc-endpoint";
 import type { RpcPort } from "../rpc-types";
 
 type Listener = (value: unknown) => void;
@@ -247,5 +248,79 @@ describe("rpc kernel (W3)", () => {
         expect(() => client.dispose()).to.not.throw();
         server.dispose();
         expect(() => server.dispose()).to.not.throw();
+    });
+});
+
+// step 1 - bidirectional endpoints. both sides attach client+server to the
+// same port; req/res frames flow in both directions; push frames keep working.
+describe("rpc kernel (W3) - bidirectional endpoints", () => {
+    it("orchestrator -> worker call works while worker -> orchestrator call works", async () => {
+        const [portA, portB] = makePair();
+        const sideA = attach(portA);
+        const sideB = attach(portB);
+
+        sideB.server.register("worker.echo", (args) => {
+            const { v } = args as { v: number };
+            return { echoed: v * 2 };
+        });
+        sideA.server.register("orch.lookup", (args) => {
+            const { key } = args as { key: string };
+            return { value: `orch:${key}` };
+        });
+
+        const fromA = (await sideA.client.call("worker.echo", { v: 21 })) as {
+            echoed: number;
+        };
+        expect(fromA.echoed).to.equal(42);
+
+        const fromB = (await sideB.client.call("orch.lookup", {
+            key: "foo"
+        })) as { value: string };
+        expect(fromB.value).to.equal("orch:foo");
+
+        sideA.dispose();
+        sideB.dispose();
+    });
+
+    it("nested callback: worker handler calls back into orchestrator mid-handle", async () => {
+        const [portA, portB] = makePair();
+        const sideA = attach(portA);
+        const sideB = attach(portB);
+
+        sideA.server.register("orch.tamper", async (args) => {
+            const { dispute } = args as { dispute: { height: number } };
+            return { dispute: { height: dispute.height + 1000 } };
+        });
+        sideB.server.register("worker.constructAndTamper", async () => {
+            const tampered = (await sideB.client.call("orch.tamper", {
+                dispute: { height: 5 }
+            })) as { dispute: { height: number } };
+            return tampered.dispute;
+        });
+
+        const result = (await sideA.client.call(
+            "worker.constructAndTamper",
+            {}
+        )) as { height: number };
+        expect(result.height).to.equal(1005);
+
+        sideA.dispose();
+        sideB.dispose();
+    });
+
+    it("push frames still work alongside bidirectional req/res", async () => {
+        const [portA, portB] = makePair();
+        const sideA = attach(portA);
+        const sideB = attach(portB);
+        const received: unknown[] = [];
+        sideA.client.on("worker.tick", (p) => received.push(p));
+        sideB.server.push("worker.tick", { n: 1 });
+        sideB.server.push("worker.tick", { n: 2 });
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+        expect(received).to.have.length(2);
+
+        sideA.dispose();
+        sideB.dispose();
     });
 });
