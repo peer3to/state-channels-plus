@@ -402,9 +402,12 @@ export class TransitionActions<
         peer: TestPeer<TCustomRpc, TContract>,
         timeoutMs = 3000
     ): Promise<void> {
+        // step 1 - W1 - turn predicate via sub-handle. inline reads
+        // stateManager.isMyTurn in-process; worker forwards rpc.
+        const handle = this.harness.getPeerHandle(peer.index);
         try {
             await peer.turnBarrier.waitFor(
-                () => peer.stateManager.isMyTurn?.() ?? false,
+                async () => await handle.queryIsMyTurn(),
                 {
                     timeoutMs,
                     timeoutMessage: `Turn not received within ${timeoutMs}ms`

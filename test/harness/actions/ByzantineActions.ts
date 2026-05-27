@@ -51,15 +51,17 @@ export class ByzantineActions {
             `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
         );
 
-        // step 1 - read the latest block via the data-path query. inline mode
-        // returns the live Block instance; worker mode returns a serialised
-        // summary (out of scope until W5).
-        const originalBlock = (await peerHandle.queryLatestBlock(forkId)) as
-            | Block
-            | undefined;
-        if (!originalBlock) {
+        // step 1 - read the latest block confirmation via sub-handle and
+        // reconstruct an orchestrator-side Block. inline returns the live
+        // peer's blockConfirmationStruct; worker forwards it over rpc.
+        const blockConfirmation =
+            await peerHandle.queryLatestBlockConfirmation(forkId);
+        if (!blockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
+        const originalBlock = Block.fromBlockConfirmation(
+            blockConfirmation as never
+        );
 
         this.logger.debug(
             `Original block found: height=${originalBlock.height}, hash=${originalBlock.hash}`
@@ -137,24 +139,18 @@ export class ByzantineActions {
         const forkId = options.forkId || this.harness.activeForkId!;
         const height = options.height;
 
-        // step 1 - storage reads are bucket-(i) reads on PeerHandle in spirit;
-        // until queryStorageSnapshot shape is pinned, the orchestrator-side
-        // query helpers take TestPeer (they too live behind PeerHandle via
-        // InlinePeer.record in inline mode). this stays the orchestrator
-        // path per W1 appendix A: "storage reads come from queryInternals /
-        // queryStorageSnapshot" (queryStorageSnapshot deferred to next agent).
-        const previousBlock = (await peerHandle.queryLatestBlock(forkId)) as
-            | Block
-            | undefined;
-        const previousBlockHash = this.harness.query.getPreviousBlockHash(
-            peer,
+        // step 1 - sub-handle reads. previousBlockHash + stateSnapshotHash
+        // both routed via PeerHandle so worker peers answer over rpc; inline
+        // peers run the same body in-process.
+        void peer; // unused once query.* migrated
+        const previousBlockHash = await peerHandle.queryPreviousBlockHash({
             forkId
-        );
-        const stateSnapshotHash = this.harness.query.getStateSnapshotHash(
-            peer,
-            forkId,
-            previousBlock
-        );
+        });
+        const stateSnapshotHash =
+            await peerHandle.queryStateSnapshotHashForFork({
+                forkId,
+                previousBlockHash
+            });
 
         const encodedData: Bytes =
             options.encodedData ||

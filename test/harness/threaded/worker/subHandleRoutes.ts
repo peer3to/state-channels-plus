@@ -255,6 +255,107 @@ export function registerSubHandleRoutes(
         return sm.storage.stateSnapshots.snapshotsByHash.size;
     });
 
+    // step 4j - mirrors stateManager.isMyTurn?.().
+    server.register("query.isMyTurn", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            isMyTurn?: () => boolean;
+        };
+        return sm.isMyTurn?.() ?? false;
+    });
+
+    // step 4l - mirrors StateQueryActions.getPreviousBlockHash body.
+    server.register("query.previousBlockHash", async (args) => {
+        const { ethers } = await import("ethers");
+        const { forkId, height } = (args ?? {}) as {
+            forkId?: unknown;
+            height?: number;
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: {
+                    getLatestBlock: (
+                        f: unknown
+                    ) => { hash: string } | undefined;
+                };
+                stateSnapshots: {
+                    getGenesisSnapshotByForkId: (
+                        f: unknown
+                    ) => { hash: string } | undefined;
+                };
+                getPreviousBlockOrSnapshot: (req: {
+                    forkId: unknown;
+                    height: number;
+                }) => {
+                    block?: { hash: string };
+                    stateSnapshot?: { hash: string };
+                };
+            };
+        };
+        if (height !== undefined) {
+            const prev = sm.storage.getPreviousBlockOrSnapshot({
+                forkId,
+                height: Number(height)
+            });
+            return prev.block?.hash ?? prev.stateSnapshot!.hash;
+        }
+        const previousBlock = sm.storage.blocks.getLatestBlock(forkId);
+        if (previousBlock?.hash) return String(previousBlock.hash);
+        const genesis =
+            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+        return String(genesis?.hash ?? ethers.ZeroHash);
+    });
+
+    // step 4m - mirrors StateQueryActions.getStateSnapshotHash body.
+    server.register("query.stateSnapshotHashForFork", async (args) => {
+        const { ethers } = await import("ethers");
+        const { forkId, previousBlockHash } = (args ?? {}) as {
+            forkId?: unknown;
+            previousBlockHash?: string;
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: {
+                    getBlock: (
+                        h: string
+                    ) => { stateSnapshotHash: string } | undefined;
+                };
+                stateSnapshots: {
+                    getGenesisSnapshotByForkId: (
+                        f: unknown
+                    ) => { hash: string } | undefined;
+                };
+            };
+        };
+        if (previousBlockHash) {
+            const block = sm.storage.blocks.getBlock(previousBlockHash);
+            if (block?.stateSnapshotHash) {
+                return String(block.stateSnapshotHash);
+            }
+        }
+        const genesis =
+            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+        return String(genesis?.hash ?? ethers.ZeroHash);
+    });
+
+    // step 4k - mirrors storage.blocks.getLatestBlock -> blockConfirmationStruct.
+    // ship the full confirmation so the orchestrator can reconstruct a Block
+    // via Block.fromBlockConfirmation and read every getter.
+    server.register("query.latestBlockConfirmation", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: {
+                    getLatestBlock: (
+                        f: unknown
+                    ) => { blockConfirmationStruct: unknown } | undefined;
+                };
+            };
+        };
+        const block = sm.storage.blocks.getLatestBlock(forkId);
+        if (!block) return undefined;
+        return block.blockConfirmationStruct;
+    });
+
     // step 4h - mirrors stateManager.postStateSnapshot(forkId).
     server.register("snapshot.post", async (args) => {
         const { forkId } = (args ?? {}) as { forkId?: unknown };

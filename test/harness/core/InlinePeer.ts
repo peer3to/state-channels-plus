@@ -774,6 +774,88 @@ export class InlinePeer implements PeerHandle {
         return snaps.snapshotsByHash.size;
     }
 
+    // step 4l - mirrors StateQueryActions.getPreviousBlockHash inline body.
+    async queryPreviousBlockHash(req: {
+        forkId: ForkId;
+        height?: number;
+    }): Promise<string> {
+        const ethersLite = await import("ethers");
+        const storage = this.record.stateManager.storage;
+        if (req.height !== undefined) {
+            const previousBlockOrSnapshot = storage.getPreviousBlockOrSnapshot({
+                forkId: req.forkId,
+                height: req.height
+            }) as unknown as {
+                block?: { hash: string };
+                stateSnapshot?: { hash: string };
+            };
+            return (
+                previousBlockOrSnapshot.block?.hash ??
+                previousBlockOrSnapshot.stateSnapshot!.hash
+            );
+        }
+        const previousBlock = storage.blocks.getLatestBlock(req.forkId) as
+            | { hash: string }
+            | undefined;
+        if (previousBlock?.hash) return String(previousBlock.hash);
+        const genesis = (
+            storage.stateSnapshots as unknown as {
+                getGenesisSnapshotByForkId: (
+                    f: unknown
+                ) => { hash: string } | undefined;
+            }
+        ).getGenesisSnapshotByForkId(req.forkId);
+        return String(genesis?.hash ?? ethersLite.ZeroHash);
+    }
+
+    // step 4m - mirrors StateQueryActions.getStateSnapshotHash inline body.
+    async queryStateSnapshotHashForFork(req: {
+        forkId: ForkId;
+        previousBlockHash?: string;
+    }): Promise<string> {
+        const ethersLite = await import("ethers");
+        const storage = this.record.stateManager.storage;
+        if (req.previousBlockHash) {
+            const block = (
+                storage.blocks as unknown as {
+                    getBlock: (
+                        h: string
+                    ) => { stateSnapshotHash: string } | undefined;
+                }
+            ).getBlock(req.previousBlockHash);
+            if (block?.stateSnapshotHash) {
+                return String(block.stateSnapshotHash);
+            }
+        }
+        const genesis = (
+            storage.stateSnapshots as unknown as {
+                getGenesisSnapshotByForkId: (
+                    f: unknown
+                ) => { hash: string } | undefined;
+            }
+        ).getGenesisSnapshotByForkId(req.forkId);
+        return String(genesis?.hash ?? ethersLite.ZeroHash);
+    }
+
+    // step 4k - mirrors storage.blocks.getLatestBlock -> blockConfirmationStruct.
+    async queryLatestBlockConfirmation(
+        forkId: ForkId
+    ): Promise<unknown | undefined> {
+        const block = this.record.stateManager.storage.blocks.getLatestBlock(
+            forkId
+        ) as { blockConfirmationStruct: unknown } | undefined;
+        if (!block) return undefined;
+        return block.blockConfirmationStruct;
+    }
+
+    // step 4j - mirrors stateManager.isMyTurn?.().
+    async queryIsMyTurn(): Promise<boolean> {
+        const sm = this.record.stateManager as unknown as {
+            isMyTurn?: () => boolean;
+        };
+        return sm.isMyTurn?.() ?? false;
+    }
+
     // step 4h - mirrors stateManager.postStateSnapshot(forkId).
     async postStateSnapshot(forkId: ForkId): Promise<unknown> {
         return await this.record.stateManager.postStateSnapshot(forkId);

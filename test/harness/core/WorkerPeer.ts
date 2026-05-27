@@ -353,10 +353,7 @@ export class WorkerPeer implements PeerHandle {
             forkId
         }) as Promise<number>;
     }
-    queryStateSnapshotAt(req: {
-        forkId: ForkId;
-        height: number;
-    }): Promise<{
+    queryStateSnapshotAt(req: { forkId: ForkId; height: number }): Promise<{
         hash: string;
         stateMachineStateHash: string;
         blockHeight: number;
@@ -374,6 +371,27 @@ export class WorkerPeer implements PeerHandle {
     }
     queryStateSnapshotCount(): Promise<number> {
         return this.rpc.call("query.stateSnapshotCount", {}) as Promise<number>;
+    }
+    queryIsMyTurn(): Promise<boolean> {
+        return this.rpc.call("query.isMyTurn", {}) as Promise<boolean>;
+    }
+    queryLatestBlockConfirmation(forkId: ForkId): Promise<unknown | undefined> {
+        return this.rpc.call("query.latestBlockConfirmation", { forkId });
+    }
+    queryPreviousBlockHash(req: {
+        forkId: ForkId;
+        height?: number;
+    }): Promise<string> {
+        return this.rpc.call("query.previousBlockHash", req) as Promise<string>;
+    }
+    queryStateSnapshotHashForFork(req: {
+        forkId: ForkId;
+        previousBlockHash?: string;
+    }): Promise<string> {
+        return this.rpc.call(
+            "query.stateSnapshotHashForFork",
+            req
+        ) as Promise<string>;
     }
     postStateSnapshot(forkId: ForkId): Promise<unknown> {
         return this.rpc.call("snapshot.post", { forkId });

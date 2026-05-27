@@ -230,10 +230,7 @@ export interface PeerHandle {
     // serialisable snapshot summary (hash + stateMachineStateHash) or null
     // when no snapshot exists at the height. callers needing the full struct
     // can extend the returned shape; today's callers only read hash.
-    queryStateSnapshotAt(req: {
-        forkId: ForkId;
-        height: number;
-    }): Promise<{
+    queryStateSnapshotAt(req: { forkId: ForkId; height: number }): Promise<{
         hash: string;
         stateMachineStateHash: string;
         blockHeight: number;
@@ -243,6 +240,29 @@ export interface PeerHandle {
     queryStateMachineState(hash: string): Promise<string | null>;
     // step 4g - mirrors storage.stateSnapshots size for "count increased" assertions.
     queryStateSnapshotCount(): Promise<number>;
+    // step 4j - mirrors stateManager.isMyTurn?.(). returns false if state
+    // manager isn't initialised yet (early-boot path). used by waitForTurn.
+    queryIsMyTurn(): Promise<boolean>;
+    // step 4k - mirrors storage.blocks.getLatestBlock returning enough fields
+    // for orchestrator-side Block reconstruction. ships the full
+    // BlockConfirmationStruct (signedBlock + confirmation signatures) so the
+    // caller can `Block.fromBlockConfirmation` and read every getter.
+    queryLatestBlockConfirmation(forkId: ForkId): Promise<unknown | undefined>;
+    // step 4l - mirrors StateQueryActions.getPreviousBlockHash. when height is
+    // omitted, returns latestBlock.hash || genesisSnapshot.hash || ZeroHash.
+    // when height is set, returns getPreviousBlockOrSnapshot({forkId,height})
+    // -> block.hash or stateSnapshot.hash.
+    queryPreviousBlockHash(req: {
+        forkId: ForkId;
+        height?: number;
+    }): Promise<string>;
+    // step 4m - mirrors StateQueryActions.getStateSnapshotHash. when
+    // previousBlockHash is set, returns the block's stateSnapshotHash. when
+    // not, returns the genesis snapshot hash for the fork (or ZeroHash).
+    queryStateSnapshotHashForFork(req: {
+        forkId: ForkId;
+        previousBlockHash?: string;
+    }): Promise<string>;
     // step 4h - mirrors stateManager.postStateSnapshot(forkId). returns the
     // posted snapshot summary (hash + serialised fields) or undefined. used
     // by transition.postSnapshot in worker mode.
