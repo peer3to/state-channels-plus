@@ -122,8 +122,6 @@ export class JoinActions {
             existingParticipantSigners: params.existingParticipantSigners,
             jcOverrides: params.jcOverrides
         });
-        const expectedSnapshotHash =
-            await this.harness.query.getOnChainSnapshotHash(channelId);
         await this.harness
             .getPeerHandle(params.joiner.index)
             .lifecycle.joinChannel(confirmation);

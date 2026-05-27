@@ -38,6 +38,7 @@ import type {
 import type { SpyMirror } from "./SpyMirror";
 import type { StubCallbackRegistry } from "./StubCallbackRegistry";
 import type { EventSpies } from "./types";
+import { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // step 1 - sub-handle implementations forward to W3 rpc. route ids follow
 // the convention `<sub-handle>.<method>` per W1 §5. worker-side handlers
@@ -270,11 +271,8 @@ class WorkerLifecycleHandle implements LifecycleHandle {
             channelId
         }) as Promise<void>;
     }
-    joinChannel(req: {
-        confirmation: unknown;
-        expectedSnapshotHash: string;
-    }): Promise<void> {
-        return this.rpc.call("lifecycle.joinChannel", req) as Promise<void>;
+    joinChannel(confirmation: JoinChannelConfirmationStruct): Promise<void> {
+        return this.rpc.call("lifecycle.joinChannel", confirmation) as Promise<void>;
     }
 }
 

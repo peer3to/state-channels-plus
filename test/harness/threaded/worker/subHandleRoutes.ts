@@ -10,6 +10,7 @@
 import type { RpcServer } from "../rpc/rpc-server";
 import type { RpcClient } from "../rpc/rpc-client";
 import type StateManager from "@/stateManager";
+import { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // step 1 - typed against the live SDK StateManager. routes touch real fields;
 // per-route narrow casts compose on top of this where private members or
@@ -43,9 +44,9 @@ export type SubHandleCtx = {
 export function w5BlockedError(route: string): Error {
     const err = new Error(
         `sub-handle route '${route}': stateManager not initialized; ` +
-            `worker is in 'boot' phase (W5-blocked). when boss's evm-in-thread ` +
-            `PR lands, this becomes the live handler against the in-thread ` +
-            `stateManager. inline bodies cited in W1 appendix A bucket (ii).`
+        `worker is in 'boot' phase (W5-blocked). when boss's evm-in-thread ` +
+        `PR lands, this becomes the live handler against the in-thread ` +
+        `stateManager. inline bodies cited in W1 appendix A bucket (ii).`
     );
     err.name = "W5BlockedError";
     return err;
@@ -96,10 +97,10 @@ export function registerSubHandleRoutes(
                         h: number
                     ) =>
                         | {
-                              hash: string;
-                              height: number | bigint;
-                              author: string;
-                          }
+                            hash: string;
+                            height: number | bigint;
+                            author: string;
+                        }
                         | undefined;
                 };
             };
@@ -182,10 +183,10 @@ export function registerSubHandleRoutes(
             storage: {
                 getStateSnapshot: (req: { forkId: unknown; height: number }) =>
                     | {
-                          hash: string;
-                          stateMachineStateHash: string;
-                          blockHeight: number | bigint;
-                      }
+                        hash: string;
+                        stateMachineStateHash: string;
+                        blockHeight: number | bigint;
+                    }
                     | undefined;
             };
         };
@@ -423,10 +424,10 @@ export function registerSubHandleRoutes(
                 timeout: {
                     getTimeout: (f: unknown) =>
                         | {
-                              participant: string;
-                              isForced: boolean;
-                              blockHeight?: bigint | number;
-                          }
+                            participant: string;
+                            isForced: boolean;
+                            blockHeight?: bigint | number;
+                        }
                         | undefined;
                 };
             };
@@ -693,8 +694,8 @@ export function registerSubHandleRoutes(
         const sm = ctx.getStateManager() as unknown as {
             prepareUpdateSnapshotSameFork: (f: unknown) => Promise<
                 | {
-                      milestoneSnapshots: Array<{ toStruct: () => unknown }>;
-                  }
+                    milestoneSnapshots: Array<{ toStruct: () => unknown }>;
+                }
                 | undefined
             >;
         };
@@ -742,9 +743,9 @@ export function registerSubHandleRoutes(
                         h: number
                     ) =>
                         | {
-                              blockConfirmationStruct: unknown;
-                              onChainTimestamp?: number;
-                          }
+                            blockConfirmationStruct: unknown;
+                            onChainTimestamp?: number;
+                        }
                         | undefined;
                 };
             };
@@ -767,12 +768,12 @@ export function registerSubHandleRoutes(
                 blocks: {
                     getBlock: (h: string) =>
                         | {
-                              blockConfirmationStruct: unknown;
-                              onChainTimestamp?: number;
-                              confirmationSignatures:
-                                  | Set<string>
-                                  | Iterable<string>;
-                          }
+                            blockConfirmationStruct: unknown;
+                            onChainTimestamp?: number;
+                            confirmationSignatures:
+                            | Set<string>
+                            | Iterable<string>;
+                        }
                         | undefined;
                 };
             };
@@ -892,12 +893,12 @@ export function registerSubHandleRoutes(
         const sm = ctx.getStateManager() as unknown as {
             prepareUpdateSnapshotSameFork: (f: unknown) => Promise<
                 | {
-                      callData: string[];
-                      expectedSnapshot: { toStruct: () => unknown };
-                      milestoneSnapshots: Array<{ toStruct: () => unknown }>;
-                      milestoneProofs?: unknown[];
-                      outboundMessageBlocks?: unknown[];
-                  }
+                    callData: string[];
+                    expectedSnapshot: { toStruct: () => unknown };
+                    milestoneSnapshots: Array<{ toStruct: () => unknown }>;
+                    milestoneProofs?: unknown[];
+                    outboundMessageBlocks?: unknown[];
+                }
                 | undefined
             >;
         };
@@ -939,7 +940,7 @@ export function registerSubHandleRoutes(
         const sm = ctx.getStateManager();
         const eh = sm.eventHandler;
         ctx.saved.calldataHandler = eh.onBlockCalldataPosted.bind(eh) as never;
-        eh.onBlockCalldataPosted = (async () => {}) as never;
+        eh.onBlockCalldataPosted = (async () => { }) as never;
         return {};
     });
 
@@ -988,9 +989,9 @@ export function registerSubHandleRoutes(
         ctx.saved.broadcast = remoteRpc.stateTransitionService
             .onBlockConfirmation as never;
         remoteRpc.stateTransitionService.onBlockConfirmation = (() => ({
-            broadcast: () => {},
-            sendOne: () => {},
-            sendMultiple: () => {}
+            broadcast: () => { },
+            sendOne: () => { },
+            sendMultiple: () => { }
         })) as never;
         return {};
     });
@@ -1087,8 +1088,8 @@ export function registerSubHandleRoutes(
             // wrapper round-trips correctly back into storage.
             const StateSnapshotMod = (await import("@/models/StateSnapshot"))
                 .default as unknown as {
-                from: (s: unknown) => unknown;
-            };
+                    from: (s: unknown) => unknown;
+                };
             const originalStruct = originalSnapshot.toStruct() as {
                 snapshotData: {
                     totalDeposits: { amount: bigint | string | number };
@@ -1427,10 +1428,10 @@ export function registerSubHandleRoutes(
             );
         const svc = pmAny.localRpc[serviceName] as
             | {
-                  createRPCMethods: (
-                      t: unknown
-                  ) => Record<string, (...a: unknown[]) => unknown>;
-              }
+                createRPCMethods: (
+                    t: unknown
+                ) => Record<string, (...a: unknown[]) => unknown>;
+            }
             | undefined;
         if (!svc)
             throw new Error(
@@ -1552,12 +1553,12 @@ export function registerSubHandleRoutes(
         const sm = ctx.getStateManager();
         const svc = sm.p2pManager.localRpc["initHandshakeService"] as
             | {
-                  getChallenge: (
-                      t: unknown
-                  ) =>
-                      | { randomChallengeHash: string; initTime: number }
-                      | undefined;
-              }
+                getChallenge: (
+                    t: unknown
+                ) =>
+                    | { randomChallengeHash: string; initTime: number }
+                    | undefined;
+            }
             | undefined;
         const c = svc?.getChallenge(t);
         if (!c) return undefined;
@@ -1666,20 +1667,12 @@ export function registerSubHandleRoutes(
     server.register("lifecycle.joinChannel", async (args) => {
         // W?: moved from JoinActions.ts:117
         const sm = ctx.getStateManager();
-        const { confirmation, expectedSnapshotHash } = (args ?? {}) as {
+        const { confirmation } = (args ?? {}) as {
             confirmation?: unknown;
-            expectedSnapshotHash?: string;
         };
         if (!confirmation)
             throw new Error("lifecycle.joinChannel: missing 'confirmation'");
-        if (!expectedSnapshotHash)
-            throw new Error(
-                "lifecycle.joinChannel: missing 'expectedSnapshotHash'"
-            );
-        await sm.p2pManager.p2pSigner.joinChannel(
-            confirmation as never,
-            expectedSnapshotHash
-        );
+        await sm.p2pManager.p2pSigner.joinChannel(confirmation as JoinChannelConfirmationStruct);
         return {};
     });
 

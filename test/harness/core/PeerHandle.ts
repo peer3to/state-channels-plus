@@ -12,6 +12,7 @@ import type { Signer } from "ethers";
 import type { Address, ForkId } from "@/types/types";
 import type { Logger, EventBarrier } from "@/utils";
 import type { EventSpies } from "./types";
+import { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // step 1 - data-path queries. uniform on both backends; worker mode forwards
 // via W3 rpc. shapes are placeholder for the audit surface in W1 appendix A
@@ -218,11 +219,8 @@ export interface LifecycleHandle {
     // addSpectator paths.
     connectToChannel(channelId: string): Promise<void>;
     // step 1 - mirrors P2pSigner.joinChannel. takes a fully serialisable
-    // JoinChannelConfirmationStruct + the expected on-chain snapshot hash.
-    joinChannel(req: {
-        confirmation: unknown;
-        expectedSnapshotHash: string;
-    }): Promise<void>;
+    // JoinChannelConfirmationStruct.
+    joinChannel(confirmation: JoinChannelConfirmationStruct): Promise<void>;
 }
 
 // step 1 - W1 §6 bucket (iii) - named-op transition surface. closures never

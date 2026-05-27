@@ -603,14 +603,8 @@ class InlineLifecycleHandle implements LifecycleHandle {
 
     // step 1 - mirrors JoinActions.ts:117 inline body. confirmation is the
     // fully-serialisable JoinChannelConfirmationStruct.
-    async joinChannel(req: {
-        confirmation: unknown;
-        expectedSnapshotHash: string;
-    }): Promise<void> {
-        await this.record.p2pInstance.p2pSigner.joinChannel(
-            req.confirmation as JoinChannelConfirmationStruct,
-            req.expectedSnapshotHash
-        );
+    async joinChannel(confirmation: JoinChannelConfirmationStruct): Promise<void> {
+        await this.record.p2pInstance.p2pSigner.joinChannel(confirmation);
     }
 }
 

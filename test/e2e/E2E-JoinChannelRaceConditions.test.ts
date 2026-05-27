@@ -17,8 +17,7 @@ describe("E2E: Join channel race conditions", function () {
                 stateSnapshot: stateSnapshot_a,
                 confirmation
             } = await h.scenario.syncSpectatorAndPrepareJoin();
-            const expectedSnapshotHash =
-                StateSnapshot.from(stateSnapshot_a).hash;
+
 
             await h.byzantine.postFraudulentSnapshot({
                 mutate: ({ originalSnapshotData }) => {
@@ -46,15 +45,10 @@ describe("E2E: Join channel race conditions", function () {
                 "on-chain snapshot S' must differ from S before submitting the join confirmation built against S"
             );
 
-            const channelManager =
-                joiner.stateManager.stateChannelManagerContract;
             let revertError: unknown;
             try {
-                const tx = await channelManager.joinChannel(
-                    confirmation,
-                    expectedSnapshotHash
-                );
-                await tx.wait();
+                // step 1 - route via handle so worker mode goes through rpc
+                await h.getPeerHandle(joiner.index).lifecycle.joinChannel(confirmation);
                 expect.fail(
                     "expected joinChannel to revert: spectator built confirmation against snapshot S, but on-chain snapshot is now the mismatched S'"
                 );
@@ -96,7 +90,7 @@ describe("E2E: Join channel race conditions", function () {
             for (const i of [0, 1, 2])
                 await h.byzantine.stubPendingInboundInclusion(i);
 
-            await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+            await h.getPeerHandle(joiner.index).lifecycle.joinChannel(confirmation);
             expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );
@@ -152,7 +146,8 @@ describe("E2E: Join channel race conditions", function () {
 
             let revertError: unknown;
             try {
-                await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+                // step 1 - route via handle so worker mode goes through rpc
+                await h.getPeerHandle(joiner.index).lifecycle.joinChannel(confirmation);
                 expect.fail(
                     "expected joinChannel to revert: spectator built confirmation against a fork that is now disputed"
                 );
@@ -213,7 +208,7 @@ describe("E2E: Join channel race conditions", function () {
             const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
 
-            await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+            await h.getPeerHandle(joiner.index).lifecycle.joinChannel(confirmation);
             expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );
