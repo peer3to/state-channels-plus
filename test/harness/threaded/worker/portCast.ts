@@ -19,11 +19,20 @@ export function nodePortToRpcPort(port: NodeMessagePort): RpcPort {
         close(): void {
             port.close();
         },
-        on(event: "message" | "close", listener: never): void {
-            port.on(event, listener);
+        on(
+            event: "message" | "close",
+            listener: ((value: unknown) => void) | (() => void)
+        ): void {
+            // step 1 - node MessagePort has overloaded `on` per event name.
+            // RpcPort collapses both to one signature; we round-trip through
+            // the message variant since both call shapes are compatible.
+            port.on(event, listener as (value: unknown) => void);
         },
-        off(event: "message" | "close", listener: never): void {
-            port.off(event, listener);
+        off(
+            event: "message" | "close",
+            listener: ((value: unknown) => void) | (() => void)
+        ): void {
+            port.off(event, listener as (value: unknown) => void);
         }
     };
 }

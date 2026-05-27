@@ -2,9 +2,10 @@
 // stringify cleanly. NOT load-bearing for the rpc kernel (structured-clone
 // handles BigInt natively); purely for log printing inside the worker.
 
-if (typeof (BigInt.prototype as { toJSON?: unknown }).toJSON !== "function") {
-    (BigInt.prototype as unknown as { toJSON: () => number }).toJSON =
-        function () {
-            return Number(this as unknown as bigint);
-        };
+type BigIntWithToJSON = bigint & { toJSON?: () => number };
+const proto = BigInt.prototype as BigIntWithToJSON;
+if (typeof proto.toJSON !== "function") {
+    proto.toJSON = function (this: bigint): number {
+        return Number(this);
+    };
 }

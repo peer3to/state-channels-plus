@@ -278,20 +278,26 @@ function workerToRpcPort(worker: Worker): RpcPort {
         close(): void {
             // step 1 - PeerWorker.dispose() owns worker.terminate(). intentional no-op.
         },
-        on(event: "message" | "close", listener: never): void {
+        on(
+            event: "message" | "close",
+            listener: ((value: unknown) => void) | (() => void)
+        ): void {
             if (event === "message") {
-                worker.on("message", listener);
+                worker.on("message", listener as (value: unknown) => void);
             } else {
                 // step 1 - map "close" -> worker exit. rpc client triggers its own
                 // dispose() on this event, which is what we want.
-                worker.on("exit", listener);
+                worker.on("exit", listener as () => void);
             }
         },
-        off(event: "message" | "close", listener: never): void {
+        off(
+            event: "message" | "close",
+            listener: ((value: unknown) => void) | (() => void)
+        ): void {
             if (event === "message") {
-                worker.off("message", listener);
+                worker.off("message", listener as (value: unknown) => void);
             } else {
-                worker.off("exit", listener);
+                worker.off("exit", listener as () => void);
             }
         }
     };
