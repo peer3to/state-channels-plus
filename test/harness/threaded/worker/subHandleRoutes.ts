@@ -566,6 +566,88 @@ export function registerSubHandleRoutes(
         );
     });
 
+    // step 4aa - mirrors disputeManager.constructDispute(forkId).
+    server.register("dispute.construct", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            disputeManager: {
+                constructDispute: (f: unknown) => Promise<unknown>;
+            };
+        };
+        return await sm.disputeManager.constructDispute(forkId);
+    });
+
+    // step 4ab - mirrors storage.stateSnapshots.getGenesisSnapshotByForkId.
+    server.register("query.genesisSnapshot", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                stateSnapshots: {
+                    getGenesisSnapshotByForkId: (
+                        f: unknown
+                    ) => unknown | undefined;
+                };
+            };
+        };
+        return (
+            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId) ?? null
+        );
+    });
+
+    // step 4ad - mirrors localDiamondContract.getLatestBlockFromStateProof.
+    server.register("dispute.latestBlockFromStateProof", async (args) => {
+        const { stateProof } = (args ?? {}) as { stateProof?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            diamondStateMachine: {
+                localDiamondContract: {
+                    getLatestBlockFromStateProof: (sp: unknown) => Promise<
+                        [
+                            boolean,
+                            {
+                                transaction: {
+                                    header: { transactionCnt: bigint | number };
+                                };
+                            }
+                        ]
+                    >;
+                };
+            };
+        };
+        const [hasBlock, latestBlock] =
+            await sm.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
+                stateProof
+            );
+        return {
+            hasBlock: Boolean(hasBlock),
+            latestBlock: {
+                transaction: {
+                    header: {
+                        transactionCnt: String(
+                            latestBlock.transaction.header.transactionCnt
+                        )
+                    }
+                }
+            }
+        };
+    });
+
+    // step 4ac - mirrors disputeManager.getAuditingData(forkId, ...).
+    server.register("dispute.getAuditingData", async (args) => {
+        const req = (args ?? {}) as { forkId: unknown; args?: unknown[] };
+        const sm = ctx.getStateManager() as unknown as {
+            disputeManager: {
+                getAuditingData: (
+                    f: unknown,
+                    ...a: unknown[]
+                ) => Promise<unknown>;
+            };
+        };
+        return await sm.disputeManager.getAuditingData(
+            req.forkId,
+            ...(req.args ?? [])
+        );
+    });
+
     // step 4z - mirrors storage.getPreviousStateSnapshot.
     server.register("query.previousStateSnapshot", async (args) => {
         const req = (args ?? {}) as { forkId: unknown; height: number };

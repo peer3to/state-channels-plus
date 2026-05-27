@@ -324,6 +324,26 @@ export interface PeerHandle {
         forkId: ForkId;
         height: number;
     }): Promise<unknown | null>;
+    // step 4aa - mirrors disputeManager.constructDispute(forkId). returns
+    // the full serialisable result.
+    constructDispute(forkId: ForkId): Promise<{
+        dispute: unknown;
+        disputeConfirmation: unknown;
+        auditingData: unknown;
+        fraudProofsToApply: unknown[];
+    }>;
+    // step 4ab - mirrors storage.stateSnapshots.getGenesisSnapshotByForkId.
+    queryGenesisSnapshot(forkId: ForkId): Promise<unknown | null>;
+    // step 4ac - mirrors disputeManager.getAuditingData(forkId, ...).
+    queryDisputeAuditingData(req: {
+        forkId: ForkId;
+        args?: unknown[];
+    }): Promise<unknown>;
+    // step 4ad - mirrors localDiamondContract.getLatestBlockFromStateProof.
+    queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
+        hasBlock: boolean;
+        latestBlock: { transaction: { header: { transactionCnt: string } } };
+    }>;
     // step 4h - mirrors stateManager.postStateSnapshot(forkId). returns the
     // posted snapshot summary (hash + serialised fields) or undefined. used
     // by transition.postSnapshot in worker mode.

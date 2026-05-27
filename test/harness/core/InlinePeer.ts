@@ -1122,6 +1122,96 @@ export class InlinePeer implements PeerHandle {
         );
     }
 
+    // step 4aa - mirrors disputeManager.constructDispute(forkId).
+    async constructDispute(forkId: ForkId): Promise<{
+        dispute: unknown;
+        disputeConfirmation: unknown;
+        auditingData: unknown;
+        fraudProofsToApply: unknown[];
+    }> {
+        const sm = this.record.stateManager as unknown as {
+            disputeManager: {
+                constructDispute: (f: unknown) => Promise<{
+                    dispute: unknown;
+                    disputeConfirmation: unknown;
+                    auditingData: unknown;
+                    fraudProofsToApply: unknown[];
+                }>;
+            };
+        };
+        return await sm.disputeManager.constructDispute(forkId);
+    }
+
+    // step 4ab - mirrors storage.stateSnapshots.getGenesisSnapshotByForkId.
+    async queryGenesisSnapshot(forkId: ForkId): Promise<unknown | null> {
+        const storage = this.record.stateManager.storage as unknown as {
+            stateSnapshots: {
+                getGenesisSnapshotByForkId: (f: unknown) => unknown | undefined;
+            };
+        };
+        return (
+            storage.stateSnapshots.getGenesisSnapshotByForkId(forkId) ?? null
+        );
+    }
+
+    // step 4ad - mirrors localDiamondContract.getLatestBlockFromStateProof.
+    async queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
+        hasBlock: boolean;
+        latestBlock: { transaction: { header: { transactionCnt: string } } };
+    }> {
+        const sm = this.record.stateManager as unknown as {
+            diamondStateMachine: {
+                localDiamondContract: {
+                    getLatestBlockFromStateProof: (sp: unknown) => Promise<
+                        [
+                            boolean,
+                            {
+                                transaction: {
+                                    header: { transactionCnt: bigint | number };
+                                };
+                            }
+                        ]
+                    >;
+                };
+            };
+        };
+        const [hasBlock, latestBlock] =
+            await sm.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
+                stateProof
+            );
+        return {
+            hasBlock: Boolean(hasBlock),
+            latestBlock: {
+                transaction: {
+                    header: {
+                        transactionCnt: String(
+                            latestBlock.transaction.header.transactionCnt
+                        )
+                    }
+                }
+            }
+        };
+    }
+
+    // step 4ac - mirrors disputeManager.getAuditingData(forkId, ...).
+    async queryDisputeAuditingData(req: {
+        forkId: ForkId;
+        args?: unknown[];
+    }): Promise<unknown> {
+        const sm = this.record.stateManager as unknown as {
+            disputeManager: {
+                getAuditingData: (
+                    f: unknown,
+                    ...args: unknown[]
+                ) => Promise<unknown>;
+            };
+        };
+        return await sm.disputeManager.getAuditingData(
+            req.forkId,
+            ...(req.args ?? [])
+        );
+    }
+
     // step 4z - mirrors storage.getPreviousStateSnapshot({forkId, height}).
     async queryPreviousStateSnapshot(req: {
         forkId: ForkId;

@@ -485,6 +485,41 @@ export class WorkerPeer implements PeerHandle {
     }): Promise<unknown | null> {
         return this.rpc.call("query.previousStateSnapshot", req);
     }
+    constructDispute(forkId: ForkId): Promise<{
+        dispute: unknown;
+        disputeConfirmation: unknown;
+        auditingData: unknown;
+        fraudProofsToApply: unknown[];
+    }> {
+        return this.rpc.call("dispute.construct", { forkId }) as Promise<{
+            dispute: unknown;
+            disputeConfirmation: unknown;
+            auditingData: unknown;
+            fraudProofsToApply: unknown[];
+        }>;
+    }
+    queryGenesisSnapshot(forkId: ForkId): Promise<unknown | null> {
+        return this.rpc.call("query.genesisSnapshot", { forkId });
+    }
+    queryDisputeAuditingData(req: {
+        forkId: ForkId;
+        args?: unknown[];
+    }): Promise<unknown> {
+        return this.rpc.call("dispute.getAuditingData", req);
+    }
+    queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
+        hasBlock: boolean;
+        latestBlock: { transaction: { header: { transactionCnt: string } } };
+    }> {
+        return this.rpc.call("dispute.latestBlockFromStateProof", {
+            stateProof
+        }) as Promise<{
+            hasBlock: boolean;
+            latestBlock: {
+                transaction: { header: { transactionCnt: string } };
+            };
+        }>;
+    }
     postStateSnapshot(forkId: ForkId): Promise<unknown> {
         return this.rpc.call("snapshot.post", { forkId });
     }

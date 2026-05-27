@@ -117,7 +117,7 @@ export class DisputeTamperingActions {
         const markMalicious = options?.markMalicious ?? true;
         const forkId = options?.forkId;
 
-        const peer = this.harness.getPeer(authorPeerIndex);
+        const handle = this.harness.getPeerHandle(authorPeerIndex);
         if (markMalicious) {
             this.harness.contextApi.markMaliciousPeer({
                 maliciousPeerIndex: authorPeerIndex
@@ -125,19 +125,24 @@ export class DisputeTamperingActions {
         }
         const targetForkId = forkId || this.harness.activeForkId!;
 
+        // step 1 - W1 - construct via sub-handle so worker peers can answer.
         const { dispute, disputeConfirmation, auditingData } =
-            await peer.stateManager.disputeManager.constructDispute(
-                targetForkId
-            );
+            (await handle.constructDispute(targetForkId)) as {
+                dispute: DisputeStruct;
+                disputeConfirmation: DisputeConfirmationStruct;
+                auditingData: DisputeAuditingDataStruct;
+            };
 
         await tamper(dispute, disputeConfirmation, auditingData);
-        await this.resignDispute(peer.signer, dispute, disputeConfirmation);
+        await this.resignDispute(handle.signer, dispute, disputeConfirmation);
 
         this.logger.debug(
             `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
         );
 
-        const channelManager = this.harness.channelManager.connect(peer.signer);
+        const channelManager = this.harness.channelManager.connect(
+            handle.signer
+        );
         const txResp = dispute.postedAuditingData
             ? await channelManager.uploadDisputeWithCalldata(
                   disputeConfirmation,
@@ -160,12 +165,13 @@ export class DisputeTamperingActions {
         }) => DisputeFraudStruct
     ): Promise<void> {
         const peer = this.harness.getPeer(disputerIndex);
+        const handle = this.harness.getPeerHandle(disputerIndex);
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
-        const genesisSnapshot =
-            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                this.harness.activeForkId!
-            )!;
+        // step 1 - W1 - genesis snapshot via sub-handle.
+        const genesisSnapshot = (await handle.queryGenesisSnapshot(
+            this.harness.activeForkId!
+        )) as StateSnapshot;
         const proofStruct = buildProof({ dispute, genesisSnapshot });
         const forged: DisputeFraudProofStruct = {
             proofType: toSolidityDisputeFraudProofType(proofType),
@@ -247,18 +253,30 @@ export class DisputeTamperingActions {
                 "plantFreshTimeoutForNextWriter: no active fork ID — channel must be opened first"
             );
         }
-        const peer = this.harness.getPeer(disputerIndex);
+        // step 1 - W1 - sub-handle reads + write.
+        const handle = this.harness.getPeerHandle(disputerIndex);
         const nextPeer = await this.harness.query.getNextPeerToWrite();
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId)!;
-        peer.stateManager.storage.timeout.storeTimeout(forkId, {
-            participant: nextPeer.address,
-            blockHeight: BigInt(Number(latestBlock.height) + 1),
-            minTimeStamp: BigInt(Clock.getTimeInSeconds()),
-            isForced: false,
-            previousBlockProducer: ZeroAddress,
-            previousBlockProducerPostedCalldata: false,
-            participantSignatureOnPreviousBlock: "0x"
+        const latestConfirmation =
+            await handle.queryLatestBlockConfirmation(forkId);
+        if (!latestConfirmation) {
+            throw new Error(
+                `plantFreshTimeoutForNextWriter: no latest block for fork ${forkId}`
+            );
+        }
+        const latestBlock = (
+            await import("@/models/Block")
+        ).default.fromBlockConfirmation(latestConfirmation as never);
+        await handle.storeTimeout({
+            forkId,
+            timeout: {
+                participant: nextPeer.address,
+                blockHeight: BigInt(Number(latestBlock.height) + 1),
+                minTimeStamp: BigInt(Clock.getTimeInSeconds()),
+                isForced: false,
+                previousBlockProducer: ZeroAddress,
+                previousBlockProducerPostedCalldata: false,
+                participantSignatureOnPreviousBlock: "0x"
+            }
         });
     }
 
@@ -402,7 +420,7 @@ export class DisputeTamperingActions {
         const { disputerPeerIndex, targetHeight } = options;
         const peer = this.harness.getPeer(disputerPeerIndex);
         const stateProof = dispute.input.stateProof;
-        const localDiamond = this.harness.getLocalDiamond(disputerPeerIndex);
+        const handle = this.harness.getPeerHandle(disputerPeerIndex);
 
         const truncate = (): boolean => {
             if (stateProof.signedBlocks.length > 0) {
@@ -449,17 +467,17 @@ export class DisputeTamperingActions {
         };
 
         while (truncate()) {
-            const [hasBlock, latestBlock] =
-                await localDiamond.getLatestBlockFromStateProof(stateProof);
+            const { hasBlock, latestBlock } =
+                await handle.queryLatestBlockFromStateProof(stateProof);
             const h = Number(latestBlock.transaction.header.transactionCnt);
             if (!hasBlock || h <= targetHeight) break;
         }
 
-        const { auditingData } =
-            peer.stateManager.disputeManager.getAuditingData(
-                dispute.input.forkId,
-                stateProof
-            );
+        // step 1 - W1 - getAuditingData via sub-handle.
+        const { auditingData } = (await handle.queryDisputeAuditingData({
+            forkId: dispute.input.forkId,
+            args: [stateProof]
+        })) as { auditingData: DisputeAuditingDataStruct };
 
         dispute.input.latestStateSnapshotHash = StateSnapshot.from(
             auditingData.latestStateSnapshot
