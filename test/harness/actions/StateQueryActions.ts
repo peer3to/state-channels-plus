@@ -104,12 +104,14 @@ export class StateQueryActions {
     }
 
     public async getLocalStateSnapshot(peer: TestPeer): Promise<StateSnapshot> {
-        const stateManager = peer.stateManager;
-        const localDiamond =
-            stateManager.diamondStateMachine.localDiamondContract;
-        return StateSnapshot.from(
-            await localDiamond.getStateSnapshot(stateManager.channelId)
+        // step 1 - worker-safe path. handle.queryLocalStateSnapshot mirrors
+        // localDiamondContract.getStateSnapshot(channelId) inside the worker
+        // and returns the raw struct -> StateSnapshot.from rebuilds class.
+        const handle = this.harness.getPeerHandle(peer.index);
+        const struct = await handle.queryLocalStateSnapshot(
+            this.harness.channelId as string
         );
+        return StateSnapshot.from(struct as never);
     }
     /**
      * Get the next peer that should write a block

@@ -1,0 +1,154 @@
+Peer3 Engineering - May 26
+VIEW RECORDING - 32 mins (No highlights): 
+
+---
+
+0:00 - Luka Stanisic (Peer3)
+  Obviously, now cleaning up between... I have a problem with the bundler.
+
+0:06 - Baruch Fishman
+  Moving the EVM into a worker?
+
+0:10 - Luka Stanisic (Peer3)
+  Yeah, well, I moved that two days ago, and yesterday I was fighting with the bundler. So essentially now I'm just partitioning all of our node and browser dependencies and having essentially two builds.  So when it builds, it runs two scripts. It runs the browser build script and the node build script, and then package.json has a browser entry point and a node entry point.  And apparently that works. I got it working with our poker stuff. So I'm now just going and cleaning things up, essentially.  So nothing spills, and everything is nicely separated. I think that's a big performance boost. So... So... So that... So...  So I had one test as a reference, which I was making these performance statistics, and I asked GPT to find a test with the biggest amount of participants.  I think this one had five or six. So I was running everything on that one, essentially. And I think now at least, well, from that test, we don't have starvation when we move the EVM to a different execution environment.  And that's per peer. So in the test, all five or six EVMs were running in the same thread. Very expensive.  And now all six are separate threads, which is nice. And I think that is good. So what we should do, which probably is, you can take a look at the research project, is how do we do a one-to-one mirror?  Of what we have now, so I kind of did, like maybe you'll have some inspiration from the stuff I did with the EVM.  So how the EVM stuff works, now I expose a dedicated, let's say, config flag of do you want a dedicated trev for the EVM?  I don't force it, it's optional. So you can still run everything in a single trev, but if you want a dedicated trev, just set that thing to true.  But everything is polymorphic. What it means is, like, from the, so the contract executor, you'll see in the PR, but I'm just giving you a brief, so you'll probably review it easier.  So once you send a request, when it was in the same trev, you send a request, blah, blah, blah, you're awaiting, something goes into the EVM, it's executing, blah, blah, blah.  Eventually you get the promise resolved and continue, essentially. Now it's, the interface is the same. You send the request, but the promise is put in.  To a map, a queue, and it fires, essentially. And it has an ID. So it has an ID, you fire it, you send it to this other execution environment.  So once the other execution environment is done processing that request, it returns a response with the same ID, essentially, with the result.  So then you take the promise out of the map queue and resolve it. And that's pretty much it. From the perspective of the usage, it's the same.  It's indifferent. It just doesn't happen logically on the same thread, which is maybe. So what I was, I didn't think too much, but what I was thinking of what we could, how we could do all of this is the main harvest thing would be like the logic that does the coordination.  All the peers would like be their own threads, essentially. The threads are directly connected on their own. thing Sort Yeah.  But maybe, decade. just mean. The occasionally just sends these messages, so technically, apart from, peers are connected normally through the peer-to-peer network, which they establish over the local transport, and they don't communicate directly over the worker threads, meaning the main thread is the harness tank, and the harness thing has N childs of worker threads, essentially.  So the worker thread can send a peer-to-peer message that is fine, that goes, ends up in other peer-to-peer connections, other worker threads, but if it sends a worker message, it just goes back and forth between the parent, which is the harness, and that harness kind of coordinates them.  But we have to do it in a smart way, like this, so where we have, so where we don't have to reinvent another testing framework, essentially.  So think a little bit about that, and then also, also in the... So technically, how you're currently running them, well, you specify the number of threads which you want, I just use some number between 12 and 20, I have 20 cores, and then like one core gets occupied with the full test.  Technically like this, a single test will occupy more, if there are more peers, will occupy N plus 1 threads.  But most of the time, I guess, the threads will be idle, and it's up to the OS.
+
+5:38 - Baruch Fishman
+  2N plus 1. One thread for peer, one thread for EVM per peer, and then one thread for the test.  Ah, yes, yes.
+
+5:48 - Luka Stanisic (Peer3)
+  For the orchestrator. Yeah, yeah, yeah, yes, yes, yes, yes, yes, yes, 2N plus 1. So, well, technically, the dedicated thread for EVM is...  It's optional. It's Boolean. But yes, we would ideally want to run it like that, so we have the max concurrency.  But then in that case, if we really spin up, like the thing is, if they were really threads, this would not be a problem.  You can spin up a million threads. They're very lightweight. The thing is, which I'm not sure, even what I saw from those flame graphs, the spin-up time takes some time.  So they're technically something in between a thread and a process. Well, they are like logically a process. They don't have shared memory and stuff.  There's this shared array buffer, which is honest as . So the point is, like, maybe we will have some overhead because we're spinning up like a million worker threads.  Like if I ran out 12 tests in parallel and I would do 2N plus 1, and let's say in every test there are 5 workers, whereas I would have...  Like, 120 processes of Node.js running. Maybe that's too much for my system panel. I'm not sure. But, like, let's see.  But, like, it's only on the spin-up time and resource management. Like, in most cases, the threads would be idle.  And when they are idle, the OS, well, has a good enough scheduling algorithm where it can context switch and give the execution to the thread it actually wants to run.  So maybe it will work. But, like, the good thing is now these race conditions, which we're never actually getting caught, are showing up, which is good.  And then I also added, which you'll see in the test. Well, you'll see in this PR. Well, this PR is going to be slightly larger.  But mostly, it wasn't that easy to do this EVM thing. You'll see also some changes to... Deployment. Well, conceptually, it's easier now.  It's in a way where technically later, even if we wanted to swap it out for a full node implementation, like we do a live client or something, it would be straightforward now.  But like the point, you'll see there, but I also added this, if the vent loop delay of scheduling the performance timer is larger.
+
+8:31 - Baruch Fishman
+  I saw what you wrote, yeah. If it's larger than one second, fail unconditionally. Yeah.
+
+8:37 - Luka Stanisic (Peer3)
+  Well, technically, I also added that as a configuration, so you can specify. course, one second is random. Yeah, one second is random.  So, well, for our test, because our state transitions should be milliseconds, there are no ZK operations. One second, I think, is reasonable.  It more than reasonable, and now I didn't, like, on this stats that I ran on this particular test, the max delay was 250 milliseconds, which was good.  From 9 plus seconds to 250 milliseconds, that's great. Yeah, one second is generous enough. Yes, for our poker stuff, it will be a lot longer because the verifier time, improver time are, but, like, technically, maybe it can also be smaller because, like, the prover and verifier will run in their own threads also.  So, yeah, either way, it's configured. I left it so it can be configured since I also want to observe the performance of other clients while they're running.  That will be some mother future PR. And this is slightly tricky, is, like, generally, when you're developing blockchain node software, you have a minimal specification.  Hey, this is the hardware requirement you have to have in order to participate in our network, essentially.
+
+10:07 - Baruch Fishman
+  Yeah, that you don't have because the node operators are the clients.
+
+10:12 - Luka Stanisic (Peer3)
+  Yes, yes, yes. So someone could technically come in with a toaster, essentially, and then it will fall apart. But like, I don't know, what we'll probably end up doing on the front-end side, like technically, even if a toaster joins, the toaster will just not be able to perform, keep up with the network, and other peers would hopefully time out the toaster and remove the toaster.  But, of course, if someone is using an honest toaster, you don't want to kind of  them up. So we'll probably have some challenge in the beginning where they go to the website on the first time on this device, then without them knowing, we perform some proof of work to do some estimate of, hey, is this enough computation or not?  Sounds like something.
+
+11:00 - Baruch Fishman
+  It's reasonable to do when moving from testnet to production, like benchmark it on phones, Android, iPhone, tablets, computers, whatever, maybe spin up some AWS processes, you know, that we make this and that and this and this, and establish recommended minimum hardware.  And, you know, then you can maybe make a pop-up saying, hey, you're welcome to play, but our recommended minimum hardware is like this.  So if you have a bad experience, we apologize.
+
+11:26 - Luka Stanisic (Peer3)
+  Yes, yes, yes. you.
+
+11:28 - Baruch Fishman
+  I think from the fire, from the client, I mean, from the browser, you can read some information about the computer that's running it.  So you don't have to show it to every single person that joins, right? Just show it to people that are, or clients that are suspected weak.
+
+11:45 - Luka Stanisic (Peer3)
+  Yeah, yeah, yeah, of course, of course, of course. Yes, exactly. And plus, so I think most of this will technically be a challenge because we want to do, multiple parallel games on the same.  So I have five tables open. For an hour of testing, that will be very, that will be very, well, like, if we optimize everything, I did some optimization that was trivial, like 15, 20 minutes, and it saved around, around 20% of the computation was saved just from the crypto hashing.  So we don't constantly do the hash, hash, encoding code. Common, yeah, hash is expensive, yeah, it's a... Yes, yes.  So that thing save already 20%, and now that the, and EVM in general is the  that adds a lot of overhead.  JavaScript technically runs in 50 milliseconds on my device once it goes, and it doesn't do any computation in the EVM.  If EVM is just passing bytes around, it ends up being 500 to 700 milliseconds, like 10x words. So yeah, but now it has its own execution environment, and a lot of the stuff could be async, so technically for the game of poker, yeah, this will be multiple games, depending on the device you have, might be tricky, we'll see.  And it also depends on the speed of, like, if someone is really, like, thinking 15 seconds, then you'll have 15 seconds of idle time, and then you can allocate those resources to other threads, like the OS will do it, but if everybody is playing at max speed all the time, then you don't have any, you definitely, you're lacking resources at that time.  So yeah, we'll see how many games we can support in parallel, but, like, we'll tell them, like, if you're playing on a low tier device, you have one or two, and if you're playing, if...  you want more, you've got to upgrade your device hardware, essentially, which is also fine. Some games also require you to have certain graphics cards if you want to play and participate.  So it's not like this is a problem that is unique not common on the web.
+
+14:16 - Baruch Fishman
+  The games, but it's very common on the real games.
+
+14:20 - Luka Stanisic (Peer3)
+  Yeah, yeah, yeah. Okay, but that's for another day. So I'll do this PR today. I just have to go over the code and see is everything partitioned with the bundler and stuff, edit some browser tests.  But maybe those, like, either way, they'll be there, but probably they're useless. Because, like, they didn't catch my bundler problem.  I had to experience it when I was bundling for poker. But either way. And then after that, have to do the PR, and then I have to make some changes for Batman so he can implement some of that.  RPCs, like message, a lot of simple ones. So, and he gets kind of familiar with this, and I promised him I'll do it for him so he can have it tomorrow.  So I'll go and create this PR, hopefully in the next hour or two, and then I'll slightly refactor the RPCs slightly so we don't have that TypeScript junk of circular dependency.  Hopefully, maybe it doesn't work, maybe we have to have it in the end. And, yeah, that's what I'll do.  If you take a look how we can parallelize our peers. So, technically, we have true concurrency of executions and peers actually run in parallel.  And, yeah, okay, I'll add that. Well, in my PR, you'll have that unconditional throw if it's more than one second.  Well, it's unfigurable, but it will be one second. Um, yes, that's, that's the... But, yeah. I
+
+16:03 - Baruch Fishman
+  Yes. What can I add? Yeah. I look into how we can make the PRS run in different threads.
+
+16:12 - Luka Stanisic (Peer3)
+  Yes. Yeah, maybe you'll find some inspiration from my PR, but either way, I think research a little bit. Maybe you'll have a better idea.  But hopefully in a way where the surface is minimal, where it's similar like a Boolean of we want dedicated threads for peers without us having to have a full double implementation of harness, which would be very, if we can have one adapter, something essentially, then it's fine.
+
+16:51 - Baruch Fishman
+  The interface should be remaining the same, right? test should look pretty much the same, but run differently under the hood.  But... I think that making every peer running in its own thread is not a small thing. probably going to require a lot of architecture.  We will need to talk to each other somehow, RPC, don't know.
+
+17:12 - Luka Stanisic (Peer3)
+  Well, yeah, all of that is part of the peer. So even now, so you'll see here, my challenge for having a dedicated EVM isn't different.  The rest, it's like, you'll see, the contract executor is polymorphic. There's one that runs in line and one that, well, you can see the entire code.  I can share it quickly. So you have some idea, entire screen, screen one. Where is my, I'm currently here.  Let's take a look at, now the contract executor has its own little browser, no other implementation, blah, blah, blah.  The factory, if you take a look here, depending on... On is it a dedicated tread, goes and creates one inline, inline contract executor, and the one, the other one is worker contract executor, which calls create, and this create is probably, yeah, has platform-dependent run time.  But either way, this creates you already from this one request ID. So from the usage, it's indifferent. So what I'm thinking briefly, I didn't think too much about the harness, so currently harness has a lot of these events, PIEs, everything that it's keeping track in its own, let's say, event loop tread, let's call it the main one.  And it's reading directly from the peer's memory, essentially, which probably we won't be able to do. Well, not probably, certainly we won't be able to read.  Unless you do some message message, right? Yeah.
+
+19:04 - Baruch Fishman
+  The harness requests this information and it gets back. So we will need some language of communication between the worker thread and the harness.  Yes. Tell me your storage. Tell me your whatever. Tell me this, tell me that. Yes, yes, yes.
+
+19:19 - Luka Stanisic (Peer3)
+  So technically the adapter, so currently when an event triggers, that event's pie is incremented, but it will now trigger in a different memory context execution environment.  So when that happens, we should just send the message back to the main tribe. That is cheap. Processing that message is very cheap, essentially, of like this event triggered so harness could implement its events pie or whatever.  So essentially we will have some message passing for communication, but like done in a smart way in a single wrapper or something.  But But I'll... Let you think about it, and then we can see where we are on Friday. We have both types, right?
+
+20:05 - Baruch Fishman
+  We have the push type, right? When the worker pushes some notifications to the orchestrator, right? That's the event barrier stuff, signals.  And we have the pool, where the harness requests some information from the worker.
+
+20:22 - Luka Stanisic (Peer3)
+  Yes, yes, yes, yes. And both can, yeah, so essentially we just need abstractions for those two. Essentially, it's like, yeah, so either way, the worker will have a communication channel with the main thread, which it always has.  And then it's just like a message passing. So it's bi-directional. So it's a socket. You can have both push and you can do a request, which will essentially query and pull.  So we'll do something like that for sure. Just like what will be the smart architecture of us to not have.  to maintain double code. So if we do a change in the, let's say, traditional main thread logic, are you sharing the screen or something?  Let me give a look. I heard the beep thing.
+
+21:15 - Baruch Fishman
+  Oh, no. What happened now? I didn't notice a loss connection.
+
+21:21 - Luka Stanisic (Peer3)
+  Well, I wasn't looking at the call. I'm looking at it now, and now I have you twice. you disappeared.  I know what I see.
+
+21:30 - Baruch Fishman
+  Yeah, OK. know what you'd see. Yeah, yeah.
+
+21:33 - Luka Stanisic (Peer3)
+  So yeah, so it's just like that. Finding out a smart way where we can do one adapter, which doesn't force us to maintain double the code.  And if we make a change to the harness or whatever, it kind of just implicitly works. So it's just like communicating stuff that happens.  That's pretty much it. I'll let you think about it on Friday, and I'll do this, and what that needs to be done.  And probably allow a couple of, like, I think I have 12 tests now that are constantly failing. I will just debug this one, and I understand why it fails.  It's weird that, well, it's probably not weird, because, like, there are also always more peers and all of them running their EVMs and all of it.  So probably that is, we hit the delay of those three to five seconds, which, plus, then it's creating a new block and everything.  Yeah. Either way, we'll fix those tests in a follow-up PR or something. And then, there's still a fuckload of stuff to do.  I still have to, like... I'm waiting for Jeff to give me his updated cryptography. I'll put that updated cryptography also in their own isolated threads for the prover.  The verifier will still be part of the EVM, but the EVM is already running in its own thread, so that is fine.  It won't affect the main SDK. So the main SDK should have constant performance on, of course, the same hardware, regardless of the state machine, because the state machine logic is essentially in a dedicated thread.  But yeah, I have to update the cryptography. I still have to finish connecting either adjacent stuff to the front end.  I'm onboarding Batman so he can slowly also at least interact with RPCs and do these other things. And then I have to also, in the end, go over my to-dos, which I have in Trello, and think about some stuff.  to And in the end, go over We have to come back and map out the tests file by file, meaning, hey, we have all of this, we don't have this, and, like, think about that.  But, yeah, like, but most of the stuff is running now, so, yeah, that's still stuff to do, which is annoying, but that's the reality.  Got it. Okay, so that's the plan for this week. Let's see what we can do on making parallel concurrent tests, and then we'll plan out the next week.  All right.
+
+24:39 - Baruch Fishman
+  Let me just check something.
+
+24:42 - Luka Stanisic (Peer3)
+  Our next Friday, okay, is the 29th. Tuesday is the 2nd. Okay, we'll talk on Friday. On the 2nd, I'm going to Greece, and I'm driving there, so maybe we'll have a call from the car or something.  I'm not sure. Mm-mm-mm-mm Yeah, either way, we'll talk about Friday. Same, the way, about Friday.
+
+25:06 - Baruch Fishman
+  Friday, I'm also traveling a bit. I think I can make it to the meeting, but I may also be in the car mode or something like that.
+
+25:14 - Luka Stanisic (Peer3)
+  Yeah, Friday, this Friday, I'm here. I'm talking about next Tuesday, 2nd of June. I know, know.
+
+25:20 - Baruch Fishman
+  I'm talking about my Friday. I'm also traveling. Okay, okay, okay, okay, okay, I think I can take the meeting, but it will probably be in the car or something.
+
+25:29 - Luka Stanisic (Peer3)
+  Yeah, yeah, okay. Either way, we'll chat. Okay, I think that's all for now, I guess.
+
+25:41 - Baruch Fishman
+  All right. The PR with your review comments is ready. I'll take a look at it.
+
+25:50 - Luka Stanisic (Peer3)
+  So, I want to finish this. Probably, I'll take a look at that, and then we can merge everything so we can...  I'll up the PRs, but yeah, I'll push this and then I'll take a look at that.
+
+26:07 - Baruch Fishman
+  Let me just raise with you one thing. Take a look at the PR on your screen, I left a comment there.  Like, you basically asked to delete the, you know, the code that when ingesting the inbound message, checking the message type, yeah?  Which one?
+
+26:28 - Luka Stanisic (Peer3)
+  Share the screen, please. Sure. And just think, ah, yeah, yeah, the join channel. Ah, yeah, that's the general case.
+
+26:39 - Baruch Fishman
+  So that one, so the thing is, the thing is, this is the only place to guard against race conditions for forced joins, right?  What you, what you describe is existing already in the regular, like, you know, consensus finalization join. But in the forced join, that comes from, that comes from the.  The user facets, right? The consumer facets. So obviously, I cannot put a guard there because I will be useless.  The only place to put a guard is where I put it. Yeah, yeah.
+
+27:09 - Luka Stanisic (Peer3)
+  So just a second.
+
+27:11 - Baruch Fishman
+  So I left a comment there. Like I've deleted the code and left a comment to you, okay, okay, you know, as you wish, but now this test is failing.  Like this avenue is unprotected.
+
+27:21 - Luka Stanisic (Peer3)
+  Yeah, that one was not, the ForgeJoin was something just for us to quickly test stuff. The ForgeJoin is not going to be part of a production software business.  There is no point in the ForgeJoin where anybody can come and inject themselves in it. It always has to be an agreement amongst the peer that are already there.
+
+27:47 - Baruch Fishman
+  Especially since we made this thing where you become pending participants first, right? Yeah, exactly, exactly, exactly.
+
+27:53 - Luka Stanisic (Peer3)
+  So this was my reasoning why it was there, right?
+
+27:57 - Baruch Fishman
+  Also, the race condition was race condition. Dispute, force, join, blah, blah, blah, blah, but if it's not part of the production code, then...
+
+28:04 - Luka Stanisic (Peer3)
+  Yeah, it won't be part of the production code, so it will be part of the service. So that service that decides, hey, now I want to join, blah, blah, blah, blah, and the message, it will have that to help.  It's not a requirement, it's there to help. Plus, that same service, if you're already part of the channel, will just let your message go in, essentially.  So I don't think we need that, because if you're already part of the channel and you're synced, all of the game theory, you're already there, essentially.  So we don't need to guard or protect you, you're already validating stuff, and your signature is already part of the set.
+
+28:49 - Baruch Fishman
+  So yeah, you had another comment about a helper, you didn't like the name, like M1, Joiner, Lieber, M2. Uh, yeah, it's Miles.  When I read it after, it was your terminology, I adapted this terminology from the card. mean, when I read it afterwards, yeah, it sounds like gibberish, I cannot understand what it means either.  I renamed it, but more important than the name you commented about, how, if the finalization, wait for finalization is false, how does it create milestones?  The test that uses it guard against, like it enforces, it asserts that more than two milestones exist. So, I pointed it out in the comments.  Yay! Anyway, I tackled it back to true, so it's not clear. But the test that was using it was absolutely asserting that there is more than two milestones.  Yes.
+
+29:42 - Luka Stanisic (Peer3)
+  Yeah, I know. I'm just saying, so even in that comment, I said maybe because of the delay and stuff, it always builds consensus.  And thanks, probably it reaches thresholds. And... Maybe I'll see is that test running in this version where everything is concurrent.  If everything runs too fast, you don't have the milestone. Then in that case, you will assert that it will fail.  True. Either way, I left it, though, or there we'll see. We'll see how all of this is performing when everything is parallel.  That's what I'm interested in seeing. Essentially, while I was hooking this up to poker, I was getting annoyed that the stuff that was green in the tests was – I had a lot of failures in poker.  I was like, what the  is now going on? Didn't we test all of this? It's the same code. I didn't reinvent anything.  Then I noticed a lot of everything, which I noticed. Let's see how all of this works when it's parallel.  And then probably we will see what real race conditions are. So I think that's the plan for this week, and then we'll see for next week after Friday.
+
+31:13 - Baruch Fishman
+  Okay. All right. See you.
+
+31:17 - Luka Stanisic (Peer3)
+  See you.
+
+31:19 - Baruch Fishman
+  Bye-bye.

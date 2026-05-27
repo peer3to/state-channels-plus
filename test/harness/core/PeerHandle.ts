@@ -354,6 +354,9 @@ export interface PeerHandle {
         channelId: string;
         forkIds: ForkId[];
     }): Promise<unknown[]>;
+    // step 4af - mirrors localDiamondContract.getStateSnapshot(channelId).
+    // returns the raw struct (callers wrap via StateSnapshot.from).
+    queryLocalStateSnapshot(channelId: string): Promise<unknown>;
     // step 4h - mirrors stateManager.postStateSnapshot(forkId). returns the
     // posted snapshot summary (hash + serialised fields) or undefined. used
     // by transition.postSnapshot in worker mode.

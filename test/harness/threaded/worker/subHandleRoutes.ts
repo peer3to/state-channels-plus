@@ -644,6 +644,21 @@ export function registerSubHandleRoutes(
         );
     });
 
+    // step 4af - mirrors localDiamondContract.getStateSnapshot(channelId).
+    server.register("dispute.localStateSnapshot", async (args) => {
+        const { channelId } = (args ?? {}) as { channelId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            diamondStateMachine: {
+                localDiamondContract: {
+                    getStateSnapshot: (c: unknown) => Promise<unknown>;
+                };
+            };
+        };
+        return await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+            channelId
+        );
+    });
+
     // step 4ac - mirrors disputeManager.getAuditingData(forkId, ...).
     server.register("dispute.getAuditingData", async (args) => {
         const req = (args ?? {}) as { forkId: unknown; args?: unknown[] };

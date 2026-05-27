@@ -532,6 +532,11 @@ export class WorkerPeer implements PeerHandle {
     }): Promise<unknown[]> {
         return this.rpc.call("dispute.windows", req) as Promise<unknown[]>;
     }
+    queryLocalStateSnapshot(channelId: string): Promise<unknown> {
+        return this.rpc.call("dispute.localStateSnapshot", {
+            channelId
+        }) as Promise<unknown>;
+    }
     postStateSnapshot(forkId: ForkId): Promise<unknown> {
         return this.rpc.call("snapshot.post", { forkId });
     }

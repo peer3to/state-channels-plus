@@ -1209,6 +1209,20 @@ export class InlinePeer implements PeerHandle {
         );
     }
 
+    // step 4af - mirrors localDiamondContract.getStateSnapshot(channelId).
+    async queryLocalStateSnapshot(channelId: string): Promise<unknown> {
+        const sm = this.record.stateManager as unknown as {
+            diamondStateMachine: {
+                localDiamondContract: {
+                    getStateSnapshot: (c: unknown) => Promise<unknown>;
+                };
+            };
+        };
+        return await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+            channelId
+        );
+    }
+
     // step 4ac - mirrors disputeManager.getAuditingData(forkId, ...).
     async queryDisputeAuditingData(req: {
         forkId: ForkId;
