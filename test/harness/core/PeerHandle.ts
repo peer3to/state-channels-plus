@@ -433,6 +433,16 @@ export interface PeerHandle {
     }>;
     // step 4ab - mirrors storage.stateSnapshots.getGenesisSnapshotByForkId.
     queryGenesisSnapshot(forkId: ForkId): Promise<unknown | null>;
+    // step 4ab2 - mirrors storage.stateSnapshots.getStateSnapshotByHash(hash).
+    // returns the serialised StateSnapshotStruct (callers rehydrate via
+    // StateSnapshot.from) or null. used by buildForgedSnapshot to read the
+    // original snapshot before forging a mutated copy.
+    queryStateSnapshotByHash(hash: string): Promise<unknown | null>;
+    // step 4ab3 - mirrors storage.outboundMessages.getMessageBlock(hash).
+    // returns the serialised MessageBlockStruct or null. used by
+    // buildForgedSnapshot to fetch the original outbound block referenced by
+    // the snapshot under forge.
+    queryOutboundMessageBlock(hash: string): Promise<unknown | null>;
     // step 4ac - mirrors disputeManager.getAuditingData(forkId, ...).
     queryDisputeAuditingData(req: {
         forkId: ForkId;

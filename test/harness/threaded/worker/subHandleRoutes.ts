@@ -579,6 +579,39 @@ export function registerSubHandleRoutes(
         return snapshot?.toStruct() ?? null;
     });
 
+    // step 4ab2 - mirrors storage.stateSnapshots.getStateSnapshotByHash(hash).
+    // ship .toStruct() so structured clone preserves snapshotData (callers
+    // rehydrate via StateSnapshot.from on the orchestrator side).
+    server.register("query.stateSnapshotByHash", async (args) => {
+        const { hash } = (args ?? {}) as { hash?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                stateSnapshots: {
+                    getStateSnapshotByHash: (
+                        h: unknown
+                    ) => { toStruct: () => unknown } | undefined;
+                };
+            };
+        };
+        const snapshot = sm.storage.stateSnapshots.getStateSnapshotByHash(hash);
+        return snapshot?.toStruct() ?? null;
+    });
+
+    // step 4ab3 - mirrors storage.outboundMessages.getMessageBlock(hash).
+    // MessageBlockStruct is plain data -> structured clone ships it as-is.
+    server.register("query.outboundMessageBlock", async (args) => {
+        const { hash } = (args ?? {}) as { hash?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                outboundMessages: {
+                    getMessageBlock: (h: unknown) => unknown | undefined;
+                };
+            };
+        };
+        const block = sm.storage.outboundMessages.getMessageBlock(hash);
+        return block ?? null;
+    });
+
     // step 4ad - mirrors localDiamondContract.getLatestBlockFromStateProof.
     // localDiamondContract is wrapped by createEthersResultProxy so the result
     // is already a plain mutable object; structured clone ships the full block

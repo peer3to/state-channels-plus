@@ -408,32 +408,44 @@ export class DisputeTamperingActions {
         peerIndex: number,
         mutate: ForgeSubmitterSnapshotMutate
     ): Promise<ForgedSnapshotBuild> {
-        const peer = this.harness.getPeer(peerIndex);
-        const storage = peer.stateManager.storage;
+        const handle = this.harness.getPeerHandle(peerIndex);
         const forkId = this.harness.activeForkId;
         if (!forkId) {
             throw new Error("buildForgedSnapshot: no active fork ID");
         }
 
-        const latestBlock = storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
+        // step 1 - W1 - latest block via sub-handle (ships full
+        // BlockConfirmationStruct -> reconstruct via Block.fromBlockConfirmation).
+        const latestBlockConfirmation =
+            await handle.queryLatestBlockConfirmation(forkId);
+        if (!latestBlockConfirmation) {
             throw new Error(
                 `buildForgedSnapshot: no latest block for fork ${forkId}`
             );
         }
-
-        const originalSnapshot = storage.stateSnapshots.getStateSnapshotByHash(
-            latestBlock.stateSnapshotHash
+        const latestBlock = Block.fromBlockConfirmation(
+            latestBlockConfirmation as BlockConfirmationStruct
         );
-        if (!originalSnapshot) {
+
+        // step 2 - W1 - original snapshot via sub-handle. returns the struct
+        // already; rehydrate to StateSnapshot for the returned ForgedSnapshotBuild.
+        const latestStateSnapshotHash = latestBlock.stateSnapshotHash as string;
+        const originalStruct = (await handle.queryStateSnapshotByHash(
+            latestStateSnapshotHash
+        )) as ReturnType<StateSnapshot["toStruct"]> | null;
+        if (!originalStruct) {
             throw new Error(
-                `buildForgedSnapshot: no snapshot for hash ${latestBlock.stateSnapshotHash}`
+                `buildForgedSnapshot: no snapshot for hash ${latestStateSnapshotHash}`
             );
         }
-        const originalStruct = originalSnapshot.toStruct();
-        const originalOutboundBlock = storage.outboundMessages.getMessageBlock(
-            originalStruct.snapshotData.latestOutboundMessageBlockHash as string
-        );
+        const originalSnapshot = StateSnapshot.from(originalStruct);
+
+        // step 3 - W1 - outbound message block via sub-handle.
+        const originalOutboundBlock =
+            ((await handle.queryOutboundMessageBlock(
+                originalStruct.snapshotData
+                    .latestOutboundMessageBlockHash as string
+            )) as MessageBlockStruct | null) ?? undefined;
 
         const mutated = mutate({
             peerIndex,

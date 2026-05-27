@@ -683,6 +683,12 @@ export class WorkerPeer implements PeerHandle {
     queryGenesisSnapshot(forkId: ForkId): Promise<unknown | null> {
         return this.rpc.call("query.genesisSnapshot", { forkId });
     }
+    queryStateSnapshotByHash(hash: string): Promise<unknown | null> {
+        return this.rpc.call("query.stateSnapshotByHash", { hash });
+    }
+    queryOutboundMessageBlock(hash: string): Promise<unknown | null> {
+        return this.rpc.call("query.outboundMessageBlock", { hash });
+    }
     queryDisputeAuditingData(req: {
         forkId: ForkId;
         args?: unknown[];

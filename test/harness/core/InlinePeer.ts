@@ -1350,6 +1350,31 @@ export class InlinePeer implements PeerHandle {
         return snapshot?.toStruct() ?? null;
     }
 
+    // step 4ab2 - mirrors storage.stateSnapshots.getStateSnapshotByHash(hash).
+    // ship .toStruct() so structured clone works in worker mode.
+    async queryStateSnapshotByHash(hash: string): Promise<unknown | null> {
+        const storage = this.record.stateManager.storage as unknown as {
+            stateSnapshots: {
+                getStateSnapshotByHash: (
+                    h: unknown
+                ) => { toStruct: () => unknown } | undefined;
+            };
+        };
+        const snapshot = storage.stateSnapshots.getStateSnapshotByHash(hash);
+        return snapshot?.toStruct() ?? null;
+    }
+
+    // step 4ab3 - mirrors storage.outboundMessages.getMessageBlock(hash).
+    async queryOutboundMessageBlock(hash: string): Promise<unknown | null> {
+        const storage = this.record.stateManager.storage as unknown as {
+            outboundMessages: {
+                getMessageBlock: (h: unknown) => unknown | undefined;
+            };
+        };
+        const block = storage.outboundMessages.getMessageBlock(hash);
+        return block ?? null;
+    }
+
     // step 4ad - mirrors localDiamondContract.getLatestBlockFromStateProof.
     // returns the full block struct so callers may mutate + re-encode.
     async queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
