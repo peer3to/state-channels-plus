@@ -106,10 +106,7 @@ export class AssertSnapshotActions {
             throw new Error("No fork ID specified and no active fork ID");
         }
 
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        const handle = this.harness.getPeerHandle(peerIndex);
 
         const onChainSnapshot = StateSnapshot.from(
             await this.harness.channelManager.getStateSnapshot(
@@ -117,11 +114,13 @@ export class AssertSnapshotActions {
             )
         );
 
+        // step 1 - W1 - height + snapshot read via sub-handles. inline body
+        // reads storage in-process; worker forwards over rpc.
         const blockHeight =
             options?.blockHeight ||
-            peer.stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
+            (await handle.queryNextBlockHeight(forkId)) - 1;
 
-        const localSnapshot = peer.stateManager.storage.getStateSnapshot({
+        const localSnapshot = await handle.queryStateSnapshotAt({
             forkId,
             height: blockHeight
         });
@@ -199,10 +198,7 @@ export class AssertSnapshotActions {
         encodedStateMachineState?: string;
     }): Promise<void> {
         const { peerIndex = 0, encodedStateMachineState } = options || {};
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        const handle = this.harness.getPeerHandle(peerIndex);
 
         const onChainSnapshot = StateSnapshot.from(
             await this.harness.channelManager.getStateSnapshot(
@@ -210,11 +206,12 @@ export class AssertSnapshotActions {
             )
         );
 
+        // step 1 - W1 - state machine state lookup via sub-handle.
         const encodedState =
             encodedStateMachineState ??
-            peer.stateManager.storage.stateMachineStates.getStateMachineState(
-                onChainSnapshot.stateMachineStateHash
-            );
+            (await handle.queryStateMachineState(
+                String(onChainSnapshot.stateMachineStateHash)
+            ));
 
         if (!encodedState) {
             throw new Error(
@@ -222,8 +219,14 @@ export class AssertSnapshotActions {
             );
         }
 
+        // step 2 - on-chain static call - hit via orchestrator-side channel
+        // manager. signer choice doesn't matter for staticCall but we use the
+        // peer signer for parity with the inline path.
+        const channelManager = this.harness.channelManager.connect(
+            handle.signer
+        );
         const isValidBalanceInvariant =
-            await peer.stateManager.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+            await channelManager.verifyBalanceInvariantCheckSnapshot.staticCall(
                 this.harness.channelId,
                 onChainSnapshot.snapshotData,
                 encodedState
@@ -240,10 +243,7 @@ export class AssertSnapshotActions {
         options?: { timeoutMs?: number }
     ): Promise<void> {
         const { timeoutMs = 5000 } = options || {};
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        const handle = this.harness.getPeerHandle(peerIndex);
 
         const countBefore =
             this.harness.context[`snapshotCount_${checkpointName}`];
@@ -253,12 +253,11 @@ export class AssertSnapshotActions {
             );
         }
 
-        const snapshotStorage = peer.stateManager.storage.stateSnapshots as any;
-        const condition = () =>
-            Array.from(snapshotStorage.snapshotsByHash.keys()).length >
-            countBefore;
+        // step 1 - W1 - snapshot count via sub-handle.
+        const condition = async () =>
+            (await handle.queryStateSnapshotCount()) > countBefore;
 
-        if (!condition()) {
+        if (!(await condition())) {
             await this.harness.eventCountsBarrier.waitFor(condition, {
                 timeoutMs,
                 timeoutMessage: `Snapshot count did not increase within ${timeoutMs}ms`

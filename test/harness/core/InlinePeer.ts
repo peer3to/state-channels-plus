@@ -719,6 +719,91 @@ export class InlinePeer implements PeerHandle {
         );
     }
 
+    // step 4d - mirrors storage.blocks.getNextBlockHeight(forkId).
+    async queryNextBlockHeight(forkId: ForkId): Promise<number> {
+        return Number(
+            this.record.stateManager.storage.blocks.getNextBlockHeight(forkId)
+        );
+    }
+
+    // step 4e - mirrors storage.getStateSnapshot({forkId, height}). returns
+    // serialisable summary (hash + stateMachineStateHash + blockHeight).
+    async queryStateSnapshotAt(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<{
+        hash: string;
+        stateMachineStateHash: string;
+        blockHeight: number;
+    } | null> {
+        const snap = this.record.stateManager.storage.getStateSnapshot({
+            forkId: req.forkId,
+            height: req.height
+        }) as
+            | {
+                  hash: string;
+                  stateMachineStateHash: string;
+                  blockHeight: number;
+              }
+            | undefined;
+        if (!snap) return null;
+        return {
+            hash: String(snap.hash),
+            stateMachineStateHash: String(snap.stateMachineStateHash),
+            blockHeight: Number(snap.blockHeight)
+        };
+    }
+
+    // step 4f - mirrors storage.stateMachineStates.getStateMachineState(hash).
+    async queryStateMachineState(hash: string): Promise<string | null> {
+        const state = (
+            this.record.stateManager.storage.stateMachineStates as unknown as {
+                getStateMachineState: (h: string) => string | undefined;
+            }
+        ).getStateMachineState(hash);
+        return state ?? null;
+    }
+
+    // step 4g - mirrors stateSnapshots.snapshotsByHash.size (for count-incr
+    // assertions).
+    async queryStateSnapshotCount(): Promise<number> {
+        const snaps = this.record.stateManager.storage
+            .stateSnapshots as unknown as {
+            snapshotsByHash: Map<unknown, unknown>;
+        };
+        return snaps.snapshotsByHash.size;
+    }
+
+    // step 4h - mirrors stateManager.postStateSnapshot(forkId).
+    async postStateSnapshot(forkId: ForkId): Promise<unknown> {
+        return await this.record.stateManager.postStateSnapshot(forkId);
+    }
+
+    // step 4i - mirrors stateManager.prepareUpdateSnapshotSameFork(forkId).
+    async prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
+        | {
+              callData: string[];
+              expectedSnapshot: unknown;
+              milestoneSnapshots: unknown[];
+              milestoneProofs?: unknown[];
+              outboundMessageBlocks?: unknown[];
+          }
+        | undefined
+    > {
+        const result =
+            await this.record.stateManager.prepareUpdateSnapshotSameFork(
+                forkId
+            );
+        if (!result) return undefined;
+        return result as unknown as {
+            callData: string[];
+            expectedSnapshot: unknown;
+            milestoneSnapshots: unknown[];
+            milestoneProofs?: unknown[];
+            outboundMessageBlocks?: unknown[];
+        };
+    }
+
     async queryStorageSnapshot(_req: unknown): Promise<unknown> {
         // step 1 - placeholder. real shape comes from W1 appendix A bucket (i)
         // "queryStorageSnapshot" entry once next agent migrates StateQueryActions

@@ -7,7 +7,9 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
 
-            await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
+            await h.transition.advanceState({
+                txFn: { op: "math.leaveChannel" }
+            });
 
             //  peer 0 turn
             await h.transition.advanceState({ waitForPeers: [0, 1] });

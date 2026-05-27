@@ -348,6 +348,59 @@ export class WorkerPeer implements PeerHandle {
             forkId
         }) as Promise<string | null>;
     }
+    queryNextBlockHeight(forkId: ForkId): Promise<number> {
+        return this.rpc.call("query.nextBlockHeight", {
+            forkId
+        }) as Promise<number>;
+    }
+    queryStateSnapshotAt(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<{
+        hash: string;
+        stateMachineStateHash: string;
+        blockHeight: number;
+    } | null> {
+        return this.rpc.call("query.stateSnapshotAt", req) as Promise<{
+            hash: string;
+            stateMachineStateHash: string;
+            blockHeight: number;
+        } | null>;
+    }
+    queryStateMachineState(hash: string): Promise<string | null> {
+        return this.rpc.call("query.stateMachineState", { hash }) as Promise<
+            string | null
+        >;
+    }
+    queryStateSnapshotCount(): Promise<number> {
+        return this.rpc.call("query.stateSnapshotCount", {}) as Promise<number>;
+    }
+    postStateSnapshot(forkId: ForkId): Promise<unknown> {
+        return this.rpc.call("snapshot.post", { forkId });
+    }
+    prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
+        | {
+              callData: string[];
+              expectedSnapshot: unknown;
+              milestoneSnapshots: unknown[];
+              milestoneProofs?: unknown[];
+              outboundMessageBlocks?: unknown[];
+          }
+        | undefined
+    > {
+        return this.rpc.call("snapshot.prepareSameFork", {
+            forkId
+        }) as Promise<
+            | {
+                  callData: string[];
+                  expectedSnapshot: unknown;
+                  milestoneSnapshots: unknown[];
+                  milestoneProofs?: unknown[];
+                  outboundMessageBlocks?: unknown[];
+              }
+            | undefined
+        >;
+    }
     queryStorageSnapshot(req: unknown): Promise<unknown> {
         return this.rpc.call("query.storageSnapshot", req);
     }

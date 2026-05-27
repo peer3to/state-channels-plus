@@ -190,6 +190,100 @@ export function registerSubHandleRoutes(
         return String(snapshot.stateMachineStateHash);
     });
 
+    // step 4d - mirrors storage.blocks.getNextBlockHeight(forkId)
+    server.register("query.nextBlockHeight", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: { getNextBlockHeight: (f: unknown) => number | bigint };
+            };
+        };
+        return Number(sm.storage.blocks.getNextBlockHeight(forkId));
+    });
+
+    // step 4e - mirrors storage.getStateSnapshot({forkId, height})
+    server.register("query.stateSnapshotAt", async (args) => {
+        const { forkId, height } = (args ?? {}) as {
+            forkId?: unknown;
+            height?: number;
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                getStateSnapshot: (req: { forkId: unknown; height: number }) =>
+                    | {
+                          hash: string;
+                          stateMachineStateHash: string;
+                          blockHeight: number | bigint;
+                      }
+                    | undefined;
+            };
+        };
+        const snap = sm.storage.getStateSnapshot({
+            forkId,
+            height: Number(height)
+        });
+        if (!snap) return null;
+        return {
+            hash: String(snap.hash),
+            stateMachineStateHash: String(snap.stateMachineStateHash),
+            blockHeight: Number(snap.blockHeight)
+        };
+    });
+
+    // step 4f - mirrors storage.stateMachineStates.getStateMachineState
+    server.register("query.stateMachineState", async (args) => {
+        const { hash } = (args ?? {}) as { hash?: string };
+        if (!hash) throw new Error("query.stateMachineState: missing 'hash'");
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                stateMachineStates: {
+                    getStateMachineState: (h: string) => string | undefined;
+                };
+            };
+        };
+        const state = sm.storage.stateMachineStates.getStateMachineState(hash);
+        return state ?? null;
+    });
+
+    // step 4g - mirrors stateSnapshots.snapshotsByHash.size
+    server.register("query.stateSnapshotCount", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                stateSnapshots: { snapshotsByHash: Map<unknown, unknown> };
+            };
+        };
+        return sm.storage.stateSnapshots.snapshotsByHash.size;
+    });
+
+    // step 4h - mirrors stateManager.postStateSnapshot(forkId).
+    server.register("snapshot.post", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            postStateSnapshot: (f: unknown) => Promise<unknown>;
+        };
+        return await sm.postStateSnapshot(forkId);
+    });
+
+    // step 4i - mirrors stateManager.prepareUpdateSnapshotSameFork(forkId).
+    // ship the struct as-is via structured clone (callData is string[],
+    // expectedSnapshot + milestoneSnapshots are plain models).
+    server.register("snapshot.prepareSameFork", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            prepareUpdateSnapshotSameFork: (f: unknown) => Promise<
+                | {
+                      callData: string[];
+                      expectedSnapshot: unknown;
+                      milestoneSnapshots: unknown[];
+                  }
+                | undefined
+            >;
+        };
+        const result = await sm.prepareUpdateSnapshotSameFork(forkId);
+        if (!result) return undefined;
+        return result;
+    });
+
     server.register("query.didEveryoneSignBlock", async (args) => {
         const { blockHash } = (args ?? {}) as { blockHash?: string };
         if (!blockHash)

@@ -204,7 +204,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         );
 
         await h.transition.advanceState({
-            txFn: (c) => c.leaveChannel(),
+            txFn: { op: "math.leaveChannel" },
             waitForFinalization: true
         });
         const remaining = [1, 2, 3];
@@ -272,7 +272,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         );
 
         await h.transition.advanceState({
-            txFn: (c) => c.leaveChannel(),
+            txFn: { op: "math.leaveChannel" },
             waitForFinalization: true
         });
         h.context.leftChannelPeerIndices = [0];

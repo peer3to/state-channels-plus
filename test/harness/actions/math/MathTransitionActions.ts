@@ -11,7 +11,10 @@ import { MathPeerTestHarness } from "test-harness";
 import { MainRpcService } from "@/rpc";
 
 type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
-    txFn?: (contract: MathStateMachine) => Promise<any>;
+    // step 1 - W1 - accept named-op so tests can opt out of closures in worker mode.
+    txFn?:
+        | ((contract: MathStateMachine) => Promise<any>)
+        | { op: string; args?: unknown };
 };
 
 type ParticipantLeaveOptions = TransitionOptions & {

@@ -38,7 +38,9 @@ export type AdvanceStateBaseOptions = {
 export type AdvanceStateOptions<
     TContract extends AStateMachineContract = AStateMachineContract
 > = AdvanceStateBaseOptions & {
-    txFn: (contract: TContract) => Promise<any>;
+    txFn:
+        | ((contract: TContract) => Promise<any>)
+        | { op: string; args?: unknown };
 };
 
 export function effectiveWaitForFinalization(
@@ -119,7 +121,9 @@ export class TransitionActions<
     }
 
     async fromHonestPeersOnly(
-        txFn: (contract: TContract) => Promise<any>,
+        txFn:
+            | ((contract: TContract) => Promise<any>)
+            | { op: string; args?: unknown },
         options?: { waitForSync?: boolean }
     ): Promise<void> {
         const syncIndices = this.harness
@@ -136,7 +140,10 @@ export class TransitionActions<
     }
 
     async sequenceFromHonestPeers(
-        txFns: Array<(contract: TContract) => Promise<any>>
+        txFns: Array<
+            | ((contract: TContract) => Promise<any>)
+            | { op: string; args?: unknown }
+        >
     ): Promise<void> {
         const syncIndices = this.harness
             .getPeersExcludingMaliciousAndLeavers()
@@ -168,12 +175,11 @@ export class TransitionActions<
             throw new Error("No active fork ID - channel must be opened first");
         }
 
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        return await peer.stateManager.postStateSnapshot(forkId);
+        // step 1 - W1 - route via sub-handle. inline body calls
+        // stateManager.postStateSnapshot in-process; worker forwards rpc.
+        return (await this.harness
+            .getPeerHandle(peerIndex)
+            .postStateSnapshot(forkId)) as StateSnapshot | undefined;
     }
 
     async postSnapshotWait(options?: {
@@ -215,20 +221,21 @@ export class TransitionActions<
             throw new Error("No active fork ID - channel must be opened first");
         }
 
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const sameForkData =
-            await peer.stateManager.prepareUpdateSnapshotSameFork(forkId);
+        // step 1 - W1 - prepare via sub-handle. inline body calls
+        // stateManager.prepareUpdateSnapshotSameFork; worker forwards rpc.
+        const handle = this.harness.getPeerHandle(peerIndex);
+        const sameForkData = await handle.prepareUpdateSnapshotSameFork(forkId);
         if (!sameForkData || sameForkData.callData.length === 0)
             return undefined;
 
-        const channelManager = this.harness.channelManager.connect(peer.signer);
+        // step 2 - on-chain submission via orchestrator-side channel manager
+        // wallet (peer signer). same path inline + worker.
+        const channelManager = this.harness.channelManager.connect(
+            handle.signer
+        );
         const tx = await channelManager.multicall(sameForkData.callData);
         await tx.wait();
-        return sameForkData.expectedSnapshot;
+        return sameForkData.expectedSnapshot as StateSnapshot;
     }
 
     async validWithoutPeer(

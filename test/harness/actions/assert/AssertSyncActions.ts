@@ -281,19 +281,24 @@ export class AssertSyncActions {
             throw new Error("No active fork ID");
         }
 
-        const condition = () => {
-            const peerHeight =
-                this.harness.peers[
-                    peerIndex
-                ].stateManager.storage.blocks.getNextBlockHeight(forkId);
-            const otherHeight =
-                this.harness.peers[
-                    otherPeerIndex
-                ].stateManager.storage.blocks.getNextBlockHeight(forkId);
-            return peerHeight > otherHeight;
+        // step 1 - W1 - route height read via queryLatestBlock so worker peers
+        // answer over rpc. nextHeight = (latest?.height ?? -1) + 1; condition
+        // compares per-peer heights.
+        const heightFor = async (i: number): Promise<number> => {
+            const latest = (await this.harness
+                .getPeerHandle(i)
+                .queryLatestBlock(forkId)) as { height?: number } | undefined;
+            return (latest?.height ?? -1) + 1;
+        };
+        const condition = async () => {
+            const [a, b] = await Promise.all([
+                heightFor(peerIndex),
+                heightFor(otherPeerIndex)
+            ]);
+            return a > b;
         };
 
-        if (!condition()) {
+        if (!(await condition())) {
             await this.harness.eventCountsBarrier.waitFor(condition, {
                 timeoutMs,
                 timeoutMessage: `Peer ${peerIndex} height did not exceed peer ${otherPeerIndex} within ${timeoutMs}ms`
@@ -308,14 +313,11 @@ export class AssertSyncActions {
     }): Promise<void> {
         const { expectedCount, peerIndex = 0, timeoutMs = 10000 } = options;
 
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
+        // step 1 - W1 - route via queryParticipants sub-handle. inline reads
+        // the live diamondStateMachine; worker forwards over rpc.
+        const handle = this.harness.getPeerHandle(peerIndex);
         const condition = async () => {
-            const participants =
-                await peer.stateManager.diamondStateMachine.getParticipants();
+            const participants = await handle.queryParticipants();
             return participants.length === expectedCount;
         };
 
@@ -326,8 +328,7 @@ export class AssertSyncActions {
             });
         }
 
-        const participants =
-            await peer.stateManager.diamondStateMachine.getParticipants();
+        const participants = await handle.queryParticipants();
         expect(participants.length).to.equal(expectedCount);
     }
 

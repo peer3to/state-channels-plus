@@ -25,7 +25,11 @@ describe("E2E: State Snapshots", function () {
         await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
 
         await h.transition.advanceState();
-        await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
+        // step 1 - W1 - named-op shape so worker mode can dispatch.
+        // resolves the "math.leaveChannel" handler in test/harness/worker-ops/math.ts.
+        await h.transition.advanceState({
+            txFn: { op: "math.leaveChannel" }
+        });
         await h.transition.advanceState();
 
         await h.assert.sync.peersInSyncWait();
@@ -50,9 +54,15 @@ describe("E2E: State Snapshots", function () {
             timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
 
-        await h.transition.fromHonestPeersOnly((c) => c.add(1));
-        await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
-        await h.transition.fromHonestPeersOnly((c) => c.add(3));
+        await h.transition.fromHonestPeersOnly({
+            op: "math.add",
+            args: { value: 1 }
+        });
+        await h.transition.fromHonestPeersOnly({ op: "math.leaveChannel" });
+        await h.transition.fromHonestPeersOnly({
+            op: "math.add",
+            args: { value: 3 }
+        });
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
 
@@ -83,9 +93,15 @@ describe("E2E: State Snapshots", function () {
         await h.scenario.fourPeersDisputeResolution({
             timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
-        await h.transition.fromHonestPeersOnly((c) => c.add(1));
-        await h.transition.fromHonestPeersOnly((c) => c.leaveChannel());
-        await h.transition.fromHonestPeersOnly((c) => c.add(3));
+        await h.transition.fromHonestPeersOnly({
+            op: "math.add",
+            args: { value: 1 }
+        });
+        await h.transition.fromHonestPeersOnly({ op: "math.leaveChannel" });
+        await h.transition.fromHonestPeersOnly({
+            op: "math.add",
+            args: { value: 3 }
+        });
 
         await h.assert.sync.onlyHonestPeersInSync();
         h.event.resetEventSpies();
@@ -111,7 +127,9 @@ describe("E2E: State Snapshots", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
-        await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
+        await h.transition.advanceState({
+            txFn: { op: "math.leaveChannel" }
+        });
         await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
 
         h.event.resetEventSpies();

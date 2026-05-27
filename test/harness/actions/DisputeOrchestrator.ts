@@ -109,8 +109,11 @@ export class DisputeOrchestrator {
                 );
 
             for (const peer of settledPeers) {
-                const participants =
-                    await peer.stateManager.diamondStateMachine.getParticipants();
+                // step 1 - W1 - route via sub-handle so worker peers answer
+                // over rpc. inline backend reads diamondStateMachine in-process.
+                const participants = await this.harness
+                    .getPeerHandle(peer.index)
+                    .queryParticipants();
                 if (participants.length > cap || participants.length === 0) {
                     throw new Error(
                         `Peer ${peer.index} has unexpected participant count ${participants.length} (expected 1..${cap}) on new fork ${newForkId}`

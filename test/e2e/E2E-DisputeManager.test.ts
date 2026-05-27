@@ -28,7 +28,10 @@ describe("E2E: Dispute Manager", function () {
             await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateWait();
 
             await h.assert.sync.onlyHonestPeersInSync();
-            await h.transition.fromHonestPeersOnly((c) => c.add(1));
+            await h.transition.fromHonestPeersOnly({
+                op: "math.add",
+                args: { value: 1 }
+            });
             h.event.resetEventSpies();
             const expectedSnapshot2 = await h.transition.postSnapshot({
                 peerIndex: 0

@@ -223,6 +223,44 @@ export interface PeerHandle {
     // step 4c - mirrors StateQueryActions.getLatestStateMachineStateHash.
     // returns null if the state isn't yet materialised in storage.
     queryLatestStateMachineStateHash(forkId: ForkId): Promise<string | null>;
+    // step 4d - mirrors storage.blocks.getNextBlockHeight(forkId). returns the
+    // next-to-write block height; 0 when no blocks exist on the fork.
+    queryNextBlockHeight(forkId: ForkId): Promise<number>;
+    // step 4e - mirrors storage.getStateSnapshot({forkId, height}). returns
+    // serialisable snapshot summary (hash + stateMachineStateHash) or null
+    // when no snapshot exists at the height. callers needing the full struct
+    // can extend the returned shape; today's callers only read hash.
+    queryStateSnapshotAt(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<{
+        hash: string;
+        stateMachineStateHash: string;
+        blockHeight: number;
+    } | null>;
+    // step 4f - mirrors storage.stateMachineStates.getStateMachineState(hash).
+    // returns the raw encoded state machine state hex string, or null.
+    queryStateMachineState(hash: string): Promise<string | null>;
+    // step 4g - mirrors storage.stateSnapshots size for "count increased" assertions.
+    queryStateSnapshotCount(): Promise<number>;
+    // step 4h - mirrors stateManager.postStateSnapshot(forkId). returns the
+    // posted snapshot summary (hash + serialised fields) or undefined. used
+    // by transition.postSnapshot in worker mode.
+    postStateSnapshot(forkId: ForkId): Promise<unknown>;
+    // step 4i - mirrors stateManager.prepareUpdateSnapshotSameFork(forkId).
+    // returns the full struct (or undefined). callers may select subfields
+    // (callData, expectedSnapshot, milestoneSnapshots, ...). worker mode
+    // sends the struct as-is via structured clone.
+    prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
+        | {
+              callData: string[];
+              expectedSnapshot: unknown;
+              milestoneSnapshots: unknown[];
+              milestoneProofs?: unknown[];
+              outboundMessageBlocks?: unknown[];
+          }
+        | undefined
+    >;
     queryStorageSnapshot(req: StorageReadRequest): Promise<StorageReadResult>;
     applyTransaction(req: ApplyTxRequest): Promise<ApplyTxResult>;
     ingestBlockConfirmation(req: IngestBlockReq): Promise<boolean>;

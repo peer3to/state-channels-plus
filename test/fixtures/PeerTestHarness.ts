@@ -585,7 +585,12 @@ export class PeerTestHarness<
             logConfig: { level: this.options.logLevel!, peerIndex: peer.index },
             testTitle: this.requireDeploymentName(),
             bundleManifest: this.workerBundleManifest,
-            chainProviderUrl: this.chainProviderUrl
+            chainProviderUrl: this.chainProviderUrl,
+            // step 4 - Q2 - default 5s loop-guard ceiling (was 1s in
+            // PeerWorker.spawn). parallel-4 mocha runners + http rpc to
+            // hardhat make the 1s default flake; scenarios can still pass an
+            // explicit tighter value when probing scheduler latency.
+            loopDelayMaxMs: 5000
         });
         this.spawnedWorkers.push(worker);
         const mirror = new SpyMirror(this.eventCountsBarrier);

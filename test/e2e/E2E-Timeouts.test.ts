@@ -69,10 +69,12 @@ describe("E2E: Timeouts", function () {
         it("should create forced timeout when peer posts junk calldata that is rejected", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 2);
-            const currentBlock =
-                h.peers[0].stateManager.storage.blocks.getLatestBlock(
-                    h.activeForkId!
-                );
+            // step 1 - W1 - sub-handle read so worker peers answer via rpc.
+            const currentBlock = (await h
+                .getPeerHandle(0)
+                .queryLatestBlock(h.activeForkId!)) as
+                | { height: number }
+                | undefined;
             if (!currentBlock) {
                 throw new Error("No current block found");
             }
@@ -93,10 +95,12 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 3);
 
-            const currentBlock =
-                h.peers[0].stateManager.storage.blocks.getLatestBlock(
-                    h.activeForkId!
-                );
+            // step 1 - W1 - sub-handle read so worker peers answer via rpc.
+            const currentBlock = (await h
+                .getPeerHandle(0)
+                .queryLatestBlock(h.activeForkId!)) as
+                | { height: number }
+                | undefined;
             if (!currentBlock) {
                 throw new Error("No current block found");
             }

@@ -514,9 +514,9 @@ describe("E2E: Spectate Service", function () {
 
             await h.transition.postSnapshot({ peerIndex: 0 });
             await h.transition.sequenceFromHonestPeers([
-                (c) => c.add(2),
-                (c) => c.add(2),
-                (c) => c.add(2)
+                { op: "math.add", args: { value: 2 } },
+                { op: "math.add", args: { value: 2 } },
+                { op: "math.add", args: { value: 2 } }
             ]);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
 
@@ -525,11 +525,17 @@ describe("E2E: Spectate Service", function () {
                 peerIndices: [0, 1, 3, 4, 5]
             });
 
-            await h.transition.fromHonestPeersOnly((c) => c.add(2));
+            await h.transition.fromHonestPeersOnly({
+                op: "math.add",
+                args: { value: 2 }
+            });
             await h.assert.sync.peersInSyncWait({
                 peerIndices: [0, 1, 3, 4, 5]
             });
-            await h.transition.fromHonestPeersOnly((c) => c.add(2));
+            await h.transition.fromHonestPeersOnly({
+                op: "math.add",
+                args: { value: 2 }
+            });
             await h.assert.sync.peersInSyncWait({
                 peerIndices: [0, 1, 3, 4, 5]
             });
