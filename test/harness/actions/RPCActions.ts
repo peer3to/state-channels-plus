@@ -180,32 +180,34 @@ export class RPCActions {
             throw new Error("No active fork ID");
         }
 
-        // step 1 - read latest block via the data-path query (PeerHandle bucket-(i)).
-        // inline mode returns the live Block instance; in-process equivalence.
+        // step 1 - read latest block as a serialisable BlockConfirmationStruct
+        // from the building peer -> survives the worker boundary. observing
+        // peer reconstructs in-thread via the queryInternals sub-handle.
         const buildingPeerHandle = this.harness.getPeerHandle(buildingPeer);
-        const observingPeerObj = this.harness.getPeer(observingPeer);
+        const observingPeerHandle = this.harness.getPeerHandle(observingPeer);
+        const buildingPeerAddress = buildingPeerHandle.address.toString();
 
-        const transport = await this.harness.query.waitForPeerTransport(
+        // step 2 - wait for the observer to have a live handshake to the
+        // building peer -> worker-safe predicate (queryInternals sub-handle).
+        await this.waitForHandshakeCompleted(
             observingPeer,
-            buildingPeer,
-            5000
+            buildingPeerHandle.address
         );
 
-        const buildingLatestBlock = (await buildingPeerHandle.queryLatestBlock(
-            activeForkId
-        )) as import("@/models/Block").default | undefined;
+        const buildingLatestBlock =
+            await buildingPeerHandle.queryLatestBlockConfirmation(activeForkId);
 
         if (!buildingLatestBlock) {
             throw new Error(`No latest block found for fork ${activeForkId}`);
         }
 
-        const buildingPeerAddress =
-            transport.peerAddress ?? buildingPeerHandle.address.toString();
-
-        await observingPeerObj.stateManager.blockValidationStrategy.blockForkIsDisputed(
-            buildingLatestBlock,
-            buildingPeerAddress
-        );
+        // step 3 - delegate to the queryInternals sub-handle. inline path runs
+        // the body in-process; worker path forwards via rpc -> route reconstructs
+        // the Block in-thread and calls blockValidationStrategy.
+        await observingPeerHandle.queryInternals.blockForkIsDisputed({
+            block: buildingLatestBlock,
+            peerAddress: buildingPeerAddress
+        });
     }
 
     async connectPeers(peerIndices: number[]): Promise<void> {

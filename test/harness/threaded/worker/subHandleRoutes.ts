@@ -1598,6 +1598,34 @@ export function registerSubHandleRoutes(
         return { present: true, isClosed: t.isClosed };
     });
 
+    // step 8 - mirrors InlinePeer.blockForkIsDisputed. reconstructs the live
+    // Block from the serialised BlockConfirmationStruct in-thread, then calls
+    // blockValidationStrategy.blockForkIsDisputed(block, peerAddress).
+    server.register("queryInternals.blockForkIsDisputed", async (args) => {
+        const { block, peerAddress } = (args ?? {}) as {
+            block?: unknown;
+            peerAddress?: string;
+        };
+        if (!block)
+            throw new Error(
+                "queryInternals.blockForkIsDisputed: missing 'block'"
+            );
+        if (!peerAddress)
+            throw new Error(
+                "queryInternals.blockForkIsDisputed: missing 'peerAddress'"
+            );
+        const Block = (await import("@/models")).Block;
+        const reconstructed = Block.fromBlockConfirmation(
+            block as Parameters<typeof Block.fromBlockConfirmation>[0]
+        );
+        const sm = ctx.getStateManager();
+        await sm.blockValidationStrategy.blockForkIsDisputed(
+            reconstructed as never,
+            peerAddress
+        );
+        return {};
+    });
+
     // step 1 - network.* (mirrors NetworkController.ts + RPCActions disconnect filter)
 
     server.register("network.disconnectAll", async () => {

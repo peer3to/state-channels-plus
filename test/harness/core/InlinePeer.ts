@@ -447,6 +447,23 @@ class InlineP2pInternalsHandle implements P2pInternalsHandle {
         svc?.mapTransportToChallenge.delete(t);
     }
 
+    // step 8 - reconstruct Block from the serialised BlockConfirmationStruct
+    // then delegate to blockValidationStrategy.blockForkIsDisputed. inline
+    // body mirrors the worker route -> identical resolution either way.
+    async blockForkIsDisputed(req: {
+        block: unknown;
+        peerAddress: string;
+    }): Promise<void> {
+        const Block = (await import("@/models")).Block;
+        const block = Block.fromBlockConfirmation(
+            req.block as Parameters<typeof Block.fromBlockConfirmation>[0]
+        );
+        await this.record.stateManager.blockValidationStrategy.blockForkIsDisputed(
+            block as never,
+            req.peerAddress
+        );
+    }
+
     // step 7 - transport status (presence + isClosed) by addr
     async getTransportStatus(
         otherAddr: Address

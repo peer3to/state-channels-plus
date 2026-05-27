@@ -166,6 +166,16 @@ export interface P2pInternalsHandle {
         present: boolean;
         isClosed?: boolean;
     }>;
+    // step 8 - mirrors stateManager.blockValidationStrategy.blockForkIsDisputed
+    // (block, senderAddress). block is shipped as the serialised
+    // BlockConfirmationStruct -> reconstructed in-thread via
+    // Block.fromBlockConfirmation. used by RPCActions.simulateBuildOnDisputedFork
+    // to validate that observing peer disconnects a peer building on a fork the
+    // observer already acknowledged as disputed.
+    blockForkIsDisputed(req: {
+        block: unknown;
+        peerAddress: string;
+    }): Promise<void>;
 }
 
 // step 1 - inline-closure disconnect-filter signature. predicate over the

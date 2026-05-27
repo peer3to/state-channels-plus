@@ -239,6 +239,17 @@ class WorkerP2pInternalsHandle implements P2pInternalsHandle {
             otherAddr
         }) as Promise<{ present: boolean; isClosed?: boolean }>;
     }
+    // step 8 - rpc proxy. worker route reconstructs the Block from the
+    // serialised confirmation in-thread and calls blockValidationStrategy.
+    blockForkIsDisputed(req: {
+        block: unknown;
+        peerAddress: string;
+    }): Promise<void> {
+        return this.rpc.call(
+            "queryInternals.blockForkIsDisputed",
+            req
+        ) as Promise<void>;
+    }
 }
 
 class WorkerTransitionHandle implements TransitionHandle {
