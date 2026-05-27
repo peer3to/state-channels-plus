@@ -263,6 +263,33 @@ export interface PeerHandle {
         forkId: ForkId;
         previousBlockHash?: string;
     }): Promise<string>;
+    // step 4n - mirrors storage.fraudProofs.getFraudProofForParticipant(addr).
+    // returns the serialised fraud proof or null. used by AssertStorageActions.
+    queryFraudProofForParticipant(addr: string): Promise<{
+        proofType: number;
+        participant: string;
+    } | null>;
+    // step 4o - mirrors storage.disputeFraudProofs.getDisputeFraudProofs().
+    queryDisputeFraudProofs(): Promise<Array<{ proofType: number }>>;
+    // step 4p - mirrors storage.inboundMessages.getLatestBlockHash() +
+    // getLatestBlockHeight(). returns scalars.
+    queryInboundLatestBlockHash(): Promise<string | undefined>;
+    queryInboundLatestBlockHeight(): Promise<number | undefined>;
+    // step 4q - mirrors storage.timeout.storeTimeout(forkId, timeoutStruct).
+    storeTimeout(req: { forkId: ForkId; timeout: unknown }): Promise<void>;
+    // step 4r - mirrors storage.timeout.getTimeoutsForFork(forkId).
+    queryTimeoutsForFork(forkId: ForkId): Promise<unknown[]>;
+    // step 4s - mirrors storage.timeout.getTimeout(forkId). returns
+    // serialised timeout struct or null.
+    queryTimeoutForFork(forkId: ForkId): Promise<{
+        participant: string;
+        isForced: boolean;
+        blockHeight?: string;
+    } | null>;
+    // step 4t - mirrors storage.disputes.getDisputeConfirmation(hash).
+    queryDisputeConfirmation(disputeHash: string): Promise<unknown | null>;
+    // step 4u - mirrors storage.disputes.getOpenDisputeForkIds().
+    queryOpenDisputeForkIds(): Promise<string[]>;
     // step 4h - mirrors stateManager.postStateSnapshot(forkId). returns the
     // posted snapshot summary (hash + serialised fields) or undefined. used
     // by transition.postSnapshot in worker mode.

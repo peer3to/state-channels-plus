@@ -255,6 +255,25 @@ export function registerSubHandleRoutes(
         return sm.storage.stateSnapshots.snapshotsByHash.size;
     });
 
+    // step 1 - mirrors stateManager.ingestBlockConfirmation(bc, opts).
+    // payload shape matches InlinePeer.ingestBlockConfirmation.
+    server.register("ingest.blockConfirmation", async (args) => {
+        const { blockConfirmation, ingestOptions } = (args ?? {}) as {
+            blockConfirmation: unknown;
+            ingestOptions?: unknown;
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            ingestBlockConfirmation: (
+                bc: unknown,
+                opts?: unknown
+            ) => Promise<boolean>;
+        };
+        return await sm.ingestBlockConfirmation(
+            blockConfirmation,
+            ingestOptions
+        );
+    });
+
     // step 4j - mirrors stateManager.isMyTurn?.().
     server.register("query.isMyTurn", async () => {
         const sm = ctx.getStateManager() as unknown as {
@@ -335,6 +354,148 @@ export function registerSubHandleRoutes(
         const genesis =
             sm.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         return String(genesis?.hash ?? ethers.ZeroHash);
+    });
+
+    // step 4n - mirrors storage.fraudProofs.getFraudProofForParticipant.
+    server.register("query.fraudProofForParticipant", async (args) => {
+        const { addr } = (args ?? {}) as { addr?: string };
+        if (!addr)
+            throw new Error("query.fraudProofForParticipant: missing 'addr'");
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                fraudProofs: {
+                    getFraudProofForParticipant: (
+                        a: string
+                    ) => { proofType: number; participant: string } | undefined;
+                };
+            };
+        };
+        const fp = sm.storage.fraudProofs.getFraudProofForParticipant(addr);
+        if (!fp) return null;
+        return {
+            proofType: Number(fp.proofType),
+            participant: String(fp.participant)
+        };
+    });
+
+    // step 4o - mirrors storage.disputeFraudProofs.getDisputeFraudProofs.
+    server.register("query.disputeFraudProofs", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                disputeFraudProofs: {
+                    getDisputeFraudProofs: () => Array<{
+                        proofType: number;
+                    }>;
+                };
+            };
+        };
+        return sm.storage.disputeFraudProofs
+            .getDisputeFraudProofs()
+            .map((p) => ({ proofType: Number(p.proofType) }));
+    });
+
+    // step 4p - mirrors storage.inboundMessages.{getLatestBlockHash,getLatestBlockHeight}.
+    server.register("query.inboundLatestBlockHash", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                inboundMessages: { getLatestBlockHash: () => unknown };
+            };
+        };
+        const result = sm.storage.inboundMessages.getLatestBlockHash();
+        return result ? String(result) : undefined;
+    });
+
+    server.register("query.inboundLatestBlockHeight", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                inboundMessages: {
+                    getLatestBlockHeight: () => number | bigint | undefined;
+                };
+            };
+        };
+        const result = sm.storage.inboundMessages.getLatestBlockHeight();
+        return result === undefined ? undefined : Number(result);
+    });
+
+    // step 4q - mirrors storage.timeout.storeTimeout(forkId, timeoutStruct).
+    server.register("timeout.store", async (args) => {
+        const { forkId, timeout } = (args ?? {}) as {
+            forkId: unknown;
+            timeout: unknown;
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                timeout: {
+                    storeTimeout: (f: unknown, t: unknown) => void;
+                };
+            };
+        };
+        sm.storage.timeout.storeTimeout(forkId, timeout);
+    });
+
+    // step 4s - mirrors storage.timeout.getTimeout(forkId).
+    server.register("query.timeoutForFork", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                timeout: {
+                    getTimeout: (f: unknown) =>
+                        | {
+                              participant: string;
+                              isForced: boolean;
+                              blockHeight?: bigint | number;
+                          }
+                        | undefined;
+                };
+            };
+        };
+        const t = sm.storage.timeout.getTimeout(forkId);
+        if (!t) return null;
+        return {
+            participant: String(t.participant),
+            isForced: Boolean(t.isForced),
+            blockHeight:
+                t.blockHeight !== undefined ? String(t.blockHeight) : undefined
+        };
+    });
+
+    // step 4t - mirrors storage.disputes.getDisputeConfirmation(hash).
+    server.register("query.disputeConfirmation", async (args) => {
+        const { disputeHash } = (args ?? {}) as { disputeHash?: string };
+        if (!disputeHash)
+            throw new Error("query.disputeConfirmation: missing 'disputeHash'");
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                disputes: {
+                    getDisputeConfirmation: (h: string) => unknown | undefined;
+                };
+            };
+        };
+        return sm.storage.disputes.getDisputeConfirmation(disputeHash) ?? null;
+    });
+
+    // step 4u - mirrors storage.disputes.getOpenDisputeForkIds().
+    server.register("query.openDisputeForkIds", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                disputes: { getOpenDisputeForkIds?: () => string[] };
+            };
+        };
+        if (typeof sm.storage.disputes.getOpenDisputeForkIds !== "function") {
+            return [];
+        }
+        return sm.storage.disputes.getOpenDisputeForkIds() ?? [];
+    });
+
+    // step 4r - mirrors storage.timeout.getTimeoutsForFork(forkId).
+    server.register("query.timeoutsForFork", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                timeout: { getTimeoutsForFork: (f: unknown) => unknown[] };
+            };
+        };
+        return sm.storage.timeout.getTimeoutsForFork(forkId);
     });
 
     // step 4k - mirrors storage.blocks.getLatestBlock -> blockConfirmationStruct.

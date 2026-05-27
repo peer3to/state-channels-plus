@@ -393,6 +393,59 @@ export class WorkerPeer implements PeerHandle {
             req
         ) as Promise<string>;
     }
+    queryFraudProofForParticipant(
+        addr: string
+    ): Promise<{ proofType: number; participant: string } | null> {
+        return this.rpc.call("query.fraudProofForParticipant", {
+            addr
+        }) as Promise<{ proofType: number; participant: string } | null>;
+    }
+    queryDisputeFraudProofs(): Promise<Array<{ proofType: number }>> {
+        return this.rpc.call("query.disputeFraudProofs", {}) as Promise<
+            Array<{ proofType: number }>
+        >;
+    }
+    queryInboundLatestBlockHash(): Promise<string | undefined> {
+        return this.rpc.call("query.inboundLatestBlockHash", {}) as Promise<
+            string | undefined
+        >;
+    }
+    queryInboundLatestBlockHeight(): Promise<number | undefined> {
+        return this.rpc.call("query.inboundLatestBlockHeight", {}) as Promise<
+            number | undefined
+        >;
+    }
+    storeTimeout(req: { forkId: ForkId; timeout: unknown }): Promise<void> {
+        return this.rpc.call("timeout.store", req) as Promise<void>;
+    }
+    queryTimeoutsForFork(forkId: ForkId): Promise<unknown[]> {
+        return this.rpc.call("query.timeoutsForFork", {
+            forkId
+        }) as Promise<unknown[]>;
+    }
+    queryTimeoutForFork(
+        forkId: ForkId
+    ): Promise<{
+        participant: string;
+        isForced: boolean;
+        blockHeight?: string;
+    } | null> {
+        return this.rpc.call("query.timeoutForFork", { forkId }) as Promise<{
+            participant: string;
+            isForced: boolean;
+            blockHeight?: string;
+        } | null>;
+    }
+    queryDisputeConfirmation(disputeHash: string): Promise<unknown | null> {
+        return this.rpc.call("query.disputeConfirmation", {
+            disputeHash
+        }) as Promise<unknown | null>;
+    }
+    queryOpenDisputeForkIds(): Promise<string[]> {
+        return this.rpc.call("query.openDisputeForkIds", {}) as Promise<
+            string[]
+        >;
+    }
     postStateSnapshot(forkId: ForkId): Promise<unknown> {
         return this.rpc.call("snapshot.post", { forkId });
     }

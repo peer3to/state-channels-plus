@@ -364,15 +364,18 @@ export class TransitionActions<
             processedKeepConnection,
             timeoutMs
         } = options;
-        const peer = this.harness.getPeer(peerIndex);
         const block = Block.fromBlockConfirmation(
             blockConfirmation,
             ingestOptions?.onChainTimestamp
         );
-        const keepConnection = await peer.stateManager.ingestBlockConfirmation(
-            blockConfirmation,
-            ingestOptions
-        );
+        // step 1 - W1 - route via sub-handle so worker peers can ingest.
+        // payload is serialisable (BlockConfirmationStruct + ingestOptions).
+        const keepConnection = (await this.harness
+            .getPeerHandle(peerIndex)
+            .ingestBlockConfirmation({
+                blockConfirmation,
+                ingestOptions
+            })) as boolean;
 
         if (
             expectedKeepConnection !== undefined &&

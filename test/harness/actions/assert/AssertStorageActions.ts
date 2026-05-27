@@ -88,10 +88,12 @@ export class AssertStorageActions {
             options?.peerIndices
         );
 
-        const condition = () => {
+        // step 1 - W1 - route via sub-handle so worker peers answer over rpc.
+        const condition = async () => {
             for (const peer of honestPeers) {
-                const latestHash =
-                    peer.stateManager.storage.inboundMessages.getLatestBlockHash();
+                const latestHash = await this.harness
+                    .getPeerHandle(peer.index)
+                    .queryInboundLatestBlockHash();
                 if (!latestHash || latestHash === options?.previousLatestHash) {
                     return false;
                 }
@@ -114,12 +116,12 @@ export class AssertStorageActions {
         DetachedPromises.collect(promise);
     }
 
-    honestPeersStoredFraudProof(options: {
+    async honestPeersStoredFraudProof(options: {
         fraudProofType?: FraudProofType;
         peerIndices?: number[];
         maliciousPeerIndex: number;
         atLeastOneHonestPeer?: boolean;
-    }): void {
+    }): Promise<void> {
         const {
             fraudProofType,
             peerIndices,
@@ -133,7 +135,7 @@ export class AssertStorageActions {
             const failures: string[] = [];
             for (const honestPeer of honestPeers) {
                 try {
-                    this.assertHonestPeerStoredFraudProofForMalicious({
+                    await this.assertHonestPeerStoredFraudProofForMalicious({
                         honestPeerIndex: honestPeer.index,
                         maliciousPeerAddress: maliciousPeer.address,
                         maliciousPeerIndex,
@@ -155,7 +157,7 @@ export class AssertStorageActions {
         }
 
         for (const honestPeer of honestPeers) {
-            this.assertHonestPeerStoredFraudProofForMalicious({
+            await this.assertHonestPeerStoredFraudProofForMalicious({
                 honestPeerIndex: honestPeer.index,
                 maliciousPeerAddress: maliciousPeer.address,
                 maliciousPeerIndex,
@@ -164,23 +166,23 @@ export class AssertStorageActions {
         }
     }
 
-    private assertHonestPeerStoredFraudProofForMalicious(options: {
+    private async assertHonestPeerStoredFraudProofForMalicious(options: {
         honestPeerIndex: number;
         maliciousPeerAddress: string;
         maliciousPeerIndex: number;
         fraudProofType?: FraudProofType;
-    }): void {
+    }): Promise<void> {
         const {
             honestPeerIndex,
             maliciousPeerAddress,
             maliciousPeerIndex,
             fraudProofType
         } = options;
-        const peerStorage = this.harness.query.getPeerStorage(honestPeerIndex);
-        const fraudProof =
-            peerStorage.fraudProofs.getFraudProofForParticipant(
-                maliciousPeerAddress
-            );
+        // step 1 - W1 - sub-handle for fraud proof lookup. inline body reads
+        // storage.fraudProofs in-process; worker forwards via rpc.
+        const fraudProof = await this.harness
+            .getPeerHandle(honestPeerIndex)
+            .queryFraudProofForParticipant(maliciousPeerAddress);
         if (!fraudProof) {
             throw new Error(
                 `Peer ${honestPeerIndex} has no fraud proofs for malicious peer ${maliciousPeerIndex}`
@@ -198,10 +200,10 @@ export class AssertStorageActions {
         }
     }
 
-    honestPeersStoredDisputeFraudProof(options: {
+    async honestPeersStoredDisputeFraudProof(options: {
         disputeFraudProofType: DisputeFraudProofType;
         peerIndices?: number[];
-    }): void {
+    }): Promise<void> {
         const { disputeFraudProofType, peerIndices } = options;
         const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         if (peers.length === 0) {
@@ -213,10 +215,11 @@ export class AssertStorageActions {
         }
         const want = toSolidityDisputeFraudProofType(disputeFraudProofType);
 
+        // step 1 - W1 - sub-handle for dispute fraud proofs.
         for (const peer of peers) {
-            const proofs = this.harness.query
-                .getPeerStorage(peer.index)
-                .disputeFraudProofs.getDisputeFraudProofs();
+            const proofs = await this.harness
+                .getPeerHandle(peer.index)
+                .queryDisputeFraudProofs();
             if (!proofs.some((p) => p.proofType === want)) {
                 throw new Error(
                     `Peer ${peer.index} should store dispute fraud proof type ${disputeFraudProofType}`
@@ -232,9 +235,9 @@ export class AssertStorageActions {
     }): Promise<void> {
         const { timeoutMs, disputeFraudProofType, ...rest } = options;
         return this.harness.eventCountsBarrier.waitFor(
-            () => {
+            async () => {
                 try {
-                    this.honestPeersStoredDisputeFraudProof({
+                    await this.honestPeersStoredDisputeFraudProof({
                         disputeFraudProofType,
                         ...rest
                     });
@@ -261,12 +264,12 @@ export class AssertStorageActions {
         );
     }
 
-    storedTimeout(options: {
+    async storedTimeout(options: {
         timedoutParticipantIndex: number;
         peerToCheck?: number;
         forkId?: ForkId;
         isForced?: boolean;
-    }): void {
+    }): Promise<void> {
         const {
             timedoutParticipantIndex,
             peerToCheck = 0,
@@ -278,9 +281,10 @@ export class AssertStorageActions {
             throw new Error("No active fork ID");
         }
 
-        const timeout = this.harness.query
-            .getPeerStorage(peerToCheck)
-            .timeout.getTimeout(forkId);
+        // step 1 - W1 - sub-handle for timeout read so worker peers answer via rpc.
+        const timeout = await this.harness
+            .getPeerHandle(peerToCheck)
+            .queryTimeoutForFork(forkId);
 
         if (!timeout) {
             throw new Error(`No timeout found for fork ${forkId}`);

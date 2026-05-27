@@ -837,6 +837,128 @@ export class InlinePeer implements PeerHandle {
         return String(genesis?.hash ?? ethersLite.ZeroHash);
     }
 
+    // step 4n - mirrors storage.fraudProofs.getFraudProofForParticipant.
+    async queryFraudProofForParticipant(
+        addr: string
+    ): Promise<{ proofType: number; participant: string } | null> {
+        const storage = this.record.stateManager.storage as unknown as {
+            fraudProofs: {
+                getFraudProofForParticipant: (
+                    a: string
+                ) => { proofType: number; participant: string } | undefined;
+            };
+        };
+        const fp = storage.fraudProofs.getFraudProofForParticipant(addr);
+        if (!fp) return null;
+        return {
+            proofType: Number(fp.proofType),
+            participant: String(fp.participant)
+        };
+    }
+
+    // step 4o - mirrors storage.disputeFraudProofs.getDisputeFraudProofs.
+    async queryDisputeFraudProofs(): Promise<Array<{ proofType: number }>> {
+        const storage = this.record.stateManager.storage as unknown as {
+            disputeFraudProofs: {
+                getDisputeFraudProofs: () => Array<{ proofType: number }>;
+            };
+        };
+        return storage.disputeFraudProofs
+            .getDisputeFraudProofs()
+            .map((p) => ({ proofType: Number(p.proofType) }));
+    }
+
+    // step 4p - mirrors storage.inboundMessages.{getLatestBlockHash,getLatestBlockHeight}.
+    async queryInboundLatestBlockHash(): Promise<string | undefined> {
+        const result =
+            this.record.stateManager.storage.inboundMessages.getLatestBlockHash();
+        return result ? String(result) : undefined;
+    }
+
+    async queryInboundLatestBlockHeight(): Promise<number | undefined> {
+        const storage = this.record.stateManager.storage
+            .inboundMessages as unknown as {
+            getLatestBlockHeight: () => number | bigint | undefined;
+        };
+        const result = storage.getLatestBlockHeight();
+        return result === undefined ? undefined : Number(result);
+    }
+
+    // step 4q - mirrors storage.timeout.storeTimeout(forkId, timeoutStruct).
+    async storeTimeout(req: {
+        forkId: ForkId;
+        timeout: unknown;
+    }): Promise<void> {
+        const storage = this.record.stateManager.storage as unknown as {
+            timeout: {
+                storeTimeout: (forkId: unknown, t: unknown) => void;
+            };
+        };
+        storage.timeout.storeTimeout(req.forkId, req.timeout);
+    }
+
+    // step 4s - mirrors storage.timeout.getTimeout(forkId).
+    async queryTimeoutForFork(
+        forkId: ForkId
+    ): Promise<{
+        participant: string;
+        isForced: boolean;
+        blockHeight?: string;
+    } | null> {
+        const storage = this.record.stateManager.storage as unknown as {
+            timeout: {
+                getTimeout: (f: unknown) =>
+                    | {
+                          participant: string;
+                          isForced: boolean;
+                          blockHeight?: bigint | number;
+                      }
+                    | undefined;
+            };
+        };
+        const t = storage.timeout.getTimeout(forkId);
+        if (!t) return null;
+        return {
+            participant: String(t.participant),
+            isForced: Boolean(t.isForced),
+            blockHeight:
+                t.blockHeight !== undefined ? String(t.blockHeight) : undefined
+        };
+    }
+
+    // step 4t - mirrors storage.disputes.getDisputeConfirmation(hash).
+    async queryDisputeConfirmation(
+        disputeHash: string
+    ): Promise<unknown | null> {
+        const storage = this.record.stateManager.storage as unknown as {
+            disputes: {
+                getDisputeConfirmation: (h: string) => unknown | undefined;
+            };
+        };
+        return storage.disputes.getDisputeConfirmation(disputeHash) ?? null;
+    }
+
+    // step 4u - mirrors storage.disputes.getOpenDisputeForkIds().
+    async queryOpenDisputeForkIds(): Promise<string[]> {
+        const storage = this.record.stateManager.storage as unknown as {
+            disputes: {
+                getOpenDisputeForkIds?: () => string[];
+            };
+        };
+        if (typeof storage.disputes.getOpenDisputeForkIds !== "function") {
+            return [];
+        }
+        return storage.disputes.getOpenDisputeForkIds() ?? [];
+    }
+
+    // step 4r - mirrors storage.timeout.getTimeoutsForFork(forkId).
+    async queryTimeoutsForFork(forkId: ForkId): Promise<unknown[]> {
+        const storage = this.record.stateManager.storage as unknown as {
+            timeout: { getTimeoutsForFork: (f: unknown) => unknown[] };
+        };
+        return storage.timeout.getTimeoutsForFork(forkId);
+    }
+
     // step 4k - mirrors storage.blocks.getLatestBlock -> blockConfirmationStruct.
     async queryLatestBlockConfirmation(
         forkId: ForkId
@@ -904,9 +1026,17 @@ export class InlinePeer implements PeerHandle {
         );
     }
 
-    async ingestBlockConfirmation(_req: unknown): Promise<boolean> {
-        throw new Error(
-            "InlinePeer.ingestBlockConfirmation: shape not pinned; awaiting caller migration"
+    // step 1 - mirrors stateManager.ingestBlockConfirmation(bc, opts).
+    // req shape: { blockConfirmation: BlockConfirmationStruct,
+    //              ingestOptions?: IngestBlockConfirmationOptions }.
+    async ingestBlockConfirmation(req: unknown): Promise<boolean> {
+        const { blockConfirmation, ingestOptions } = (req ?? {}) as {
+            blockConfirmation: never;
+            ingestOptions?: never;
+        };
+        return await this.record.stateManager.ingestBlockConfirmation(
+            blockConfirmation,
+            ingestOptions
         );
     }
 

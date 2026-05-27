@@ -88,7 +88,9 @@ describe("E2E: Timeouts", function () {
                 timeoutMs: 10000
             });
             await h.assert.dispute.committedWait();
-            h.assert.storage.storedTimeout({ timedoutParticipantIndex: 2 });
+            await h.assert.storage.storedTimeout({
+                timedoutParticipantIndex: 2
+            });
         });
 
         it("should handle timeout when previous peer posted junk calldata and next peer doesn't author block", async function () {
