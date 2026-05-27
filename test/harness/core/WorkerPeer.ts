@@ -509,16 +509,28 @@ export class WorkerPeer implements PeerHandle {
     }
     queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
         hasBlock: boolean;
-        latestBlock: { transaction: { header: { transactionCnt: string } } };
+        latestBlock: {
+            transaction: {
+                header: { transactionCnt: bigint | number | string };
+            };
+        } & Record<string, unknown>;
     }> {
         return this.rpc.call("dispute.latestBlockFromStateProof", {
             stateProof
         }) as Promise<{
             hasBlock: boolean;
             latestBlock: {
-                transaction: { header: { transactionCnt: string } };
-            };
+                transaction: {
+                    header: { transactionCnt: bigint | number | string };
+                };
+            } & Record<string, unknown>;
         }>;
+    }
+    queryDisputeWindows(req: {
+        channelId: string;
+        forkIds: ForkId[];
+    }): Promise<unknown[]> {
+        return this.rpc.call("dispute.windows", req) as Promise<unknown[]>;
     }
     postStateSnapshot(forkId: ForkId): Promise<unknown> {
         return this.rpc.call("snapshot.post", { forkId });

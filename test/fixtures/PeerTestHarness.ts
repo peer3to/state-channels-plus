@@ -987,9 +987,58 @@ export class PeerTestHarness<
         return this.harnessConfig;
     }
 
-    getLocalDiamond(peerIndex: number) {
+    // step 1 - worker-safe localDiamond accessor. inline mode returns the live
+    // contract (callers can still call any abi method); worker mode returns a
+    // thin shim covering the two methods tests actually use today. extend the
+    // shim as more methods come in scope rather than crossing the worker
+    // boundary via a live ethers Contract.
+    getLocalDiamond(peerIndex: number): {
+        getLatestBlockFromStateProof(stateProof: unknown): Promise<
+            [
+                boolean,
+                Record<string, unknown> & {
+                    transaction: {
+                        header: { transactionCnt: bigint | number | string };
+                    };
+                }
+            ]
+        >;
+        getDisputeWindows(
+            channelId: string,
+            forkIds: ForkId[]
+        ): Promise<unknown[]>;
+    } & Record<string, unknown> {
+        if (this.options.dedicatedPeerThread) {
+            const handle = this.getPeerHandle(peerIndex);
+            return {
+                getLatestBlockFromStateProof: async (stateProof: unknown) => {
+                    const { hasBlock, latestBlock } =
+                        await handle.queryLatestBlockFromStateProof(stateProof);
+                    return [hasBlock, latestBlock] as [
+                        boolean,
+                        Record<string, unknown> & {
+                            transaction: {
+                                header: {
+                                    transactionCnt: bigint | number | string;
+                                };
+                            };
+                        }
+                    ];
+                },
+                getDisputeWindows: async (
+                    channelId: string,
+                    forkIds: ForkId[]
+                ) => {
+                    return await handle.queryDisputeWindows({
+                        channelId,
+                        forkIds
+                    });
+                }
+            } as never;
+        }
         const peer = this.getPeer(peerIndex);
-        return peer.stateManager.diamondStateMachine.localDiamondContract;
+        return peer.stateManager.diamondStateMachine
+            .localDiamondContract as never;
     }
 }
 

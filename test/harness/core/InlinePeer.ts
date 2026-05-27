@@ -1143,35 +1143,38 @@ export class InlinePeer implements PeerHandle {
     }
 
     // step 4ab - mirrors storage.stateSnapshots.getGenesisSnapshotByForkId.
+    // returns the struct (parity with worker route) so callers can read
+    // snapshotData / forkId etc. uniformly. callers wanting the class wrapper
+    // rehydrate via StateSnapshot.from on the returned struct.
     async queryGenesisSnapshot(forkId: ForkId): Promise<unknown | null> {
         const storage = this.record.stateManager.storage as unknown as {
             stateSnapshots: {
-                getGenesisSnapshotByForkId: (f: unknown) => unknown | undefined;
+                getGenesisSnapshotByForkId: (
+                    f: unknown
+                ) => { toStruct: () => unknown } | undefined;
             };
         };
-        return (
-            storage.stateSnapshots.getGenesisSnapshotByForkId(forkId) ?? null
-        );
+        const snapshot =
+            storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+        return snapshot?.toStruct() ?? null;
     }
 
     // step 4ad - mirrors localDiamondContract.getLatestBlockFromStateProof.
+    // returns the full block struct so callers may mutate + re-encode.
     async queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
         hasBlock: boolean;
-        latestBlock: { transaction: { header: { transactionCnt: string } } };
+        latestBlock: {
+            transaction: {
+                header: { transactionCnt: bigint | number | string };
+            };
+        } & Record<string, unknown>;
     }> {
         const sm = this.record.stateManager as unknown as {
             diamondStateMachine: {
                 localDiamondContract: {
-                    getLatestBlockFromStateProof: (sp: unknown) => Promise<
-                        [
-                            boolean,
-                            {
-                                transaction: {
-                                    header: { transactionCnt: bigint | number };
-                                };
-                            }
-                        ]
-                    >;
+                    getLatestBlockFromStateProof: (
+                        sp: unknown
+                    ) => Promise<[boolean, unknown]>;
                 };
             };
         };
@@ -1181,16 +1184,29 @@ export class InlinePeer implements PeerHandle {
             );
         return {
             hasBlock: Boolean(hasBlock),
-            latestBlock: {
-                transaction: {
-                    header: {
-                        transactionCnt: String(
-                            latestBlock.transaction.header.transactionCnt
-                        )
-                    }
-                }
-            }
+            latestBlock: latestBlock as never
         };
+    }
+
+    // step 4ae - mirrors localDiamondContract.getDisputeWindows.
+    async queryDisputeWindows(req: {
+        channelId: string;
+        forkIds: ForkId[];
+    }): Promise<unknown[]> {
+        const sm = this.record.stateManager as unknown as {
+            diamondStateMachine: {
+                localDiamondContract: {
+                    getDisputeWindows: (
+                        c: unknown,
+                        f: unknown[]
+                    ) => Promise<unknown[]>;
+                };
+            };
+        };
+        return await sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
+            req.channelId,
+            req.forkIds
+        );
     }
 
     // step 4ac - mirrors disputeManager.getAuditingData(forkId, ...).
@@ -1213,6 +1229,8 @@ export class InlinePeer implements PeerHandle {
     }
 
     // step 4z - mirrors storage.getPreviousStateSnapshot({forkId, height}).
+    // returns the struct (parity with worker route); callers read snapshotData
+    // subfields directly. rehydrate via StateSnapshot.from when needed.
     async queryPreviousStateSnapshot(req: {
         forkId: ForkId;
         height: number;
@@ -1221,9 +1239,10 @@ export class InlinePeer implements PeerHandle {
             getPreviousStateSnapshot: (req: {
                 forkId: unknown;
                 height: number;
-            }) => unknown | undefined;
+            }) => { toStruct: () => unknown } | undefined;
         };
-        return storage.getPreviousStateSnapshot(req) ?? null;
+        const snapshot = storage.getPreviousStateSnapshot(req);
+        return snapshot?.toStruct() ?? null;
     }
 
     // step 1 - mirrors stateManager.applyTransaction(tx). req is the

@@ -340,10 +340,20 @@ export interface PeerHandle {
         args?: unknown[];
     }): Promise<unknown>;
     // step 4ad - mirrors localDiamondContract.getLatestBlockFromStateProof.
+    // returns the full block struct; callers may mutate + re-encode.
     queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
         hasBlock: boolean;
-        latestBlock: { transaction: { header: { transactionCnt: string } } };
+        latestBlock: {
+            transaction: {
+                header: { transactionCnt: bigint | number | string };
+            };
+        } & Record<string, unknown>;
     }>;
+    // step 4ae - mirrors localDiamondContract.getDisputeWindows.
+    queryDisputeWindows(req: {
+        channelId: string;
+        forkIds: ForkId[];
+    }): Promise<unknown[]>;
     // step 4h - mirrors stateManager.postStateSnapshot(forkId). returns the
     // posted snapshot summary (hash + serialised fields) or undefined. used
     // by transition.postSnapshot in worker mode.

@@ -578,6 +578,8 @@ export function registerSubHandleRoutes(
     });
 
     // step 4ab - mirrors storage.stateSnapshots.getGenesisSnapshotByForkId.
+    // ship .toStruct() so structured clone preserves snapshotData (callers
+    // rehydrate via StateSnapshot.from on the orchestrator side).
     server.register("query.genesisSnapshot", async (args) => {
         const { forkId } = (args ?? {}) as { forkId?: unknown };
         const sm = ctx.getStateManager() as unknown as {
@@ -585,31 +587,27 @@ export function registerSubHandleRoutes(
                 stateSnapshots: {
                     getGenesisSnapshotByForkId: (
                         f: unknown
-                    ) => unknown | undefined;
+                    ) => { toStruct: () => unknown } | undefined;
                 };
             };
         };
-        return (
-            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId) ?? null
-        );
+        const snapshot =
+            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+        return snapshot?.toStruct() ?? null;
     });
 
     // step 4ad - mirrors localDiamondContract.getLatestBlockFromStateProof.
+    // localDiamondContract is wrapped by createEthersResultProxy so the result
+    // is already a plain mutable object; structured clone ships the full block
+    // struct so the orchestrator can read every field + re-encode if needed.
     server.register("dispute.latestBlockFromStateProof", async (args) => {
         const { stateProof } = (args ?? {}) as { stateProof?: unknown };
         const sm = ctx.getStateManager() as unknown as {
             diamondStateMachine: {
                 localDiamondContract: {
-                    getLatestBlockFromStateProof: (sp: unknown) => Promise<
-                        [
-                            boolean,
-                            {
-                                transaction: {
-                                    header: { transactionCnt: bigint | number };
-                                };
-                            }
-                        ]
-                    >;
+                    getLatestBlockFromStateProof: (
+                        sp: unknown
+                    ) => Promise<[boolean, unknown]>;
                 };
             };
         };
@@ -619,16 +617,31 @@ export function registerSubHandleRoutes(
             );
         return {
             hasBlock: Boolean(hasBlock),
-            latestBlock: {
-                transaction: {
-                    header: {
-                        transactionCnt: String(
-                            latestBlock.transaction.header.transactionCnt
-                        )
-                    }
-                }
-            }
+            latestBlock
         };
+    });
+
+    // step 4ae - mirrors localDiamondContract.getDisputeWindows(channelId, [forkId]).
+    // returns the raw array result; ethers result proxy converts to plain.
+    server.register("dispute.windows", async (args) => {
+        const { channelId, forkIds } = (args ?? {}) as {
+            channelId?: unknown;
+            forkIds?: unknown[];
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            diamondStateMachine: {
+                localDiamondContract: {
+                    getDisputeWindows: (
+                        c: unknown,
+                        f: unknown[]
+                    ) => Promise<unknown[]>;
+                };
+            };
+        };
+        return await sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
+            channelId,
+            forkIds ?? []
+        );
     });
 
     // step 4ac - mirrors disputeManager.getAuditingData(forkId, ...).
@@ -648,7 +661,9 @@ export function registerSubHandleRoutes(
         );
     });
 
-    // step 4z - mirrors storage.getPreviousStateSnapshot.
+    // step 4z - mirrors storage.getPreviousStateSnapshot. ship .toStruct() so
+    // structured clone preserves snapshotData (StateSnapshot class wraps the
+    // struct in a private field + getters that don't survive clone).
     server.register("query.previousStateSnapshot", async (args) => {
         const req = (args ?? {}) as { forkId: unknown; height: number };
         const sm = ctx.getStateManager() as unknown as {
@@ -656,10 +671,11 @@ export function registerSubHandleRoutes(
                 getPreviousStateSnapshot: (req: {
                     forkId: unknown;
                     height: number;
-                }) => unknown | undefined;
+                }) => { toStruct: () => unknown } | undefined;
             };
         };
-        return sm.storage.getPreviousStateSnapshot(req) ?? null;
+        const snapshot = sm.storage.getPreviousStateSnapshot(req);
+        return snapshot?.toStruct() ?? null;
     });
 
     // step 1 - mirrors stateManager.applyTransaction(tx).
