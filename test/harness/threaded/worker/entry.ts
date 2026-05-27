@@ -185,6 +185,66 @@ registerSubHandleRoutes(server, {
 
 registerWorkerOpRoutes(server, { getStateManager, getP2pInstance });
 
+// step 1 - override lifecycle.connectToChannel to retro-trigger spectator
+// sync against already-handshaked peers. workers dial discovery during
+// p2pSetup -> handshakes can complete BEFORE channelId is set, so
+// InitHandshakeService.maybeFinalize skips the post-handshake
+// spectateService.sync (status=NOT_OPENED gate at InitHandshakeService:265).
+// after p2pSigner.connectToChannel flips status to OPENED, iterate open
+// connections + fire sync per participant. inline path doesn't need this
+// because it dials discovery AFTER connectToChannel runs (JoinActions:69).
+server.unregister("lifecycle.connectToChannel");
+server.register("lifecycle.connectToChannel", async (args) => {
+    type SyncableStateManager = {
+        getStatus: () => number;
+        getChannelId: () => unknown;
+        diamondStateMachine: {
+            localDiamondContract: {
+                canParticipateInDisputes: (
+                    cid: unknown,
+                    addr: string
+                ) => Promise<boolean>;
+            };
+        };
+        p2pManager: {
+            p2pSigner: { connectToChannel: (id: string) => Promise<void> };
+            openConnections: Array<{
+                peerAddress?: string;
+            }>;
+            localRpc: {
+                spectateService: {
+                    sync: (peerAddr: string, channelId: unknown) => unknown;
+                };
+            };
+        };
+    };
+    const sm = getStateManager() as unknown as SyncableStateManager;
+    const { channelId } = (args ?? {}) as { channelId?: string };
+    if (!channelId)
+        throw new Error("lifecycle.connectToChannel: missing 'channelId'");
+    await sm.p2pManager.p2pSigner.connectToChannel(channelId);
+    // step 2 - retro-sync. Status.OPENED == 1; numeric to avoid an extra import.
+    if (sm.getStatus() === 1) {
+        const cid = sm.getChannelId();
+        for (const conn of sm.p2pManager.openConnections) {
+            const peerAddr = conn.peerAddress;
+            if (!peerAddr) continue;
+            try {
+                const isParticipant =
+                    await sm.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
+                        cid,
+                        peerAddr
+                    );
+                if (!isParticipant) continue;
+            } catch {
+                continue;
+            }
+            sm.p2pManager.localRpc.spectateService.sync(peerAddr, cid);
+        }
+    }
+    return {};
+});
+
 // step 1 - tamper-bridge. orchestrator-only closures can't cross the worker
 // boundary, so install a wrap-and-callback: the hook calls back into the
 // orchestrator's "harness.tamperDispute" rpc, which runs the registered
