@@ -14,21 +14,25 @@ export type ForceInboundJoinOptions = {
 };
 
 export class MathJoinActions extends JoinActions {
-    private pickSubmitterWithLatestInbound(): TestPeer {
+    private async pickSubmitterWithLatestInbound(): Promise<TestPeer> {
         const candidates = this.harness.getPeersExcludingMaliciousAndLeavers();
         if (candidates.length === 0) {
             throw new Error(
                 "forceInboundJoin: no honest non-leaver peers to submit from (all peers are malicious or have left)"
             );
         }
+        // step 1 - W1 - inbound height read via sub-handle so worker peers
+        // answer over rpc. inline body matches the today loop.
         let best = candidates[0];
         let bestHeight =
-            best.stateManager.storage.inboundMessages.getLatestBlockHeight() ??
-            0;
+            (await this.harness
+                .getPeerHandle(best.index)
+                .queryInboundLatestBlockHeight()) ?? 0;
         for (const peer of candidates.slice(1)) {
             const h =
-                peer.stateManager.storage.inboundMessages.getLatestBlockHeight() ??
-                0;
+                (await this.harness
+                    .getPeerHandle(peer.index)
+                    .queryInboundLatestBlockHeight()) ?? 0;
             if (h > bestHeight) {
                 bestHeight = h;
                 best = peer;
@@ -44,15 +48,17 @@ export class MathJoinActions extends JoinActions {
         previousLatestHash: Hash | undefined;
     }> {
         const deposit = options?.deposit ?? 250n;
-        const submitter = this.pickSubmitterWithLatestInbound();
+        const submitter = await this.pickSubmitterWithLatestInbound();
         const participant =
             options?.participant ?? hre.ethers.Wallet.createRandom().address;
-        const previousLatestHash =
-            submitter.stateManager.storage.inboundMessages.getLatestBlockHash();
+        // step 1 - W1 - inbound latest block hash via sub-handle.
+        const previousLatestHash = (await this.harness
+            .getPeerHandle(submitter.index)
+            .queryInboundLatestBlockHash()) as Hash | undefined;
 
         const consumerFacet = MathConsumerFacet__factory.connect(
             await this.harness.channelManager.getAddress(),
-            submitter.signer
+            this.harness.getPeerHandle(submitter.index).signer
         );
         const tx = await consumerFacet.forceInboundJoin(
             this.harness.channelId,
