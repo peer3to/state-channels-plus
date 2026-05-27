@@ -92,6 +92,28 @@ export class PeerTestHarness<
     private chainProviderUrl?: string;
     private spawnedWorkers: PeerWorker[] = [];
 
+    // Orchestrator-side tamper closures; worker calls back via harness.tamperDispute.
+    public tamperFnsByPeer = new Map<
+        number,
+        (
+            dispute: unknown,
+            disputeConfirmation: unknown,
+            auditingData: unknown
+        ) =>
+            | void
+            | Promise<void>
+            | {
+                  dispute: unknown;
+                  disputeConfirmation: unknown;
+                  auditingData: unknown;
+              }
+            | Promise<{
+                  dispute: unknown;
+                  disputeConfirmation: unknown;
+                  auditingData: unknown;
+              }>
+    >();
+
     /**
      * Test context for cross-block state sharing
      * Used by blocks to store and retrieve test-specific data (e.g., malicious peer index, fork IDs)
@@ -244,8 +266,6 @@ export class PeerTestHarness<
             this.logger,
             this.eventCountsBarrier
         );
-        // step 1 - worker mode probe -> tip + finalization checks go through
-        // PeerHandle instead of `peer.stateManager.*` (live record absent).
         if (this.options.dedicatedPeerThread) {
             this.syncCoordinator.setProbe({
                 loadTip: async (peerIndex, forkId) =>
@@ -586,21 +606,41 @@ export class PeerTestHarness<
             testTitle: this.requireDeploymentName(),
             bundleManifest: this.workerBundleManifest,
             chainProviderUrl: this.chainProviderUrl,
-            // step 4 - Q2 - default 5s loop-guard ceiling (was 1s in
-            // PeerWorker.spawn). parallel-4 mocha runners + http rpc to
-            // hardhat make the 1s default flake; scenarios can still pass an
-            // explicit tighter value when probing scheduler latency.
             loopDelayMaxMs: 5000
         });
         this.spawnedWorkers.push(worker);
+
+        worker
+            .getRpcServer()
+            .register("harness.tamperDispute", async (args) => {
+                const {
+                    peerIndex,
+                    dispute,
+                    disputeConfirmation,
+                    auditingData
+                } = (args ?? {}) as {
+                    peerIndex: number;
+                    dispute: unknown;
+                    disputeConfirmation: unknown;
+                    auditingData: unknown;
+                };
+                const fn = this.tamperFnsByPeer.get(peerIndex);
+                if (!fn) return { dispute, disputeConfirmation, auditingData };
+                const ret = await fn(
+                    dispute,
+                    disputeConfirmation,
+                    auditingData
+                );
+                if (ret && typeof ret === "object" && "dispute" in ret) {
+                    return ret;
+                }
+                return { dispute, disputeConfirmation, auditingData };
+            });
+
         const mirror = new SpyMirror(this.eventCountsBarrier);
         worker.getRpcClient().on("spy", (payload: unknown) => {
             const frame = payload as Parameters<SpyMirror["ingest"]>[0];
             mirror.ingest(frame);
-            // step 1 - fan-out to the per-event harness barriers so the same
-            // waitFor surface inline mode uses (connection, disconnection,
-            // rpc, peerTurn) wakes on worker-side events. mirrors the
-            // hook-side signal() calls at PeerTestHarness.ts:376-397.
             switch (frame.name) {
                 case "onConnection":
                     void this.connectionBarrier.signal();
@@ -611,9 +651,6 @@ export class PeerTestHarness<
                 case "onTurn":
                     void peer.turnBarrier.signal();
                     break;
-                // step 1 - rpcBarrier signal sites are inline-only (assert/sync
-                // paths); no worker-side hook produces them today. add when a
-                // worker test requires it.
             }
         });
         // Orchestrator sinon spies never fire in worker mode; mirror-backed spies report pushed counts.

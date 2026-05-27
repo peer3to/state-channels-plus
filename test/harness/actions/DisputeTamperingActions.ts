@@ -190,9 +190,6 @@ export class DisputeTamperingActions {
         tamper: DisputeTamper,
         options?: { autoRestore?: boolean; markMalicious?: boolean }
     ): void {
-        const peer = this.harness.getPeer(peerIndex);
-        const disputeManager: DisputeManager = peer.stateManager.disputeManager;
-
         if (options?.markMalicious ?? true) {
             this.harness.contextApi.markMaliciousPeer({
                 maliciousPeerIndex: peerIndex
@@ -200,6 +197,66 @@ export class DisputeTamperingActions {
         }
         this.restoreConstructDispute(peerIndex);
 
+        // step 1 - worker mode -> register the closure on the harness side and
+        // install the worker-side wrap via byzantine.installDisputeTamperHook.
+        // worker's wrapped constructDispute calls back via "harness.tamperDispute"
+        // (W3 bidirectional) -> we run the closure here -> mutated pair returns.
+        const handle = this.harness.getPeerHandle(peerIndex);
+        const isWorker =
+            (handle as unknown as { __workerBackend?: boolean })
+                .__workerBackend === true;
+        if (isWorker) {
+            const peer = this.harness.getPeer(peerIndex);
+            this.harness.tamperFnsByPeer.set(
+                peerIndex,
+                async (dispute, disputeConfirmation, auditingData) => {
+                    await tamper(
+                        dispute as DisputeStruct,
+                        disputeConfirmation as DisputeConfirmationStruct,
+                        auditingData as DisputeAuditingDataStruct
+                    );
+                    await this.resignDispute(
+                        peer.signer,
+                        dispute as DisputeStruct,
+                        disputeConfirmation as DisputeConfirmationStruct
+                    );
+                    this.harness.context.tamperedDisputes.push(
+                        dispute as DisputeStruct
+                    );
+                    if (options?.autoRestore) {
+                        this.harness.tamperFnsByPeer.delete(peerIndex);
+                    }
+                    return { dispute, disputeConfirmation, auditingData };
+                }
+            );
+            // step 1 - fire the install rpc. fire-and-forget against the install
+            // ack; caller is sync so we can't await. install must land before
+            // the test triggers a dispute -> typical scenario.preDisputeSetup
+            // runs many awaits before peers initiate, so the race is benign.
+            // any error surfaces on the next handle.* call (rpc bus shared).
+            const rpc = (
+                handle as unknown as {
+                    rpc?: { call: (m: string, a: unknown) => Promise<unknown> };
+                }
+            ).rpc;
+            if (rpc) {
+                void rpc.call("byzantine.installDisputeTamperHook", {});
+            }
+            this.restoreByPeerIndex.set(peerIndex, () => {
+                this.harness.tamperFnsByPeer.delete(peerIndex);
+                if (rpc) {
+                    void rpc.call("byzantine.uninstallDisputeTamperHook", {});
+                }
+            });
+            this.logger.debug(
+                `Stubbed constructDispute (worker mode) for peer ${peerIndex}`
+            );
+            return;
+        }
+
+        // step 2 - inline mode (unchanged from pre-W3).
+        const peer = this.harness.getPeer(peerIndex);
+        const disputeManager: DisputeManager = peer.stateManager.disputeManager;
         const originalConstructDispute =
             disputeManager.constructDispute.bind(disputeManager);
 

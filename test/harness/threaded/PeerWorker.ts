@@ -11,6 +11,7 @@ import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 
 import { RpcClient } from "./rpc/rpc-client";
+import { RpcServer } from "./rpc/rpc-server";
 import type { RpcPort } from "./rpc/rpc-types";
 import {
     LIFECYCLE_PUSH,
@@ -94,7 +95,11 @@ export class PeerWorker {
         index: number,
         peerAddress: string,
         private readonly worker: Worker,
-        private readonly rpc: RpcClient
+        private readonly rpc: RpcClient,
+        // step 1 - bidirectional. orchestrator-side server handles req frames
+        // initiated by the worker (e.g. tamper-bridge callbacks). registered
+        // handlers live in the PeerTestHarness layer.
+        private readonly server: RpcServer
     ) {
         this.index = index;
         this.peerAddress = peerAddress;
@@ -140,9 +145,12 @@ export class PeerWorker {
         });
 
         // step 1 - rpc rides the worker's built-in parentPort. one port total
-        // per D-21. orchestrator-side surface is Worker.postMessage / on('message').
+        // per D-21. orchestrator-side surface is Worker.postMessage / on('close').
+        // bidirectional - client handles res/push (worker -> orch), server handles
+        // req frames the worker initiates (tamper-bridge callbacks).
         const rpcPort = workerToRpcPort(worker);
         const rpc = new RpcClient(rpcPort);
+        const server = new RpcServer(rpcPort);
 
         const bootTimeoutMs = opts?.bootTimeoutMs ?? DEFAULT_BOOT_TIMEOUT_MS;
 
@@ -152,6 +160,7 @@ export class PeerWorker {
         } catch (e) {
             // step 1 - boot failure: tear down everything we created
             rpc.dispose();
+            server.dispose();
             await worker.terminate().catch(() => undefined);
             throw e;
         }
@@ -160,7 +169,8 @@ export class PeerWorker {
             args.index,
             ready.peerAddress,
             worker,
-            rpc
+            rpc,
+            server
         );
 
         // step 1 - wire post-ready push topics
@@ -183,6 +193,12 @@ export class PeerWorker {
     // step 1 - exposed for W1's WorkerPeer to ride sub-handle rpc surface.
     getRpcClient(): RpcClient {
         return this.rpc;
+    }
+
+    // step 1 - orchestrator-side rpc server. handles req frames the worker
+    // initiates (tamper-bridge callback hooks). harness registers handlers.
+    getRpcServer(): RpcServer {
+        return this.server;
     }
 
     on(event: PeerWorkerEvent, listener: Listener): this {
@@ -225,6 +241,7 @@ export class PeerWorker {
         } catch {
             // step 1 - timeout or crash -> force-terminate
             this.rpc.dispose();
+            this.server.dispose();
             await this.worker.terminate().catch(() => undefined);
             const reason = timedOut ? "timeout" : "crashed";
             return { kind: "forced", reason };
@@ -232,6 +249,7 @@ export class PeerWorker {
 
         // step 1 - graceful path
         this.rpc.dispose();
+        this.server.dispose();
         await this.worker.terminate().catch(() => undefined);
         return { kind: "graceful", durationMs: Date.now() - start };
     }

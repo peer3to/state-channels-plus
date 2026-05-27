@@ -26,6 +26,7 @@ import "../../worker-handlers";
 import { parentPort, workerData } from "node:worker_threads";
 
 import { RpcServer } from "../rpc/rpc-server";
+import { RpcClient } from "../rpc/rpc-client";
 import { nodePortToRpcPort } from "./portCast";
 import { toWireError } from "./serializeError";
 import { SpyRegistry } from "./SpyRegistry";
@@ -103,8 +104,10 @@ process.on("unhandledRejection", (e) => {
 });
 
 // step 1 - install rpc server early so lifecycle rpcs work during bootstrap
-// failures + tests.
+// failures + tests. bidirectional - server handles req frames from the
+// orchestrator; client lets the worker initiate req frames back (tamper bridge).
 const server = new RpcServer(rpcPort);
+const workerRpcClient = new RpcClient(rpcPort);
 
 // step 1 - W4 spy registry. wired here so the reset rpc + bump push topic
 // work from boot onwards. event-handler proxy installation that calls
@@ -182,6 +185,61 @@ registerSubHandleRoutes(server, {
 });
 
 registerWorkerOpRoutes(server, { getStateManager, getP2pInstance });
+
+// step 1 - tamper-bridge. orchestrator-only closures can't cross the worker
+// boundary, so install a wrap-and-callback: the hook calls back into the
+// orchestrator's "harness.tamperDispute" rpc, which runs the registered
+// closure + returns the mutated dispute/auditingData.
+let tamperRestore: (() => void) | undefined;
+server.register("byzantine.installDisputeTamperHook", async () => {
+    const sm = getStateManager() as unknown as {
+        disputeManager: {
+            constructDispute: (forkId: unknown) => Promise<{
+                dispute: unknown;
+                disputeConfirmation: unknown;
+                auditingData: unknown;
+                fraudProofsToApply: unknown[];
+            }>;
+        };
+    };
+    // step 1 - if a previous install is live, restore first -> wrap unmodified.
+    tamperRestore?.();
+    const dm = sm.disputeManager;
+    const original = dm.constructDispute.bind(dm);
+    dm.constructDispute = async (forkId: unknown) => {
+        const result = await original(forkId);
+        // step 1 - callback to orchestrator. payload survives structured clone
+        // (plain BigInts + strings); orchestrator runs the user closure +
+        // returns the mutated pair (may be the same refs if closure mutated
+        // in place; harness reassigns either way).
+        const reply = (await workerRpcClient.call("harness.tamperDispute", {
+            peerIndex: data.index,
+            dispute: result.dispute,
+            disputeConfirmation: result.disputeConfirmation,
+            auditingData: result.auditingData
+        })) as {
+            dispute: unknown;
+            disputeConfirmation: unknown;
+            auditingData: unknown;
+        };
+        return {
+            dispute: reply.dispute,
+            disputeConfirmation: reply.disputeConfirmation,
+            auditingData: reply.auditingData,
+            fraudProofsToApply: result.fraudProofsToApply
+        };
+    };
+    tamperRestore = () => {
+        dm.constructDispute = original;
+        tamperRestore = undefined;
+    };
+    return {};
+});
+
+server.register("byzantine.uninstallDisputeTamperHook", async () => {
+    tamperRestore?.();
+    return {};
+});
 
 // step 1 - test-only handler so the W6 acceptance test can trigger a
 // real stall without needing prod code paths to hang. busy-loops for the
