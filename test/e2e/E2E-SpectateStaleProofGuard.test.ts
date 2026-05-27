@@ -76,9 +76,14 @@ describe("E2E: Spectate stale-proof guard", function () {
             "Spectator should not have reached SYNCED with stale proofs"
         );
 
-        const spectator = h.getPeer(2);
-        expect(
-            spectator.stateManager.p2pManager.openConnections.length
-        ).to.equal(0, "Spectator should have 0 open connections after abort");
+        // step 1 - read connection count via PeerHandle -> worker mode safe.
+        // live p2pManager doesn't cross the boundary.
+        const spectatorConns = await h
+            .getPeerHandle(2)
+            .queryInternals.connectionCount();
+        expect(spectatorConns).to.equal(
+            0,
+            "Spectator should have 0 open connections after abort"
+        );
     });
 });
