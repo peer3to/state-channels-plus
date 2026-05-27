@@ -1,5 +1,9 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
+import { SyncRequest } from "@/rpc/services/spectate/SpectateService";
+import { Codec, Type } from "@/utils";
+import SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
+import { SyncPayload } from "@/types";
 
 describe("E2E: Spectate stale-proof guard", function () {
     it("aborts sync when on-chain snapshot is more advanced than what participant proved", async function () {
@@ -22,16 +26,39 @@ describe("E2E: Spectate stale-proof guard", function () {
 
         const staleBlockHeight = 1;
 
-        // step 1 - stub both participants to respond with a stale proof. handler
-        // body lives in test/harness/worker-handlers/index.ts under
-        // "spectate.respondWithStaleProof"; staleBlockHeight rides handlerArgs.
+        // Stub both participants to respond with a stale proof regardless of what
+        // was actually requested by the spectator.
         for (const peerIndex of [0, 1]) {
-            await h.rpcStub.installNamedStub({
+            await h.rpcStub.stubServiceCreateRpcMethod({
                 peerIndex,
                 serviceName: "spectateService",
                 methodName: "onSpectateRequest",
-                handlerId: "spectate.respondWithStaleProof",
-                handlerArgs: { staleBlockHeight }
+                stubbedMethod: async function (
+                    this: SpectateServiceRpcMethods,
+                    syncRequest: SyncRequest
+                ) {
+                    const senderTransport = this.senderTransport;
+                    const peerAddress = senderTransport.peerAddress;
+                    if (!peerAddress) return;
+
+                    const syncPayload = (await this.service.generateSyncPayload(
+                        syncRequest.channelId,
+                        syncRequest.forkId,
+                        //  STALE BLOCK HEIGHT
+                        staleBlockHeight
+                    )!) as SyncPayload;
+
+                    const encodedSyncPayload = Codec.encode(
+                        syncPayload,
+                        Type.SyncPayload
+                    );
+                    this.remoteRpc.spectateService
+                        .onSpectateResponse(
+                            syncRequest.channelId,
+                            encodedSyncPayload
+                        )
+                        .sendOne(peerAddress);
+                }
             });
         }
 
