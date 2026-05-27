@@ -8,8 +8,9 @@ Date: 2026-05-28
 
 - Total e2e tests: ~130
 - Boss-known failures (skip set): 22 (documented in PR 339)
-- **Confirmed passing in worker mode (`HARNESS_DEDICATED_PEER_THREAD=true`)**: ~70-80 (up from 7 baseline; 10x improvement)
-- Remaining failures: ~30-40 (mix of Spectate architectural + bespoke per-test issues)
+- **Confirmed passing in worker mode (`HARNESS_DEDICATED_PEER_THREAD=true`)**: ~75-80 (up from 7 baseline; 10-11x improvement)
+- Remaining failures: ~28-33 (Spectate state-pollution + bespoke per-test issues)
+- Realistic ceiling with current architecture: ~95-100 (Spectate suite blocked by test-isolation, not harness)
 
 Numbers are estimates from spot probes; last full -w 4 sweep at commit `8936f12e` showed 43/109 PASS, since then ~20+ more confirmed via narrow probes.
 
@@ -204,6 +205,11 @@ Total achievable: ~95-100 / 130.
 ## Recent commits this session
 
 ```
+c13805ad worker/rpc: preserve CustomEvmError fields across the wire
+f66bbde1 actions/DisputeTampering: migrate buildForgedSnapshot off stateManager reads
+69a0b537 docs: update WORKER_MODE_STATUS — Spectate root cause is state pollution, not discovery
+cd372834 docs: WORKER_MODE_STATUS.md — overnight pass/fail census
+8150c822 e2e/JoinChannelRaceConditions: migrate joinChannel direct calls to handle
 315e87cf worker/sub-handles: blockForkIsDisputed + migrate simulateBuildOnDisputedFork
 84478846 actions: migrate getIsForkDisputedService callers to handle dispatcher
 19d60d3c worker/sub-handles: queryDisputeConfirmation (migrate AssertStorageActions)
