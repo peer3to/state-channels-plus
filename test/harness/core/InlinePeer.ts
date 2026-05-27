@@ -686,14 +686,33 @@ export class InlinePeer implements PeerHandle {
         return (await this.record.stateManager.diamondStateMachine.getParticipants()) as Address[];
     }
 
+    // step 4c - mirrors StateQueryActions.getLatestStateMachineStateHash body
+    // in-process (no migration of the storage seam needed for this read).
+    async queryLatestStateMachineStateHash(
+        forkId: ForkId
+    ): Promise<string | null> {
+        const storage = this.record.stateManager.storage;
+        const latestBlock = storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) return null;
+        const snapshot = storage.stateSnapshots.getStateSnapshotByHash(
+            latestBlock.stateSnapshotHash
+        );
+        if (!snapshot) return null;
+        const machineState = storage.stateMachineStates.getStateMachineState(
+            snapshot.stateMachineStateHash
+        );
+        if (!machineState) return null;
+        return String(snapshot.stateMachineStateHash);
+    }
+
     // step 4b - agreementManager.didEveryoneSignBlock. inline body resolves
     // the block from the local storage by hash so the SyncCoordinator path
     // doesn't need to ship the full Block over the wire.
     async queryDidEveryoneSignBlock(blockHash: string): Promise<boolean> {
         const storage = this.record.stateManager.storage as unknown as {
-            blocks: { getBlockByHash: (h: string) => unknown };
+            blocks: { getBlock: (h: string) => unknown };
         };
-        const block = storage.blocks.getBlockByHash(blockHash);
+        const block = storage.blocks.getBlock(blockHash);
         if (!block) return false;
         return this.record.stateManager.agreementManager.didEveryoneSignBlock(
             block as never

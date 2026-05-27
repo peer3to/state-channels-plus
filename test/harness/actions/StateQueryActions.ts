@@ -44,30 +44,17 @@ export class StateQueryActions {
     /**
      * Get the latest state machine state hash for a peer - ONLY if it exists in storage
      */
-    public getLatestStateMachineStateHash(peerIndex: number): Hash | null {
-        // step 1 - bucket-(iii) deferred; live state snapshots/machine states
-        // aren't on PeerHandle. inline path reads through the record.
-        const handle = this.harness.getPeerHandle(peerIndex) as InlinePeer;
-        const storage = handle.record.stateManager.storage;
-
-        const latestBlock = storage.blocks.getLatestBlock(
-            this.harness.activeForkId!
-        );
-        if (!latestBlock) return null;
-
-        const latestStateSnapshot =
-            storage.stateSnapshots.getStateSnapshotByHash(
-                latestBlock.stateSnapshotHash
-            );
-        if (!latestStateSnapshot) return null;
-
-        const latestStateMachineState =
-            storage.stateMachineStates.getStateMachineState(
-                latestStateSnapshot.stateMachineStateHash
-            );
-        if (!latestStateMachineState) return null;
-
-        return latestStateSnapshot.stateMachineStateHash; // return the hash if the state exists
+    public async getLatestStateMachineStateHash(
+        peerIndex: number
+    ): Promise<Hash | null> {
+        // step 1 - sub-handle path. inline body matches the live storage walk;
+        // worker body forwards via rpc. activeForkId resolution stays on the
+        // harness (worker mode caches it via push).
+        const forkId = this.harness.activeForkId;
+        if (!forkId) return null;
+        const handle = this.harness.getPeerHandle(peerIndex);
+        const hash = await handle.queryLatestStateMachineStateHash(forkId);
+        return hash as Hash | null;
     }
 
     public getPreviousBlockHash(

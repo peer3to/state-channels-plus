@@ -158,19 +158,51 @@ export function registerSubHandleRoutes(
         return await sm.diamondStateMachine.getParticipants();
     });
 
+    server.register("query.latestStateMachineStateHash", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: {
+                    getLatestBlock: (
+                        f: unknown
+                    ) => { stateSnapshotHash: string } | undefined;
+                };
+                stateSnapshots: {
+                    getStateSnapshotByHash: (
+                        h: string
+                    ) => { stateMachineStateHash: string } | undefined;
+                };
+                stateMachineStates: {
+                    getStateMachineState: (h: string) => unknown;
+                };
+            };
+        };
+        const latestBlock = sm.storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) return null;
+        const snapshot = sm.storage.stateSnapshots.getStateSnapshotByHash(
+            latestBlock.stateSnapshotHash
+        );
+        if (!snapshot) return null;
+        const machineState = sm.storage.stateMachineStates.getStateMachineState(
+            snapshot.stateMachineStateHash
+        );
+        if (!machineState) return null;
+        return String(snapshot.stateMachineStateHash);
+    });
+
     server.register("query.didEveryoneSignBlock", async (args) => {
         const { blockHash } = (args ?? {}) as { blockHash?: string };
         if (!blockHash)
             throw new Error("query.didEveryoneSignBlock: missing 'blockHash'");
         const sm = ctx.getStateManager() as unknown as {
             storage: {
-                blocks: { getBlockByHash: (h: string) => unknown };
+                blocks: { getBlock: (h: string) => unknown };
             };
             agreementManager: {
                 didEveryoneSignBlock: (b: unknown) => boolean;
             };
         };
-        const block = sm.storage.blocks.getBlockByHash(blockHash);
+        const block = sm.storage.blocks.getBlock(blockHash);
         if (!block) return false;
         return sm.agreementManager.didEveryoneSignBlock(block);
     });

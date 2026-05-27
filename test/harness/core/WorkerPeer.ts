@@ -343,6 +343,11 @@ export class WorkerPeer implements PeerHandle {
             blockHash
         }) as Promise<boolean>;
     }
+    queryLatestStateMachineStateHash(forkId: ForkId): Promise<string | null> {
+        return this.rpc.call("query.latestStateMachineStateHash", {
+            forkId
+        }) as Promise<string | null>;
+    }
     queryStorageSnapshot(req: unknown): Promise<unknown> {
         return this.rpc.call("query.storageSnapshot", req);
     }

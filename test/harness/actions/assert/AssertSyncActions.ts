@@ -37,12 +37,16 @@ export class AssertSyncActions {
 
         const firstPeerIndex = peers[0].index;
         const firstPeerState =
-            this.harness.query.getLatestStateMachineStateHash(firstPeerIndex);
+            await this.harness.query.getLatestStateMachineStateHash(
+                firstPeerIndex
+            );
 
         for (let i = 1; i < peers.length; i++) {
             const peerIndex = peers[i].index;
             const peerState =
-                this.harness.query.getLatestStateMachineStateHash(peerIndex);
+                await this.harness.query.getLatestStateMachineStateHash(
+                    peerIndex
+                );
 
             expect(peerState).to.deep.equal(
                 firstPeerState,
@@ -74,8 +78,11 @@ export class AssertSyncActions {
         }
 
         for (const peer of peers) {
-            const latestBlock =
-                peer.stateManager.storage.blocks.getLatestBlock(forkId);
+            // step 1 - route through PeerHandle -> inline reads the live
+            // storage, worker forwards via rpc + serialised {hash,height}.
+            const latestBlock = (await this.harness
+                .getPeerHandle(peer.index)
+                .queryLatestBlock(forkId)) as { height?: number } | undefined;
             expect(latestBlock).to.not.equal(
                 undefined,
                 `Peer ${peer.index} should have a latest block`

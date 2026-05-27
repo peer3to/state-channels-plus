@@ -220,6 +220,9 @@ export interface PeerHandle {
     // sends the serialised block hash + height; inline body matches the
     // SyncCoordinator.checkSync today path.
     queryDidEveryoneSignBlock(blockHash: string): Promise<boolean>;
+    // step 4c - mirrors StateQueryActions.getLatestStateMachineStateHash.
+    // returns null if the state isn't yet materialised in storage.
+    queryLatestStateMachineStateHash(forkId: ForkId): Promise<string | null>;
     queryStorageSnapshot(req: StorageReadRequest): Promise<StorageReadResult>;
     applyTransaction(req: ApplyTxRequest): Promise<ApplyTxResult>;
     ingestBlockConfirmation(req: IngestBlockReq): Promise<boolean>;
