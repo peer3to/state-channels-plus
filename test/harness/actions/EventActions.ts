@@ -139,23 +139,30 @@ export class EventActions {
         } = options;
         const peer = this.harness.getPeer(peerIndex);
 
+        // step 1 - worker mode spies don't expose per-call history. fall back
+        // to lastCall.args matching when getCalls throws -> covers the common
+        // case where the test ingests one block then waits for it (the latest
+        // call IS ours). inline mode still iterates the full history.
+        const matchesCall = (args: readonly unknown[]): boolean => {
+            const [processedBlockHash, processedKeepConnection] = args;
+            return (
+                processedBlockHash === blockHash &&
+                (keepConnection === undefined ||
+                    processedKeepConnection === keepConnection)
+            );
+        };
         await this.harness.eventCountsBarrier.waitFor(
             () => {
-                return (
-                    peer.eventSpies.onBlockConfirmationProcessed
-                        ?.getCalls()
-                        .some((call) => {
-                            const [
-                                processedBlockHash,
-                                processedKeepConnection
-                            ] = call.args;
-                            return (
-                                processedBlockHash === blockHash &&
-                                (keepConnection === undefined ||
-                                    processedKeepConnection === keepConnection)
-                            );
-                        }) ?? false
-                );
+                const spy = peer.eventSpies.onBlockConfirmationProcessed;
+                if (!spy) return false;
+                try {
+                    return spy
+                        .getCalls()
+                        .some((call) => matchesCall(call.args));
+                } catch {
+                    const last = spy.lastCall;
+                    return last !== undefined && matchesCall(last.args);
+                }
             },
             {
                 timeoutMs,
