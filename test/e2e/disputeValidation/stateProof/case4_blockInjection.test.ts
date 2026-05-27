@@ -194,7 +194,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
 
                 for (const p of h.getHonestPeers()) {
                     expect(
-                        p.stateManager.forkId,
+                        h.getPeerHandle(p.index).forkId,
                         `peer ${p.index} forkId changed`
                     ).to.equal(originalForkId);
                 }
@@ -234,7 +234,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
 
                 for (const p of h.getHonestPeers()) {
                     expect(
-                        p.stateManager.forkId,
+                        h.getPeerHandle(p.index).forkId,
                         `peer ${p.index} forkId changed`
                     ).to.equal(originalForkId);
                 }

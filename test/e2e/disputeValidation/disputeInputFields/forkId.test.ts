@@ -36,11 +36,11 @@ describe("E2E: dispute validation / disputeInputFields / forkId", function () {
             { durationMs: 6000, maxCount: 0 }
         );
 
-        // 3) After waiting, honest peers still hold the original (genesis) forkId —
+        // 3) After waiting, honest peers still hold the original (genesis) forkId -
         //    they did not switch onto the random junk fork.
         for (const p of h.getHonestPeers()) {
             expect(
-                p.stateManager.forkId,
+                h.getPeerHandle(p.index).forkId,
                 `peer ${p.index} forkId changed`
             ).to.equal(originalForkId);
         }
