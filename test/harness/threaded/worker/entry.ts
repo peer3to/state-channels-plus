@@ -30,7 +30,7 @@ import { SpyRegistry } from "./SpyRegistry";
 import { startLoopGuard } from "./loopGuard";
 import {
     registerSubHandleRoutes,
-    W5BlockedError,
+    w5BlockedError,
     type SubHandleCtx
 } from "./subHandleRoutes";
 import { registerWorkerOpRoutes } from "./opRoutes";
@@ -43,6 +43,7 @@ import {
     type ReadyPayload,
     type WorkerData
 } from "./types";
+import StateManager from "@/stateManager";
 
 // step 1 - parentPort is the MessagePort the orchestrator handed us.
 // (workerData carries plain data; the port arrives via the worker constructor.)
@@ -58,7 +59,6 @@ const rpcPort = nodePortToRpcPort(port);
 
 // step 1 - crash plumbing. capture before bootstrap so import-time exceptions
 // surface to the orchestrator with attribution.
-const phasesCompleted: BootstrapPhase[] = [];
 let currentPhase: BootstrapPhase | undefined;
 
 function postCrash(e: unknown, phase?: BootstrapPhase): void {
@@ -163,19 +163,18 @@ const loopGuard = startLoopGuard({
 // clear W5 marker until then so handlers fail loud rather than NPE on
 // undefined. when W5 lands, set `runtimeStateManager` after p2pSetup.
 type StateManagerAccessor = SubHandleCtx["getStateManager"];
-type WorkerStateManager = ReturnType<StateManagerAccessor>;
 
-let runtimeStateManager: WorkerStateManager | undefined = undefined;
+let runtimeStateManager: StateManager | undefined = undefined;
 let runtimeP2pInstance: unknown = undefined;
 const getStateManager: StateManagerAccessor = () => {
     if (runtimeStateManager === undefined) {
-        throw new W5BlockedError("stateManager");
+        throw w5BlockedError("stateManager");
     }
     return runtimeStateManager;
 };
 const getP2pInstance = (): unknown => {
     if (runtimeP2pInstance === undefined) {
-        throw new W5BlockedError("p2pInstance");
+        throw w5BlockedError("p2pInstance");
     }
     return runtimeP2pInstance;
 };
@@ -183,7 +182,6 @@ const getP2pInstance = (): unknown => {
 registerSubHandleRoutes(server, {
     getStateManager,
     saved: {},
-    spyRegistry,
     rpcStubRestores: new Map(),
     disconnectFilterRestore: undefined,
     debugMethodRestores: new Map(),
@@ -321,22 +319,13 @@ server.register("test.busyLoop", async (args) => {
     return { busyMs: ms };
 });
 
-// step 1 - lifecycle handlers. dispose returns durationMs (req/res). drainDetached
-// is a separate rpc per W2 §5; for now it's a no-op pending DetachedPromises
-// integration (// W?: defer to W2 follow-up when actions install detached promises).
+// step 1 - lifecycle handlers. dispose returns durationMs (req/res).
 server.register(LIFECYCLE_RPC.dispose, async () => {
     const start = Date.now();
     // W5 - p2pInstance.dispose() goes here once p2pSetup phase is wired. for now
     // boot-only workers have nothing to tear down beyond the rpc server.
     loopGuard.stop();
     return { durationMs: Date.now() - start };
-});
-
-server.register(LIFECYCLE_RPC.drainDetached, async () => {
-    // W2 §5 - drain-detached is a separate rpc so afterEach can flush detached
-    // promises without tearing the worker down. wired empty until the p2pSetup
-    // phase lands the DetachedPromises seam.
-    return { drained: 0 };
 });
 
 // step 1 - main bootstrap. two phases per D-20.
@@ -363,8 +352,6 @@ async function bootstrap(): Promise<void> {
     const wallet = new ethers.Wallet(data.signerPk);
     const peerAddress = await wallet.getAddress();
 
-    phasesCompleted.push("boot");
-
     // step 1 - p2pSetup phase. wired through boss's PR 339 polymorphic executor.
     // chain access is the remaining constraint: chainProviderUrl must point at an
     // HTTP-served hardhat (or equivalent) since hre.ethers.provider is per-isolate.
@@ -376,13 +363,12 @@ async function bootstrap(): Promise<void> {
             wallet,
             deployment
         });
-        phasesCompleted.push("p2pSetup");
     }
 
     currentPhase = undefined;
 
     // step 1 - ready handshake. ride W3 push envelope per D-21.
-    const ready: ReadyPayload = { peerAddress, phasesCompleted };
+    const ready: ReadyPayload = { peerAddress };
     port.postMessage({
         kind: "push",
         topic: LIFECYCLE_PUSH.ready,
@@ -532,7 +518,7 @@ async function runP2pSetup(args: {
             p2pManager: { self: never; stateManager: unknown };
         }
     ).p2pManager;
-    runtimeStateManager = p2pManager.stateManager as WorkerStateManager;
+    runtimeStateManager = p2pManager.stateManager as StateManager;
     // step 5a - stash live p2pInstance so worker ops can submit txs against
     // `.p2pContractInstance.<methodName>(...args)` (math.add etc.).
     runtimeP2pInstance = p2pInstance;

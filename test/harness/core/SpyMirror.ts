@@ -68,16 +68,15 @@ export class SpyMirror {
     }
 }
 
-export class WorkerSpyUnsupportedError extends Error {
-    constructor(name: string, member: string) {
-        super(
-            `WorkerEventSpy.${member} is inline-only (W4 D-14). ` +
-                `spy '${name}' cannot expose per-call history in worker mode; ` +
-                `restrict the scenario to inline peers or add per-call args ` +
-                `propagation to the spy push frame.`
-        );
-        this.name = "WorkerSpyUnsupportedError";
-    }
+function workerSpyUnsupportedError(name: string, member: string): Error {
+    const err = new Error(
+        `WorkerEventSpy.${member} is inline-only (W4 D-14). ` +
+            `spy '${name}' cannot expose per-call history in worker mode; ` +
+            `restrict the scenario to inline peers or add per-call args ` +
+            `propagation to the spy push frame.`
+    );
+    err.name = "WorkerSpyUnsupportedError";
+    return err;
 }
 
 // step 1 - synthetic spy shape that mirrors the sinon members tests read.
@@ -113,7 +112,7 @@ export function makeWorkerEventSpy(
             // partial reset; the action surface routes through resetSpies().
         },
         getCalls(): never {
-            throw new WorkerSpyUnsupportedError(name, "getCalls");
+            throw workerSpyUnsupportedError(name, "getCalls");
         }
     };
 }

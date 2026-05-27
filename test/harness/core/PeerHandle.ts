@@ -18,8 +18,6 @@ import type { EventSpies } from "./types";
 // (next agent fleshes these out per real callers).
 export type StateStatus = unknown;
 export type BlockSummary = unknown;
-export type StorageReadRequest = unknown;
-export type StorageReadResult = unknown;
 export type ApplyTxRequest = unknown;
 export type ApplyTxResult = unknown;
 export type IngestBlockReq = unknown;
@@ -428,7 +426,6 @@ export interface PeerHandle {
           }
         | undefined
     >;
-    queryStorageSnapshot(req: StorageReadRequest): Promise<StorageReadResult>;
     applyTransaction(req: ApplyTxRequest): Promise<ApplyTxResult>;
     ingestBlockConfirmation(req: IngestBlockReq): Promise<boolean>;
 

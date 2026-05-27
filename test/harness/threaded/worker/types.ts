@@ -56,7 +56,6 @@ export type WorkerData = {
 // step 1 - lifecycle frame shapes. ride W3's envelope per D-21.
 export type ReadyPayload = {
     peerAddress: string;
-    phasesCompleted: BootstrapPhase[];
 };
 
 export type CrashPayload = {
@@ -72,22 +71,14 @@ export type DetachedRejectionPayload = {
     stack?: string;
 };
 
-export type LogPayload = {
-    level: string;
-    message: string;
-    meta?: Record<string, unknown>;
-};
-
 // step 1 - lifecycle rpc method ids on W3. distinct namespace.
 export const LIFECYCLE_RPC = {
-    dispose: "lifecycle.dispose",
-    drainDetached: "lifecycle.drainDetached"
+    dispose: "lifecycle.dispose"
 } as const;
 
 // step 1 - lifecycle push topics on W3.
 export const LIFECYCLE_PUSH = {
     ready: "lifecycle.ready",
     crash: "lifecycle.crash",
-    detachedRejection: "lifecycle.detachedRejection",
-    log: "lifecycle.log"
+    detachedRejection: "lifecycle.detachedRejection"
 } as const;

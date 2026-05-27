@@ -61,27 +61,21 @@ export type DisposeResult =
     | { kind: "graceful"; durationMs: number }
     | { kind: "forced"; reason: "timeout" | "crashed" | "exited" };
 
-export class UnsupportedInWorkerMode extends Error {
-    constructor(field: string) {
-        super(
-            `PeerWorker: '${field}' is not supported in worker mode (D-19). ` +
-                `add a string-keyed registry mirroring deploymentRegistry and ` +
-                `remove this throw when a real test demands it.`
-        );
-        this.name = "UnsupportedInWorkerMode";
-    }
+function unsupportedInWorkerMode(field: string): Error {
+    const err = new Error(
+        `PeerWorker: '${field}' is not supported in worker mode (D-19). ` +
+            `add a string-keyed registry mirroring deploymentRegistry and ` +
+            `remove this throw when a real test demands it.`
+    );
+    err.name = "UnsupportedInWorkerMode";
+    return err;
 }
 
 // step 1 - boot timeout defaults. first spawn pays ts-node cold compile.
 // see W2-review-r2 N-2 (IOU on citing v1 values); 60s is conservative.
 const DEFAULT_BOOT_TIMEOUT_MS = 60_000;
 
-type PeerWorkerEvent =
-    | "exit"
-    | "error"
-    | "crash"
-    | "detached-rejection"
-    | "log";
+type PeerWorkerEvent = "exit" | "error" | "crash" | "detached-rejection";
 type Listener = (...args: unknown[]) => void;
 
 export class PeerWorker {
@@ -116,10 +110,10 @@ export class PeerWorker {
         // step 1 - D-19 guard before we burn worker spawn cost on a config that
         // can't run.
         if (args.customPrecompilesNonEmpty) {
-            throw new UnsupportedInWorkerMode("customPrecompiles");
+            throw unsupportedInWorkerMode("customPrecompiles");
         }
         if (args.rpcServiceFactoriesNonEmpty) {
-            throw new UnsupportedInWorkerMode("rpcServiceFactories");
+            throw unsupportedInWorkerMode("rpcServiceFactories");
         }
 
         // step 1 - ts-node shim re-registers per-isolate (W2 §8).
@@ -183,9 +177,6 @@ export class PeerWorker {
                 payload as DetachedRejectionPayload
             );
         });
-        rpc.on(LIFECYCLE_PUSH.log, (payload) => {
-            instance.emit("log", payload);
-        });
 
         return instance;
     }
@@ -209,14 +200,6 @@ export class PeerWorker {
         }
         set.add(listener);
         return this;
-    }
-
-    async drainDetached(opts?: { timeoutMs?: number }): Promise<void> {
-        const timeoutMs = opts?.timeoutMs ?? 5_000;
-        await Promise.race([
-            this.rpc.call(LIFECYCLE_RPC.drainDetached, {}),
-            new Promise((resolve) => setTimeout(resolve, timeoutMs))
-        ]);
     }
 
     async dispose(opts?: { graceMs?: number }): Promise<DisposeResult> {

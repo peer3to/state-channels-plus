@@ -1206,17 +1206,6 @@ export class InlinePeer implements PeerHandle {
         };
     }
 
-    async queryStorageSnapshot(_req: unknown): Promise<unknown> {
-        // step 1 - placeholder. real shape comes from W1 appendix A bucket (i)
-        // "queryStorageSnapshot" entry once next agent migrates StateQueryActions
-        // callers. inline body would be `storage.stateSnapshots.getByForkId(...)`
-        // or `storage.stateMachineStates.getStateMachineState(...)` depending on
-        // the req discriminator.
-        throw new Error(
-            "InlinePeer.queryStorageSnapshot: shape not pinned; awaiting caller migration"
-        );
-    }
-
     // step 4aa - mirrors disputeManager.constructDispute(forkId).
     async constructDispute(forkId: ForkId): Promise<{
         dispute: unknown;

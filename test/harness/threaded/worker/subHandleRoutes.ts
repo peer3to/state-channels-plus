@@ -9,28 +9,22 @@
 
 import type { RpcServer } from "../rpc/rpc-server";
 import type { RpcClient } from "../rpc/rpc-client";
-import type { SpyRegistry } from "./SpyRegistry";
 import type StateManager from "@/stateManager";
 
 // step 1 - typed against the live SDK StateManager. routes touch real fields;
 // per-route narrow casts compose on top of this where private members or
 // looser-shape access is needed. type-only import -> zero runtime weight.
-type WorkerStateManager = StateManager;
 
 export type SubHandleCtx = {
     // step 1 - lazy accessor. throws W5BlockedError if p2pSetup hasn't completed.
     // every handler dereferences via this so the failure mode is uniform.
-    getStateManager: () => WorkerStateManager;
+    getStateManager: () => StateManager;
     // step 2 - W5 saved refs. per-peer restore registry for byzantine stubs.
     saved: {
         calldataHandler?: (...args: unknown[]) => Promise<void>;
         broadcast?: (...args: unknown[]) => unknown;
         inboundGetLatestBlockHash?: () => unknown;
     };
-    // step 3 - spy registry (for handlers that need to install spy proxies
-    // post-p2pSetup; currently unused at the route layer, retained so the
-    // ctx is the single seam handlers consume).
-    spyRegistry: SpyRegistry;
     // step 4 - per-worker restore registry for rpc-stub installs +
     // disconnect-filter installs. keyed by "<serviceName>:<methodName>" for
     // rpc stubs and "disconnectFilter" for the single-slot filter.
@@ -46,16 +40,15 @@ export type SubHandleCtx = {
     workerRpcClient: RpcClient;
 };
 
-export class W5BlockedError extends Error {
-    constructor(route: string) {
-        super(
-            `sub-handle route '${route}': stateManager not initialized; ` +
-                `worker is in 'boot' phase (W5-blocked). when boss's evm-in-thread ` +
-                `PR lands, this becomes the live handler against the in-thread ` +
-                `stateManager. inline bodies cited in W1 appendix A bucket (ii).`
-        );
-        this.name = "W5BlockedError";
-    }
+export function w5BlockedError(route: string): Error {
+    const err = new Error(
+        `sub-handle route '${route}': stateManager not initialized; ` +
+            `worker is in 'boot' phase (W5-blocked). when boss's evm-in-thread ` +
+            `PR lands, this becomes the live handler against the in-thread ` +
+            `stateManager. inline bodies cited in W1 appendix A bucket (ii).`
+    );
+    err.name = "W5BlockedError";
+    return err;
 }
 
 // step 1 - register every route the orchestrator-side WorkerPeer expects.

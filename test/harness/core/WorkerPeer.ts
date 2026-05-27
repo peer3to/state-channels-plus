@@ -690,9 +690,6 @@ export class WorkerPeer implements PeerHandle {
             | undefined
         >;
     }
-    queryStorageSnapshot(req: unknown): Promise<unknown> {
-        return this.rpc.call("query.storageSnapshot", req);
-    }
     applyTransaction(req: unknown): Promise<unknown> {
         return this.rpc.call("tx.apply", req);
     }
