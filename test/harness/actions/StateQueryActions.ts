@@ -273,14 +273,17 @@ export class StateQueryActions {
 
         const disputeHashes = new Set<Hash>();
 
-        const disputeWindowsByPeer = await Promise.all(
+        const disputeWindowsByPeer = (await Promise.all(
             peers.map((peer) => {
                 const localDiamond = this.harness.getLocalDiamond(peer.index);
-                return localDiamond.getDisputeWindows(this.harness.channelId, [
-                    forkId
-                ]);
+                return localDiamond.getDisputeWindows(
+                    this.harness.channelId as string,
+                    [forkId]
+                );
             })
-        );
+        )) as Array<
+            Array<{ evidence: { disputeCommitments: Hash[] } } | undefined>
+        >;
 
         for (const disputeWindows of disputeWindowsByPeer) {
             const disputeWindow = disputeWindows[0];

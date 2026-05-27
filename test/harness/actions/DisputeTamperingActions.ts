@@ -409,7 +409,7 @@ export class DisputeTamperingActions {
                 snapshotData: corruptedSnapshotData
             };
             const corruptedSnapshot = StateSnapshot.from(corruptedStruct);
-            originalHash = originalSnapshot.hash;
+            originalHash = originalSnapshot.hash as string;
 
             storage.stateSnapshots.storeStateSnapshot(corruptedSnapshot, {
                 hash: originalHash

@@ -32,7 +32,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 stateProof.milestones
                     .at(-1)!
                     .blockConfirmations.at(-1)!.signedBlock.encodedBlock =
-                    Codec.encode(latestBlock, Type.Block);
+                    Codec.encode(latestBlock as never, Type.Block);
             });
 
             await h.byzantine.submitInvalidStateTransitionBlock(1);
