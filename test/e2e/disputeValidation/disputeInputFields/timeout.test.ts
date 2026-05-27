@@ -179,8 +179,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         });
 
         // Skip leave snapshot so peer 0 stays dispute-eligible on-chain.
-        const peer0Sm = h.getPeer(0).stateManager;
-        peer0Sm.postStateSnapshot = async () => undefined;
+        await h
+            .getPeerHandle(0)
+            .debug.stubMethod("postStateSnapshot", async () => undefined);
 
         // Tamper peer 0's scheduled timeout dispute: proof to H-1=0, claim height 1 / block-1 author.
         h.tamper.stubConstructDispute(
@@ -247,8 +248,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             timeConfig: { agreementTime: 2, evidenceTime: 12 }
         });
 
-        const peer0Sm = h.getPeer(0).stateManager;
-        peer0Sm.postStateSnapshot = async () => undefined;
+        await h
+            .getPeerHandle(0)
+            .debug.stubMethod("postStateSnapshot", async () => undefined);
 
         // Falsely blame peer 1 @ H=1 (that block exists + calldata on-chain), truncate proof, isForced clears upload guard.
         h.tamper.stubConstructDispute(

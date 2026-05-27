@@ -19,6 +19,7 @@ import { TRANSITION_RUN_OP } from "../threaded/worker/opRoutes";
 import { rejectLambdaArgs } from "./namedOpGuards";
 import type {
     ByzantineHandle,
+    DebugHandle,
     DisconnectFilterFn,
     LifecycleHandle,
     NamedOpRequest,
@@ -29,6 +30,7 @@ import type {
     RestoreToken,
     RpcStubHandle,
     RpcStubHandlerFn,
+    StubMethodFn,
     SubmitDoubleSignReq,
     TransitionHandle,
     TransportSummary
@@ -265,6 +267,52 @@ class WorkerLifecycleHandle implements LifecycleHandle {
     }
 }
 
+class WorkerDebugHandle implements DebugHandle {
+    // step 1 - orchestrator-side token -> callback id map. token id is the
+    // worker-returned slot ("debugStub#N"); callback id is the registry handle
+    // we drop when the test restores. parallel to WorkerRpcStubHandle.
+    private readonly liveCallbackIds = new Map<string, string>();
+
+    constructor(
+        private readonly rpc: RpcClient,
+        private readonly registry: StubCallbackRegistry
+    ) {}
+
+    async stubMethod(path: string, fn: StubMethodFn): Promise<RestoreToken> {
+        // step 1 - register closure + ship the opaque id to the worker. worker
+        // patches stateManager[<path>] with a stub that calls back via
+        // "harness.invokeStubCallback" -> registry runs the closure with args.
+        const callbackId = this.registry.registerStub((args) =>
+            (fn as (...a: unknown[]) => unknown)(...args)
+        );
+        const token = (await this.rpc.call("debug.stubMethod", {
+            path,
+            callbackId
+        })) as RestoreToken;
+        this.liveCallbackIds.set(token.id, callbackId);
+        return token;
+    }
+
+    async restoreStubbedMethod(token: RestoreToken): Promise<void> {
+        const callbackId = this.liveCallbackIds.get(token.id);
+        if (callbackId) {
+            this.registry.unregisterStub(callbackId);
+            this.liveCallbackIds.delete(token.id);
+        }
+        await this.rpc.call("debug.restoreStubbedMethod", {
+            tokenId: token.id
+        });
+    }
+
+    async restoreAllStubbedMethods(): Promise<void> {
+        for (const id of this.liveCallbackIds.values()) {
+            this.registry.unregisterStub(id);
+        }
+        this.liveCallbackIds.clear();
+        await this.rpc.call("debug.restoreAllStubbedMethods", {});
+    }
+}
+
 class WorkerNetworkHandle implements NetworkHandle {
     // step 1 - single-slot filter id matches the worker route's table.
     private liveCallbackId: string | undefined;
@@ -343,6 +391,7 @@ export class WorkerPeer implements PeerHandle {
     readonly network: NetworkHandle;
     readonly transition: TransitionHandle;
     readonly lifecycle: LifecycleHandle;
+    readonly debug: DebugHandle;
 
     // step 1 - cached scalar (D-12). worker pushes `fork.changed` post-p2pSetup
     // (W5-blocked); until then the value stays undefined and any test reading
@@ -385,6 +434,7 @@ export class WorkerPeer implements PeerHandle {
         );
         this.transition = new WorkerTransitionHandle(this.rpc);
         this.lifecycle = new WorkerLifecycleHandle(this.rpc);
+        this.debug = new WorkerDebugHandle(this.rpc, args.stubCallbackRegistry);
     }
 
     get forkId(): ForkId | undefined {

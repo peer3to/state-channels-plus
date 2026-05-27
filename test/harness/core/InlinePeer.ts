@@ -13,6 +13,7 @@ import type { Signer } from "ethers";
 
 import type {
     ByzantineHandle,
+    DebugHandle,
     DisconnectFilterFn,
     LifecycleHandle,
     NamedOpRequest,
@@ -23,6 +24,7 @@ import type {
     RestoreToken,
     RpcStubHandle,
     RpcStubHandlerFn,
+    StubMethodFn,
     SubmitDoubleSignReq,
     TransitionHandle,
     TransportSummary
@@ -621,6 +623,64 @@ class InlineNetworkHandle implements NetworkHandle {
     }
 }
 
+// step 1 - generic method-stubbing on the live stateManager. dotted paths
+// walk intermediate objects; the last segment is the slot to overwrite.
+// monotonic-id tokens map back to a restore closure that puts the original
+// method back on the same object slot.
+class InlineDebugHandle implements DebugHandle {
+    private nextTokenId = 1;
+    private readonly restoresByToken = new Map<string, () => void>();
+
+    constructor(private readonly record: TestPeer) {}
+
+    async stubMethod(path: string, fn: StubMethodFn): Promise<RestoreToken> {
+        const { target, leaf } = walkDottedPath(
+            this.record.stateManager as unknown as Record<string, unknown>,
+            path
+        );
+        const original = (target as Record<string, unknown>)[leaf];
+        (target as Record<string, unknown>)[leaf] = fn as unknown as never;
+        const id = `stubMethod#${this.nextTokenId++}`;
+        this.restoresByToken.set(id, () => {
+            (target as Record<string, unknown>)[leaf] = original as never;
+            this.restoresByToken.delete(id);
+        });
+        return { id };
+    }
+
+    async restoreStubbedMethod(token: RestoreToken): Promise<void> {
+        this.restoresByToken.get(token.id)?.();
+    }
+
+    async restoreAllStubbedMethods(): Promise<void> {
+        for (const restore of this.restoresByToken.values()) restore();
+        this.restoresByToken.clear();
+    }
+}
+
+// step 1 - dotted path walker. "a.b.c" -> { target: root.a.b, leaf: "c" }.
+// throws on missing intermediates so test source surfaces typos loud.
+function walkDottedPath(
+    root: Record<string, unknown>,
+    path: string
+): { target: Record<string, unknown>; leaf: string } {
+    const parts = path.split(".");
+    if (parts.length === 0 || parts.some((p) => p.length === 0)) {
+        throw new Error(`stubMethod: invalid path '${path}'`);
+    }
+    let cur: Record<string, unknown> = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+        const next = cur[parts[i]];
+        if (next === undefined || next === null) {
+            throw new Error(
+                `stubMethod: path '${path}' segment '${parts[i]}' is ${String(next)}`
+            );
+        }
+        cur = next as Record<string, unknown>;
+    }
+    return { target: cur, leaf: parts[parts.length - 1] };
+}
+
 export class InlinePeer implements PeerHandle {
     readonly byzantine: ByzantineHandle;
     readonly rpcStub: RpcStubHandle;
@@ -628,6 +688,7 @@ export class InlinePeer implements PeerHandle {
     readonly network: NetworkHandle;
     readonly transition: TransitionHandle;
     readonly lifecycle: LifecycleHandle;
+    readonly debug: DebugHandle;
 
     constructor(public readonly record: TestPeer) {
         this.byzantine = new InlineByzantineHandle(record);
@@ -636,6 +697,7 @@ export class InlinePeer implements PeerHandle {
         this.network = new InlineNetworkHandle(record);
         this.transition = new InlineTransitionHandle(record);
         this.lifecycle = new InlineLifecycleHandle(record);
+        this.debug = new InlineDebugHandle(record);
     }
 
     get index(): number {

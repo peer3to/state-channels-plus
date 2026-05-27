@@ -91,6 +91,9 @@ export type SubHandleCtx = {
     // rpc stubs and "disconnectFilter" for the single-slot filter.
     rpcStubRestores: Map<string, () => void>;
     disconnectFilterRestore?: () => void;
+    // step 4a - per-worker restore registry for debug.stubMethod installs.
+    // keyed by monotonic token id ("debugStub#N"); orchestrator drives by token.
+    debugMethodRestores: Map<string, () => void>;
     // step 5 - worker rpc client. used by closure-bearing routes (rpc-stub
     // install + disconnect filter install) to call back into the orchestrator
     // via "harness.invokeStubCallback" / "harness.invokeFilterCallback".
@@ -1570,4 +1573,78 @@ export function registerSubHandleRoutes(
         ctx.disconnectFilterRestore?.();
         return {};
     });
+
+    // step 1 - debug.stubMethod. dotted-path monkey-patch on the live
+    // stateManager. closure stays orchestrator-side; worker installs a stub
+    // that calls back via "harness.invokeStubCallback" -> registry runs it.
+    let nextDebugTokenId = 1;
+    server.register("debug.stubMethod", async (args) => {
+        const { path, callbackId } = (args ?? {}) as {
+            path?: string;
+            callbackId?: string;
+        };
+        if (!path) throw new Error("debug.stubMethod: missing 'path'");
+        if (!callbackId)
+            throw new Error("debug.stubMethod: missing 'callbackId'");
+        const sm = ctx.getStateManager();
+        const { target, leaf } = walkDottedPath(
+            sm as unknown as Record<string, unknown>,
+            path
+        );
+        const original = (target as Record<string, unknown>)[leaf];
+        (target as Record<string, unknown>)[leaf] = async (
+            ...callArgs: unknown[]
+        ) => {
+            return await ctx.workerRpcClient.call(
+                "harness.invokeStubCallback",
+                {
+                    id: callbackId,
+                    args: callArgs
+                }
+            );
+        };
+        const tokenId = `debugStub#${nextDebugTokenId++}`;
+        ctx.debugMethodRestores.set(tokenId, () => {
+            (target as Record<string, unknown>)[leaf] = original as never;
+            ctx.debugMethodRestores.delete(tokenId);
+        });
+        return { id: tokenId };
+    });
+
+    server.register("debug.restoreStubbedMethod", async (args) => {
+        const { tokenId } = (args ?? {}) as { tokenId?: string };
+        if (!tokenId)
+            throw new Error("debug.restoreStubbedMethod: missing 'tokenId'");
+        ctx.debugMethodRestores.get(tokenId)?.();
+        return {};
+    });
+
+    server.register("debug.restoreAllStubbedMethods", async () => {
+        for (const restore of ctx.debugMethodRestores.values()) restore();
+        ctx.debugMethodRestores.clear();
+        return {};
+    });
+}
+
+// step 1 - dotted path walker. "a.b.c" -> { target: root.a.b, leaf: "c" }.
+// throws on missing intermediates so test source surfaces typos loud.
+function walkDottedPath(
+    root: Record<string, unknown>,
+    path: string
+): { target: Record<string, unknown>; leaf: string } {
+    const parts = path.split(".");
+    if (parts.length === 0 || parts.some((p) => p.length === 0)) {
+        throw new Error(`debug.stubMethod: invalid path '${path}'`);
+    }
+    let cur: Record<string, unknown> = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+        const next = cur[parts[i]];
+        if (next === undefined || next === null) {
+            throw new Error(
+                `debug.stubMethod: path '${path}' segment '${parts[i]}' is ${String(next)}`
+            );
+        }
+        cur = next as Record<string, unknown>;
+    }
+    return { target: cur, leaf: parts[parts.length - 1] };
 }

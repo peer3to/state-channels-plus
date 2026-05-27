@@ -177,6 +177,22 @@ export type DisconnectFilterFn = (
     message: unknown
 ) => boolean | Promise<boolean>;
 
+// step 1 - generic method-stub closure. closure runs orchestrator-side with
+// positional args; worker-side replacement method calls back via bidirectional
+// rpc. used by tests that need to monkey-patch a state-manager method (or any
+// dotted path off it). `this` is NOT bound cross-thread.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type StubMethodFn = (...args: any[]) => unknown | Promise<unknown>;
+
+export interface DebugHandle {
+    // step 1 - replace stateManager[<path>] with the closure. dotted paths walk
+    // intermediate objects; the last segment is the slot to overwrite. returns
+    // a RestoreToken for cleanup via restoreStubbedMethod.
+    stubMethod(path: string, fn: StubMethodFn): Promise<RestoreToken>;
+    restoreStubbedMethod(token: RestoreToken): Promise<void>;
+    restoreAllStubbedMethods(): Promise<void>;
+}
+
 export interface NetworkHandle {
     disconnectAll(): Promise<void>;
     tryOpenConnectionToChannel(channelId: string): Promise<void>;
@@ -406,6 +422,10 @@ export interface PeerHandle {
     readonly rpcStub: RpcStubHandle;
     readonly queryInternals: P2pInternalsHandle;
     readonly network: NetworkHandle;
+    // step 5c - debug surface for tests that need to monkey-patch a method on
+    // the live stateManager (or any dotted path off it). today's callers used
+    // `peer.stateManager.foo = ...` directly -> impossible cross-thread.
+    readonly debug: DebugHandle;
     // step 5a - named-op transition surface (W0 D-11, D-22). closure-bearing
     // overloads migrate at test source from lambdas to op ids.
     readonly transition: TransitionHandle;

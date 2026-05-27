@@ -179,6 +179,7 @@ registerSubHandleRoutes(server, {
     spyRegistry,
     rpcStubRestores: new Map(),
     disconnectFilterRestore: undefined,
+    debugMethodRestores: new Map(),
     workerRpcClient
 });
 
