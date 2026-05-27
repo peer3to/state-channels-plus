@@ -410,7 +410,8 @@ async function runP2pSetup(args: {
     // overrides via harnessConfig.configOverrides; DEBUG_LOCAL_TRANSPORT=true
     // skips holepunch UDP allocation -> avoids the worker's libuv-close abort.
     const { createConfig } = await import("@/utils/config");
-    createConfig(data.harnessConfig.configOverrides as never);
+    type PartialConfig = Parameters<typeof createConfig>[0];
+    createConfig(data.harnessConfig.configOverrides as PartialConfig);
 
     // step 1 - chain provider. JsonRpcProvider against an HTTP-served hardhat is
     // the only cross-isolate path that works today; orchestrator passes the URL.
@@ -432,6 +433,11 @@ async function runP2pSetup(args: {
     // step 3 - state-machine deployer closure. the deployment record carries
     // the chain-side and local-side deploy bodies; the local deployer is what
     // p2pSetup feeds to deployLocalDiamond against the in-memory executor.
+    // deployLocalStateMachine returns a plain string; the SDK deployer signature
+    // wants the Address brand -> cast once at the boundary.
+    type AddressBrand = Awaited<
+        ReturnType<import("scripts/V1/deploy").LocalStateMachineDeployer>
+    >;
     const deployStateMachine: import("scripts/V1/deploy").LocalStateMachineDeployer =
         async (localSigner) =>
             (await deployment.deployLocalStateMachine({
@@ -441,7 +447,7 @@ async function runP2pSetup(args: {
                     data.harnessConfig.disputeExecutionGasLimit,
                 timeConfig: data.harnessConfig.timeConfig,
                 harnessConfig: data.harnessConfig.configOverrides
-            })) as never;
+            })) as AddressBrand;
 
     const contractInstanceMock = deployment.connectSigner(
         ethers.ZeroAddress,
@@ -500,15 +506,21 @@ async function runP2pSetup(args: {
     // step 4 - p2pSetup. opts in to dedicatedEvmThread when the harnessConfig
     // override requests it (orthogonal to dedicatedPeerThread; we're already
     // inside the peer worker - VM_DEDICATED_THREAD spawns boss's EVM sub-worker).
+    type P2pSetupOptions = NonNullable<
+        Parameters<typeof EvmStateMachine.p2pSetup>[4]
+    >;
+    type P2pEventHooks = NonNullable<P2pSetupOptions["p2pEventHooks"]>;
+    type P2pConfig = NonNullable<P2pSetupOptions["config"]>;
+    type ContractInstance = Parameters<typeof EvmStateMachine.p2pSetup>[2];
     const p2pInstance = await EvmStateMachine.p2pSetup(
         signer,
         channelManager,
-        contractInstanceMock as never,
+        contractInstanceMock as ContractInstance,
         deployStateMachine,
         {
             peerId: data.index,
-            p2pEventHooks: hooks as never,
-            config: data.harnessConfig.configOverrides as never
+            p2pEventHooks: hooks as unknown as P2pEventHooks,
+            config: data.harnessConfig.configOverrides as P2pConfig
         }
     );
 
@@ -568,9 +580,12 @@ async function runP2pSetup(args: {
             { level: data.logConfig.level, attachErrorListener: false }
         )
     );
+    type ConnectChannelId = Parameters<
+        typeof LocalDiscoveryServer.connectToPeers
+    >[1];
     await LocalDiscoveryServer.connectToPeers(
         p2pManager.self,
-        data.channelId as never,
+        data.channelId as ConnectChannelId,
         await wallet.getAddress(),
         // W2 D-17 - explicit port -> the worker's static discoveryPort is null
         // because tryStart() ran in the orchestrator isolate.

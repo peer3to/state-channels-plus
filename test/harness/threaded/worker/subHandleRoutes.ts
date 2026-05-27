@@ -922,8 +922,8 @@ export function registerSubHandleRoutes(
         // W?: moved from ByzantineActions.ts:308-328
         const sm = ctx.getStateManager();
         const remoteRpc = sm.p2pManager.remoteRpc;
-        ctx.saved.broadcast = remoteRpc.stateTransitionService
-            .onBlockConfirmation as never;
+        ctx.saved.broadcast =
+            remoteRpc.stateTransitionService.onBlockConfirmation;
         remoteRpc.stateTransitionService.onBlockConfirmation = () => ({
             broadcast: () => {},
             sendOne: () => {},
@@ -1098,7 +1098,7 @@ export function registerSubHandleRoutes(
         // first so we wrap the unmodified service (matches the inline path).
         ctx.rpcStubRestores.get(key)?.();
 
-        service.createRPCMethods = ((transport: unknown) => {
+        service.createRPCMethods = (transport: unknown) => {
             const methods = originalCreate(transport) as Record<
                 string,
                 unknown
@@ -1122,10 +1122,10 @@ export function registerSubHandleRoutes(
                 );
             };
             return methods;
-        }) as never;
+        };
 
         const restore = () => {
-            service.createRPCMethods = originalCreate as never;
+            service.createRPCMethods = originalCreate;
             ctx.rpcStubRestores.delete(key);
         };
         ctx.rpcStubRestores.set(key, restore);
@@ -1624,10 +1624,8 @@ export function registerSubHandleRoutes(
             sm as unknown as Record<string, unknown>,
             path
         );
-        const original = (target as Record<string, unknown>)[leaf];
-        (target as Record<string, unknown>)[leaf] = async (
-            ...callArgs: unknown[]
-        ) => {
+        const original = target[leaf];
+        target[leaf] = async (...callArgs: unknown[]) => {
             return await ctx.workerRpcClient.call(
                 "harness.invokeStubCallback",
                 {
@@ -1638,7 +1636,7 @@ export function registerSubHandleRoutes(
         };
         const tokenId = `debugStub#${nextDebugTokenId++}`;
         ctx.debugMethodRestores.set(tokenId, () => {
-            (target as Record<string, unknown>)[leaf] = original as never;
+            target[leaf] = original;
             ctx.debugMethodRestores.delete(tokenId);
         });
         return { id: tokenId };
