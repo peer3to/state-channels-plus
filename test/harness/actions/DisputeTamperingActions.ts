@@ -337,10 +337,10 @@ export class DisputeTamperingActions {
         });
     }
 
-    corruptValidatorSnapshotForBalanceInvariant(
+    async corruptValidatorSnapshotForBalanceInvariant(
         validatorPeerIndex: number,
         options?: { forkId?: ForkId }
-    ): void {
+    ): Promise<void> {
         const forkId = options?.forkId ?? this.harness.activeForkId;
         if (!forkId) {
             throw new Error(
@@ -348,47 +348,73 @@ export class DisputeTamperingActions {
             );
         }
 
-        const peer = this.harness.getPeer(validatorPeerIndex);
-        const storage = peer.stateManager.storage;
-        const latestBlock = storage.blocks.getLatestBlock(forkId);
+        const handle = this.harness.getPeerHandle(validatorPeerIndex);
+        const isWorker =
+            (handle as unknown as { __workerBackend?: boolean })
+                .__workerBackend === true;
+        let originalHash: string;
+        if (isWorker) {
+            // step 1 - worker mode -> route the whole read/mutate/write into the
+            // worker. inline mode keeps the in-process body for parity.
+            const rpc = (
+                handle as unknown as {
+                    rpc?: { call: (m: string, a: unknown) => Promise<unknown> };
+                }
+            ).rpc;
+            if (!rpc) {
+                throw new Error(
+                    "corruptValidatorSnapshotForBalanceInvariant: worker handle missing rpc"
+                );
+            }
+            const result = (await rpc.call(
+                "byzantine.corruptValidatorSnapshotForBalanceInvariant",
+                { forkId }
+            )) as { hash: string };
+            originalHash = result.hash;
+        } else {
+            const peer = this.harness.getPeer(validatorPeerIndex);
+            const storage = peer.stateManager.storage;
+            const latestBlock = storage.blocks.getLatestBlock(forkId);
 
-        if (!latestBlock) {
-            throw new Error(
-                `corruptValidatorSnapshotForBalanceInvariant: no latest block for fork ${forkId}`
+            if (!latestBlock) {
+                throw new Error(
+                    `corruptValidatorSnapshotForBalanceInvariant: no latest block for fork ${forkId}`
+                );
+            }
+
+            const originalSnapshot =
+                storage.stateSnapshots.getStateSnapshotByHash(
+                    latestBlock.stateSnapshotHash
+                );
+            if (!originalSnapshot) {
+                throw new Error(
+                    `corruptValidatorSnapshotForBalanceInvariant: no snapshot for hash ${latestBlock.stateSnapshotHash}`
+                );
+            }
+
+            const originalStateSnapshotStruct = originalSnapshot.toStruct();
+            const corruptedSnapshotData = {
+                ...originalStateSnapshotStruct.snapshotData
+            };
+            const originalAmount = BigInt(
+                originalStateSnapshotStruct.snapshotData.totalDeposits.amount
             );
+            corruptedSnapshotData.totalDeposits = {
+                ...corruptedSnapshotData.totalDeposits,
+                amount: originalAmount + 1n
+            };
+
+            const corruptedStruct = {
+                ...originalStateSnapshotStruct,
+                snapshotData: corruptedSnapshotData
+            };
+            const corruptedSnapshot = StateSnapshot.from(corruptedStruct);
+            originalHash = originalSnapshot.hash;
+
+            storage.stateSnapshots.storeStateSnapshot(corruptedSnapshot, {
+                hash: originalHash
+            });
         }
-
-        const originalSnapshot = storage.stateSnapshots.getStateSnapshotByHash(
-            latestBlock.stateSnapshotHash
-        );
-        if (!originalSnapshot) {
-            throw new Error(
-                `corruptValidatorSnapshotForBalanceInvariant: no snapshot for hash ${latestBlock.stateSnapshotHash}`
-            );
-        }
-
-        const originalStateSnapshotStruct = originalSnapshot.toStruct();
-        const corruptedSnapshotData = {
-            ...originalStateSnapshotStruct.snapshotData
-        };
-        const originalAmount = BigInt(
-            originalStateSnapshotStruct.snapshotData.totalDeposits.amount
-        );
-        corruptedSnapshotData.totalDeposits = {
-            ...corruptedSnapshotData.totalDeposits,
-            amount: originalAmount + 1n
-        };
-
-        const corruptedStruct = {
-            ...originalStateSnapshotStruct,
-            snapshotData: corruptedSnapshotData
-        };
-        const corruptedSnapshot = StateSnapshot.from(corruptedStruct);
-        const originalHash = originalSnapshot.hash;
-
-        storage.stateSnapshots.storeStateSnapshot(corruptedSnapshot, {
-            hash: originalHash
-        });
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: validatorPeerIndex
         });

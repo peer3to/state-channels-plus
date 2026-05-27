@@ -916,6 +916,84 @@ export function registerSubHandleRoutes(
     // harness.channelManager.connect(peer.signer).postBlockCalldata(...) directly.
     // worker contributes nothing on this path -> no rpc method on ByzantineHandle.
 
+    // step 1 - corruptValidatorSnapshotForBalanceInvariant. mirrors the whole
+    // body of DisputeTamperingActions.corruptValidatorSnapshotForBalanceInvariant
+    // since the storage read + write + StateSnapshot.from rebuild are entirely
+    // in-worker. orchestrator-side caller just markMaliciousPeer; ship the
+    // serialised snapshot back for any future asserts.
+    server.register(
+        "byzantine.corruptValidatorSnapshotForBalanceInvariant",
+        async (args) => {
+            const { forkId } = (args ?? {}) as { forkId?: unknown };
+            const sm = ctx.getStateManager() as unknown as {
+                storage: {
+                    blocks: {
+                        getLatestBlock: (
+                            f: unknown
+                        ) => { stateSnapshotHash: string } | undefined;
+                    };
+                    stateSnapshots: {
+                        getStateSnapshotByHash: (
+                            h: string
+                        ) =>
+                            | { toStruct: () => unknown; hash: string }
+                            | undefined;
+                        storeStateSnapshot: (
+                            snapshot: unknown,
+                            options: { hash: string }
+                        ) => unknown;
+                    };
+                };
+            };
+            const latestBlock = sm.storage.blocks.getLatestBlock(forkId);
+            if (!latestBlock) {
+                throw new Error(
+                    `byzantine.corruptValidatorSnapshotForBalanceInvariant: no latest block for fork ${forkId}`
+                );
+            }
+            const originalSnapshot =
+                sm.storage.stateSnapshots.getStateSnapshotByHash(
+                    latestBlock.stateSnapshotHash
+                );
+            if (!originalSnapshot) {
+                throw new Error(
+                    `byzantine.corruptValidatorSnapshotForBalanceInvariant: no snapshot for hash ${latestBlock.stateSnapshotHash}`
+                );
+            }
+            // step 1 - rebuild via StateSnapshot.from in-worker so the class
+            // wrapper round-trips correctly back into storage.
+            const StateSnapshotMod = (await import("@/models/StateSnapshot"))
+                .default as unknown as {
+                from: (s: unknown) => unknown;
+            };
+            const originalStruct = originalSnapshot.toStruct() as {
+                snapshotData: {
+                    totalDeposits: { amount: bigint | string | number };
+                };
+            };
+            const corruptedSnapshotData = {
+                ...originalStruct.snapshotData,
+                totalDeposits: {
+                    ...originalStruct.snapshotData.totalDeposits,
+                    amount:
+                        BigInt(
+                            originalStruct.snapshotData.totalDeposits.amount
+                        ) + 1n
+                }
+            };
+            const corruptedStruct = {
+                ...originalStruct,
+                snapshotData: corruptedSnapshotData
+            };
+            const corruptedSnapshot = StateSnapshotMod.from(corruptedStruct);
+            const originalHash = originalSnapshot.hash;
+            sm.storage.stateSnapshots.storeStateSnapshot(corruptedSnapshot, {
+                hash: originalHash
+            });
+            return { hash: originalHash };
+        }
+    );
+
     // step 1 - rpcStub.* (mirrors rpcStubActions.ts bodies). handler bodies
     // resolved against the named registry in worker-handlers/rpc-stub-handlers.ts;
     // the test source ships a stable handlerId instead of a lambda.

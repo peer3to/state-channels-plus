@@ -30,19 +30,19 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         // Verify the asymmetric storage state: peer 3 has block 3,
         // honest peers still at block 2.
-        const peer3Latest = h
-            .getPeer(3)
-            .stateManager.storage.blocks.getLatestBlock(forkId)!;
-        if (peer3Latest.height !== 3) {
+        const peer3Latest = (await h
+            .getPeerHandle(3)
+            .queryLatestBlock(forkId)) as { height?: number } | undefined;
+        if (!peer3Latest || peer3Latest.height !== 3) {
             throw new Error(
-                `expected peer 3 to have height 3 after suppressed write, got ${peer3Latest.height}`
+                `expected peer 3 to have height 3 after suppressed write, got ${peer3Latest?.height}`
             );
         }
         for (const honestIndex of [0, 1, 2]) {
-            const honestLatest = h
-                .getPeer(honestIndex)
-                .stateManager.storage.blocks.getLatestBlock(forkId)!;
-            if (honestLatest.height > 2) {
+            const honestLatest = (await h
+                .getPeerHandle(honestIndex)
+                .queryLatestBlock(forkId)) as { height?: number } | undefined;
+            if (honestLatest && (honestLatest.height ?? 0) > 2) {
                 throw new Error(
                     `expected honest peer ${honestIndex} at height == 2, got ${honestLatest.height} (broadcast suppression failed)`
                 );
@@ -84,17 +84,17 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         // confirm other peers did not modify their local state forward, their tip is at block height 2
         for (const honestIndex of [0, 1, 2]) {
-            const peer = h.getPeer(honestIndex);
-            const latestBlock =
-                peer.stateManager.storage.blocks.getLatestBlock(forkId);
+            const latestBlock = (await h
+                .getPeerHandle(honestIndex)
+                .queryLatestBlock(forkId)) as { height?: number } | undefined;
             if (!latestBlock) {
                 throw new Error(
                     `peer ${honestIndex} has no latest block on the original fork`
                 );
             }
-            if (latestBlock.height > 2) {
+            if ((latestBlock.height ?? 0) > 2) {
                 throw new Error(
-                    `peer ${honestIndex} fast-forwarded on original fork: height ${latestBlock.height} > 2 — height-above attack succeeded (PROTOCOL GAP)`
+                    `peer ${honestIndex} fast-forwarded on original fork: height ${latestBlock.height} > 2 -> height-above attack succeeded (PROTOCOL GAP)`
                 );
             }
         }
