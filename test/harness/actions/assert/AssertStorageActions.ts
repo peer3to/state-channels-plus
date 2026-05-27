@@ -325,16 +325,14 @@ export class AssertStorageActions {
         }
         const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         for (const peer of peers) {
-            const storage = this.harness.query.getPeerStorage(peer.index);
+            // step 1 - W1 - route via sub-handle so worker peers answer over rpc.
+            const handle = this.harness.getPeerHandle(peer.index);
             for (const disputeHash of disputeHashes) {
                 const disputeConfirmation =
-                    storage.disputes.getDisputeConfirmation(disputeHash);
+                    await handle.queryDisputeConfirmation(String(disputeHash));
                 if (!disputeConfirmation) {
-                    const existingConfirmationHashes = Array.from(
-                        (storage.disputes as any).disputes.keys()
-                    );
                     throw new Error(
-                        `No dispute confirmation found for hash ${disputeHash} on peer ${peer.index}, existing confirmations: ${JSON.stringify(existingConfirmationHashes)}`
+                        `No dispute confirmation found for hash ${disputeHash} on peer ${peer.index}`
                     );
                 }
             }
