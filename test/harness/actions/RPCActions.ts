@@ -140,10 +140,7 @@ export class RPCActions {
         // p2pSetup (entry.ts runP2pSetup) and newPeer.stateManager.p2pManager
         // is undefined orchestrator-side -> skip when handle is worker.
         // mirrors NetworkController.connectPeers.
-        const isWorker =
-            (handle as unknown as { __workerBackend?: boolean })
-                .__workerBackend === true;
-        if (!isWorker) {
+        if (!handle.__workerBackend) {
             await LocalDiscoveryServer.connectToPeers(
                 newPeer.stateManager.p2pManager.self,
                 this.harness.channelId!,

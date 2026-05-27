@@ -14,12 +14,9 @@ export function rejectClosureInWorkerMode(
     label: string,
     handle: PeerHandle
 ): void {
-    // step 1 - WorkerPeer carries an `rpc` field private to that backend;
-    // sniff via a stable structural marker (the typed `transition` sub-handle
-    // exists on both, but only WorkerPeer has the rpc backend wiring).
+    // step 1 - WorkerPeer brands itself via __workerBackend on PeerHandle.
     // duck-type check avoids importing WorkerPeer here -> no cycle.
-    const probe = handle as unknown as { __workerBackend?: boolean };
-    if (probe.__workerBackend === true) {
+    if (handle.__workerBackend) {
         throw new Error(
             `${label}: closure-bearing call not supported in worker mode (W0 D-22). ` +
                 `migrate test source to the named-op shape and register the op ` +
@@ -29,7 +26,8 @@ export function rejectClosureInWorkerMode(
 }
 
 export function rejectLambdaArgs(label: string, req: NamedOpRequest): void {
-    if (typeof (req as unknown as { txFn?: unknown }).txFn === "function") {
+    const probe = req as NamedOpRequest & { txFn?: unknown };
+    if (typeof probe.txFn === "function") {
         throw new Error(
             `${label}: function-typed 'txFn' is not supported. closures never cross ` +
                 `the orchestrator <-> worker boundary (W0 D-11). migrate to the ` +

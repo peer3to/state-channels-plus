@@ -62,10 +62,7 @@ export class JoinActions {
             // (entry.ts:324 LocalDiscoveryServer.connectToPeers from the
             // worker) -> skip the orchestrator-side dial when peer is worker.
             const handle = this.harness.getPeerHandle(index);
-            const isWorker =
-                (handle as unknown as { __workerBackend?: boolean })
-                    .__workerBackend === true;
-            if (!isWorker) {
+            if (!handle.__workerBackend) {
                 await LocalDiscoveryServer.connectToPeers(
                     peer.stateManager.p2pManager.self,
                     this.harness.channelId,

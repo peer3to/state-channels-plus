@@ -53,10 +53,7 @@ export class NetworkController {
         await Promise.all(
             peers.map((peer) => {
                 const handle = this.harness.getPeerHandle(peer.index);
-                const isWorker =
-                    (handle as unknown as { __workerBackend?: boolean })
-                        .__workerBackend === true;
-                if (isWorker) return Promise.resolve();
+                if (handle.__workerBackend) return Promise.resolve();
                 return LocalDiscoveryServer.connectToPeers(
                     peer.stateManager.p2pManager.self,
                     this.harness.channelId!,

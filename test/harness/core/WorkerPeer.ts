@@ -441,6 +441,15 @@ export class WorkerPeer implements PeerHandle {
         return this.cachedForkId;
     }
 
+    // step 1 - escape hatch for tamper-bridge actions that need to invoke
+    // worker-only rpc methods (byzantine.installDisputeTamperHook etc.).
+    // narrowed via the `__workerBackend` discriminator on PeerHandle. only
+    // those two action sites should reach for this; everything else uses
+    // the sub-handles.
+    getRpc(): RpcClient {
+        return this.rpc;
+    }
+
     queryStatus(): Promise<unknown> {
         return this.rpc.call("query.status", {});
     }

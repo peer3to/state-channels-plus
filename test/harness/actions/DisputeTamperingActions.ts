@@ -27,6 +27,7 @@ import {
 import DisputeManager, {
     ConstructDisputeResult
 } from "@/disputeManager/DisputeManager";
+import { WorkerPeer } from "@test/harness/core/WorkerPeer";
 import type {
     BlockStruct,
     SignedBlockStruct,
@@ -202,10 +203,7 @@ export class DisputeTamperingActions {
         // worker's wrapped constructDispute calls back via "harness.tamperDispute"
         // (W3 bidirectional) -> we run the closure here -> mutated pair returns.
         const handle = this.harness.getPeerHandle(peerIndex);
-        const isWorker =
-            (handle as unknown as { __workerBackend?: boolean })
-                .__workerBackend === true;
-        if (isWorker) {
+        if (handle instanceof WorkerPeer) {
             const peer = this.harness.getPeer(peerIndex);
             this.harness.tamperFnsByPeer.set(
                 peerIndex,
@@ -233,19 +231,11 @@ export class DisputeTamperingActions {
             // any test code can trigger a dispute. fire-and-forget races with
             // tests where the dispute starts immediately after the stub call
             // (e.g. case5_lastMilestoneFinalityAndAuditingData).
-            const rpc = (
-                handle as unknown as {
-                    rpc?: { call: (m: string, a: unknown) => Promise<unknown> };
-                }
-            ).rpc;
-            if (rpc) {
-                await rpc.call("byzantine.installDisputeTamperHook", {});
-            }
+            const rpc = handle.getRpc();
+            await rpc.call("byzantine.installDisputeTamperHook", {});
             this.restoreByPeerIndex.set(peerIndex, () => {
                 this.harness.tamperFnsByPeer.delete(peerIndex);
-                if (rpc) {
-                    void rpc.call("byzantine.uninstallDisputeTamperHook", {});
-                }
+                void rpc.call("byzantine.uninstallDisputeTamperHook", {});
             });
             this.logger.debug(
                 `Stubbed constructDispute (worker mode) for peer ${peerIndex}`
@@ -348,27 +338,15 @@ export class DisputeTamperingActions {
         }
 
         const handle = this.harness.getPeerHandle(validatorPeerIndex);
-        const isWorker =
-            (handle as unknown as { __workerBackend?: boolean })
-                .__workerBackend === true;
         let originalHash: string;
-        if (isWorker) {
+        if (handle instanceof WorkerPeer) {
             // step 1 - worker mode -> route the whole read/mutate/write into the
             // worker. inline mode keeps the in-process body for parity.
-            const rpc = (
-                handle as unknown as {
-                    rpc?: { call: (m: string, a: unknown) => Promise<unknown> };
-                }
-            ).rpc;
-            if (!rpc) {
-                throw new Error(
-                    "corruptValidatorSnapshotForBalanceInvariant: worker handle missing rpc"
-                );
-            }
-            const result = (await rpc.call(
-                "byzantine.corruptValidatorSnapshotForBalanceInvariant",
-                { forkId }
-            )) as { hash: string };
+            const result = (await handle
+                .getRpc()
+                .call("byzantine.corruptValidatorSnapshotForBalanceInvariant", {
+                    forkId
+                })) as { hash: string };
             originalHash = result.hash;
         } else {
             const peer = this.harness.getPeer(validatorPeerIndex);

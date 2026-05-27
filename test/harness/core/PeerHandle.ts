@@ -232,6 +232,12 @@ export interface TransitionHandle {
 }
 
 export interface PeerHandle {
+    // step 0 - backend discriminator. WorkerPeer sets to true; InlinePeer
+    // leaves undefined. consumers branch off this instead of `as unknown as`
+    // shape probes. keeps PeerHandle a single interface with one extra
+    // optional brand field instead of a discriminated union of two classes.
+    readonly __workerBackend?: true;
+
     // step 1 - identity. always sync. orchestrator-side per D-15.
     readonly index: number;
     readonly address: Address;
