@@ -54,8 +54,9 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         await h.assert.sync.participantCount({ expectedCount: 2 });
 
         for (const peer of h.getPeersExcludingMaliciousAndLeavers()) {
-            const participants =
-                await peer.stateManager.diamondStateMachine.getParticipants();
+            const participants = await h
+                .getPeerHandle(peer.index)
+                .queryParticipants();
             expect(
                 participants.some((p) => addressesEqual(p, leaverAddress)),
                 `Peer ${peer.index} still has self-removed peer ${leaverIndex} in participants`
