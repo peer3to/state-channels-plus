@@ -64,25 +64,32 @@ export class AssertRPCActions {
             throw new Error("No active fork ID");
         }
 
-        const requestingService =
-            this.harness.rpc.getIsForkDisputedService(requestingPeer);
+        const requestingHandle = this.harness.getPeerHandle(requestingPeer);
 
         const totalPeers = this.harness.peers.length;
         const expectedAcknowledgments = totalPeers - excludePeers.length - 1;
 
-        await this.harness.rpcBarrier.waitFor(
-            () => {
-                const acknowledgedPeers = this.harness.peers
-                    .filter((_, i) => !excludePeers.includes(i))
-                    .filter((_, i) => i !== requestingPeer)
-                    .filter((p) =>
-                        requestingService.didPeerAcknowledgeDisputedFork(
-                            p.address,
-                            activeForkId
-                        )
-                    );
+        // step 1 - candidate peers for the acknowledgment check; computed once.
+        const candidates = this.harness.peers
+            .map((p, i) => ({ p, i }))
+            .filter(({ i }) => !excludePeers.includes(i))
+            .filter(({ i }) => i !== requestingPeer);
 
-                return acknowledgedPeers.length >= expectedAcknowledgments;
+        await this.harness.rpcBarrier.waitFor(
+            async () => {
+                // step 2 - dispatch via sub-handle -> worker-safe.
+                const results = await Promise.all(
+                    candidates.map(({ p }) =>
+                        requestingHandle.queryInternals
+                            .isForkDisputedService({
+                                op: "didPeerAcknowledgeDisputedFork",
+                                args: [p.address, activeForkId]
+                            })
+                            .then((v) => v as boolean)
+                    )
+                );
+                const acknowledgedCount = results.filter(Boolean).length;
+                return acknowledgedCount >= expectedAcknowledgments;
             },
             {
                 timeoutMs,
@@ -91,50 +98,53 @@ export class AssertRPCActions {
         );
     }
 
-    duplicateDisputeRequestIgnored(options: {
+    async duplicateDisputeRequestIgnored(options: {
         peerIndex: number;
         forkId?: ForkId;
-    }): void {
+    }): Promise<void> {
         const { peerIndex, forkId } = options;
         const activeForkId = forkId ?? this.harness.activeForkId;
         if (!activeForkId) {
             throw new Error("No active fork ID");
         }
 
-        const service = this.harness.rpc.getIsForkDisputedService(peerIndex);
-        const disputedForksBefore = service.disputedForks.size;
-        service.requestDisputeAcknowledgment(
-            this.harness.channelId!,
-            activeForkId
-        );
-        const disputedForksAfter = service.disputedForks.size;
+        // step 1 - service.requestDisputeAcknowledgment returns false when the
+        // fork is already in disputedForks -> use the boolean return as the
+        // dedupe signal instead of reading service.disputedForks.size.
+        const handle = this.harness.getPeerHandle(peerIndex);
+        const accepted = (await handle.queryInternals.isForkDisputedService({
+            op: "requestDisputeAcknowledgment",
+            args: [this.harness.channelId!, activeForkId]
+        })) as boolean;
 
-        if (disputedForksAfter !== disputedForksBefore) {
+        if (accepted !== false) {
             throw new Error(
-                `Expected duplicate request to be ignored, but disputedForks changed from ${disputedForksBefore} to ${disputedForksAfter}`
+                `Expected duplicate request to be ignored, but requestDisputeAcknowledgment returned ${accepted}`
             );
         }
     }
 
-    firstAcknowledgmentRecorded(options: {
+    async firstAcknowledgmentRecorded(options: {
         respondingPeer: number;
         requestingPeer: number;
         forkId?: ForkId;
-    }): void {
+    }): Promise<void> {
         const { respondingPeer, requestingPeer, forkId } = options;
         const activeForkId = forkId ?? this.harness.activeForkId;
         if (!activeForkId) {
             throw new Error("No active fork ID");
         }
 
-        const requestingPeerObj = this.harness.getPeer(requestingPeer);
-        const service =
-            this.harness.rpc.getIsForkDisputedService(respondingPeer);
-
-        const acknowledged = service.didIAcknowledgeDisputedFork(
-            requestingPeerObj.address,
-            activeForkId
-        );
+        // step 1 - dispatch via sub-handle -> worker-safe.
+        const requestingAddr =
+            this.harness.getPeerHandle(requestingPeer).address;
+        const handle = this.harness.getPeerHandle(respondingPeer);
+        const acknowledged = (await handle.queryInternals.isForkDisputedService(
+            {
+                op: "didIAcknowledgeDisputedFork",
+                args: [requestingAddr, activeForkId]
+            }
+        )) as boolean;
 
         if (!acknowledged) {
             throw new Error(

@@ -38,7 +38,7 @@ describe("E2E: Is Fork Disputed", function () {
                 requestingPeer: 0,
                 excludePeers: [1]
             });
-            h.assert.rpc.duplicateDisputeRequestIgnored({ peerIndex: 0 });
+            await h.assert.rpc.duplicateDisputeRequestIgnored({ peerIndex: 0 });
             await h.assert.rpc.allPeersAcknowledgedDispute({
                 requestingPeer: 0,
                 excludePeers: [1]
@@ -56,7 +56,7 @@ describe("E2E: Is Fork Disputed", function () {
                 respondingPeer: 0,
                 requestingPeer: 2
             });
-            h.assert.rpc.firstAcknowledgmentRecorded({
+            await h.assert.rpc.firstAcknowledgmentRecorded({
                 respondingPeer: 0,
                 requestingPeer: 2
             });

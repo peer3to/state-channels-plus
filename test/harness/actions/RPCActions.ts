@@ -15,8 +15,6 @@ import { ethers } from "ethers";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { LocalDiscoveryServer, Logger } from "@/utils";
 import { ForkId, Address } from "@/types/types";
-import IsForkDisputedService from "@/rpc/services/isForkDisputedService/IsForkDisputedService";
-import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
 import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
@@ -59,22 +57,6 @@ export class RPCActions {
         return this.harness.query.getTransport(fromPeerIndex, toPeerIndex);
     }
     /**
-     * Get IsForkDisputed RPC service for a peer
-     */
-    getIsForkDisputedService(peerIndex: number): IsForkDisputedService {
-        return this.getInlineRecord(peerIndex).stateManager.p2pManager.localRpc
-            .isForkDisputedService;
-    }
-
-    /**
-     * Get InitHandshake RPC service for a peer
-     */
-    getInitHandshakeService(peerIndex: number): InitHandshakeService {
-        return this.getInlineRecord(peerIndex).stateManager.p2pManager.localRpc
-            .initHandshakeService;
-    }
-
-    /**
      * Check if handshake is completed between two peers
      */
     async isHandshakeCompleted(
@@ -108,16 +90,18 @@ export class RPCActions {
     /**
      * Check if a peer has acknowledged a disputed fork
      */
-    didPeerAcknowledgeDisputedFork(
+    async didPeerAcknowledgeDisputedFork(
         requestingPeerIndex: number,
         respondingPeerAddress: Address,
         forkId: ForkId
-    ): boolean {
-        const service = this.getIsForkDisputedService(requestingPeerIndex);
-        return service.didPeerAcknowledgeDisputedFork(
-            respondingPeerAddress.toString(),
-            forkId
-        );
+    ): Promise<boolean> {
+        // step 1 - route via sub-handle dispatcher -> worker-safe.
+        const handle = this.harness.getPeerHandle(requestingPeerIndex);
+        const result = await handle.queryInternals.isForkDisputedService({
+            op: "didPeerAcknowledgeDisputedFork",
+            args: [respondingPeerAddress.toString(), forkId]
+        });
+        return result as boolean;
     }
 
     /**

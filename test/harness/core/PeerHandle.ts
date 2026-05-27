@@ -112,6 +112,7 @@ export interface P2pInternalsHandle {
     isForkDisputedService(req: {
         op:
             | "didPeerAcknowledgeDisputedFork"
+            | "didIAcknowledgeDisputedFork"
             | "requestDisputeAcknowledgment"
             | "respondToDisputeAcknowledgment"
             | "onDisputeAcknowledgmentRequest";
