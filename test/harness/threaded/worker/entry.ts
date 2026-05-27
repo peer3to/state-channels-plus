@@ -4,9 +4,6 @@
 // or stringifies BigInts.
 import "./stackLimit";
 import "./bigintJson";
-// step 1 - register every shipped named rpc-stub handler + disconnect filter
-// into this worker isolate. resolves the ids the orchestrator ships.
-import "../../worker-handlers";
 
 // step 1 - block holepunch's unconditional Hyperswarm DHT bind. tests run on
 // LocalTransport (DEBUG_LOCAL_TRANSPORT=true) and never join() topics, but the
@@ -181,7 +178,8 @@ registerSubHandleRoutes(server, {
     saved: {},
     spyRegistry,
     rpcStubRestores: new Map(),
-    disconnectFilterRestore: undefined
+    disconnectFilterRestore: undefined,
+    workerRpcClient
 });
 
 registerWorkerOpRoutes(server, { getStateManager, getP2pInstance });

@@ -13,6 +13,7 @@ import type { Signer } from "ethers";
 
 import type {
     ByzantineHandle,
+    DisconnectFilterFn,
     LifecycleHandle,
     NamedOpRequest,
     NetworkHandle,
@@ -21,19 +22,12 @@ import type {
     ProfileSummary,
     RestoreToken,
     RpcStubHandle,
+    RpcStubHandlerFn,
     SubmitDoubleSignReq,
     TransitionHandle,
     TransportSummary
 } from "./PeerHandle";
 import { getOp } from "../threaded/worker/opsRegistry";
-import {
-    getRpcStubHandler,
-    type RpcStubHandler
-} from "../worker-handlers/rpc-stub-handlers";
-import {
-    getDisconnectFilter,
-    type DisconnectFilter
-} from "../worker-handlers/disconnect-filters";
 import { rejectLambdaArgs } from "./namedOpGuards";
 import type { EventSpies, TestPeer } from "./types";
 
@@ -133,23 +127,19 @@ class InlineByzantineHandle implements ByzantineHandle {
 
 class InlineRpcStubHandle implements RpcStubHandle {
     // step 1 - per-peer restore map. keyed by "<serviceName>:<methodName>"
-    // (one slot per stubbed method), matching the worker route's table.
+    // (one slot per stubbed method).
     private readonly restoresByKey = new Map<string, () => void>();
 
     constructor(private readonly record: TestPeer) {}
 
-    // step 1 - mirror of subHandleRoutes "rpcStub.installCreateRpcMethodStub"
-    // body running against record.stateManager.p2pManager.localRpc. handler
-    // body is resolved against the shared named registry; same registry the
-    // worker isolate imports at boot.
-    async installCreateRpcMethodStub(req: {
-        serviceName: string;
-        methodName: string;
-        handlerId: string;
-        handlerArgs?: unknown;
-    }): Promise<RestoreToken> {
-        const { serviceName, methodName, handlerId, handlerArgs } = req;
-        const handler: RpcStubHandler = getRpcStubHandler(handlerId);
+    // step 1 - install an inline closure as the stub. wraps service.createRPCMethods
+    // so methods[methodName] runs the closure with `this` -> the rpc methods
+    // instance (services expose senderTransport/service/remoteRpc on this).
+    async installCreateRpcMethodStub(
+        serviceName: string,
+        methodName: string,
+        handler: RpcStubHandlerFn
+    ): Promise<RestoreToken> {
         const localRpc = (
             this.record.stateManager.p2pManager as unknown as {
                 localRpc: Record<string, unknown>;
@@ -183,16 +173,10 @@ class InlineRpcStubHandle implements RpcStubHandle {
                     `InlineRpcStubHandle: method '${methodName}' missing on createRPCMethods() result for '${serviceName}'`
                 );
             }
-            methods[methodName] = async function (
-                this: unknown,
-                ...callArgs: unknown[]
-            ) {
-                return await handler({
-                    thisCtx: this,
-                    args: callArgs,
-                    handlerArgs
-                });
-            };
+            // step 1 - install the closure verbatim. rpc kernel binds `this`
+            // to the methods instance + spreads positional args -> closures
+            // that need senderTransport / service / remoteRpc see them.
+            methods[methodName] = handler;
             return methods;
         }) as never;
 
@@ -607,14 +591,12 @@ class InlineNetworkHandle implements NetworkHandle {
         );
     }
 
-    // step 1 - mirror of subHandleRoutes "network.installDisconnectFilter" body
-    // running against record.stateManager.p2pManager. filter body resolved
-    // against the shared named-filter registry.
-    async installDisconnectFilter(req: {
-        filterId: string;
-        args?: unknown;
-    }): Promise<RestoreToken> {
-        const filter: DisconnectFilter = getDisconnectFilter(req.filterId);
+    // step 1 - install an inline closure filter over
+    // disconnectAndBlacklistPeerByEvmAddress(addr). predicate returns true ->
+    // delegate to original; false -> drop. message arg is the addr string.
+    async installDisconnectFilter(
+        filter: DisconnectFilterFn
+    ): Promise<RestoreToken> {
         const pm = this.record.stateManager.p2pManager as unknown as {
             disconnectAndBlacklistPeerByEvmAddress: (addr: string) => unknown;
         };
@@ -623,10 +605,7 @@ class InlineNetworkHandle implements NetworkHandle {
         this.filterRestore?.();
 
         pm.disconnectAndBlacklistPeerByEvmAddress = (async (addr: string) => {
-            const allow = await filter({
-                address: addr,
-                filterArgs: req.args
-            });
+            const allow = await filter(addr);
             if (!allow) return;
             return original(addr);
         }) as never;

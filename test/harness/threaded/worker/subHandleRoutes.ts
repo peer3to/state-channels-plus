@@ -8,15 +8,8 @@
 // from the action classes the audit cites (W1 appendix A bucket (ii)).
 
 import type { RpcServer } from "../rpc/rpc-server";
+import type { RpcClient } from "../rpc/rpc-client";
 import type { SpyRegistry } from "./SpyRegistry";
-import {
-    getRpcStubHandler,
-    type RpcStubHandler
-} from "../../worker-handlers/rpc-stub-handlers";
-import {
-    getDisconnectFilter,
-    type DisconnectFilter
-} from "../../worker-handlers/disconnect-filters";
 
 // step 1 - structural stand-in. real type lives in src/stateManager. handlers
 // only touch fields the action audit lists; keeping this loose avoids dragging
@@ -98,6 +91,11 @@ export type SubHandleCtx = {
     // rpc stubs and "disconnectFilter" for the single-slot filter.
     rpcStubRestores: Map<string, () => void>;
     disconnectFilterRestore?: () => void;
+    // step 5 - worker rpc client. used by closure-bearing routes (rpc-stub
+    // install + disconnect filter install) to call back into the orchestrator
+    // via "harness.invokeStubCallback" / "harness.invokeFilterCallback".
+    // populated in entry.ts at boot alongside the rpc server.
+    workerRpcClient: RpcClient;
 };
 
 export class W5BlockedError extends Error {
@@ -1020,19 +1018,17 @@ export function registerSubHandleRoutes(
         }
     );
 
-    // step 1 - rpcStub.* (mirrors rpcStubActions.ts bodies). handler bodies
-    // resolved against the named registry in worker-handlers/rpc-stub-handlers.ts;
-    // the test source ships a stable handlerId instead of a lambda.
+    // step 1 - rpcStub.* (closure-bearing). orchestrator ships an opaque
+    // callbackId; the worker-side wrapped method calls back via
+    // "harness.invokeStubCallback" -> the orchestrator's StubCallbackRegistry
+    // runs the closure with its native `this`/locals + returns the result.
 
     server.register("rpcStub.installCreateRpcMethodStub", async (args) => {
-        // step 1 - mirror of rpcStubActions.ts:69-156 inline body.
         const sm = ctx.getStateManager();
-        const { serviceName, methodName, handlerId, handlerArgs } = (args ??
-            {}) as {
+        const { serviceName, methodName, callbackId } = (args ?? {}) as {
             serviceName?: string;
             methodName?: string;
-            handlerId?: string;
-            handlerArgs?: unknown;
+            callbackId?: string;
         };
         if (!serviceName)
             throw new Error(
@@ -1042,12 +1038,11 @@ export function registerSubHandleRoutes(
             throw new Error(
                 "rpcStub.installCreateRpcMethodStub: missing 'methodName'"
             );
-        if (!handlerId)
+        if (!callbackId)
             throw new Error(
-                "rpcStub.installCreateRpcMethodStub: missing 'handlerId'"
+                "rpcStub.installCreateRpcMethodStub: missing 'callbackId'"
             );
 
-        const handler: RpcStubHandler = getRpcStubHandler(handlerId);
         const localRpc = sm.p2pManager.localRpc as Record<string, unknown>;
         const service = localRpc[serviceName] as
             | { createRPCMethods: (t: unknown) => unknown }
@@ -1081,11 +1076,14 @@ export function registerSubHandleRoutes(
                 this: unknown,
                 ...callArgs: unknown[]
             ) {
-                return await handler({
-                    thisCtx: this,
-                    args: callArgs,
-                    handlerArgs
-                });
+                // step 1 - callback to orchestrator. closure runs there with
+                // the spread args; this binding can't survive structured
+                // clone -> closures that need `this` rely on the test-local
+                // capture (same pattern as the inline path's bound closures).
+                return await ctx.workerRpcClient.call(
+                    "harness.invokeStubCallback",
+                    { id: callbackId, args: callArgs }
+                );
             };
             return methods;
         }) as never;
@@ -1535,20 +1533,17 @@ export function registerSubHandleRoutes(
     });
 
     server.register("network.installDisconnectFilter", async (args) => {
-        // step 1 - mirror of RPCActions.ts:447-463 inline body. wraps
-        // disconnectAndBlacklistPeerByEvmAddress with a named filter; the
-        // filter returns false to drop, true to delegate to the original.
+        // step 1 - closure-bearing install. orchestrator ships an opaque
+        // callbackId; the wrapped disconnectAndBlacklistPeerByEvmAddress calls
+        // back via "harness.invokeFilterCallback" -> orchestrator runs the
+        // closure with the addr string -> true delegates to original, false drops.
         const sm = ctx.getStateManager();
-        const { filterId, args: filterArgs } = (args ?? {}) as {
-            filterId?: string;
-            args?: unknown;
-        };
-        if (!filterId)
+        const { callbackId } = (args ?? {}) as { callbackId?: string };
+        if (!callbackId)
             throw new Error(
-                "network.installDisconnectFilter: missing 'filterId'"
+                "network.installDisconnectFilter: missing 'callbackId'"
             );
 
-        const filter: DisconnectFilter = getDisconnectFilter(filterId);
         const pm = sm.p2pManager;
         const original = pm.disconnectAndBlacklistPeerByEvmAddress.bind(pm);
         // step 1 - if a prior install is live, restore first so we wrap the
@@ -1556,7 +1551,10 @@ export function registerSubHandleRoutes(
         ctx.disconnectFilterRestore?.();
 
         pm.disconnectAndBlacklistPeerByEvmAddress = async (addr: string) => {
-            const allow = await filter({ address: addr, filterArgs });
+            const allow = (await ctx.workerRpcClient.call(
+                "harness.invokeFilterCallback",
+                { id: callbackId, message: addr }
+            )) as boolean;
             if (!allow) return;
             return original(addr);
         };

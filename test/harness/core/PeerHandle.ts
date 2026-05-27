@@ -70,13 +70,24 @@ export type SubmitDoubleSignReq = {
     signedBlockConfirmation: unknown;
 };
 
+// step 1 - inline-closure rpc-stub handler signature. the closure IS the
+// replacement method: in inline mode, it's installed verbatim onto the
+// service's rpc methods object (called with the rpc methods instance as
+// `this` + the positional args). in worker mode, the wrapped method calls
+// back via "harness.invokeStubCallback" and the closure runs orchestrator-side
+// with the args (no `this` available cross-thread).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type RpcStubHandlerFn = (
+    this: any,
+    ...args: any[]
+) => unknown | Promise<unknown>;
+
 export interface RpcStubHandle {
-    installCreateRpcMethodStub(req: {
-        serviceName: string;
-        methodName: string;
-        handlerId: string;
-        handlerArgs?: unknown;
-    }): Promise<RestoreToken>;
+    installCreateRpcMethodStub(
+        serviceName: string,
+        methodName: string,
+        handler: RpcStubHandlerFn
+    ): Promise<RestoreToken>;
     restoreCreateRpcMethodStub(req: {
         serviceName: string;
         methodName: string;
@@ -158,13 +169,18 @@ export interface P2pInternalsHandle {
     }>;
 }
 
+// step 1 - inline-closure disconnect-filter signature. predicate over the
+// disconnectAndBlacklistPeerByEvmAddress(addr) callsite; true -> delegate to
+// original, false -> short-circuit. closure runs orchestrator-side either
+// way -> worker mode ships an opaque id + callbacks via bidirectional rpc.
+export type DisconnectFilterFn = (
+    message: unknown
+) => boolean | Promise<boolean>;
+
 export interface NetworkHandle {
     disconnectAll(): Promise<void>;
     tryOpenConnectionToChannel(channelId: string): Promise<void>;
-    installDisconnectFilter(req: {
-        filterId: string;
-        args?: unknown;
-    }): Promise<RestoreToken>;
+    installDisconnectFilter(filter: DisconnectFilterFn): Promise<RestoreToken>;
     restoreDisconnectFilter(): Promise<void>;
 }
 

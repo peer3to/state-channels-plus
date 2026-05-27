@@ -1,12 +1,11 @@
-// step 1 - W1 §6 bucket (iii) / D-22 - named-handler surface. test sources ship
-// a stable handlerId (+ optional handlerArgs) instead of a lambda; the handler
-// body lives once in test/harness/worker-handlers/rpc-stub-handlers.ts (or is
-// registered ephemerally via registerTemporaryRpcStubHandler for genuinely
-// test-local cases). action class delegates to peer.rpcStub.* on the handle;
-// inline backend runs the body in-process, worker backend forwards via rpc.
+// step 1 - action namespace for rpc-method stubs. test source passes an inline
+// closure; orchestrator runs it either in-process (inline backend) or via the
+// W3 bidirectional rpc callback (worker backend) -> closures stay in the test
+// isolate, never serialised, free to capture test-local state.
 
 import { Logger } from "@/utils";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { RpcStubHandlerFn } from "@test/harness/core/PeerHandle";
 
 export class RpcStubActions {
     constructor(
@@ -14,27 +13,23 @@ export class RpcStubActions {
         private logger: Logger
     ) {}
 
-    // step 1 - install a named rpc-method stub on one peer's localRpc service.
-    // returns an async restore that reverts the wrapper. handlerId resolves
-    // against the shared registry (worker-handlers/rpc-stub-handlers.ts).
-    async installNamedStub(options: {
+    // step 1 - install a stub closure on one peer's localRpc service. returns
+    // an async restore that reverts the wrapper.
+    async stubServiceCreateRpcMethod(options: {
         peerIndex: number;
         serviceName: string;
         methodName: string;
-        handlerId: string;
-        handlerArgs?: unknown;
+        stubbedMethod: RpcStubHandlerFn;
     }): Promise<() => Promise<void>> {
-        const { peerIndex, serviceName, methodName, handlerId, handlerArgs } =
-            options;
+        const { peerIndex, serviceName, methodName, stubbedMethod } = options;
         const peer = this.harness.getPeerHandle(peerIndex);
-        await peer.rpcStub.installCreateRpcMethodStub({
+        await peer.rpcStub.installCreateRpcMethodStub(
             serviceName,
             methodName,
-            handlerId,
-            handlerArgs
-        });
+            stubbedMethod
+        );
         this.logger.debug(
-            `Stubbed RPC method '${methodName}' on service '${serviceName}' for peer ${peerIndex} via handler '${handlerId}'`
+            `Stubbed RPC method '${methodName}' on service '${serviceName}' for peer ${peerIndex}`
         );
         return async () => {
             await peer.rpcStub.restoreCreateRpcMethodStub({

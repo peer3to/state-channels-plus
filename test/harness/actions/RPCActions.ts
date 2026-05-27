@@ -428,21 +428,21 @@ export class RPCActions {
     async requestFakeDisputeWithSpiedDisconnect(options: {
         requestingPeer: number;
     }): Promise<void> {
-        // step 1 - install the named "network.dropSpecificAddress" filter on
-        // every other peer; filter drops disconnects targeting the requester
-        // so the test can observe the no-ack timeout path. handler body lives
-        // in test/harness/worker-handlers/index.ts.
+        // step 1 - install an inline filter on every other peer; filter drops
+        // disconnects targeting the requester so the test can observe the
+        // no-ack timeout path. closure runs orchestrator-side either backend.
         const { requestingPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
         const requestingPeerHandle = this.harness.getPeerHandle(requestingPeer);
+        const skipAddress = requestingPeerHandle.address;
 
         for (let i = 0; i < this.harness.peers.length; i++) {
             if (i === requestingPeer) continue;
             const peer = this.harness.getPeerHandle(i);
-            await peer.network.installDisconnectFilter({
-                filterId: "network.dropSpecificAddress",
-                args: { skipAddress: requestingPeerHandle.address }
-            });
+            // step 1 - return false -> drop; true -> delegate to original.
+            await peer.network.installDisconnectFilter(
+                (addr) => addr !== skipAddress
+            );
         }
 
         // step 2 - dispatch through queryInternals -> in worker mode this rpc

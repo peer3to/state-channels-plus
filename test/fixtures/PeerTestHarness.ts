@@ -51,6 +51,7 @@ import {
 } from "@test/harness/core/types";
 import { InlinePeer } from "@test/harness/core/InlinePeer";
 import type { PeerHandle } from "@test/harness/core/PeerHandle";
+import { StubCallbackRegistry } from "@test/harness/core/StubCallbackRegistry";
 import { WorkerPeer } from "@test/harness/core/WorkerPeer";
 import {
     SpyMirror,
@@ -610,32 +611,44 @@ export class PeerTestHarness<
         });
         this.spawnedWorkers.push(worker);
 
-        worker
-            .getRpcServer()
-            .register("harness.tamperDispute", async (args) => {
-                const {
-                    peerIndex,
-                    dispute,
-                    disputeConfirmation,
-                    auditingData
-                } = (args ?? {}) as {
+        const stubCallbackRegistry = new StubCallbackRegistry();
+        const rpcServer = worker.getRpcServer();
+        rpcServer.register("harness.invokeStubCallback", async (args) => {
+            const { id, args: callArgs } = (args ?? {}) as {
+                id?: string;
+                args?: readonly unknown[];
+            };
+            if (!id) throw new Error("harness.invokeStubCallback: missing id");
+            return await stubCallbackRegistry.invokeStub(id, callArgs ?? []);
+        });
+        rpcServer.register("harness.invokeFilterCallback", async (args) => {
+            const { id, message } = (args ?? {}) as {
+                id?: string;
+                message?: unknown;
+            };
+            if (!id)
+                throw new Error("harness.invokeFilterCallback: missing id");
+            return await stubCallbackRegistry.invokeFilter(id, message);
+        });
+
+
+        rpcServer.register("harness.tamperDispute", async (args) => {
+            const { peerIndex, dispute, disputeConfirmation, auditingData } =
+                (args ?? {}) as {
                     peerIndex: number;
                     dispute: unknown;
                     disputeConfirmation: unknown;
                     auditingData: unknown;
                 };
-                const fn = this.tamperFnsByPeer.get(peerIndex);
-                if (!fn) return { dispute, disputeConfirmation, auditingData };
-                const ret = await fn(
-                    dispute,
-                    disputeConfirmation,
-                    auditingData
-                );
-                if (ret && typeof ret === "object" && "dispute" in ret) {
-                    return ret;
-                }
-                return { dispute, disputeConfirmation, auditingData };
-            });
+            const fn = this.tamperFnsByPeer.get(peerIndex);
+            if (!fn) return { dispute, disputeConfirmation, auditingData };
+            const ret = await fn(dispute, disputeConfirmation, auditingData);
+            if (ret && typeof ret === "object" && "dispute" in ret) {
+                return ret;
+            }
+
+            return { dispute, disputeConfirmation, auditingData };
+        });
 
         const mirror = new SpyMirror(this.eventCountsBarrier);
         worker.getRpcClient().on("spy", (payload: unknown) => {
@@ -670,6 +683,7 @@ export class PeerTestHarness<
             turnBarrier: peer.turnBarrier,
             rpc: worker.getRpcClient(),
             mirror,
+            stubCallbackRegistry,
             onDispose: async () => {
                 await worker.dispose();
             }

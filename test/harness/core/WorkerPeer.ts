@@ -19,6 +19,7 @@ import { TRANSITION_RUN_OP } from "../threaded/worker/opRoutes";
 import { rejectLambdaArgs } from "./namedOpGuards";
 import type {
     ByzantineHandle,
+    DisconnectFilterFn,
     LifecycleHandle,
     NamedOpRequest,
     NetworkHandle,
@@ -27,11 +28,13 @@ import type {
     ProfileSummary,
     RestoreToken,
     RpcStubHandle,
+    RpcStubHandlerFn,
     SubmitDoubleSignReq,
     TransitionHandle,
     TransportSummary
 } from "./PeerHandle";
 import type { SpyMirror } from "./SpyMirror";
+import type { StubCallbackRegistry } from "./StubCallbackRegistry";
 import type { EventSpies } from "./types";
 
 // step 1 - sub-handle implementations forward to W3 rpc. route ids follow
@@ -84,29 +87,61 @@ class WorkerByzantineHandle implements ByzantineHandle {
 }
 
 class WorkerRpcStubHandle implements RpcStubHandle {
-    constructor(private readonly rpc: RpcClient) {}
-    installCreateRpcMethodStub(req: {
-        serviceName: string;
-        methodName: string;
-        handlerId: string;
-        handlerArgs?: unknown;
-    }): Promise<RestoreToken> {
-        return this.rpc.call(
+    // step 1 - per-handle live ids -> let restoreAll drop the orchestrator-side
+    // closures even when the test source only restores via restoreCreateRpcMethodStub
+    // (one-slot key) or never restores explicitly.
+    private readonly liveCallbackIds = new Map<string, string>();
+
+    constructor(
+        private readonly rpc: RpcClient,
+        private readonly registry: StubCallbackRegistry
+    ) {}
+
+    async installCreateRpcMethodStub(
+        serviceName: string,
+        methodName: string,
+        handler: RpcStubHandlerFn
+    ): Promise<RestoreToken> {
+        const key = `${serviceName}:${methodName}`;
+        // step 1 - replace any prior closure on this slot first so the orchestrator
+        // map stays in sync with the worker's single-slot table.
+        const prior = this.liveCallbackIds.get(key);
+        if (prior) this.registry.unregisterStub(prior);
+
+        // step 2 - register the closure with the per-peer registry; ship the
+        // opaque id to the worker. worker calls back via "harness.invokeStubCallback"
+        // -> registry dispatches -> closure runs orchestrator-side. `this` is
+        // not bound cross-thread; closures that need it can't run in worker mode.
+        const id = this.registry.registerStub((args) =>
+            (handler as (...a: unknown[]) => unknown)(...args)
+        );
+        this.liveCallbackIds.set(key, id);
+        const token = (await this.rpc.call(
             "rpcStub.installCreateRpcMethodStub",
-            req
-        ) as Promise<RestoreToken>;
+            { serviceName, methodName, callbackId: id }
+        )) as RestoreToken;
+        return token;
     }
-    restoreCreateRpcMethodStub(req: {
+
+    async restoreCreateRpcMethodStub(req: {
         serviceName: string;
         methodName: string;
     }): Promise<void> {
-        return this.rpc.call(
-            "rpcStub.restoreCreateRpcMethodStub",
-            req
-        ) as Promise<void>;
+        const key = `${req.serviceName}:${req.methodName}`;
+        const id = this.liveCallbackIds.get(key);
+        if (id) {
+            this.registry.unregisterStub(id);
+            this.liveCallbackIds.delete(key);
+        }
+        await this.rpc.call("rpcStub.restoreCreateRpcMethodStub", req);
     }
-    restoreAll(): Promise<void> {
-        return this.rpc.call("rpcStub.restoreAll", {}) as Promise<void>;
+
+    async restoreAll(): Promise<void> {
+        for (const id of this.liveCallbackIds.values()) {
+            this.registry.unregisterStub(id);
+        }
+        this.liveCallbackIds.clear();
+        await this.rpc.call("rpcStub.restoreAll", {});
     }
 }
 
@@ -231,7 +266,13 @@ class WorkerLifecycleHandle implements LifecycleHandle {
 }
 
 class WorkerNetworkHandle implements NetworkHandle {
-    constructor(private readonly rpc: RpcClient) {}
+    // step 1 - single-slot filter id matches the worker route's table.
+    private liveCallbackId: string | undefined;
+
+    constructor(
+        private readonly rpc: RpcClient,
+        private readonly registry: StubCallbackRegistry
+    ) {}
     disconnectAll(): Promise<void> {
         return this.rpc.call("network.disconnectAll", {}) as Promise<void>;
     }
@@ -240,20 +281,25 @@ class WorkerNetworkHandle implements NetworkHandle {
             channelId
         }) as Promise<void>;
     }
-    installDisconnectFilter(req: {
-        filterId: string;
-        args?: unknown;
-    }): Promise<RestoreToken> {
-        return this.rpc.call(
-            "network.installDisconnectFilter",
-            req
-        ) as Promise<RestoreToken>;
+    async installDisconnectFilter(
+        filter: DisconnectFilterFn
+    ): Promise<RestoreToken> {
+        // step 1 - drop any prior closure -> map stays in sync with worker.
+        if (this.liveCallbackId) {
+            this.registry.unregisterFilter(this.liveCallbackId);
+        }
+        const id = this.registry.registerFilter((msg) => filter(msg));
+        this.liveCallbackId = id;
+        return (await this.rpc.call("network.installDisconnectFilter", {
+            callbackId: id
+        })) as RestoreToken;
     }
-    restoreDisconnectFilter(): Promise<void> {
-        return this.rpc.call(
-            "network.restoreDisconnectFilter",
-            {}
-        ) as Promise<void>;
+    async restoreDisconnectFilter(): Promise<void> {
+        if (this.liveCallbackId) {
+            this.registry.unregisterFilter(this.liveCallbackId);
+            this.liveCallbackId = undefined;
+        }
+        await this.rpc.call("network.restoreDisconnectFilter", {});
     }
 }
 
@@ -273,6 +319,11 @@ export type WorkerPeerCtorArgs = {
     // lifecycle.dispose rpc; the underlying PeerWorker.dispose terminates the
     // node Worker. wiring lives in PeerTestHarness.createPeer.
     onDispose: () => Promise<void>;
+    // step 3 - per-peer closure registry. ships opaque ids for inline closures
+    // installed via rpcStub / network filters; worker invokes via callbacks
+    // wired in PeerTestHarness.createPeerHandle ("harness.invokeStubCallback"
+    // / "harness.invokeFilterCallback") -> registry dispatches to the closure.
+    stubCallbackRegistry: StubCallbackRegistry;
 };
 
 export class WorkerPeer implements PeerHandle {
@@ -323,9 +374,15 @@ export class WorkerPeer implements PeerHandle {
         });
 
         this.byzantine = new WorkerByzantineHandle(this.rpc);
-        this.rpcStub = new WorkerRpcStubHandle(this.rpc);
+        this.rpcStub = new WorkerRpcStubHandle(
+            this.rpc,
+            args.stubCallbackRegistry
+        );
         this.queryInternals = new WorkerP2pInternalsHandle(this.rpc);
-        this.network = new WorkerNetworkHandle(this.rpc);
+        this.network = new WorkerNetworkHandle(
+            this.rpc,
+            args.stubCallbackRegistry
+        );
         this.transition = new WorkerTransitionHandle(this.rpc);
         this.lifecycle = new WorkerLifecycleHandle(this.rpc);
     }
