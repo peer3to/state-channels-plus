@@ -31,7 +31,11 @@ export class MathPeerTestHarness extends PeerTestHarness<
             workerBundleManifest: [
                 // step 1 - side-effect import: registers the deployer in the
                 // worker's deploymentRegistry.
-                "@test/harness/core/defaultMathHarnessDeployment"
+                "@test/harness/core/defaultMathHarnessDeployment",
+                // step 2 - register math.* named ops in the worker isolate ->
+                // transition.runOp resolves them against the same registry the
+                // orchestrator uses for inline mode.
+                "@test/harness/worker-ops/math"
             ]
         });
         this.transition = new MathTransitionActions(this, this.logger);

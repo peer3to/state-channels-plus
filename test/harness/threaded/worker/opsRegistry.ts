@@ -12,6 +12,10 @@ export type WorkerOpContext = {
     // they need (state manager, p2p manager, etc). domain modules cast to
     // their concrete shape at the call site.
     getStateManager: () => unknown;
+    // step 2 - W?: p2p instance accessor. tx-submission ops cast this to the
+    // typed P2pInstance and call `.p2pContractInstance.<methodName>(...args)`.
+    // throws same W5-style error when set in boot phase.
+    getP2pInstance?: () => unknown;
 };
 
 export type WorkerOp<TArgs = unknown, TResult = unknown> = (

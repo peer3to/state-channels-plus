@@ -39,7 +39,7 @@ describe("E2E: Block Fraud Proofs", function () {
             waitForFinalization: false
         });
 
-        const source = h.peerWithHighestBlock(forkId!);
+        const source = await h.peerWithHighestBlock(forkId!);
         const block1 = source.stateManager.storage.blocks.getBlock(forkId!, 0);
         const block2 = source.stateManager.storage.blocks.getBlock(forkId!, 1);
         expect(block1).to.not.be.undefined;

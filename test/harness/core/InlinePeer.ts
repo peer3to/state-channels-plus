@@ -540,10 +540,11 @@ class InlineTransitionHandle implements TransitionHandle {
         rejectLambdaArgs("InlinePeer.transition.submitNext", req);
         // step 1 - resolve op id against the shared registry. inline backend
         // runs the op body in-process with a context exposing the live
-        // stateManager. same body as the worker route (one impl, two paths).
+        // stateManager + p2pInstance. same bodies as the worker route.
         const fn = getOp(req.op);
         const ctx = {
-            getStateManager: () => this.record.stateManager as unknown
+            getStateManager: () => this.record.stateManager as unknown,
+            getP2pInstance: () => this.record.p2pInstance as unknown
         };
         return await fn(ctx, req.args);
     }
@@ -673,6 +674,30 @@ export class InlinePeer implements PeerHandle {
 
     async queryLatestBlock(forkId: ForkId): Promise<unknown> {
         return this.record.stateManager.storage.blocks.getLatestBlock(forkId);
+    }
+
+    // step 4a - diamondStateMachine direct read. inline body matches
+    // StateQueryActions.ts:140.
+    async queryNextToWrite(): Promise<Address> {
+        return (await this.record.stateManager.diamondStateMachine.getNextToWrite()) as Address;
+    }
+
+    async queryParticipants(): Promise<Address[]> {
+        return (await this.record.stateManager.diamondStateMachine.getParticipants()) as Address[];
+    }
+
+    // step 4b - agreementManager.didEveryoneSignBlock. inline body resolves
+    // the block from the local storage by hash so the SyncCoordinator path
+    // doesn't need to ship the full Block over the wire.
+    async queryDidEveryoneSignBlock(blockHash: string): Promise<boolean> {
+        const storage = this.record.stateManager.storage as unknown as {
+            blocks: { getBlockByHash: (h: string) => unknown };
+        };
+        const block = storage.blocks.getBlockByHash(blockHash);
+        if (!block) return false;
+        return this.record.stateManager.agreementManager.didEveryoneSignBlock(
+            block as never
+        );
     }
 
     async queryStorageSnapshot(_req: unknown): Promise<unknown> {

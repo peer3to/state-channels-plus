@@ -244,6 +244,20 @@ export class PeerTestHarness<
             this.logger,
             this.eventCountsBarrier
         );
+        // step 1 - worker mode probe -> tip + finalization checks go through
+        // PeerHandle instead of `peer.stateManager.*` (live record absent).
+        if (this.options.dedicatedPeerThread) {
+            this.syncCoordinator.setProbe({
+                loadTip: async (peerIndex, forkId) =>
+                    (await this.getPeerHandle(peerIndex).queryLatestBlock(
+                        forkId
+                    )) as never,
+                didEveryoneSignBlock: async (peerIndex, blockHash) =>
+                    this.getPeerHandle(peerIndex).queryDidEveryoneSignBlock(
+                        blockHash
+                    )
+            });
+        }
 
         await this.deployContracts();
         if (this.options.dedicatedPeerThread) {
@@ -883,20 +897,22 @@ export class PeerTestHarness<
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
 
-    peerWithHighestBlock(forkId: ForkId): TestPeer<TCustomRpc, TStateMachine> {
+    async peerWithHighestBlock(
+        forkId: ForkId
+    ): Promise<TestPeer<TCustomRpc, TStateMachine>> {
         const malicious = new Set(this.context.maliciousPeerIndices ?? []);
         let best: TestPeer<TCustomRpc, TStateMachine> | undefined;
         let bestHeight = Number.NEGATIVE_INFINITY;
         for (const peer of this.peers) {
-            if (malicious.has(peer.index)) {
-                continue;
+            if (malicious.has(peer.index)) continue;
+            let h: number | undefined;
+            if (this.options.dedicatedPeerThread) {
+                const latest = (await this.getPeerHandle(peer.index).queryLatestBlock(forkId)) as { height?: number } | undefined;
+                h = latest?.height;
+            } else {
+                h = peer.stateManager.storage.blocks.getLatestBlock(forkId)?.height;
             }
-            const latest =
-                peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            const h = latest?.height;
-            if (h === undefined) {
-                continue;
-            }
+            if (h === undefined) continue;
             if (h > bestHeight) {
                 bestHeight = h;
                 best = peer;

@@ -127,10 +127,52 @@ export function registerSubHandleRoutes(
     });
 
     server.register("query.latestBlock", async (args) => {
-        // W?: mirrors PeerHandle.queryLatestBlock / storage.blocks.getLatestBlock
+        // W?: mirrors PeerHandle.queryLatestBlock / storage.blocks.getLatestBlock.
+        // serialise to a plain object -> Block getters (hash, height) don't
+        // survive structured-clone otherwise.
         const sm = ctx.getStateManager();
         const { forkId } = (args ?? {}) as { forkId?: unknown };
-        return sm.storage.blocks.getLatestBlock(forkId);
+        const block = sm.storage.blocks.getLatestBlock(forkId) as
+            | { hash: string; height: number | bigint }
+            | undefined;
+        if (!block) return undefined;
+        return {
+            hash: String(block.hash),
+            height: Number(block.height)
+        };
+    });
+
+    // step 1 - diamondStateMachine reads. mirror StateQueryActions.ts:140 +
+    // StateQueryActions.ts:163 (participants).
+    server.register("query.nextToWrite", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            diamondStateMachine: { getNextToWrite: () => Promise<string> };
+        };
+        return await sm.diamondStateMachine.getNextToWrite();
+    });
+
+    server.register("query.participants", async () => {
+        const sm = ctx.getStateManager() as unknown as {
+            diamondStateMachine: { getParticipants: () => Promise<string[]> };
+        };
+        return await sm.diamondStateMachine.getParticipants();
+    });
+
+    server.register("query.didEveryoneSignBlock", async (args) => {
+        const { blockHash } = (args ?? {}) as { blockHash?: string };
+        if (!blockHash)
+            throw new Error("query.didEveryoneSignBlock: missing 'blockHash'");
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: { getBlockByHash: (h: string) => unknown };
+            };
+            agreementManager: {
+                didEveryoneSignBlock: (b: unknown) => boolean;
+            };
+        };
+        const block = sm.storage.blocks.getBlockByHash(blockHash);
+        if (!block) return false;
+        return sm.agreementManager.didEveryoneSignBlock(block);
     });
 
     // step 1 - byzantine.* (mirrors ByzantineActions.ts bodies)

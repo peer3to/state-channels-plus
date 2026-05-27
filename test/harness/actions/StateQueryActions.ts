@@ -134,10 +134,13 @@ export class StateQueryActions {
                 throw new Error("getNextPeerToWrite: no active fork ID");
             }
 
-            const sourcePeer = this.harness.peerWithHighestBlock(forkId);
-
-            const nextAddress =
-                await sourcePeer.stateManager.diamondStateMachine.getNextToWrite();
+            // step 1 - async variant handles worker mode correctly (queries
+            // each handle's tip via rpc). inline mode short-circuits to the
+            // sync read.
+            const sourcePeer =
+                await this.harness.peerWithHighestBlock(forkId);
+            const sourceHandle = this.harness.getPeerHandle(sourcePeer.index);
+            const nextAddress = await sourceHandle.queryNextToWrite();
 
             this.logger.verbose(`getNextPeerToWrite returned: ${nextAddress}`);
 
@@ -146,21 +149,15 @@ export class StateQueryActions {
             );
             if (!nextPeer) {
                 // Enhanced error reporting
-                const stateHash = this.getLatestStateMachineStateHash(0);
                 const peerAddresses = this.harness.peers.map((p) => p.address);
 
-                const latestBlock =
-                    sourcePeer.stateManager.storage.blocks.getLatestBlock(
-                        this.harness.activeForkId!
-                    );
-                const forkIdForDiag = sourcePeer.stateManager.forkId;
-
-                // Check participants on all peers for diagnostics
+                // step 1 - participant diagnostics via PeerHandle -> worker safe.
                 const participantStates = await Promise.all(
-                    this.harness.peers.map(async (peer, i) => {
+                    this.harness.peers.map(async (_peer, i) => {
                         try {
-                            const participants =
-                                await peer.stateManager.diamondStateMachine.getParticipants();
+                            const participants = await this.harness
+                                .getPeerHandle(i)
+                                .queryParticipants();
                             return `Peer ${i}: ${participants.length} participants`;
                         } catch {
                             return `Peer ${i}: error getting participants`;
@@ -169,7 +166,7 @@ export class StateQueryActions {
                 );
 
                 throw new Error(
-                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. ForkId: ${forkIdForDiag}, StateHash: ${stateHash ?? "none"}, LatestBlockHeight: ${latestBlock?.height ?? "none"}. Participant states: ${participantStates.join(", ")}`
+                    `No peer found with address ${nextAddress}. Available peers: ${peerAddresses.join(", ")}. Participant states: ${participantStates.join(", ")}`
                 );
             }
 

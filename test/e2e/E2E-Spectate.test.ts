@@ -170,7 +170,7 @@ describe("E2E: Spectate Service", function () {
                 waitForFinalization: true
             });
 
-            const sourcePeer = h.peerWithHighestBlock(forkId!);
+            const sourcePeer = await h.peerWithHighestBlock(forkId!);
             const blockToQueue =
                 sourcePeer.stateManager.storage.blocks.getLatestBlock(forkId!);
             expect(blockToQueue).to.not.be.undefined;
@@ -294,7 +294,7 @@ describe("E2E: Spectate Service", function () {
             expect(localLatestBlock).to.not.be.undefined;
             expect(localLatestBlock!.height).to.be.greaterThan(0);
 
-            const sourcePeer = h.peerWithHighestBlock(forkId!);
+            const sourcePeer = await h.peerWithHighestBlock(forkId!);
             const syncPayload =
                 await sourcePeer.stateManager.p2pManager.localRpc.spectateService.generateSyncPayload(
                     h.channelId!,
@@ -373,7 +373,7 @@ describe("E2E: Spectate Service", function () {
                 waitForFinalization: true
             });
 
-            const sourcePeer = h.peerWithHighestBlock(forkId!);
+            const sourcePeer = await h.peerWithHighestBlock(forkId!);
             const sourceLatestBlock =
                 sourcePeer.stateManager.storage.blocks.getLatestBlock(forkId!);
             expect(sourceLatestBlock).to.not.be.undefined;

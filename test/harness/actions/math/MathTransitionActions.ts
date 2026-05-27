@@ -34,19 +34,38 @@ export class MathTransitionActions extends TransitionActions<
         value: number = 1,
         options?: TransitionOptions
     ): Promise<any> {
-        return this.submitNext((contract) => contract.add(value), options);
+        // step 1 - prefer named-op shape -> works in both inline + worker mode.
+        return this.submitNext({ op: "math.add", args: { value } }, options);
     }
 
     override async advanceState(
         options?: MathAdvanceStateOptions
     ): Promise<void> {
-        const txFn =
-            options?.txFn ?? ((contract: MathStateMachine) => contract.add(1));
+        // step 1 - the legacy txFn override (lambda over MathStateMachine) is
+        // inline-only. when provided, defer to the base lambda path. otherwise
+        // ship the default add-1 as a named op so worker mode works without
+        // test-source churn.
+        if (options?.txFn) {
+            return super.advanceState({ ...options, txFn: options.txFn });
+        }
+        // step 1 - reuse the base advanceState loop but inject a named-op via
+        // a small adapter that bypasses the lambda path. base loops over
+        // submitNext; we shadow the local txFn -> use submitNext({op}).
+        const count = options?.count ?? 1;
+        const total = options?.rounds
+            ? options.rounds * this.harness.peers.length
+            : count;
 
-        return super.advanceState({
-            ...options,
-            txFn
-        });
+        for (let i = 0; i < total; i++) {
+            await this.submitNext(
+                { op: "math.add", args: { value: 1 } },
+                {
+                    ...options,
+                    waitForFinalization:
+                        i === total - 1 ? options?.waitForFinalization : false
+                }
+            );
+        }
     }
 
     async peerWrite(options: {
@@ -60,9 +79,11 @@ export class MathTransitionActions extends TransitionActions<
             throw new Error(`Peer ${peer} not found`);
         }
 
-        await this.submit(peerObj, (contract) => contract.add(value), {
-            waitForPeers
-        });
+        await this.submitOp(
+            peerObj,
+            { op: "math.add", args: { value } },
+            { waitForPeers }
+        );
     }
 
     async participantLeaveWait(
@@ -110,13 +131,16 @@ export class MathTransitionActions extends TransitionActions<
         const leaver = await this.harness.query.getNextPeerToWrite();
         const leaverIndex = leaver.index;
 
-        await this.submitNext((contract) => contract.leaveChannel(), {
-            waitForTurn: true,
-            waitForSync: options?.waitForSync ?? true,
-            waitForPeers: options?.waitForPeers,
-            waitForFinalization: options?.waitForFinalization ?? true,
-            delayMs: options?.delayMs
-        });
+        await this.submitNext(
+            { op: "math.leaveChannel" },
+            {
+                waitForTurn: true,
+                waitForSync: options?.waitForSync ?? true,
+                waitForPeers: options?.waitForPeers,
+                waitForFinalization: options?.waitForFinalization ?? true,
+                delayMs: options?.delayMs
+            }
+        );
 
         this.logger.debug(`Peer ${leaverIndex} left channel`);
 

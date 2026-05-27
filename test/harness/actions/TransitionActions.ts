@@ -69,7 +69,9 @@ export class TransitionActions<
      * Submit a valid transaction from the next peer to write
      */
     async submitNext(
-        txFn: (contract: TContract) => Promise<any>,
+        txFn:
+            | ((contract: TContract) => Promise<any>)
+            | { op: string; args?: unknown },
         options: TransitionOptions = { waitForTurn: true, waitForSync: true }
     ): Promise<any> {
         const nextPeer =
@@ -80,6 +82,17 @@ export class TransitionActions<
 
         if (options.waitForTurn) {
             await this.waitForTurn(nextPeer);
+        }
+
+        // step 1 - named-op shape -> route through submitOp (worker safe).
+        // lambda shape -> legacy submit path (inline only).
+        if (typeof txFn !== "function") {
+            return this.submitOp(nextPeer, txFn, {
+                waitForSync: options.waitForSync ?? true,
+                waitForPeers: options.waitForPeers,
+                waitForTurn: false,
+                waitForFinalization: options.waitForFinalization
+            });
         }
 
         return this.submit(nextPeer, txFn, {
@@ -249,6 +262,36 @@ export class TransitionActions<
             "TransitionActions.submit(txFn)",
             this.harness.getPeerHandle(peer.index)
         );
+        return this.submitInner(
+            peer,
+            () => txFn(peer.p2pInstance.p2pContractInstance),
+            options
+        );
+    }
+
+    // step 1 - named-op equivalent. worker-safe. inline path goes through
+    // PeerHandle.transition.submitNext which dispatches against the shared
+    // ops registry (worker-ops/<domain>.ts) - same body both backends.
+    async submitOp(
+        peer: TestPeer<TFactories, TContract>,
+        opRequest: { op: string; args?: unknown },
+        options: TransitionOptions = {}
+    ): Promise<any> {
+        const handle = this.harness.getPeerHandle(peer.index);
+        return this.submitInner(
+            peer,
+            () => handle.transition.submitNext(opRequest),
+            options
+        );
+    }
+
+    // step 1 - shared body. txExec runs the actual on-chain submission;
+    // surrounds it with the same waitForTurn / waitForSync semantics.
+    private async submitInner(
+        peer: TestPeer<TFactories, TContract>,
+        txExec: () => Promise<unknown>,
+        options: TransitionOptions
+    ): Promise<unknown> {
         const waitForSync = options.waitForSync ?? true;
 
         if (options.waitForTurn) {
@@ -257,7 +300,7 @@ export class TransitionActions<
 
         if (options.delayMs) await sleep(options.delayMs);
 
-        const result = await txFn(peer.p2pInstance.p2pContractInstance);
+        const result = await txExec();
 
         if (waitForSync) {
             const forkId = this.harness.activeForkId;
@@ -265,9 +308,21 @@ export class TransitionActions<
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
-            const authorLatestBlock =
-                peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            const minHeight = authorLatestBlock?.height;
+            // step 1 - height read needs the live peer.stateManager. worker
+            // mode -> query via handle; inline keeps the sync read.
+            let minHeight: number | undefined;
+            if (this.harness.options.dedicatedPeerThread) {
+                const latest = (await this.harness
+                    .getPeerHandle(peer.index)
+                    .queryLatestBlock(forkId)) as
+                    | { height?: number }
+                    | undefined;
+                minHeight = latest?.height;
+            } else {
+                const latest =
+                    peer.stateManager.storage.blocks.getLatestBlock(forkId);
+                minHeight = latest?.height;
+            }
 
             const peers =
                 options.waitForPeers !== undefined

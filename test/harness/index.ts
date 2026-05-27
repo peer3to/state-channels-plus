@@ -5,6 +5,9 @@ export * from "./core/types";
 // disconnect filter into the orchestrator isolate. inline backend resolves
 // handler ids against this same table.
 import "./worker-handlers";
+// step 1 - same pattern for worker-ops (transition.runOp domain modules).
+// inline backend resolves op ids against this same registry.
+import "./worker-ops";
 
 import { MathTestSession } from "./session/MathTestSession";
 import { registerTestSessionHooks } from "./session/registerTestSessionHooks";

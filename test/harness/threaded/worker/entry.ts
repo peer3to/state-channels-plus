@@ -159,11 +159,18 @@ const loopGuard = startLoopGuard({
 // clear W5 marker until then so handlers fail loud rather than NPE on
 // undefined. when W5 lands, set `runtimeStateManager` after p2pSetup.
 let runtimeStateManager: unknown = undefined;
+let runtimeP2pInstance: unknown = undefined;
 const getStateManager = (): never => {
     if (runtimeStateManager === undefined) {
         throw new W5BlockedError("stateManager");
     }
     return runtimeStateManager as never;
+};
+const getP2pInstance = (): never => {
+    if (runtimeP2pInstance === undefined) {
+        throw new W5BlockedError("p2pInstance");
+    }
+    return runtimeP2pInstance as never;
 };
 
 registerSubHandleRoutes(server, {
@@ -174,7 +181,7 @@ registerSubHandleRoutes(server, {
     disconnectFilterRestore: undefined
 });
 
-registerWorkerOpRoutes(server, { getStateManager });
+registerWorkerOpRoutes(server, { getStateManager, getP2pInstance });
 
 // step 1 - test-only handler so the W6 acceptance test can trigger a
 // real stall without needing prod code paths to hang. busy-loops for the
@@ -390,6 +397,9 @@ async function runP2pSetup(args: {
         }
     ).p2pManager;
     runtimeStateManager = p2pManager.stateManager;
+    // step 5a - stash live p2pInstance so worker ops can submit txs against
+    // `.p2pContractInstance.<methodName>(...args)` (math.add etc.).
+    runtimeP2pInstance = p2pInstance;
 
     // step 5b - install worker-side spy proxy on the live eventHandler so
     // real events push frames to the orchestrator's SpyMirror. mirrors the

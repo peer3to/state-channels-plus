@@ -332,6 +332,17 @@ export class WorkerPeer implements PeerHandle {
     queryLatestBlock(forkId: ForkId): Promise<unknown> {
         return this.rpc.call("query.latestBlock", { forkId });
     }
+    queryNextToWrite(): Promise<Address> {
+        return this.rpc.call("query.nextToWrite", {}) as Promise<Address>;
+    }
+    queryParticipants(): Promise<Address[]> {
+        return this.rpc.call("query.participants", {}) as Promise<Address[]>;
+    }
+    queryDidEveryoneSignBlock(blockHash: string): Promise<boolean> {
+        return this.rpc.call("query.didEveryoneSignBlock", {
+            blockHash
+        }) as Promise<boolean>;
+    }
     queryStorageSnapshot(req: unknown): Promise<unknown> {
         return this.rpc.call("query.storageSnapshot", req);
     }

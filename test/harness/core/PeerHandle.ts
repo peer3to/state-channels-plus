@@ -211,6 +211,15 @@ export interface PeerHandle {
     // step 4 - hot-path data queries.
     queryStatus(): Promise<StateStatus>;
     queryLatestBlock(forkId: ForkId): Promise<BlockSummary | undefined>;
+    // step 4a - diamondStateMachine read-throughs. worker mode -> rpc; inline
+    // mode -> direct call on the live diamond. used by StateQueryActions to
+    // pick the next writer / report participant count.
+    queryNextToWrite(): Promise<Address>;
+    queryParticipants(): Promise<Address[]>;
+    // step 4b - agreementManager.didEveryoneSignBlock(block). worker mode
+    // sends the serialised block hash + height; inline body matches the
+    // SyncCoordinator.checkSync today path.
+    queryDidEveryoneSignBlock(blockHash: string): Promise<boolean>;
     queryStorageSnapshot(req: StorageReadRequest): Promise<StorageReadResult>;
     applyTransaction(req: ApplyTxRequest): Promise<ApplyTxResult>;
     ingestBlockConfirmation(req: IngestBlockReq): Promise<boolean>;
