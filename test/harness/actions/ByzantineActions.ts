@@ -268,17 +268,17 @@ export class ByzantineActions {
         );
     }
 
-    stubDisputeConstruction(options: {
+    async stubDisputeConstruction(options: {
         peerIndex: number;
         tamperFn: DisputeTamper;
-    }): void {
+    }): Promise<void> {
         // step 1 - tamperFn is a lambda over orchestrator state; named-tamper
         // migration target per W0 D-22.
         rejectClosureInWorkerMode(
             "ByzantineActions.stubDisputeConstruction(tamperFn)",
             this.harness.getPeerHandle(options.peerIndex)
         );
-        this.harness.tamper.stubConstructDispute(
+        await this.harness.tamper.stubConstructDispute(
             options.peerIndex,
             options.tamperFn
         );

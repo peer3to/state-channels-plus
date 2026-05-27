@@ -185,11 +185,11 @@ export class DisputeTamperingActions {
         await tx.wait();
     }
 
-    stubConstructDispute(
+    async stubConstructDispute(
         peerIndex: number,
         tamper: DisputeTamper,
         options?: { autoRestore?: boolean; markMalicious?: boolean }
-    ): void {
+    ): Promise<void> {
         if (options?.markMalicious ?? true) {
             this.harness.contextApi.markMaliciousPeer({
                 maliciousPeerIndex: peerIndex
@@ -229,18 +229,17 @@ export class DisputeTamperingActions {
                     return { dispute, disputeConfirmation, auditingData };
                 }
             );
-            // step 1 - fire the install rpc. fire-and-forget against the install
-            // ack; caller is sync so we can't await. install must land before
-            // the test triggers a dispute -> typical scenario.preDisputeSetup
-            // runs many awaits before peers initiate, so the race is benign.
-            // any error surfaces on the next handle.* call (rpc bus shared).
+            // step 1 - await the install rpc -> the wrap is in place before
+            // any test code can trigger a dispute. fire-and-forget races with
+            // tests where the dispute starts immediately after the stub call
+            // (e.g. case5_lastMilestoneFinalityAndAuditingData).
             const rpc = (
                 handle as unknown as {
                     rpc?: { call: (m: string, a: unknown) => Promise<unknown> };
                 }
             ).rpc;
             if (rpc) {
-                void rpc.call("byzantine.installDisputeTamperHook", {});
+                await rpc.call("byzantine.installDisputeTamperHook", {});
             }
             this.restoreByPeerIndex.set(peerIndex, () => {
                 this.harness.tamperFnsByPeer.delete(peerIndex);
