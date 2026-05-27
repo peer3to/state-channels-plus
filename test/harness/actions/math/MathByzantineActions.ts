@@ -12,6 +12,7 @@ import { hash } from "@/utils";
 import type { MathStateMachine } from "@typechain-types";
 import {
     BlockStruct,
+    BlockConfirmationStruct,
     TransactionStruct,
     MessageBlockStruct,
     MessageStruct,
@@ -74,7 +75,7 @@ export class MathByzantineActions extends ByzantineActions {
             throw new Error(`No block found for fork ${forkId}`);
         }
         const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as never
+            latestBlockConfirmation as BlockConfirmationStruct
         );
 
         const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
@@ -148,7 +149,9 @@ export class MathByzantineActions extends ByzantineActions {
         const previousBlockConfirmation =
             await handle.queryLatestBlockConfirmation(forkId);
         const previousBlock = previousBlockConfirmation
-            ? Block.fromBlockConfirmation(previousBlockConfirmation as never)
+            ? Block.fromBlockConfirmation(
+                  previousBlockConfirmation as BlockConfirmationStruct
+              )
             : undefined;
         const previousBlockHash = await handle.queryPreviousBlockHash({
             forkId,
@@ -303,7 +306,7 @@ export class MathByzantineActions extends ByzantineActions {
             throw new Error(`No block found for fork ${forkId}`);
         }
         const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as never
+            latestBlockConfirmation as BlockConfirmationStruct
         );
 
         const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
@@ -385,7 +388,7 @@ export class MathByzantineActions extends ByzantineActions {
             throw new Error(`No block found for fork ${forkId}`);
         }
         const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as never
+            latestBlockConfirmation as BlockConfirmationStruct
         );
 
         const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
@@ -520,7 +523,7 @@ export class MathByzantineActions extends ByzantineActions {
             throw new Error(`No block found for fork ${forkId}`);
         }
         const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as never
+            latestBlockConfirmation as BlockConfirmationStruct
         );
 
         const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
@@ -584,7 +587,7 @@ export class MathByzantineActions extends ByzantineActions {
             throw new Error(`No block found for fork ${forkId}`);
         }
         const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as never
+            latestBlockConfirmation as BlockConfirmationStruct
         );
 
         const nextBlockHeight = await handle.queryNextBlockHeight(forkId);

@@ -8,6 +8,7 @@ import PeerProfile from "@/PeerProfile";
 import { ethers } from "@/index";
 import Block from "@/models/Block";
 import { StateSnapshot } from "@/models";
+import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -111,7 +112,7 @@ export class StateQueryActions {
         const struct = await handle.queryLocalStateSnapshot(
             this.harness.channelId as string
         );
-        return StateSnapshot.from(struct as never);
+        return StateSnapshot.from(struct as StateSnapshotStruct);
     }
     /**
      * Get the next peer that should write a block

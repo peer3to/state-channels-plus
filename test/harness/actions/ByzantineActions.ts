@@ -6,7 +6,8 @@ import Block from "@/models/Block";
 import {
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct
+    SignedBlockStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers } from "ethers";
 import Clock from "@/Clock";
@@ -60,7 +61,7 @@ export class ByzantineActions {
             throw new Error(`No block found for fork ${forkId}`);
         }
         const originalBlock = Block.fromBlockConfirmation(
-            blockConfirmation as never
+            blockConfirmation as BlockConfirmationStruct
         );
 
         this.logger.debug(

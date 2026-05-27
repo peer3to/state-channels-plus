@@ -28,7 +28,11 @@ import { nodePortToRpcPort } from "./portCast";
 import { toWireError } from "./serializeError";
 import { SpyRegistry } from "./SpyRegistry";
 import { startLoopGuard } from "./loopGuard";
-import { registerSubHandleRoutes, W5BlockedError } from "./subHandleRoutes";
+import {
+    registerSubHandleRoutes,
+    W5BlockedError,
+    type SubHandleCtx
+} from "./subHandleRoutes";
 import { registerWorkerOpRoutes } from "./opRoutes";
 import {
     LIFECYCLE_PUSH,
@@ -158,19 +162,22 @@ const loopGuard = startLoopGuard({
 // constructed during p2pSetup (W5-blocked); the accessor below throws a
 // clear W5 marker until then so handlers fail loud rather than NPE on
 // undefined. when W5 lands, set `runtimeStateManager` after p2pSetup.
-let runtimeStateManager: unknown = undefined;
+type StateManagerAccessor = SubHandleCtx["getStateManager"];
+type WorkerStateManager = ReturnType<StateManagerAccessor>;
+
+let runtimeStateManager: WorkerStateManager | undefined = undefined;
 let runtimeP2pInstance: unknown = undefined;
-const getStateManager = (): never => {
+const getStateManager: StateManagerAccessor = () => {
     if (runtimeStateManager === undefined) {
         throw new W5BlockedError("stateManager");
     }
-    return runtimeStateManager as never;
+    return runtimeStateManager;
 };
-const getP2pInstance = (): never => {
+const getP2pInstance = (): unknown => {
     if (runtimeP2pInstance === undefined) {
         throw new W5BlockedError("p2pInstance");
     }
-    return runtimeP2pInstance as never;
+    return runtimeP2pInstance;
 };
 
 registerSubHandleRoutes(server, {
@@ -513,7 +520,7 @@ async function runP2pSetup(args: {
             p2pManager: { self: never; stateManager: unknown };
         }
     ).p2pManager;
-    runtimeStateManager = p2pManager.stateManager;
+    runtimeStateManager = p2pManager.stateManager as WorkerStateManager;
     // step 5a - stash live p2pInstance so worker ops can submit txs against
     // `.p2pContractInstance.<methodName>(...args)` (math.add etc.).
     runtimeP2pInstance = p2pInstance;
@@ -526,7 +533,7 @@ async function runP2pSetup(args: {
     //
     // bump fires before the original -> the harness barrier wakes as soon as
     // the spy increments even if the original method throws.
-    const stateManagerLive = runtimeStateManager as {
+    const stateManagerLive = runtimeStateManager as unknown as {
         eventHandler: Record<string, unknown>;
         stateChannelEventListener: { eventHandler: Record<string, unknown> };
     };

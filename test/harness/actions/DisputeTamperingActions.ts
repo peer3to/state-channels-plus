@@ -30,6 +30,7 @@ import DisputeManager, {
 import { WorkerPeer } from "@test/harness/core/WorkerPeer";
 import type {
     BlockStruct,
+    BlockConfirmationStruct,
     SignedBlockStruct,
     SnapshotDataStruct,
     MessageBlockStruct
@@ -311,7 +312,9 @@ export class DisputeTamperingActions {
         }
         const latestBlock = (
             await import("@/models/Block")
-        ).default.fromBlockConfirmation(latestConfirmation as never);
+        ).default.fromBlockConfirmation(
+            latestConfirmation as BlockConfirmationStruct
+        );
         await handle.storeTimeout({
             forkId,
             timeout: {

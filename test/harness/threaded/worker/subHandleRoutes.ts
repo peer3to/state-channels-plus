@@ -13,7 +13,8 @@ import type { SpyRegistry } from "./SpyRegistry";
 
 // step 1 - structural stand-in. real type lives in src/stateManager. handlers
 // only touch fields the action audit lists; keeping this loose avoids dragging
-// the full state-machine type-graph into the worker bootstrap surface.
+// the full state-machine type-graph (private-only fields the worker reaches
+// via per-call casts) into the worker bootstrap surface.
 type WorkerStateManager = {
     eventHandler: {
         onBlockCalldataPosted: (...args: unknown[]) => Promise<void>;

@@ -29,19 +29,34 @@ import type {
     TransitionHandle,
     TransportSummary
 } from "./PeerHandle";
+import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { getOp } from "../threaded/worker/opsRegistry";
 import { rejectLambdaArgs } from "./namedOpGuards";
 import type { EventSpies, TestPeer } from "./types";
+
+// step 1 - the real onBlockCalldataPosted signature pulls in BytesLike from
+// ethers, and onBlockConfirmation takes a typechain BlockConfirmationStruct
+// (-> SignedBlockStruct -> SignatureStruct). the byzantine stubs only need to
+// replace these slots, never to call the originals. type aliases below
+// capture the live method types so the assignment site stays honest without
+// us mirroring the prod signature inline.
+type EventHandler = TestPeer["stateManager"]["eventHandler"];
+type CalldataHandlerFn = EventHandler["onBlockCalldataPosted"];
+type InboundStorage = TestPeer["stateManager"]["storage"]["inboundMessages"];
+type InboundGetLatestBlockHashFn = InboundStorage["getLatestBlockHash"];
+type StateTransitionService =
+    TestPeer["stateManager"]["p2pManager"]["remoteRpc"]["stateTransitionService"];
+type OnBlockConfirmationFn = StateTransitionService["onBlockConfirmation"];
 
 class InlineByzantineHandle implements ByzantineHandle {
     // step 1 - sub-handle owns the captured refs for restore. one slot per
     // stub kind; restoreCalldataHandler / restorePendingInboundInclusion
     // consume the matching slot. stubBroadcast has no paired restore today
     // (no test calls it), so no slot kept.
-    private originalCalldataHandler: unknown;
-    // step 1 - cast through `never` -> the storage field's signature uses
-    // ethers BytesLike; binding the original method preserves runtime shape.
-    private originalInboundGetLatestBlockHash: unknown;
+    private originalCalldataHandler: CalldataHandlerFn | undefined;
+    private originalInboundGetLatestBlockHash:
+        | InboundGetLatestBlockHashFn
+        | undefined;
 
     constructor(private readonly record: TestPeer) {}
 
@@ -50,8 +65,8 @@ class InlineByzantineHandle implements ByzantineHandle {
         const eh = this.record.stateManager.eventHandler;
         this.originalCalldataHandler = eh.onBlockCalldataPosted.bind(
             eh
-        ) as unknown;
-        eh.onBlockCalldataPosted = (async () => {}) as never;
+        ) as CalldataHandlerFn;
+        eh.onBlockCalldataPosted = (async () => {}) as CalldataHandlerFn;
     }
 
     // step 1 - mirrors ByzantineActions.ts:276-291 (today body)
@@ -61,8 +76,8 @@ class InlineByzantineHandle implements ByzantineHandle {
                 "InlineByzantineHandle: no calldata handler captured to restore"
             );
         }
-        this.record.stateManager.eventHandler.onBlockCalldataPosted = this
-            .originalCalldataHandler as never;
+        this.record.stateManager.eventHandler.onBlockCalldataPosted =
+            this.originalCalldataHandler;
         this.originalCalldataHandler = undefined;
     }
 
@@ -70,8 +85,11 @@ class InlineByzantineHandle implements ByzantineHandle {
     async stubPendingInboundInclusion(): Promise<void> {
         const storage = this.record.stateManager.storage.inboundMessages;
         this.originalInboundGetLatestBlockHash =
-            storage.getLatestBlockHash.bind(storage);
-        storage.getLatestBlockHash = () => undefined;
+            storage.getLatestBlockHash.bind(
+                storage
+            ) as InboundGetLatestBlockHashFn;
+        storage.getLatestBlockHash = (() =>
+            undefined) as InboundGetLatestBlockHashFn;
     }
 
     async restorePendingInboundInclusion(): Promise<void> {
@@ -81,7 +99,7 @@ class InlineByzantineHandle implements ByzantineHandle {
             );
         }
         this.record.stateManager.storage.inboundMessages.getLatestBlockHash =
-            this.originalInboundGetLatestBlockHash as never;
+            this.originalInboundGetLatestBlockHash;
         this.originalInboundGetLatestBlockHash = undefined;
     }
 
@@ -92,6 +110,9 @@ class InlineByzantineHandle implements ByzantineHandle {
         const remoteRpc = this.record.stateManager.p2pManager.remoteRpc;
         const peerLogger = this.record.logger;
         const peerIndex = this.record.index;
+        // step 1 - the production RpcHandler return has more fields than the
+        // suppressed stub uses; double-cast keeps the assignment compatible
+        // without forcing the stub to mirror the full RpcHandler surface.
         remoteRpc.stateTransitionService.onBlockConfirmation = ((
             _blockConfirmation: unknown
         ) => {
@@ -101,15 +122,19 @@ class InlineByzantineHandle implements ByzantineHandle {
                 sendOne: () => {},
                 sendMultiple: () => {}
             };
-        }) as never;
+        }) as unknown as OnBlockConfirmationFn;
     }
 
     // step 1 - block construction is orchestrator-side per D-15. inline body
     // is the broadcast call only (mirrors ByzantineActions.ts:99-101 today).
+    // signed confirmation arrives via rpc as `unknown`; recast to the
+    // BlockConfirmationStruct the rpc kernel expects.
     async submitDoubleSignBlock(req: SubmitDoubleSignReq): Promise<void> {
         const remoteRpc = this.record.stateManager.p2pManager.remoteRpc;
         remoteRpc.stateTransitionService
-            .onBlockConfirmation(req.signedBlockConfirmation as never)
+            .onBlockConfirmation(
+                req.signedBlockConfirmation as Parameters<OnBlockConfirmationFn>[0]
+            )
             .broadcast();
     }
 
@@ -122,7 +147,9 @@ class InlineByzantineHandle implements ByzantineHandle {
     }): Promise<void> {
         const remoteRpc = this.record.stateManager.p2pManager.remoteRpc;
         remoteRpc.stateTransitionService
-            .onBlockConfirmation(req.blockConfirmation as never)
+            .onBlockConfirmation(
+                req.blockConfirmation as Parameters<OnBlockConfirmationFn>[0]
+            )
             .broadcast();
     }
 }
@@ -165,7 +192,7 @@ class InlineRpcStubHandle implements RpcStubHandle {
         // we wrap the unmodified service.
         this.restoresByKey.get(key)?.();
 
-        service.createRPCMethods = ((transport: unknown) => {
+        service.createRPCMethods = (transport: unknown) => {
             const methods = originalCreate(transport) as Record<
                 string,
                 unknown
@@ -180,10 +207,10 @@ class InlineRpcStubHandle implements RpcStubHandle {
             // that need senderTransport / service / remoteRpc see them.
             methods[methodName] = handler;
             return methods;
-        }) as never;
+        };
 
         const restore = () => {
-            service.createRPCMethods = originalCreate as never;
+            service.createRPCMethods = originalCreate;
             this.restoresByKey.delete(key);
         };
         this.restoresByKey.set(key, restore);
@@ -564,7 +591,7 @@ class InlineLifecycleHandle implements LifecycleHandle {
         expectedSnapshotHash: string;
     }): Promise<void> {
         await this.record.p2pInstance.p2pSigner.joinChannel(
-            req.confirmation as never,
+            req.confirmation as JoinChannelConfirmationStruct,
             req.expectedSnapshotHash
         );
     }
@@ -580,9 +607,9 @@ class InlineNetworkHandle implements NetworkHandle {
     // step 1 - mirrors NetworkController.ts:77-90
     async disconnectAll(): Promise<void> {
         const pm = this.record.p2pInstance.p2pSigner.p2pManager;
-        const conns = [...(pm.openConnections as Iterable<unknown>)];
+        const conns = [...pm.openConnections];
         for (const conn of conns) {
-            pm.disconnectConnection(conn as never);
+            pm.disconnectConnection(conn);
         }
     }
 
@@ -599,20 +626,22 @@ class InlineNetworkHandle implements NetworkHandle {
     async installDisconnectFilter(
         filter: DisconnectFilterFn
     ): Promise<RestoreToken> {
+        type DisconnectFn = (addr: string) => unknown;
         const pm = this.record.stateManager.p2pManager as unknown as {
-            disconnectAndBlacklistPeerByEvmAddress: (addr: string) => unknown;
+            disconnectAndBlacklistPeerByEvmAddress: DisconnectFn;
         };
-        const original = pm.disconnectAndBlacklistPeerByEvmAddress.bind(pm);
+        const original: DisconnectFn =
+            pm.disconnectAndBlacklistPeerByEvmAddress.bind(pm);
         // step 1 - if a prior filter is live, restore first -> wrap clean.
         this.filterRestore?.();
 
-        pm.disconnectAndBlacklistPeerByEvmAddress = (async (addr: string) => {
+        pm.disconnectAndBlacklistPeerByEvmAddress = async (addr: string) => {
             const allow = await filter(addr);
             if (!allow) return;
             return original(addr);
-        }) as never;
+        };
         this.filterRestore = () => {
-            pm.disconnectAndBlacklistPeerByEvmAddress = original as never;
+            pm.disconnectAndBlacklistPeerByEvmAddress = original;
             this.filterRestore = undefined;
         };
         return { id: "disconnectFilter" };
@@ -638,11 +667,11 @@ class InlineDebugHandle implements DebugHandle {
             this.record.stateManager as unknown as Record<string, unknown>,
             path
         );
-        const original = (target as Record<string, unknown>)[leaf];
-        (target as Record<string, unknown>)[leaf] = fn as unknown as never;
+        const original = target[leaf];
+        target[leaf] = fn;
         const id = `stubMethod#${this.nextTokenId++}`;
         this.restoresByToken.set(id, () => {
-            (target as Record<string, unknown>)[leaf] = original as never;
+            target[leaf] = original;
             this.restoresByToken.delete(id);
         });
         return { id };
@@ -782,13 +811,11 @@ export class InlinePeer implements PeerHandle {
     // the block from the local storage by hash so the SyncCoordinator path
     // doesn't need to ship the full Block over the wire.
     async queryDidEveryoneSignBlock(blockHash: string): Promise<boolean> {
-        const storage = this.record.stateManager.storage as unknown as {
-            blocks: { getBlock: (h: string) => unknown };
-        };
-        const block = storage.blocks.getBlock(blockHash);
+        const block =
+            this.record.stateManager.storage.blocks.getBlock(blockHash);
         if (!block) return false;
         return this.record.stateManager.agreementManager.didEveryoneSignBlock(
-            block as never
+            block
         );
     }
 
@@ -1237,12 +1264,17 @@ export class InlinePeer implements PeerHandle {
             };
         } & Record<string, unknown>;
     }> {
+        type RawLatestBlock = {
+            transaction: {
+                header: { transactionCnt: bigint | number | string };
+            };
+        } & Record<string, unknown>;
         const sm = this.record.stateManager as unknown as {
             diamondStateMachine: {
                 localDiamondContract: {
                     getLatestBlockFromStateProof: (
                         sp: unknown
-                    ) => Promise<[boolean, unknown]>;
+                    ) => Promise<[boolean, RawLatestBlock]>;
                 };
             };
         };
@@ -1252,7 +1284,7 @@ export class InlinePeer implements PeerHandle {
             );
         return {
             hasBlock: Boolean(hasBlock),
-            latestBlock: latestBlock as never
+            latestBlock
         };
     }
 
