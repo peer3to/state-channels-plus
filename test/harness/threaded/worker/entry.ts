@@ -467,8 +467,8 @@ async function runP2pSetup(args: {
     // any state has been set (matches inline pre-genesis behaviour).
     let lastPushedForkId: string | undefined;
     const maybePushForkId = (): void => {
-        const fid = (runtimeStateManager as { forkId?: string } | undefined)
-            ?.forkId;
+        const raw = runtimeStateManager?.forkId;
+        const fid = typeof raw === "string" ? raw : undefined;
         if (fid === undefined || fid === lastPushedForkId) return;
         lastPushedForkId = fid;
         server.push("fork.changed", { forkId: fid });
