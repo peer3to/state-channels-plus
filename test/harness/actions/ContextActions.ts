@@ -35,14 +35,13 @@ export class ContextActions {
             throw new Error("No active fork ID");
         }
 
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const lastSnapshot = (
-            await peer.stateManager.prepareUpdateSnapshotSameFork(forkId)
-        )?.milestoneSnapshots.at(-1);
+        const handle = this.harness.getPeerHandle(peerIndex);
+        // step 1 - W1 - milestone read via sub-handle. inline returns the
+        // live StateSnapshot; worker returns the serialised struct (still
+        // satisfies LoggerUtils.getSnapshotMetadata via duck-typing).
+        const lastSnapshot = (await handle.queryLastMilestoneSnapshot(
+            forkId
+        )) as StateSnapshot | undefined;
 
         const onChainSnapshotBefore = StateSnapshot.from(
             await this.harness.channelManager.getStateSnapshot(
@@ -62,12 +61,22 @@ export class ContextActions {
                 newSnapshot: LoggerUtils.getSnapshotMetadata(lastSnapshot)
             }
         );
+        // step 2 - W1 - withdrawals delta computed by the sub-handle (one
+        // round-trip; the outboundMessages walk + diamondStateMachine math
+        // runs in the peer's process). returned struct is { amount, data }.
         const expectedWithdrawalsDeltaBalance =
-            await this.computeExpectedWithdrawalsDelta(
-                peer,
-                lastSnapshot,
-                onChainSnapshotBefore
-            );
+            await handle.computeExpectedWithdrawalsDelta({
+                upperBlockHash: String(
+                    lastSnapshot.snapshotData.latestOutboundMessageBlockHash
+                ),
+                lowerBlockHash: onChainSnapshotBefore.snapshotData
+                    .latestOutboundMessageBlockHash
+                    ? String(
+                          onChainSnapshotBefore.snapshotData
+                              .latestOutboundMessageBlockHash
+                      )
+                    : undefined
+            });
 
         const channelBalance =
             await this.harness.channelManager.getChannelBalance(

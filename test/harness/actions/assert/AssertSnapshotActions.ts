@@ -151,12 +151,8 @@ export class AssertSnapshotActions {
         peerIndex?: number;
     }): Promise<void> {
         const { peerIndex = 0 } = options || {};
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
+        const handle = this.harness.getPeerHandle(peerIndex);
 
-        const stateMachine = peer.stateManager.diamondStateMachine;
         const channelBalanceBefore = this.harness.context.channelBalanceBefore;
         if (!channelBalanceBefore) {
             throw new Error(
@@ -169,10 +165,19 @@ export class AssertSnapshotActions {
                 this.harness.channelId
             );
 
-        const actualDelta = await stateMachine.subtractBalance(
-            channelBalanceAfter.totalWithdrawals,
-            channelBalanceBefore.totalWithdrawals
-        );
+        // step 1 - W1 - balance math via sub-handles. inline runs diamond
+        // contract calls in-process; worker forwards rpc. payloads are
+        // string-serialised so bigints survive structured clone.
+        const actualDelta = await handle.subtractBalance({
+            a: {
+                amount: String(channelBalanceAfter.totalWithdrawals.amount),
+                data: String(channelBalanceAfter.totalWithdrawals.data)
+            },
+            b: {
+                amount: String(channelBalanceBefore.totalWithdrawals.amount),
+                data: String(channelBalanceBefore.totalWithdrawals.data)
+            }
+        });
         const expectedWithdrawalsDelta =
             this.harness.context.expectedWithdrawalsDelta;
         if (!expectedWithdrawalsDelta) {
@@ -181,10 +186,13 @@ export class AssertSnapshotActions {
             );
         }
 
-        const deltaMatches = await stateMachine.areBalancesEqual(
-            actualDelta,
-            expectedWithdrawalsDelta
-        );
+        const deltaMatches = await handle.areBalancesEqual({
+            a: actualDelta,
+            b: {
+                amount: String(expectedWithdrawalsDelta.amount),
+                data: String(expectedWithdrawalsDelta.data)
+            }
+        });
 
         if (!deltaMatches) {
             throw new Error(

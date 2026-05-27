@@ -898,9 +898,7 @@ export class InlinePeer implements PeerHandle {
     }
 
     // step 4s - mirrors storage.timeout.getTimeout(forkId).
-    async queryTimeoutForFork(
-        forkId: ForkId
-    ): Promise<{
+    async queryTimeoutForFork(forkId: ForkId): Promise<{
         participant: string;
         isForced: boolean;
         blockHeight?: string;
@@ -936,6 +934,98 @@ export class InlinePeer implements PeerHandle {
             };
         };
         return storage.disputes.getDisputeConfirmation(disputeHash) ?? null;
+    }
+
+    // step 4v - compute expected withdrawals delta in-peer.
+    async computeExpectedWithdrawalsDelta(req: {
+        upperBlockHash: string;
+        lowerBlockHash?: string;
+    }): Promise<{ amount: string; data: string }> {
+        const sm = this.record.stateManager as unknown as {
+            storage: {
+                outboundMessages: {
+                    getMessageBlocksInRange: (range: {
+                        upperBlockHash: string;
+                        lowerBlockHash?: string;
+                    }) => Array<{
+                        messages: Array<{
+                            balance: { amount: bigint | number; data: string };
+                        }>;
+                    }>;
+                };
+            };
+            diamondStateMachine: {
+                getZeroBalance: () => Promise<{
+                    amount: bigint;
+                    data: string;
+                }>;
+                addBalance: (
+                    a: { amount: bigint; data: string },
+                    b: { amount: bigint | number; data: string }
+                ) => Promise<{ amount: bigint; data: string }>;
+            };
+        };
+        const blocks = sm.storage.outboundMessages.getMessageBlocksInRange(req);
+        let total = await sm.diamondStateMachine.getZeroBalance();
+        for (const block of blocks) {
+            for (const message of block.messages) {
+                total = await sm.diamondStateMachine.addBalance(
+                    total,
+                    message.balance
+                );
+            }
+        }
+        return { amount: String(total.amount), data: String(total.data) };
+    }
+
+    // step 4x - mirrors diamondStateMachine.subtractBalance(a, b).
+    async subtractBalance(req: {
+        a: { amount: string; data: string };
+        b: { amount: string; data: string };
+    }): Promise<{ amount: string; data: string }> {
+        const sm = this.record.stateManager as unknown as {
+            diamondStateMachine: {
+                subtractBalance: (
+                    a: { amount: bigint; data: string },
+                    b: { amount: bigint; data: string }
+                ) => Promise<{ amount: bigint; data: string }>;
+            };
+        };
+        const r = await sm.diamondStateMachine.subtractBalance(
+            { amount: BigInt(req.a.amount), data: req.a.data },
+            { amount: BigInt(req.b.amount), data: req.b.data }
+        );
+        return { amount: String(r.amount), data: String(r.data) };
+    }
+
+    // step 4y - mirrors diamondStateMachine.areBalancesEqual(a, b).
+    async areBalancesEqual(req: {
+        a: { amount: string; data: string };
+        b: { amount: string; data: string };
+    }): Promise<boolean> {
+        const sm = this.record.stateManager as unknown as {
+            diamondStateMachine: {
+                areBalancesEqual: (
+                    a: { amount: bigint; data: string },
+                    b: { amount: bigint; data: string }
+                ) => Promise<boolean>;
+            };
+        };
+        return await sm.diamondStateMachine.areBalancesEqual(
+            { amount: BigInt(req.a.amount), data: req.a.data },
+            { amount: BigInt(req.b.amount), data: req.b.data }
+        );
+    }
+
+    // step 4w - mirrors lastMilestoneSnapshot from prepareUpdateSnapshotSameFork.
+    async queryLastMilestoneSnapshot(
+        forkId: ForkId
+    ): Promise<unknown | undefined> {
+        const result =
+            await this.record.stateManager.prepareUpdateSnapshotSameFork(
+                forkId
+            );
+        return result?.milestoneSnapshots.at(-1);
     }
 
     // step 4u - mirrors storage.disputes.getOpenDisputeForkIds().

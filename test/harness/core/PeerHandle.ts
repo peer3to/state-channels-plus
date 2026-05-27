@@ -290,6 +290,27 @@ export interface PeerHandle {
     queryDisputeConfirmation(disputeHash: string): Promise<unknown | null>;
     // step 4u - mirrors storage.disputes.getOpenDisputeForkIds().
     queryOpenDisputeForkIds(): Promise<string[]>;
+    // step 4v - compute the expected withdrawals delta in-peer. mirrors
+    // ContextActions.computeExpectedWithdrawalsDelta (outboundMessages walk
+    // + diamondStateMachine.addBalance). returns serialised Balance struct.
+    computeExpectedWithdrawalsDelta(req: {
+        upperBlockHash: string;
+        lowerBlockHash?: string;
+    }): Promise<{ amount: string; data: string }>;
+    // step 4w - mirrors prepareUpdateSnapshotSameFork(forkId).milestoneSnapshots
+    // -> last entry only (the snapshot ContextActions uses as `lastSnapshot`).
+    queryLastMilestoneSnapshot(forkId: ForkId): Promise<unknown | undefined>;
+    // step 4x - mirrors diamondStateMachine.subtractBalance(a, b). returns
+    // serialised Balance.
+    subtractBalance(req: {
+        a: { amount: string; data: string };
+        b: { amount: string; data: string };
+    }): Promise<{ amount: string; data: string }>;
+    // step 4y - mirrors diamondStateMachine.areBalancesEqual(a, b).
+    areBalancesEqual(req: {
+        a: { amount: string; data: string };
+        b: { amount: string; data: string };
+    }): Promise<boolean>;
     // step 4h - mirrors stateManager.postStateSnapshot(forkId). returns the
     // posted snapshot summary (hash + serialised fields) or undefined. used
     // by transition.postSnapshot in worker mode.

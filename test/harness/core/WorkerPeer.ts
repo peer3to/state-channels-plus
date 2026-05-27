@@ -423,9 +423,7 @@ export class WorkerPeer implements PeerHandle {
             forkId
         }) as Promise<unknown[]>;
     }
-    queryTimeoutForFork(
-        forkId: ForkId
-    ): Promise<{
+    queryTimeoutForFork(forkId: ForkId): Promise<{
         participant: string;
         isForced: boolean;
         blockHeight?: string;
@@ -445,6 +443,33 @@ export class WorkerPeer implements PeerHandle {
         return this.rpc.call("query.openDisputeForkIds", {}) as Promise<
             string[]
         >;
+    }
+    computeExpectedWithdrawalsDelta(req: {
+        upperBlockHash: string;
+        lowerBlockHash?: string;
+    }): Promise<{ amount: string; data: string }> {
+        return this.rpc.call(
+            "context.computeExpectedWithdrawalsDelta",
+            req
+        ) as Promise<{ amount: string; data: string }>;
+    }
+    queryLastMilestoneSnapshot(forkId: ForkId): Promise<unknown | undefined> {
+        return this.rpc.call("query.lastMilestoneSnapshot", { forkId });
+    }
+    subtractBalance(req: {
+        a: { amount: string; data: string };
+        b: { amount: string; data: string };
+    }): Promise<{ amount: string; data: string }> {
+        return this.rpc.call("balance.subtract", req) as Promise<{
+            amount: string;
+            data: string;
+        }>;
+    }
+    areBalancesEqual(req: {
+        a: { amount: string; data: string };
+        b: { amount: string; data: string };
+    }): Promise<boolean> {
+        return this.rpc.call("balance.areEqual", req) as Promise<boolean>;
     }
     postStateSnapshot(forkId: ForkId): Promise<unknown> {
         return this.rpc.call("snapshot.post", { forkId });

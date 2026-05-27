@@ -474,6 +474,110 @@ export function registerSubHandleRoutes(
         return sm.storage.disputes.getDisputeConfirmation(disputeHash) ?? null;
     });
 
+    // step 4v - compute expected withdrawals delta. mirrors the
+    // ContextActions.computeExpectedWithdrawalsDelta body running in the
+    // worker so live storage + diamondStateMachine never cross the boundary.
+    server.register("context.computeExpectedWithdrawalsDelta", async (args) => {
+        const req = (args ?? {}) as {
+            upperBlockHash: string;
+            lowerBlockHash?: string;
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                outboundMessages: {
+                    getMessageBlocksInRange: (range: {
+                        upperBlockHash: string;
+                        lowerBlockHash?: string;
+                    }) => Array<{
+                        messages: Array<{
+                            balance: {
+                                amount: bigint | number;
+                                data: string;
+                            };
+                        }>;
+                    }>;
+                };
+            };
+            diamondStateMachine: {
+                getZeroBalance: () => Promise<{
+                    amount: bigint;
+                    data: string;
+                }>;
+                addBalance: (
+                    a: { amount: bigint; data: string },
+                    b: { amount: bigint | number; data: string }
+                ) => Promise<{ amount: bigint; data: string }>;
+            };
+        };
+        const blocks = sm.storage.outboundMessages.getMessageBlocksInRange(req);
+        let total = await sm.diamondStateMachine.getZeroBalance();
+        for (const block of blocks) {
+            for (const message of block.messages) {
+                total = await sm.diamondStateMachine.addBalance(
+                    total,
+                    message.balance
+                );
+            }
+        }
+        return {
+            amount: String(total.amount),
+            data: String(total.data)
+        };
+    });
+
+    // step 4x - mirrors diamondStateMachine.subtractBalance.
+    server.register("balance.subtract", async (args) => {
+        const req = (args ?? {}) as {
+            a: { amount: string; data: string };
+            b: { amount: string; data: string };
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            diamondStateMachine: {
+                subtractBalance: (
+                    a: { amount: bigint; data: string },
+                    b: { amount: bigint; data: string }
+                ) => Promise<{ amount: bigint; data: string }>;
+            };
+        };
+        const r = await sm.diamondStateMachine.subtractBalance(
+            { amount: BigInt(req.a.amount), data: req.a.data },
+            { amount: BigInt(req.b.amount), data: req.b.data }
+        );
+        return { amount: String(r.amount), data: String(r.data) };
+    });
+
+    // step 4y - mirrors diamondStateMachine.areBalancesEqual.
+    server.register("balance.areEqual", async (args) => {
+        const req = (args ?? {}) as {
+            a: { amount: string; data: string };
+            b: { amount: string; data: string };
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            diamondStateMachine: {
+                areBalancesEqual: (
+                    a: { amount: bigint; data: string },
+                    b: { amount: bigint; data: string }
+                ) => Promise<boolean>;
+            };
+        };
+        return await sm.diamondStateMachine.areBalancesEqual(
+            { amount: BigInt(req.a.amount), data: req.a.data },
+            { amount: BigInt(req.b.amount), data: req.b.data }
+        );
+    });
+
+    // step 4w - mirrors lastMilestoneSnapshot from prepareUpdateSnapshotSameFork.
+    server.register("query.lastMilestoneSnapshot", async (args) => {
+        const { forkId } = (args ?? {}) as { forkId?: unknown };
+        const sm = ctx.getStateManager() as unknown as {
+            prepareUpdateSnapshotSameFork: (
+                f: unknown
+            ) => Promise<{ milestoneSnapshots: unknown[] } | undefined>;
+        };
+        const result = await sm.prepareUpdateSnapshotSameFork(forkId);
+        return result?.milestoneSnapshots.at(-1);
+    });
+
     // step 4u - mirrors storage.disputes.getOpenDisputeForkIds().
     server.register("query.openDisputeForkIds", async () => {
         const sm = ctx.getStateManager() as unknown as {
