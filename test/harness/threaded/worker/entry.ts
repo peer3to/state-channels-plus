@@ -543,8 +543,8 @@ async function runP2pSetup(args: {
     // the EventHandler-method subset of EventSpies lives here. P2pEventHooks
     // spies are inline-only until hooks are shipped to the worker.
     //
-    // bump fires before the original -> the harness barrier wakes as soon as
-    // the spy increments even if the original method throws.
+    // ordering matches inline (PeerTestHarness.ts:808) - await original then
+    // bump -> "spy count == N" implies handler completed, same as inline.
     const stateManagerLive = runtimeStateManager as unknown as {
         eventHandler: Record<string, unknown>;
         stateChannelEventListener: { eventHandler: Record<string, unknown> };
@@ -556,13 +556,14 @@ async function runP2pSetup(args: {
             if (typeof original !== "function") return original;
             if (typeof prop !== "string") return original;
             if (!EVENT_HANDLER_SPY_METHODS.has(prop)) return original;
-            return function (this: unknown, ...args: unknown[]) {
-                // step 1 - bump first -> barrier wakes regardless of throw.
-                spyRegistry.bump(prop, args);
-                return (original as (...a: unknown[]) => unknown).apply(
+            return async function (this: unknown, ...args: unknown[]) {
+                // step 1 - await original first -> bump after success matches
+                // inline ordering. errors propagate to caller, not unhandled.
+                await (original as (...a: unknown[]) => unknown).apply(
                     target,
                     args
                 );
+                spyRegistry.bump(prop, args);
             };
         }
     });

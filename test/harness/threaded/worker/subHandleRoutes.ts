@@ -10,68 +10,12 @@
 import type { RpcServer } from "../rpc/rpc-server";
 import type { RpcClient } from "../rpc/rpc-client";
 import type { SpyRegistry } from "./SpyRegistry";
+import type StateManager from "@/stateManager";
 
-// step 1 - structural stand-in. real type lives in src/stateManager. handlers
-// only touch fields the action audit lists; keeping this loose avoids dragging
-// the full state-machine type-graph (private-only fields the worker reaches
-// via per-call casts) into the worker bootstrap surface.
-type WorkerStateManager = {
-    eventHandler: {
-        onBlockCalldataPosted: (...args: unknown[]) => Promise<void>;
-    };
-    storage: {
-        blocks: {
-            getLatestBlock: (forkId: unknown) => unknown;
-        };
-        inboundMessages: {
-            getLatestBlockHash: () => unknown;
-        };
-    };
-    p2pManager: {
-        openConnections: Array<{
-            connectionId?: string;
-            peerAddress?: string;
-            kind?: string;
-        }>;
-        self: { address: string };
-        profileManager?: {
-            getProfileByEvmAddress?: (
-                addr: string
-            ) =>
-                | { evmAddress?: string; transport?: { connectionId?: string } }
-                | undefined;
-            getProfileByTransport?: (
-                t: unknown
-            ) => { evmAddress?: string } | undefined;
-        };
-        remoteRpc: {
-            stateTransitionService: {
-                onBlockConfirmation: (...args: unknown[]) => {
-                    broadcast: () => void;
-                    sendOne: () => void;
-                    sendMultiple: () => void;
-                };
-            };
-        };
-        localRpc: Record<string, unknown>;
-        disconnectConnection: (c: unknown) => void;
-        tryOpenConnectionToChannel: (channelId: string) => Promise<void>;
-        disconnectAndBlacklistPeerByEvmAddress: (addr: string) => unknown;
-        // step 1 - p2pSigner exposes connectToChannel + joinChannel. used by
-        // lifecycle.connectToChannel / lifecycle.joinChannel routes.
-        p2pSigner: {
-            connectToChannel: (channelId: string) => Promise<void>;
-            joinChannel: (
-                confirmation: unknown,
-                expectedSnapshotHash: string
-            ) => Promise<void>;
-        };
-    };
-    stateChannelManagerContract: unknown;
-    getStatus: () => unknown;
-    getChannelId: () => unknown;
-    forkId: unknown;
-};
+// step 1 - typed against the live SDK StateManager. routes touch real fields;
+// per-route narrow casts compose on top of this where private members or
+// looser-shape access is needed. type-only import -> zero runtime weight.
+type WorkerStateManager = StateManager;
 
 export type SubHandleCtx = {
     // step 1 - lazy accessor. throws W5BlockedError if p2pSetup hasn't completed.
@@ -133,8 +77,8 @@ export function registerSubHandleRoutes(
         // serialise to a plain object -> Block getters (hash, height) don't
         // survive structured-clone otherwise.
         const sm = ctx.getStateManager();
-        const { forkId } = (args ?? {}) as { forkId?: unknown };
-        const block = sm.storage.blocks.getLatestBlock(forkId) as
+        const { forkId } = (args ?? {}) as { forkId?: string };
+        const block = sm.storage.blocks.getLatestBlock(forkId ?? "") as
             | { hash: string; height: number | bigint }
             | undefined;
         if (!block) return undefined;
@@ -875,8 +819,8 @@ export function registerSubHandleRoutes(
         // W?: moved from ByzantineActions.ts:263-274 (inline body)
         const sm = ctx.getStateManager();
         const eh = sm.eventHandler;
-        ctx.saved.calldataHandler = eh.onBlockCalldataPosted.bind(eh);
-        eh.onBlockCalldataPosted = async () => {};
+        ctx.saved.calldataHandler = eh.onBlockCalldataPosted.bind(eh) as never;
+        eh.onBlockCalldataPosted = (async () => {}) as never;
         return {};
     });
 
@@ -913,7 +857,7 @@ export function registerSubHandleRoutes(
                 "byzantine.restorePendingInboundInclusion: no original captured"
             );
         }
-        sm.storage.inboundMessages.getLatestBlockHash = original;
+        sm.storage.inboundMessages.getLatestBlockHash = original as never;
         ctx.saved.inboundGetLatestBlockHash = undefined;
         return {};
     });
@@ -922,13 +866,13 @@ export function registerSubHandleRoutes(
         // W?: moved from ByzantineActions.ts:308-328
         const sm = ctx.getStateManager();
         const remoteRpc = sm.p2pManager.remoteRpc;
-        ctx.saved.broadcast =
-            remoteRpc.stateTransitionService.onBlockConfirmation;
-        remoteRpc.stateTransitionService.onBlockConfirmation = () => ({
+        ctx.saved.broadcast = remoteRpc.stateTransitionService
+            .onBlockConfirmation as never;
+        remoteRpc.stateTransitionService.onBlockConfirmation = (() => ({
             broadcast: () => {},
             sendOne: () => {},
             sendMultiple: () => {}
-        });
+        })) as never;
         return {};
     });
 
@@ -947,7 +891,7 @@ export function registerSubHandleRoutes(
         }
         const sm = ctx.getStateManager();
         sm.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(blockConfirmation)
+            .onBlockConfirmation(blockConfirmation as never)
             .broadcast();
         return {};
     });
@@ -966,7 +910,7 @@ export function registerSubHandleRoutes(
             );
         }
         sm.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(signedBlockConfirmation)
+            .onBlockConfirmation(signedBlockConfirmation as never)
             .broadcast();
         return {};
     });
@@ -1079,7 +1023,10 @@ export function registerSubHandleRoutes(
                 "rpcStub.installCreateRpcMethodStub: missing 'callbackId'"
             );
 
-        const localRpc = sm.p2pManager.localRpc as Record<string, unknown>;
+        const localRpc = sm.p2pManager.localRpc as unknown as Record<
+            string,
+            unknown
+        >;
         const service = localRpc[serviceName] as
             | { createRPCMethods: (t: unknown) => unknown }
             | undefined;
@@ -1163,7 +1110,15 @@ export function registerSubHandleRoutes(
             peerAddress: string;
             kind: string;
         }> = [];
-        for (const t of sm.p2pManager.openConnections) {
+        // transport runtime instances carry connectionId + kind which aren't on
+        // the ATransport base type. cast at the access seam.
+        type TransportRuntime = {
+            connectionId?: string;
+            peerAddress?: string;
+            kind?: string;
+        };
+        for (const t of sm.p2pManager
+            .openConnections as unknown as TransportRuntime[]) {
             out.push({
                 connectionId: t.connectionId ?? "",
                 peerAddress: t.peerAddress ?? "0x",
@@ -1181,8 +1136,11 @@ export function registerSubHandleRoutes(
             throw new Error(
                 "queryInternals.getProfileByEvmAddress: missing 'addr'"
             );
-        const profile =
-            sm.p2pManager.profileManager?.getProfileByEvmAddress?.(addr);
+        const profile = sm.p2pManager.profileManager?.getProfileByEvmAddress?.(
+            addr
+        ) as
+            | { evmAddress?: string; transport?: { connectionId?: string } }
+            | undefined;
         if (!profile) return undefined;
         return {
             evmAddress: profile.evmAddress ?? addr,
@@ -1198,10 +1156,14 @@ export function registerSubHandleRoutes(
             throw new Error(
                 "queryInternals.getProfileByConnectionId: missing 'connectionId'"
             );
-        for (const t of sm.p2pManager.openConnections) {
+        type TransportRuntime = { connectionId?: string };
+        for (const t of sm.p2pManager
+            .openConnections as unknown as TransportRuntime[]) {
             if (t.connectionId === connectionId) {
                 const profile =
-                    sm.p2pManager.profileManager?.getProfileByTransport?.(t);
+                    sm.p2pManager.profileManager?.getProfileByTransport?.(
+                        t as never
+                    ) as { evmAddress?: string } | undefined;
                 if (!profile) return undefined;
                 return {
                     evmAddress: profile.evmAddress ?? "0x",
@@ -1258,7 +1220,9 @@ export function registerSubHandleRoutes(
             throw new Error(
                 "queryInternals.isForkDisputedService: missing 'op'"
             );
-        const svc = sm.p2pManager.localRpc["isForkDisputedService"] as
+        const svc = sm.p2pManager.localRpc[
+            "isForkDisputedService"
+        ] as unknown as
             | Record<string, (...a: unknown[]) => unknown>
             | undefined;
         if (!svc)
@@ -1283,7 +1247,9 @@ export function registerSubHandleRoutes(
             throw new Error(
                 "queryInternals.initHandshakeService: missing 'op'"
             );
-        const svc = sm.p2pManager.localRpc["initHandshakeService"] as
+        const svc = sm.p2pManager.localRpc[
+            "initHandshakeService"
+        ] as unknown as
             | Record<string, (...a: unknown[]) => unknown>
             | undefined;
         if (!svc)
@@ -1491,8 +1457,10 @@ export function registerSubHandleRoutes(
         const t = resolveTransport(otherAddr);
         if (!t) return {};
         const sm = ctx.getStateManager();
-        const svc = sm.p2pManager.localRpc["initHandshakeService"] as
-            | { mapTransportToChallenge: Map<unknown, unknown> }
+        const svc = sm.p2pManager.localRpc[
+            "initHandshakeService"
+        ] as unknown as
+            | { mapTransportToChallenge: { delete: (k: unknown) => void } }
             | undefined;
         svc?.mapTransportToChallenge.delete(t);
         return {};
@@ -1519,7 +1487,7 @@ export function registerSubHandleRoutes(
         const pm = sm.p2pManager;
         const conns = [...pm.openConnections];
         for (const conn of conns) {
-            pm.disconnectConnection(conn as unknown);
+            pm.disconnectConnection(conn as never);
         }
         return {};
     });
@@ -1562,7 +1530,7 @@ export function registerSubHandleRoutes(
                 "lifecycle.joinChannel: missing 'expectedSnapshotHash'"
             );
         await sm.p2pManager.p2pSigner.joinChannel(
-            confirmation,
+            confirmation as never,
             expectedSnapshotHash
         );
         return {};
