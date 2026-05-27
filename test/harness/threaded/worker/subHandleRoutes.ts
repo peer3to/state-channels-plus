@@ -433,6 +433,17 @@ export function registerSubHandleRoutes(
         sm.storage.timeout.storeTimeout(forkId, timeout);
     });
 
+    // step 4q2 - mirrors storage.forceExit.setForceExit(value).
+    server.register("forceExit.set", async (args) => {
+        const { value } = (args ?? {}) as { value?: boolean };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                forceExit: { setForceExit: (v: boolean) => void };
+            };
+        };
+        sm.storage.forceExit.setForceExit(Boolean(value));
+    });
+
     // step 4s - mirrors storage.timeout.getTimeout(forkId).
     server.register("query.timeoutForFork", async (args) => {
         const { forkId } = (args ?? {}) as { forkId?: unknown };

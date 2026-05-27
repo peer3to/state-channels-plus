@@ -223,9 +223,7 @@ describe("E2E: Join channel race conditions", function () {
             // dispute. The dispute is valid (selfRemoval=true) and not slashed.
             const leaverIndex = 0;
             const leaverAddress = h.getPeer(leaverIndex).address;
-            h.getPeer(leaverIndex).stateManager.storage.forceExit.setForceExit(
-                true
-            );
+            await h.getPeerHandle(leaverIndex).setForceExit(true);
             h.context.leftChannelPeerIndices = [
                 ...h.context.leftChannelPeerIndices,
                 leaverIndex

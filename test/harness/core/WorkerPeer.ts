@@ -426,6 +426,9 @@ export class WorkerPeer implements PeerHandle {
     storeTimeout(req: { forkId: ForkId; timeout: unknown }): Promise<void> {
         return this.rpc.call("timeout.store", req) as Promise<void>;
     }
+    setForceExit(value: boolean): Promise<void> {
+        return this.rpc.call("forceExit.set", { value }) as Promise<void>;
+    }
     queryTimeoutsForFork(forkId: ForkId): Promise<unknown[]> {
         return this.rpc.call("query.timeoutsForFork", {
             forkId

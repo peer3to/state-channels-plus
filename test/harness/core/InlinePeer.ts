@@ -910,6 +910,14 @@ export class InlinePeer implements PeerHandle {
         storage.timeout.storeTimeout(req.forkId, req.timeout);
     }
 
+    // step 4q2 - mirrors storage.forceExit.setForceExit(value).
+    async setForceExit(value: boolean): Promise<void> {
+        const storage = this.record.stateManager.storage as unknown as {
+            forceExit: { setForceExit: (v: boolean) => void };
+        };
+        storage.forceExit.setForceExit(value);
+    }
+
     // step 4s - mirrors storage.timeout.getTimeout(forkId).
     async queryTimeoutForFork(forkId: ForkId): Promise<{
         participant: string;

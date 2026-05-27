@@ -18,9 +18,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         const leaverAddress = h.getPeer(leaverIndex).address;
 
         // forceExit yields a valid self-removal dispute; post untampered.
-        h.getPeer(leaverIndex).stateManager.storage.forceExit.setForceExit(
-            true
-        );
+        await h.getPeerHandle(leaverIndex).setForceExit(true);
         // Voluntary exit: skip sync barrier, don't mark malicious.
         h.context.leftChannelPeerIndices = [
             ...h.context.leftChannelPeerIndices,

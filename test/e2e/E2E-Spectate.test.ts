@@ -821,9 +821,7 @@ describe("E2E: Spectate Service", function () {
             // block consumes the spectator's inbound. agreementTime=4s gives a
             // window where no peer has posted a block yet.
             const leaverIndex = 0;
-            h.getPeer(leaverIndex).stateManager.storage.forceExit.setForceExit(
-                true
-            );
+            await h.getPeerHandle(leaverIndex).setForceExit(true);
             h.context.leftChannelPeerIndices = [
                 ...h.context.leftChannelPeerIndices,
                 leaverIndex

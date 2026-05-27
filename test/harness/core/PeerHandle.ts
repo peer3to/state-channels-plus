@@ -284,6 +284,10 @@ export interface PeerHandle {
     queryInboundLatestBlockHeight(): Promise<number | undefined>;
     // step 4q - mirrors storage.timeout.storeTimeout(forkId, timeoutStruct).
     storeTimeout(req: { forkId: ForkId; timeout: unknown }): Promise<void>;
+    // step 4q2 - mirrors storage.forceExit.setForceExit(value). flips the
+    // in-peer "i intend to leave" flag the dispute manager honours when
+    // constructing a self-removal dispute.
+    setForceExit(value: boolean): Promise<void>;
     // step 4r - mirrors storage.timeout.getTimeoutsForFork(forkId).
     queryTimeoutsForFork(forkId: ForkId): Promise<unknown[]>;
     // step 4s - mirrors storage.timeout.getTimeout(forkId). returns
