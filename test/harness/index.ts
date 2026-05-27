@@ -1,11 +1,7 @@
 // Core types and interfaces
 export * from "./core/types";
 
-// step 1 - side-effect: register every shipped named rpc-stub handler +
-// disconnect filter into the orchestrator isolate. inline backend resolves
-// handler ids against this same table.
-import "./worker-handlers";
-// step 1 - same pattern for worker-ops (transition.runOp domain modules).
+// step 1 - side-effect: register worker-ops (transition.runOp domain modules).
 // inline backend resolves op ids against this same registry.
 import "./worker-ops";
 
