@@ -68,10 +68,13 @@ describe("E2E: Join channel race conditions", function () {
                 "RaceConditionJoinChannelSnapshotMismatch"
             );
 
-            expect(joiner.stateManager.getStatus()).to.equal(Status.SYNCED);
+            expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
+                Status.SYNCED
+            );
 
-            const onChainParticipants =
-                await joiner.stateManager.diamondStateMachine.getParticipants();
+            const onChainParticipants = await h
+                .getPeerHandle(joiner.index)
+                .queryParticipants();
             expect(
                 onChainParticipants.map((a) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
@@ -94,7 +97,7 @@ describe("E2E: Join channel race conditions", function () {
                 await h.byzantine.stubPendingInboundInclusion(i);
 
             await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
-            expect(joiner.stateManager.getStatus()).to.equal(
+            expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );
 
@@ -163,10 +166,13 @@ describe("E2E: Join channel race conditions", function () {
                 "RaceConditionJoinChannelForkDisputed"
             );
 
-            expect(joiner.stateManager.getStatus()).to.equal(Status.SYNCED);
+            expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
+                Status.SYNCED
+            );
 
-            const onChainParticipants =
-                await joiner.stateManager.diamondStateMachine.getParticipants();
+            const onChainParticipants = await h
+                .getPeerHandle(joiner.index)
+                .queryParticipants();
             expect(
                 onChainParticipants.map((a: unknown) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
@@ -208,7 +214,7 @@ describe("E2E: Join channel race conditions", function () {
                 await h.scenario.syncSpectatorAndPrepareJoin();
 
             await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
-            expect(joiner.stateManager.getStatus()).to.equal(
+            expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );
 
