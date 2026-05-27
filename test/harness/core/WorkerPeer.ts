@@ -510,6 +510,52 @@ export class WorkerPeer implements PeerHandle {
     queryLatestBlockConfirmation(forkId: ForkId): Promise<unknown | undefined> {
         return this.rpc.call("query.latestBlockConfirmation", { forkId });
     }
+    queryBlockConfirmationAt(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<
+        { blockConfirmation: unknown; onChainTimestamp?: number } | undefined
+    > {
+        return this.rpc.call("query.blockConfirmationAt", req) as Promise<
+            | { blockConfirmation: unknown; onChainTimestamp?: number }
+            | undefined
+        >;
+    }
+    queryBlockByHash(hash: string): Promise<
+        | {
+              blockConfirmation: unknown;
+              onChainTimestamp?: number;
+              confirmationSignatures: string[];
+          }
+        | undefined
+    > {
+        return this.rpc.call("query.blockByHash", { hash }) as Promise<
+            | {
+                  blockConfirmation: unknown;
+                  onChainTimestamp?: number;
+                  confirmationSignatures: string[];
+              }
+            | undefined
+        >;
+    }
+    queueBlock(req: {
+        blockConfirmation: unknown;
+        onChainTimestamp?: number;
+    }): Promise<void> {
+        return this.rpc.call("queue.block", req) as Promise<void>;
+    }
+    isBlacklisted(addr: Address): Promise<boolean> {
+        return this.rpc.call("p2p.isBlacklisted", { addr }) as Promise<boolean>;
+    }
+    postBlockCalldata(req: {
+        signedBlock: unknown;
+        maxTimestamp: number;
+    }): Promise<void> {
+        return this.rpc.call(
+            "contract.postBlockCalldata",
+            req
+        ) as Promise<void>;
+    }
     queryPreviousBlockHash(req: {
         forkId: ForkId;
         height?: number;

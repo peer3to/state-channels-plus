@@ -726,6 +726,132 @@ export function registerSubHandleRoutes(
         return sm.storage.timeout.getTimeoutsForFork(forkId);
     });
 
+    // step 4k2 - mirrors storage.blocks.getBlock(forkId, height) but ships the
+    // full BlockConfirmationStruct + onChainTimestamp -> orchestrator rebuilds
+    // a Block via Block.fromBlockConfirmation and reads every getter.
+    server.register("query.blockConfirmationAt", async (args) => {
+        const { forkId, height } = (args ?? {}) as {
+            forkId?: unknown;
+            height?: number;
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: {
+                    getBlock: (
+                        f: unknown,
+                        h: number
+                    ) =>
+                        | {
+                              blockConfirmationStruct: unknown;
+                              onChainTimestamp?: number;
+                          }
+                        | undefined;
+                };
+            };
+        };
+        const block = sm.storage.blocks.getBlock(forkId, Number(height));
+        if (!block) return undefined;
+        return {
+            blockConfirmation: block.blockConfirmationStruct,
+            onChainTimestamp: block.onChainTimestamp
+        };
+    });
+
+    // step 4k3 - mirrors storage.blocks.getBlock(hash). serialise the Set of
+    // confirmation signatures to a plain array -> structured clone preserves it.
+    server.register("query.blockByHash", async (args) => {
+        const { hash } = (args ?? {}) as { hash?: string };
+        if (!hash) throw new Error("query.blockByHash: missing 'hash'");
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: {
+                    getBlock: (h: string) =>
+                        | {
+                              blockConfirmationStruct: unknown;
+                              onChainTimestamp?: number;
+                              confirmationSignatures:
+                                  | Set<string>
+                                  | Iterable<string>;
+                          }
+                        | undefined;
+                };
+            };
+        };
+        const block = sm.storage.blocks.getBlock(hash);
+        if (!block) return undefined;
+        return {
+            blockConfirmation: block.blockConfirmationStruct,
+            onChainTimestamp: block.onChainTimestamp,
+            confirmationSignatures: Array.from(
+                block.confirmationSignatures ?? []
+            ).map((s) => String(s))
+        };
+    });
+
+    // step 4k4 - mirrors storage.queues.queueBlock(block). reconstructs the
+    // Block from the serialised confirmation in-worker so storage gets a real
+    // Block instance (Block.fromBlockConfirmation -> queues.queueBlock).
+    server.register("queue.block", async (args) => {
+        const { blockConfirmation, onChainTimestamp } = (args ?? {}) as {
+            blockConfirmation?: unknown;
+            onChainTimestamp?: number;
+        };
+        if (!blockConfirmation) {
+            throw new Error("queue.block: missing 'blockConfirmation'");
+        }
+        const Block = (await import("@/models")).Block;
+        const block = Block.fromBlockConfirmation(
+            blockConfirmation as Parameters<
+                typeof Block.fromBlockConfirmation
+            >[0],
+            onChainTimestamp
+        );
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                queues: { queueBlock: (b: unknown) => unknown };
+            };
+        };
+        sm.storage.queues.queueBlock(block);
+    });
+
+    // step 4k5 - mirrors p2pManager.isBlacklisted(addr).
+    server.register("p2p.isBlacklisted", async (args) => {
+        const { addr } = (args ?? {}) as { addr?: string };
+        if (!addr) throw new Error("p2p.isBlacklisted: missing 'addr'");
+        const sm = ctx.getStateManager() as unknown as {
+            p2pManager: { isBlacklisted: (a: string) => boolean };
+        };
+        return sm.p2pManager.isBlacklisted(addr);
+    });
+
+    // step 4k6 - mirrors stateChannelManagerContract.postBlockCalldata + wait().
+    // on-chain write runs in-worker -> the contract reference never crosses the
+    // boundary. orchestrator awaits the rpc, which resolves after tx.wait().
+    server.register("contract.postBlockCalldata", async (args) => {
+        const { signedBlock, maxTimestamp } = (args ?? {}) as {
+            signedBlock?: unknown;
+            maxTimestamp?: number;
+        };
+        if (!signedBlock) {
+            throw new Error(
+                "contract.postBlockCalldata: missing 'signedBlock'"
+            );
+        }
+        const sm = ctx.getStateManager() as unknown as {
+            stateChannelManagerContract: {
+                postBlockCalldata: (
+                    s: unknown,
+                    t: number
+                ) => Promise<{ wait: () => Promise<unknown> }>;
+            };
+        };
+        const tx = await sm.stateChannelManagerContract.postBlockCalldata(
+            signedBlock,
+            Number(maxTimestamp)
+        );
+        await tx.wait();
+    });
+
     // step 4k - mirrors storage.blocks.getLatestBlock -> blockConfirmationStruct.
     // ship the full confirmation so the orchestrator can reconstruct a Block
     // via Block.fromBlockConfirmation and read every getter.

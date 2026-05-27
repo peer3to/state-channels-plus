@@ -302,6 +302,45 @@ export interface PeerHandle {
     // BlockConfirmationStruct (signedBlock + confirmation signatures) so the
     // caller can `Block.fromBlockConfirmation` and read every getter.
     queryLatestBlockConfirmation(forkId: ForkId): Promise<unknown | undefined>;
+    // step 4k2 - mirrors storage.blocks.getBlock(forkId, height) but ships the
+    // full BlockConfirmationStruct + onChainTimestamp so callers can
+    // Block.fromBlockConfirmation and read every getter (signedBlock,
+    // confirmationSignatures, blockConfirmationStruct, ...).
+    queryBlockConfirmationAt(req: { forkId: ForkId; height: number }): Promise<
+        | {
+              blockConfirmation: unknown;
+              onChainTimestamp?: number;
+          }
+        | undefined
+    >;
+    // step 4k3 - mirrors storage.blocks.getBlock(hash). returns the full
+    // BlockConfirmationStruct + onChainTimestamp + raw confirmationSignatures
+    // array so callers can either reconstruct a Block via Block.fromBlockConfirmation
+    // or read scalars directly. undefined when no block exists at hash.
+    queryBlockByHash(hash: string): Promise<
+        | {
+              blockConfirmation: unknown;
+              onChainTimestamp?: number;
+              confirmationSignatures: string[];
+          }
+        | undefined
+    >;
+    // step 4k4 - mirrors storage.queues.queueBlock(block). takes a
+    // BlockConfirmationStruct + optional onChainTimestamp so the worker can
+    // reconstruct the Block in-process and enqueue it.
+    queueBlock(req: {
+        blockConfirmation: unknown;
+        onChainTimestamp?: number;
+    }): Promise<void>;
+    // step 4k5 - mirrors p2pManager.isBlacklisted(addr). cheap boolean read.
+    isBlacklisted(addr: Address): Promise<boolean>;
+    // step 4k6 - mirrors stateChannelManagerContract.postBlockCalldata
+    // (signedBlock, maxTimestamp) + tx.wait(). on-chain write lives in the
+    // peer's process so the contract reference never crosses the boundary.
+    postBlockCalldata(req: {
+        signedBlock: unknown;
+        maxTimestamp: number;
+    }): Promise<void>;
     // step 4l - mirrors StateQueryActions.getPreviousBlockHash. when height is
     // omitted, returns latestBlock.hash || genesisSnapshot.hash || ZeroHash.
     // when height is set, returns getPreviousBlockOrSnapshot({forkId,height})

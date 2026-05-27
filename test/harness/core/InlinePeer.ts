@@ -1168,6 +1168,102 @@ export class InlinePeer implements PeerHandle {
         return block.blockConfirmationStruct;
     }
 
+    // step 4k2 - mirrors storage.blocks.getBlock(forkId, height). returns the
+    // full BlockConfirmationStruct + onChainTimestamp.
+    async queryBlockConfirmationAt(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<
+        { blockConfirmation: unknown; onChainTimestamp?: number } | undefined
+    > {
+        const block = this.record.stateManager.storage.blocks.getBlock(
+            req.forkId,
+            req.height
+        ) as
+            | {
+                  blockConfirmationStruct: unknown;
+                  onChainTimestamp?: number;
+              }
+            | undefined;
+        if (!block) return undefined;
+        return {
+            blockConfirmation: block.blockConfirmationStruct,
+            onChainTimestamp: block.onChainTimestamp
+        };
+    }
+
+    // step 4k3 - mirrors storage.blocks.getBlock(hash). ships the full
+    // BlockConfirmationStruct + onChainTimestamp + the confirmation signatures
+    // as a plain array (the live Set doesn't survive structured clone).
+    async queryBlockByHash(hash: string): Promise<
+        | {
+              blockConfirmation: unknown;
+              onChainTimestamp?: number;
+              confirmationSignatures: string[];
+          }
+        | undefined
+    > {
+        const block = this.record.stateManager.storage.blocks.getBlock(hash) as
+            | {
+                  blockConfirmationStruct: unknown;
+                  onChainTimestamp?: number;
+                  confirmationSignatures: Set<string> | Iterable<string>;
+              }
+            | undefined;
+        if (!block) return undefined;
+        return {
+            blockConfirmation: block.blockConfirmationStruct,
+            onChainTimestamp: block.onChainTimestamp,
+            confirmationSignatures: Array.from(
+                block.confirmationSignatures ?? []
+            ).map((s) => String(s))
+        };
+    }
+
+    // step 4k4 - mirrors storage.queues.queueBlock(block). reconstructs a Block
+    // from the serialised confirmation in-process; same path as inline today.
+    async queueBlock(req: {
+        blockConfirmation: unknown;
+        onChainTimestamp?: number;
+    }): Promise<void> {
+        const Block = (await import("@/models")).Block;
+        const block = Block.fromBlockConfirmation(
+            req.blockConfirmation as Parameters<
+                typeof Block.fromBlockConfirmation
+            >[0],
+            req.onChainTimestamp
+        );
+        const storage = this.record.stateManager.storage as unknown as {
+            queues: { queueBlock: (b: unknown) => unknown };
+        };
+        storage.queues.queueBlock(block);
+    }
+
+    // step 4k5 - mirrors p2pManager.isBlacklisted(addr).
+    async isBlacklisted(addr: Address): Promise<boolean> {
+        return this.record.stateManager.p2pManager.isBlacklisted(addr);
+    }
+
+    // step 4k6 - mirrors stateChannelManagerContract.postBlockCalldata + tx.wait().
+    async postBlockCalldata(req: {
+        signedBlock: unknown;
+        maxTimestamp: number;
+    }): Promise<void> {
+        const sm = this.record.stateManager as unknown as {
+            stateChannelManagerContract: {
+                postBlockCalldata: (
+                    s: unknown,
+                    t: number
+                ) => Promise<{ wait: () => Promise<unknown> }>;
+            };
+        };
+        const tx = await sm.stateChannelManagerContract.postBlockCalldata(
+            req.signedBlock,
+            req.maxTimestamp
+        );
+        await tx.wait();
+    }
+
     // step 4j - mirrors stateManager.isMyTurn?.().
     async queryIsMyTurn(): Promise<boolean> {
         const sm = this.record.stateManager as unknown as {
