@@ -228,15 +228,23 @@ export class AssertSnapshotActions {
         }
 
         // step 2 - on-chain static call - hit via orchestrator-side channel
-        // manager. signer choice doesn't matter for staticCall but we use the
-        // peer signer for parity with the inline path.
+        // manager. ethers ContractResult tuples are frozen, so we
+        // structured-clone the snapshotData before passing it into
+        // staticCall (the unwrapped harness contract doesn't run through
+        // createEthersResultProxy so the staticCall arg-conversion can
+        // mutate them).
         const channelManager = this.harness.channelManager.connect(
             handle.signer
+        );
+        const cloneSnapshotData = JSON.parse(
+            JSON.stringify(onChainSnapshot.snapshotData, (_k, v) =>
+                typeof v === "bigint" ? v.toString() : v
+            )
         );
         const isValidBalanceInvariant =
             await channelManager.verifyBalanceInvariantCheckSnapshot.staticCall(
                 this.harness.channelId,
-                onChainSnapshot.snapshotData,
+                cloneSnapshotData,
                 encodedState
             );
 

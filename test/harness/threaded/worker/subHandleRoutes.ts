@@ -673,15 +673,20 @@ export function registerSubHandleRoutes(
     });
 
     // step 4w - mirrors lastMilestoneSnapshot from prepareUpdateSnapshotSameFork.
+    // ship .toStruct() so the orchestrator can rehydrate via StateSnapshot.from
+    // (class instances don't survive structured clone).
     server.register("query.lastMilestoneSnapshot", async (args) => {
         const { forkId } = (args ?? {}) as { forkId?: unknown };
         const sm = ctx.getStateManager() as unknown as {
-            prepareUpdateSnapshotSameFork: (
-                f: unknown
-            ) => Promise<{ milestoneSnapshots: unknown[] } | undefined>;
+            prepareUpdateSnapshotSameFork: (f: unknown) => Promise<
+                | {
+                      milestoneSnapshots: Array<{ toStruct: () => unknown }>;
+                  }
+                | undefined
+            >;
         };
         const result = await sm.prepareUpdateSnapshotSameFork(forkId);
-        return result?.milestoneSnapshots.at(-1);
+        return result?.milestoneSnapshots.at(-1)?.toStruct();
     });
 
     // step 4u - mirrors storage.disputes.getOpenDisputeForkIds().
@@ -727,33 +732,47 @@ export function registerSubHandleRoutes(
         return block.blockConfirmationStruct;
     });
 
-    // step 4h - mirrors stateManager.postStateSnapshot(forkId).
+    // step 4h - mirrors stateManager.postStateSnapshot(forkId). serialise
+    // StateSnapshot via .toStruct() so structured clone preserves data.
     server.register("snapshot.post", async (args) => {
         const { forkId } = (args ?? {}) as { forkId?: unknown };
         const sm = ctx.getStateManager() as unknown as {
-            postStateSnapshot: (f: unknown) => Promise<unknown>;
+            postStateSnapshot: (
+                f: unknown
+            ) => Promise<{ toStruct: () => unknown } | undefined>;
         };
-        return await sm.postStateSnapshot(forkId);
+        const result = await sm.postStateSnapshot(forkId);
+        return result?.toStruct();
     });
 
     // step 4i - mirrors stateManager.prepareUpdateSnapshotSameFork(forkId).
-    // ship the struct as-is via structured clone (callData is string[],
-    // expectedSnapshot + milestoneSnapshots are plain models).
+    // serialise StateSnapshot class instances via toStruct() before shipping
+    // (structured clone strips class wrappers + private fields).
     server.register("snapshot.prepareSameFork", async (args) => {
         const { forkId } = (args ?? {}) as { forkId?: unknown };
         const sm = ctx.getStateManager() as unknown as {
             prepareUpdateSnapshotSameFork: (f: unknown) => Promise<
                 | {
                       callData: string[];
-                      expectedSnapshot: unknown;
-                      milestoneSnapshots: unknown[];
+                      expectedSnapshot: { toStruct: () => unknown };
+                      milestoneSnapshots: Array<{ toStruct: () => unknown }>;
+                      milestoneProofs?: unknown[];
+                      outboundMessageBlocks?: unknown[];
                   }
                 | undefined
             >;
         };
         const result = await sm.prepareUpdateSnapshotSameFork(forkId);
         if (!result) return undefined;
-        return result;
+        return {
+            callData: result.callData,
+            expectedSnapshot: result.expectedSnapshot.toStruct(),
+            milestoneSnapshots: result.milestoneSnapshots.map((s) =>
+                s.toStruct()
+            ),
+            milestoneProofs: result.milestoneProofs,
+            outboundMessageBlocks: result.outboundMessageBlocks
+        };
     });
 
     server.register("query.didEveryoneSignBlock", async (args) => {

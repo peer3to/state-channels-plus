@@ -176,10 +176,16 @@ export class TransitionActions<
         }
 
         // step 1 - W1 - route via sub-handle. inline body calls
-        // stateManager.postStateSnapshot in-process; worker forwards rpc.
-        return (await this.harness
+        // stateManager.postStateSnapshot in-process; worker forwards rpc and
+        // ships .toStruct() -> rehydrate orchestrator-side.
+        const raw = await this.harness
             .getPeerHandle(peerIndex)
-            .postStateSnapshot(forkId)) as StateSnapshot | undefined;
+            .postStateSnapshot(forkId);
+        if (!raw) return undefined;
+        if (raw instanceof StateSnapshot) return raw;
+        return StateSnapshot.from(
+            raw as Parameters<typeof StateSnapshot.from>[0]
+        );
     }
 
     async postSnapshotWait(options?: {
@@ -235,7 +241,17 @@ export class TransitionActions<
         );
         const tx = await channelManager.multicall(sameForkData.callData);
         await tx.wait();
-        return sameForkData.expectedSnapshot as StateSnapshot;
+        // step 3 - W1 - rehydrate expectedSnapshot if worker returned a
+        // plain struct (structured clone strips class wrappers).
+        const expected = sameForkData.expectedSnapshot;
+        if (expected && expected instanceof StateSnapshot) {
+            return expected;
+        }
+        return expected
+            ? StateSnapshot.from(
+                  expected as Parameters<typeof StateSnapshot.from>[0]
+              )
+            : undefined;
     }
 
     async validWithoutPeer(

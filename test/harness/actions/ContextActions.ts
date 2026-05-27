@@ -36,12 +36,19 @@ export class ContextActions {
         }
 
         const handle = this.harness.getPeerHandle(peerIndex);
-        // step 1 - W1 - milestone read via sub-handle. inline returns the
-        // live StateSnapshot; worker returns the serialised struct (still
-        // satisfies LoggerUtils.getSnapshotMetadata via duck-typing).
-        const lastSnapshot = (await handle.queryLastMilestoneSnapshot(
-            forkId
-        )) as StateSnapshot | undefined;
+        // step 1 - W1 - milestone read via sub-handle. worker mode ships a
+        // plain struct (lost class getters); rehydrate via StateSnapshot.from
+        // so downstream LoggerUtils.getSnapshotMetadata + accessors work.
+        const lastSnapshotRaw = await handle.queryLastMilestoneSnapshot(forkId);
+        const lastSnapshot = lastSnapshotRaw
+            ? lastSnapshotRaw instanceof StateSnapshot
+                ? lastSnapshotRaw
+                : StateSnapshot.from(
+                      lastSnapshotRaw as Parameters<
+                          typeof StateSnapshot.from
+                      >[0]
+                  )
+            : undefined;
 
         const onChainSnapshotBefore = StateSnapshot.from(
             await this.harness.channelManager.getStateSnapshot(
