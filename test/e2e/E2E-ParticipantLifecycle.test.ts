@@ -32,7 +32,7 @@ describe("E2E: Participant Lifecycle", function () {
             // Remaining participants are unaffected
             const remaining = h.peers.filter((p) => p.index !== leaverIndex);
             for (const p of remaining) {
-                expect(p.stateManager.getStatus()).to.equal(
+                expect(await h.getPeerHandle(p.index).queryStatus()).to.equal(
                     Status.PARTICIPATING,
                     `Peer ${p.index} should remain PARTICIPATING`
                 );
@@ -68,8 +68,12 @@ describe("E2E: Participant Lifecycle", function () {
             const joinPromise =
                 spectator.p2pInstance.p2pSigner.joinChannel(confirmation);
 
-            // Status must already be PENDING_PARTICIPANT — no await needed
-            expect(spectator.stateManager.getStatus()).to.equal(
+            // step 1 - joinChannel sets PENDING_PARTICIPANT synchronously before
+            // the first internal await -> by the time queryStatus yields once,
+            // status is already set and joinChannel is parked on tx mining.
+            expect(
+                await h.getPeerHandle(spectator.index).queryStatus()
+            ).to.equal(
                 Status.PENDING_PARTICIPANT,
                 "Status should be PENDING_PARTICIPANT immediately on broadcast, before tx is mined"
             );
@@ -85,7 +89,9 @@ describe("E2E: Participant Lifecycle", function () {
 
             // Joiner is now PARTICIPATING — promoted inside success() when the first
             // block that includes them in the resulting participant set was processed.
-            expect(spectator.stateManager.getStatus()).to.equal(
+            expect(
+                await h.getPeerHandle(spectator.index).queryStatus()
+            ).to.equal(
                 Status.PARTICIPATING,
                 "Joiner should be PARTICIPATING after the first block that includes them"
             );
