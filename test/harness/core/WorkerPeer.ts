@@ -479,6 +479,12 @@ export class WorkerPeer implements PeerHandle {
     }): Promise<boolean> {
         return this.rpc.call("balance.areEqual", req) as Promise<boolean>;
     }
+    queryPreviousStateSnapshot(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<unknown | null> {
+        return this.rpc.call("query.previousStateSnapshot", req);
+    }
     postStateSnapshot(forkId: ForkId): Promise<unknown> {
         return this.rpc.call("snapshot.post", { forkId });
     }

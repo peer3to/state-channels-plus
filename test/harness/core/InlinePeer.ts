@@ -1122,11 +1122,29 @@ export class InlinePeer implements PeerHandle {
         );
     }
 
-    async applyTransaction(_req: unknown): Promise<unknown> {
-        throw new Error(
-            "InlinePeer.applyTransaction: shape not pinned; awaiting caller migration " +
-                "(TransitionActions.submitNext data-path)"
-        );
+    // step 4z - mirrors storage.getPreviousStateSnapshot({forkId, height}).
+    async queryPreviousStateSnapshot(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<unknown | null> {
+        const storage = this.record.stateManager.storage as unknown as {
+            getPreviousStateSnapshot: (req: {
+                forkId: unknown;
+                height: number;
+            }) => unknown | undefined;
+        };
+        return storage.getPreviousStateSnapshot(req) ?? null;
+    }
+
+    // step 1 - mirrors stateManager.applyTransaction(tx). req is the
+    // serialisable TransactionStruct; returns { success, encodedState }.
+    async applyTransaction(req: unknown): Promise<unknown> {
+        const sm = this.record.stateManager as unknown as {
+            applyTransaction: (
+                tx: unknown
+            ) => Promise<{ success: boolean; encodedState: string }>;
+        };
+        return await sm.applyTransaction(req);
     }
 
     // step 1 - mirrors stateManager.ingestBlockConfirmation(bc, opts).

@@ -137,32 +137,39 @@ export class MathByzantineActions extends ByzantineActions {
             forkId?: ForkId;
         }
     ): Promise<Block> {
-        const peer = this.harness.getPeer(peerIndex);
+        const handle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const nextBlockHeight =
-            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        const previousBlockHash = this.harness.query.getPreviousBlockHash(
-            peer,
+        // step 1 - W1 - storage reads via sub-handles.
+        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
+        const previousBlockConfirmation =
+            await handle.queryLatestBlockConfirmation(forkId);
+        const previousBlock = previousBlockConfirmation
+            ? Block.fromBlockConfirmation(previousBlockConfirmation as never)
+            : undefined;
+        const previousBlockHash = await handle.queryPreviousBlockHash({
             forkId,
-            nextBlockHeight
-        );
-        const stateSnapshotHash = this.harness.query.getStateSnapshotHash(
-            peer,
+            height: nextBlockHeight
+        });
+        const stateSnapshotHash = await handle.queryStateSnapshotHashForFork({
             forkId,
-            previousBlock
-        );
+            previousBlockHash: previousBlock?.hash
+                ? String(previousBlock.hash)
+                : undefined
+        });
 
-        const previousStateSnapshot =
-            peer.stateManager.storage.getPreviousStateSnapshot({
-                forkId,
-                height: nextBlockHeight
-            });
+        const previousStateSnapshot = (await handle.queryPreviousStateSnapshot({
+            forkId,
+            height: nextBlockHeight
+        })) as {
+            snapshotData: {
+                latestInboundMessageBlockHash?: Hash;
+                latestInboundMessageBlockHeight?: bigint | number;
+            };
+        } | null;
         if (!previousStateSnapshot) {
             throw new Error(
                 `Unable to compute previous snapshot for fork ${forkId}`
@@ -182,7 +189,7 @@ export class MathByzantineActions extends ByzantineActions {
 
         const forgedMessage: MessageStruct = {
             messageType: ethers.hexlify(ethers.randomBytes(32)) as Bytes,
-            participant: peer.address,
+            participant: handle.address,
             balance: {
                 amount: 1n,
                 data: "0x"
@@ -203,7 +210,7 @@ export class MathByzantineActions extends ByzantineActions {
             timestamp: BigInt(Clock.getTimeInSeconds())
         };
 
-        const transactionData = this.encodeMathAdd(peer);
+        const transactionData = this.encodeMathAdd();
 
         const blockTimestampBase = previousBlock
             ? previousBlock.timestamp + 1
@@ -211,8 +218,8 @@ export class MathByzantineActions extends ByzantineActions {
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: peer.stateManager.getChannelId(),
-                participant: peer.address,
+                channelId: this.harness.channelId,
+                participant: handle.address,
                 forkId,
                 transactionCnt: BigInt(nextBlockHeight),
                 timestamp: BigInt(blockTimestampBase)
@@ -232,7 +239,7 @@ export class MathByzantineActions extends ByzantineActions {
 
         const forgedBlock = await Block.fromBlockStruct(
             blockStruct,
-            peer.signer
+            handle.signer
         );
 
         this.logger.info(
@@ -240,9 +247,9 @@ export class MathByzantineActions extends ByzantineActions {
             { forkId }
         );
 
-        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(forgedBlock.blockConfirmationStruct)
-            .broadcast();
+        await handle.byzantine.broadcastBlockConfirmation({
+            blockConfirmation: forgedBlock.blockConfirmationStruct
+        });
 
         return forgedBlock;
     }
@@ -283,32 +290,34 @@ export class MathByzantineActions extends ByzantineActions {
             forkId?: ForkId;
         }
     ): Promise<Block> {
-        const peer = this.harness.getPeer(peerIndex);
+        const handle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
+        // step 1 - W1 - storage reads via sub-handles.
+        const latestBlockConfirmation =
+            await handle.queryLatestBlockConfirmation(forkId);
+        if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
-
-        const nextBlockHeight =
-            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlockHash = this.harness.query.getPreviousBlockHash(
-            peer,
-            forkId,
-            nextBlockHeight
+        const latestBlock = Block.fromBlockConfirmation(
+            latestBlockConfirmation as never
         );
+
+        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.queryPreviousBlockHash({
+            forkId,
+            height: nextBlockHeight
+        });
 
         const malformedData = "0x1234567890abcdef";
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: peer.stateManager.getChannelId(),
-                participant: peer.address,
+                channelId: this.harness.channelId,
+                participant: handle.address,
                 forkId,
                 transactionCnt: BigInt(nextBlockHeight),
                 timestamp: BigInt(latestBlock.timestamp) + 1n
@@ -319,15 +328,16 @@ export class MathByzantineActions extends ByzantineActions {
             }
         };
 
-        const validEncodedData = this.encodeMathAdd(peer);
-        const { success, encodedState } =
-            await peer.stateManager.applyTransaction({
-                ...transaction,
-                body: {
-                    encodedData: validEncodedData,
-                    data: validEncodedData
-                }
-            });
+        // step 2 - W1 - applyTransaction sub-handle. inline body runs the
+        // call in-process; worker forwards rpc with the serialised tx.
+        const validEncodedData = this.encodeMathAdd();
+        const { success, encodedState } = (await handle.applyTransaction({
+            ...transaction,
+            body: {
+                encodedData: validEncodedData,
+                data: validEncodedData
+            }
+        })) as { success: boolean; encodedState: string };
 
         if (!success) {
             throw new Error("Failed to compute valid state for fraud block");
@@ -342,16 +352,16 @@ export class MathByzantineActions extends ByzantineActions {
 
         const invalidBlock = await Block.fromBlockStruct(
             blockStruct,
-            peer.signer
+            handle.signer
         );
 
         this.logger.info(
             `Peer ${peerIndex} creating invalid transaction data block: height=${invalidBlock.height}`
         );
 
-        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(invalidBlock.blockConfirmationStruct)
-            .broadcast();
+        await handle.byzantine.broadcastBlockConfirmation({
+            blockConfirmation: invalidBlock.blockConfirmationStruct
+        });
 
         return invalidBlock;
     }
@@ -362,32 +372,34 @@ export class MathByzantineActions extends ByzantineActions {
             forkId?: ForkId;
         }
     ): Promise<Block> {
-        const peer = this.harness.getPeer(peerIndex);
+        const handle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
+        // step 1 - W1 - storage reads via sub-handles.
+        const latestBlockConfirmation =
+            await handle.queryLatestBlockConfirmation(forkId);
+        if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
-
-        const nextBlockHeight =
-            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlockHash = this.harness.query.getPreviousBlockHash(
-            peer,
-            forkId,
-            nextBlockHeight
+        const latestBlock = Block.fromBlockConfirmation(
+            latestBlockConfirmation as never
         );
 
-        const transactionData = this.encodeMathAdd(peer);
+        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.queryPreviousBlockHash({
+            forkId,
+            height: nextBlockHeight
+        });
+
+        const transactionData = this.encodeMathAdd();
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: peer.stateManager.getChannelId(),
-                participant: peer.address,
+                channelId: this.harness.channelId,
+                participant: handle.address,
                 forkId,
                 transactionCnt: BigInt(nextBlockHeight),
                 timestamp: BigInt(latestBlock.timestamp) + 1n
@@ -420,16 +432,16 @@ export class MathByzantineActions extends ByzantineActions {
 
         const invalidBlock = await Block.fromBlockStruct(
             blockStruct,
-            peer.signer
+            handle.signer
         );
 
         this.logger.info(
             `Peer ${peerIndex} creating broken inbound chain block: height=${invalidBlock.height}`
         );
 
-        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(invalidBlock.blockConfirmationStruct)
-            .broadcast();
+        await handle.byzantine.broadcastBlockConfirmation({
+            blockConfirmation: invalidBlock.blockConfirmationStruct
+        });
 
         return invalidBlock;
     }
@@ -440,7 +452,7 @@ export class MathByzantineActions extends ByzantineActions {
             forkId?: ForkId;
         }
     ): Promise<Block> {
-        const peer = this.harness.getPeer(peerIndex);
+        const handle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
@@ -450,12 +462,12 @@ export class MathByzantineActions extends ByzantineActions {
             ethers.toUtf8Bytes("wrong_genesis_hash")
         ) as Hash;
 
-        const transactionData = this.encodeMathAdd(peer);
+        const transactionData = this.encodeMathAdd();
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: peer.stateManager.getChannelId(),
-                participant: peer.address,
+                channelId: this.harness.channelId,
+                participant: handle.address,
                 forkId,
                 transactionCnt: 0n,
                 timestamp: BigInt(Clock.getTimeInSeconds())
@@ -475,7 +487,7 @@ export class MathByzantineActions extends ByzantineActions {
 
         const wrongGenesisBlock = await Block.fromBlockStruct(
             blockStruct,
-            peer.signer
+            handle.signer
         );
 
         this.logger.info(
@@ -483,9 +495,9 @@ export class MathByzantineActions extends ByzantineActions {
             { forkId }
         );
 
-        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(wrongGenesisBlock.blockConfirmationStruct)
-            .broadcast();
+        await handle.byzantine.broadcastBlockConfirmation({
+            blockConfirmation: wrongGenesisBlock.blockConfirmationStruct
+        });
 
         return wrongGenesisBlock;
     }
@@ -496,32 +508,33 @@ export class MathByzantineActions extends ByzantineActions {
             forkId?: ForkId;
         }
     ): Promise<Block> {
-        const peer = this.harness.getPeer(peerIndex);
+        const handle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
+        const latestBlockConfirmation =
+            await handle.queryLatestBlockConfirmation(forkId);
+        if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
-
-        const nextBlockHeight =
-            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlockHash = this.harness.query.getPreviousBlockHash(
-            peer,
-            forkId,
-            nextBlockHeight
+        const latestBlock = Block.fromBlockConfirmation(
+            latestBlockConfirmation as never
         );
 
-        const transactionData = this.encodeMathAdd(peer);
+        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.queryPreviousBlockHash({
+            forkId,
+            height: nextBlockHeight
+        });
+
+        const transactionData = this.encodeMathAdd();
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: peer.stateManager.getChannelId(),
-                participant: peer.address,
+                channelId: this.harness.channelId,
+                participant: handle.address,
                 forkId,
                 transactionCnt: BigInt(nextBlockHeight),
                 timestamp: BigInt(latestBlock.timestamp) + 1n
@@ -539,16 +552,16 @@ export class MathByzantineActions extends ByzantineActions {
             messageBlocks: []
         };
 
-        const block = await Block.fromBlockStruct(blockStruct, peer.signer);
+        const block = await Block.fromBlockStruct(blockStruct, handle.signer);
 
         this.logger.info(
             `Peer ${peerIndex} submitting unexpected-next-leader block: height=${block.height}`,
             { forkId }
         );
 
-        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(block.blockConfirmationStruct)
-            .broadcast();
+        await handle.byzantine.broadcastBlockConfirmation({
+            blockConfirmation: block.blockConfirmationStruct
+        });
 
         return block;
     }
@@ -559,33 +572,34 @@ export class MathByzantineActions extends ByzantineActions {
             forkId?: ForkId;
         }
     ): Promise<Block> {
-        const peer = this.harness.getPeer(peerIndex);
+        const handle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
+        const latestBlockConfirmation =
+            await handle.queryLatestBlockConfirmation(forkId);
+        if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
-
-        const nextBlockHeight =
-            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlockHash = this.harness.query.getPreviousBlockHash(
-            peer,
-            forkId,
-            nextBlockHeight
+        const latestBlock = Block.fromBlockConfirmation(
+            latestBlockConfirmation as never
         );
 
-        const transactionData = this.encodeMathAdd(peer);
+        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.queryPreviousBlockHash({
+            forkId,
+            height: nextBlockHeight
+        });
+
+        const transactionData = this.encodeMathAdd();
         const invalidTimestamp = BigInt(latestBlock.timestamp) - 1000n;
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: peer.stateManager.getChannelId(),
-                participant: peer.address,
+                channelId: this.harness.channelId,
+                participant: handle.address,
                 forkId,
                 transactionCnt: BigInt(nextBlockHeight),
                 timestamp: invalidTimestamp
@@ -605,16 +619,16 @@ export class MathByzantineActions extends ByzantineActions {
 
         const invalidBlock = await Block.fromBlockStruct(
             blockStruct,
-            peer.signer
+            handle.signer
         );
 
         this.logger.info(
             `Peer ${peerIndex} creating invalid timestamp block: height=${invalidBlock.height}, timestamp=${invalidTimestamp}`
         );
 
-        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(invalidBlock.blockConfirmationStruct)
-            .broadcast();
+        await handle.byzantine.broadcastBlockConfirmation({
+            blockConfirmation: invalidBlock.blockConfirmationStruct
+        });
 
         return invalidBlock;
     }

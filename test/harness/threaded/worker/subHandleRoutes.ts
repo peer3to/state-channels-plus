@@ -566,6 +566,30 @@ export function registerSubHandleRoutes(
         );
     });
 
+    // step 4z - mirrors storage.getPreviousStateSnapshot.
+    server.register("query.previousStateSnapshot", async (args) => {
+        const req = (args ?? {}) as { forkId: unknown; height: number };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                getPreviousStateSnapshot: (req: {
+                    forkId: unknown;
+                    height: number;
+                }) => unknown | undefined;
+            };
+        };
+        return sm.storage.getPreviousStateSnapshot(req) ?? null;
+    });
+
+    // step 1 - mirrors stateManager.applyTransaction(tx).
+    server.register("tx.apply", async (args) => {
+        const sm = ctx.getStateManager() as unknown as {
+            applyTransaction: (
+                tx: unknown
+            ) => Promise<{ success: boolean; encodedState: string }>;
+        };
+        return await sm.applyTransaction(args);
+    });
+
     // step 4w - mirrors lastMilestoneSnapshot from prepareUpdateSnapshotSameFork.
     server.register("query.lastMilestoneSnapshot", async (args) => {
         const { forkId } = (args ?? {}) as { forkId?: unknown };

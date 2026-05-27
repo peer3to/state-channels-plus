@@ -318,6 +318,12 @@ export interface PeerHandle {
         a: { amount: string; data: string };
         b: { amount: string; data: string };
     }): Promise<boolean>;
+    // step 4z - mirrors storage.getPreviousStateSnapshot({forkId, height}).
+    // returns serialised StateSnapshot or null.
+    queryPreviousStateSnapshot(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<unknown | null>;
     // step 4h - mirrors stateManager.postStateSnapshot(forkId). returns the
     // posted snapshot summary (hash + serialised fields) or undefined. used
     // by transition.postSnapshot in worker mode.
