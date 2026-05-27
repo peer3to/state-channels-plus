@@ -141,7 +141,7 @@ Numbers are estimates from spot probes; last full -w 4 sweep at commit `8936f12e
 
 ## Architectural blockers identified (not yet fixed)
 
-1. **`addSpectatorWait` cross-worker discovery refresh** — blocks ~10 Spectate tests. Orchestrator-side LocalDiscoveryServer dial doesn't notify already-running peer workers to re-dial.
+1. **Spectate suite (~10 tests) — NOT discovery refresh.** Investigation (2026-05-28) found the real root cause: on-chain state pollution from cross-suite `before` hooks. Peer-to-peer connectivity is established and sync runs, but the spectator syncs to a fork where unrelated prior tests' dispute reductions have already reduced participants to 1. Symptom: `participantCount` returns 1 instead of expected 2. Fix requires either `hardhat_reset` between scenarios, fresh deployment per scenario, or fixing the cross-suite hook contamination — multi-hour test-infrastructure work, not a worker-mode-specific bug.
 2. **Live `ATransport`/`PeerProfile` identity comparisons** — InitHandshake WebRTC, some Spectate tests. Cannot preserve object identity across worker boundary.
 3. **State sync race for snapshot writes** — withdrawalDelta mismatch. Chain TX submit + chain event read happen too close.
 4. **`peer.p2pInstance.p2pSigner.joinChannel` direct calls** in JoinChannelRaceConditions tests — need migration to sub-handle.
