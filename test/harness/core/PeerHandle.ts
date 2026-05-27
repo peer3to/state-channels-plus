@@ -250,6 +250,17 @@ export interface PeerHandle {
     // step 4 - hot-path data queries.
     queryStatus(): Promise<StateStatus>;
     queryLatestBlock(forkId: ForkId): Promise<BlockSummary | undefined>;
+    // step 4a2 - mirrors storage.blocks.getBlock(forkId, height). returns the
+    // block summary (hash, height, author) or undefined. used by tamper closures
+    // that need to read a specific block's author/height for dispute construction.
+    queryBlockAt(req: { forkId: ForkId; height: number }): Promise<
+        | {
+              hash: string;
+              height: number;
+              author: Address;
+          }
+        | undefined
+    >;
     // step 4a - diamondStateMachine read-throughs. worker mode -> rpc; inline
     // mode -> direct call on the live diamond. used by StateQueryActions to
     // pick the next writer / report participant count.

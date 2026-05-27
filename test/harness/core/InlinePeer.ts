@@ -730,6 +730,25 @@ export class InlinePeer implements PeerHandle {
         return this.record.stateManager.storage.blocks.getLatestBlock(forkId);
     }
 
+    // step 4a2 - mirrors storage.blocks.getBlock(forkId, height) for tamper
+    // closures that need a specific block's author/hash/height. returns
+    // undefined when no block exists at the coordinate.
+    async queryBlockAt(req: {
+        forkId: ForkId;
+        height: number;
+    }): Promise<{ hash: string; height: number; author: Address } | undefined> {
+        const block = this.record.stateManager.storage.blocks.getBlock(
+            req.forkId,
+            req.height
+        );
+        if (!block) return undefined;
+        return {
+            hash: String(block.hash),
+            height: Number(block.height),
+            author: block.author as Address
+        };
+    }
+
     // step 4a - diamondStateMachine direct read. inline body matches
     // StateQueryActions.ts:140.
     async queryNextToWrite(): Promise<Address> {

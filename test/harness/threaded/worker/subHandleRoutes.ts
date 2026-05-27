@@ -143,6 +143,38 @@ export function registerSubHandleRoutes(
         };
     });
 
+    // step 4a2 - mirrors PeerHandle.queryBlockAt / storage.blocks.getBlock(forkId, height).
+    // serialise to {hash, height, author} -> Block getters don't survive structured-clone.
+    server.register("query.blockAt", async (args) => {
+        const { forkId, height } = (args ?? {}) as {
+            forkId?: unknown;
+            height?: number;
+        };
+        const sm = ctx.getStateManager() as unknown as {
+            storage: {
+                blocks: {
+                    getBlock: (
+                        f: unknown,
+                        h: number
+                    ) =>
+                        | {
+                              hash: string;
+                              height: number | bigint;
+                              author: string;
+                          }
+                        | undefined;
+                };
+            };
+        };
+        const block = sm.storage.blocks.getBlock(forkId, Number(height));
+        if (!block) return undefined;
+        return {
+            hash: String(block.hash),
+            height: Number(block.height),
+            author: String(block.author)
+        };
+    });
+
     // step 1 - diamondStateMachine reads. mirror StateQueryActions.ts:140 +
     // StateQueryActions.ts:163 (participants).
     server.register("query.nextToWrite", async () => {
