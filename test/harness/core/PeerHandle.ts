@@ -52,6 +52,13 @@ export interface ByzantineHandle {
     // step 2 - synthesised + broadcasted misbehaviour. block construction is
     // orchestrator-side (D-15); worker routes receive serialised structs.
     submitDoubleSignBlock(req: SubmitDoubleSignReq): Promise<void>;
+    // step 3 - generic broadcast. mirrors
+    // remoteRpc.stateTransitionService.onBlockConfirmation(bc).broadcast().
+    // used by submitInvalidStateTransitionBlock + variants which all share
+    // the same broadcast tail. block construction is orchestrator-side.
+    broadcastBlockConfirmation(req: {
+        blockConfirmation: unknown;
+    }): Promise<void>;
 }
 
 // step 1 - byzantine.submitDoubleSignBlock payload. block construction is

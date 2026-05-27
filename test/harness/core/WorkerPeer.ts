@@ -73,6 +73,14 @@ class WorkerByzantineHandle implements ByzantineHandle {
             req
         ) as Promise<void>;
     }
+    broadcastBlockConfirmation(req: {
+        blockConfirmation: unknown;
+    }): Promise<void> {
+        return this.rpc.call(
+            "byzantine.broadcastBlockConfirmation",
+            req
+        ) as Promise<void>;
+    }
 }
 
 class WorkerRpcStubHandle implements RpcStubHandle {

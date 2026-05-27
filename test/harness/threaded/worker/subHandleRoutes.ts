@@ -731,6 +731,26 @@ export function registerSubHandleRoutes(
         return {};
     });
 
+    // step 3 - mirrors broadcastBlockConfirmation (the shared broadcast tail
+    // used by submitInvalidStateTransitionBlock + the other byzantine action
+    // variants). orchestrator constructs the BlockConfirmationStruct, worker
+    // just invokes the broadcast.
+    server.register("byzantine.broadcastBlockConfirmation", async (args) => {
+        const { blockConfirmation } = (args ?? {}) as {
+            blockConfirmation?: unknown;
+        };
+        if (!blockConfirmation) {
+            throw new Error(
+                "byzantine.broadcastBlockConfirmation: missing blockConfirmation"
+            );
+        }
+        const sm = ctx.getStateManager();
+        sm.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(blockConfirmation)
+            .broadcast();
+        return {};
+    });
+
     server.register("byzantine.submitDoubleSignBlock", async (args) => {
         // step 1 - block construction is orchestrator-side (D-15); worker
         // receives a serialised SignedBlockStruct + invokes broadcast.

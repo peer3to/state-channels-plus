@@ -25,10 +25,25 @@ export class MathByzantineActions extends ByzantineActions {
         super(harness, logger);
     }
 
-    private encodeMathAdd(peer: TestPeer, value: number = 1): Bytes {
+    // step 1 - W1 - encoder uses orchestrator-side abi (the harness ships
+    // the same MathStateMachine typechain factory). worker peers don't have
+    // a live contractInstance, so reaching `peer.contractInstance` here
+    // throws; bring our own interface.
+    private encodeMathAdd(_peer?: TestPeer, value: number = 1): Bytes {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { MathStateMachine__factory } = require("@typechain-types");
         return (
-            peer.contractInstance as MathStateMachine
-        ).interface.encodeFunctionData("add", [value]) as Bytes;
+            MathStateMachine__factory as {
+                createInterface: () => {
+                    encodeFunctionData: (
+                        name: string,
+                        args: unknown[]
+                    ) => string;
+                };
+            }
+        )
+            .createInterface()
+            .encodeFunctionData("add", [value]) as Bytes;
     }
 
     async submitInvalidStateTransitionBlock(
@@ -40,6 +55,7 @@ export class MathByzantineActions extends ByzantineActions {
         }
     ): Promise<Block> {
         const peer = this.harness.getPeer(peerIndex);
+        const handle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
@@ -49,27 +65,31 @@ export class MathByzantineActions extends ByzantineActions {
             `Peer ${peerIndex} creating invalid state transition block for fork ${forkId}`
         );
 
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
+        // step 1 - W1 - reconstruct the latest Block via sub-handle so worker
+        // peers can answer; orchestrator builds invalid block off the
+        // reconstructed Block's fields.
+        const latestBlockConfirmation =
+            await handle.queryLatestBlockConfirmation(forkId);
+        if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
-
-        const nextBlockHeight =
-            peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
-        const previousBlockHash = this.harness.query.getPreviousBlockHash(
-            peer,
-            forkId,
-            nextBlockHeight
+        const latestBlock = Block.fromBlockConfirmation(
+            latestBlockConfirmation as never
         );
+
+        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.queryPreviousBlockHash({
+            forkId,
+            height: nextBlockHeight
+        });
 
         const transactionData =
             options?.transactionData ?? this.encodeMathAdd(peer);
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: peer.stateManager.getChannelId(),
-                participant: peer.address,
+                channelId: this.harness.channelId,
+                participant: handle.address,
                 forkId,
                 transactionCnt: BigInt(nextBlockHeight),
                 timestamp: BigInt(latestBlock.timestamp) + 1n
@@ -92,16 +112,17 @@ export class MathByzantineActions extends ByzantineActions {
 
         const invalidBlock = await Block.fromBlockStruct(
             blockStruct,
-            peer.signer
+            handle.signer
         );
 
         this.logger.info(
             `Peer ${peerIndex} creating invalid state transition block: height=${invalidBlock.height}, hash=${invalidBlock.hash}, wrongStateSnapshotHash=${wrongStateSnapshotHash}`
         );
 
-        peer.p2pInstance.p2pSigner.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(invalidBlock.blockConfirmationStruct)
-            .broadcast();
+        // step 2 - W1 - broadcast via sub-handle.
+        await handle.byzantine.broadcastBlockConfirmation({
+            blockConfirmation: invalidBlock.blockConfirmationStruct
+        });
 
         this.logger.info(
             `Invalid state transition block broadcasted by peer ${peerIndex}`

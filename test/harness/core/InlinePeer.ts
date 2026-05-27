@@ -116,6 +116,19 @@ class InlineByzantineHandle implements ByzantineHandle {
             .onBlockConfirmation(req.signedBlockConfirmation as never)
             .broadcast();
     }
+
+    // step 3 - generic broadcast tail. shares the same path as
+    // submitDoubleSignBlock; separated so byzantine action sites read as
+    // "construct orchestrator-side + broadcast peer-side" rather than the
+    // misleading-named double-sign route.
+    async broadcastBlockConfirmation(req: {
+        blockConfirmation: unknown;
+    }): Promise<void> {
+        const remoteRpc = this.record.stateManager.p2pManager.remoteRpc;
+        remoteRpc.stateTransitionService
+            .onBlockConfirmation(req.blockConfirmation as never)
+            .broadcast();
+    }
 }
 
 class InlineRpcStubHandle implements RpcStubHandle {
