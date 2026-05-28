@@ -6,7 +6,7 @@ HEAD: `80fee8fe` on branch `threaded-harness-on-v339`.
 
 ## Processed files
 
-- [ ] E2E-InitHandshake.test.ts
+- [x] E2E-InitHandshake.test.ts
 - [ ] E2E-StateTransition.test.ts
 - [ ] E2E-Timeouts.test.ts
 - [ ] E2E-DisputeManager.test.ts
@@ -46,3 +46,13 @@ HEAD: `80fee8fe` on branch `threaded-harness-on-v339`.
 - [ ] disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts
 
 ---
+
+## E2E-InitHandshake.test.ts
+
+- FAIL (worker) should update existing profile transport on WebRTC upgrade — inline PASS, worker FAIL (both initial and rerun)
+- PASS should complete handshake successfully and create peer profile
+- PASS should disconnect peer when handshake request time difference exceeds agreementTime
+- PASS should disconnect peer that doesn't respond within agreementTime
+- PASS should disconnect peer when handshake response RTT exceeds agreementTime
+- PASS should disconnect peer when handshake response time doesn't match init time
+- PASS should disconnect peer sending unsolicited handshake response

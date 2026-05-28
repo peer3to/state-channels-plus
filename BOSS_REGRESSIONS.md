@@ -12,7 +12,7 @@ A test is a boss regression if pre-339 PASS but (339 FAIL OR HEAD-inline FAIL).
 
 ## Processed files
 
-- [ ] E2E-InitHandshake.test.ts
+- [x] E2E-InitHandshake.test.ts
 - [ ] E2E-StateTransition.test.ts
 - [ ] E2E-Timeouts.test.ts
 - [ ] E2E-DisputeManager.test.ts
@@ -52,3 +52,7 @@ A test is a boss regression if pre-339 PASS but (339 FAIL OR HEAD-inline FAIL).
 - [ ] disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts
 
 ---
+
+## E2E-InitHandshake.test.ts
+
+All 7 tests: pre-339 PASS, PR-339 PASS, HEAD-inline PASS. No boss regression.
