@@ -13,10 +13,11 @@ import {
 describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash", function () {
     describe("no calldata", function () {
         describe("(1) stateProof empty — genesis (no milestones, no signedBlocks)", function () {
-            describe("peers synced to dispute.input.latestStateSnapshot", function () {
-                it("dispute.input.stateProof = {} AND dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
+            describe("all peers are in sync", function () {
+                it("[no calldata] dispute.input.stateProof = {} AND dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetup();
+                    await h.assert.sync.peersInSyncWait();
 
                     h.tamper.stubConstructDispute(1, (dispute) => {
                         dispute.input.stateProof.milestones = [];
@@ -47,10 +48,11 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
         });
 
         describe("(3) stateProof.milestones only — last milestone block commits to hash", function () {
-            describe("peers synced to dispute.input.latestStateSnapshot", function () {
-                it("dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
+            describe("all peers are in sync", function () {
+                it("[no calldata] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetup();
+                    await h.assert.sync.peersInSyncWait();
 
                     h.tamper.stubConstructDispute(1, (d) => {
                         expectMilestonesOnlyStateProof(d.input.stateProof);
@@ -77,13 +79,50 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.dispute.resolveDisputeWait();
                 });
             });
+
+            describe("auditor peer 3 disconnected — local storage stale, pipeline still kills", function () {
+                it("[no calldata] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 3)", async function () {
+                    const h = TestSession.getHarness();
+                    await h.scenario.preDisputeSetup({ peerCount: 4 });
+
+                    const disconnectedAuditorIndex = 3;
+                    await h.network.disconnectPeer(disconnectedAuditorIndex);
+
+                    h.tamper.stubConstructDispute(1, (d) => {
+                        expectMilestonesOnlyStateProof(d.input.stateProof);
+                        d.input.latestStateSnapshotHash = randomHash();
+                    });
+
+                    await h.byzantine.submitInvalidStateTransitionBlock(2);
+
+                    await h.assert.dispute.initiatedWait({
+                        peersIndices: [1],
+                        initiatedWithAuditingData: false
+                    });
+                    // peer 3 lacks post-disconnect state locally but still audits via on-chain events.
+                    await h.event.waitForPeers(
+                        "onDisputeKilled",
+                        [disconnectedAuditorIndex],
+                        1,
+                        { mode: "atLeast" }
+                    );
+                    await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
+                        {
+                            disputeFraudProofType:
+                                DisputeFraudProofType.DisputeInvalidStateProof,
+                            timeoutMs: 10000
+                        }
+                    );
+                    await h.dispute.resolveDisputeWait();
+                });
+            });
         });
 
         describe("(2) stateProof.signedBlocks only — last signedBlock commits to hash", function () {
             // preDisputeSetupDisconnectedPeer builds signedBlocks-only proofs; peer 2
             // disconnects during setup. Same hash tamper; we assert which auditor kills.
             describe("peers synced — auditor peer 0 has full signedBlocks chain locally", function () {
-                it("dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 0)", async function () {
+                it("[no calldata] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 0)", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupDisconnectedPeer();
 
@@ -113,7 +152,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
             });
 
             describe("auditor peer 2 disconnected — local storage genesis-only, pipeline still kills", function () {
-                it("dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 2)", async function () {
+                it("[no calldata] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 2)", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupDisconnectedPeer({
                         timeConfig: { p2pTime: 3 }
@@ -149,10 +188,11 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
 
     describe("calldata posted", function () {
         describe("(1) stateProof empty — genesis (no milestones, no signedBlocks)", function () {
-            describe("peers synced to dispute.input.latestStateSnapshot", function () {
-                it("dispute.input.stateProof = {} AND dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
+            describe("all peers are in sync", function () {
+                it("[calldata posted] dispute.input.stateProof = {} AND dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupCalldataPath();
+                    await h.assert.sync.peersInSyncWait();
 
                     h.tamper.stubConstructDispute(3, (d) => {
                         d.input.stateProof.milestones = [];
@@ -185,10 +225,11 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
         });
 
         describe("(3) stateProof.milestones only — last milestone block commits to hash", function () {
-            describe("peers synced to dispute.input.latestStateSnapshot", function () {
-                it("dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
+            describe("all peers are in sync", function () {
+                it("[calldata posted] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupCalldataPath();
+                    await h.assert.sync.peersInSyncWait();
 
                     h.tamper.stubConstructDispute(3, (d) => {
                         d.input.latestStateSnapshotHash = randomHash();
@@ -218,7 +259,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
             });
 
             describe("peers not synced — auditor peer 1 disconnected (misses latest block)", function () {
-                it("dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 1)", async function () {
+                it("[calldata posted] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 1)", async function () {
                     const h = TestSession.getHarness();
                     const disconnectedAuditorIndex = 1;
 
@@ -281,7 +322,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
 
         describe("(2) stateProof.signedBlocks only — last signedBlock commits to hash", function () {
             describe("peers not synced — auditor peer 2 disconnected (calldata forced)", function () {
-                it("dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 2)", async function () {
+                it("[calldata posted] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 2)", async function () {
                     const h = TestSession.getHarness();
                     const disconnectedAuditorIndex = 2;
 

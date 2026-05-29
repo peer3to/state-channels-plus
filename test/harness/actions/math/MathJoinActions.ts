@@ -37,7 +37,7 @@ export class MathJoinActions extends JoinActions {
         return best;
     }
 
-    private async submitForceInboundJoinTx(
+    private async submitForceInboundJoinTxWait(
         options?: ForceInboundJoinOptions
     ): Promise<{
         participant: string;
@@ -72,7 +72,7 @@ export class MathJoinActions extends JoinActions {
             options?.waitForHonestPeersObserve ?? true;
 
         const { participant, previousLatestHash } =
-            await this.submitForceInboundJoinTx(options);
+            await this.submitForceInboundJoinTxWait(options);
 
         if (waitForHonestPeersObserve) {
             await this.harness.assert.storage.honestPeersObserveInboundMessageWait(
@@ -93,7 +93,7 @@ export class MathJoinActions extends JoinActions {
             options?.waitForHonestPeersObserve ?? true;
 
         const { participant, previousLatestHash } =
-            await this.submitForceInboundJoinTx(options);
+            await this.submitForceInboundJoinTxWait(options);
 
         if (waitForHonestPeersObserve) {
             const promise =

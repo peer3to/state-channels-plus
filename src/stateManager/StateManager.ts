@@ -744,8 +744,7 @@ class StateManager<
     }
 
     public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct,
-        expectedSnapshotHash: Bytes
+        confirmation: JoinChannelConfirmationStruct
     ): Promise<void> {
         if (this.status !== Status.SYNCED) return;
 
@@ -765,6 +764,11 @@ class StateManager<
         );
 
         try {
+            const expectedSnapshotHash = StateSnapshot.from(
+                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                    this.channelId
+                )
+            ).hash;
             const tx = await this.stateChannelManagerContract.joinChannel(
                 confirmation,
                 expectedSnapshotHash
@@ -779,6 +783,8 @@ class StateManager<
                 case "RaceConditionJoinChannelExpired":
                 case "RaceConditionJoinChannelSnapshotMismatch":
                 case "RaceConditionJoinChannelForkDisputed":
+                    // TODO: call general abort() here once it exists outside spectate
+                    // (see SpectateService.abort + EventHandler.onStateSnapshotUpdated).
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
                         {
@@ -1734,16 +1740,22 @@ class StateManager<
                                 );
                             },
                             RaceConditionPendingInboundNotConsumed: () => {
-                                this.logger.warn(
+                                this.logger.error(
                                     "postStateSnapshot: pending inbound not consumed by our snapshot",
                                     { forkId }
+                                );
+                                throw new Error(
+                                    `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
                                 );
                             },
                             RaceConditionReductionExpectationDoesntMatch:
                                 () => {
-                                    this.logger.warn(
+                                    this.logger.error(
                                         "postStateSnapshot: reduction already finalized to a different forkId",
                                         { forkId }
+                                    );
+                                    throw new Error(
+                                        `postStateSnapshot: reduction already finalized to a different forkId for forkId=${forkId}`
                                     );
                                 }
                         }

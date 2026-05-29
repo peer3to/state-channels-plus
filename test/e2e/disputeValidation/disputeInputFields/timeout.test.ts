@@ -73,6 +73,11 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             // peer 2 is the silent non-writer → exclude from fork-change barrier.
             h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
 
+            const slashedBefore =
+                await h.channelManager.getOnChainSlashedParticipants(
+                    h.channelId
+                );
+
             await h.tamper.plantFreshTimeoutForNextWriter(0);
             await h.tamper.postTamperedDispute(0, () => {});
 
@@ -83,8 +88,19 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly,
                 timeoutMs: 10000
             });
-            // No resolveDisputeWait: the killed too-early dispute leaves no
-            // surviving dispute in the window, so the fork doesn't change.
+
+            const disputerAddress = h.getPeer(0).address;
+
+            const slashedAfter =
+                await h.channelManager.getOnChainSlashedParticipants(
+                    h.channelId
+                );
+            expect(slashedAfter.length).to.be.greaterThan(slashedBefore.length);
+            expect(
+                slashedAfter.some((a: string) =>
+                    addressesEqual(a, disputerAddress)
+                )
+            ).to.equal(true);
         });
 
         it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
@@ -120,37 +136,6 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             }
 
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
-        });
-
-        it("too-early timeout dispute posted on-chain → applyDisputeFraudProofs slashes disputer", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            // peer 2 is the silent non-writer → exclude from fork-change barrier.
-            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
-
-            const disputerAddress = h.getPeer(0).address;
-            const slashedBefore =
-                await h.channelManager.getOnChainSlashedParticipants(
-                    h.channelId
-                );
-
-            await h.tamper.plantFreshTimeoutForNextWriter(0);
-            await h.tamper.postTamperedDispute(0, () => {});
-
-            await h.event.waitForPeers("onDisputeKilled", [1], 1, {
-                mode: "atLeast"
-            });
-
-            const slashedAfter =
-                await h.channelManager.getOnChainSlashedParticipants(
-                    h.channelId
-                );
-            expect(slashedAfter.length).to.be.greaterThan(slashedBefore.length);
-            expect(
-                slashedAfter.some((a: string) =>
-                    addressesEqual(a, disputerAddress)
-                )
-            ).to.equal(true);
         });
 
         it("forged TimeoutTooEarly against a legitimate timeout dispute → applyDisputeFraudProofs reverts ErrorInvalidFraudProof", async function () {

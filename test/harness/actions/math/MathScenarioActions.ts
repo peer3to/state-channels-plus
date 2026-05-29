@@ -211,7 +211,7 @@ export class MathScenarioActions extends ScenarioActions {
         this.harness.contextApi.captureOriginalFork();
     }
 
-    async setupLeaverM1WithPendingJoinerInM2(options?: {
+    async setupTwoLeaversWithPendingJoinerAcrossMilestones(options?: {
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -236,7 +236,8 @@ export class MathScenarioActions extends ScenarioActions {
 
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3, 4],
-            count: 1
+            count: 1,
+            waitForFinalization: true
         });
 
         const { participant: pendingJoin } =
@@ -266,14 +267,14 @@ export class MathScenarioActions extends ScenarioActions {
             chainFallbackTime?: number;
             evidenceTime?: number;
         };
-        count?: number;
+        stateTransitionCount?: number;
         disconnectedPeerIndex?: number;
     }) {
         const timeConfig = {
             evidenceTime: 12,
             ...options?.timeConfig
         };
-        const count = options?.count ?? 2;
+        const stateTransitionCount = options?.stateTransitionCount ?? 2;
         const disconnectedPeerIndex = options?.disconnectedPeerIndex ?? 2;
         await this.harness.lifecycle.timeoutSetup(4, 0, { timeConfig });
         await this.harness.network.disconnectPeer(disconnectedPeerIndex);
@@ -282,7 +283,7 @@ export class MathScenarioActions extends ScenarioActions {
         );
         await this.harness.transition.advanceState({
             waitForPeers: remainingPeerIndices,
-            count
+            count: stateTransitionCount
         });
 
         this.harness.event.resetEventSpies();

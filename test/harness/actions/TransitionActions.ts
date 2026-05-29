@@ -1,6 +1,6 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
-import { DetachedPromises, Logger, sleep } from "@/utils";
+import { Logger, sleep } from "@/utils";
 import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
 import { MainRpcService } from "@/rpc";
 import { Block, StateSnapshot } from "@/models";
@@ -165,10 +165,29 @@ export class TransitionActions<
     async postSnapshotWait(options?: {
         peerIndex?: number;
         forkId?: string;
+        timeoutMs?: number;
     }): Promise<StateSnapshot | undefined> {
         const expectedSnapshot = await this.postSnapshot(options);
-        const last = DetachedPromises.last();
-        if (last) await last;
+        if (!expectedSnapshot) return undefined;
+
+        const timeoutMs = options?.timeoutMs ?? 8000;
+        await this.harness.eventCountsBarrier.waitFor(
+            async () => {
+                const honestPeers = this.harness.getHonestPeers();
+                const localSnapshots = await Promise.all(
+                    honestPeers.map((peer) =>
+                        this.harness.query.getLocalStateSnapshot(peer)
+                    )
+                );
+                return localSnapshots.every(
+                    (s) => s.hash === expectedSnapshot.hash
+                );
+            },
+            {
+                timeoutMs,
+                timeoutMessage: `postSnapshotWait: honest peers did not observe expected snapshot ${expectedSnapshot.hash} within ${timeoutMs}ms`
+            }
+        );
         return expectedSnapshot;
     }
 

@@ -1,5 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
-import { hash, tryDecodeCustomError } from "@/utils";
+import { DetachedPromises, hash, tryDecodeCustomError } from "@/utils";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import {
@@ -46,12 +46,15 @@ describe("E2E: Join channel race conditions", function () {
                 "on-chain snapshot S' must differ from S before submitting the join confirmation built against S"
             );
 
+            const channelManager =
+                joiner.stateManager.stateChannelManagerContract;
             let revertError: unknown;
             try {
-                await joiner.p2pInstance.p2pSigner.joinChannel(
+                const tx = await channelManager.joinChannel(
                     confirmation,
                     expectedSnapshotHash
                 );
+                await tx.wait();
                 expect.fail(
                     "expected joinChannel to revert: spectator built confirmation against snapshot S, but on-chain snapshot is now the mismatched S'"
                 );
@@ -72,22 +75,25 @@ describe("E2E: Join channel race conditions", function () {
             expect(
                 onChainParticipants.map((a) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
+
+            // existing PARTICIPATING peers observe the byzantine snapshot and
+            // throw via EventHandler's unknown-snapshot fraud detection.
+            await TestSession.expectFirstDetachedError({
+                includes: "unknown snapshot",
+                timeoutMs: 3000
+            });
         });
 
-        it("pending inbound unconsumed → SDK absorbs RaceConditionPendingInboundNotConsumed; on-chain snapshot unchanged", async function () {
+        it("pending inbound unconsumed → postStateSnapshot throws RaceConditionPendingInboundNotConsumed (fatal); on-chain snapshot unchanged", async function () {
             const h = TestSession.getHarness();
-            const { joiner, stateSnapshot, confirmation } =
+            const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
-            const expectedSnapshotHash = StateSnapshot.from(stateSnapshot).hash;
 
             // Existing peers ignore the join's inbound message.
             for (const i of [0, 1, 2])
                 h.byzantine.stubPendingInboundInclusion(i);
 
-            await joiner.p2pInstance.p2pSigner.joinChannel(
-                confirmation,
-                expectedSnapshotHash
-            );
+            await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
             expect(joiner.stateManager.getStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );
@@ -100,9 +106,31 @@ describe("E2E: Join channel race conditions", function () {
             const snapshotBefore = await h.channelManager.getStateSnapshot(
                 h.channelId
             );
-            // postStateSnapshot silently absorbs RaceConditionPendingInboundNotConsumed
-            // via tryHandleEvmError; assert the chain did not advance the snapshot.
-            await h.transition.postSnapshotWait({ peerIndex: 0 });
+
+            // postSnapshotWait times out -> chain rejects with
+            // RaceConditionPendingInboundNotConsumed
+            let waitError: unknown;
+            try {
+                await h.transition.postSnapshotWait({
+                    peerIndex: 0,
+                    timeoutMs: 5000
+                });
+                expect.fail(
+                    "expected postSnapshotWait to time out: chain should reject the snapshot"
+                );
+            } catch (e) {
+                waitError = e;
+            }
+            expect((waitError as Error).message).to.include(
+                "honest peers did not observe expected snapshot"
+            );
+
+            await DetachedPromises.awaitAllAndClear();
+            await TestSession.expectFirstDetachedError({
+                includes: "pending inbound not consumed",
+                timeoutMs: 2000
+            });
+
             const snapshotAfter = await h.channelManager.getStateSnapshot(
                 h.channelId
             );
@@ -113,19 +141,15 @@ describe("E2E: Join channel race conditions", function () {
     describe("Dispute vs join race", function () {
         it("join on disputed fork reverts", async function () {
             const h = TestSession.getHarness();
-            const { joiner, stateSnapshot, confirmation } =
+            const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
-            const expectedSnapshotHash = StateSnapshot.from(stateSnapshot).hash;
 
             // Existing peers open a dispute on the latest fork
             await h.tamper.postTamperedDispute(0, async () => {});
 
             let revertError: unknown;
             try {
-                await joiner.p2pInstance.p2pSigner.joinChannel(
-                    confirmation,
-                    expectedSnapshotHash
-                );
+                await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
                 expect.fail(
                     "expected joinChannel to revert: spectator built confirmation against a fork that is now disputed"
                 );
@@ -148,6 +172,7 @@ describe("E2E: Join channel race conditions", function () {
             ).to.not.include(joiner.address.toLowerCase());
         });
 
+        // Fails: Race condition guard was removed from appendInboundMessages in commit 029c6a82b6f76e233af191b9b88c2e22dfef595f
         it("forceInboundJoin on disputed fork reverts", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
@@ -179,14 +204,10 @@ describe("E2E: Join channel race conditions", function () {
 
         it("pending joiner participates after dispute reduction", async function () {
             const h = TestSession.getHarness();
-            const { joiner, stateSnapshot, confirmation } =
+            const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
-            const expectedSnapshotHash = StateSnapshot.from(stateSnapshot).hash;
 
-            await joiner.p2pInstance.p2pSigner.joinChannel(
-                confirmation,
-                expectedSnapshotHash
-            );
+            await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
             expect(joiner.stateManager.getStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );
