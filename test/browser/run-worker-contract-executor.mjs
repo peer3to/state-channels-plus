@@ -93,8 +93,11 @@ try {
     );
 
     try {
-        await page.waitForFunction(() =>
-            Boolean(globalThis.runContractExecutorWorkerBrowserSmoke)
+        await page.waitForFunction(
+            () =>
+                Boolean(globalThis.runContractExecutorWorkerBrowserSmoke) &&
+                Boolean(globalThis.runWebRTCMainThreadBrowserSmoke) &&
+                Boolean(globalThis.runWebRTCDedicatedWorkerBrowserSmoke)
         );
     } catch (error) {
         if (browserErrors.length) {
@@ -107,22 +110,55 @@ try {
         if (!globalThis.runContractExecutorWorkerBrowserSmoke) {
             throw new Error("Browser worker smoke function was not registered");
         }
-        return await Promise.race([
-            globalThis.runContractExecutorWorkerBrowserSmoke(),
-            new Promise((_, reject) =>
-                setTimeout(
-                    () => reject(new Error("Browser worker smoke timed out")),
-                    45_000
+        if (!globalThis.runWebRTCMainThreadBrowserSmoke) {
+            throw new Error(
+                "WebRTC main-thread smoke function was not registered"
+            );
+        }
+        if (!globalThis.runWebRTCDedicatedWorkerBrowserSmoke) {
+            throw new Error(
+                "WebRTC dedicated-worker smoke function was not registered"
+            );
+        }
+        const withTimeout = (label, promise) =>
+            Promise.race([
+                promise,
+                new Promise((_, reject) =>
+                    setTimeout(
+                        () => reject(new Error(`${label} timed out`)),
+                        45_000
+                    )
                 )
-            )
-        ]);
+            ]);
+
+        const contractExecutor = await withTimeout(
+            "Contract executor browser worker smoke",
+            globalThis.runContractExecutorWorkerBrowserSmoke()
+        );
+        const webRTCMainThread = await withTimeout(
+            "WebRTC main-thread browser smoke",
+            globalThis.runWebRTCMainThreadBrowserSmoke()
+        );
+        const webRTCDedicatedWorker = await withTimeout(
+            "WebRTC dedicated-worker browser smoke",
+            globalThis.runWebRTCDedicatedWorkerBrowserSmoke()
+        );
+        return {
+            contractExecutor,
+            webRTCMainThread,
+            webRTCDedicatedWorker
+        };
     });
 
-    assert.equal(result.value, "42");
-    assert.equal(result.isWorker, true);
+    assert.equal(result.contractExecutor.value, "42");
+    assert.equal(result.contractExecutor.isWorker, true);
+    assert.equal(result.webRTCMainThread.receivedByInitiator, 1);
+    assert.equal(result.webRTCMainThread.receivedByResponder, 1);
+    assert.equal(result.webRTCDedicatedWorker.receivedByMain, 1);
+    assert.equal(result.webRTCDedicatedWorker.receivedByWorker, 1);
     assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
 
-    console.log("Browser worker custom precompile smoke passed");
+    console.log("Browser worker and WebRTC smoke passed");
 } finally {
     await browser?.close();
     await server.close();

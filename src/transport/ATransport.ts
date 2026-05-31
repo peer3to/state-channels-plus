@@ -1,4 +1,4 @@
-import P2PManager from "@/P2PManager";
+import type P2PManager from "@/P2PManager";
 import { TransportType } from "./TransportType";
 import Rpc, { serializeRpc } from "@/rpc/Rpc";
 import { LoggerUtils } from "@/utils/LoggerUtils";

@@ -13,7 +13,8 @@ import {
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
-import { difference, hash } from "@/utils";
+import { hash } from "./hash";
+import { difference } from "./set";
 import { Address, BlockOrSnapshot, Hash } from "@/types/types";
 import {
     DisputeFraudProofType,
@@ -21,9 +22,9 @@ import {
     toSolidityFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
-import type { Logger } from "@/utils";
+import type { Logger, LogLevel } from "./logging/Logger";
 import { TransportType } from "@/transport/TransportType";
-import ATransport from "@/transport/ATransport";
+import type ATransport from "@/transport/ATransport";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import {
@@ -32,7 +33,6 @@ import {
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
-import { LogLevel } from "./logging/Logger";
 import { TimeConfig } from "@/types";
 import type Rpc from "@/rpc/Rpc";
 export class LoggerUtils {
