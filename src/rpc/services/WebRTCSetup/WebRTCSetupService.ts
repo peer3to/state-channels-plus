@@ -101,19 +101,10 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
         }
     }
 
-    private createTransportWhenDataChannelOpen(
+    private createTransportForDataChannel(
         channel: WebRTCDataChannelLike
     ): void {
-        const createTransport = () => {
-            new WebRTCTransport(channel, this.p2pManager);
-        };
-
-        if (channel.readyState === "open") {
-            createTransport();
-            return;
-        }
-
-        channel.onopen = createTransport;
+        new WebRTCTransport(channel, this.p2pManager);
     }
 
     private createConnectionCallbacks(
@@ -124,7 +115,7 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
                 this.serializeAndSendIceCandidate(peerAddress, candidate);
             },
             onDataChannel: (channel) => {
-                this.createTransportWhenDataChannelOpen(channel);
+                this.createTransportForDataChannel(channel);
             },
             onConnectionStateChange: (state) => {
                 this.handleConnectionStateChange(peerAddress, state);

@@ -4,6 +4,7 @@ import { ATransport, TransportType } from "@/transport";
 import { Hash, Signature, Timestamp } from "@/types/types";
 import { ethers } from "ethers";
 import InitHandshakeService from "./InitHandshakeService";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 class InitHandshakeRpcMethods extends ARpcMethods {
     service: InitHandshakeService;
@@ -14,23 +15,51 @@ class InitHandshakeRpcMethods extends ARpcMethods {
 
     public async onInitHandshakeRequest(challengeHash: Hash, time: Timestamp) {
         const localTime = Clock.getTimeInSeconds();
-        if (
-            Math.abs(time - localTime) >
-            this.p2pManager.stateManager.timeConfig.agreementTime
-        ) {
-            this.p2pManager.disconnectConnection(this.senderTransport);
-            this.service.logger.debug(
-                `onInitHandshakeRequest - time difference too big - time:${time} localTime:${localTime} diff:${
-                    time - localTime
-                } agreementTime:${
-                    this.p2pManager.stateManager.timeConfig.agreementTime
-                }`
+        const agreementTime =
+            this.p2pManager.stateManager.timeConfig.agreementTime;
+        LoggerUtils.logInitHandshakeMessage(
+            this.service.logger,
+            this.senderTransport,
+            {
+                direction: "receive",
+                message: "request",
+                challengeHash,
+                messageTime: time
+            }
+        );
+        const timeDifference = time - localTime;
+        if (Math.abs(timeDifference) > agreementTime) {
+            LoggerUtils.logInitHandshakeMessage(
+                this.service.logger,
+                this.senderTransport,
+                {
+                    direction: "local",
+                    message: "rejected",
+                    challengeHash,
+                    messageTime: time,
+                    timeDifferenceSeconds: timeDifference,
+                    absoluteTimeDifferenceSeconds: Math.abs(timeDifference),
+                    agreementTimeSeconds: agreementTime,
+                    reason: "request time outside agreement window"
+                }
             );
+            this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
         const challengeHashBytes = ethers.getBytes(challengeHash);
         const signature =
             await this.p2pManager.p2pSigner.signMessage(challengeHashBytes);
+        LoggerUtils.logInitHandshakeMessage(
+            this.service.logger,
+            this.senderTransport,
+            {
+                direction: "send",
+                message: "response",
+                challengeHash,
+                responseTime: localTime,
+                preferredTransport: this.p2pManager.preferredTransport
+            }
+        );
         this.remoteRpc.initHandshakeService
             .onInitHandshakeResponse(
                 signature,
@@ -49,20 +78,66 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         const challenge = this.service.getChallenge(this.senderTransport);
         this.service.mapTransportToChallenge.delete(this.senderTransport);
         if (!challenge) {
+            LoggerUtils.logInitHandshakeMessage(
+                this.service.logger,
+                this.senderTransport,
+                {
+                    direction: "receive",
+                    message: "rejected",
+                    responseTime,
+                    preferredTransport,
+                    reason: "response did not match an active challenge"
+                }
+            );
             this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
         const localTime = Clock.getTimeInSeconds();
         const rtt = localTime - challenge.initTime;
-        this.service.logger.verbose(`Handshake response RTT: ${rtt}`);
-        if (rtt > this.p2pManager.stateManager.timeConfig.agreementTime) {
+        const agreementTime =
+            this.p2pManager.stateManager.timeConfig.agreementTime;
+        if (rtt > agreementTime) {
+            LoggerUtils.logInitHandshakeMessage(
+                this.service.logger,
+                this.senderTransport,
+                {
+                    direction: "receive",
+                    message: "rejected",
+                    challengeHash: challenge.randomChallengeHash,
+                    challengeInitTime: challenge.initTime,
+                    responseTime,
+                    preferredTransport,
+                    rttSeconds: rtt,
+                    timeDifferenceSeconds: rtt,
+                    absoluteTimeDifferenceSeconds: Math.abs(rtt),
+                    agreementTimeSeconds: agreementTime,
+                    reason: "response RTT outside agreement window"
+                }
+            );
             this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
-        if (
-            Math.abs(responseTime - challenge.initTime) >
-            this.p2pManager.stateManager.timeConfig.agreementTime
-        ) {
+        const responseTimeDifference = responseTime - challenge.initTime;
+        if (Math.abs(responseTimeDifference) > agreementTime) {
+            LoggerUtils.logInitHandshakeMessage(
+                this.service.logger,
+                this.senderTransport,
+                {
+                    direction: "receive",
+                    message: "rejected",
+                    challengeHash: challenge.randomChallengeHash,
+                    challengeInitTime: challenge.initTime,
+                    responseTime,
+                    preferredTransport,
+                    rttSeconds: rtt,
+                    timeDifferenceSeconds: responseTimeDifference,
+                    absoluteTimeDifferenceSeconds: Math.abs(
+                        responseTimeDifference
+                    ),
+                    agreementTimeSeconds: agreementTime,
+                    reason: "response timestamp outside agreement window"
+                }
+            );
             this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
@@ -74,14 +149,37 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             challengeHashBytes,
             signature
         );
-        this.service.logger.verbose(
-            `Handshake response signer address ${signerAddress} and RTT: ${rtt}`
+        LoggerUtils.logInitHandshakeMessage(
+            this.service.logger,
+            this.senderTransport,
+            {
+                direction: "receive",
+                message: "response",
+                challengeHash: challenge.randomChallengeHash,
+                challengeInitTime: challenge.initTime,
+                responseTime,
+                preferredTransport,
+                rttSeconds: rtt,
+                signerAddress
+            }
         );
         // Check if this peer is blacklisted
         // TODO - we destory the profile, so we wouldn't have this information
         if (this.p2pManager.isBlacklisted(signerAddress)) {
-            this.service.logger.debug(
-                `Rejecting handshake from blacklisted peer: ${signerAddress}`
+            LoggerUtils.logInitHandshakeMessage(
+                this.service.logger,
+                this.senderTransport,
+                {
+                    direction: "local",
+                    message: "rejected",
+                    challengeHash: challenge.randomChallengeHash,
+                    challengeInitTime: challenge.initTime,
+                    responseTime,
+                    preferredTransport,
+                    rttSeconds: rtt,
+                    signerAddress,
+                    reason: "response signer is blacklisted"
+                }
             );
             this.p2pManager.disconnectConnection(this.senderTransport);
             return;
@@ -102,8 +200,18 @@ class InitHandshakeRpcMethods extends ARpcMethods {
         );
 
         // Inform the remote that we've authenticated them.
+        LoggerUtils.logInitHandshakeMessage(
+            this.service.logger,
+            this.senderTransport,
+            {
+                direction: "send",
+                message: "ack",
+                challengeHash: challenge.randomChallengeHash,
+                signerAddress
+            }
+        );
         this.remoteRpc.initHandshakeService
-            .onInitHandshakeAck()
+            .onInitHandshakeAck(challenge.randomChallengeHash)
             .sendOne(this.senderTransport);
         //TODO! TEST!!
         // this.rpcProxy
@@ -121,8 +229,27 @@ class InitHandshakeRpcMethods extends ARpcMethods {
      * Sent after a peer verifies our handshake response. We only treat the handshake
      * as complete once we have both: (1) verified the remote, and (2) received this ack.
      */
-    public async onInitHandshakeAck() {
+    public async onInitHandshakeAck(challengeHash?: Hash) {
+        LoggerUtils.logInitHandshakeMessage(
+            this.service.logger,
+            this.senderTransport,
+            {
+                direction: "receive",
+                message: "ack",
+                challengeHash
+            }
+        );
         if (this.service.didReceiveAck(this.senderTransport)) {
+            LoggerUtils.logInitHandshakeMessage(
+                this.service.logger,
+                this.senderTransport,
+                {
+                    direction: "local",
+                    message: "ack",
+                    challengeHash,
+                    reason: "duplicate handshake ack"
+                }
+            );
             this.p2pManager.disconnectAndBlacklistPeer(
                 this.senderTransport,
                 "protocol violation: duplicate handshake ack"
