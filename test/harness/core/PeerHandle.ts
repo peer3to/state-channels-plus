@@ -194,7 +194,7 @@ export type DisconnectFilterFn = (
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type StubMethodFn = (...args: any[]) => unknown | Promise<unknown>;
 
-export interface DebugHandle {
+export interface StubHandle {
     // step 1 - replace stateManager[<path>] with the closure. dotted paths walk
     // intermediate objects; the last segment is the slot to overwrite. returns
     // a RestoreToken for cleanup via restoreStubbedMethod.
@@ -233,8 +233,7 @@ export type NamedOpRequest = {
 };
 
 export interface TransitionHandle {
-    // step 1 - run a named op. inline -> registry lookup runs in-process;
-    // worker -> rpc 'transition.runOp' with the same id + args.
+    // run a named op. op name is the rpc route name (e.g. "math.add").
     submitNext(req: NamedOpRequest): Promise<unknown>;
 }
 
@@ -497,7 +496,7 @@ export interface PeerHandle {
     // step 5c - debug surface for tests that need to monkey-patch a method on
     // the live stateManager (or any dotted path off it). today's callers used
     // `peer.stateManager.foo = ...` directly -> impossible cross-thread.
-    readonly debug: DebugHandle;
+    readonly stub: StubHandle;
     // step 5a - named-op transition surface (W0 D-11, D-22). closure-bearing
     // overloads migrate at test source from lambdas to op ids.
     readonly transition: TransitionHandle;

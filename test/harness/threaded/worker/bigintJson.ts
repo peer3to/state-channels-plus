@@ -1,6 +1,4 @@
-// W2 - side-effect import. install BigInt.prototype.toJSON so log payloads
-// stringify cleanly. NOT load-bearing for the rpc kernel (structured-clone
-// handles BigInt natively); purely for log printing inside the worker.
+// BigInt.prototype.toJSON for log payloads; rpc uses structured-clone for BigInt natively.
 
 type BigIntWithToJSON = bigint & { toJSON?: () => number };
 const proto = BigInt.prototype as BigIntWithToJSON;

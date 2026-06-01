@@ -13,7 +13,7 @@ import type { Signer } from "ethers";
 
 import type {
     ByzantineHandle,
-    DebugHandle,
+    StubHandle,
     DisconnectFilterFn,
     LifecycleHandle,
     NamedOpRequest,
@@ -30,7 +30,6 @@ import type {
     TransportSummary
 } from "./PeerHandle";
 import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { getOp } from "../threaded/worker/opsRegistry";
 import { rejectLambdaArgs } from "./namedOpGuards";
 import type { EventSpies, TestPeer } from "./types";
 
@@ -577,19 +576,15 @@ class InlineP2pInternalsHandle implements P2pInternalsHandle {
 }
 
 class InlineTransitionHandle implements TransitionHandle {
-    constructor(private readonly record: TestPeer) {}
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    constructor(private readonly _record: TestPeer) {}
 
-    async submitNext(req: NamedOpRequest): Promise<unknown> {
-        rejectLambdaArgs("InlinePeer.transition.submitNext", req);
-        // step 1 - resolve op id against the shared registry. inline backend
-        // runs the op body in-process with a context exposing the live
-        // stateManager + p2pInstance. same bodies as the worker route.
-        const fn = getOp(req.op);
-        const ctx = {
-            getStateManager: () => this.record.stateManager as unknown,
-            getP2pInstance: () => this.record.p2pInstance as unknown
-        };
-        return await fn(ctx, req.args);
+    async submitNext(_req: NamedOpRequest): Promise<unknown> {
+        throw new Error(
+            "InlinePeer.transition.submitNext is not available in inline mode. " +
+                "Use action class methods (e.g. h.transition.increment()) which " +
+                "call the contract instance directly."
+        );
     }
 }
 
@@ -667,7 +662,7 @@ class InlineNetworkHandle implements NetworkHandle {
 // walk intermediate objects; the last segment is the slot to overwrite.
 // monotonic-id tokens map back to a restore closure that puts the original
 // method back on the same object slot.
-class InlineDebugHandle implements DebugHandle {
+class InlineStubHandle implements StubHandle {
     private nextTokenId = 1;
     private readonly restoresByToken = new Map<string, () => void>();
 
@@ -728,7 +723,7 @@ export class InlinePeer implements PeerHandle {
     readonly network: NetworkHandle;
     readonly transition: TransitionHandle;
     readonly lifecycle: LifecycleHandle;
-    readonly debug: DebugHandle;
+    readonly stub: StubHandle;
 
     constructor(public readonly record: TestPeer) {
         this.byzantine = new InlineByzantineHandle(record);
@@ -737,7 +732,7 @@ export class InlinePeer implements PeerHandle {
         this.network = new InlineNetworkHandle(record);
         this.transition = new InlineTransitionHandle(record);
         this.lifecycle = new InlineLifecycleHandle(record);
-        this.debug = new InlineDebugHandle(record);
+        this.stub = new InlineStubHandle(record);
     }
 
     get index(): number {

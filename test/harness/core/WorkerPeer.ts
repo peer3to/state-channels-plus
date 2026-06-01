@@ -12,14 +12,14 @@ import type { Signer } from "ethers";
 import type { Address, ForkId } from "@/types/types";
 import type { Logger, EventBarrier } from "@/utils";
 
-import type { RpcClient } from "../threaded/rpc/rpc-client";
-import { LIFECYCLE_RPC } from "../threaded/worker/types";
+import type { PeerCaller } from "../threaded/rpc/rpc-client";
+import { ROUTES } from "../threaded/worker/routeNames";
 import { SPY_RESET_RPC } from "../threaded/worker/SpyRegistry";
-import { TRANSITION_RUN_OP } from "../threaded/worker/opRoutes";
+
 import { rejectLambdaArgs } from "./namedOpGuards";
 import type {
     ByzantineHandle,
-    DebugHandle,
+    StubHandle,
     DisconnectFilterFn,
     LifecycleHandle,
     NamedOpRequest,
@@ -38,6 +38,7 @@ import type {
 import type { SpyMirror } from "./SpyMirror";
 import type { StubCallbackRegistry } from "./StubCallbackRegistry";
 import type { EventSpies } from "./types";
+import { ROUTES } from "@test/harness/threaded/worker/routeNames";
 import { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // step 1 - sub-handle implementations forward to W3 rpc. route ids follow
@@ -45,7 +46,7 @@ import { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/typ
 // are registered by W2's bundle-manifest pattern (next agent ships those).
 
 class WorkerByzantineHandle implements ByzantineHandle {
-    constructor(private readonly rpc: RpcClient) {}
+    constructor(private readonly rpc: PeerCaller) {}
     stubCalldataHandler(): Promise<void> {
         return this.rpc.call(
             "byzantine.stubCalldataHandler",
@@ -96,7 +97,7 @@ class WorkerRpcStubHandle implements RpcStubHandle {
     private readonly liveCallbackIds = new Map<string, string>();
 
     constructor(
-        private readonly rpc: RpcClient,
+        private readonly rpc: PeerCaller,
         private readonly registry: StubCallbackRegistry
     ) {}
 
@@ -149,7 +150,7 @@ class WorkerRpcStubHandle implements RpcStubHandle {
 }
 
 class WorkerP2pInternalsHandle implements P2pInternalsHandle {
-    constructor(private readonly rpc: RpcClient) {}
+    constructor(private readonly rpc: PeerCaller) {}
     openConnections(): Promise<TransportSummary[]> {
         return this.rpc.call("queryInternals.openConnections", {}) as Promise<
             TransportSummary[]
@@ -254,18 +255,15 @@ class WorkerP2pInternalsHandle implements P2pInternalsHandle {
 }
 
 class WorkerTransitionHandle implements TransitionHandle {
-    constructor(private readonly rpc: RpcClient) {}
+    constructor(private readonly rpc: PeerCaller) {}
     submitNext(req: NamedOpRequest): Promise<unknown> {
         rejectLambdaArgs("WorkerPeer.transition.submitNext", req);
-        return this.rpc.call(TRANSITION_RUN_OP, {
-            op: req.op,
-            args: req.args
-        });
+        return this.rpc.call(req.op, req.args ?? {});
     }
 }
 
 class WorkerLifecycleHandle implements LifecycleHandle {
-    constructor(private readonly rpc: RpcClient) {}
+    constructor(private readonly rpc: PeerCaller) {}
     connectToChannel(channelId: string): Promise<void> {
         return this.rpc.call("lifecycle.connectToChannel", {
             channelId
@@ -276,14 +274,14 @@ class WorkerLifecycleHandle implements LifecycleHandle {
     }
 }
 
-class WorkerDebugHandle implements DebugHandle {
+class WorkerStubHandle implements StubHandle {
     // step 1 - orchestrator-side token -> callback id map. token id is the
     // worker-returned slot ("debugStub#N"); callback id is the registry handle
     // we drop when the test restores. parallel to WorkerRpcStubHandle.
     private readonly liveCallbackIds = new Map<string, string>();
 
     constructor(
-        private readonly rpc: RpcClient,
+        private readonly rpc: PeerCaller,
         private readonly registry: StubCallbackRegistry
     ) {}
 
@@ -294,7 +292,7 @@ class WorkerDebugHandle implements DebugHandle {
         const callbackId = this.registry.registerStub((args) =>
             (fn as (...a: unknown[]) => unknown)(...args)
         );
-        const token = (await this.rpc.call("debug.stubMethod", {
+        const token = (await this.rpc.call(ROUTES.stub.stubMethod, {
             path,
             callbackId
         })) as RestoreToken;
@@ -308,7 +306,7 @@ class WorkerDebugHandle implements DebugHandle {
             this.registry.unregisterStub(callbackId);
             this.liveCallbackIds.delete(token.id);
         }
-        await this.rpc.call("debug.restoreStubbedMethod", {
+        await this.rpc.call(ROUTES.stub.restoreStubbedMethod, {
             tokenId: token.id
         });
     }
@@ -318,7 +316,7 @@ class WorkerDebugHandle implements DebugHandle {
             this.registry.unregisterStub(id);
         }
         this.liveCallbackIds.clear();
-        await this.rpc.call("debug.restoreAllStubbedMethods", {});
+        await this.rpc.call(ROUTES.stub.restoreAllStubbedMethods, {});
     }
 }
 
@@ -327,7 +325,7 @@ class WorkerNetworkHandle implements NetworkHandle {
     private liveCallbackId: string | undefined;
 
     constructor(
-        private readonly rpc: RpcClient,
+        private readonly rpc: PeerCaller,
         private readonly registry: StubCallbackRegistry
     ) {}
     disconnectAll(): Promise<void> {
@@ -367,7 +365,7 @@ export type WorkerPeerCtorArgs = {
     logger: Logger;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;
-    rpc: RpcClient;
+    rpc: PeerCaller;
     // step 1 - W4 spy mirror. orchestrator-owned; worker bumps land via the
     // "spy" push topic; WorkerPeer.resetSpies clears the row after the rpc
     // round-trip resolves (§reset). harness owns construction + ingest wiring.
@@ -400,7 +398,7 @@ export class WorkerPeer implements PeerHandle {
     readonly network: NetworkHandle;
     readonly transition: TransitionHandle;
     readonly lifecycle: LifecycleHandle;
-    readonly debug: DebugHandle;
+    readonly stub: StubHandle;
 
     // step 1 - cached scalar (D-12). worker pushes `fork.changed` post-p2pSetup
     // (W5-blocked); until then the value stays undefined and any test reading
@@ -408,7 +406,7 @@ export class WorkerPeer implements PeerHandle {
     // startup. W4 push channel is wired; only the worker-side emit is deferred.
     private cachedForkId: ForkId | undefined = undefined;
 
-    private readonly rpc: RpcClient;
+    private readonly rpc: PeerCaller;
     private readonly mirror: SpyMirror;
     private readonly _onDispose: () => Promise<void>;
 
@@ -443,7 +441,7 @@ export class WorkerPeer implements PeerHandle {
         );
         this.transition = new WorkerTransitionHandle(this.rpc);
         this.lifecycle = new WorkerLifecycleHandle(this.rpc);
-        this.debug = new WorkerDebugHandle(this.rpc, args.stubCallbackRegistry);
+        this.stub = new WorkerStubHandle(this.rpc, args.stubCallbackRegistry);
     }
 
     get forkId(): ForkId | undefined {
@@ -455,7 +453,7 @@ export class WorkerPeer implements PeerHandle {
     // narrowed via the `__workerBackend` discriminator on PeerHandle. only
     // those two action sites should reach for this; everything else uses
     // the sub-handles.
-    getRpc(): RpcClient {
+    getRpc(): PeerCaller {
         return this.rpc;
     }
 
@@ -765,7 +763,7 @@ export class WorkerPeer implements PeerHandle {
         // step 1 - drive lifecycle rpc, then hand off to PeerWorker.dispose
         // which terminates the underlying node Worker.
         try {
-            await this.rpc.call(LIFECYCLE_RPC.dispose, {});
+            await this.rpc.call(ROUTES.lifecycle.dispose, {});
         } catch {
             // step 1 - rpc may already be torn down; force-path picks up.
         }

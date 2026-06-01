@@ -1,7 +1,5 @@
-// W3 - error serialize/deserialize. {name, message, stack} is the debugger
-// contract that matters. no cause-chain walk, no aggregate, no wrapper class.
-// CustomEvmError fields are preserved so `isCustomEvmError(err)` still
-// returns true on the orchestrator side after a wire round-trip.
+// Error serialize/deserialize for rpc responses. CustomEvmError fields are
+// preserved so isCustomEvmError(err) still works on the orchestrator side.
 
 import type { SerializedError } from "./rpc-types";
 
@@ -22,7 +20,6 @@ export function serializeError(e: unknown): SerializedError {
             message: e.message,
             stack: e.stack
         };
-        // step 1 - preserve CustomEvmError discriminator + parsed description
         const maybeCustom = e as Partial<CustomEvmShape>;
         if (
             maybeCustom.isCustomError === true &&

@@ -30,7 +30,7 @@ describe("E2E: Block Fraud Proofs", function () {
         for (const peer of h.peers) {
             await h
                 .getPeerHandle(peer.index)
-                .debug.stubMethod("maybePostBlockOnChain", () => {});
+                .stub.stubMethod("maybePostBlockOnChain", () => {});
         }
 
         const observerIndex = 3;

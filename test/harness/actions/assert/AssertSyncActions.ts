@@ -78,8 +78,6 @@ export class AssertSyncActions {
         }
 
         for (const peer of peers) {
-            // step 1 - route through PeerHandle -> inline reads the live
-            // storage, worker forwards via rpc + serialised {hash,height}.
             const latestBlock = (await this.harness
                 .getPeerHandle(peer.index)
                 .queryLatestBlock(forkId)) as { height?: number } | undefined;
@@ -116,8 +114,6 @@ export class AssertSyncActions {
             originalForkId
         ]);
 
-        // step 1 - forkId via PeerHandle (cached scalar D-12; worker mode
-        // refreshes via W4 push).
         const peerForks = peers
             .map((p) => this.harness.getPeerHandle(p.index).forkId)
             .filter(
@@ -138,7 +134,6 @@ export class AssertSyncActions {
                 );
             return;
         } else {
-            // All peers have moved to same new fork
             const uniqueForks = new Set(peerForks);
             const isGood = uniqueForks.size === 1;
             if (!isGood)
@@ -281,9 +276,6 @@ export class AssertSyncActions {
             throw new Error("No active fork ID");
         }
 
-        // step 1 - W1 - route height read via queryLatestBlock so worker peers
-        // answer over rpc. nextHeight = (latest?.height ?? -1) + 1; condition
-        // compares per-peer heights.
         const heightFor = async (i: number): Promise<number> => {
             const latest = (await this.harness
                 .getPeerHandle(i)
@@ -313,8 +305,6 @@ export class AssertSyncActions {
     }): Promise<void> {
         const { expectedCount, peerIndex = 0, timeoutMs = 10000 } = options;
 
-        // step 1 - W1 - route via queryParticipants sub-handle. inline reads
-        // the live diamondStateMachine; worker forwards over rpc.
         const handle = this.harness.getPeerHandle(peerIndex);
         const condition = async () => {
             const participants = await handle.queryParticipants();

@@ -86,8 +86,6 @@ export class TransitionActions<
             await this.waitForTurn(nextPeer);
         }
 
-        // step 1 - named-op shape -> route through submitOp (worker safe).
-        // lambda shape -> legacy submit path (inline only).
         if (typeof txFn !== "function") {
             return this.submitOp(nextPeer, txFn, {
                 waitForSync: options.waitForSync ?? true,
@@ -175,9 +173,6 @@ export class TransitionActions<
             throw new Error("No active fork ID - channel must be opened first");
         }
 
-        // step 1 - W1 - route via sub-handle. inline body calls
-        // stateManager.postStateSnapshot in-process; worker forwards rpc and
-        // ships .toStruct() -> rehydrate orchestrator-side.
         const raw = await this.harness
             .getPeerHandle(peerIndex)
             .postStateSnapshot(forkId);
@@ -227,22 +222,16 @@ export class TransitionActions<
             throw new Error("No active fork ID - channel must be opened first");
         }
 
-        // step 1 - W1 - prepare via sub-handle. inline body calls
-        // stateManager.prepareUpdateSnapshotSameFork; worker forwards rpc.
         const handle = this.harness.getPeerHandle(peerIndex);
         const sameForkData = await handle.prepareUpdateSnapshotSameFork(forkId);
         if (!sameForkData || sameForkData.callData.length === 0)
             return undefined;
 
-        // step 2 - on-chain submission via orchestrator-side channel manager
-        // wallet (peer signer). same path inline + worker.
         const channelManager = this.harness.channelManager.connect(
             handle.signer
         );
         const tx = await channelManager.multicall(sameForkData.callData);
         await tx.wait();
-        // step 3 - W1 - rehydrate expectedSnapshot if worker returned a
-        // plain struct (structured clone strips class wrappers).
         const expected = sameForkData.expectedSnapshot;
         if (expected && expected instanceof StateSnapshot) {
             return expected;
@@ -278,9 +267,6 @@ export class TransitionActions<
         txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = {}
     ): Promise<any> {
-        // step 1 - lambda over the in-peer contract instance cannot cross the
-        // worker boundary (W0 D-11/D-22). worker mode -> migrate test source
-        // to a named-op shape; runtime guard for fast failure.
         rejectClosureInWorkerMode(
             "TransitionActions.submit(txFn)",
             this.harness.getPeerHandle(peer.index)
@@ -292,9 +278,6 @@ export class TransitionActions<
         );
     }
 
-    // step 1 - named-op equivalent. worker-safe. inline path goes through
-    // PeerHandle.transition.submitNext which dispatches against the shared
-    // ops registry (worker-ops/<domain>.ts) - same body both backends.
     async submitOp(
         peer: TestPeer<TFactories, TContract>,
         opRequest: { op: string; args?: unknown },
@@ -308,8 +291,6 @@ export class TransitionActions<
         );
     }
 
-    // step 1 - shared body. txExec runs the actual on-chain submission;
-    // surrounds it with the same waitForTurn / waitForSync semantics.
     private async submitInner(
         peer: TestPeer<TFactories, TContract>,
         txExec: () => Promise<unknown>,
@@ -331,8 +312,6 @@ export class TransitionActions<
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
-            // step 1 - height read needs the live peer.stateManager. worker
-            // mode -> query via handle; inline keeps the sync read.
             let minHeight: number | undefined;
             if (this.harness.options.dedicatedPeerThread) {
                 const latest = (await this.harness
@@ -384,8 +363,6 @@ export class TransitionActions<
             blockConfirmation,
             ingestOptions?.onChainTimestamp
         );
-        // step 1 - W1 - route via sub-handle so worker peers can ingest.
-        // payload is serialisable (BlockConfirmationStruct + ingestOptions).
         const keepConnection = (await this.harness
             .getPeerHandle(peerIndex)
             .ingestBlockConfirmation({
@@ -421,8 +398,6 @@ export class TransitionActions<
         peer: TestPeer<TCustomRpc, TContract>,
         timeoutMs = 3000
     ): Promise<void> {
-        // step 1 - W1 - turn predicate via sub-handle. inline reads
-        // stateManager.isMyTurn in-process; worker forwards rpc.
         const handle = this.harness.getPeerHandle(peer.index);
         try {
             await peer.turnBarrier.waitFor(

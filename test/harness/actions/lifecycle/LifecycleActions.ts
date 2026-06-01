@@ -82,8 +82,6 @@ export class LifecycleActions {
         return this.submitOpenChannel(openChannel, signatures);
     }
 
-    // ************** PRIVATE HELPERS ****************
-
     private buildOpenChannelStruct(
         args: { participantAddresses?: string[] } = {}
     ): OpenChannelStruct {
@@ -121,9 +119,6 @@ export class LifecycleActions {
         this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
-        // step 1 - connect every peer to the channel via the lifecycle
-        // sub-handle. inline path runs P2pSigner.connectToChannel in-process;
-        // worker path routes to `lifecycle.connectToChannel`.
         for (const peer of this.harness.peers) {
             await this.harness
                 .getPeerHandle(peer.index)
@@ -156,8 +151,6 @@ export class LifecycleActions {
         const isValidForkId = (forkId: ForkId | undefined): boolean =>
             !!forkId && forkId !== "0x00" && forkId !== "0x0";
 
-        // step 1 - forkId is a cached scalar on PeerHandle (D-12). worker mode
-        // keeps it fresh via W4 `fork.changed` push; inline reads through.
         const getPeerForkIds = () =>
             this.harness.peers.map(
                 (peer) => this.harness.getPeerHandle(peer.index).forkId
@@ -165,7 +158,6 @@ export class LifecycleActions {
 
         this.logger.debug("Waiting for fork ID to be set on all peers...");
 
-        // Wait for onSetState event on all peers (called when forkId is set)
         const eventCounts = this.harness.peers.map((_, index: number) => ({
             peerId: index,
             expectedCount: 1
@@ -178,7 +170,6 @@ export class LifecycleActions {
             { mode: "atLeast" }
         );
 
-        // Verify all peers have the same valid fork ID
         const peerForkIds = getPeerForkIds();
         const allValidAndSame =
             peerForkIds.every(isValidForkId) &&
@@ -190,8 +181,6 @@ export class LifecycleActions {
             );
         }
 
-        // State machine is already initialized when onSetState fires
-        // (setState is called before forkId is set and before onSetState is called)
         if (!this.harness.activeForkId) {
             throw new Error("Fork ID was not set after waiting for onSetState");
         }

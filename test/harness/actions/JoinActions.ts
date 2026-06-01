@@ -51,16 +51,10 @@ export class JoinActions {
         }
 
         if (this.harness.channelId) {
-            // step 1 - peer-side connect via lifecycle sub-handle. inline path
-            // runs P2pSigner.connectToChannel in-process; worker mode routes
-            // through `lifecycle.connectToChannel`.
             await this.harness
                 .getPeerHandle(index)
                 .lifecycle.connectToChannel(this.harness.channelId.toString());
-            // step 2 - orchestrator-side discovery wiring. inline path passes
-            // the live P2PManager. worker mode already dials inside p2pSetup
-            // (entry.ts:324 LocalDiscoveryServer.connectToPeers from the
-            // worker) -> skip the orchestrator-side dial when peer is worker.
+            // Worker peers already dialed discovery during p2pSetup.
             const handle = this.harness.getPeerHandle(index);
             if (!handle.__workerBackend) {
                 await LocalDiscoveryServer.connectToPeers(

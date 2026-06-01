@@ -86,12 +86,9 @@ export type HarnessConstructorOptions<
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     deployment: HarnessDeploymentConfig<TContract>;
-    // W5 - deployment registry key + worker bundle manifest. when
-    // dedicatedPeerThread=true the worker resolves the deployer by name from
-    // the shared registry; bundleManifest lists the module paths to import at
-    // boot so the registry entry is populated in the worker isolate.
-    deploymentName?: string;
-    workerBundleManifest?: string[];
+    // Module path that exports the HarnessDeploymentConfig as its default export.
+    // Required when dedicatedPeerThread=true.
+    deploymentModule?: string;
 };
 
 /**

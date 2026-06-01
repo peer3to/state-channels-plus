@@ -11,7 +11,6 @@ import { MathPeerTestHarness } from "test-harness";
 import { MainRpcService } from "@/rpc";
 
 type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
-    // step 1 - W1 - accept named-op so tests can opt out of closures in worker mode.
     txFn?:
         | ((contract: MathStateMachine) => Promise<any>)
         | { op: string; args?: unknown };
@@ -37,37 +36,32 @@ export class MathTransitionActions extends TransitionActions<
         value: number = 1,
         options?: TransitionOptions
     ): Promise<any> {
-        // step 1 - prefer named-op shape -> works in both inline + worker mode.
-        return this.submitNext({ op: "math.add", args: { value } }, options);
+        return this.harness.options.dedicatedPeerThread
+            ? this.submitNext({ op: "math.add", args: { value } }, options)
+            : this.submitNext((contract) => contract.add(value), options);
     }
 
     override async advanceState(
         options?: MathAdvanceStateOptions
     ): Promise<void> {
-        // step 1 - the legacy txFn override (lambda over MathStateMachine) is
-        // inline-only. when provided, defer to the base lambda path. otherwise
-        // ship the default add-1 as a named op so worker mode works without
-        // test-source churn.
         if (options?.txFn) {
             return super.advanceState({ ...options, txFn: options.txFn });
         }
-        // step 1 - reuse the base advanceState loop but inject a named-op via
-        // a small adapter that bypasses the lambda path. base loops over
-        // submitNext; we shadow the local txFn -> use submitNext({op}).
+        const txFn = this.harness.options.dedicatedPeerThread
+            ? { op: "math.add", args: { value: 1 } }
+            : (contract: MathStateMachine) => contract.add(1);
+
         const count = options?.count ?? 1;
         const total = options?.rounds
             ? options.rounds * this.harness.peers.length
             : count;
 
         for (let i = 0; i < total; i++) {
-            await this.submitNext(
-                { op: "math.add", args: { value: 1 } },
-                {
-                    ...options,
-                    waitForFinalization:
-                        i === total - 1 ? options?.waitForFinalization : false
-                }
-            );
+            await this.submitNext(txFn, {
+                ...options,
+                waitForFinalization:
+                    i === total - 1 ? options?.waitForFinalization : false
+            });
         }
     }
 
@@ -78,15 +72,20 @@ export class MathTransitionActions extends TransitionActions<
     }): Promise<void> {
         const { peer, value = 1, waitForPeers } = options;
         const peerObj = this.harness.peers[peer];
-        if (!peerObj) {
-            throw new Error(`Peer ${peer} not found`);
+        if (!peerObj) throw new Error(`Peer ${peer} not found`);
+        if (this.harness.options.dedicatedPeerThread) {
+            await this.submitOp(
+                peerObj,
+                { op: "math.add", args: { value } },
+                {
+                    waitForPeers
+                }
+            );
+        } else {
+            await this.submit(peerObj, (contract) => contract.add(value), {
+                waitForPeers
+            });
         }
-
-        await this.submitOp(
-            peerObj,
-            { op: "math.add", args: { value } },
-            { waitForPeers }
-        );
     }
 
     async participantLeaveWait(
@@ -134,16 +133,16 @@ export class MathTransitionActions extends TransitionActions<
         const leaver = await this.harness.query.getNextPeerToWrite();
         const leaverIndex = leaver.index;
 
-        await this.submitNext(
-            { op: "math.leaveChannel" },
-            {
-                waitForTurn: true,
-                waitForSync: options?.waitForSync ?? true,
-                waitForPeers: options?.waitForPeers,
-                waitForFinalization: options?.waitForFinalization ?? true,
-                delayMs: options?.delayMs
-            }
-        );
+        const leaveOp = this.harness.options.dedicatedPeerThread
+            ? { op: "math.leaveChannel" }
+            : (contract: MathStateMachine) => contract.leaveChannel();
+        await this.submitNext(leaveOp, {
+            waitForTurn: true,
+            waitForSync: options?.waitForSync ?? true,
+            waitForPeers: options?.waitForPeers,
+            waitForFinalization: options?.waitForFinalization ?? true,
+            delayMs: options?.delayMs
+        });
 
         this.logger.debug(`Peer ${leaverIndex} left channel`);
 

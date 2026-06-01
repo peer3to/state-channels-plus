@@ -26,10 +26,7 @@ export class MathByzantineActions extends ByzantineActions {
         super(harness, logger);
     }
 
-    // step 1 - W1 - encoder uses orchestrator-side abi (the harness ships
-    // the same MathStateMachine typechain factory). worker peers don't have
-    // a live contractInstance, so reaching `peer.contractInstance` here
-    // throws; bring our own interface.
+    // Worker peers lack contractInstance; encode calldata via the factory locally.
     private encodeMathAdd(_peer?: TestPeer, value: number = 1): Bytes {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { MathStateMachine__factory } = require("@typechain-types");
@@ -66,9 +63,6 @@ export class MathByzantineActions extends ByzantineActions {
             `Peer ${peerIndex} creating invalid state transition block for fork ${forkId}`
         );
 
-        // step 1 - W1 - reconstruct the latest Block via sub-handle so worker
-        // peers can answer; orchestrator builds invalid block off the
-        // reconstructed Block's fields.
         const latestBlockConfirmation =
             await handle.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
@@ -120,7 +114,6 @@ export class MathByzantineActions extends ByzantineActions {
             `Peer ${peerIndex} creating invalid state transition block: height=${invalidBlock.height}, hash=${invalidBlock.hash}, wrongStateSnapshotHash=${wrongStateSnapshotHash}`
         );
 
-        // step 2 - W1 - broadcast via sub-handle.
         await handle.byzantine.broadcastBlockConfirmation({
             blockConfirmation: invalidBlock.blockConfirmationStruct
         });
@@ -144,7 +137,6 @@ export class MathByzantineActions extends ByzantineActions {
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        // step 1 - W1 - storage reads via sub-handles.
         const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
         const previousBlockConfirmation =
             await handle.queryLatestBlockConfirmation(forkId);
@@ -299,7 +291,6 @@ export class MathByzantineActions extends ByzantineActions {
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        // step 1 - W1 - storage reads via sub-handles.
         const latestBlockConfirmation =
             await handle.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
@@ -331,8 +322,6 @@ export class MathByzantineActions extends ByzantineActions {
             }
         };
 
-        // step 2 - W1 - applyTransaction sub-handle. inline body runs the
-        // call in-process; worker forwards rpc with the serialised tx.
         const validEncodedData = this.encodeMathAdd();
         const { success, encodedState } = (await handle.applyTransaction({
             ...transaction,
@@ -381,7 +370,6 @@ export class MathByzantineActions extends ByzantineActions {
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        // step 1 - W1 - storage reads via sub-handles.
         const latestBlockConfirmation =
             await handle.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {

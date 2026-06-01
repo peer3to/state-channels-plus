@@ -21,8 +21,6 @@ export class MathJoinActions extends JoinActions {
                 "forceInboundJoin: no honest non-leaver peers to submit from (all peers are malicious or have left)"
             );
         }
-        // step 1 - W1 - inbound height read via sub-handle so worker peers
-        // answer over rpc. inline body matches the today loop.
         let best = candidates[0];
         let bestHeight =
             (await this.harness
@@ -51,7 +49,6 @@ export class MathJoinActions extends JoinActions {
         const submitter = await this.pickSubmitterWithLatestInbound();
         const participant =
             options?.participant ?? hre.ethers.Wallet.createRandom().address;
-        // step 1 - W1 - inbound latest block hash via sub-handle.
         const previousLatestHash = (await this.harness
             .getPeerHandle(submitter.index)
             .queryInboundLatestBlockHash()) as Hash | undefined;

@@ -36,9 +36,6 @@ export class ContextActions {
         }
 
         const handle = this.harness.getPeerHandle(peerIndex);
-        // step 1 - W1 - milestone read via sub-handle. worker mode ships a
-        // plain struct (lost class getters); rehydrate via StateSnapshot.from
-        // so downstream LoggerUtils.getSnapshotMetadata + accessors work.
         const lastSnapshotRaw = await handle.queryLastMilestoneSnapshot(forkId);
         const lastSnapshot = lastSnapshotRaw
             ? lastSnapshotRaw instanceof StateSnapshot
@@ -68,9 +65,6 @@ export class ContextActions {
                 newSnapshot: LoggerUtils.getSnapshotMetadata(lastSnapshot)
             }
         );
-        // step 2 - W1 - withdrawals delta computed by the sub-handle (one
-        // round-trip; the outboundMessages walk + diamondStateMachine math
-        // runs in the peer's process). returned struct is { amount, data }.
         const expectedWithdrawalsDeltaBalance =
             await handle.computeExpectedWithdrawalsDelta({
                 upperBlockHash: String(

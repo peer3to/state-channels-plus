@@ -1,12 +1,11 @@
-// W3 - worker-side rpc server. handler map + push channel. responds to req
-// frames with res; emits push frames on its own initiative.
+// Peer handler: inbound req dispatch via handler map, outbound res/push frames.
 
 import { serializeError } from "./rpc-errors";
 import type { Frame, Req, RpcPort } from "./rpc-types";
 
 type Handler = (args: unknown) => unknown | Promise<unknown>;
 
-export class RpcServer {
+export class PeerHandler {
     private handlers = new Map<string, Handler>();
     private disposed = false;
     private readonly onMessage: (raw: unknown) => void;
@@ -20,8 +19,7 @@ export class RpcServer {
     }
 
     register(method: string, fn: Handler): void {
-        // step 1 - guard against accidental double-register -> last-write-wins
-        // would silently alias otherwise. explicit unregister required.
+        // Duplicate registration would last-write-win silently.
         if (this.handlers.has(method)) {
             throw new Error(`rpc: duplicate handler '${method}'`);
         }
@@ -32,7 +30,6 @@ export class RpcServer {
         this.handlers.delete(method);
     }
 
-    // step 1 - one-direction worker -> orchestrator push frame.
     push(topic: string, payload: unknown): void {
         if (this.disposed) return;
         this.safePost({ kind: "push", topic, payload });
@@ -54,7 +51,7 @@ export class RpcServer {
     private handleFrame(raw: unknown): void {
         const f = raw as Frame;
         if (!f || typeof f !== "object") return;
-        if (f.kind !== "req") return; // step 1 - server only acts on req frames
+        if (f.kind !== "req") return;
         void this.dispatch(f);
     }
 
@@ -84,9 +81,7 @@ export class RpcServer {
     }
 
     private safePost(value: unknown): void {
-        // step 1 - guard every outbound postMessage. closed ports throw
-        // synchronously (DataCloneError / "port is closed" on some node
-        // builds). callers' resolved values are discarded silently.
+        // Closed ports throw synchronously; late posts are dropped.
         if (this.disposed) return;
         try {
             this.port.postMessage(value);
@@ -95,3 +90,6 @@ export class RpcServer {
         }
     }
 }
+
+// Back-compat alias for in-flight refactors.
+export { PeerHandler as RpcServer };

@@ -18,9 +18,8 @@ export function rejectClosureInWorkerMode(
     // duck-type check avoids importing WorkerPeer here -> no cycle.
     if (handle.__workerBackend) {
         throw new Error(
-            `${label}: closure-bearing call not supported in worker mode (W0 D-22). ` +
-                `migrate test source to the named-op shape and register the op ` +
-                `via registerOp() in your worker-ops domain module.`
+            `${label}: closure-bearing call not supported in worker mode. ` +
+                `migrate test source to the named-op shape: { op: '<domain>.<opId>', args: {...} }.`
         );
     }
 }
@@ -30,9 +29,8 @@ export function rejectLambdaArgs(label: string, req: NamedOpRequest): void {
     if (typeof probe.txFn === "function") {
         throw new Error(
             `${label}: function-typed 'txFn' is not supported. closures never cross ` +
-                `the orchestrator <-> worker boundary (W0 D-11). migrate to the ` +
-                `named-op shape: { op: '<domain>.<opId>', args: {...} } and register ` +
-                `the op via registerOp() in your worker-ops domain module.`
+                `the orchestrator <-> worker boundary. migrate to the named-op shape: ` +
+                `{ op: '<domain>.<opId>', args: {...} }.`
         );
     }
     if (typeof req.args === "function") {

@@ -77,7 +77,6 @@ export class DisputeOrchestrator {
         const honestPeers = honestPeerIndices.map((idx) =>
             this.harness.getPeer(idx)
         );
-        // step 1 - forkId via PeerHandle cached scalar (D-12).
         const newForkId = this.harness.getPeerHandle(
             honestPeers[0]!.index
         ).forkId;
@@ -109,8 +108,6 @@ export class DisputeOrchestrator {
                 );
 
             for (const peer of settledPeers) {
-                // step 1 - W1 - route via sub-handle so worker peers answer
-                // over rpc. inline backend reads diamondStateMachine in-process.
                 const participants = await this.harness
                     .getPeerHandle(peer.index)
                     .queryParticipants();

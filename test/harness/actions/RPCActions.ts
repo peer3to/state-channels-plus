@@ -1,16 +1,3 @@
-// step 1 - W1 §6 - RPCActions hits the localRpc service instances via
-// `peer.stateManager.p2pManager.localRpc.<service>` and frequently passes a
-// live ATransport into createRPCMethods(transport). the audit (W1 appendix A
-// bucket ii) maps these to queryInternals.isForkDisputedService({op,args}) and
-// queryInternals.initHandshakeService({op,args}), with the worker dispatching
-// the op against the in-thread service. that dispatcher exists in
-// subHandleRoutes; however the action methods today consume live service
-// instances + transports + signers. migrating to the dispatcher requires
-// serialising transports + signing args (named-handler registry / W3 envelope
-// id seam). until that lands, the action class continues to reach the live
-// services through the inline peer's record. dedicatedPeerThread=true is
-// W5-blocked at handle construction so every handle is an InlinePeer.
-
 import { ethers } from "ethers";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { LocalDiscoveryServer, Logger } from "@/utils";
@@ -30,10 +17,7 @@ export class RPCActions {
         private logger: Logger
     ) {}
 
-    // step 1 - inline-only accessor. live service instance is not on the sub-
-    // handle surface; worker-mode equivalent goes through the dispatcher named
-    // op (queryInternals.isForkDisputedService) once the named-handler registry
-    // lands. callers below are bucket-(ii) deferred.
+    // Inline-only: live localRpc service instances are not on PeerHandle.
     private getInlineRecord(peerIndex: number) {
         const handle = this.harness.getPeerHandle(peerIndex) as InlinePeer;
         return handle.record;
@@ -63,8 +47,6 @@ export class RPCActions {
         peerIndex: number,
         otherPeerAddress: Address
     ): Promise<boolean> {
-        // route via sub-handle so worker peers can answer over rpc; inline
-        // peers run the same predicate body locally.
         return this.harness
             .getPeerHandle(peerIndex)
             .queryInternals.isHandshakeCompletedWith(otherPeerAddress);
@@ -95,7 +77,6 @@ export class RPCActions {
         respondingPeerAddress: Address,
         forkId: ForkId
     ): Promise<boolean> {
-        // step 1 - route via sub-handle dispatcher -> worker-safe.
         const handle = this.harness.getPeerHandle(requestingPeerIndex);
         const result = await handle.queryInternals.isForkDisputedService({
             op: "didPeerAcknowledgeDisputedFork",
@@ -112,18 +93,12 @@ export class RPCActions {
         newPeerIndex: number,
         observingPeerIndex: number
     ): Promise<void> {
-        // step 1 - tryOpenConnectionToChannel routes through the network
-        // sub-handle (W1 appendix A bucket ii). live P2PManager.self stays
-        // inline-side; LocalDiscoveryServer is orchestrator-driven.
         const newPeer = this.harness.getPeer(newPeerIndex);
         const handle = this.harness.getPeerHandle(newPeerIndex);
         await handle.network.tryOpenConnectionToChannel(
             this.harness.channelId!.toString()
         );
-        // step 2 - orchestrator-side dial. worker mode already dialed inside
-        // p2pSetup (entry.ts runP2pSetup) and newPeer.stateManager.p2pManager
-        // is undefined orchestrator-side -> skip when handle is worker.
-        // mirrors NetworkController.connectPeers.
+        // Worker peers already dialed discovery during p2pSetup.
         if (!handle.__workerBackend) {
             await LocalDiscoveryServer.connectToPeers(
                 newPeer.stateManager.p2pManager.self,
@@ -180,15 +155,10 @@ export class RPCActions {
             throw new Error("No active fork ID");
         }
 
-        // step 1 - read latest block as a serialisable BlockConfirmationStruct
-        // from the building peer -> survives the worker boundary. observing
-        // peer reconstructs in-thread via the queryInternals sub-handle.
         const buildingPeerHandle = this.harness.getPeerHandle(buildingPeer);
         const observingPeerHandle = this.harness.getPeerHandle(observingPeer);
         const buildingPeerAddress = buildingPeerHandle.address.toString();
 
-        // step 2 - wait for the observer to have a live handshake to the
-        // building peer -> worker-safe predicate (queryInternals sub-handle).
         await this.waitForHandshakeCompleted(
             observingPeer,
             buildingPeerHandle.address
@@ -201,9 +171,6 @@ export class RPCActions {
             throw new Error(`No latest block found for fork ${activeForkId}`);
         }
 
-        // step 3 - delegate to the queryInternals sub-handle. inline path runs
-        // the body in-process; worker path forwards via rpc -> route reconstructs
-        // the Block in-thread and calls blockValidationStrategy.
         await observingPeerHandle.queryInternals.blockForkIsDisputed({
             block: buildingLatestBlock,
             peerAddress: buildingPeerAddress
@@ -230,9 +197,6 @@ export class RPCActions {
         timeOffset: number;
     }): Promise<void> {
         const { fromPeer, toPeer, timeOffset } = options;
-        // step 1 - route createRPCMethods(transport).onInitHandshakeRequest
-        // through the receiving peer -> in-thread transport resolution
-        // (worker-safe). orchestrator only ships scalars.
         const toHandle = this.harness.getPeerHandle(toPeer);
         const fromAddr = this.harness.getPeerHandle(fromPeer).address;
         const agreementTime =
@@ -252,7 +216,6 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        // step 1 - run initHandshake(transport) in-thread for `fromPeer`.
         const fromHandle = this.harness.getPeerHandle(fromPeer);
         const toAddr = this.harness.getPeerHandle(toPeer).address;
         await fromHandle.queryInternals.callServiceMethodWithTransport({
@@ -273,7 +236,6 @@ export class RPCActions {
         const fromHandle = this.harness.getPeerHandle(fromPeer);
         const fromAddr = fromHandle.address;
 
-        // step 1 - lookup the challenge `toPeer` set when it initiated handshake.
         const challenge =
             await toHandle.queryInternals.getInitChallenge(fromAddr);
         if (!challenge)
@@ -283,16 +245,12 @@ export class RPCActions {
             this.harness.options.timeConfig?.agreementTime ?? 0;
         const slowResponseTime =
             challenge.initTime + agreementTime + delaySeconds;
-        // step 2 - sign the challenge with the orchestrator-side fromPeer signer
-        // (signer is already on the handle per D-15).
         const signature = await fromHandle.signer.signMessage(
             ethers.getBytes(challenge.randomChallengeHash)
         );
         const fromPreferred =
             await fromHandle.queryInternals.getPreferredTransportType();
 
-        // step 3 - call onInitHandshakeResponse via the rpc-methods chain on
-        // `toPeer` (the receiving side) with the live transport to fromPeer.
         await toHandle.queryInternals.callServiceWithTransport({
             serviceName: "initHandshakeService",
             methodName: "onInitHandshakeResponse",
@@ -310,7 +268,6 @@ export class RPCActions {
         const fromHandle = this.harness.getPeerHandle(fromPeer);
         const fromAddr = fromHandle.address;
 
-        // step 1 - guard: no challenge expected for "unsolicited" semantics.
         const challenge =
             await toHandle.queryInternals.getInitChallenge(fromAddr);
         if (challenge)
@@ -373,8 +330,6 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        // step 1 - same as initiateHandshake; named separately to document
-        // the test's expectation (response will time out).
         const fromHandle = this.harness.getPeerHandle(fromPeer);
         const toAddr = this.harness.getPeerHandle(toPeer).address;
         await fromHandle.queryInternals.callServiceMethodWithTransport({
@@ -411,9 +366,7 @@ export class RPCActions {
     async requestFakeDisputeWithSpiedDisconnect(options: {
         requestingPeer: number;
     }): Promise<void> {
-        // step 1 - install an inline filter on every other peer; filter drops
-        // disconnects targeting the requester so the test can observe the
-        // no-ack timeout path. closure runs orchestrator-side either backend.
+        // Install disconnect filters so only disconnects targeting the requester proceed.
         const { requestingPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
         const requestingPeerHandle = this.harness.getPeerHandle(requestingPeer);
@@ -422,15 +375,11 @@ export class RPCActions {
         for (let i = 0; i < this.harness.peers.length; i++) {
             if (i === requestingPeer) continue;
             const peer = this.harness.getPeerHandle(i);
-            // step 1 - return false -> drop; true -> delegate to original.
             await peer.network.installDisconnectFilter(
                 (addr) => addr !== skipAddress
             );
         }
 
-        // step 2 - dispatch through queryInternals -> in worker mode this rpc
-        // forwards to the in-thread service; inline runs the body locally.
-        // args is an array -> dispatcher spreads positionally.
         await requestingPeerHandle.queryInternals.isForkDisputedService({
             op: "requestDisputeAcknowledgment",
             args: [this.harness.channelId!, fakeForkId]

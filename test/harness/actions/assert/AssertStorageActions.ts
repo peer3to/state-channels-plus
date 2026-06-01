@@ -88,7 +88,6 @@ export class AssertStorageActions {
             options?.peerIndices
         );
 
-        // step 1 - W1 - route via sub-handle so worker peers answer over rpc.
         const condition = async () => {
             for (const peer of honestPeers) {
                 const latestHash = await this.harness
@@ -178,8 +177,6 @@ export class AssertStorageActions {
             maliciousPeerIndex,
             fraudProofType
         } = options;
-        // step 1 - W1 - sub-handle for fraud proof lookup. inline body reads
-        // storage.fraudProofs in-process; worker forwards via rpc.
         const fraudProof = await this.harness
             .getPeerHandle(honestPeerIndex)
             .queryFraudProofForParticipant(maliciousPeerAddress);
@@ -215,7 +212,6 @@ export class AssertStorageActions {
         }
         const want = toSolidityDisputeFraudProofType(disputeFraudProofType);
 
-        // step 1 - W1 - sub-handle for dispute fraud proofs.
         for (const peer of peers) {
             const proofs = await this.harness
                 .getPeerHandle(peer.index)
@@ -281,7 +277,6 @@ export class AssertStorageActions {
             throw new Error("No active fork ID");
         }
 
-        // step 1 - W1 - sub-handle for timeout read so worker peers answer via rpc.
         const timeout = await this.harness
             .getPeerHandle(peerToCheck)
             .queryTimeoutForFork(forkId);
@@ -325,7 +320,6 @@ export class AssertStorageActions {
         }
         const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         for (const peer of peers) {
-            // step 1 - W1 - route via sub-handle so worker peers answer over rpc.
             const handle = this.harness.getPeerHandle(peer.index);
             for (const disputeHash of disputeHashes) {
                 const disputeConfirmation =

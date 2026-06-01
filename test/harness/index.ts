@@ -1,10 +1,6 @@
 // Core types and interfaces
 export * from "./core/types";
 
-// step 1 - side-effect: register worker-ops (transition.runOp domain modules).
-// inline backend resolves op ids against this same registry.
-import "./worker-ops";
-
 import { MathTestSession } from "./session/MathTestSession";
 import { registerTestSessionHooks } from "./session/registerTestSessionHooks";
 

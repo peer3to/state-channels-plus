@@ -12,21 +12,9 @@ import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/Da
 
 /**
  * StateQueryActions handles all read-only state queries.
- * Responsibilities:
- * - Query state machine state
- * - Query network/transport state
- * - Query dispute/timeout state
- * - Determine next peer to write
+ * NO MUTATIONS - read-only operations only.
  *
- * NO MUTATIONS - read-only operations only
- *
- * step 1 - W1 §6 - migration status. several methods return live objects
- * (Storage, ATransport, PeerProfile, StateMachineState) that the sub-handle
- * surface intentionally does not carry (W1 §3.1 "what *is not* on PeerHandle").
- * those reads stay as-is for inline mode via the handle's record; their
- * worker-mode equivalents land with the named-handler / queryStorageSnapshot
- * migrations in W1 §6 bucket (iii) and the deferred queryStorageSnapshot shape
- * pinning. dedicatedPeerThread=true is W5-blocked anyway so these are inert.
+ * Some methods return live inline-only objects (Storage, ATransport, PeerProfile).
  */
 export class StateQueryActions {
     constructor(
@@ -34,9 +22,6 @@ export class StateQueryActions {
         private logger: Logger
     ) {}
 
-    // step 1 - bucket-(iii) deferred. live storage is not on PeerHandle;
-    // inline mode reads through the record. worker-mode equivalent lands with
-    // queryStorageSnapshot once shape is pinned (W1 appendix A bucket i).
     public getPeerStorage(peerIndex: number) {
         const handle = this.harness.getPeerHandle(peerIndex) as InlinePeer;
         return handle.record.stateManager.storage;
@@ -48,9 +33,6 @@ export class StateQueryActions {
     public async getLatestStateMachineStateHash(
         peerIndex: number
     ): Promise<Hash | null> {
-        // step 1 - sub-handle path. inline body matches the live storage walk;
-        // worker body forwards via rpc. activeForkId resolution stays on the
-        // harness (worker mode caches it via push).
         const forkId = this.harness.activeForkId;
         if (!forkId) return null;
         const handle = this.harness.getPeerHandle(peerIndex);
@@ -105,9 +87,6 @@ export class StateQueryActions {
     }
 
     public async getLocalStateSnapshot(peer: TestPeer): Promise<StateSnapshot> {
-        // step 1 - worker-safe path. handle.queryLocalStateSnapshot mirrors
-        // localDiamondContract.getStateSnapshot(channelId) inside the worker
-        // and returns the raw struct -> StateSnapshot.from rebuilds class.
         const handle = this.harness.getPeerHandle(peer.index);
         const struct = await handle.queryLocalStateSnapshot(
             this.harness.channelId as string
@@ -124,9 +103,6 @@ export class StateQueryActions {
                 throw new Error("getNextPeerToWrite: no active fork ID");
             }
 
-            // step 1 - async variant handles worker mode correctly (queries
-            // each handle's tip via rpc). inline mode short-circuits to the
-            // sync read.
             const sourcePeer =
                 await this.harness.peerWithHighestBlock(forkId);
             const sourceHandle = this.harness.getPeerHandle(sourcePeer.index);
@@ -138,10 +114,8 @@ export class StateQueryActions {
                 (peer) => peer.address === nextAddress
             );
             if (!nextPeer) {
-                // Enhanced error reporting
                 const peerAddresses = this.harness.peers.map((p) => p.address);
 
-                // step 1 - participant diagnostics via PeerHandle -> worker safe.
                 const participantStates = await Promise.all(
                     this.harness.peers.map(async (_peer, i) => {
                         try {
@@ -188,7 +162,6 @@ export class StateQueryActions {
             return false;
         };
 
-        // Check immediately first
         if (condition()) {
             return resolvedTransport!;
         }
@@ -222,9 +195,6 @@ export class StateQueryActions {
     /**
      * Get the number of open connections for a peer
      */
-    // step 1 - bucket (ii) - routes through queryInternals.connectionCount.
-    // inline body reads peer.stateManager.p2pManager.openConnections.length
-    // in-process (see InlineP2pInternalsHandle).
     async getConnectionCount(peerIndex: number): Promise<number> {
         return this.harness
             .getPeerHandle(peerIndex)

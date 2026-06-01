@@ -80,9 +80,7 @@ export class PeerTestHarness<
     public options!: HarnessOptions<TCustomRpc>;
     private harnessConfig!: Partial<Config>;
     private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
-    // Worker boot: deployment registry name and module manifest.
-    private readonly deploymentName?: string;
-    private readonly workerBundleManifest: string[];
+    private readonly deploymentModule?: string;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
@@ -165,8 +163,7 @@ export class PeerTestHarness<
 
     constructor({
         deployment,
-        deploymentName,
-        workerBundleManifest
+        deploymentModule
     }: HarnessConstructorOptions<TStateMachine>) {
         // JSON.stringify cannot serialize BigInt.
         if (typeof (BigInt.prototype as any).toJSON !== "function") {
@@ -177,8 +174,7 @@ export class PeerTestHarness<
         dotenv.config(); // use .env since it's gitignored and it's only for testing - not altering SDK usage
         createConfig(testConfig); // Ensure config is initialized for tests
         this.deployment = deployment;
-        this.deploymentName = deploymentName;
-        this.workerBundleManifest = workerBundleManifest ?? [];
+        this.deploymentModule = deploymentModule;
 
         // Logger starts with config default and is reconfigured in setup().
         this.logger = createLogger(
@@ -288,9 +284,11 @@ export class PeerTestHarness<
             await LocalDiscoveryServer.tryStart();
         }
         const signers = await hre.ethers.getSigners();
-        for (let i = 0; i < numPeers; i++) {
-            await this.createPeer(i, signers[i]);
-        }
+        await Promise.all(
+            Array.from({ length: numPeers }, (_, i) =>
+                this.createPeer(i, signers[i])
+            )
+        );
 
         this.logger.info("Test harness setup completed");
     }
@@ -563,8 +561,11 @@ export class PeerTestHarness<
             this.wrapEventHandlerWithSpies(peer);
         }
 
-        this.peers.push(peer);
-        this.peerHandles.push(await this.createPeerHandle(peer));
+        this.peers[index] = peer;
+        // step 1 - W1 / D-3 - register the PeerHandle. inline path wraps the
+        // TestPeer; worker path spawns a node worker against the per-test http
+        // hardhat node (W5).
+        this.peerHandles[index] = await this.createPeerHandle(peer);
 
         this.logger.debug(`Peer ${index} created successfully`);
     }
@@ -593,21 +594,15 @@ export class PeerTestHarness<
             channelId: this.options.channelId!,
             discoveryRegistryPort: registryPort,
             channelManagerAddress: this.channelManager.target as string,
-            deploymentName: this.requireDeploymentName(),
             harnessConfig: {
                 timeConfig: this.options.timeConfig as never,
                 configOverrides: this.harnessConfig as Record<string, unknown>,
                 stateMachineGasLimit: this.options.stateMachineGasLimit!,
-                disputeExecutionGasLimit:
-                    this.options.disputeExecutionGasLimit!,
-                channelId: this.options.channelId!,
-                initialBalance: this.options.initialBalance!
+                disputeExecutionGasLimit: this.options.disputeExecutionGasLimit!
             },
-            logConfig: { level: this.options.logLevel!, peerIndex: peer.index },
-            testTitle: this.requireDeploymentName(),
-            bundleManifest: this.workerBundleManifest,
+            logConfig: { level: this.options.logLevel! },
             chainProviderUrl: this.chainProviderUrl,
-            loopDelayMaxMs: 5000
+            deploymentModule: this.requireDeploymentModule()
         });
         this.spawnedWorkers.push(worker);
 
@@ -690,13 +685,13 @@ export class PeerTestHarness<
         });
     }
 
-    private requireDeploymentName(): string {
-        if (!this.deploymentName) {
+    private requireDeploymentModule(): string {
+        if (!this.deploymentModule) {
             throw new Error(
-                "PeerTestHarness: dedicatedPeerThread requires deploymentName + workerBundleManifest on the harness ctor"
+                "PeerTestHarness: dedicatedPeerThread requires deploymentModule on the harness ctor"
             );
         }
-        return this.deploymentName;
+        return this.deploymentModule;
     }
 
     // Derive the same private key Hardhat uses for getSigners()[i].

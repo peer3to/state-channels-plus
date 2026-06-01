@@ -25,8 +25,6 @@ describe("E2E: State Snapshots", function () {
         await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
 
         await h.transition.advanceState();
-        // step 1 - W1 - named-op shape so worker mode can dispatch.
-        // resolves the "math.leaveChannel" handler in test/harness/worker-ops/math.ts.
         await h.transition.advanceState({
             txFn: { op: "math.leaveChannel" }
         });

@@ -1,21 +1,16 @@
-// W3 - rpc kernel unit tests. fake in-memory port pair so we don't depend
-// on worker_threads; that's W2's surface. focus: correlation-id round trips,
-// push delivery, error serialization, dispose semantics, race with late post.
+// Rpc kernel unit tests using an in-memory port pair.
 
 import { expect } from "chai";
 import { describe, it, beforeEach } from "mocha";
 
-import { RpcClient } from "../rpc-client";
-import { RpcServer } from "../rpc-server";
-import { attach } from "../rpc-endpoint";
+import { PeerCaller } from "../rpc-client";
+import { PeerHandler } from "../rpc-server";
 import type { RpcPort } from "../rpc-types";
 
 type Listener = (value: unknown) => void;
 type CloseListener = () => void;
 
-// step 1 - in-memory bidirectional port pair. messages enqueue on the other
-// side via setImmediate to mimic real MessagePort async semantics. close() on
-// one side triggers close listeners on both.
+// In-memory bidirectional port pair; close on one side triggers close listeners on both.
 class FakePort implements RpcPort {
     private msgListeners = new Set<Listener>();
     private closeListeners = new Set<CloseListener>();
@@ -26,8 +21,6 @@ class FakePort implements RpcPort {
         if (this.closed || this.other.closed) {
             throw new Error("port is closed");
         }
-        // step 1 - deliver async; structured-clone semantics not modeled but
-        // not needed for these tests (all payloads are plain JSON-safe data).
         setImmediate(() => {
             if (this.other.closed) return;
             for (const fn of this.other.msgListeners) {
@@ -39,9 +32,7 @@ class FakePort implements RpcPort {
     close(): void {
         if (this.closed) return;
         this.closed = true;
-        // step 1 - fire local close listeners (RpcClient/Server self-dispose)
         for (const fn of this.closeListeners) fn();
-        // step 2 - propagate to the other side asynchronously
         setImmediate(() => {
             if (!this.other.closed) {
                 this.other.closed = true;
@@ -69,14 +60,14 @@ function makePair(): [FakePort, FakePort] {
     return [a, b];
 }
 
-describe("rpc kernel (W3)", () => {
-    let client: RpcClient;
-    let server: RpcServer;
+describe("rpc kernel", () => {
+    let client: PeerCaller;
+    let server: PeerHandler;
 
     beforeEach(() => {
         const [portA, portB] = makePair();
-        client = new RpcClient(portA);
-        server = new RpcServer(portB);
+        client = new PeerCaller(portA);
+        server = new PeerHandler(portB);
     });
 
     it("req/res round trip resolves with handler return value", async () => {
@@ -136,11 +127,9 @@ describe("rpc kernel (W3)", () => {
         const slowP = client.call("slow", {});
         const fastP = client.call("fast", {});
 
-        // step 1 - fast resolves first even though slow was issued first
         const fastResult = await fastP;
         expect(fastResult).to.equal(1);
 
-        // step 2 - now release slow
         resolveSlow(42);
         const slowResult = await slowP;
         expect(slowResult).to.equal(42);
@@ -154,7 +143,6 @@ describe("rpc kernel (W3)", () => {
         });
         server.push("spy", { name: "onTurn", count: 1 });
         server.push("spy", { name: "onSetState", count: 2 });
-        // step 1 - drain the async queue
         await new Promise((r) => setImmediate(r));
         await new Promise((r) => setImmediate(r));
         expect(received).to.have.length(2);
@@ -174,7 +162,7 @@ describe("rpc kernel (W3)", () => {
             "slow",
             () =>
                 new Promise<number>(() => {
-                    // step 1 - never resolves; dispose must wake the parked promise
+                    // never resolves
                 })
         );
 
@@ -200,13 +188,11 @@ describe("rpc kernel (W3)", () => {
 
     it("server postMessage on a closed port is swallowed (no throw)", async () => {
         server.register("slow", async () => {
-            // step 1 - sleep a bit so client closes before we respond
             await new Promise((r) => setImmediate(r));
             await new Promise((r) => setImmediate(r));
             return "result";
         });
         const callP = client.call("slow", {});
-        // step 1 - immediately dispose; in-flight handler will try to post late
         client.dispose();
 
         let caught: Error | undefined;
@@ -217,19 +203,15 @@ describe("rpc kernel (W3)", () => {
         }
         expect(caught?.message).to.include("disposed");
 
-        // step 2 - give the handler a chance to try posting; should not throw
         await new Promise((r) => setImmediate(r));
         await new Promise((r) => setImmediate(r));
         await new Promise((r) => setImmediate(r));
-        // step 3 - no unhandled exception means the safePost guard worked
     });
 
     it("close event on port triggers local dispose -> subsequent calls reject", async () => {
         server.register("noop", () => "ok");
-        // step 1 - happy path first to prove the link works
         expect(await client.call("noop", {})).to.equal("ok");
 
-        // step 2 - close from the server side; client's close listener fires
         server.dispose();
         await new Promise((r) => setImmediate(r));
 
@@ -251,29 +233,27 @@ describe("rpc kernel (W3)", () => {
     });
 });
 
-// step 1 - bidirectional endpoints. both sides attach client+server to the
-// same port; req/res frames flow in both directions; push frames keep working.
-describe("rpc kernel (W3) - bidirectional endpoints", () => {
+describe("rpc kernel - bidirectional endpoints", () => {
     it("orchestrator -> worker call works while worker -> orchestrator call works", async () => {
         const [portA, portB] = makePair();
-        const sideA = attach(portA);
-        const sideB = attach(portB);
+        const sideA = createBidirectionalEndpoint(portA);
+        const sideB = createBidirectionalEndpoint(portB);
 
-        sideB.server.register("worker.echo", (args) => {
+        sideB.handler.register("worker.echo", (args) => {
             const { v } = args as { v: number };
             return { echoed: v * 2 };
         });
-        sideA.server.register("orch.lookup", (args) => {
+        sideA.handler.register("orch.lookup", (args) => {
             const { key } = args as { key: string };
             return { value: `orch:${key}` };
         });
 
-        const fromA = (await sideA.client.call("worker.echo", { v: 21 })) as {
+        const fromA = (await sideA.caller.call("worker.echo", { v: 21 })) as {
             echoed: number;
         };
         expect(fromA.echoed).to.equal(42);
 
-        const fromB = (await sideB.client.call("orch.lookup", {
+        const fromB = (await sideB.caller.call("orch.lookup", {
             key: "foo"
         })) as { value: string };
         expect(fromB.value).to.equal("orch:foo");
@@ -284,21 +264,21 @@ describe("rpc kernel (W3) - bidirectional endpoints", () => {
 
     it("nested callback: worker handler calls back into orchestrator mid-handle", async () => {
         const [portA, portB] = makePair();
-        const sideA = attach(portA);
-        const sideB = attach(portB);
+        const sideA = createBidirectionalEndpoint(portA);
+        const sideB = createBidirectionalEndpoint(portB);
 
-        sideA.server.register("orch.tamper", async (args) => {
+        sideA.handler.register("orch.tamper", async (args) => {
             const { dispute } = args as { dispute: { height: number } };
             return { dispute: { height: dispute.height + 1000 } };
         });
-        sideB.server.register("worker.constructAndTamper", async () => {
-            const tampered = (await sideB.client.call("orch.tamper", {
+        sideB.handler.register("worker.constructAndTamper", async () => {
+            const tampered = (await sideB.caller.call("orch.tamper", {
                 dispute: { height: 5 }
             })) as { dispute: { height: number } };
             return tampered.dispute;
         });
 
-        const result = (await sideA.client.call(
+        const result = (await sideA.caller.call(
             "worker.constructAndTamper",
             {}
         )) as { height: number };
@@ -310,12 +290,12 @@ describe("rpc kernel (W3) - bidirectional endpoints", () => {
 
     it("push frames still work alongside bidirectional req/res", async () => {
         const [portA, portB] = makePair();
-        const sideA = attach(portA);
-        const sideB = attach(portB);
+        const sideA = createBidirectionalEndpoint(portA);
+        const sideB = createBidirectionalEndpoint(portB);
         const received: unknown[] = [];
-        sideA.client.on("worker.tick", (p) => received.push(p));
-        sideB.server.push("worker.tick", { n: 1 });
-        sideB.server.push("worker.tick", { n: 2 });
+        sideA.caller.on("worker.tick", (p) => received.push(p));
+        sideB.handler.push("worker.tick", { n: 1 });
+        sideB.handler.push("worker.tick", { n: 2 });
         await new Promise((r) => setImmediate(r));
         await new Promise((r) => setImmediate(r));
         expect(received).to.have.length(2);
@@ -324,3 +304,20 @@ describe("rpc kernel (W3) - bidirectional endpoints", () => {
         sideB.dispose();
     });
 });
+
+function createBidirectionalEndpoint(port: RpcPort): {
+    caller: PeerCaller;
+    handler: PeerHandler;
+    dispose: () => void;
+} {
+    const caller = new PeerCaller(port);
+    const handler = new PeerHandler(port);
+    return {
+        caller,
+        handler,
+        dispose(): void {
+            handler.dispose();
+            caller.dispose();
+        }
+    };
+}

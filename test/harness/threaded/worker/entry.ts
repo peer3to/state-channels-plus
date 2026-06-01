@@ -1,16 +1,6 @@
-// W2 - worker entry. ordered stages per §2.
-
-// step 1 - side-effect imports first, before any module that allocates errors
-// or stringifies BigInts.
-import "./stackLimit";
 import "./bigintJson";
 
-// step 1 - block holepunch's unconditional Hyperswarm DHT bind. tests run on
-// LocalTransport (DEBUG_LOCAL_TRANSPORT=true) and never join() topics, but the
-// DHT still opens UDP sockets at Holepunch construction time. those sockets
-// hold the worker's libuv loop open at terminate() -> CheckedUvLoopClose abort.
-// stub the global so `global.Hyperswarm || new Hyperswarm()` short-circuits
-// to a quiet object with the methods Holepunch reads.
+// Stub Hyperswarm so Holepunch does not open UDP sockets that keep the worker alive at terminate().
 (global as unknown as { Hyperswarm: unknown }).Hyperswarm = {
     on: () => undefined,
     removeAllListeners: () => undefined,
@@ -20,107 +10,37 @@ import "./bigintJson";
     flush: async () => undefined
 };
 
-import { parentPort, workerData } from "node:worker_threads";
+import { MessagePort, parentPort, workerData } from "node:worker_threads";
+import { ethers } from "ethers";
+import type { Wallet } from "ethers";
 
-import { RpcServer } from "../rpc/rpc-server";
-import { RpcClient } from "../rpc/rpc-client";
-import { nodePortToRpcPort } from "./portCast";
-import { toWireError } from "./serializeError";
+import { PeerHandler } from "../rpc/rpc-server";
+import { PeerCaller } from "../rpc/rpc-client";
+import type { RpcPort } from "../rpc/rpc-types";
 import { SpyRegistry } from "./SpyRegistry";
-import { startLoopGuard } from "./loopGuard";
+import { WorkerRoutes } from "./subHandleRoutes";
+import { EvmStateMachine } from "@/evm";
+import { LocalDiscoveryServer, createLogger } from "@/utils";
+import { StateChannelManagerProxy__factory } from "@typechain-types";
+import { createConfig } from "@/utils/config";
+import type { Config } from "@/utils/config";
+import StateManager from "@/stateManager";
+import type { HarnessDeploymentConfig } from "@test/harness/core/types";
+import type { LocalStateMachineDeployer } from "scripts/V1/deploy";
+import type P2pEventHooks from "@/P2pEventHooks";
+
 import {
-    registerSubHandleRoutes,
-    w5BlockedError,
-    type SubHandleCtx
-} from "./subHandleRoutes";
-import { registerWorkerOpRoutes } from "./opRoutes";
-import {
-    LIFECYCLE_PUSH,
-    LIFECYCLE_RPC,
-    type BootstrapPhase,
     type CrashPayload,
     type DetachedRejectionPayload,
-    type ReadyPayload,
     type WorkerData
 } from "./types";
-import StateManager from "@/stateManager";
 
-// step 1 - parentPort is the MessagePort the orchestrator handed us.
-// (workerData carries plain data; the port arrives via the worker constructor.)
 if (!parentPort) {
     throw new Error(
         "worker entry: parentPort missing - not running under a Worker"
     );
 }
 
-const data = workerData as WorkerData;
-const port = parentPort;
-const rpcPort = nodePortToRpcPort(port);
-
-// step 1 - crash plumbing. capture before bootstrap so import-time exceptions
-// surface to the orchestrator with attribution.
-let currentPhase: BootstrapPhase | undefined;
-
-function postCrash(e: unknown, phase?: BootstrapPhase): void {
-    const wire = toWireError(e);
-    const payload: CrashPayload = {
-        name: wire.name,
-        message: wire.message,
-        stack: wire.stack,
-        phase
-    };
-    try {
-        port.postMessage({
-            kind: "push",
-            topic: LIFECYCLE_PUSH.crash,
-            payload
-        });
-    } catch {
-        // port already closed; nothing to do
-    }
-}
-
-process.on("uncaughtException", (e) => {
-    postCrash(e, currentPhase);
-    // step 1 - exit 99 -> orchestrator sees `exit` event with non-zero code
-    process.exit(99);
-});
-
-process.on("unhandledRejection", (e) => {
-    const wire = toWireError(e);
-    const payload: DetachedRejectionPayload = {
-        name: wire.name,
-        message: wire.message,
-        stack: wire.stack
-    };
-    try {
-        port.postMessage({
-            kind: "push",
-            topic: LIFECYCLE_PUSH.detachedRejection,
-            payload
-        });
-    } catch {
-        // port already closed
-    }
-});
-
-// step 1 - install rpc server early so lifecycle rpcs work during bootstrap
-// failures + tests. bidirectional - server handles req frames from the
-// orchestrator; client lets the worker initiate req frames back (tamper bridge).
-const server = new RpcServer(rpcPort);
-const workerRpcClient = new RpcClient(rpcPort);
-
-// step 1 - W4 spy registry. wired here so the reset rpc + bump push topic
-// work from boot onwards. event-handler proxy installation that calls
-// registry.bump on every spy hit lands in p2pSetup (see runP2pSetup); until
-// p2pSetup runs the registry is exercised via the spy.testBump handler.
-const spyRegistry = new SpyRegistry(data.index, server);
-spyRegistry.register();
-
-// step 1 - EventHandler-method names the worker-side proxy bumps on. mirrors
-// the EventHandler-method subset of EventSpies in test/harness/core/types.ts.
-// P2pEventHooks names (onConnection, onTurn, ...) are inline-only until hooks
-// ship to the worker; do not add them here without a hooks wire-through.
 const EVENT_HANDLER_SPY_METHODS = new Set<string>([
     "onChannelOpened",
     "onStateSnapshotUpdated",
@@ -134,456 +54,244 @@ const EVENT_HANDLER_SPY_METHODS = new Set<string>([
     "onInboundMessagesProcessed"
 ]);
 
-// step 1 - test-only handler so the worker can drive a bump without W5.
-// real bumps come from the event-handler proxy once p2pSetup lands; see
-// SpyRegistry.bump for the call shape.
-server.register("spy.testBump", async (args) => {
-    const { name, eventArgs } = (args ?? {}) as {
-        name?: string;
-        eventArgs?: readonly unknown[];
-    };
-    if (typeof name !== "string") {
-        throw new Error("spy.testBump: missing 'name'");
-    }
-    spyRegistry.bump(name, eventArgs ?? []);
-    return {};
-});
+class PeerWorkerProcess {
+    private stateManager: StateManager | undefined;
+    private currentPhase: "boot" | "p2pSetup" | undefined;
+    private lastPushedForkId: string | undefined;
 
-// step 1 - W6 loop-delay guard. starts at boot; threshold from spawn args.
-// guard pushes one frame per stall on the "loop.stall" topic; orchestrator
-// marks the active test failed.
-const loopGuard = startLoopGuard({
-    workerIndex: data.index,
-    thresholdMs: data.loopDelayMaxMs,
-    server
-});
+    private readonly peerHandler: PeerHandler;
+    private readonly workerPeerCaller: PeerCaller;
+    private readonly spyRegistry: SpyRegistry;
+    private readonly routes: WorkerRoutes;
+    private readonly port: MessagePort;
 
-// step 1 - W1 §6 sub-handle routes + named-op dispatcher. stateManager is
-// constructed during p2pSetup (W5-blocked); the accessor below throws a
-// clear W5 marker until then so handlers fail loud rather than NPE on
-// undefined. when W5 lands, set `runtimeStateManager` after p2pSetup.
-type StateManagerAccessor = SubHandleCtx["getStateManager"];
-
-let runtimeStateManager: StateManager | undefined = undefined;
-let runtimeP2pInstance: unknown = undefined;
-const getStateManager: StateManagerAccessor = () => {
-    if (runtimeStateManager === undefined) {
-        throw w5BlockedError("stateManager");
-    }
-    return runtimeStateManager;
-};
-const getP2pInstance = (): unknown => {
-    if (runtimeP2pInstance === undefined) {
-        throw w5BlockedError("p2pInstance");
-    }
-    return runtimeP2pInstance;
-};
-
-registerSubHandleRoutes(server, {
-    getStateManager,
-    saved: {},
-    rpcStubRestores: new Map(),
-    disconnectFilterRestore: undefined,
-    debugMethodRestores: new Map(),
-    workerRpcClient
-});
-
-registerWorkerOpRoutes(server, { getStateManager, getP2pInstance });
-
-// step 1 - override lifecycle.connectToChannel to retro-trigger spectator
-// sync against already-handshaked peers. workers dial discovery during
-// p2pSetup -> handshakes can complete BEFORE channelId is set, so
-// InitHandshakeService.maybeFinalize skips the post-handshake
-// spectateService.sync (status=NOT_OPENED gate at InitHandshakeService:265).
-// after p2pSigner.connectToChannel flips status to OPENED, iterate open
-// connections + fire sync per participant. inline path doesn't need this
-// because it dials discovery AFTER connectToChannel runs (JoinActions:69).
-server.unregister("lifecycle.connectToChannel");
-server.register("lifecycle.connectToChannel", async (args) => {
-    type SyncableStateManager = {
-        getStatus: () => number;
-        getChannelId: () => unknown;
-        diamondStateMachine: {
-            localDiamondContract: {
-                canParticipateInDisputes: (
-                    cid: unknown,
-                    addr: string
-                ) => Promise<boolean>;
-            };
-        };
-        p2pManager: {
-            p2pSigner: { connectToChannel: (id: string) => Promise<void> };
-            openConnections: Array<{
-                peerAddress?: string;
-            }>;
-            localRpc: {
-                spectateService: {
-                    sync: (peerAddr: string, channelId: unknown) => unknown;
-                };
-            };
-        };
-    };
-    const sm = getStateManager() as unknown as SyncableStateManager;
-    const { channelId } = (args ?? {}) as { channelId?: string };
-    if (!channelId)
-        throw new Error("lifecycle.connectToChannel: missing 'channelId'");
-    await sm.p2pManager.p2pSigner.connectToChannel(channelId);
-    // step 2 - retro-sync. Status.OPENED == 1; numeric to avoid an extra import.
-    if (sm.getStatus() === 1) {
-        const cid = sm.getChannelId();
-        for (const conn of sm.p2pManager.openConnections) {
-            const peerAddr = conn.peerAddress;
-            if (!peerAddr) continue;
-            try {
-                const isParticipant =
-                    await sm.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
-                        cid,
-                        peerAddr
-                    );
-                if (!isParticipant) continue;
-            } catch {
-                continue;
+    constructor(data: WorkerData, port: MessagePort) {
+        this.port = port;
+        const rpcPort: RpcPort = {
+            postMessage: (v) => port.postMessage(v),
+            close: () => port.close(),
+            on: (event, listener) => {
+                port.on(event, listener as (v: unknown) => void);
+            },
+            off: (event, listener) => {
+                port.off(event, listener as (v: unknown) => void);
             }
-            sm.p2pManager.localRpc.spectateService.sync(peerAddr, cid);
-        }
-    }
-    return {};
-});
-
-// step 1 - tamper-bridge. orchestrator-only closures can't cross the worker
-// boundary, so install a wrap-and-callback: the hook calls back into the
-// orchestrator's "harness.tamperDispute" rpc, which runs the registered
-// closure + returns the mutated dispute/auditingData.
-let tamperRestore: (() => void) | undefined;
-server.register("byzantine.installDisputeTamperHook", async () => {
-    const sm = getStateManager() as unknown as {
-        disputeManager: {
-            constructDispute: (forkId: unknown) => Promise<{
-                dispute: unknown;
-                disputeConfirmation: unknown;
-                auditingData: unknown;
-                fraudProofsToApply: unknown[];
-            }>;
         };
-    };
-    // step 1 - if a previous install is live, restore first -> wrap unmodified.
-    tamperRestore?.();
-    const dm = sm.disputeManager;
-    const original = dm.constructDispute.bind(dm);
-    dm.constructDispute = async (forkId: unknown) => {
-        const result = await original(forkId);
-        // step 1 - callback to orchestrator. payload survives structured clone
-        // (plain BigInts + strings); orchestrator runs the user closure +
-        // returns the mutated pair (may be the same refs if closure mutated
-        // in place; harness reassigns either way).
-        const reply = (await workerRpcClient.call("harness.tamperDispute", {
-            peerIndex: data.index,
-            dispute: result.dispute,
-            disputeConfirmation: result.disputeConfirmation,
-            auditingData: result.auditingData
-        })) as {
-            dispute: unknown;
-            disputeConfirmation: unknown;
-            auditingData: unknown;
-        };
-        return {
-            dispute: reply.dispute,
-            disputeConfirmation: reply.disputeConfirmation,
-            auditingData: reply.auditingData,
-            fraudProofsToApply: result.fraudProofsToApply
-        };
-    };
-    tamperRestore = () => {
-        dm.constructDispute = original;
-        tamperRestore = undefined;
-    };
-    return {};
-});
+        this.peerHandler = new PeerHandler(rpcPort);
+        this.workerPeerCaller = new PeerCaller(rpcPort);
+        this.spyRegistry = new SpyRegistry(data.index, this.peerHandler);
+        this.spyRegistry.register();
+        this.routes = new WorkerRoutes(
+            this.peerHandler,
+            this.workerPeerCaller,
+            data.index
+        );
 
-server.register("byzantine.uninstallDisputeTamperHook", async () => {
-    tamperRestore?.();
-    return {};
-});
+        process.on("uncaughtException", (e) => {
+            this.postCrash(e, this.currentPhase);
+            process.exit(99);
+        });
 
-// step 1 - test-only handler so the W6 acceptance test can trigger a
-// real stall without needing prod code paths to hang. busy-loops for the
-// requested duration (default 1500ms -> exceeds the 1000ms default threshold).
-server.register("test.busyLoop", async (args) => {
-    const { durationMs } = (args ?? {}) as { durationMs?: number };
-    const ms = typeof durationMs === "number" ? durationMs : 1500;
-    const deadline = Date.now() + ms;
-    // step 1 - tight busy loop. cpu-bound -> event loop blocked -> guard fires.
-    while (Date.now() < deadline) {
-        // step 1 - intentional: blocking work, no microtask yield.
-    }
-    return { busyMs: ms };
-});
+        process.on("unhandledRejection", (e) => {
+            const err = e instanceof Error ? e : new Error(String(e));
+            const payload: DetachedRejectionPayload = {
+                name: err.name,
+                message: err.message,
+                stack: err.stack
+            };
+            try {
+                port.postMessage({
+                    kind: "push",
+                    topic: "lifecycle.detachedRejection",
+                    payload
+                });
+            } catch {
+                // port already closed
+            }
+        });
 
-// step 1 - lifecycle handlers. dispose returns durationMs (req/res).
-server.register(LIFECYCLE_RPC.dispose, async () => {
-    const start = Date.now();
-    // W5 - p2pInstance.dispose() goes here once p2pSetup phase is wired. for now
-    // boot-only workers have nothing to tear down beyond the rpc server.
-    loopGuard.stop();
-    return { durationMs: Date.now() - start };
-});
-
-// step 1 - main bootstrap. two phases per D-20.
-async function bootstrap(): Promise<void> {
-    // step 1 - boot phase. logger / wallet construct / deployment resolve /
-    // rpc handler registration. real I/O on chain access is in p2pSetup.
-    currentPhase = "boot";
-    // step 1 - import bundle manifest first so per-suite deployments + op
-    // tables register against the canonical registries before resolveDeployment
-    // runs. side-effect imports only; ordering matches the manifest.
-    for (const modulePath of data.bundleManifest) {
-        await import(modulePath);
-    }
-    const { resolveDeployment } = await import(
-        "@test/harness/core/deploymentRegistry"
-    );
-    // step 2 - resolve deployment. fails fast with DeploymentNotFoundError if
-    // the orchestrator shipped a name the worker doesn't have registered.
-    const deployment = resolveDeployment(data.deploymentName);
-
-    // step 3 - construct wallet from pk (D-15 - orchestrator owns the signer,
-    // worker gets only the key for its own in-thread p2pSetup signer).
-    const { ethers } = await import("ethers");
-    const wallet = new ethers.Wallet(data.signerPk);
-    const peerAddress = await wallet.getAddress();
-
-    // step 1 - p2pSetup phase. wired through boss's PR 339 polymorphic executor.
-    // chain access is the remaining constraint: chainProviderUrl must point at an
-    // HTTP-served hardhat (or equivalent) since hre.ethers.provider is per-isolate.
-    // when undefined, stop after boot - the smoke flag for this branch is the
-    // 2-peer threaded test (W5 seam doc).
-    if (data.chainProviderUrl) {
-        currentPhase = "p2pSetup";
-        await runP2pSetup({
-            wallet,
-            deployment
+        this.bootstrap(data).catch((e) => {
+            this.postCrash(e, this.currentPhase);
+            setImmediate(() => process.exit(99));
         });
     }
 
-    currentPhase = undefined;
+    private postCrash(e: unknown, phase?: string): void {
+        const err = e instanceof Error ? e : new Error(String(e));
+        const payload: CrashPayload = {
+            name: err.name,
+            message: err.message,
+            stack: err.stack,
+            phase
+        };
+        try {
+            this.port.postMessage({
+                kind: "push",
+                topic: "lifecycle.crash",
+                payload
+            });
+        } catch {
+            // port already closed
+        }
+    }
 
-    // step 1 - ready handshake. ride W3 push envelope per D-21.
-    const ready: ReadyPayload = { peerAddress };
-    port.postMessage({
-        kind: "push",
-        topic: LIFECYCLE_PUSH.ready,
-        payload: ready
-    });
-}
+    private maybePushForkId(): void {
+        const raw = this.stateManager?.forkId;
+        const fid = typeof raw === "string" ? raw : undefined;
+        if (fid === undefined || fid === this.lastPushedForkId) return;
+        this.lastPushedForkId = fid;
+        this.peerHandler.push("fork.changed", { forkId: fid });
+    }
 
-// step 1 - p2pSetup phase body. moved out of bootstrap so the dynamic imports
-// (which pull in chain plumbing - LocalDiscoveryServer, hardhat-tied deploy
-// helpers via the deployment closures) don't run for boot-only workers and
-// keep the `boot` cold path cheap.
-async function runP2pSetup(args: {
-    wallet: import("ethers").Wallet;
-    deployment: import("@test/harness/core/types").HarnessDeploymentConfig;
-}): Promise<void> {
-    const { wallet, deployment } = args;
-    const { ethers } = await import("ethers");
-    const { EvmStateMachine } = await import("@/evm");
-    const { LocalDiscoveryServer } = await import("@/utils");
-    const { StateChannelManagerProxy__factory } = await import(
-        "@typechain-types"
-    );
+    private async bootstrap(data: WorkerData): Promise<void> {
+        this.currentPhase = "boot";
+        const deployment = (await import(data.deploymentModule))
+            .default as HarnessDeploymentConfig;
+        const wallet = new ethers.Wallet(data.signerPk);
+        const peerAddress = await wallet.getAddress();
 
-    // step 0 - apply test config in this isolate. orchestrator sends the same
-    // overrides via harnessConfig.configOverrides; DEBUG_LOCAL_TRANSPORT=true
-    // skips holepunch UDP allocation -> avoids the worker's libuv-close abort.
-    const { createConfig } = await import("@/utils/config");
-    type PartialConfig = Parameters<typeof createConfig>[0];
-    createConfig(data.harnessConfig.configOverrides as PartialConfig);
+        if (data.chainProviderUrl) {
+            this.currentPhase = "p2pSetup";
+            await this.runP2pSetup(data, wallet, deployment);
+        }
 
-    // step 1 - chain provider. JsonRpcProvider against an HTTP-served hardhat is
-    // the only cross-isolate path that works today; orchestrator passes the URL.
-    // hre.ethers.provider is in-process per isolate and cannot be shared.
-    // step 1a - fast polling so chain-event filter polling beats the harness
-    // 2s barrier timeouts. ethers v6 default is 4s -> onSetState would never
-    // wake within the test budget.
-    const provider = new ethers.JsonRpcProvider(data.chainProviderUrl);
-    provider.pollingInterval = 200;
-    const signer = wallet.connect(provider);
+        this.currentPhase = undefined;
+        const ready = { peerAddress };
+        this.port.postMessage({
+            kind: "push",
+            topic: "lifecycle.ready",
+            payload: ready
+        });
+    }
 
-    // step 2 - SCM proxy from the address the orchestrator shipped. typechain
-    // factory only needs an ABI + address + signer; no hre dependency.
-    const channelManager = StateChannelManagerProxy__factory.connect(
-        data.channelManagerAddress,
-        signer
-    );
+    private async runP2pSetup(
+        data: WorkerData,
+        wallet: Wallet,
+        deployment: HarnessDeploymentConfig
+    ): Promise<void> {
+        const {
+            harnessConfig,
+            index,
+            channelManagerAddress,
+            channelId,
+            discoveryRegistryPort,
+            logConfig,
+            chainProviderUrl
+        } = data;
+        const peerAddress = await wallet.getAddress();
 
-    // step 3 - state-machine deployer closure. the deployment record carries
-    // the chain-side and local-side deploy bodies; the local deployer is what
-    // p2pSetup feeds to deployLocalDiamond against the in-memory executor.
-    // deployLocalStateMachine returns a plain string; the SDK deployer signature
-    // wants the Address brand -> cast once at the boundary.
-    type AddressBrand = Awaited<
-        ReturnType<import("scripts/V1/deploy").LocalStateMachineDeployer>
-    >;
-    const deployStateMachine: import("scripts/V1/deploy").LocalStateMachineDeployer =
-        async (localSigner) =>
+        createConfig(harnessConfig.configOverrides as Partial<Config>);
+
+        const provider = new ethers.JsonRpcProvider(chainProviderUrl);
+        provider.pollingInterval = 200;
+        const signer = wallet.connect(provider);
+
+        const channelManager = StateChannelManagerProxy__factory.connect(
+            channelManagerAddress,
+            signer
+        );
+
+        const deployStateMachine: LocalStateMachineDeployer = async (
+            localSigner
+        ) =>
             (await deployment.deployLocalStateMachine({
                 signer: localSigner,
-                stateMachineGasLimit: data.harnessConfig.stateMachineGasLimit,
+                stateMachineGasLimit: harnessConfig.stateMachineGasLimit,
                 disputeExecutionGasLimit:
-                    data.harnessConfig.disputeExecutionGasLimit,
-                timeConfig: data.harnessConfig.timeConfig,
-                harnessConfig: data.harnessConfig.configOverrides
-            })) as AddressBrand;
+                    harnessConfig.disputeExecutionGasLimit,
+                timeConfig: harnessConfig.timeConfig,
+                harnessConfig: harnessConfig.configOverrides
+            })) as never;
 
-    const contractInstanceMock = deployment.connectSigner(
-        ethers.ZeroAddress,
-        signer
-    );
+        const contractInstanceMock = deployment.connectSigner(
+            ethers.ZeroAddress,
+            signer
+        );
 
-    // step 4a - P2pEventHooks wired through to spyRegistry.bump. these are the
-    // hooks the prod state-machine fires inside the worker; bump pushes the
-    // event into the orchestrator's SpyMirror over W3's push channel ->
-    // waitForEventCounts wakes in the orchestrator thread. mirrors the
-    // single-thread hooks shape in PeerTestHarness.ts:361-476 but drops the
-    // peerLogger / barrier signal side-effects (orchestrator owns barriers).
-    // step 4a-ii - forkId snapshot pusher. WorkerPeer caches forkId via a
-    // "fork.changed" push (W1 D-12). worker pushes the current forkId after
-    // any state-set: orchestrator's PeerHandle.forkId getter then reads
-    // synchronously without an rpc round-trip. emitted forkId is "" before
-    // any state has been set (matches inline pre-genesis behaviour).
-    let lastPushedForkId: string | undefined;
-    const maybePushForkId = (): void => {
-        const raw = runtimeStateManager?.forkId;
-        const fid = typeof raw === "string" ? raw : undefined;
-        if (fid === undefined || fid === lastPushedForkId) return;
-        lastPushedForkId = fid;
-        server.push("fork.changed", { forkId: fid });
-    };
-    const hooks = {
-        onConnection: (...args: unknown[]) =>
-            spyRegistry.bump("onConnection", args),
-        onDisconnection: (...args: unknown[]) =>
-            spyRegistry.bump("onDisconnection", args),
-        onTurn: (...args: unknown[]) => spyRegistry.bump("onTurn", args),
-        onSetState: (...args: unknown[]) => {
-            maybePushForkId();
-            spyRegistry.bump("onSetState", args);
-        },
-        onStatusChanged: (...args: unknown[]) =>
-            spyRegistry.bump("onStatusChanged", args),
-        onPostingCalldata: (...args: unknown[]) =>
-            spyRegistry.bump("onPostingCalldata", args),
-        onPostedCalldata: (...args: unknown[]) =>
-            spyRegistry.bump("onPostedCalldata", args),
-        onDisputeStarted: (...args: unknown[]) =>
-            spyRegistry.bump("disputeStarted", args),
-        onInitiatingDispute: (...args: unknown[]) =>
-            spyRegistry.bump("onInitiatingDispute", args),
-        onDisputeUpdate: (...args: unknown[]) =>
-            spyRegistry.bump("onDisputeUpdate", args),
-        onDisputeAcknowledgment: (...args: unknown[]) =>
-            spyRegistry.bump("onDisputeAcknowledgment", args),
-        onBlockFinalized: (...args: unknown[]) =>
-            spyRegistry.bump("onBlockFinalized", args),
-        onBlockConfirmationProcessed: (...args: unknown[]) =>
-            spyRegistry.bump("onBlockConfirmationProcessed", args)
-    };
+        const hooks = {
+            onConnection: (...args: unknown[]) =>
+                this.spyRegistry.bump("onConnection", args),
+            onDisconnection: (...args: unknown[]) =>
+                this.spyRegistry.bump("onDisconnection", args),
+            onTurn: (...args: unknown[]) =>
+                this.spyRegistry.bump("onTurn", args),
+            onSetState: (...args: unknown[]) => {
+                this.maybePushForkId();
+                this.spyRegistry.bump("onSetState", args);
+            },
+            onStatusChanged: (...args: unknown[]) =>
+                this.spyRegistry.bump("onStatusChanged", args),
+            onPostingCalldata: (...args: unknown[]) =>
+                this.spyRegistry.bump("onPostingCalldata", args),
+            onPostedCalldata: (...args: unknown[]) =>
+                this.spyRegistry.bump("onPostedCalldata", args),
+            onDisputeStarted: (...args: unknown[]) =>
+                this.spyRegistry.bump("disputeStarted", args),
+            onInitiatingDispute: (...args: unknown[]) =>
+                this.spyRegistry.bump("onInitiatingDispute", args),
+            onDisputeUpdate: (...args: unknown[]) =>
+                this.spyRegistry.bump("onDisputeUpdate", args),
+            onDisputeAcknowledgment: (...args: unknown[]) =>
+                this.spyRegistry.bump("onDisputeAcknowledgment", args),
+            onBlockFinalized: (...args: unknown[]) =>
+                this.spyRegistry.bump("onBlockFinalized", args),
+            onBlockConfirmationProcessed: (...args: unknown[]) =>
+                this.spyRegistry.bump("onBlockConfirmationProcessed", args)
+        };
 
-    // step 4 - p2pSetup. opts in to dedicatedEvmThread when the harnessConfig
-    // override requests it (orthogonal to dedicatedPeerThread; we're already
-    // inside the peer worker - VM_DEDICATED_THREAD spawns boss's EVM sub-worker).
-    type P2pSetupOptions = NonNullable<
-        Parameters<typeof EvmStateMachine.p2pSetup>[4]
-    >;
-    type P2pEventHooks = NonNullable<P2pSetupOptions["p2pEventHooks"]>;
-    type P2pConfig = NonNullable<P2pSetupOptions["config"]>;
-    type ContractInstance = Parameters<typeof EvmStateMachine.p2pSetup>[2];
-    const p2pInstance = await EvmStateMachine.p2pSetup(
-        signer,
-        channelManager,
-        contractInstanceMock as ContractInstance,
-        deployStateMachine,
-        {
-            peerId: data.index,
-            p2pEventHooks: hooks as unknown as P2pEventHooks,
-            config: data.harnessConfig.configOverrides as P2pConfig
-        }
-    );
+        const p2pInstance = await EvmStateMachine.p2pSetup(
+            signer,
+            channelManager,
+            contractInstanceMock as never,
+            deployStateMachine,
+            {
+                peerId: index,
+                p2pEventHooks: hooks as unknown as P2pEventHooks, // hooks satisfies the shape; cast needed due to optional vs required method signatures
+                config: harnessConfig.configOverrides as Partial<Config>
+            }
+        );
 
-    // step 5 - stash live stateManager so sub-handle routes resolve. cast
-    // through unknown: p2pSigner exposes p2pManager at runtime; the typed
-    // surface keeps it private.
-    const p2pManager = (
-        p2pInstance.p2pSigner as unknown as {
-            p2pManager: { self: never; stateManager: unknown };
-        }
-    ).p2pManager;
-    runtimeStateManager = p2pManager.stateManager as StateManager;
-    // step 5a - stash live p2pInstance so worker ops can submit txs against
-    // `.p2pContractInstance.<methodName>(...args)` (math.add etc.).
-    runtimeP2pInstance = p2pInstance;
+        this.stateManager = p2pInstance.p2pSigner.p2pManager.stateManager;
+        this.routes.setRuntime(this.stateManager, p2pInstance);
 
-    // step 5b - install worker-side spy proxy on the live eventHandler so
-    // real events push frames to the orchestrator's SpyMirror. mirrors the
-    // single-thread wrapEventHandlerWithSpies (PeerTestHarness.ts:667); only
-    // the EventHandler-method subset of EventSpies lives here. P2pEventHooks
-    // spies are inline-only until hooks are shipped to the worker.
-    //
-    // ordering matches inline (PeerTestHarness.ts:808) - await original then
-    // bump -> "spy count == N" implies handler completed, same as inline.
-    const stateManagerLive = runtimeStateManager as unknown as {
-        eventHandler: Record<string, unknown>;
-        stateChannelEventListener: { eventHandler: Record<string, unknown> };
-    };
-    const eventHandler = stateManagerLive.eventHandler;
-    const eventHandlerProxy = new Proxy(eventHandler, {
-        get(target, prop, receiver) {
-            const original = Reflect.get(target, prop, receiver);
-            if (typeof original !== "function") return original;
-            if (typeof prop !== "string") return original;
-            if (!EVENT_HANDLER_SPY_METHODS.has(prop)) return original;
-            return async function (this: unknown, ...args: unknown[]) {
-                // step 1 - await original first -> bump after success matches
-                // inline ordering. errors propagate to caller, not unhandled.
-                await (original as (...a: unknown[]) => unknown).apply(
-                    target,
-                    args
-                );
-                spyRegistry.bump(prop, args);
-            };
-        }
-    });
-    stateManagerLive.eventHandler = eventHandlerProxy;
-    stateManagerLive.stateChannelEventListener.eventHandler = eventHandlerProxy;
+        // Proxy eventHandler so real events push spy frames to the orchestrator.
+        const sm = this.stateManager;
+        const spyRegistry = this.spyRegistry;
+        const eventHandlerProxy = new Proxy(sm.eventHandler, {
+            get(target, prop, receiver) {
+                const original = Reflect.get(target, prop, receiver);
+                if (typeof original !== "function" || typeof prop !== "string")
+                    return original;
+                if (!EVENT_HANDLER_SPY_METHODS.has(prop)) return original;
+                return async function (this: unknown, ...args: unknown[]) {
+                    await (original as (...a: unknown[]) => unknown).apply(
+                        target,
+                        args
+                    );
+                    spyRegistry.bump(prop, args);
+                };
+            }
+        });
+        // stateChannelEventListener stores its own reference — both must be patched.
+        // on-chain events flow through stateChannelEventListener.eventHandler;
+        // p2p events flow through StateManager.eventHandler directly.
+        sm.eventHandler = eventHandlerProxy;
+        sm.stateChannelEventListener.eventHandler = eventHandlerProxy;
 
-    // step 6 - dial peers via LocalDiscoveryServer. orchestrator owns the
-    // registry port; worker calls the connect side using its own P2PManager.
-    // mirrors the inline path in NetworkController.connectPeers but runs from
-    // inside the worker since the live P2PManager never leaves the thread.
-    LocalDiscoveryServer.setLogger(
-        (await import("@/utils")).createLogger(
-            { peerId: data.index, peerAddress: await wallet.getAddress() },
-            { component: "WorkerLocalDiscovery" },
-            { level: data.logConfig.level, attachErrorListener: false }
-        )
-    );
-    type ConnectChannelId = Parameters<
-        typeof LocalDiscoveryServer.connectToPeers
-    >[1];
-    await LocalDiscoveryServer.connectToPeers(
-        p2pManager.self,
-        data.channelId as ConnectChannelId,
-        await wallet.getAddress(),
-        // W2 D-17 - explicit port -> the worker's static discoveryPort is null
-        // because tryStart() ran in the orchestrator isolate.
-        data.discoveryRegistryPort
-    );
+        LocalDiscoveryServer.setLogger(
+            createLogger(
+                { peerId: index, peerAddress },
+                { component: "WorkerLocalDiscovery" },
+                { level: logConfig.level, attachErrorListener: false }
+            )
+        );
+        await LocalDiscoveryServer.connectToPeers(
+            p2pInstance.p2pSigner.p2pManager,
+            channelId,
+            peerAddress,
+            discoveryRegistryPort
+        );
+    }
 }
 
-bootstrap().catch((e) => {
-    postCrash(e, currentPhase);
-    // step 1 - defer exit so the crash push frame drains before the port closes.
-    // setImmediate runs after the current microtask queue (which includes the
-    // postMessage delivery).
-    setImmediate(() => process.exit(99));
-});
+new PeerWorkerProcess(workerData as WorkerData, parentPort);

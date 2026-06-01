@@ -66,7 +66,7 @@ export class AssertSnapshotActions {
                     return false;
             }
 
-            return true; // all honest peers observed a snapshot update event
+            return true;
         };
 
         const promise = this.harness.eventCountsBarrier.waitFor(condition, {
@@ -114,8 +114,6 @@ export class AssertSnapshotActions {
             )
         );
 
-        // step 1 - W1 - height + snapshot read via sub-handles. inline body
-        // reads storage in-process; worker forwards over rpc.
         const blockHeight =
             options?.blockHeight ||
             (await handle.queryNextBlockHeight(forkId)) - 1;
@@ -130,8 +128,8 @@ export class AssertSnapshotActions {
                 `No local snapshot found at height ${blockHeight} on fork ${forkId}`
             );
         }
-        //  at genesis, onChainSnapshot.blockHeight is 0, but blockHeight is -1
-        //  normalize blockHeight to 0 at genesis
+        // at genesis, onChainSnapshot.blockHeight is 0, but blockHeight is -1
+        // normalize blockHeight to 0 at genesis
         const normalizedBlockHeight = Math.max(blockHeight, 0);
 
         if (onChainSnapshot.blockHeight !== normalizedBlockHeight) {
@@ -165,9 +163,6 @@ export class AssertSnapshotActions {
                 this.harness.channelId
             );
 
-        // step 1 - W1 - balance math via sub-handles. inline runs diamond
-        // contract calls in-process; worker forwards rpc. payloads are
-        // string-serialised so bigints survive structured clone.
         const actualDelta = await handle.subtractBalance({
             a: {
                 amount: String(channelBalanceAfter.totalWithdrawals.amount),
@@ -214,7 +209,6 @@ export class AssertSnapshotActions {
             )
         );
 
-        // step 1 - W1 - state machine state lookup via sub-handle.
         const encodedState =
             encodedStateMachineState ??
             (await handle.queryStateMachineState(
@@ -227,12 +221,7 @@ export class AssertSnapshotActions {
             );
         }
 
-        // step 2 - on-chain static call - hit via orchestrator-side channel
-        // manager. ethers ContractResult tuples are frozen, so we
-        // structured-clone the snapshotData before passing it into
-        // staticCall (the unwrapped harness contract doesn't run through
-        // createEthersResultProxy so the staticCall arg-conversion can
-        // mutate them).
+        // Frozen ethers tuples break staticCall arg conversion; deep-clone snapshotData first.
         const channelManager = this.harness.channelManager.connect(
             handle.signer
         );
@@ -269,7 +258,6 @@ export class AssertSnapshotActions {
             );
         }
 
-        // step 1 - W1 - snapshot count via sub-handle.
         const condition = async () =>
             (await handle.queryStateSnapshotCount()) > countBefore;
 

@@ -1,7 +1,4 @@
-// step 1 - action namespace for rpc-method stubs. test source passes an inline
-// closure; orchestrator runs it either in-process (inline backend) or via the
-// W3 bidirectional rpc callback (worker backend) -> closures stay in the test
-// isolate, never serialised, free to capture test-local state.
+// Rpc-method stub actions. Closures run in the test isolate via tamper-bridge callback.
 
 import { Logger } from "@/utils";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -13,8 +10,6 @@ export class RpcStubActions {
         private logger: Logger
     ) {}
 
-    // step 1 - install a stub closure on one peer's localRpc service. returns
-    // an async restore that reverts the wrapper.
     async stubServiceCreateRpcMethod(options: {
         peerIndex: number;
         serviceName: string;

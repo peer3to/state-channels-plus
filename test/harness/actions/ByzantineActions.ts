@@ -18,11 +18,6 @@ import {
 } from "@test/harness/actions/DisputeTamperingActions";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
-// step 1 - action class composes orchestrator-side block construction with the
-// peer sub-handles (W1 §6). every internal access goes through PeerHandle:
-// peerHandle.byzantine.* for state-manager mutations, peerHandle.queryLatestBlock
-// for read-through, peerHandle.signer for orchestrator-side block signing,
-// harness.channelManager.connect(signer) for on-chain writes (W0 D-15).
 export class ByzantineActions {
     constructor(
         protected harness: PeerTestHarness,
@@ -52,9 +47,6 @@ export class ByzantineActions {
             `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
         );
 
-        // step 1 - read the latest block confirmation via sub-handle and
-        // reconstruct an orchestrator-side Block. inline returns the live
-        // peer's blockConfirmationStruct; worker forwards it over rpc.
         const blockConfirmation =
             await peerHandle.queryLatestBlockConfirmation(forkId);
         if (!blockConfirmation) {
@@ -68,8 +60,6 @@ export class ByzantineActions {
             `Original block found: height=${originalBlock.height}, hash=${originalBlock.hash}`
         );
 
-        // step 2 - construct conflicting block orchestrator-side. signer is
-        // orchestrator-side per D-15.
         const conflictingTransactionData: Bytes =
             options?.transactionData ||
             (ethers.hexlify(ethers.randomBytes(64)) as Bytes);
@@ -106,9 +96,6 @@ export class ByzantineActions {
             `Peer ${peerIndex} broadcasting double-sign block: height=${conflictingBlock.height}, hash=${conflictingBlock.hash}`
         );
 
-        // step 3 - broadcast via sub-handle. inline body runs the same
-        // remoteRpc.stateTransitionService.onBlockConfirmation(...).broadcast()
-        // call the today-action used to inline.
         await peerHandle.byzantine.submitDoubleSignBlock({
             signedBlockConfirmation: conflictingBlock.blockConfirmationStruct
         });
@@ -140,9 +127,6 @@ export class ByzantineActions {
         const forkId = options.forkId || this.harness.activeForkId!;
         const height = options.height;
 
-        // step 1 - sub-handle reads. previousBlockHash + stateSnapshotHash
-        // both routed via PeerHandle so worker peers answer over rpc; inline
-        // peers run the same body in-process.
         void peer; // unused once query.* migrated
         const previousBlockHash = await peerHandle.queryPreviousBlockHash({
             forkId
@@ -178,7 +162,7 @@ export class ByzantineActions {
             messageBlocks: []
         };
 
-        // step 2 - corrupt the hash to produce an invalid signature.
+        // Corrupt the hash so the on-chain signature is invalid.
         const encodedBlock = Codec.encode(blockStruct, Type.Block);
         const blockHash = hash(encodedBlock);
         const corruptedBlockHash = hash(blockHash);
@@ -198,9 +182,7 @@ export class ByzantineActions {
             { forkId }
         );
 
-        // step 3 - on-chain write is orchestrator-side per D-15. connect the
-        // harness's channelManager to the peer's signer (the audit says: no
-        // worker rpc on this path).
+        // On-chain write stays orchestrator-side via harness.channelManager.
         const channelManager = this.harness.channelManager.connect(
             peerHandle.signer
         );
@@ -219,9 +201,6 @@ export class ByzantineActions {
         peerIndex: number,
         tamperFn: DisputeTamper
     ): Promise<DisputeStruct> {
-        // step 1 - tamperFn is a closure over orchestrator-side dispute state;
-        // can't cross worker boundary (W0 D-22). worker-mode migration target
-        // is a named-tamper id resolved against a worker-side registry.
         rejectClosureInWorkerMode(
             "ByzantineActions.postTamperedDisputeWith(tamperFn)",
             this.harness.getPeerHandle(peerIndex)
@@ -273,8 +252,6 @@ export class ByzantineActions {
         peerIndex: number;
         tamperFn: DisputeTamper;
     }): Promise<void> {
-        // step 1 - tamperFn is a lambda over orchestrator state; named-tamper
-        // migration target per W0 D-22.
         rejectClosureInWorkerMode(
             "ByzantineActions.stubDisputeConstruction(tamperFn)",
             this.harness.getPeerHandle(options.peerIndex)
@@ -293,7 +270,6 @@ export class ByzantineActions {
         await this.harness.network.disconnectPeer(peerIndex);
     }
 
-    // step 1 - sub-handle owns the saved-ref state. action class is composition.
     async stubCalldataHandler(peerIndex: number): Promise<void> {
         await this.harness
             .getPeerHandle(peerIndex)
@@ -306,8 +282,6 @@ export class ByzantineActions {
             .byzantine.restoreCalldataHandler();
     }
 
-    // step 1 - paired with restorePendingInboundInclusion. tests today bind a
-    // thunk for the restore -> wrap it to keep the existing call shape.
     async stubPendingInboundInclusion(
         peerIndex: number
     ): Promise<() => Promise<void>> {

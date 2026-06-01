@@ -17,6 +17,57 @@ import {
 import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ForkId, Address, Hash } from "@/types/types";
 import StateSnapshot from "@/models/StateSnapshot";
+
+type SnapshotStorage = {
+    blocks: {
+        getLatestBlock: (
+            forkId: BytesLike
+        ) => { stateSnapshotHash: BytesLike } | undefined;
+    };
+    stateSnapshots: {
+        getStateSnapshotByHash: (h: string) => StateSnapshot | undefined;
+        storeStateSnapshot: (
+            snapshot: StateSnapshot,
+            opts: { hash: string }
+        ) => unknown;
+    };
+};
+
+export function corruptValidatorSnapshotForBalanceInvariant(
+    storage: SnapshotStorage,
+    forkId: ForkId
+): string {
+    const latestBlock = storage.blocks.getLatestBlock(forkId);
+    if (!latestBlock)
+        throw new Error(
+            `corruptValidatorSnapshotForBalanceInvariant: no latest block for fork ${forkId}`
+        );
+    const originalSnapshot = storage.stateSnapshots.getStateSnapshotByHash(
+        String(latestBlock.stateSnapshotHash)
+    );
+    if (!originalSnapshot)
+        throw new Error(
+            `corruptValidatorSnapshotForBalanceInvariant: no snapshot for hash ${latestBlock.stateSnapshotHash}`
+        );
+    const originalStruct = originalSnapshot.toStruct();
+    const corruptedSnapshot = StateSnapshot.from({
+        ...originalStruct,
+        snapshotData: {
+            ...originalStruct.snapshotData,
+            totalDeposits: {
+                ...originalStruct.snapshotData.totalDeposits,
+                amount:
+                    BigInt(originalStruct.snapshotData.totalDeposits.amount) +
+                    1n
+            }
+        }
+    });
+    const originalHash = originalSnapshot.hash as string;
+    storage.stateSnapshots.storeStateSnapshot(corruptedSnapshot, {
+        hash: originalHash
+    });
+    return originalHash;
+}
 import Block from "@/models/Block";
 import { BytesLike, Signer, ZeroAddress } from "ethers";
 import {
@@ -127,7 +178,6 @@ export class DisputeTamperingActions {
         }
         const targetForkId = forkId || this.harness.activeForkId!;
 
-        // step 1 - W1 - construct via sub-handle so worker peers can answer.
         const { dispute, disputeConfirmation, auditingData } =
             (await handle.constructDispute(targetForkId)) as {
                 dispute: DisputeStruct;
@@ -170,7 +220,6 @@ export class DisputeTamperingActions {
         const handle = this.harness.getPeerHandle(disputerIndex);
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
-        // step 1 - W1 - genesis snapshot via sub-handle.
         const genesisSnapshot = (await handle.queryGenesisSnapshot(
             this.harness.activeForkId!
         )) as StateSnapshot;
@@ -199,10 +248,6 @@ export class DisputeTamperingActions {
         }
         this.restoreConstructDispute(peerIndex);
 
-        // step 1 - worker mode -> register the closure on the harness side and
-        // install the worker-side wrap via byzantine.installDisputeTamperHook.
-        // worker's wrapped constructDispute calls back via "harness.tamperDispute"
-        // (W3 bidirectional) -> we run the closure here -> mutated pair returns.
         const handle = this.harness.getPeerHandle(peerIndex);
         if (handle instanceof WorkerPeer) {
             const peer = this.harness.getPeer(peerIndex);
@@ -228,10 +273,7 @@ export class DisputeTamperingActions {
                     return { dispute, disputeConfirmation, auditingData };
                 }
             );
-            // step 1 - await the install rpc -> the wrap is in place before
-            // any test code can trigger a dispute. fire-and-forget races with
-            // tests where the dispute starts immediately after the stub call
-            // (e.g. case5_lastMilestoneFinalityAndAuditingData).
+            // Await install so the tamper hook is active before disputes fire.
             const rpc = handle.getRpc();
             await rpc.call("byzantine.installDisputeTamperHook", {});
             this.restoreByPeerIndex.set(peerIndex, () => {
@@ -239,12 +281,11 @@ export class DisputeTamperingActions {
                 void rpc.call("byzantine.uninstallDisputeTamperHook", {});
             });
             this.logger.debug(
-                `Stubbed constructDispute (worker mode) for peer ${peerIndex}`
+                `Stubbed constructDispute for worker peer ${peerIndex}`
             );
             return;
         }
 
-        // step 2 - inline mode (unchanged from pre-W3).
         const peer = this.harness.getPeer(peerIndex);
         const disputeManager: DisputeManager = peer.stateManager.disputeManager;
         const originalConstructDispute =
@@ -300,7 +341,6 @@ export class DisputeTamperingActions {
                 "plantFreshTimeoutForNextWriter: no active fork ID — channel must be opened first"
             );
         }
-        // step 1 - W1 - sub-handle reads + write.
         const handle = this.harness.getPeerHandle(disputerIndex);
         const nextPeer = await this.harness.query.getNextPeerToWrite();
         const latestConfirmation =
@@ -343,8 +383,6 @@ export class DisputeTamperingActions {
         const handle = this.harness.getPeerHandle(validatorPeerIndex);
         let originalHash: string;
         if (handle instanceof WorkerPeer) {
-            // step 1 - worker mode -> route the whole read/mutate/write into the
-            // worker. inline mode keeps the in-process body for parity.
             const result = (await handle
                 .getRpc()
                 .call("byzantine.corruptValidatorSnapshotForBalanceInvariant", {
@@ -353,47 +391,10 @@ export class DisputeTamperingActions {
             originalHash = result.hash;
         } else {
             const peer = this.harness.getPeer(validatorPeerIndex);
-            const storage = peer.stateManager.storage;
-            const latestBlock = storage.blocks.getLatestBlock(forkId);
-
-            if (!latestBlock) {
-                throw new Error(
-                    `corruptValidatorSnapshotForBalanceInvariant: no latest block for fork ${forkId}`
-                );
-            }
-
-            const originalSnapshot =
-                storage.stateSnapshots.getStateSnapshotByHash(
-                    latestBlock.stateSnapshotHash
-                );
-            if (!originalSnapshot) {
-                throw new Error(
-                    `corruptValidatorSnapshotForBalanceInvariant: no snapshot for hash ${latestBlock.stateSnapshotHash}`
-                );
-            }
-
-            const originalStateSnapshotStruct = originalSnapshot.toStruct();
-            const corruptedSnapshotData = {
-                ...originalStateSnapshotStruct.snapshotData
-            };
-            const originalAmount = BigInt(
-                originalStateSnapshotStruct.snapshotData.totalDeposits.amount
+            originalHash = corruptValidatorSnapshotForBalanceInvariant(
+                peer.stateManager.storage,
+                forkId
             );
-            corruptedSnapshotData.totalDeposits = {
-                ...corruptedSnapshotData.totalDeposits,
-                amount: originalAmount + 1n
-            };
-
-            const corruptedStruct = {
-                ...originalStateSnapshotStruct,
-                snapshotData: corruptedSnapshotData
-            };
-            const corruptedSnapshot = StateSnapshot.from(corruptedStruct);
-            originalHash = originalSnapshot.hash as string;
-
-            storage.stateSnapshots.storeStateSnapshot(corruptedSnapshot, {
-                hash: originalHash
-            });
         }
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: validatorPeerIndex
@@ -414,8 +415,6 @@ export class DisputeTamperingActions {
             throw new Error("buildForgedSnapshot: no active fork ID");
         }
 
-        // step 1 - W1 - latest block via sub-handle (ships full
-        // BlockConfirmationStruct -> reconstruct via Block.fromBlockConfirmation).
         const latestBlockConfirmation =
             await handle.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
@@ -427,8 +426,6 @@ export class DisputeTamperingActions {
             latestBlockConfirmation as BlockConfirmationStruct
         );
 
-        // step 2 - W1 - original snapshot via sub-handle. returns the struct
-        // already; rehydrate to StateSnapshot for the returned ForgedSnapshotBuild.
         const latestStateSnapshotHash = latestBlock.stateSnapshotHash as string;
         const originalStruct = (await handle.queryStateSnapshotByHash(
             latestStateSnapshotHash
@@ -440,7 +437,6 @@ export class DisputeTamperingActions {
         }
         const originalSnapshot = StateSnapshot.from(originalStruct);
 
-        // step 3 - W1 - outbound message block via sub-handle.
         const originalOutboundBlock =
             ((await handle.queryOutboundMessageBlock(
                 originalStruct.snapshotData
@@ -548,7 +544,6 @@ export class DisputeTamperingActions {
             if (!hasBlock || h <= targetHeight) break;
         }
 
-        // step 1 - W1 - getAuditingData via sub-handle.
         const { auditingData } = (await handle.queryDisputeAuditingData({
             forkId: dispute.input.forkId,
             args: [stateProof]

@@ -1,15 +1,10 @@
-// W3 - wire format. three frame shapes, one envelope.
-// W0 D-2 - port is orchestrator <-> worker only.
-// W0 D-8 - one channel carries req/res + push.
+// Wire format: req, res, and push frames share one envelope on a single channel.
 
 export type SerializedError = {
     name: string;
     message: string;
     stack?: string;
-    // preserve CustomEvmError discriminator + parsed solidity error description
-    // so the orchestrator-side tryDecodeCustomError / isCustomEvmError still
-    // recognise an error that crossed the worker boundary. plain Errors omit
-    // both fields.
+    // Preserve CustomEvmError fields so isCustomEvmError still works after a wire round-trip.
     isCustomError?: boolean;
     customError?: {
         name: string;
@@ -41,10 +36,7 @@ export type Push = {
 
 export type Frame = Req | Res | Push;
 
-// step 1 - structural port type. covers both node:worker_threads MessagePort
-// and lib.dom MessagePort. kernel doesn't care which it gets; W2's portCast
-// helper hands one in at construction. close() ends both sides; postMessage
-// throws synchronously on a closed port, callers wrap in try/catch.
+// Structural port type covering node and lib.dom MessagePort.
 export interface RpcPort {
     postMessage(value: unknown): void;
     close(): void;

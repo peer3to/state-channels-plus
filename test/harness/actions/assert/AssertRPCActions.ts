@@ -69,7 +69,7 @@ export class AssertRPCActions {
         const totalPeers = this.harness.peers.length;
         const expectedAcknowledgments = totalPeers - excludePeers.length - 1;
 
-        // step 1 - candidate peers for the acknowledgment check; computed once.
+        // candidate peers for the acknowledgment check; computed once.
         const candidates = this.harness.peers
             .map((p, i) => ({ p, i }))
             .filter(({ i }) => !excludePeers.includes(i))
@@ -77,7 +77,6 @@ export class AssertRPCActions {
 
         await this.harness.rpcBarrier.waitFor(
             async () => {
-                // step 2 - dispatch via sub-handle -> worker-safe.
                 const results = await Promise.all(
                     candidates.map(({ p }) =>
                         requestingHandle.queryInternals
@@ -108,9 +107,7 @@ export class AssertRPCActions {
             throw new Error("No active fork ID");
         }
 
-        // step 1 - service.requestDisputeAcknowledgment returns false when the
-        // fork is already in disputedForks -> use the boolean return as the
-        // dedupe signal instead of reading service.disputedForks.size.
+        // requestDisputeAcknowledgment returns false when the fork is already disputed.
         const handle = this.harness.getPeerHandle(peerIndex);
         const accepted = (await handle.queryInternals.isForkDisputedService({
             op: "requestDisputeAcknowledgment",
@@ -135,7 +132,6 @@ export class AssertRPCActions {
             throw new Error("No active fork ID");
         }
 
-        // step 1 - dispatch via sub-handle -> worker-safe.
         const requestingAddr =
             this.harness.getPeerHandle(requestingPeer).address;
         const handle = this.harness.getPeerHandle(respondingPeer);
@@ -158,8 +154,6 @@ export class AssertRPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        // step 1 - serialisable status read; worker-safe replacement for the
-        // prior `waitForPeerTransport(...).isClosed` read on the live ref.
         const handle = this.harness.getPeerHandle(fromPeer);
         const toAddr = this.harness.getPeerHandle(toPeer).address;
         const status = await handle.queryInternals.getTransportStatus(toAddr);
