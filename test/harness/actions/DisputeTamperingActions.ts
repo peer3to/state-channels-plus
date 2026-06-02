@@ -220,9 +220,9 @@ export class DisputeTamperingActions {
         const handle = this.harness.getPeerHandle(disputerIndex);
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
-        const genesisSnapshot = (await handle.queryGenesisSnapshot(
-            this.harness.activeForkId!
-        )) as StateSnapshot;
+        const genesisSnapshot = StateSnapshot.from(
+            (await handle.queryGenesisSnapshot(this.harness.activeForkId!))!
+        );
         const proofStruct = buildProof({ dispute, genesisSnapshot });
         const forged: DisputeFraudProofStruct = {
             proofType: toSolidityDisputeFraudProofType(proofType),
@@ -544,10 +544,10 @@ export class DisputeTamperingActions {
             if (!hasBlock || h <= targetHeight) break;
         }
 
-        const { auditingData } = (await handle.queryDisputeAuditingData({
+        const auditingData = await handle.queryDisputeAuditingData({
             forkId: dispute.input.forkId,
             args: [stateProof]
-        })) as { auditingData: DisputeAuditingDataStruct };
+        });
 
         dispute.input.latestStateSnapshotHash = StateSnapshot.from(
             auditingData.latestStateSnapshot

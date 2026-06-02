@@ -619,10 +619,14 @@ export class PeerTestHarness<
         rpcServer.register("harness.invokeFilterCallback", async (args) => {
             const { id, message } = (args ?? {}) as {
                 id?: string;
-                message?: unknown;
+                message?: string;
             };
             if (!id)
                 throw new Error("harness.invokeFilterCallback: missing id");
+            if (message === undefined)
+                throw new Error(
+                    "harness.invokeFilterCallback: missing message"
+                );
             return await stubCallbackRegistry.invokeFilter(id, message);
         });
 

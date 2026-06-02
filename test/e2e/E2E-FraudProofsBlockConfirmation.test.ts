@@ -155,7 +155,7 @@ describe("E2E: Block Fraud Proofs", function () {
         const block = Block.fromBlockConfirmation(latestConfirmation!);
 
         await observerHandle.queueBlock({
-            blockConfirmation: latestConfirmation
+            blockConfirmation: latestConfirmation!
         });
 
         await h.transition.ingestBlockConfirmationWait({

@@ -20,7 +20,7 @@ export class RPCActions {
     // Inline-only: live localRpc service instances are not on PeerHandle.
     private getInlineRecord(peerIndex: number) {
         const handle = this.harness.getPeerHandle(peerIndex) as InlinePeer;
-        return handle.record;
+        return handle.peer;
     }
 
     getRemoteRpc(peerIndex: number) {

@@ -9,14 +9,36 @@
 // W5-blocked anyway (worker-side chain access).
 
 import type { Signer } from "ethers";
-import type { Address, ForkId } from "@/types/types";
+import type {
+    Address,
+    BlockHeight,
+    ChannelId,
+    ForkId,
+    Hash
+} from "@/types/types";
 import type { Logger, EventBarrier } from "@/utils";
 
 import type { PeerCaller } from "../threaded/rpc/rpc-client";
-import { ROUTES } from "../threaded/worker/routeNames";
 import { SPY_RESET_RPC } from "../threaded/worker/SpyRegistry";
 
 import { rejectLambdaArgs } from "./namedOpGuards";
+import type { Bytes, Status, Timestamp } from "@/types";
+import type {
+    BlockConfirmationStruct,
+    JoinChannelConfirmationStruct,
+    MessageBlockStruct,
+    SignedBlockStruct,
+    StateSnapshotStruct,
+    TransactionStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import type {
+    DisputeAuditingDataStruct,
+    DisputeConfirmationStruct,
+    DisputeStruct,
+    MilestoneProofStruct,
+    TimeoutStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import type {
     ByzantineHandle,
     StubHandle,
@@ -264,7 +286,7 @@ class WorkerTransitionHandle implements TransitionHandle {
 
 class WorkerLifecycleHandle implements LifecycleHandle {
     constructor(private readonly rpc: PeerCaller) {}
-    connectToChannel(channelId: string): Promise<void> {
+    connectToChannel(channelId: ChannelId): Promise<void> {
         return this.rpc.call("lifecycle.connectToChannel", {
             channelId
         }) as Promise<void>;
@@ -457,18 +479,38 @@ export class WorkerPeer implements PeerHandle {
         return this.rpc;
     }
 
-    queryStatus(): Promise<unknown> {
-        return this.rpc.call("query.status", {});
+    queryStatus(): Promise<Status> {
+        return this.rpc.call("query.status", {}) as Promise<Status>;
     }
-    queryLatestBlock(forkId: ForkId): Promise<unknown> {
-        return this.rpc.call("query.latestBlock", { forkId });
+    queryLatestBlock(
+        forkId: ForkId
+    ): Promise<
+        | {
+              hash: Hash;
+              height: BlockHeight;
+              author: Address;
+              stateSnapshotHash: Hash;
+          }
+        | undefined
+    > {
+        return this.rpc.call("query.latestBlock", { forkId }) as Promise<
+            | {
+                  hash: Hash;
+                  height: BlockHeight;
+                  author: Address;
+                  stateSnapshotHash: Hash;
+              }
+            | undefined
+        >;
     }
     queryBlockAt(req: {
         forkId: ForkId;
-        height: number;
-    }): Promise<{ hash: string; height: number; author: Address } | undefined> {
+        height: BlockHeight;
+    }): Promise<
+        { hash: Hash; height: BlockHeight; author: Address } | undefined
+    > {
         return this.rpc.call("query.blockAt", req) as Promise<
-            { hash: string; height: number; author: Address } | undefined
+            { hash: Hash; height: BlockHeight; author: Address } | undefined
         >;
     }
     queryNextToWrite(): Promise<Address> {
@@ -477,36 +519,39 @@ export class WorkerPeer implements PeerHandle {
     queryParticipants(): Promise<Address[]> {
         return this.rpc.call("query.participants", {}) as Promise<Address[]>;
     }
-    queryDidEveryoneSignBlock(blockHash: string): Promise<boolean> {
+    queryDidEveryoneSignBlock(blockHash: Hash): Promise<boolean> {
         return this.rpc.call("query.didEveryoneSignBlock", {
             blockHash
         }) as Promise<boolean>;
     }
-    queryLatestStateMachineStateHash(forkId: ForkId): Promise<string | null> {
+    queryLatestStateMachineStateHash(forkId: ForkId): Promise<Hash | null> {
         return this.rpc.call("query.latestStateMachineStateHash", {
             forkId
-        }) as Promise<string | null>;
+        }) as Promise<Hash | null>;
     }
-    queryNextBlockHeight(forkId: ForkId): Promise<number> {
+    queryNextBlockHeight(forkId: ForkId): Promise<BlockHeight> {
         return this.rpc.call("query.nextBlockHeight", {
             forkId
-        }) as Promise<number>;
+        }) as Promise<BlockHeight>;
     }
-    queryStateSnapshotAt(req: { forkId: ForkId; height: number }): Promise<{
-        hash: string;
-        stateMachineStateHash: string;
-        blockHeight: number;
+    queryStateSnapshotAt(req: {
+        forkId: ForkId;
+        height: BlockHeight;
+    }): Promise<{
+        hash: Hash;
+        stateMachineStateHash: Hash;
+        blockHeight: BlockHeight;
     } | null> {
         return this.rpc.call("query.stateSnapshotAt", req) as Promise<{
-            hash: string;
-            stateMachineStateHash: string;
-            blockHeight: number;
+            hash: Hash;
+            stateMachineStateHash: Hash;
+            blockHeight: BlockHeight;
         } | null>;
     }
-    queryStateMachineState(hash: string): Promise<string | null> {
-        return this.rpc.call("query.stateMachineState", { hash }) as Promise<
-            string | null
-        >;
+    queryStateMachineState(hash: Hash): Promise<Bytes | null> {
+        return this.rpc.call("query.stateMachineState", {
+            hash
+        }) as Promise<Bytes | null>;
     }
     queryStateSnapshotCount(): Promise<number> {
         return this.rpc.call("query.stateSnapshotCount", {}) as Promise<number>;
@@ -514,40 +559,53 @@ export class WorkerPeer implements PeerHandle {
     queryIsMyTurn(): Promise<boolean> {
         return this.rpc.call("query.isMyTurn", {}) as Promise<boolean>;
     }
-    queryLatestBlockConfirmation(forkId: ForkId): Promise<unknown | undefined> {
-        return this.rpc.call("query.latestBlockConfirmation", { forkId });
+    queryLatestBlockConfirmation(
+        forkId: ForkId
+    ): Promise<BlockConfirmationStruct | undefined> {
+        return this.rpc.call("query.latestBlockConfirmation", {
+            forkId
+        }) as Promise<BlockConfirmationStruct | undefined>;
     }
     queryBlockConfirmationAt(req: {
         forkId: ForkId;
-        height: number;
+        height: BlockHeight;
     }): Promise<
-        { blockConfirmation: unknown; onChainTimestamp?: number } | undefined
+        | {
+              blockConfirmation: BlockConfirmationStruct;
+              onChainTimestamp?: Timestamp;
+          }
+        | undefined
     > {
         return this.rpc.call("query.blockConfirmationAt", req) as Promise<
-            | { blockConfirmation: unknown; onChainTimestamp?: number }
+            | {
+                  blockConfirmation: BlockConfirmationStruct;
+                  onChainTimestamp?: Timestamp;
+              }
             | undefined
         >;
     }
-    queryBlockByHash(hash: string): Promise<
+    queryBlockByHash(
+        hash: Hash
+    ): Promise<
         | {
-              blockConfirmation: unknown;
-              onChainTimestamp?: number;
+              blockConfirmation: BlockConfirmationStruct;
+              onChainTimestamp?: Timestamp;
               confirmationSignatures: string[];
           }
         | undefined
     > {
         return this.rpc.call("query.blockByHash", { hash }) as Promise<
             | {
-                  blockConfirmation: unknown;
-                  onChainTimestamp?: number;
+                  blockConfirmation: BlockConfirmationStruct;
+                  onChainTimestamp?: Timestamp;
                   confirmationSignatures: string[];
               }
             | undefined
         >;
     }
     queueBlock(req: {
-        blockConfirmation: unknown;
-        onChainTimestamp?: number;
+        blockConfirmation: BlockConfirmationStruct;
+        onChainTimestamp?: Timestamp;
     }): Promise<void> {
         return this.rpc.call("queue.block", req) as Promise<void>;
     }
@@ -555,8 +613,8 @@ export class WorkerPeer implements PeerHandle {
         return this.rpc.call("p2p.isBlacklisted", { addr }) as Promise<boolean>;
     }
     postBlockCalldata(req: {
-        signedBlock: unknown;
-        maxTimestamp: number;
+        signedBlock: SignedBlockStruct;
+        maxTimestamp: Timestamp;
     }): Promise<void> {
         return this.rpc.call(
             "contract.postBlockCalldata",
@@ -565,84 +623,90 @@ export class WorkerPeer implements PeerHandle {
     }
     queryPreviousBlockHash(req: {
         forkId: ForkId;
-        height?: number;
-    }): Promise<string> {
-        return this.rpc.call("query.previousBlockHash", req) as Promise<string>;
+        height?: BlockHeight;
+    }): Promise<Hash> {
+        return this.rpc.call("query.previousBlockHash", req) as Promise<Hash>;
     }
     queryStateSnapshotHashForFork(req: {
         forkId: ForkId;
-        previousBlockHash?: string;
-    }): Promise<string> {
+        previousBlockHash?: Hash;
+    }): Promise<Hash> {
         return this.rpc.call(
             "query.stateSnapshotHashForFork",
             req
-        ) as Promise<string>;
+        ) as Promise<Hash>;
     }
     queryFraudProofForParticipant(
-        addr: string
-    ): Promise<{ proofType: number; participant: string } | null> {
+        addr: Address
+    ): Promise<{ proofType: number; participant: Address } | null> {
         return this.rpc.call("query.fraudProofForParticipant", {
             addr
-        }) as Promise<{ proofType: number; participant: string } | null>;
+        }) as Promise<{
+            proofType: number;
+            participant: Address;
+        } | null>;
     }
     queryDisputeFraudProofs(): Promise<Array<{ proofType: number }>> {
         return this.rpc.call("query.disputeFraudProofs", {}) as Promise<
             Array<{ proofType: number }>
         >;
     }
-    queryInboundLatestBlockHash(): Promise<string | undefined> {
+    queryInboundLatestBlockHash(): Promise<Hash | undefined> {
         return this.rpc.call("query.inboundLatestBlockHash", {}) as Promise<
-            string | undefined
+            Hash | undefined
         >;
     }
-    queryInboundLatestBlockHeight(): Promise<number | undefined> {
+    queryInboundLatestBlockHeight(): Promise<BlockHeight | undefined> {
         return this.rpc.call("query.inboundLatestBlockHeight", {}) as Promise<
-            number | undefined
+            BlockHeight | undefined
         >;
     }
-    storeTimeout(req: { forkId: ForkId; timeout: unknown }): Promise<void> {
+    storeTimeout(req: {
+        forkId: ForkId;
+        timeout: TimeoutStruct;
+    }): Promise<void> {
         return this.rpc.call("timeout.store", req) as Promise<void>;
     }
     setForceExit(value: boolean): Promise<void> {
         return this.rpc.call("forceExit.set", { value }) as Promise<void>;
     }
-    queryTimeoutsForFork(forkId: ForkId): Promise<unknown[]> {
-        return this.rpc.call("query.timeoutsForFork", {
+    queryTimeoutsForFork(forkId: ForkId): Promise<TimeoutStruct[]> {
+        return this.rpc.call("query.timeoutsForFork", { forkId }) as Promise<
+            TimeoutStruct[]
+        >;
+    }
+    queryTimeoutForFork(forkId: ForkId): Promise<TimeoutStruct | null> {
+        return this.rpc.call("query.timeoutForFork", {
             forkId
-        }) as Promise<unknown[]>;
+        }) as Promise<TimeoutStruct | null>;
     }
-    queryTimeoutForFork(forkId: ForkId): Promise<{
-        participant: string;
-        isForced: boolean;
-        blockHeight?: string;
-    } | null> {
-        return this.rpc.call("query.timeoutForFork", { forkId }) as Promise<{
-            participant: string;
-            isForced: boolean;
-            blockHeight?: string;
-        } | null>;
-    }
-    queryDisputeConfirmation(disputeHash: string): Promise<unknown | null> {
+    queryDisputeConfirmation(
+        disputeHash: Hash
+    ): Promise<DisputeConfirmationStruct | null> {
         return this.rpc.call("query.disputeConfirmation", {
             disputeHash
-        }) as Promise<unknown | null>;
+        }) as Promise<DisputeConfirmationStruct | null>;
     }
-    queryOpenDisputeForkIds(): Promise<string[]> {
+    queryOpenDisputeForkIds(): Promise<ForkId[]> {
         return this.rpc.call("query.openDisputeForkIds", {}) as Promise<
-            string[]
+            ForkId[]
         >;
     }
     computeExpectedWithdrawalsDelta(req: {
-        upperBlockHash: string;
-        lowerBlockHash?: string;
+        upperBlockHash: Hash;
+        lowerBlockHash?: Hash;
     }): Promise<{ amount: string; data: string }> {
         return this.rpc.call(
             "context.computeExpectedWithdrawalsDelta",
             req
         ) as Promise<{ amount: string; data: string }>;
     }
-    queryLastMilestoneSnapshot(forkId: ForkId): Promise<unknown | undefined> {
-        return this.rpc.call("query.lastMilestoneSnapshot", { forkId });
+    queryLastMilestoneSnapshot(
+        forkId: ForkId
+    ): Promise<StateSnapshotStruct | undefined> {
+        return this.rpc.call("query.lastMilestoneSnapshot", {
+            forkId
+        }) as Promise<StateSnapshotStruct | undefined>;
     }
     subtractBalance(req: {
         a: { amount: string; data: string };
@@ -661,37 +725,49 @@ export class WorkerPeer implements PeerHandle {
     }
     queryPreviousStateSnapshot(req: {
         forkId: ForkId;
-        height: number;
-    }): Promise<unknown | null> {
-        return this.rpc.call("query.previousStateSnapshot", req);
+        height: BlockHeight;
+    }): Promise<StateSnapshotStruct | null> {
+        return this.rpc.call(
+            "query.previousStateSnapshot",
+            req
+        ) as Promise<StateSnapshotStruct | null>;
     }
     constructDispute(forkId: ForkId): Promise<{
-        dispute: unknown;
-        disputeConfirmation: unknown;
-        auditingData: unknown;
-        fraudProofsToApply: unknown[];
+        dispute: DisputeStruct;
+        disputeConfirmation: DisputeConfirmationStruct;
+        auditingData: DisputeAuditingDataStruct;
+        fraudProofsToApply: FraudProofStruct[];
     }> {
         return this.rpc.call("dispute.construct", { forkId }) as Promise<{
-            dispute: unknown;
-            disputeConfirmation: unknown;
-            auditingData: unknown;
-            fraudProofsToApply: unknown[];
+            dispute: DisputeStruct;
+            disputeConfirmation: DisputeConfirmationStruct;
+            auditingData: DisputeAuditingDataStruct;
+            fraudProofsToApply: FraudProofStruct[];
         }>;
     }
-    queryGenesisSnapshot(forkId: ForkId): Promise<unknown | null> {
-        return this.rpc.call("query.genesisSnapshot", { forkId });
+    queryGenesisSnapshot(forkId: ForkId): Promise<StateSnapshotStruct | null> {
+        return this.rpc.call("query.genesisSnapshot", {
+            forkId
+        }) as Promise<StateSnapshotStruct | null>;
     }
-    queryStateSnapshotByHash(hash: string): Promise<unknown | null> {
-        return this.rpc.call("query.stateSnapshotByHash", { hash });
+    queryStateSnapshotByHash(hash: Hash): Promise<StateSnapshotStruct | null> {
+        return this.rpc.call("query.stateSnapshotByHash", {
+            hash
+        }) as Promise<StateSnapshotStruct | null>;
     }
-    queryOutboundMessageBlock(hash: string): Promise<unknown | null> {
-        return this.rpc.call("query.outboundMessageBlock", { hash });
+    queryOutboundMessageBlock(hash: Hash): Promise<MessageBlockStruct | null> {
+        return this.rpc.call("query.outboundMessageBlock", {
+            hash
+        }) as Promise<MessageBlockStruct | null>;
     }
     queryDisputeAuditingData(req: {
         forkId: ForkId;
         args?: unknown[];
-    }): Promise<unknown> {
-        return this.rpc.call("dispute.getAuditingData", req);
+    }): Promise<DisputeAuditingDataStruct> {
+        return this.rpc.call(
+            "dispute.getAuditingData",
+            req
+        ) as Promise<DisputeAuditingDataStruct>;
     }
     queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
         hasBlock: boolean;
@@ -718,41 +794,51 @@ export class WorkerPeer implements PeerHandle {
     }): Promise<unknown[]> {
         return this.rpc.call("dispute.windows", req) as Promise<unknown[]>;
     }
-    queryLocalStateSnapshot(channelId: string): Promise<unknown> {
+    queryLocalStateSnapshot(channelId: string): Promise<StateSnapshotStruct> {
         return this.rpc.call("dispute.localStateSnapshot", {
             channelId
-        }) as Promise<unknown>;
+        }) as Promise<StateSnapshotStruct>;
     }
-    postStateSnapshot(forkId: ForkId): Promise<unknown> {
-        return this.rpc.call("snapshot.post", { forkId });
+    postStateSnapshot(
+        forkId: ForkId
+    ): Promise<StateSnapshotStruct | undefined> {
+        return this.rpc.call("snapshot.post", { forkId }) as Promise<
+            StateSnapshotStruct | undefined
+        >;
     }
     prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
         | {
               callData: string[];
-              expectedSnapshot: unknown;
-              milestoneSnapshots: unknown[];
-              milestoneProofs?: unknown[];
-              outboundMessageBlocks?: unknown[];
+              expectedSnapshot: StateSnapshotStruct;
+              milestoneSnapshots: StateSnapshotStruct[];
+              milestoneProofs: MilestoneProofStruct[];
+              outboundMessageBlocks: MessageBlockStruct[];
           }
         | undefined
     > {
-        return this.rpc.call("snapshot.prepareSameFork", {
-            forkId
-        }) as Promise<
+        return this.rpc.call("snapshot.prepareSameFork", { forkId }) as Promise<
             | {
                   callData: string[];
-                  expectedSnapshot: unknown;
-                  milestoneSnapshots: unknown[];
-                  milestoneProofs?: unknown[];
-                  outboundMessageBlocks?: unknown[];
+                  expectedSnapshot: StateSnapshotStruct;
+                  milestoneSnapshots: StateSnapshotStruct[];
+                  milestoneProofs: MilestoneProofStruct[];
+                  outboundMessageBlocks: MessageBlockStruct[];
               }
             | undefined
         >;
     }
-    applyTransaction(req: unknown): Promise<unknown> {
-        return this.rpc.call("tx.apply", req);
+    applyTransaction(
+        req: TransactionStruct
+    ): Promise<{ success: boolean; encodedState: Bytes }> {
+        return this.rpc.call("tx.apply", req) as Promise<{
+            success: boolean;
+            encodedState: Bytes;
+        }>;
     }
-    ingestBlockConfirmation(req: unknown): Promise<boolean> {
+    ingestBlockConfirmation(req: {
+        blockConfirmation: BlockConfirmationStruct;
+        ingestOptions?: { onChainTimestamp?: Timestamp };
+    }): Promise<boolean> {
         return this.rpc.call(
             "ingest.blockConfirmation",
             req

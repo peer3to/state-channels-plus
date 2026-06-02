@@ -24,7 +24,7 @@ export class StateQueryActions {
 
     public getPeerStorage(peerIndex: number) {
         const handle = this.harness.getPeerHandle(peerIndex) as InlinePeer;
-        return handle.record.stateManager.storage;
+        return handle.peer.stateManager.storage;
     }
 
     /**

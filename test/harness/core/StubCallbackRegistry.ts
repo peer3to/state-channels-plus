@@ -10,7 +10,9 @@
 export type StubCallback = (
     args: readonly unknown[]
 ) => unknown | Promise<unknown>;
-export type FilterCallback = (message: unknown) => boolean | Promise<boolean>;
+export type FilterCallback = (
+    peerAddress: string
+) => boolean | Promise<boolean>;
 
 export class StubCallbackRegistry {
     private nextId = 1;
@@ -46,9 +48,9 @@ export class StubCallbackRegistry {
         return await fn(args);
     }
 
-    async invokeFilter(id: string, message: unknown): Promise<boolean> {
+    async invokeFilter(id: string, peerAddress: string): Promise<boolean> {
         const fn = this.filters.get(id);
         if (!fn) throw new Error(`unknown filter callback id: ${id}`);
-        return await fn(message);
+        return await fn(peerAddress);
     }
 }
