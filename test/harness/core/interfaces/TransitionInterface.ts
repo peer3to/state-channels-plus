@@ -3,6 +3,6 @@ export type NamedOpRequest = {
     args?: unknown;
 };
 
-export interface TransitionHandle {
+export interface TransitionInterface {
     submitNext(req: NamedOpRequest): Promise<unknown>;
 }

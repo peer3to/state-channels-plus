@@ -1,7 +1,7 @@
 import type { ChannelId, Hash } from "@/types/types";
 import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-export interface LifecycleHandle {
+export interface LifecycleInterface {
     connectToChannel(channelId: ChannelId): Promise<void>;
     joinChannel(confirmation: JoinChannelConfirmationStruct): Promise<void>;
 }

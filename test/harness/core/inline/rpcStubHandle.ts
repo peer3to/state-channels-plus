@@ -1,8 +1,11 @@
-import type { RpcStubHandle, RpcStubHandlerFn } from "../handles/RpcStubHandle";
-import type { RestoreToken } from "../handles/common";
+import type {
+    RpcStubInterface,
+    RpcStubHandlerFn
+} from "../interfaces/RpcStubInterface";
+import type { RestoreToken } from "../interfaces/common";
 import type { TestPeer } from "../types";
 
-export class InlineRpcStubHandle implements RpcStubHandle {
+export class InlineRpcStubHandle implements RpcStubInterface {
     private readonly restoresByKey = new Map<string, () => void>();
 
     constructor(private readonly peer: TestPeer) {}
@@ -54,11 +57,11 @@ export class InlineRpcStubHandle implements RpcStubHandle {
         return { id: key };
     }
 
-    async restoreCreateRpcMethodStub(req: {
-        serviceName: string;
-        methodName: string;
-    }): Promise<void> {
-        this.restoresByKey.get(`${req.serviceName}:${req.methodName}`)?.();
+    async restoreCreateRpcMethodStub(
+        serviceName: string,
+        methodName: string
+    ): Promise<void> {
+        this.restoresByKey.get(`${serviceName}:${methodName}`)?.();
     }
 
     async restoreAll(): Promise<void> {

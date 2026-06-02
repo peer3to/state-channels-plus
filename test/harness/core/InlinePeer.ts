@@ -19,14 +19,14 @@ import type {
 import type { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 import type {
-    ByzantineHandle,
-    StubHandle,
-    LifecycleHandle,
-    NetworkHandle,
-    P2pInternalsHandle,
+    ByzantineInterface,
+    StubInterface,
+    LifecycleInterface,
+    NetworkInterface,
+    P2pInternalsInterface,
     PeerHandle,
-    RpcStubHandle,
-    TransitionHandle
+    RpcStubInterface,
+    TransitionInterface
 } from "./PeerHandle";
 import type { EventSpies, TestPeer } from "./types";
 
@@ -40,13 +40,13 @@ import { InlineStubHandle } from "./inline/stubHandle";
 import { BlockCoordinates } from "@/models";
 
 export class InlinePeer implements PeerHandle {
-    readonly byzantine: ByzantineHandle;
-    readonly rpcStub: RpcStubHandle;
-    readonly queryInternals: P2pInternalsHandle;
-    readonly network: NetworkHandle;
-    readonly transition: TransitionHandle;
-    readonly lifecycle: LifecycleHandle;
-    readonly stub: StubHandle;
+    readonly byzantine: ByzantineInterface;
+    readonly rpcStub: RpcStubInterface;
+    readonly queryInternals: P2pInternalsInterface;
+    readonly network: NetworkInterface;
+    readonly transition: TransitionInterface;
+    readonly lifecycle: LifecycleInterface;
+    readonly stub: StubInterface;
 
     constructor(public readonly peer: TestPeer) {
         this.byzantine = new InlineByzantineHandle(peer);
@@ -84,9 +84,7 @@ export class InlinePeer implements PeerHandle {
         return this.peer.stateManager.getStatus();
     }
 
-    async queryLatestBlock(
-        forkId: ForkId
-    ): Promise<
+    async queryLatestBlock(forkId: ForkId): Promise<
         | {
               hash: Hash;
               height: BlockHeight;
@@ -162,9 +160,7 @@ export class InlinePeer implements PeerHandle {
         return this.peer.stateManager.storage.blocks.getNextBlockHeight(forkId);
     }
 
-    async queryStateSnapshotAt(
-        req: BlockCoordinates
-    ): Promise<{
+    async queryStateSnapshotAt(req: BlockCoordinates): Promise<{
         hash: Hash;
         stateMachineStateHash: Hash;
         blockHeight: BlockHeight;
@@ -449,9 +445,7 @@ export class InlinePeer implements PeerHandle {
         };
     }
 
-    async queryBlockByHash(
-        hash: Hash
-    ): Promise<
+    async queryBlockByHash(hash: Hash): Promise<
         | {
               blockConfirmation: BlockConfirmationStruct;
               onChainTimestamp?: Timestamp;
@@ -612,9 +606,7 @@ export class InlinePeer implements PeerHandle {
         return storage.outboundMessages.getMessageBlock(hash) ?? null;
     }
 
-    async queryLatestBlockFromStateProof(
-        stateProof: unknown
-    ): Promise<{
+    async queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
         hasBlock: boolean;
         latestBlock: {
             transaction: {

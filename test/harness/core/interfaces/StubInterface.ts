@@ -4,7 +4,7 @@ import type { RestoreToken } from "./common";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type StubMethodFn = (...args: any[]) => unknown | Promise<unknown>;
 
-export interface StubHandle {
+export interface StubInterface {
     stubMethod(path: string, fn: StubMethodFn): Promise<RestoreToken>;
     restoreStubbedMethod(token: RestoreToken): Promise<void>;
     restoreAllStubbedMethods(): Promise<void>;

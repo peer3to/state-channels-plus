@@ -7,7 +7,7 @@ export type DisconnectFilterFn = (
     peerAddress: Address
 ) => boolean | Promise<boolean>;
 
-export interface NetworkHandle {
+export interface NetworkInterface {
     disconnectAll(): Promise<void>;
     tryOpenConnectionToChannel(channelId: ChannelId): Promise<void>;
     installDisconnectFilter(filter: DisconnectFilterFn): Promise<RestoreToken>;

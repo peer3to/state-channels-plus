@@ -1,11 +1,11 @@
 import type {
-    NetworkHandle,
+    NetworkInterface,
     DisconnectFilterFn
-} from "../handles/NetworkHandle";
-import type { RestoreToken } from "../handles/common";
+} from "../interfaces/NetworkInterface";
+import type { RestoreToken } from "../interfaces/common";
 import type { TestPeer } from "../types";
 
-export class InlineNetworkHandle implements NetworkHandle {
+export class InlineNetworkHandle implements NetworkInterface {
     private filterRestore: (() => void) | undefined;
 
     constructor(private readonly peer: TestPeer) {}

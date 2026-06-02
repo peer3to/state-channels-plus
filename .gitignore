@@ -38,4 +38,3 @@ src/utils/GeneratedArtifacts.ts
 *.tsbuildinfo
 
 /profiles
-docs/parallel-plan-v2/

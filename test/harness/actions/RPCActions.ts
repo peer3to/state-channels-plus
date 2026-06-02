@@ -78,11 +78,10 @@ export class RPCActions {
         forkId: ForkId
     ): Promise<boolean> {
         const handle = this.harness.getPeerHandle(requestingPeerIndex);
-        const result = await handle.queryInternals.isForkDisputedService({
-            op: "didPeerAcknowledgeDisputedFork",
-            args: [respondingPeerAddress.toString(), forkId]
-        });
-        return result as boolean;
+        return handle.queryInternals.didPeerAcknowledgeDisputedFork(
+            respondingPeerAddress,
+            forkId
+        );
     }
 
     /**
@@ -122,10 +121,10 @@ export class RPCActions {
             throw new Error("No active fork ID");
         }
         const handle = this.harness.getPeerHandle(peerIndex);
-        await handle.queryInternals.isForkDisputedService({
-            op: "requestDisputeAcknowledgment",
-            args: [this.harness.channelId!, activeForkId]
-        });
+        await handle.queryInternals.requestDisputeAcknowledgment(
+            this.harness.channelId!,
+            activeForkId
+        );
     }
 
     async sendFakeDisputeRequest(options: {
@@ -136,12 +135,11 @@ export class RPCActions {
         const fakeForkId = fakeHash() as ForkId;
         const toHandle = this.harness.getPeerHandle(toPeer);
         const fromAddr = this.harness.getPeerHandle(fromPeer).address;
-        await toHandle.queryInternals.callServiceWithTransport({
-            serviceName: "isForkDisputedService",
-            methodName: "onDisputeAcknowledgmentRequest",
-            otherAddr: fromAddr,
-            args: [this.harness.channelId!, fakeForkId]
-        });
+        await toHandle.queryInternals.onDisputeAcknowledgmentRequest(
+            fromAddr,
+            this.harness.channelId!,
+            fakeForkId
+        );
     }
 
     async simulateBuildOnDisputedFork(options: {
@@ -171,10 +169,10 @@ export class RPCActions {
             throw new Error(`No latest block found for fork ${activeForkId}`);
         }
 
-        await observingPeerHandle.queryInternals.blockForkIsDisputed({
-            block: buildingLatestBlock,
-            peerAddress: buildingPeerAddress
-        });
+        await observingPeerHandle.queryInternals.blockForkIsDisputed(
+            buildingLatestBlock,
+            buildingPeerAddress
+        );
     }
 
     async connectPeers(peerIndices: number[]): Promise<void> {
@@ -203,12 +201,11 @@ export class RPCActions {
             this.harness.options.timeConfig?.agreementTime ?? 0;
         const invalidTime =
             Clock.getTimeInSeconds() + agreementTime + timeOffset;
-        await toHandle.queryInternals.callServiceWithTransport({
-            serviceName: "initHandshakeService",
-            methodName: "onInitHandshakeRequest",
-            otherAddr: fromAddr,
-            args: [fakeHash(), invalidTime]
-        });
+        await toHandle.queryInternals.onInitHandshakeRequest(
+            fromAddr,
+            fakeHash(),
+            invalidTime
+        );
     }
 
     async initiateHandshake(options: {
@@ -218,12 +215,7 @@ export class RPCActions {
         const { fromPeer, toPeer } = options;
         const fromHandle = this.harness.getPeerHandle(fromPeer);
         const toAddr = this.harness.getPeerHandle(toPeer).address;
-        await fromHandle.queryInternals.callServiceMethodWithTransport({
-            serviceName: "initHandshakeService",
-            methodName: "initHandshake",
-            otherAddr: toAddr,
-            args: []
-        });
+        await fromHandle.queryInternals.initHandshakeTo(toAddr);
     }
 
     async sendSlowHandshakeResponse(options: {
@@ -251,12 +243,12 @@ export class RPCActions {
         const fromPreferred =
             await fromHandle.queryInternals.getPreferredTransportType();
 
-        await toHandle.queryInternals.callServiceWithTransport({
-            serviceName: "initHandshakeService",
-            methodName: "onInitHandshakeResponse",
-            otherAddr: fromAddr,
-            args: [signature, slowResponseTime, fromPreferred]
-        });
+        await toHandle.queryInternals.onInitHandshakeResponse(
+            fromAddr,
+            signature,
+            slowResponseTime,
+            fromPreferred
+        );
     }
 
     async sendUnsolicitedHandshakeResponse(options: {
@@ -280,12 +272,12 @@ export class RPCActions {
         );
         const fromPreferred =
             await fromHandle.queryInternals.getPreferredTransportType();
-        await toHandle.queryInternals.callServiceWithTransport({
-            serviceName: "initHandshakeService",
-            methodName: "onInitHandshakeResponse",
-            otherAddr: fromAddr,
-            args: [signature, Clock.getTimeInSeconds(), fromPreferred]
-        });
+        await toHandle.queryInternals.onInitHandshakeResponse(
+            fromAddr,
+            signature,
+            Clock.getTimeInSeconds(),
+            fromPreferred
+        );
     }
 
     async clearHandshakeChallenge(options: {
@@ -317,12 +309,12 @@ export class RPCActions {
         );
         const fromPreferred =
             await fromHandle.queryInternals.getPreferredTransportType();
-        await toHandle.queryInternals.callServiceWithTransport({
-            serviceName: "initHandshakeService",
-            methodName: "onInitHandshakeResponse",
-            otherAddr: fromAddr,
-            args: [signature, Clock.getTimeInSeconds(), fromPreferred]
-        });
+        await toHandle.queryInternals.onInitHandshakeResponse(
+            fromAddr,
+            signature,
+            Clock.getTimeInSeconds(),
+            fromPreferred
+        );
     }
 
     async initiateHandshakeWithoutResponse(options: {
@@ -332,12 +324,7 @@ export class RPCActions {
         const { fromPeer, toPeer } = options;
         const fromHandle = this.harness.getPeerHandle(fromPeer);
         const toAddr = this.harness.getPeerHandle(toPeer).address;
-        await fromHandle.queryInternals.callServiceMethodWithTransport({
-            serviceName: "initHandshakeService",
-            methodName: "initHandshake",
-            otherAddr: toAddr,
-            args: []
-        });
+        await fromHandle.queryInternals.initHandshakeTo(toAddr);
     }
 
     async sendDuplicateAcknowledgmentResponse(options: {
@@ -353,14 +340,11 @@ export class RPCActions {
 
         const requestingPeerHandle = this.harness.getPeerHandle(requestingPeer);
         const respondingHandle = this.harness.getPeerHandle(respondingPeer);
-        await respondingHandle.queryInternals.isForkDisputedService({
-            op: "respondToDisputeAcknowledgment",
-            args: [
-                requestingPeerHandle.address.toString(),
-                this.harness.channelId!,
-                activeForkId
-            ]
-        });
+        await respondingHandle.queryInternals.respondToDisputeAcknowledgment(
+            requestingPeerHandle.address,
+            this.harness.channelId!,
+            activeForkId
+        );
     }
 
     async requestFakeDisputeWithSpiedDisconnect(options: {
@@ -380,9 +364,9 @@ export class RPCActions {
             );
         }
 
-        await requestingPeerHandle.queryInternals.isForkDisputedService({
-            op: "requestDisputeAcknowledgment",
-            args: [this.harness.channelId!, fakeForkId]
-        });
+        await requestingPeerHandle.queryInternals.requestDisputeAcknowledgment(
+            this.harness.channelId!,
+            fakeForkId
+        );
     }
 }

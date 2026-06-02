@@ -27,36 +27,39 @@ import type {
 import type { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import type { EventSpies } from "./types";
 
-import type { ByzantineHandle } from "./handles/ByzantineHandle";
-import type { RpcStubHandle } from "./handles/RpcStubHandle";
-import type { P2pInternalsHandle } from "./handles/P2pInternalsHandle";
-import type { StubHandle } from "./handles/StubHandle";
-import type { NetworkHandle } from "./handles/NetworkHandle";
-import type { LifecycleHandle } from "./handles/LifecycleHandle";
-import type { TransitionHandle } from "./handles/TransitionHandle";
+import type { ByzantineInterface } from "./interfaces/ByzantineInterface";
+import type { RpcStubInterface } from "./interfaces/RpcStubInterface";
+import type { P2pInternalsInterface } from "./interfaces/P2pInternalsInterface";
+import type { StubInterface } from "./interfaces/StubInterface";
+import type { NetworkInterface } from "./interfaces/NetworkInterface";
+import type { LifecycleInterface } from "./interfaces/LifecycleInterface";
+import type { TransitionInterface } from "./interfaces/TransitionInterface";
 
 // Re-exports so existing imports from this file continue to work.
-export type { RestoreToken, ConnectionId } from "./handles/common";
+export type { RestoreToken, ConnectionId } from "./interfaces/common";
 export type {
-    ByzantineHandle,
+    ByzantineInterface,
     SubmitDoubleSignReq
-} from "./handles/ByzantineHandle";
-export type { RpcStubHandlerFn, RpcStubHandle } from "./handles/RpcStubHandle";
+} from "./interfaces/ByzantineInterface";
+export type {
+    RpcStubHandlerFn,
+    RpcStubInterface
+} from "./interfaces/RpcStubInterface";
 export type {
     ProfileSummary,
     TransportSummary,
-    P2pInternalsHandle
-} from "./handles/P2pInternalsHandle";
-export type { StubMethodFn, StubHandle } from "./handles/StubHandle";
+    P2pInternalsInterface
+} from "./interfaces/P2pInternalsInterface";
+export type { StubMethodFn, StubInterface } from "./interfaces/StubInterface";
 export type {
     DisconnectFilterFn,
-    NetworkHandle
-} from "./handles/NetworkHandle";
-export type { LifecycleHandle } from "./handles/LifecycleHandle";
+    NetworkInterface
+} from "./interfaces/NetworkInterface";
+export type { LifecycleInterface } from "./interfaces/LifecycleInterface";
 export type {
     NamedOpRequest,
-    TransitionHandle
-} from "./handles/TransitionHandle";
+    TransitionInterface
+} from "./interfaces/TransitionInterface";
 
 export interface PeerHandle {
     // Set on WorkerPeer; undefined on InlinePeer.
@@ -73,9 +76,7 @@ export interface PeerHandle {
     readonly forkId: ForkId | undefined;
 
     queryStatus(): Promise<Status>;
-    queryLatestBlock(
-        forkId: ForkId
-    ): Promise<
+    queryLatestBlock(forkId: ForkId): Promise<
         | {
               hash: Hash;
               height: BlockHeight;
@@ -226,13 +227,13 @@ export interface PeerHandle {
         ingestOptions?: { onChainTimestamp?: Timestamp };
     }): Promise<boolean>;
 
-    readonly byzantine: ByzantineHandle;
-    readonly rpcStub: RpcStubHandle;
-    readonly queryInternals: P2pInternalsHandle;
-    readonly network: NetworkHandle;
-    readonly stub: StubHandle;
-    readonly transition: TransitionHandle;
-    readonly lifecycle: LifecycleHandle;
+    readonly byzantine: ByzantineInterface;
+    readonly rpcStub: RpcStubInterface;
+    readonly queryInternals: P2pInternalsInterface;
+    readonly network: NetworkInterface;
+    readonly stub: StubInterface;
+    readonly transition: TransitionInterface;
+    readonly lifecycle: LifecycleInterface;
 
     dispose(): Promise<void>;
 

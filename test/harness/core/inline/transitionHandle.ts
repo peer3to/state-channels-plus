@@ -1,10 +1,10 @@
 import type {
-    TransitionHandle,
+    TransitionInterface,
     NamedOpRequest
-} from "../handles/TransitionHandle";
+} from "../interfaces/TransitionInterface";
 import type { TestPeer } from "../types";
 
-export class InlineTransitionHandle implements TransitionHandle {
+export class InlineTransitionHandle implements TransitionInterface {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(private readonly _peer: TestPeer) {}
 

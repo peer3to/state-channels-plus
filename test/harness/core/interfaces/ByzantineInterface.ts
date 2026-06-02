@@ -4,7 +4,7 @@ export type SubmitDoubleSignReq = {
     signedBlockConfirmation: BlockConfirmationStruct;
 };
 
-export interface ByzantineHandle {
+export interface ByzantineInterface {
     stubCalldataHandler(): Promise<void>;
     restoreCalldataHandler(): Promise<void>;
     stubPendingInboundInclusion(): Promise<void>;

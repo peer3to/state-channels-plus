@@ -1,9 +1,9 @@
-import type { LifecycleHandle } from "../handles/LifecycleHandle";
+import type { LifecycleInterface } from "../interfaces/LifecycleInterface";
 import type { ChannelId } from "@/types/types";
 import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { TestPeer } from "../types";
 
-export class InlineLifecycleHandle implements LifecycleHandle {
+export class InlineLifecycleHandle implements LifecycleInterface {
     constructor(private readonly peer: TestPeer) {}
 
     async connectToChannel(channelId: ChannelId): Promise<void> {

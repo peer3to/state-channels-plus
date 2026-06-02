@@ -1,6 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { DetachedPromises, hash, tryDecodeCustomError } from "@/utils";
-import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import {
     encodeMathState,
@@ -17,7 +16,6 @@ describe("E2E: Join channel race conditions", function () {
                 stateSnapshot: stateSnapshot_a,
                 confirmation
             } = await h.scenario.syncSpectatorAndPrepareJoin();
-
 
             await h.byzantine.postFraudulentSnapshot({
                 mutate: ({ originalSnapshotData }) => {
@@ -48,7 +46,9 @@ describe("E2E: Join channel race conditions", function () {
             let revertError: unknown;
             try {
                 // step 1 - route via handle so worker mode goes through rpc
-                await h.getPeerHandle(joiner.index).lifecycle.joinChannel(confirmation);
+                await h
+                    .getPeerHandle(joiner.index)
+                    .lifecycle.joinChannel(confirmation);
                 expect.fail(
                     "expected joinChannel to revert: spectator built confirmation against snapshot S, but on-chain snapshot is now the mismatched S'"
                 );
@@ -90,7 +90,9 @@ describe("E2E: Join channel race conditions", function () {
             for (const i of [0, 1, 2])
                 await h.byzantine.stubPendingInboundInclusion(i);
 
-            await h.getPeerHandle(joiner.index).lifecycle.joinChannel(confirmation);
+            await h
+                .getPeerHandle(joiner.index)
+                .lifecycle.joinChannel(confirmation);
             expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );
@@ -147,7 +149,9 @@ describe("E2E: Join channel race conditions", function () {
             let revertError: unknown;
             try {
                 // step 1 - route via handle so worker mode goes through rpc
-                await h.getPeerHandle(joiner.index).lifecycle.joinChannel(confirmation);
+                await h
+                    .getPeerHandle(joiner.index)
+                    .lifecycle.joinChannel(confirmation);
                 expect.fail(
                     "expected joinChannel to revert: spectator built confirmation against a fork that is now disputed"
                 );
@@ -208,7 +212,9 @@ describe("E2E: Join channel race conditions", function () {
             const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();
 
-            await h.getPeerHandle(joiner.index).lifecycle.joinChannel(confirmation);
+            await h
+                .getPeerHandle(joiner.index)
+                .lifecycle.joinChannel(confirmation);
             expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
                 Status.PENDING_PARTICIPANT
             );

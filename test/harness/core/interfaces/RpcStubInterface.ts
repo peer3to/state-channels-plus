@@ -7,15 +7,15 @@ export type RpcStubHandlerFn = (
     ...args: any[]
 ) => unknown | Promise<unknown>;
 
-export interface RpcStubHandle {
+export interface RpcStubInterface {
     installCreateRpcMethodStub(
         serviceName: string,
         methodName: string,
         handler: RpcStubHandlerFn
     ): Promise<RestoreToken>;
-    restoreCreateRpcMethodStub(req: {
-        serviceName: string;
-        methodName: string;
-    }): Promise<void>;
+    restoreCreateRpcMethodStub(
+        serviceName: string,
+        methodName: string
+    ): Promise<void>;
     restoreAll(): Promise<void>;
 }

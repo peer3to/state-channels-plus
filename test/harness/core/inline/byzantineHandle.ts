@@ -1,7 +1,7 @@
 import type {
-    ByzantineHandle,
+    ByzantineInterface,
     SubmitDoubleSignReq
-} from "../handles/ByzantineHandle";
+} from "../interfaces/ByzantineInterface";
 import type { TestPeer } from "../types";
 
 type EventHandler = TestPeer["stateManager"]["eventHandler"];
@@ -12,7 +12,7 @@ type StateTransitionService =
     TestPeer["stateManager"]["p2pManager"]["remoteRpc"]["stateTransitionService"];
 type OnBlockConfirmationFn = StateTransitionService["onBlockConfirmation"];
 
-export class InlineByzantineHandle implements ByzantineHandle {
+export class InlineByzantineHandle implements ByzantineInterface {
     private originalCalldataHandler: CalldataHandlerFn | undefined;
     private originalInboundGetLatestBlockHash:
         | InboundGetLatestBlockHashFn

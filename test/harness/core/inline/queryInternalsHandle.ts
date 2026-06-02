@@ -1,12 +1,21 @@
 import type {
-    P2pInternalsHandle,
+    P2pInternalsInterface,
     ProfileSummary,
     TransportSummary
-} from "../handles/P2pInternalsHandle";
-import type { Address } from "@/types/types";
+} from "../interfaces/P2pInternalsInterface";
+import type {
+    Address,
+    ChannelId,
+    ForkId,
+    Hash,
+    Signature,
+    Timestamp
+} from "@/types/types";
+import type { TransportType } from "@/transport";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { TestPeer } from "../types";
 
-export class InlineP2pInternalsHandle implements P2pInternalsHandle {
+export class InlineP2pInternalsHandle implements P2pInternalsInterface {
     constructor(private readonly peer: TestPeer) {}
 
     async openConnections(): Promise<TransportSummary[]> {
@@ -28,9 +37,7 @@ export class InlineP2pInternalsHandle implements P2pInternalsHandle {
     ): Promise<ProfileSummary | undefined> {
         const pm = this.peer.stateManager.p2pManager as unknown as {
             profileManager?: {
-                getProfileByEvmAddress?: (
-                    a: Address
-                ) =>
+                getProfileByEvmAddress?: (a: Address) =>
                     | {
                           evmAddress?: string;
                           transport?: { connectionId?: string };
@@ -86,27 +93,106 @@ export class InlineP2pInternalsHandle implements P2pInternalsHandle {
         return this.peer.address as Address;
     }
 
-    async isForkDisputedService(req: {
-        op: string;
-        args: unknown;
-    }): Promise<unknown> {
-        return this.runLocalRpcOp("isForkDisputedService", req.op, req.args);
+    async didPeerAcknowledgeDisputedFork(
+        peerAddress: Address,
+        forkId: ForkId
+    ): Promise<boolean> {
+        return (await this.runLocalRpcOp(
+            "isForkDisputedService",
+            "didPeerAcknowledgeDisputedFork",
+            [peerAddress, forkId]
+        )) as boolean;
     }
 
-    async initHandshakeService(req: {
-        op: string;
-        args: unknown;
-    }): Promise<unknown> {
-        return this.runLocalRpcOp("initHandshakeService", req.op, req.args);
+    async didIAcknowledgeDisputedFork(
+        peerAddress: Address,
+        forkId: ForkId
+    ): Promise<boolean> {
+        return (await this.runLocalRpcOp(
+            "isForkDisputedService",
+            "didIAcknowledgeDisputedFork",
+            [peerAddress, forkId]
+        )) as boolean;
     }
 
-    async callServiceMethodWithTransport(req: {
-        serviceName: string;
-        methodName: string;
-        otherAddr: Address;
-        args: unknown[];
-    }): Promise<unknown> {
-        const { serviceName, methodName, otherAddr, args } = req;
+    async requestDisputeAcknowledgment(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean> {
+        return (await this.runLocalRpcOp(
+            "isForkDisputedService",
+            "requestDisputeAcknowledgment",
+            [channelId, forkId]
+        )) as boolean;
+    }
+
+    async respondToDisputeAcknowledgment(
+        peerAddress: Address,
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<void> {
+        await this.runLocalRpcOp(
+            "isForkDisputedService",
+            "respondToDisputeAcknowledgment",
+            [peerAddress, channelId, forkId]
+        );
+    }
+
+    async onDisputeAcknowledgmentRequest(
+        fromAddr: Address,
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<void> {
+        await this.callServiceWithTransport(
+            "isForkDisputedService",
+            "onDisputeAcknowledgmentRequest",
+            fromAddr,
+            [channelId, forkId]
+        );
+    }
+
+    async onInitHandshakeRequest(
+        fromAddr: Address,
+        hash: Hash,
+        time: Timestamp
+    ): Promise<void> {
+        await this.callServiceWithTransport(
+            "initHandshakeService",
+            "onInitHandshakeRequest",
+            fromAddr,
+            [hash, time]
+        );
+    }
+
+    async onInitHandshakeResponse(
+        fromAddr: Address,
+        signature: Signature,
+        time: Timestamp,
+        preferred: TransportType
+    ): Promise<void> {
+        await this.callServiceWithTransport(
+            "initHandshakeService",
+            "onInitHandshakeResponse",
+            fromAddr,
+            [signature, time, preferred]
+        );
+    }
+
+    async initHandshakeTo(toAddr: Address): Promise<void> {
+        await this.callServiceMethodWithTransport(
+            "initHandshakeService",
+            "initHandshake",
+            toAddr,
+            []
+        );
+    }
+
+    private async callServiceMethodWithTransport(
+        serviceName: string,
+        methodName: string,
+        otherAddr: Address,
+        args: unknown[]
+    ): Promise<unknown> {
         const pmAny = this.peer.stateManager.p2pManager as unknown as {
             openConnections: Iterable<unknown>;
             profileManager: {
@@ -139,13 +225,12 @@ export class InlineP2pInternalsHandle implements P2pInternalsHandle {
         ]);
     }
 
-    async callServiceWithTransport(req: {
-        serviceName: string;
-        methodName: string;
-        otherAddr: Address;
-        args: unknown[];
-    }): Promise<unknown> {
-        const { serviceName, methodName, otherAddr, args } = req;
+    private async callServiceWithTransport(
+        serviceName: string,
+        methodName: string,
+        otherAddr: Address,
+        args: unknown[]
+    ): Promise<unknown> {
         const pmAny = this.peer.stateManager.p2pManager as unknown as {
             openConnections: Iterable<unknown>;
             profileManager: {
@@ -237,17 +322,15 @@ export class InlineP2pInternalsHandle implements P2pInternalsHandle {
         return { present: true, isClosed: t.isClosed };
     }
 
-    async blockForkIsDisputed(req: {
-        block: unknown;
-        peerAddress: string;
-    }): Promise<void> {
+    async blockForkIsDisputed(
+        block: BlockConfirmationStruct,
+        peerAddress: string
+    ): Promise<void> {
         const Block = (await import("@/models")).Block;
-        const block = Block.fromBlockConfirmation(
-            req.block as Parameters<typeof Block.fromBlockConfirmation>[0]
-        );
+        const reconstructed = Block.fromBlockConfirmation(block);
         await this.peer.stateManager.blockValidationStrategy.blockForkIsDisputed(
-            block as never,
-            req.peerAddress
+            reconstructed as never,
+            peerAddress
         );
     }
 

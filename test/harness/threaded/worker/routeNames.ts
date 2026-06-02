@@ -100,7 +100,6 @@ export const ROUTES = {
         isHandshakeCompletedWith: "queryInternals.isHandshakeCompletedWith",
         self: "queryInternals.self",
         isForkDisputedService: "queryInternals.isForkDisputedService",
-        initHandshakeService: "queryInternals.initHandshakeService",
         callServiceWithTransport: "queryInternals.callServiceWithTransport",
         callServiceMethodWithTransport:
             "queryInternals.callServiceMethodWithTransport",

@@ -27,10 +27,10 @@ export class RpcStubActions {
             `Stubbed RPC method '${methodName}' on service '${serviceName}' for peer ${peerIndex}`
         );
         return async () => {
-            await peer.rpcStub.restoreCreateRpcMethodStub({
+            await peer.rpcStub.restoreCreateRpcMethodStub(
                 serviceName,
                 methodName
-            });
+            );
         };
     }
 

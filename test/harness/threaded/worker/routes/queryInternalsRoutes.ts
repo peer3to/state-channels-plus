@@ -169,21 +169,6 @@ export class QueryInternalsRoutes {
         );
 
         server.register(
-            ROUTES.queryInternals.initHandshakeService,
-            async (args) => {
-                const { op, args: opArgs } = (args ?? {}) as {
-                    op?: string;
-                    args?: unknown;
-                };
-                if (!op)
-                    throw new Error(
-                        "queryInternals.initHandshakeService: missing 'op'"
-                    );
-                return this.callLocalRpcOp("initHandshakeService", op, opArgs);
-            }
-        );
-
-        server.register(
             ROUTES.queryInternals.callServiceWithTransport,
             async (args) => {
                 const {
@@ -303,9 +288,7 @@ export class QueryInternalsRoutes {
                     "initHandshakeService"
                 ] as
                     | {
-                          getChallenge: (
-                              t: unknown
-                          ) =>
+                          getChallenge: (t: unknown) =>
                               | {
                                     randomChallengeHash: string;
                                     initTime: number;

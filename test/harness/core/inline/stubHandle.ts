@@ -1,5 +1,5 @@
-import type { StubHandle, StubMethodFn } from "../handles/StubHandle";
-import type { RestoreToken } from "../handles/common";
+import type { StubInterface, StubMethodFn } from "../interfaces/StubInterface";
+import type { RestoreToken } from "../interfaces/common";
 import type { TestPeer } from "../types";
 
 function walkDottedPath(
@@ -21,7 +21,7 @@ function walkDottedPath(
     return { target: cur, leaf: parts[parts.length - 1] };
 }
 
-export class InlineStubHandle implements StubHandle {
+export class InlineStubHandle implements StubInterface {
     private nextTokenId = 1;
     private readonly restoresByToken = new Map<string, () => void>();
 

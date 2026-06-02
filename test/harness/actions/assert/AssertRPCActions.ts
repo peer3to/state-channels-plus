@@ -79,12 +79,10 @@ export class AssertRPCActions {
             async () => {
                 const results = await Promise.all(
                     candidates.map(({ p }) =>
-                        requestingHandle.queryInternals
-                            .isForkDisputedService({
-                                op: "didPeerAcknowledgeDisputedFork",
-                                args: [p.address, activeForkId]
-                            })
-                            .then((v) => v as boolean)
+                        requestingHandle.queryInternals.didPeerAcknowledgeDisputedFork(
+                            p.address,
+                            activeForkId
+                        )
                     )
                 );
                 const acknowledgedCount = results.filter(Boolean).length;
@@ -109,10 +107,11 @@ export class AssertRPCActions {
 
         // requestDisputeAcknowledgment returns false when the fork is already disputed.
         const handle = this.harness.getPeerHandle(peerIndex);
-        const accepted = (await handle.queryInternals.isForkDisputedService({
-            op: "requestDisputeAcknowledgment",
-            args: [this.harness.channelId!, activeForkId]
-        })) as boolean;
+        const accepted =
+            await handle.queryInternals.requestDisputeAcknowledgment(
+                this.harness.channelId!,
+                activeForkId
+            );
 
         if (accepted !== false) {
             throw new Error(
@@ -135,12 +134,11 @@ export class AssertRPCActions {
         const requestingAddr =
             this.harness.getPeerHandle(requestingPeer).address;
         const handle = this.harness.getPeerHandle(respondingPeer);
-        const acknowledged = (await handle.queryInternals.isForkDisputedService(
-            {
-                op: "didIAcknowledgeDisputedFork",
-                args: [requestingAddr, activeForkId]
-            }
-        )) as boolean;
+        const acknowledged =
+            await handle.queryInternals.didIAcknowledgeDisputedFork(
+                requestingAddr,
+                activeForkId
+            );
 
         if (!acknowledged) {
             throw new Error(
