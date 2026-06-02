@@ -3,8 +3,5 @@ import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V
 
 export interface LifecycleHandle {
     connectToChannel(channelId: ChannelId): Promise<void>;
-    joinChannel(req: {
-        confirmation: JoinChannelConfirmationStruct;
-        expectedSnapshotHash: Hash;
-    }): Promise<void>;
+    joinChannel(confirmation: JoinChannelConfirmationStruct): Promise<void>;
 }

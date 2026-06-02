@@ -1,5 +1,5 @@
 import type { LifecycleHandle } from "../handles/LifecycleHandle";
-import type { ChannelId, Hash } from "@/types/types";
+import type { ChannelId } from "@/types/types";
 import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { TestPeer } from "../types";
 
@@ -12,13 +12,9 @@ export class InlineLifecycleHandle implements LifecycleHandle {
         );
     }
 
-    async joinChannel(req: {
-        confirmation: JoinChannelConfirmationStruct;
-        expectedSnapshotHash: Hash;
-    }): Promise<void> {
-        await this.peer.p2pInstance.p2pSigner.joinChannel(
-            req.confirmation,
-            req.expectedSnapshotHash as string
-        );
+    async joinChannel(
+        confirmation: JoinChannelConfirmationStruct
+    ): Promise<void> {
+        await this.peer.p2pInstance.p2pSigner.joinChannel(confirmation);
     }
 }
