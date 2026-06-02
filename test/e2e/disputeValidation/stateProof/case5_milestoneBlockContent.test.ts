@@ -17,9 +17,9 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             h.tamper.stubConstructDispute(0, async (dispute) => {
                 const stateProof = dispute.input.stateProof;
 
-                const localDiamond = h.getLocalDiamond(0);
-                const [hasBlock, latestBlock] =
-                    await localDiamond.getLatestBlockFromStateProof(stateProof);
+                const { hasBlock, latestBlock } = await h
+                    .localDiamondView(0)
+                    .getLatestBlockFromStateProof(stateProof);
                 if (!hasBlock) {
                     throw new Error(
                         "State proof does not contain a block to tamper with"
@@ -32,7 +32,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 stateProof.milestones
                     .at(-1)!
                     .blockConfirmations.at(-1)!.signedBlock.encodedBlock =
-                    Codec.encode(latestBlock as never, Type.Block);
+                    Codec.encode(latestBlock, Type.Block);
             });
 
             await h.byzantine.submitInvalidStateTransitionBlock(1);

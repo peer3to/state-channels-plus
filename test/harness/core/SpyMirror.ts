@@ -4,8 +4,6 @@
 //
 // W4 D-12 - EventBarrier stays orchestrator-side, untouched. mirror writes
 //           signal the barrier; other barriers stay orchestrator-local.
-// W4 §reset - noteReset is package-private to W4 / PeerHandle. only
-//             WorkerPeer.resetSpies() calls it, after the rpc round-trip.
 
 import type { EventBarrier } from "@/utils";
 
@@ -58,14 +56,6 @@ export class SpyMirror {
     ): readonly unknown[] | undefined {
         return this.rows.get(peerIndex)?.get(name)?.lastArgs;
     }
-
-    // step 1 - package-private. only WorkerPeer.resetSpies() invokes it,
-    // and only after the rpc round-trip resolves (fifo guarantees prior
-    // pushes have landed). zeroes the row in place; subsequent push frames
-    // overwrite via max() from the new baseline.
-    noteReset(peerIndex: number): void {
-        this.rows.get(peerIndex)?.clear();
-    }
 }
 
 function workerSpyUnsupportedError(name: string, member: string): Error {
@@ -91,8 +81,7 @@ export interface WorkerEventSpy {
 }
 
 // step 1 - build a WorkerEventSpy backed by a SpyMirror for a given (peer, name).
-// resetHistory is a no-op here; real clearing happens in WorkerPeer.resetSpies()
-// via the rpc + noteReset pair.
+// resetHistory is a no-op in worker mode.
 export function makeWorkerEventSpy(
     mirror: SpyMirror,
     peerIndex: number,
@@ -107,9 +96,7 @@ export function makeWorkerEventSpy(
             return args === undefined ? undefined : { args };
         },
         resetHistory() {
-            // step 1 - no-op. WorkerPeer.resetSpies() owns the rpc + noteReset
-            // ordering. calling resetHistory() directly on a worker spy is a
-            // partial reset; the action surface routes through resetSpies().
+            // step 1 - no-op in worker mode.
         },
         getCalls(): never {
             throw workerSpyUnsupportedError(name, "getCalls");

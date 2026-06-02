@@ -1,8 +1,10 @@
-import { ForkId } from "@/types/types";
+import { ForkId, Hash, BlockHeight } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import type { TestPeer } from "@test/harness/core/types";
 import type { Block } from "@/models";
+
+type BlockTip = { hash: Hash; height: BlockHeight };
 
 export type WaitForPeersToSyncOptions = {
     timeoutMs?: number;
@@ -15,7 +17,10 @@ export type WaitForPeersToSyncOptions = {
 // `peer.stateManager.*` (which doesn't exist on worker peers). inline mode
 // leaves this undefined and keeps the sync reads.
 export type SyncProbe = {
-    loadTip: (peerIndex: number, forkId: ForkId) => Promise<Block | undefined>;
+    loadTip: (
+        peerIndex: number,
+        forkId: ForkId
+    ) => Promise<BlockTip | undefined>;
     didEveryoneSignBlock: (
         peerIndex: number,
         blockHash: string
@@ -67,7 +72,7 @@ export class SyncCoordinator {
         });
 
         const probe = this.probe;
-        const loadTips = async (): Promise<(Block | undefined)[]> => {
+        const loadTips = async (): Promise<(BlockTip | undefined)[]> => {
             if (probe) {
                 return Promise.all(
                     peers.map((peer) => probe.loadTip(peer.index, forkId))
@@ -88,7 +93,7 @@ export class SyncCoordinator {
                 return false;
             }
 
-            const blocks = tipBlocks as Block[];
+            const blocks = tipBlocks as BlockTip[];
             const { hash, height } = blocks[0];
 
             if (!blocks.every((b) => b.hash === hash && b.height === height)) {
@@ -111,7 +116,7 @@ export class SyncCoordinator {
                         !peers[
                             i
                         ].stateManager.agreementManager.didEveryoneSignBlock(
-                            blocks[i]
+                            blocks[i] as unknown as Block
                         )
                     ) {
                         return false;
@@ -149,15 +154,14 @@ export class SyncCoordinator {
             if (probe) return `Peer ${peer.index}: ${base}`;
             let fin = "";
             if (waitForFinalization && block) {
+                const b = block as unknown as Block;
                 const ok =
-                    peer.stateManager.agreementManager.didEveryoneSignBlock(
-                        block
-                    );
+                    peer.stateManager.agreementManager.didEveryoneSignBlock(b);
                 const union = peer.stateManager.storage.getParticipantsUnion(
-                    block.coordinates,
-                    block.stateSnapshotHash
+                    b.coordinates,
+                    b.stateSnapshotHash
                 ).length;
-                fin = ` finalize@h=${block.height} ok=${ok} sigs=${block.allSignatures.size}/${union}`;
+                fin = ` finalize@h=${block.height} ok=${ok} sigs=${b.allSignatures.size}/${union}`;
             }
             return `Peer ${peer.index}: ${base}${fin}`;
         });
@@ -168,18 +172,19 @@ export class SyncCoordinator {
             reason = ` (expected height ${minHeight}, have ${latest?.height ?? "?"})`;
         }
         if (waitForFinalization && latest && !probe) {
+            const latestBlock = latest as unknown as Block;
             const union = peers[0].stateManager.storage.getParticipantsUnion(
-                latest.coordinates,
-                latest.stateSnapshotHash
+                latestBlock.coordinates,
+                latestBlock.stateSnapshotHash
             ).length;
             const allOk = tipMaybe.every(
                 (block, i) =>
                     block &&
                     peers[i].stateManager.agreementManager.didEveryoneSignBlock(
-                        block
+                        block as unknown as Block
                     )
             );
-            reason += ` (finalization@h=${latest.height}: allPeers=${allOk} sigs=${latest.allSignatures.size} union=${union})`;
+            reason += ` (finalization@h=${latest.height}: allPeers=${allOk} sigs=${latestBlock.allSignatures.size} union=${union})`;
         } else if (waitForFinalization) {
             reason += " (finalization: no tip block)";
         }

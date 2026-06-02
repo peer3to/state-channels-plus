@@ -13,6 +13,7 @@ import type { CustomRpcConstructor } from "@/rpc";
 import MainRpcService from "@/rpc/MainRpcService";
 import { TimeConfig } from "@/types";
 import { Config } from "@/utils";
+import type { PeerHandle } from "@test/harness/core/PeerHandle";
 
 /**
  * Test context fields used by blocks for cross-block state sharing
@@ -173,13 +174,10 @@ export type EventSpies = {
     onInboundMessagesProcessed?: sinon.SinonSpy;
 };
 
-export type CreateAndResolveDisputeResult<
-    TCustomRpc extends MainRpcService = MainRpcService,
-    TContract extends AStateMachineContract = AStateMachineContract
-> = {
+export type CreateAndResolveDisputeResult = {
     originalForkId: ForkId;
     newForkId: ForkId;
     maliciousPeerIndices: number[];
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TCustomRpc, TContract>>;
+    honestPeers: PeerHandle[];
 };

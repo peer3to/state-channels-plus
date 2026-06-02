@@ -75,11 +75,9 @@ export class DisputeOrchestrator {
         });
 
         const honestPeers = honestPeerIndices.map((idx) =>
-            this.harness.getPeer(idx)
+            this.harness.getPeerHandle(idx)
         );
-        const newForkId = this.harness.getPeerHandle(
-            honestPeers[0]!.index
-        ).forkId;
+        const newForkId = honestPeers[0]!.forkId;
 
         if (
             newForkId === undefined ||
@@ -93,7 +91,7 @@ export class DisputeOrchestrator {
 
         if (options.assertMaliciousRemoved ?? true) {
             const maliciousAddresses = maliciousPeerIndices.map(
-                (i) => this.harness.getPeer(i).address
+                (i) => this.harness.getPeerHandle(i).address
             );
 
             const cap =
@@ -101,16 +99,11 @@ export class DisputeOrchestrator {
                 (options.syntheticOnChainParticipants ?? 0);
 
             const settledPeers = syncPeerIndices
-                .map((i) => this.harness.getPeer(i))
-                .filter(
-                    (p) =>
-                        this.harness.getPeerHandle(p.index).forkId === newForkId
-                );
+                .map((i) => this.harness.getPeerHandle(i))
+                .filter((p) => p.forkId === newForkId);
 
             for (const peer of settledPeers) {
-                const participants = await this.harness
-                    .getPeerHandle(peer.index)
-                    .queryParticipants();
+                const participants = await peer.queryParticipants();
                 if (participants.length > cap || participants.length === 0) {
                     throw new Error(
                         `Peer ${peer.index} has unexpected participant count ${participants.length} (expected 1..${cap}) on new fork ${newForkId}`

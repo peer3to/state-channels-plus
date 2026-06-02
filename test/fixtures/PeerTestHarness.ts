@@ -50,7 +50,10 @@ import {
     HarnessOptions
 } from "@test/harness/core/types";
 import { InlinePeer } from "@test/harness/core/InlinePeer";
-import type { PeerHandle } from "@test/harness/core/PeerHandle";
+import type {
+    LocalDiamondView,
+    PeerHandle
+} from "@test/harness/core/PeerHandle";
 import { StubCallbackRegistry } from "@test/harness/core/StubCallbackRegistry";
 import { WorkerPeer } from "@test/harness/core/WorkerPeer";
 import {
@@ -265,10 +268,8 @@ export class PeerTestHarness<
         );
         if (this.options.dedicatedPeerThread) {
             this.syncCoordinator.setProbe({
-                loadTip: async (peerIndex, forkId) =>
-                    (await this.getPeerHandle(peerIndex).queryLatestBlock(
-                        forkId
-                    )) as never,
+                loadTip: (peerIndex, forkId) =>
+                    this.getPeerHandle(peerIndex).queryLatestBlock(forkId),
                 didEveryoneSignBlock: async (peerIndex, blockHash) =>
                     this.getPeerHandle(peerIndex).queryDidEveryoneSignBlock(
                         blockHash
@@ -527,44 +528,41 @@ export class PeerTestHarness<
             );
 
             const p2pInstance = await EvmStateMachine.p2pSetup<
-            TStateMachine,
-            TCustomRpc,
-            any
-        >(
-            signer,
-            this.channelManager,
-            contractInstanceMock,
-            this.sharedStateMachineDeployer,
-            {
-                peerId: index,
-                peerLogger: peerLogger,
-                p2pEventHooks: hooks,
-                customPrecompiles: this.options.customPrecompiles!,
-                customRpc: this.options.customRpc,
-                customRpcOptions: this.options.customRpcOptions,
-                config: this.harnessConfig
-            }
-        );
+                TStateMachine,
+                TCustomRpc,
+                any
+            >(
+                signer,
+                this.channelManager,
+                contractInstanceMock,
+                this.sharedStateMachineDeployer,
+                {
+                    peerId: index,
+                    peerLogger: peerLogger,
+                    p2pEventHooks: hooks,
+                    customPrecompiles: this.options.customPrecompiles!,
+                    customRpc: this.options.customRpc,
+                    customRpcOptions: this.options.customRpcOptions,
+                    config: this.harnessConfig
+                }
+            );
 
-        peer = {
-            index,
-            signer,
-            address,
-            p2pInstance,
-            stateManager: p2pInstance.p2pSigner.p2pManager.stateManager,
-            contractInstance: p2pInstance.p2pContractInstance,
-            eventSpies,
-            turnBarrier: peerTurnBarrier,
-            logger: peerLogger
-        };
+            peer = {
+                index,
+                signer,
+                address,
+                p2pInstance,
+                stateManager: p2pInstance.p2pSigner.p2pManager.stateManager,
+                contractInstance: p2pInstance.p2pContractInstance,
+                eventSpies,
+                turnBarrier: peerTurnBarrier,
+                logger: peerLogger
+            };
 
             this.wrapEventHandlerWithSpies(peer);
         }
 
         this.peers[index] = peer;
-        // step 1 - W1 / D-3 - register the PeerHandle. inline path wraps the
-        // TestPeer; worker path spawns a node worker against the per-test http
-        // hardhat node (W5).
         this.peerHandles[index] = await this.createPeerHandle(peer);
 
         this.logger.debug(`Peer ${index} created successfully`);
@@ -630,7 +628,6 @@ export class PeerTestHarness<
             return await stubCallbackRegistry.invokeFilter(id, message);
         });
 
-
         rpcServer.register("harness.tamperDispute", async (args) => {
             const { peerIndex, dispute, disputeConfirmation, auditingData } =
                 (args ?? {}) as {
@@ -675,7 +672,7 @@ export class PeerTestHarness<
         }
         return new WorkerPeer({
             index: peer.index,
-            address: peer.address as never,
+            address: peer.address,
             signer: peer.signer,
             logger: peer.logger,
             eventSpies: peer.eventSpies,
@@ -931,7 +928,7 @@ export class PeerTestHarness<
     }
 
     getPeerAddresses(): Address[] {
-        return this.peers.map((p) => p.address);
+        return this.peerHandles.map((h) => h.address);
     }
 
     getFilteredPeers(
@@ -962,10 +959,15 @@ export class PeerTestHarness<
             if (malicious.has(peer.index)) continue;
             let h: number | undefined;
             if (this.options.dedicatedPeerThread) {
-                const latest = (await this.getPeerHandle(peer.index).queryLatestBlock(forkId)) as { height?: number } | undefined;
+                const latest = await this.getPeerHandle(
+                    peer.index
+                ).queryLatestBlock(forkId);
                 h = latest?.height;
             } else {
-                h = peer.stateManager.storage.blocks.getLatestBlock(forkId)?.height;
+                h =
+                    peer.stateManager.storage.blocks.getLatestBlock(
+                        forkId
+                    )?.height;
             }
             if (h === undefined) continue;
             if (h > bestHeight) {
@@ -1000,58 +1002,19 @@ export class PeerTestHarness<
         return this.harnessConfig;
     }
 
-    // step 1 - worker-safe localDiamond accessor. inline mode returns the live
-    // contract (callers can still call any abi method); worker mode returns a
-    // thin shim covering the two methods tests actually use today. extend the
-    // shim as more methods come in scope rather than crossing the worker
-    // boundary via a live ethers Contract.
-    getLocalDiamond(peerIndex: number): {
-        getLatestBlockFromStateProof(stateProof: unknown): Promise<
-            [
-                boolean,
-                Record<string, unknown> & {
-                    transaction: {
-                        header: { transactionCnt: bigint | number | string };
-                    };
-                }
-            ]
-        >;
-        getDisputeWindows(
-            channelId: string,
-            forkIds: ForkId[]
-        ): Promise<unknown[]>;
-    } & Record<string, unknown> {
-        if (this.options.dedicatedPeerThread) {
-            const handle = this.getPeerHandle(peerIndex);
-            return {
-                getLatestBlockFromStateProof: async (stateProof: unknown) => {
-                    const { hasBlock, latestBlock } =
-                        await handle.queryLatestBlockFromStateProof(stateProof);
-                    return [hasBlock, latestBlock] as [
-                        boolean,
-                        Record<string, unknown> & {
-                            transaction: {
-                                header: {
-                                    transactionCnt: bigint | number | string;
-                                };
-                            };
-                        }
-                    ];
-                },
-                getDisputeWindows: async (
-                    channelId: string,
-                    forkIds: ForkId[]
-                ) => {
-                    return await handle.queryDisputeWindows({
-                        channelId,
-                        forkIds
-                    });
-                }
-            } as never;
-        }
-        const peer = this.getPeer(peerIndex);
-        return peer.stateManager.diamondStateMachine
-            .localDiamondContract as never;
+    localDiamondView(peerIndex: number): LocalDiamondView {
+        const handle = this.getPeerHandle(peerIndex);
+        return {
+            async getLatestBlockFromStateProof(stateProof) {
+                return await handle.queryLatestBlockFromStateProof(stateProof);
+            },
+            async getDisputeWindows(channelId, forkIds) {
+                return handle.queryDisputeWindows({
+                    channelId: channelId as string,
+                    forkIds: forkIds as string[]
+                });
+            }
+        };
     }
 }
 

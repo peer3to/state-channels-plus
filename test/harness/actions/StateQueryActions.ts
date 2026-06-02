@@ -103,8 +103,7 @@ export class StateQueryActions {
                 throw new Error("getNextPeerToWrite: no active fork ID");
             }
 
-            const sourcePeer =
-                await this.harness.peerWithHighestBlock(forkId);
+            const sourcePeer = await this.harness.peerWithHighestBlock(forkId);
             const sourceHandle = this.harness.getPeerHandle(sourcePeer.index);
             const nextAddress = await sourceHandle.queryNextToWrite();
 
@@ -246,11 +245,9 @@ export class StateQueryActions {
 
         const disputeWindowsByPeer = (await Promise.all(
             peers.map((peer) => {
-                const localDiamond = this.harness.getLocalDiamond(peer.index);
-                return localDiamond.getDisputeWindows(
-                    this.harness.channelId as string,
-                    [forkId]
-                );
+                return this.harness
+                    .localDiamondView(peer.index)
+                    .getDisputeWindows(this.harness.channelId!, [forkId]);
             })
         )) as Array<
             Array<{ evidence: { disputeCommitments: Hash[] } } | undefined>

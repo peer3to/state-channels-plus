@@ -21,7 +21,10 @@ describe("E2E: Force Join Dispute", function () {
 
         await h.join.joinChannelWait({
             joiner,
-            existingParticipantSigners: [h.peers[0].signer, h.peers[1].signer]
+            existingParticipantSigners: [
+                h.getPeerHandle(0).signer,
+                h.getPeerHandle(1).signer
+            ]
         });
         expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
             Status.PENDING_PARTICIPANT,
@@ -47,14 +50,12 @@ describe("E2E: Force Join Dispute", function () {
         );
 
         const expected = new Set([
-            h.peers[0].address,
-            h.peers[1].address,
+            h.getPeerHandle(0).address,
+            h.getPeerHandle(1).address,
             joiner.address
         ]);
-        for (const peer of h.peers) {
-            const actual = await h
-                .getPeerHandle(peer.index)
-                .queryParticipants();
+        for (const peer of h.peerHandles) {
+            const actual = await peer.queryParticipants();
             expect(new Set(actual)).to.deep.equal(
                 expected,
                 `Peer ${peer.index} on-chain participants should match 3-player fork after reduction`

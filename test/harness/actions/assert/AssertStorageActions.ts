@@ -127,7 +127,7 @@ export class AssertStorageActions {
             maliciousPeerIndex,
             atLeastOneHonestPeer = true
         } = options;
-        const maliciousPeer = this.harness.getPeer(maliciousPeerIndex);
+        const maliciousPeer = this.harness.getPeerHandle(maliciousPeerIndex);
         const honestPeers = this.harness.getFilteredOrHonestPeers(peerIndices);
 
         if (atLeastOneHonestPeer) {
@@ -291,10 +291,10 @@ export class AssertStorageActions {
 
         if (
             timeout.participant !==
-            this.harness.peers[timedoutParticipantIndex].address
+            this.harness.getPeerHandle(timedoutParticipantIndex).address
         ) {
             throw new Error(
-                `Expected timeout participant to be peer ${timedoutParticipantIndex} (${this.harness.peers[timedoutParticipantIndex].address}), ` +
+                `Expected timeout participant to be peer ${timedoutParticipantIndex} (${this.harness.getPeerHandle(timedoutParticipantIndex).address}), ` +
                     `but was ${timeout.participant}`
             );
         }

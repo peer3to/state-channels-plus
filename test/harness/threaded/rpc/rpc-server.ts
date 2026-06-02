@@ -3,7 +3,8 @@
 import { serializeError } from "./rpc-errors";
 import type { Frame, Req, RpcPort } from "./rpc-types";
 
-type Handler = (args: unknown) => unknown | Promise<unknown>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Handler = (args: any) => unknown | Promise<unknown>;
 
 export class PeerHandler {
     private handlers = new Map<string, Handler>();

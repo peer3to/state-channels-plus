@@ -314,11 +314,9 @@ export class TransitionActions<
 
             let minHeight: number | undefined;
             if (this.harness.options.dedicatedPeerThread) {
-                const latest = (await this.harness
+                const latest = await this.harness
                     .getPeerHandle(peer.index)
-                    .queryLatestBlock(forkId)) as
-                    | { height?: number }
-                    | undefined;
+                    .queryLatestBlock(forkId);
                 minHeight = latest?.height;
             } else {
                 const latest =

@@ -21,7 +21,7 @@ describe("E2E: Join channel race conditions", function () {
                 mutate: ({ originalSnapshotData }) => {
                     const fraudulentEncoded = encodeMathState({
                         number: 999_999n,
-                        participants: h.peers.map((p) => p.address),
+                        participants: h.peerHandles.map((p) => p.address),
                         balances: [0n, 0n, 0n],
                         currentTurnIndex: 7n
                     } satisfies MathStateDecoded);
@@ -229,7 +229,7 @@ describe("E2E: Join channel race conditions", function () {
             // Peer 0 voluntarily self-removes by setting forceExit and filing a
             // dispute. The dispute is valid (selfRemoval=true) and not slashed.
             const leaverIndex = 0;
-            const leaverAddress = h.getPeer(leaverIndex).address;
+            const leaverAddress = h.getPeerHandle(leaverIndex).address;
             await h.getPeerHandle(leaverIndex).setForceExit(true);
             h.context.leftChannelPeerIndices = [
                 ...h.context.leftChannelPeerIndices,

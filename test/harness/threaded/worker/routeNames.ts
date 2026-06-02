@@ -26,8 +26,6 @@ export const ROUTES = {
         outboundMessageBlock: "query.outboundMessageBlock",
         previousStateSnapshot: "query.previousStateSnapshot",
         lastMilestoneSnapshot: "query.lastMilestoneSnapshot",
-        openDisputeForkIds: "query.openDisputeForkIds",
-        timeoutsForFork: "query.timeoutsForFork",
         blockConfirmationAt: "query.blockConfirmationAt",
         blockByHash: "query.blockByHash",
         latestBlockConfirmation: "query.latestBlockConfirmation",

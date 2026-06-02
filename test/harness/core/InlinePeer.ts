@@ -4,11 +4,17 @@ import { ZeroHash, type Signer } from "ethers";
 import type { BlockHeight as _BH, Bytes, Status, Timestamp } from "@/types";
 import type {
     BlockConfirmationStruct,
+    BlockStruct,
+    BlockStructOutput,
     MessageBlockStruct,
     SignedBlockStruct,
     StateSnapshotStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type {
+    DisputeWindowStructOutput,
+    StateProofStruct
+} from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct,
@@ -61,8 +67,8 @@ export class InlinePeer implements PeerHandle {
     get index(): number {
         return this.peer.index;
     }
-    get address(): Address {
-        return this.peer.address as Address;
+    get address(): string {
+        return this.peer.address;
     }
     get signer(): Signer {
         return this.peer.signer;
@@ -84,25 +90,13 @@ export class InlinePeer implements PeerHandle {
         return this.peer.stateManager.getStatus();
     }
 
-    async queryLatestBlock(forkId: ForkId): Promise<
-        | {
-              hash: Hash;
-              height: BlockHeight;
-              author: Address;
-              stateSnapshotHash: Hash;
-          }
-        | undefined
-    > {
-        return this.peer.stateManager.storage.blocks.getLatestBlock(
-            forkId
-        ) as unknown as
-            | {
-                  hash: Hash;
-                  height: BlockHeight;
-                  author: Address;
-                  stateSnapshotHash: Hash;
-              }
-            | undefined;
+    async queryLatestBlock(
+        forkId: ForkId
+    ): Promise<{ hash: Hash; height: BlockHeight } | undefined> {
+        const block =
+            this.peer.stateManager.storage.blocks.getLatestBlock(forkId);
+        if (!block) return undefined;
+        return { hash: block.hash, height: block.height };
     }
 
     async queryBlockAt(req: {
@@ -394,22 +388,6 @@ export class InlinePeer implements PeerHandle {
         return result?.milestoneSnapshots.at(-1)?.toStruct();
     }
 
-    async queryOpenDisputeForkIds(): Promise<ForkId[]> {
-        const storage = this.peer.stateManager.storage as unknown as {
-            disputes: { getOpenDisputeForkIds?: () => ForkId[] };
-        };
-        if (typeof storage.disputes.getOpenDisputeForkIds !== "function")
-            return [];
-        return storage.disputes.getOpenDisputeForkIds() ?? [];
-    }
-
-    async queryTimeoutsForFork(forkId: ForkId): Promise<TimeoutStruct[]> {
-        const storage = this.peer.stateManager.storage as unknown as {
-            timeout: { getTimeoutsForFork: (f: ForkId) => TimeoutStruct[] };
-        };
-        return storage.timeout.getTimeoutsForFork(forkId);
-    }
-
     async queryLatestBlockConfirmation(
         forkId: ForkId
     ): Promise<BlockConfirmationStruct | undefined> {
@@ -606,30 +584,14 @@ export class InlinePeer implements PeerHandle {
         return storage.outboundMessages.getMessageBlock(hash) ?? null;
     }
 
-    async queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
+    async queryLatestBlockFromStateProof(
+        stateProof: StateProofStruct
+    ): Promise<{
         hasBlock: boolean;
-        latestBlock: {
-            transaction: {
-                header: { transactionCnt: bigint | number | string };
-            };
-        } & Record<string, unknown>;
+        latestBlock: BlockStruct;
     }> {
-        type RawLatestBlock = {
-            transaction: {
-                header: { transactionCnt: bigint | number | string };
-            };
-        } & Record<string, unknown>;
-        const sm = this.peer.stateManager as unknown as {
-            diamondStateMachine: {
-                localDiamondContract: {
-                    getLatestBlockFromStateProof: (
-                        sp: unknown
-                    ) => Promise<[boolean, RawLatestBlock]>;
-                };
-            };
-        };
         const [hasBlock, latestBlock] =
-            await sm.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
+            await this.peer.stateManager.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
                 stateProof
             );
         return { hasBlock: Boolean(hasBlock), latestBlock };
@@ -638,14 +600,14 @@ export class InlinePeer implements PeerHandle {
     async queryDisputeWindows(req: {
         channelId: string;
         forkIds: ForkId[];
-    }): Promise<unknown[]> {
+    }): Promise<DisputeWindowStructOutput[]> {
         const sm = this.peer.stateManager as unknown as {
             diamondStateMachine: {
                 localDiamondContract: {
                     getDisputeWindows: (
                         c: unknown,
                         f: unknown[]
-                    ) => Promise<unknown[]>;
+                    ) => Promise<DisputeWindowStructOutput[]>;
                 };
             };
         };
@@ -719,13 +681,5 @@ export class InlinePeer implements PeerHandle {
 
     async dispose(): Promise<void> {
         await this.peer.p2pInstance.dispose();
-    }
-
-    async resetSpies(): Promise<void> {
-        const spies = this.peer.eventSpies as Record<
-            string,
-            { resetHistory?: () => void } | undefined
-        >;
-        for (const name of Object.keys(spies)) spies[name]?.resetHistory?.();
     }
 }

@@ -70,7 +70,7 @@ describe("E2E: Init Handshake", function () {
                 peer1Profile.transport.transportType === TransportType.HOLEPUNCH
             ) {
                 const refreshedPeer1Profile = h.query.getProfile(0, {
-                    evmAddress: h.getPeer(1).address
+                    evmAddress: h.getPeerHandle(1).address
                 });
                 const isSameProfile = refreshedPeer1Profile === peer1Profile;
                 const transportType =

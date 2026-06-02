@@ -75,7 +75,7 @@ export class LifecycleActions {
      */
     async openChannel(): Promise<ForkId> {
         this.logger.info("Opening channel...");
-        await Clock.init(this.harness.peers[0].signer.provider!);
+        await Clock.init(this.harness.getPeerHandle(0).signer.provider!);
 
         const openChannel = this.buildOpenChannelStruct();
         const signatures = await this.signOpenChannelStruct(openChannel);
@@ -87,7 +87,7 @@ export class LifecycleActions {
     ): OpenChannelStruct {
         const participantAddresses =
             args.participantAddresses ??
-            this.harness.peers.map((p) => p.address);
+            this.harness.peerHandles.map((h) => h.address);
 
         return createOpenChannelTestObject(participantAddresses, {
             channelId: this.harness.options.channelId,
@@ -100,12 +100,12 @@ export class LifecycleActions {
         signerIndices?: number[]
     ): Promise<BytesLike[]> {
         const indices =
-            signerIndices ?? this.harness.peers.map((peer) => peer.index);
+            signerIndices ?? this.harness.peerHandles.map((h) => h.index);
         const signatures = await Promise.all(
             indices.map((i: number) =>
                 SignatureUtils.signOpenChannel(
                     openChannel,
-                    this.harness.peers[i].signer
+                    this.harness.getPeerHandle(i).signer
                 ).then((s) => s.signature as BytesLike)
             )
         );
@@ -119,14 +119,13 @@ export class LifecycleActions {
         this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
-        for (const peer of this.harness.peers) {
-            await this.harness
-                .getPeerHandle(peer.index)
-                .lifecycle.connectToChannel(openChannel.channelId.toString());
-            peer.logger.verbose(
-                `Connected to channel ${openChannel.channelId}`,
-                { component: "ChannelActions" }
+        for (const h of this.harness.peerHandles) {
+            await h.lifecycle.connectToChannel(
+                openChannel.channelId.toString()
             );
+            h.logger.verbose(`Connected to channel ${openChannel.channelId}`, {
+                component: "ChannelActions"
+            });
         }
 
         if (this.harness.options.autoConnect) {
@@ -152,14 +151,12 @@ export class LifecycleActions {
             !!forkId && forkId !== "0x00" && forkId !== "0x0";
 
         const getPeerForkIds = () =>
-            this.harness.peers.map(
-                (peer) => this.harness.getPeerHandle(peer.index).forkId
-            );
+            this.harness.peerHandles.map((h) => h.forkId);
 
         this.logger.debug("Waiting for fork ID to be set on all peers...");
 
-        const eventCounts = this.harness.peers.map((_, index: number) => ({
-            peerId: index,
+        const eventCounts = this.harness.peerHandles.map((h) => ({
+            peerId: h.index,
             expectedCount: 1
         }));
 

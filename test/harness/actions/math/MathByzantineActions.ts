@@ -114,9 +114,9 @@ export class MathByzantineActions extends ByzantineActions {
             `Peer ${peerIndex} creating invalid state transition block: height=${invalidBlock.height}, hash=${invalidBlock.hash}, wrongStateSnapshotHash=${wrongStateSnapshotHash}`
         );
 
-        await handle.byzantine.broadcastBlockConfirmation({
-            blockConfirmation: invalidBlock.blockConfirmationStruct
-        });
+        await handle.byzantine.broadcastBlockConfirmation(
+            invalidBlock.blockConfirmationStruct
+        );
 
         this.logger.info(
             `Invalid state transition block broadcasted by peer ${peerIndex}`
@@ -242,9 +242,9 @@ export class MathByzantineActions extends ByzantineActions {
             { forkId }
         );
 
-        await handle.byzantine.broadcastBlockConfirmation({
-            blockConfirmation: forgedBlock.blockConfirmationStruct
-        });
+        await handle.byzantine.broadcastBlockConfirmation(
+            forgedBlock.blockConfirmationStruct
+        );
 
         return forgedBlock;
     }
@@ -351,9 +351,9 @@ export class MathByzantineActions extends ByzantineActions {
             `Peer ${peerIndex} creating invalid transaction data block: height=${invalidBlock.height}`
         );
 
-        await handle.byzantine.broadcastBlockConfirmation({
-            blockConfirmation: invalidBlock.blockConfirmationStruct
-        });
+        await handle.byzantine.broadcastBlockConfirmation(
+            invalidBlock.blockConfirmationStruct
+        );
 
         return invalidBlock;
     }
@@ -430,9 +430,9 @@ export class MathByzantineActions extends ByzantineActions {
             `Peer ${peerIndex} creating broken inbound chain block: height=${invalidBlock.height}`
         );
 
-        await handle.byzantine.broadcastBlockConfirmation({
-            blockConfirmation: invalidBlock.blockConfirmationStruct
-        });
+        await handle.byzantine.broadcastBlockConfirmation(
+            invalidBlock.blockConfirmationStruct
+        );
 
         return invalidBlock;
     }
@@ -486,9 +486,9 @@ export class MathByzantineActions extends ByzantineActions {
             { forkId }
         );
 
-        await handle.byzantine.broadcastBlockConfirmation({
-            blockConfirmation: wrongGenesisBlock.blockConfirmationStruct
-        });
+        await handle.byzantine.broadcastBlockConfirmation(
+            wrongGenesisBlock.blockConfirmationStruct
+        );
 
         return wrongGenesisBlock;
     }
@@ -550,9 +550,9 @@ export class MathByzantineActions extends ByzantineActions {
             { forkId }
         );
 
-        await handle.byzantine.broadcastBlockConfirmation({
-            blockConfirmation: block.blockConfirmationStruct
-        });
+        await handle.byzantine.broadcastBlockConfirmation(
+            block.blockConfirmationStruct
+        );
 
         return block;
     }
@@ -617,9 +617,9 @@ export class MathByzantineActions extends ByzantineActions {
             `Peer ${peerIndex} creating invalid timestamp block: height=${invalidBlock.height}, timestamp=${invalidTimestamp}`
         );
 
-        await handle.byzantine.broadcastBlockConfirmation({
-            blockConfirmation: invalidBlock.blockConfirmationStruct
-        });
+        await handle.byzantine.broadcastBlockConfirmation(
+            invalidBlock.blockConfirmationStruct
+        );
 
         return invalidBlock;
     }

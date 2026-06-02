@@ -25,10 +25,10 @@ export class AssertRPCActions {
 
     handshakeCompleted(options: { peer1: number; peer2: number }): void {
         const { peer1, peer2 } = options;
-        const peer2Obj = this.harness.getPeer(peer2);
+        const peer2Handle = this.harness.getPeerHandle(peer2);
         const isCompleted = this.harness.rpc.isHandshakeCompleted(
             peer1,
-            peer2Obj.address
+            peer2Handle.address
         );
 
         if (!isCompleted) {
@@ -66,11 +66,11 @@ export class AssertRPCActions {
 
         const requestingHandle = this.harness.getPeerHandle(requestingPeer);
 
-        const totalPeers = this.harness.peers.length;
+        const totalPeers = this.harness.peerHandles.length;
         const expectedAcknowledgments = totalPeers - excludePeers.length - 1;
 
         // candidate peers for the acknowledgment check; computed once.
-        const candidates = this.harness.peers
+        const candidates = this.harness.peerHandles
             .map((p, i) => ({ p, i }))
             .filter(({ i }) => !excludePeers.includes(i))
             .filter(({ i }) => i !== requestingPeer);

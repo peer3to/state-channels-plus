@@ -71,8 +71,6 @@ export class LocalDiscoveryServer {
     /** Prevent reconnect loops during/after cleanup */
     private static _cleanupRequested: boolean = false;
 
-    // W2 D-17 - expose the kernel-picked registry port so orchestrators can
-    // ship it to worker isolates (workers have their own null static).
     public static getDiscoveryPort(): number | null {
         return this.discoveryPort;
     }

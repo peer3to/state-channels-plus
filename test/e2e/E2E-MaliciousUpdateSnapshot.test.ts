@@ -22,9 +22,10 @@ describe("E2E: Malicious updateSnapshot", function () {
         await h.lifecycle.start(3, 1);
 
         const initialBalance = h.options.initialBalance!;
-        const totalDeposits = BigInt(initialBalance) * BigInt(h.peers.length);
+        const totalDeposits =
+            BigInt(initialBalance) * BigInt(h.peerHandles.length);
         const inflatedAmount = totalDeposits + 500n;
-        const recipient = h.getPeer(0).address;
+        const recipient = h.getPeerHandle(0).address;
 
         let revertError: unknown;
         try {
@@ -92,9 +93,10 @@ describe("E2E: Malicious updateSnapshot", function () {
         await h.lifecycle.start(3, 1);
 
         const initialBalance = h.options.initialBalance!;
-        const totalDeposits = BigInt(initialBalance) * BigInt(h.peers.length);
+        const totalDeposits =
+            BigInt(initialBalance) * BigInt(h.peerHandles.length);
         const inflatedAmount = totalDeposits + 500n;
-        const recipient = h.getPeer(0).address;
+        const recipient = h.getPeerHandle(0).address;
 
         let revertError: unknown;
         try {

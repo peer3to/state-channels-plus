@@ -4,6 +4,7 @@ import type { Signer } from "ethers";
 import type {
     Address,
     BlockHeight,
+    ChannelId,
     ForkId,
     Hash,
     Timestamp
@@ -12,11 +13,16 @@ import type { Logger, EventBarrier } from "@/utils";
 import type { Bytes, Status } from "@/types";
 import type {
     BlockConfirmationStruct,
+    BlockStruct,
     MessageBlockStruct,
     SignedBlockStruct,
     StateSnapshotStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type {
+    DisputeWindowStructOutput,
+    StateProofStruct
+} from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct,
@@ -37,10 +43,7 @@ import type { TransitionInterface } from "./interfaces/TransitionInterface";
 
 // Re-exports so existing imports from this file continue to work.
 export type { RestoreToken, ConnectionId } from "./interfaces/common";
-export type {
-    ByzantineInterface,
-    SubmitDoubleSignReq
-} from "./interfaces/ByzantineInterface";
+export type { ByzantineInterface } from "./interfaces/ByzantineInterface";
 export type {
     RpcStubHandlerFn,
     RpcStubInterface
@@ -61,12 +64,22 @@ export type {
     TransitionInterface
 } from "./interfaces/TransitionInterface";
 
+export interface LocalDiamondView {
+    getLatestBlockFromStateProof(
+        stateProof: StateProofStruct
+    ): Promise<{ hasBlock: boolean; latestBlock: BlockStruct }>;
+    getDisputeWindows(
+        channelId: ChannelId,
+        forkIds: ForkId[]
+    ): Promise<DisputeWindowStructOutput[]>;
+}
+
 export interface PeerHandle {
     // Set on WorkerPeer; undefined on InlinePeer.
     readonly __workerBackend?: true;
 
     readonly index: number;
-    readonly address: Address;
+    readonly address: string;
     readonly signer: Signer;
     readonly logger: Logger;
 
@@ -76,15 +89,9 @@ export interface PeerHandle {
     readonly forkId: ForkId | undefined;
 
     queryStatus(): Promise<Status>;
-    queryLatestBlock(forkId: ForkId): Promise<
-        | {
-              hash: Hash;
-              height: BlockHeight;
-              author: Address;
-              stateSnapshotHash: Hash;
-          }
-        | undefined
-    >;
+    queryLatestBlock(
+        forkId: ForkId
+    ): Promise<{ hash: Hash; height: BlockHeight } | undefined>;
     queryBlockAt(req: {
         forkId: ForkId;
         height: BlockHeight;
@@ -157,12 +164,10 @@ export interface PeerHandle {
         timeout: TimeoutStruct;
     }): Promise<void>;
     setForceExit(value: boolean): Promise<void>;
-    queryTimeoutsForFork(forkId: ForkId): Promise<TimeoutStruct[]>;
     queryTimeoutForFork(forkId: ForkId): Promise<TimeoutStruct | null>;
     queryDisputeConfirmation(
         disputeHash: Hash
     ): Promise<DisputeConfirmationStruct | null>;
-    queryOpenDisputeForkIds(): Promise<ForkId[]>;
     computeExpectedWithdrawalsDelta(req: {
         upperBlockHash: Hash;
         lowerBlockHash?: Hash;
@@ -195,18 +200,13 @@ export interface PeerHandle {
         forkId: ForkId;
         args?: unknown[];
     }): Promise<DisputeAuditingDataStruct>;
-    queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
-        hasBlock: boolean;
-        latestBlock: {
-            transaction: {
-                header: { transactionCnt: bigint | number | string };
-            };
-        } & Record<string, unknown>;
-    }>;
+    queryLatestBlockFromStateProof(
+        stateProof: StateProofStruct
+    ): Promise<{ hasBlock: boolean; latestBlock: BlockStruct }>;
     queryDisputeWindows(req: {
         channelId: string;
         forkIds: ForkId[];
-    }): Promise<unknown[]>;
+    }): Promise<DisputeWindowStructOutput[]>;
     queryLocalStateSnapshot(channelId: string): Promise<StateSnapshotStruct>;
     postStateSnapshot(forkId: ForkId): Promise<StateSnapshotStruct | undefined>;
     prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
@@ -236,6 +236,4 @@ export interface PeerHandle {
     readonly lifecycle: LifecycleInterface;
 
     dispose(): Promise<void>;
-
-    resetSpies(): Promise<void>;
 }

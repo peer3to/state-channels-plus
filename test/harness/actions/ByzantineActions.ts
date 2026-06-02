@@ -96,9 +96,9 @@ export class ByzantineActions {
             `Peer ${peerIndex} broadcasting double-sign block: height=${conflictingBlock.height}, hash=${conflictingBlock.hash}`
         );
 
-        await peerHandle.byzantine.submitDoubleSignBlock({
-            signedBlockConfirmation: conflictingBlock.blockConfirmationStruct
-        });
+        await peerHandle.byzantine.submitDoubleSignBlock(
+            conflictingBlock.blockConfirmationStruct
+        );
 
         this.logger.info(`Double-sign block broadcasted by peer ${peerIndex}`);
 

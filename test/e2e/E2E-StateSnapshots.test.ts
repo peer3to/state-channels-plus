@@ -37,7 +37,7 @@ describe("E2E: State Snapshots", function () {
         await h.transition.postSnapshot();
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
-            h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
+            h.peerHandles.map((h) => ({ peerId: h.index, expectedCount: 1 })),
             10000,
             { mode: "atLeast" }
         );
@@ -139,7 +139,7 @@ describe("E2E: State Snapshots", function () {
 
         await h.event.waitForEventCounts(
             "onStateSnapshotUpdated",
-            h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
+            h.peerHandles.map((h) => ({ peerId: h.index, expectedCount: 1 })),
             10000,
             { mode: "atLeast" }
         );

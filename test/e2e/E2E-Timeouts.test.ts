@@ -70,11 +70,9 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 2);
             // step 1 - W1 - sub-handle read so worker peers answer via rpc.
-            const currentBlock = (await h
+            const currentBlock = await h
                 .getPeerHandle(0)
-                .queryLatestBlock(h.activeForkId!)) as
-                | { height: number }
-                | undefined;
+                .queryLatestBlock(h.activeForkId!);
             if (!currentBlock) {
                 throw new Error("No current block found");
             }
@@ -98,11 +96,9 @@ describe("E2E: Timeouts", function () {
             await h.lifecycle.timeoutSetup(3, 3);
 
             // step 1 - W1 - sub-handle read so worker peers answer via rpc.
-            const currentBlock = (await h
+            const currentBlock = await h
                 .getPeerHandle(0)
-                .queryLatestBlock(h.activeForkId!)) as
-                | { height: number }
-                | undefined;
+                .queryLatestBlock(h.activeForkId!);
             if (!currentBlock) {
                 throw new Error("No current block found");
             }

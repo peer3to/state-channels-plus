@@ -15,11 +15,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
         // Peer 2 submits a timeout dispute with the wrong blockHeight.
         h.tamper.stubConstructDispute(2, async (dispute) => {
-            const localDiamond = h.getLocalDiamond(1);
-            const [hasBlock, latestBlock] =
-                await localDiamond.getLatestBlockFromStateProof(
-                    dispute.input.stateProof
-                );
+            const { hasBlock, latestBlock } = await h
+                .localDiamondView(1)
+                .getLatestBlockFromStateProof(dispute.input.stateProof);
             const expectedHeight = hasBlock
                 ? Number(latestBlock.transaction.header.transactionCnt) + 1
                 : 0;
@@ -48,7 +46,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // Peer 0 submits a timeout dispute with the wrong participant.
         h.tamper.stubConstructDispute(0, (dispute) => {
             //  blame peer 1
-            dispute.input.timeout.participant = h.getPeer(1).address;
+            dispute.input.timeout.participant = h.getPeerHandle(1).address;
         });
 
         // No action needed — peer 2 never writes, so the timeout fires naturally.
@@ -89,7 +87,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 timeoutMs: 10000
             });
 
-            const disputerAddress = h.getPeer(0).address;
+            const disputerAddress = h.getPeerHandle(0).address;
 
             const slashedAfter =
                 await h.channelManager.getOnChainSlashedParticipants(

@@ -9,28 +9,25 @@
 // W5-blocked anyway (worker-side chain access).
 
 import type { Signer } from "ethers";
-import type {
-    Address,
-    BlockHeight,
-    ChannelId,
-    ForkId,
-    Hash
-} from "@/types/types";
+import type { Address, BlockHeight, ForkId, Hash } from "@/types/types";
 import type { Logger, EventBarrier } from "@/utils";
 
 import type { PeerCaller } from "../threaded/rpc/rpc-client";
-import { SPY_RESET_RPC } from "../threaded/worker/SpyRegistry";
 
-import { rejectLambdaArgs } from "./namedOpGuards";
 import type { Bytes, Status, Timestamp } from "@/types";
 import type {
     BlockConfirmationStruct,
-    JoinChannelConfirmationStruct,
+    BlockStruct,
+    BlockStructOutput,
     MessageBlockStruct,
     SignedBlockStruct,
     StateSnapshotStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type {
+    DisputeWindowStructOutput,
+    StateProofStruct
+} from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct,
@@ -42,414 +39,35 @@ import type { FraudProofStruct } from "@typechain-types/contracts/V1/types/Proof
 import type {
     ByzantineInterface,
     StubInterface,
-    DisconnectFilterFn,
     LifecycleInterface,
-    NamedOpRequest,
     NetworkInterface,
     P2pInternalsInterface,
     PeerHandle,
-    ProfileSummary,
-    RestoreToken,
     RpcStubInterface,
-    RpcStubHandlerFn,
-    StubMethodFn,
-    SubmitDoubleSignReq,
-    TransitionInterface,
-    TransportSummary
+    TransitionInterface
 } from "./PeerHandle";
 import type { SpyMirror } from "./SpyMirror";
 import type { StubCallbackRegistry } from "./StubCallbackRegistry";
 import type { EventSpies } from "./types";
 import { ROUTES } from "@test/harness/threaded/worker/routeNames";
-
-// step 1 - sub-handle implementations forward to W3 rpc. route ids follow
-// the convention `<sub-handle>.<method>` per W1 §5. worker-side handlers
-// are registered by W2's bundle-manifest pattern (next agent ships those).
-
-class WorkerByzantineHandle implements ByzantineInterface {
-    constructor(private readonly rpc: PeerCaller) {}
-    stubCalldataHandler(): Promise<void> {
-        return this.rpc.call(
-            "byzantine.stubCalldataHandler",
-            {}
-        ) as Promise<void>;
-    }
-    restoreCalldataHandler(): Promise<void> {
-        return this.rpc.call(
-            "byzantine.restoreCalldataHandler",
-            {}
-        ) as Promise<void>;
-    }
-    stubPendingInboundInclusion(): Promise<void> {
-        return this.rpc.call(
-            "byzantine.stubPendingInboundInclusion",
-            {}
-        ) as Promise<void>;
-    }
-    restorePendingInboundInclusion(): Promise<void> {
-        return this.rpc.call(
-            "byzantine.restorePendingInboundInclusion",
-            {}
-        ) as Promise<void>;
-    }
-    stubBroadcast(): Promise<void> {
-        return this.rpc.call("byzantine.stubBroadcast", {}) as Promise<void>;
-    }
-    submitDoubleSignBlock(req: SubmitDoubleSignReq): Promise<void> {
-        return this.rpc.call(
-            "byzantine.submitDoubleSignBlock",
-            req
-        ) as Promise<void>;
-    }
-    broadcastBlockConfirmation(req: {
-        blockConfirmation: unknown;
-    }): Promise<void> {
-        return this.rpc.call(
-            "byzantine.broadcastBlockConfirmation",
-            req
-        ) as Promise<void>;
-    }
-}
-
-class WorkerRpcStubHandle implements RpcStubInterface {
-    // step 1 - per-handle live ids -> let restoreAll drop the orchestrator-side
-    // closures even when the test source only restores via restoreCreateRpcMethodStub
-    // (one-slot key) or never restores explicitly.
-    private readonly liveCallbackIds = new Map<string, string>();
-
-    constructor(
-        private readonly rpc: PeerCaller,
-        private readonly registry: StubCallbackRegistry
-    ) {}
-
-    async installCreateRpcMethodStub(
-        serviceName: string,
-        methodName: string,
-        handler: RpcStubHandlerFn
-    ): Promise<RestoreToken> {
-        const key = `${serviceName}:${methodName}`;
-        // step 1 - replace any prior closure on this slot first so the orchestrator
-        // map stays in sync with the worker's single-slot table.
-        const prior = this.liveCallbackIds.get(key);
-        if (prior) this.registry.unregisterStub(prior);
-
-        // step 2 - register the closure with the per-peer registry; ship the
-        // opaque id to the worker. worker calls back via "harness.invokeStubCallback"
-        // -> registry dispatches -> closure runs orchestrator-side. `this` is
-        // not bound cross-thread; closures that need it can't run in worker mode.
-        const id = this.registry.registerStub((args) =>
-            (handler as (...a: unknown[]) => unknown)(...args)
-        );
-        this.liveCallbackIds.set(key, id);
-        const token = (await this.rpc.call(
-            "rpcStub.installCreateRpcMethodStub",
-            { serviceName, methodName, callbackId: id }
-        )) as RestoreToken;
-        return token;
-    }
-
-    async restoreCreateRpcMethodStub(
-        serviceName: string,
-        methodName: string
-    ): Promise<void> {
-        const key = `${serviceName}:${methodName}`;
-        const id = this.liveCallbackIds.get(key);
-        if (id) {
-            this.registry.unregisterStub(id);
-            this.liveCallbackIds.delete(key);
-        }
-        await this.rpc.call("rpcStub.restoreCreateRpcMethodStub", {
-            serviceName,
-            methodName
-        });
-    }
-
-    async restoreAll(): Promise<void> {
-        for (const id of this.liveCallbackIds.values()) {
-            this.registry.unregisterStub(id);
-        }
-        this.liveCallbackIds.clear();
-        await this.rpc.call("rpcStub.restoreAll", {});
-    }
-}
-
-class WorkerP2pInternalsHandle implements P2pInternalsInterface {
-    constructor(private readonly rpc: PeerCaller) {}
-    openConnections(): Promise<TransportSummary[]> {
-        return this.rpc.call("queryInternals.openConnections", {}) as Promise<
-            TransportSummary[]
-        >;
-    }
-    getProfileByEvmAddress(addr: Address): Promise<ProfileSummary | undefined> {
-        return this.rpc.call("queryInternals.getProfileByEvmAddress", {
-            addr
-        }) as Promise<ProfileSummary | undefined>;
-    }
-    getProfileByConnectionId(
-        connectionId: string
-    ): Promise<ProfileSummary | undefined> {
-        return this.rpc.call("queryInternals.getProfileByConnectionId", {
-            connectionId
-        }) as Promise<ProfileSummary | undefined>;
-    }
-    connectionCount(): Promise<number> {
-        return this.rpc.call(
-            "queryInternals.connectionCount",
-            {}
-        ) as Promise<number>;
-    }
-    isHandshakeCompletedWith(otherAddr: Address): Promise<boolean> {
-        return this.rpc.call("queryInternals.isHandshakeCompletedWith", {
-            otherAddr
-        }) as Promise<boolean>;
-    }
-    self(): Promise<Address> {
-        return this.rpc.call("queryInternals.self", {}) as Promise<Address>;
-    }
-    didPeerAcknowledgeDisputedFork(
-        peerAddress: Address,
-        forkId: ForkId
-    ): Promise<boolean> {
-        return this.rpc.call("queryInternals.isForkDisputedService", {
-            op: "didPeerAcknowledgeDisputedFork",
-            args: [peerAddress, forkId]
-        }) as Promise<boolean>;
-    }
-    didIAcknowledgeDisputedFork(
-        peerAddress: Address,
-        forkId: ForkId
-    ): Promise<boolean> {
-        return this.rpc.call("queryInternals.isForkDisputedService", {
-            op: "didIAcknowledgeDisputedFork",
-            args: [peerAddress, forkId]
-        }) as Promise<boolean>;
-    }
-    requestDisputeAcknowledgment(
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<boolean> {
-        return this.rpc.call("queryInternals.isForkDisputedService", {
-            op: "requestDisputeAcknowledgment",
-            args: [channelId, forkId]
-        }) as Promise<boolean>;
-    }
-    respondToDisputeAcknowledgment(
-        peerAddress: Address,
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<void> {
-        return this.rpc.call("queryInternals.isForkDisputedService", {
-            op: "respondToDisputeAcknowledgment",
-            args: [peerAddress, channelId, forkId]
-        }) as Promise<void>;
-    }
-    onDisputeAcknowledgmentRequest(
-        fromAddr: Address,
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<void> {
-        return this.rpc.call("queryInternals.callServiceWithTransport", {
-            serviceName: "isForkDisputedService",
-            methodName: "onDisputeAcknowledgmentRequest",
-            otherAddr: fromAddr,
-            args: [channelId, forkId]
-        }) as Promise<void>;
-    }
-    onInitHandshakeRequest(
-        fromAddr: Address,
-        hash: string,
-        time: number
-    ): Promise<void> {
-        return this.rpc.call("queryInternals.callServiceWithTransport", {
-            serviceName: "initHandshakeService",
-            methodName: "onInitHandshakeRequest",
-            otherAddr: fromAddr,
-            args: [hash, time]
-        }) as Promise<void>;
-    }
-    onInitHandshakeResponse(
-        fromAddr: Address,
-        signature: string,
-        time: number,
-        preferred: number
-    ): Promise<void> {
-        return this.rpc.call("queryInternals.callServiceWithTransport", {
-            serviceName: "initHandshakeService",
-            methodName: "onInitHandshakeResponse",
-            otherAddr: fromAddr,
-            args: [signature, time, preferred]
-        }) as Promise<void>;
-    }
-    initHandshakeTo(toAddr: Address): Promise<void> {
-        return this.rpc.call("queryInternals.callServiceMethodWithTransport", {
-            serviceName: "initHandshakeService",
-            methodName: "initHandshake",
-            otherAddr: toAddr,
-            args: []
-        }) as Promise<void>;
-    }
-    getPreferredTransportType(): Promise<number> {
-        return this.rpc.call(
-            "queryInternals.getPreferredTransportType",
-            {}
-        ) as Promise<number>;
-    }
-    getInitChallenge(otherAddr: Address): Promise<
-        | {
-              randomChallengeHash: string;
-              initTime: number;
-          }
-        | undefined
-    > {
-        return this.rpc.call("queryInternals.getInitChallenge", {
-            otherAddr
-        }) as Promise<
-            { randomChallengeHash: string; initTime: number } | undefined
-        >;
-    }
-    clearInitChallenge(otherAddr: Address): Promise<void> {
-        return this.rpc.call("queryInternals.clearInitChallenge", {
-            otherAddr
-        }) as Promise<void>;
-    }
-    getTransportStatus(
-        otherAddr: Address
-    ): Promise<{ present: boolean; isClosed?: boolean }> {
-        return this.rpc.call("queryInternals.getTransportStatus", {
-            otherAddr
-        }) as Promise<{ present: boolean; isClosed?: boolean }>;
-    }
-    // step 8 - rpc proxy. worker route reconstructs the Block from the
-    // serialised confirmation in-thread and calls blockValidationStrategy.
-    blockForkIsDisputed(
-        block: BlockConfirmationStruct,
-        peerAddress: string
-    ): Promise<void> {
-        return this.rpc.call("queryInternals.blockForkIsDisputed", {
-            block,
-            peerAddress
-        }) as Promise<void>;
-    }
-}
-
-class WorkerTransitionHandle implements TransitionInterface {
-    constructor(private readonly rpc: PeerCaller) {}
-    submitNext(req: NamedOpRequest): Promise<unknown> {
-        rejectLambdaArgs("WorkerPeer.transition.submitNext", req);
-        return this.rpc.call(req.op, req.args ?? {});
-    }
-}
-
-class WorkerLifecycleHandle implements LifecycleInterface {
-    constructor(private readonly rpc: PeerCaller) {}
-    connectToChannel(channelId: ChannelId): Promise<void> {
-        return this.rpc.call("lifecycle.connectToChannel", {
-            channelId
-        }) as Promise<void>;
-    }
-    joinChannel(confirmation: JoinChannelConfirmationStruct): Promise<void> {
-        return this.rpc.call(
-            "lifecycle.joinChannel",
-            confirmation
-        ) as Promise<void>;
-    }
-}
-
-class WorkerStubHandle implements StubInterface {
-    // step 1 - orchestrator-side token -> callback id map. token id is the
-    // worker-returned slot ("debugStub#N"); callback id is the registry handle
-    // we drop when the test restores. parallel to WorkerRpcStubHandle.
-    private readonly liveCallbackIds = new Map<string, string>();
-
-    constructor(
-        private readonly rpc: PeerCaller,
-        private readonly registry: StubCallbackRegistry
-    ) {}
-
-    async stubMethod(path: string, fn: StubMethodFn): Promise<RestoreToken> {
-        // step 1 - register closure + ship the opaque id to the worker. worker
-        // patches stateManager[<path>] with a stub that calls back via
-        // "harness.invokeStubCallback" -> registry runs the closure with args.
-        const callbackId = this.registry.registerStub((args) =>
-            (fn as (...a: unknown[]) => unknown)(...args)
-        );
-        const token = (await this.rpc.call(ROUTES.stub.stubMethod, {
-            path,
-            callbackId
-        })) as RestoreToken;
-        this.liveCallbackIds.set(token.id, callbackId);
-        return token;
-    }
-
-    async restoreStubbedMethod(token: RestoreToken): Promise<void> {
-        const callbackId = this.liveCallbackIds.get(token.id);
-        if (callbackId) {
-            this.registry.unregisterStub(callbackId);
-            this.liveCallbackIds.delete(token.id);
-        }
-        await this.rpc.call(ROUTES.stub.restoreStubbedMethod, {
-            tokenId: token.id
-        });
-    }
-
-    async restoreAllStubbedMethods(): Promise<void> {
-        for (const id of this.liveCallbackIds.values()) {
-            this.registry.unregisterStub(id);
-        }
-        this.liveCallbackIds.clear();
-        await this.rpc.call(ROUTES.stub.restoreAllStubbedMethods, {});
-    }
-}
-
-class WorkerNetworkHandle implements NetworkInterface {
-    // step 1 - single-slot filter id matches the worker route's table.
-    private liveCallbackId: string | undefined;
-
-    constructor(
-        private readonly rpc: PeerCaller,
-        private readonly registry: StubCallbackRegistry
-    ) {}
-    disconnectAll(): Promise<void> {
-        return this.rpc.call("network.disconnectAll", {}) as Promise<void>;
-    }
-    tryOpenConnectionToChannel(channelId: string): Promise<void> {
-        return this.rpc.call("network.tryOpenConnectionToChannel", {
-            channelId
-        }) as Promise<void>;
-    }
-    async installDisconnectFilter(
-        filter: DisconnectFilterFn
-    ): Promise<RestoreToken> {
-        // step 1 - drop any prior closure -> map stays in sync with worker.
-        if (this.liveCallbackId) {
-            this.registry.unregisterFilter(this.liveCallbackId);
-        }
-        const id = this.registry.registerFilter((msg) => filter(msg));
-        this.liveCallbackId = id;
-        return (await this.rpc.call("network.installDisconnectFilter", {
-            callbackId: id
-        })) as RestoreToken;
-    }
-    async restoreDisconnectFilter(): Promise<void> {
-        if (this.liveCallbackId) {
-            this.registry.unregisterFilter(this.liveCallbackId);
-            this.liveCallbackId = undefined;
-        }
-        await this.rpc.call("network.restoreDisconnectFilter", {});
-    }
-}
+import { WorkerByzantineHandle } from "./worker/byzantineHandle";
+import { WorkerRpcStubHandle } from "./worker/rpcStubHandle";
+import { WorkerP2pInternalsHandle } from "./worker/queryInternalsHandle";
+import { WorkerTransitionHandle } from "./worker/transitionHandle";
+import { WorkerLifecycleHandle } from "./worker/lifecycleHandle";
+import { WorkerStubHandle } from "./worker/stubHandle";
+import { WorkerNetworkHandle } from "./worker/networkHandle";
 
 export type WorkerPeerCtorArgs = {
     index: number;
-    address: Address;
+    address: string;
     signer: Signer;
     logger: Logger;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;
     rpc: PeerCaller;
     // step 1 - W4 spy mirror. orchestrator-owned; worker bumps land via the
-    // "spy" push topic; WorkerPeer.resetSpies clears the row after the rpc
-    // round-trip resolves (§reset). harness owns construction + ingest wiring.
+    // "spy" push topic. harness owns construction + ingest wiring.
     mirror: SpyMirror;
     // step 2 - dispose-the-worker hook. WorkerPeer.dispose() drives the
     // lifecycle.dispose rpc; the underlying PeerWorker.dispose terminates the
@@ -468,7 +86,7 @@ export class WorkerPeer implements PeerHandle {
     readonly __workerBackend = true as const;
 
     readonly index: number;
-    readonly address: Address;
+    readonly address: string;
     readonly signer: Signer;
     readonly logger: Logger;
     readonly eventSpies: EventSpies;
@@ -539,25 +157,13 @@ export class WorkerPeer implements PeerHandle {
     }
 
     queryStatus(): Promise<Status> {
-        return this.rpc.call("query.status", {}) as Promise<Status>;
+        return this.rpc.call(ROUTES.query.status, {}) as Promise<Status>;
     }
-    queryLatestBlock(forkId: ForkId): Promise<
-        | {
-              hash: Hash;
-              height: BlockHeight;
-              author: Address;
-              stateSnapshotHash: Hash;
-          }
-        | undefined
-    > {
-        return this.rpc.call("query.latestBlock", { forkId }) as Promise<
-            | {
-                  hash: Hash;
-                  height: BlockHeight;
-                  author: Address;
-                  stateSnapshotHash: Hash;
-              }
-            | undefined
+    queryLatestBlock(
+        forkId: ForkId
+    ): Promise<{ hash: Hash; height: BlockHeight } | undefined> {
+        return this.rpc.call(ROUTES.query.latestBlock, { forkId }) as Promise<
+            { hash: Hash; height: BlockHeight } | undefined
         >;
     }
     queryBlockAt(req: {
@@ -566,28 +172,30 @@ export class WorkerPeer implements PeerHandle {
     }): Promise<
         { hash: Hash; height: BlockHeight; author: Address } | undefined
     > {
-        return this.rpc.call("query.blockAt", req) as Promise<
+        return this.rpc.call(ROUTES.query.blockAt, req) as Promise<
             { hash: Hash; height: BlockHeight; author: Address } | undefined
         >;
     }
     queryNextToWrite(): Promise<Address> {
-        return this.rpc.call("query.nextToWrite", {}) as Promise<Address>;
+        return this.rpc.call(ROUTES.query.nextToWrite, {}) as Promise<Address>;
     }
     queryParticipants(): Promise<Address[]> {
-        return this.rpc.call("query.participants", {}) as Promise<Address[]>;
+        return this.rpc.call(ROUTES.query.participants, {}) as Promise<
+            Address[]
+        >;
     }
     queryDidEveryoneSignBlock(blockHash: Hash): Promise<boolean> {
-        return this.rpc.call("query.didEveryoneSignBlock", {
+        return this.rpc.call(ROUTES.query.didEveryoneSignBlock, {
             blockHash
         }) as Promise<boolean>;
     }
     queryLatestStateMachineStateHash(forkId: ForkId): Promise<Hash | null> {
-        return this.rpc.call("query.latestStateMachineStateHash", {
+        return this.rpc.call(ROUTES.query.latestStateMachineStateHash, {
             forkId
         }) as Promise<Hash | null>;
     }
     queryNextBlockHeight(forkId: ForkId): Promise<BlockHeight> {
-        return this.rpc.call("query.nextBlockHeight", {
+        return this.rpc.call(ROUTES.query.nextBlockHeight, {
             forkId
         }) as Promise<BlockHeight>;
     }
@@ -599,27 +207,30 @@ export class WorkerPeer implements PeerHandle {
         stateMachineStateHash: Hash;
         blockHeight: BlockHeight;
     } | null> {
-        return this.rpc.call("query.stateSnapshotAt", req) as Promise<{
+        return this.rpc.call(ROUTES.query.stateSnapshotAt, req) as Promise<{
             hash: Hash;
             stateMachineStateHash: Hash;
             blockHeight: BlockHeight;
         } | null>;
     }
     queryStateMachineState(hash: Hash): Promise<Bytes | null> {
-        return this.rpc.call("query.stateMachineState", {
+        return this.rpc.call(ROUTES.query.stateMachineState, {
             hash
         }) as Promise<Bytes | null>;
     }
     queryStateSnapshotCount(): Promise<number> {
-        return this.rpc.call("query.stateSnapshotCount", {}) as Promise<number>;
+        return this.rpc.call(
+            ROUTES.query.stateSnapshotCount,
+            {}
+        ) as Promise<number>;
     }
     queryIsMyTurn(): Promise<boolean> {
-        return this.rpc.call("query.isMyTurn", {}) as Promise<boolean>;
+        return this.rpc.call(ROUTES.query.isMyTurn, {}) as Promise<boolean>;
     }
     queryLatestBlockConfirmation(
         forkId: ForkId
     ): Promise<BlockConfirmationStruct | undefined> {
-        return this.rpc.call("query.latestBlockConfirmation", {
+        return this.rpc.call(ROUTES.query.latestBlockConfirmation, {
             forkId
         }) as Promise<BlockConfirmationStruct | undefined>;
     }
@@ -633,7 +244,7 @@ export class WorkerPeer implements PeerHandle {
           }
         | undefined
     > {
-        return this.rpc.call("query.blockConfirmationAt", req) as Promise<
+        return this.rpc.call(ROUTES.query.blockConfirmationAt, req) as Promise<
             | {
                   blockConfirmation: BlockConfirmationStruct;
                   onChainTimestamp?: Timestamp;
@@ -649,7 +260,7 @@ export class WorkerPeer implements PeerHandle {
           }
         | undefined
     > {
-        return this.rpc.call("query.blockByHash", { hash }) as Promise<
+        return this.rpc.call(ROUTES.query.blockByHash, { hash }) as Promise<
             | {
                   blockConfirmation: BlockConfirmationStruct;
                   onChainTimestamp?: Timestamp;
@@ -662,17 +273,19 @@ export class WorkerPeer implements PeerHandle {
         blockConfirmation: BlockConfirmationStruct;
         onChainTimestamp?: Timestamp;
     }): Promise<void> {
-        return this.rpc.call("queue.block", req) as Promise<void>;
+        return this.rpc.call(ROUTES.queue.block, req) as Promise<void>;
     }
     isBlacklisted(addr: Address): Promise<boolean> {
-        return this.rpc.call("p2p.isBlacklisted", { addr }) as Promise<boolean>;
+        return this.rpc.call(ROUTES.p2p.isBlacklisted, {
+            addr
+        }) as Promise<boolean>;
     }
     postBlockCalldata(req: {
         signedBlock: SignedBlockStruct;
         maxTimestamp: Timestamp;
     }): Promise<void> {
         return this.rpc.call(
-            "contract.postBlockCalldata",
+            ROUTES.contract.postBlockCalldata,
             req
         ) as Promise<void>;
     }
@@ -680,21 +293,24 @@ export class WorkerPeer implements PeerHandle {
         forkId: ForkId;
         height?: BlockHeight;
     }): Promise<Hash> {
-        return this.rpc.call("query.previousBlockHash", req) as Promise<Hash>;
+        return this.rpc.call(
+            ROUTES.query.previousBlockHash,
+            req
+        ) as Promise<Hash>;
     }
     queryStateSnapshotHashForFork(req: {
         forkId: ForkId;
         previousBlockHash?: Hash;
     }): Promise<Hash> {
         return this.rpc.call(
-            "query.stateSnapshotHashForFork",
+            ROUTES.query.stateSnapshotHashForFork,
             req
         ) as Promise<Hash>;
     }
     queryFraudProofForParticipant(
         addr: Address
     ): Promise<{ proofType: number; participant: Address } | null> {
-        return this.rpc.call("query.fraudProofForParticipant", {
+        return this.rpc.call(ROUTES.query.fraudProofForParticipant, {
             addr
         }) as Promise<{
             proofType: number;
@@ -702,36 +318,33 @@ export class WorkerPeer implements PeerHandle {
         } | null>;
     }
     queryDisputeFraudProofs(): Promise<Array<{ proofType: number }>> {
-        return this.rpc.call("query.disputeFraudProofs", {}) as Promise<
+        return this.rpc.call(ROUTES.query.disputeFraudProofs, {}) as Promise<
             Array<{ proofType: number }>
         >;
     }
     queryInboundLatestBlockHash(): Promise<Hash | undefined> {
-        return this.rpc.call("query.inboundLatestBlockHash", {}) as Promise<
-            Hash | undefined
-        >;
+        return this.rpc.call(
+            ROUTES.query.inboundLatestBlockHash,
+            {}
+        ) as Promise<Hash | undefined>;
     }
     queryInboundLatestBlockHeight(): Promise<BlockHeight | undefined> {
-        return this.rpc.call("query.inboundLatestBlockHeight", {}) as Promise<
-            BlockHeight | undefined
-        >;
+        return this.rpc.call(
+            ROUTES.query.inboundLatestBlockHeight,
+            {}
+        ) as Promise<BlockHeight | undefined>;
     }
     storeTimeout(req: {
         forkId: ForkId;
         timeout: TimeoutStruct;
     }): Promise<void> {
-        return this.rpc.call("timeout.store", req) as Promise<void>;
+        return this.rpc.call(ROUTES.timeout.store, req) as Promise<void>;
     }
     setForceExit(value: boolean): Promise<void> {
-        return this.rpc.call("forceExit.set", { value }) as Promise<void>;
-    }
-    queryTimeoutsForFork(forkId: ForkId): Promise<TimeoutStruct[]> {
-        return this.rpc.call("query.timeoutsForFork", { forkId }) as Promise<
-            TimeoutStruct[]
-        >;
+        return this.rpc.call(ROUTES.forceExit.set, { value }) as Promise<void>;
     }
     queryTimeoutForFork(forkId: ForkId): Promise<TimeoutStruct | null> {
-        return this.rpc.call("query.timeoutForFork", {
+        return this.rpc.call(ROUTES.query.timeoutForFork, {
             forkId
         }) as Promise<TimeoutStruct | null>;
     }
@@ -741,11 +354,6 @@ export class WorkerPeer implements PeerHandle {
         return this.rpc.call("query.disputeConfirmation", {
             disputeHash
         }) as Promise<DisputeConfirmationStruct | null>;
-    }
-    queryOpenDisputeForkIds(): Promise<ForkId[]> {
-        return this.rpc.call("query.openDisputeForkIds", {}) as Promise<
-            ForkId[]
-        >;
     }
     computeExpectedWithdrawalsDelta(req: {
         upperBlockHash: Hash;
@@ -824,30 +432,20 @@ export class WorkerPeer implements PeerHandle {
             req
         ) as Promise<DisputeAuditingDataStruct>;
     }
-    queryLatestBlockFromStateProof(stateProof: unknown): Promise<{
-        hasBlock: boolean;
-        latestBlock: {
-            transaction: {
-                header: { transactionCnt: bigint | number | string };
-            };
-        } & Record<string, unknown>;
-    }> {
+    queryLatestBlockFromStateProof(
+        stateProof: StateProofStruct
+    ): Promise<{ hasBlock: boolean; latestBlock: BlockStruct }> {
         return this.rpc.call("dispute.latestBlockFromStateProof", {
             stateProof
-        }) as Promise<{
-            hasBlock: boolean;
-            latestBlock: {
-                transaction: {
-                    header: { transactionCnt: bigint | number | string };
-                };
-            } & Record<string, unknown>;
-        }>;
+        }) as Promise<{ hasBlock: boolean; latestBlock: BlockStruct }>;
     }
     queryDisputeWindows(req: {
         channelId: string;
         forkIds: ForkId[];
-    }): Promise<unknown[]> {
-        return this.rpc.call("dispute.windows", req) as Promise<unknown[]>;
+    }): Promise<DisputeWindowStructOutput[]> {
+        return this.rpc.call("dispute.windows", req) as Promise<
+            DisputeWindowStructOutput[]
+        >;
     }
     queryLocalStateSnapshot(channelId: string): Promise<StateSnapshotStruct> {
         return this.rpc.call("dispute.localStateSnapshot", {
@@ -909,15 +507,5 @@ export class WorkerPeer implements PeerHandle {
             // step 1 - rpc may already be torn down; force-path picks up.
         }
         await this._onDispose();
-    }
-
-    // step 1 - W4 §reset. two-step locked here: rpc round-trip flushes prior
-    // pushes through the fifo + clears the worker's counter map; then we zero
-    // the orchestrator row. any post-reset pushes overwrite via max() in
-    // SpyMirror.ingest. nothing else may call mirror.noteReset or the rpc
-    // directly (invariant declared in W4 §reset).
-    async resetSpies(): Promise<void> {
-        await this.rpc.call(SPY_RESET_RPC, {});
-        this.mirror.noteReset(this.index);
     }
 }

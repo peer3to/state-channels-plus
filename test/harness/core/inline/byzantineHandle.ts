@@ -1,7 +1,5 @@
-import type {
-    ByzantineInterface,
-    SubmitDoubleSignReq
-} from "../interfaces/ByzantineInterface";
+import type { ByzantineInterface } from "../interfaces/ByzantineInterface";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { TestPeer } from "../types";
 
 type EventHandler = TestPeer["stateManager"]["eventHandler"];
@@ -74,22 +72,24 @@ export class InlineByzantineHandle implements ByzantineInterface {
         }) as unknown as OnBlockConfirmationFn;
     }
 
-    async submitDoubleSignBlock(req: SubmitDoubleSignReq): Promise<void> {
+    async submitDoubleSignBlock(
+        signedBlockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
         const remoteRpc = this.peer.stateManager.p2pManager.remoteRpc;
         remoteRpc.stateTransitionService
             .onBlockConfirmation(
-                req.signedBlockConfirmation as Parameters<OnBlockConfirmationFn>[0]
+                signedBlockConfirmation as Parameters<OnBlockConfirmationFn>[0]
             )
             .broadcast();
     }
 
-    async broadcastBlockConfirmation(req: {
-        blockConfirmation: unknown;
-    }): Promise<void> {
+    async broadcastBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct
+    ): Promise<void> {
         const remoteRpc = this.peer.stateManager.p2pManager.remoteRpc;
         remoteRpc.stateTransitionService
             .onBlockConfirmation(
-                req.blockConfirmation as Parameters<OnBlockConfirmationFn>[0]
+                blockConfirmation as Parameters<OnBlockConfirmationFn>[0]
             )
             .broadcast();
     }

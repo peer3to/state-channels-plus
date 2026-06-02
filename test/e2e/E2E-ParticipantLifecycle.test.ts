@@ -30,7 +30,9 @@ describe("E2E: Participant Lifecycle", function () {
             );
 
             // Remaining participants are unaffected
-            const remaining = h.peers.filter((p) => p.index !== leaverIndex);
+            const remaining = h.peerHandles.filter(
+                (p) => p.index !== leaverIndex
+            );
             for (const p of remaining) {
                 expect(await h.getPeerHandle(p.index).queryStatus()).to.equal(
                     Status.PARTICIPATING,
@@ -56,8 +58,8 @@ describe("E2E: Participant Lifecycle", function () {
                 joiner: spectator,
                 channelId: h.channelId,
                 existingParticipantSigners: [
-                    h.peers[0].signer,
-                    h.peers[1].signer
+                    h.getPeerHandle(0).signer,
+                    h.getPeerHandle(1).signer
                 ]
             });
 

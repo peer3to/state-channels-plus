@@ -78,9 +78,9 @@ export class AssertSyncActions {
         }
 
         for (const peer of peers) {
-            const latestBlock = (await this.harness
+            const latestBlock = await this.harness
                 .getPeerHandle(peer.index)
-                .queryLatestBlock(forkId)) as { height?: number } | undefined;
+                .queryLatestBlock(forkId);
             expect(latestBlock).to.not.equal(
                 undefined,
                 `Peer ${peer.index} should have a latest block`
@@ -277,9 +277,9 @@ export class AssertSyncActions {
         }
 
         const heightFor = async (i: number): Promise<number> => {
-            const latest = (await this.harness
+            const latest = await this.harness
                 .getPeerHandle(i)
-                .queryLatestBlock(forkId)) as { height?: number } | undefined;
+                .queryLatestBlock(forkId);
             return (latest?.height ?? -1) + 1;
         };
         const condition = async () => {

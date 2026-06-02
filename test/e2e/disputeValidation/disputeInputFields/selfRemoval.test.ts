@@ -15,7 +15,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         });
 
         const leaverIndex = 1;
-        const leaverAddress = h.getPeer(leaverIndex).address;
+        const leaverAddress = h.getPeerHandle(leaverIndex).address;
 
         // forceExit yields a valid self-removal dispute; post untampered.
         await h.getPeerHandle(leaverIndex).setForceExit(true);

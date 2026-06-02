@@ -64,15 +64,13 @@ export class NetworkController {
 
         const condition = async () => {
             const counts = await Promise.all(
-                this.harness.peers.map((_, i) =>
-                    this.harness
-                        .getPeerHandle(i)
-                        .queryInternals.connectionCount()
+                this.harness.peerHandles.map((h) =>
+                    h.queryInternals.connectionCount()
                 )
             );
             return (
                 counts.filter((n) => n > 0).length >=
-                Math.min(2, this.harness.peers.length)
+                Math.min(2, this.harness.peerHandles.length)
             );
         };
 
@@ -88,9 +86,8 @@ export class NetworkController {
      * Disconnect a peer from the P2P network (simulates timeout)
      */
     async disconnectPeer(peerIndex: number): Promise<void> {
-        await this.harness.getPeerHandle(peerIndex).network.disconnectAll();
-        this.harness.peers[peerIndex].logger.warn(
-            "Disconnected to simulate timeout"
-        );
+        const handle = this.harness.getPeerHandle(peerIndex);
+        await handle.network.disconnectAll();
+        handle.logger.warn("Disconnected to simulate timeout");
     }
 }
