@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 node_modules
 .vscode
 .env
@@ -38,3 +41,6 @@ src/utils/GeneratedArtifacts.ts
 *.tsbuildinfo
 
 /profiles
+
+# local design specs / plans — never commit (per project convention)
+docs/superpowers/
