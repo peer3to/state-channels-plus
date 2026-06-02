@@ -458,7 +458,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             createLogger(
                 {
                     peerId: pid,
-                    peerAddress: signerAddress
+                    peerAddress: signerAddress,
+                    threadName: config.LOG_THREAD_NAME
                 },
                 { component: "ClientApp" },
                 { attachErrorListener: true }
