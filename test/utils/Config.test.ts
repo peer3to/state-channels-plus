@@ -6,7 +6,8 @@ import { createConfig } from "@/utils/config";
 const ENV_KEYS = [
     "HOLEPUNCH_RELAYER_URLS",
     "DEBUG_LOCAL_TRANSPORT",
-    "LOG_LEVEL"
+    "LOG_LEVEL",
+    "LOG_THREAD_NAME"
 ] as const;
 
 describe("config env parsing", () => {
@@ -43,6 +44,18 @@ describe("config env parsing", () => {
         // peer3.config.ts sets DEBUG_LOCAL_TRANSPORT=true (default is false)
         const cfg = createConfig({});
         expect(cfg.DEBUG_LOCAL_TRANSPORT).to.equal(true);
+    });
+
+    it("defaults LOG_THREAD_NAME to 'sdk'", () => {
+        delete process.env.LOG_THREAD_NAME;
+        const cfg = createConfig({});
+        expect(cfg.LOG_THREAD_NAME).to.equal("sdk");
+    });
+
+    it("reads LOG_THREAD_NAME from env", () => {
+        process.env.LOG_THREAD_NAME = "sdk-worker";
+        const cfg = createConfig({});
+        expect(cfg.LOG_THREAD_NAME).to.equal("sdk-worker");
     });
 
     it("parses HOLEPUNCH_RELAYER_URLS from env JSON array", () => {

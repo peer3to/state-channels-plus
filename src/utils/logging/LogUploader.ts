@@ -89,6 +89,7 @@ export abstract class LogUploader {
             const channelId = this.sharedContext.channelId || ethers.ZeroHash;
             const peerAddress =
                 this.sharedContext.peerAddress || ethers.ZeroAddress;
+            const threadName = this.sharedContext.threadName;
 
             if (!channelId || !peerAddress) {
                 return; // ignore
@@ -118,6 +119,7 @@ export abstract class LogUploader {
                         {
                             channelId,
                             peerAddress,
+                            threadName,
                             compressedLogs
                         },
                         {

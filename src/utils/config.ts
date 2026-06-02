@@ -9,6 +9,7 @@ export type Config = {
     DEBUG_CHANNEL_CONTRACT: boolean;
     DEBUG_LOCAL_TRANSPORT: boolean;
     LOG_LEVEL: string;
+    LOG_THREAD_NAME: string;
     LOG_SKIP_WRITING: boolean;
     LOG_EXCLUDE_TAGS: string;
     EXCLUDE_LOG_TAGS: string;
@@ -30,6 +31,7 @@ const DEFAULT_CONFIG: Config = {
     DEBUG_CHANNEL_CONTRACT: false,
     DEBUG_LOCAL_TRANSPORT: false,
     LOG_LEVEL: "info",
+    LOG_THREAD_NAME: "sdk",
     LOG_SKIP_WRITING: false,
     LOG_EXCLUDE_TAGS: "",
     EXCLUDE_LOG_TAGS: "",

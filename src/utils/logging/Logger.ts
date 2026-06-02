@@ -16,6 +16,7 @@ export type SharedLoggerContext = {
     peerId?: number;
     peerAddress?: Address;
     channelId?: string;
+    threadName?: string;
 };
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "verbose";
