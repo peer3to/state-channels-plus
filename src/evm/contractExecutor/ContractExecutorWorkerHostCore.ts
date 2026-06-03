@@ -2,6 +2,8 @@ import { Buffer } from "buffer";
 import ContractExecutor from "./ContractExecutor";
 import { createEvm } from "../EvmFactory";
 import noOpLogger from "./NoOpLogger";
+import { createLogger } from "@platform/createLogger";
+import type { Logger, LogLevel } from "@/utils/logging/Logger";
 import type {
     WorkerRequest,
     WorkerRequestPayload,
@@ -20,8 +22,28 @@ workerGlobal.window ||= globalThis;
 
 let evm: Awaited<ReturnType<typeof createEvm>> | undefined;
 let executor: ContractExecutor | undefined;
+let workerLogger: Logger = noOpLogger;
 
 async function init(request: Extract<WorkerRequestPayload, { type: "init" }>) {
+    const loggerConfig = request.loggerConfig;
+    // The worker's own config singleton is DEFAULT_CONFIG (createConfig only
+    // runs on the main thread), so logger config must be injected explicitly.
+    workerLogger = loggerConfig
+        ? createLogger(
+              loggerConfig.sharedContext,
+              { component: "ContractExecutorWorker" },
+              {
+                  logUploaderConfig: {
+                      uploadEndpoint: loggerConfig.uploadEndpoint,
+                      apiToken: loggerConfig.apiToken
+                  },
+                  level: loggerConfig.level as LogLevel | undefined,
+                  skipWriting: loggerConfig.skipWriting,
+                  attachErrorListener: true
+              }
+          )
+        : noOpLogger;
+
     evm = await createEvm(
         {
             allowUnlimitedContractSize: true,
@@ -34,9 +56,9 @@ async function init(request: Extract<WorkerRequestPayload, { type: "init" }>) {
                 })
             )
         },
-        noOpLogger
+        workerLogger
     );
-    executor = new ContractExecutor(evm, noOpLogger);
+    executor = new ContractExecutor(evm, workerLogger);
     return null;
 }
 

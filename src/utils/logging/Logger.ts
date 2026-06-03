@@ -21,6 +21,16 @@ export type SharedLoggerContext = {
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "verbose";
 
+// Serializable recipe for rebuilding an equivalent logger on a worker thread,
+// where a live Logger can't cross the structured-clone boundary.
+export type SerializableLoggerConfig = {
+    sharedContext: SharedLoggerContext;
+    uploadEndpoint: string;
+    apiToken: string;
+    level?: string;
+    skipWriting?: boolean;
+};
+
 export type LogEntry = {
     time: string;
     level: LogLevel;
@@ -50,6 +60,7 @@ export abstract class Logger {
     protected readonly sharedContext: SharedLoggerContext; // shared among all child loggers - imutable reference
     protected logStore: LogStore;
     protected logUploader?: LogUploader;
+    protected readonly skipWriting: boolean;
     protected parent?: Logger;
     protected readonly children: Set<Logger> = new Set();
     private destroyed = false;
@@ -60,13 +71,30 @@ export abstract class Logger {
         sharedContext: SharedLoggerContext,
         level: LogLevel | undefined,
         logStore: LogStore,
-        logUploader?: LogUploader
+        logUploader?: LogUploader,
+        skipWriting: boolean = false
     ) {
         this.context = context;
         this.sharedContext = sharedContext;
         this.level = level;
         this.logStore = logStore;
         this.logUploader = logUploader;
+        this.skipWriting = skipWriting;
+    }
+
+    // Project this logger into a serializable recipe so a worker thread can
+    // rebuild an equivalent sibling (a live Logger can't be structured-cloned).
+    public toSerializableConfig(overrides: {
+        threadName: string;
+    }): SerializableLoggerConfig {
+        const uploaderConfig = this.logUploader?.getConfig();
+        return {
+            sharedContext: { ...this.sharedContext, ...overrides },
+            uploadEndpoint: uploaderConfig?.uploadEndpoint ?? "",
+            apiToken: uploaderConfig?.apiToken ?? "",
+            level: this.level,
+            skipWriting: this.skipWriting
+        };
     }
 
     public child(context: ExclusiveLoggerContext): Logger {

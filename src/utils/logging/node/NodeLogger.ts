@@ -23,7 +23,7 @@ export class NodeLogger extends Logger {
         logStore: LogStore,
         logUploaderOptions?: LogUploaderOptions,
         excludedTags: Set<string> = new Set(),
-        private readonly skipWriting: boolean = false
+        skipWriting: boolean = false
     ) {
         const logUploader =
             logUploaderOptions?.logUploader ||
@@ -37,7 +37,14 @@ export class NodeLogger extends Logger {
                   )
                 : undefined);
 
-        super(context, sharedContext, level, logStore, logUploader);
+        super(
+            context,
+            sharedContext,
+            level,
+            logStore,
+            logUploader,
+            skipWriting
+        );
         this.excludedTags = excludedTags;
         logUploader?.setLogger(this);
     }

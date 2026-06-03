@@ -10,6 +10,7 @@ import type {
     WorkerRequestPayload,
     WorkerResponse
 } from "./types";
+import type { SerializableLoggerConfig } from "@/utils/logging/Logger";
 import {
     createContractExecutorWorker,
     type WorkerLike
@@ -46,7 +47,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
     private resolveWorkerReady!: () => void;
 
     static async create(
-        customPrecompiles: readonly EvmCustomPrecompileManifest[] = []
+        customPrecompiles: readonly EvmCustomPrecompileManifest[] = [],
+        loggerConfig?: SerializableLoggerConfig
     ): Promise<WorkerContractExecutor> {
         const executor = new WorkerContractExecutor();
         await executor.workerReady;
@@ -54,7 +56,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
             type: "init",
             customPrecompiles: customPrecompiles.map(
                 serializePrecompileManifest
-            )
+            ),
+            loggerConfig
         });
         return executor;
     }

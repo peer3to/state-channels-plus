@@ -1,4 +1,5 @@
 import type { ContractExecutionResult } from "./AContractExecutor";
+import type { SerializableLoggerConfig } from "@/utils/logging/Logger";
 
 export type WorkerCustomPrecompile = {
     address: string;
@@ -13,6 +14,7 @@ export type WorkerRequestPayload =
     | {
           type: "init";
           customPrecompiles: WorkerCustomPrecompile[];
+          loggerConfig?: SerializableLoggerConfig;
       }
     | {
           type: "call";

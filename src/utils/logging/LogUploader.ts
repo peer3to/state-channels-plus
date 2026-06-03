@@ -45,6 +45,10 @@ export abstract class LogUploader {
     setLogger(logger: Logger) {
         this.logger = logger;
     }
+
+    public getConfig(): LogUploaderConfig {
+        return this.config;
+    }
     protected abstract attachListeners(): void;
     protected abstract detachListeners(): void;
 

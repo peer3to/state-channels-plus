@@ -29,5 +29,8 @@ export async function createContractExecutorFactory(
 
         return new InlineContractExecutor(evm, logger);
     }
-    return WorkerContractExecutor.create(options.customPrecompiles);
+    return WorkerContractExecutor.create(
+        options.customPrecompiles,
+        options.logger?.toSerializableConfig({ threadName: "evm" })
+    );
 }

@@ -20,7 +20,7 @@ export class BrowserLogger extends Logger {
         level: LogLevel | undefined,
         logStore: LogStore,
         logUploaderOptions?: LogUploaderOptions,
-        private readonly skipWriting: boolean = false
+        skipWriting: boolean = false
     ) {
         const logUploader =
             logUploaderOptions?.logUploader ||
@@ -34,7 +34,14 @@ export class BrowserLogger extends Logger {
                   )
                 : undefined);
 
-        super(context, sharedContext, level, logStore, logUploader);
+        super(
+            context,
+            sharedContext,
+            level,
+            logStore,
+            logUploader,
+            skipWriting
+        );
         logUploader?.setLogger(this);
     }
 
