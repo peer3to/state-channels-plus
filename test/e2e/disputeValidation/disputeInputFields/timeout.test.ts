@@ -122,9 +122,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 { durationMs: 3000, maxCount: 0 }
             );
             for (const peer of [0, 1]) {
-                const proofs = h.query
-                    .getPeerStorage(peer)
-                    .disputeFraudProofs.getDisputeFraudProofs();
+                const proofs = await h
+                    .getPeerHandle(peer)
+                    .dispute.queryDisputeFraudProofs();
                 if (proofs.length > 0) {
                     const types = proofs.map((p) => p.proofType).join(", ");
                     throw new Error(

@@ -1,7 +1,7 @@
 import type { Address } from "@/types/types";
 import type { Status } from "@/types";
 import type { ChannelInterface } from "../interfaces/ChannelInterface";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
 import { ROUTES } from "../../threaded/worker/routeNames";
 
 export class WorkerChannelHandle implements ChannelInterface {

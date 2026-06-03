@@ -3,19 +3,19 @@ import type {
     BlockHeight,
     ForkId,
     Hash,
+    Signature,
     Timestamp
 } from "@/types/types";
 import type {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type Block from "@/models/Block";
 
 export interface BlocksInterface {
     // --- reads: tip & lookup ---
 
-    queryLatestBlock(
-        forkId: ForkId
-    ): Promise<{ hash: Hash; height: BlockHeight } | undefined>;
+    queryLatestBlock(forkId: ForkId): Promise<Block | undefined>;
 
     queryBlockAt(req: {
         forkId: ForkId;
@@ -28,7 +28,7 @@ export interface BlocksInterface {
         | {
               blockConfirmation: BlockConfirmationStruct;
               onChainTimestamp?: Timestamp;
-              confirmationSignatures: string[];
+              confirmationSignatures: Signature[];
           }
         | undefined
     >;
@@ -50,6 +50,11 @@ export interface BlocksInterface {
         forkId: ForkId
     ): Promise<BlockConfirmationStruct | undefined>;
 
+    queryBlockFullAt(req: {
+        forkId: ForkId;
+        height: BlockHeight;
+    }): Promise<Block | undefined>;
+
     queryPreviousBlockHash(req: {
         forkId: ForkId;
         height?: BlockHeight;
@@ -57,9 +62,9 @@ export interface BlocksInterface {
 
     queryNextBlockHeight(forkId: ForkId): Promise<BlockHeight>;
 
-    queryDidEveryoneSignBlock(blockHash: Hash): Promise<boolean>;
-
     // --- reads: inbound ---
+
+    queryDidEveryoneSignBlock(blockHash: Hash): Promise<boolean>;
 
     queryInboundLatestBlockHash(): Promise<Hash | undefined>;
 

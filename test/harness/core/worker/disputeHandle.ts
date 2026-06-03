@@ -1,12 +1,10 @@
-import type { Address, ForkId, Hash } from "@/types/types";
+import type { Address, ChannelId, ForkId, Hash } from "@/types/types";
+import type { DisputeWindowStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import type {
     BlockStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type {
-    DisputeWindowStructOutput,
-    StateProofStruct
-} from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
+import type { StateProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct,
@@ -15,7 +13,7 @@ import type {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import type { DisputeInterface } from "../interfaces/DisputeInterface";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
 import { ROUTES } from "../../threaded/worker/routeNames";
 
 export class WorkerDisputeHandle implements DisputeInterface {
@@ -51,21 +49,13 @@ export class WorkerDisputeHandle implements DisputeInterface {
 
     queryDisputeAuditingData(req: {
         forkId: ForkId;
-        args?: unknown[];
+        stateProof: StateProofStruct;
+        options?: { disputeLatestInboundMessageBlockHash?: Hash };
     }): Promise<DisputeAuditingDataStruct> {
         return this.rpc.call(
             ROUTES.dispute.getAuditingData,
             req
         ) as Promise<DisputeAuditingDataStruct>;
-    }
-
-    queryDisputeWindows(req: {
-        channelId: string;
-        forkIds: ForkId[];
-    }): Promise<DisputeWindowStructOutput[]> {
-        return this.rpc.call(ROUTES.dispute.windows, req) as Promise<
-            DisputeWindowStructOutput[]
-        >;
     }
 
     queryLatestBlockFromStateProof(
@@ -74,6 +64,15 @@ export class WorkerDisputeHandle implements DisputeInterface {
         return this.rpc.call(ROUTES.dispute.latestBlockFromStateProof, {
             stateProof
         }) as Promise<{ hasBlock: boolean; latestBlock: BlockStruct }>;
+    }
+
+    queryDisputeWindows(req: {
+        channelId: ChannelId;
+        forkIds: ForkId[];
+    }): Promise<DisputeWindowStructOutput[]> {
+        return this.rpc.call(ROUTES.dispute.disputeWindows, req) as Promise<
+            DisputeWindowStructOutput[]
+        >;
     }
 
     queryOutboundMessageBlock(

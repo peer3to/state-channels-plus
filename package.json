@@ -92,8 +92,6 @@
     "test:e2e": "LOG_LEVEL=warn yarn test:e2e:base",
     "test:e2e:threaded": "HARNESS_DEDICATED_PEER_THREAD=true yarn test:e2e",
     "test:e2e:threaded:log-file": "HARNESS_DEDICATED_PEER_THREAD=true yarn test:e2e:log-file",
-    "test:harness": "LOG_LEVEL=warn yarn hardhat test $(find test/harness -name '*.test.ts')",
-    "test:harness:threaded": "HARNESS_DEDICATED_PEER_THREAD=true yarn test:harness",
     "test:e2e:log-file": "rm -rf ./logs/wtf.ansi && yarn test:e2e:verbose >> ./logs/wtf.ansi",
     "test:e2e:skip-log": "LOG_SKIP_WRITING=true yarn test:e2e:verbose",
     "test:e2e:info": "LOG_LEVEL=info yarn test:e2e:base",

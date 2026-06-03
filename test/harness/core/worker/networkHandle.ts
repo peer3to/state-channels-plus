@@ -3,8 +3,10 @@ import type {
     DisconnectFilterFn
 } from "../interfaces/NetworkInterface";
 import type { RestoreToken } from "../interfaces/common";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
 import type { StubCallbackRegistry } from "../StubCallbackRegistry";
+import { ChannelId } from "@/types";
+import { ROUTES } from "@test/harness/threaded/worker/routeNames";
 
 export class WorkerNetworkHandle implements NetworkInterface {
     private liveCallbackId: string | undefined;
@@ -15,10 +17,10 @@ export class WorkerNetworkHandle implements NetworkInterface {
     ) {}
 
     disconnectAll(): Promise<void> {
-        return this.rpc.call("network.disconnectAll", {}) as Promise<void>;
+        return this.rpc.call(ROUTES.network.disconnectAll, {}) as Promise<void>;
     }
-    tryOpenConnectionToChannel(channelId: string): Promise<void> {
-        return this.rpc.call("network.tryOpenConnectionToChannel", {
+    tryOpenConnectionToChannel(channelId: ChannelId): Promise<void> {
+        return this.rpc.call(ROUTES.network.tryOpenConnectionToChannel, {
             channelId
         }) as Promise<void>;
     }
@@ -30,15 +32,8 @@ export class WorkerNetworkHandle implements NetworkInterface {
         }
         const id = this.registry.registerFilter((msg) => filter(msg));
         this.liveCallbackId = id;
-        return (await this.rpc.call("network.installDisconnectFilter", {
+        return (await this.rpc.call(ROUTES.network.installDisconnectFilter, {
             callbackId: id
         })) as RestoreToken;
-    }
-    async restoreDisconnectFilter(): Promise<void> {
-        if (this.liveCallbackId) {
-            this.registry.unregisterFilter(this.liveCallbackId);
-            this.liveCallbackId = undefined;
-        }
-        await this.rpc.call("network.restoreDisconnectFilter", {});
     }
 }

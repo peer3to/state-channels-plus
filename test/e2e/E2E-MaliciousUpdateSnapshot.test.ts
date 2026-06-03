@@ -14,6 +14,7 @@ import type {
     BalanceStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { StateSnapshot } from "@/models";
 
 describe("E2E: Malicious updateSnapshot", function () {
     it("colluded over-withdrawal → updateStateSnapshotSameFork reverts with CantWithdrawMoreThanDeposits", async function () {
@@ -170,17 +171,17 @@ describe("E2E: Malicious updateSnapshot", function () {
         });
 
         const p0 = h.peerHandles[0];
-        const latestBlock = await p0.blocks.queryLatestBlock(h.activeForkId!);
-        if (!latestBlock) throw new Error("no latest block for peer 0");
-        const snapshotAt = await p0.snapshots.queryStateSnapshotAt({
-            forkId: h.activeForkId!,
-            height: latestBlock.height
-        });
-        if (!snapshotAt)
-            throw new Error("no snapshot at latest block for peer 0");
+        const latestBlock = (await p0.blocks.queryLatestBlock(
+            h.activeForkId!
+        ))!;
+        const snapshotStruct = (await p0.snapshots.queryStateSnapshotByHash(
+            latestBlock.stateSnapshotHash
+        ))!;
+        const snapshot = StateSnapshot.from(snapshotStruct);
+
         const encodedStatemachineState =
             await p0.stateMachine.queryStateMachineState(
-                snapshotAt.stateMachineStateHash
+                snapshot.stateMachineStateHash
             );
         if (!encodedStatemachineState) {
             throw new Error("seed encoded state not found");
@@ -238,7 +239,7 @@ describe("E2E: Malicious updateSnapshot", function () {
         );
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const spectator = await (h.join as any).addSpectator();
+        const spectator = (await (h.join as any).addSpectator())!;
 
         await h.eventCountsBarrier.waitFor(
             async () =>

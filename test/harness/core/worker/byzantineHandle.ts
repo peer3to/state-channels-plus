@@ -3,8 +3,8 @@ import type {
     BlockConfirmationStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { Bytes, Hash } from "@/types/types";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { Bytes, ForkId, Hash } from "@/types/types";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
 import { ROUTES } from "@test/harness/threaded/worker/routeNames";
 
 export class WorkerByzantineHandle implements ByzantineInterface {
@@ -64,5 +64,15 @@ export class WorkerByzantineHandle implements ByzantineInterface {
         return this.rpc.call(ROUTES.byzantine.storeStateSnapshot, {
             snapshot
         }) as Promise<void>;
+    }
+
+    async corruptValidatorSnapshotForBalanceInvariant(
+        forkId: ForkId
+    ): Promise<Hash> {
+        const result = (await this.rpc.call(
+            ROUTES.byzantine.corruptValidatorSnapshotForBalanceInvariant,
+            { forkId }
+        )) as { hash: Hash };
+        return result.hash;
     }
 }

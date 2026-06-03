@@ -1,5 +1,5 @@
-import type { PeerHandler } from "../../rpc/rpc-server";
-import type { PeerCaller } from "../../rpc/rpc-client";
+import type { PeerHandler } from "../../rpc/PeerHandler";
+import type { PeerCaller } from "../../rpc/PeerCaller";
 import { ROUTES } from "../routeNames";
 import type StateManager from "@/stateManager";
 
@@ -29,13 +29,15 @@ export class RpcStubRoutes {
     private register(server: PeerHandler): void {
         server.register(
             ROUTES.rpcStub.installCreateRpcMethodStub,
-            async (args) => {
-                const { serviceName, methodName, callbackId } = (args ??
-                    {}) as {
-                    serviceName?: string;
-                    methodName?: string;
-                    callbackId?: string;
-                };
+            async ({
+                serviceName,
+                methodName,
+                callbackId
+            }: {
+                serviceName: string;
+                methodName: string;
+                callbackId: string;
+            }) => {
                 if (!serviceName)
                     throw new Error(
                         "rpcStub.installCreateRpcMethodStub: missing 'serviceName'"
@@ -100,11 +102,13 @@ export class RpcStubRoutes {
 
         server.register(
             ROUTES.rpcStub.restoreCreateRpcMethodStub,
-            async (args) => {
-                const { serviceName, methodName } = (args ?? {}) as {
-                    serviceName?: string;
-                    methodName?: string;
-                };
+            async ({
+                serviceName,
+                methodName
+            }: {
+                serviceName: string;
+                methodName: string;
+            }) => {
                 if (!serviceName || !methodName)
                     throw new Error(
                         "rpcStub.restoreCreateRpcMethodStub: missing 'serviceName' or 'methodName'"

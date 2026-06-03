@@ -137,16 +137,15 @@ describe("E2E: PingPongService (custom RPC)", function () {
 
         const peer0 = harness.getPeer(0);
         const peer1 = harness.getPeer(1);
-        const transport0To1 = await harness.query.waitForPeerTransport(
-            0,
-            1,
-            5000
-        );
-        const transport1To0 = await harness.query.waitForPeerTransport(
-            1,
-            0,
-            5000
-        );
+        const findTransport = (from: typeof peer0, toAddr: string) =>
+            from.stateManager.p2pManager.openConnections.find(
+                (t) =>
+                    from.stateManager.p2pManager.profileManager.getProfileByTransport(
+                        t
+                    )?.evmAddress === toAddr
+            )!;
+        const transport0To1 = findTransport(peer0, peer1.address);
+        const transport1To0 = findTransport(peer1, peer0.address);
 
         peer0.stateManager.p2pManager.remoteRpc.pingService
             .ping("from-0")

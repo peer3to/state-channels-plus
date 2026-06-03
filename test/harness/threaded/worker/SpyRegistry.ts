@@ -1,6 +1,6 @@
 // Worker-side spy registry: counts events and pushes frames to the orchestrator.
 
-import type { PeerHandler } from "../rpc/rpc-server";
+import type { PeerHandler } from "../rpc/PeerHandler";
 
 import { PUSH_TOPICS, ROUTES } from "./routeNames";
 

@@ -32,10 +32,7 @@ export type AdvanceStateBaseOptions = {
     waitForPeers?: number[];
     waitForTurn?: boolean;
     waitForFinalization?: boolean;
-};
-
-export type AdvanceStateOptions = AdvanceStateBaseOptions & {
-    txFn: NamedOpRequest;
+    txFn?: NamedOpRequest;
 };
 
 export function effectiveWaitForFinalization(
@@ -83,7 +80,8 @@ export class TransitionActions<
         });
     }
 
-    async advanceState(options: AdvanceStateOptions): Promise<void> {
+    async advanceState(options: AdvanceStateBaseOptions): Promise<void> {
+        if (!options.txFn) throw new Error("advanceState: txFn is required");
         const count = options?.count ?? 1;
         const total = options?.rounds
             ? options.rounds * this.harness.peerCount
@@ -203,63 +201,38 @@ export class TransitionActions<
         const tx = await channelManager.multicall(sameForkData.callData);
         await tx.wait();
         const expected = sameForkData.expectedSnapshot;
-        if (expected && expected instanceof StateSnapshot) {
-            return expected;
-        }
-        return expected
-            ? StateSnapshot.from(
-                  expected as Parameters<typeof StateSnapshot.from>[0]
-              )
-            : undefined;
+        return expected ? StateSnapshot.from(expected) : undefined;
     }
 
-    // Submit a named transition op from a specific peer. Polymorphic: inline
-    // runs the op via the injected handler table, worker via the rpc route.
     async submitOp(
         peer: PeerHandle,
         opRequest: NamedOpRequest,
         options: TransitionOptions = {}
     ): Promise<any> {
-        return this.submitInner(
-            peer,
-            () => peer.transition.submitNext(opRequest),
-            options
-        );
-    }
-
-    private async submitInner(
-        peer: PeerHandle,
-        txExec: () => Promise<unknown>,
-        options: TransitionOptions
-    ): Promise<unknown> {
         const waitForSync = options.waitForSync ?? true;
 
-        if (options.waitForTurn) {
-            await this.waitForTurn(peer);
-        }
-
+        if (options.waitForTurn) await this.waitForTurn(peer);
         if (options.delayMs) await sleep(options.delayMs);
 
-        const result = await txExec();
+        const result = await peer.transition.submitNext(opRequest);
 
         if (waitForSync) {
             const forkId = this.harness.activeForkId;
-            if (!forkId) {
+            if (!forkId)
                 throw new Error("No active fork ID - cannot wait for sync");
-            }
 
             const latest = await peer.blocks.queryLatestBlock(forkId);
-            const minHeight = latest?.height;
-
             const peers =
                 options.waitForPeers !== undefined
                     ? this.harness.getFilteredPeers(options.waitForPeers)
                     : this.harness.getPeersExcludingMaliciousAndLeavers();
-            const waitForFinalization = effectiveWaitForFinalization(options);
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
                 forkId,
-                { minHeight, waitForFinalization }
+                {
+                    minHeight: latest?.height,
+                    waitForFinalization: effectiveWaitForFinalization(options)
+                }
             );
         }
 
@@ -288,12 +261,12 @@ export class TransitionActions<
             blockConfirmation,
             ingestOptions?.onChainTimestamp
         );
-        const keepConnection = (await this.harness
+        const keepConnection = await this.harness
             .getPeerHandle(peerIndex)
             .blocks.ingestBlockConfirmation({
                 blockConfirmation,
                 ingestOptions
-            })) as boolean;
+            });
 
         if (
             expectedKeepConnection !== undefined &&

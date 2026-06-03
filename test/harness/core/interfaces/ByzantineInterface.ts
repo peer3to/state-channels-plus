@@ -2,7 +2,7 @@ import type {
     BlockConfirmationStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { Bytes, Hash } from "@/types/types";
+import type { Bytes, ForkId, Hash } from "@/types/types";
 
 export interface ByzantineInterface {
     // --- calldata & broadcast stubs ---
@@ -34,4 +34,6 @@ export interface ByzantineInterface {
     // Plant a state snapshot in the peer's local store so on-chain
     // StateSnapshotUpdated events don't error on unknown-snapshot lookup.
     storeStateSnapshot(snapshot: StateSnapshotStruct): Promise<void>;
+
+    corruptValidatorSnapshotForBalanceInvariant(forkId: ForkId): Promise<Hash>;
 }

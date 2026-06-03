@@ -1,11 +1,21 @@
-import type { Hash } from "@/types/types";
+import type { Bytes, ChannelId, Hash } from "@/types/types";
 import type { BalanceInterface } from "../interfaces/BalanceInterface";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
 import { ROUTES } from "../../threaded/worker/routeNames";
 import { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export class WorkerBalanceHandle implements BalanceInterface {
     constructor(private readonly rpc: PeerCaller) {}
+
+    verifyBalanceInvariant(req: {
+        channelId: ChannelId;
+        encodedStateMachineState?: Bytes;
+    }): Promise<boolean> {
+        return this.rpc.call(
+            ROUTES.balance.verifyInvariant,
+            req
+        ) as Promise<boolean>;
+    }
 
     subtractBalance(req: {
         a: BalanceStruct;

@@ -3,6 +3,7 @@ import type {
     BlockHeight,
     ForkId,
     Hash,
+    Signature,
     Timestamp
 } from "@/types/types";
 import type {
@@ -10,18 +11,18 @@ import type {
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { BlocksInterface } from "../interfaces/BlocksInterface";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
 import { ROUTES } from "../../threaded/worker/routeNames";
+import { Block } from "@/models";
 
 export class WorkerBlocksHandle implements BlocksInterface {
     constructor(private readonly rpc: PeerCaller) {}
 
-    queryLatestBlock(
-        forkId: ForkId
-    ): Promise<{ hash: Hash; height: BlockHeight } | undefined> {
-        return this.rpc.call(ROUTES.query.latestBlock, { forkId }) as Promise<
-            { hash: Hash; height: BlockHeight } | undefined
-        >;
+    async queryLatestBlock(forkId: ForkId): Promise<Block | undefined> {
+        const confirmation = await this.queryLatestBlockConfirmation(forkId);
+        return confirmation
+            ? Block.fromBlockConfirmation(confirmation)
+            : undefined;
     }
 
     queryBlockAt(req: {
@@ -39,7 +40,7 @@ export class WorkerBlocksHandle implements BlocksInterface {
         | {
               blockConfirmation: BlockConfirmationStruct;
               onChainTimestamp?: Timestamp;
-              confirmationSignatures: string[];
+              confirmationSignatures: Signature[];
           }
         | undefined
     > {
@@ -47,7 +48,7 @@ export class WorkerBlocksHandle implements BlocksInterface {
             | {
                   blockConfirmation: BlockConfirmationStruct;
                   onChainTimestamp?: Timestamp;
-                  confirmationSignatures: string[];
+                  confirmationSignatures: Signature[];
               }
             | undefined
         >;
@@ -78,6 +79,19 @@ export class WorkerBlocksHandle implements BlocksInterface {
         return this.rpc.call(ROUTES.query.latestBlockConfirmation, {
             forkId
         }) as Promise<BlockConfirmationStruct | undefined>;
+    }
+
+    async queryBlockFullAt(req: {
+        forkId: ForkId;
+        height: BlockHeight;
+    }): Promise<Block | undefined> {
+        const r = await this.queryBlockConfirmationAt(req);
+        return r
+            ? Block.fromBlockConfirmation(
+                  r.blockConfirmation,
+                  r.onChainTimestamp
+              )
+            : undefined;
     }
 
     queryPreviousBlockHash(req: {

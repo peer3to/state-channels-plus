@@ -136,7 +136,6 @@ export class EventActions {
         } = options;
         const handle = this.harness.getPeerHandle(peerIndex);
 
-        // Worker spy getCalls may fail; fall back to lastCall.
         const matchesCall = (args: readonly unknown[]): boolean => {
             const [processedBlockHash, processedKeepConnection] = args;
             return (
@@ -149,14 +148,7 @@ export class EventActions {
             () => {
                 const spy = handle.eventSpies.onBlockConfirmationProcessed;
                 if (!spy) return false;
-                try {
-                    return spy
-                        .getCalls()
-                        .some((call) => matchesCall(call.args));
-                } catch {
-                    const last = spy.lastCall;
-                    return last !== undefined && matchesCall(last.args);
-                }
+                return spy.getCalls().some((call) => matchesCall(call.args));
             },
             {
                 timeoutMs,

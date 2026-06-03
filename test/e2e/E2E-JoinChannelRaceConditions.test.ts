@@ -45,7 +45,6 @@ describe("E2E: Join channel race conditions", function () {
 
             let revertError: unknown;
             try {
-                // step 1 - route via handle so worker mode goes through rpc
                 await h
                     .getPeerHandle(joiner.index)
                     .lifecycle.joinChannel(confirmation);
@@ -148,7 +147,6 @@ describe("E2E: Join channel race conditions", function () {
 
             let revertError: unknown;
             try {
-                // step 1 - route via handle so worker mode goes through rpc
                 await h
                     .getPeerHandle(joiner.index)
                     .lifecycle.joinChannel(confirmation);

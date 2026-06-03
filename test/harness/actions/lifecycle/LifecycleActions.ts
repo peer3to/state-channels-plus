@@ -119,14 +119,17 @@ export class LifecycleActions {
         this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
-        for (const h of this.harness.peerHandles) {
-            await h.lifecycle.connectToChannel(
-                openChannel.channelId.toString()
-            );
-            h.logger.verbose(`Connected to channel ${openChannel.channelId}`, {
-                component: "ChannelActions"
-            });
-        }
+        await Promise.all(
+            this.harness.peerHandles.map(async (h) => {
+                await h.lifecycle.connectToChannel(
+                    openChannel.channelId.toString()
+                );
+                h.logger.verbose(
+                    `Connected to channel ${openChannel.channelId}`,
+                    { component: "ChannelActions" }
+                );
+            })
+        );
 
         if (this.harness.options.autoConnect) {
             const networkController = new NetworkController(

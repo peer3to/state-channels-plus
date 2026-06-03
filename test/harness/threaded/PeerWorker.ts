@@ -1,8 +1,8 @@
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 
-import { PeerCaller } from "./rpc/rpc-client";
-import { PeerHandler } from "./rpc/rpc-server";
+import { PeerCaller } from "./rpc/PeerCaller";
+import { PeerHandler } from "./rpc/PeerHandler";
 import type { RpcPort } from "./rpc/rpc-types";
 import { ROUTES } from "./worker/routeNames";
 import {

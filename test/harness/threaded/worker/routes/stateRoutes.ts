@@ -1,9 +1,16 @@
 import { ethers } from "ethers";
-import type { PeerHandler } from "../../rpc/rpc-server";
+import type { PeerHandler } from "../../rpc/PeerHandler";
 import { ROUTES } from "../routeNames";
 import type StateManager from "@/stateManager";
 import Block from "@/models/Block";
-import type { ForkId, Hash, Timestamp } from "@/types/types";
+import type {
+    Address,
+    Bytes,
+    ChannelId,
+    ForkId,
+    Hash,
+    Timestamp
+} from "@/types/types";
 import type { StateProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type {
@@ -11,6 +18,7 @@ import type {
     SignedBlockStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { BalanceStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 
 export class StateRoutes {
     private stateManager?: StateManager;
@@ -33,18 +41,6 @@ export class StateRoutes {
 
     private register(server: PeerHandler): void {
         server.register(ROUTES.query.status, async () => this.sm.getStatus());
-
-        server.register(
-            ROUTES.query.latestBlock,
-            async ({ forkId }: { forkId: string }) => {
-                const block = this.sm.storage.blocks.getLatestBlock(forkId);
-                if (!block) return undefined;
-                return {
-                    hash: String(block.hash),
-                    height: Number(block.height)
-                };
-            }
-        );
 
         server.register(
             ROUTES.query.blockAt,
@@ -80,7 +76,7 @@ export class StateRoutes {
                 if (!snapshot) return null;
                 if (
                     !this.sm.storage.stateMachineStates.getStateMachineState(
-                        snapshot.stateMachineStateHash as string
+                        snapshot.stateMachineStateHash
                     )
                 )
                     return null;
@@ -126,11 +122,7 @@ export class StateRoutes {
 
         server.register(ROUTES.query.stateSnapshotCount, async () => {
             // snapshotsByHash is private — no public count API on StateSnapshotStorage
-            return (
-                this.sm.storage.stateSnapshots as unknown as {
-                    snapshotsByHash: Map<unknown, unknown>;
-                }
-            ).snapshotsByHash.size;
+            return this.sm.storage.stateSnapshots["snapshotsByHash"].size;
         });
 
         server.register(
@@ -199,7 +191,7 @@ export class StateRoutes {
 
         server.register(
             ROUTES.query.fraudProofForParticipant,
-            async ({ addr }: { addr: string }) => {
+            async ({ addr }: { addr: Address }) => {
                 const fp =
                     this.sm.storage.fraudProofs.getFraudProofForParticipant(
                         addr
@@ -306,16 +298,10 @@ export class StateRoutes {
 
         server.register(
             ROUTES.balance.subtract,
-            async ({
-                a,
-                b
-            }: {
-                a: { amount: string; data: string };
-                b: { amount: string; data: string };
-            }) => {
+            async ({ a, b }: { a: BalanceStruct; b: BalanceStruct }) => {
                 const r = await this.sm.diamondStateMachine.subtractBalance(
-                    { amount: BigInt(a.amount), data: a.data },
-                    { amount: BigInt(b.amount), data: b.data }
+                    a,
+                    b
                 );
                 return { amount: String(r.amount), data: String(r.data) };
             }
@@ -323,16 +309,38 @@ export class StateRoutes {
 
         server.register(
             ROUTES.balance.areEqual,
+            async ({ a, b }: { a: BalanceStruct; b: BalanceStruct }) => {
+                return this.sm.diamondStateMachine.areBalancesEqual(a, b);
+            }
+        );
+
+        server.register(
+            ROUTES.balance.verifyInvariant,
             async ({
-                a,
-                b
+                channelId,
+                encodedStateMachineState
             }: {
-                a: { amount: string; data: string };
-                b: { amount: string; data: string };
+                channelId: ChannelId;
+                encodedStateMachineState?: Bytes;
             }) => {
-                return await this.sm.diamondStateMachine.areBalancesEqual(
-                    { amount: BigInt(a.amount), data: a.data },
-                    { amount: BigInt(b.amount), data: b.data }
+                const cm = this.sm.stateChannelManagerContract;
+                const rawSnapshot = await cm.getStateSnapshot(channelId);
+                const stateHash =
+                    rawSnapshot.snapshotData.stateMachineStateHash;
+                const encodedState =
+                    encodedStateMachineState ??
+                    this.sm.storage.stateMachineStates.getStateMachineState(
+                        stateHash
+                    );
+                if (!encodedState) {
+                    throw new Error(
+                        `No encoded state machine state found for snapshot hash ${stateHash}`
+                    );
+                }
+                return cm.verifyBalanceInvariantCheckSnapshot.staticCall(
+                    channelId,
+                    rawSnapshot.snapshotData,
+                    encodedState
                 );
             }
         );
@@ -388,12 +396,12 @@ export class StateRoutes {
         );
 
         server.register(
-            ROUTES.dispute.windows,
+            ROUTES.dispute.disputeWindows,
             async ({
                 channelId,
                 forkIds
             }: {
-                channelId: string;
+                channelId: ChannelId;
                 forkIds: ForkId[];
             }) => {
                 return await this.sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
@@ -405,7 +413,7 @@ export class StateRoutes {
 
         server.register(
             ROUTES.dispute.localStateSnapshot,
-            async ({ channelId }: { channelId: string }) => {
+            async ({ channelId }: { channelId: ChannelId }) => {
                 return await this.sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
                     channelId
                 );
@@ -416,27 +424,28 @@ export class StateRoutes {
             ROUTES.dispute.getAuditingData,
             async ({
                 forkId,
-                args: extraArgs
+                stateProof,
+                options
             }: {
                 forkId: ForkId;
-                args?: unknown[];
+                stateProof: StateProofStruct;
+                options?: { disputeLatestInboundMessageBlockHash?: Hash };
             }) => {
-                // getAuditingData has a variadic test-only call pattern not captured in its signature
-                return (
-                    this.sm.disputeManager.getAuditingData as unknown as (
-                        f: ForkId,
-                        ...a: unknown[]
-                    ) => unknown
-                )(forkId, ...(extraArgs ?? []));
+                return this.sm.disputeManager.getAuditingData(
+                    forkId,
+                    stateProof,
+                    options
+                ).auditingData;
             }
         );
 
         server.register(
             ROUTES.query.previousStateSnapshot,
-            async (req: { forkId: ForkId; height: number }) => {
+            async ({ forkId, height }: { forkId: ForkId; height: number }) => {
                 return (
-                    this.sm.storage.getPreviousStateSnapshot(req)?.toStruct() ??
-                    null
+                    this.sm.storage
+                        .getPreviousStateSnapshot({ forkId, height })
+                        ?.toStruct() ?? null
                 );
             }
         );
@@ -487,9 +496,7 @@ export class StateRoutes {
                 blockConfirmation,
                 onChainTimestamp
             }: {
-                blockConfirmation: Parameters<
-                    typeof Block.fromBlockConfirmation
-                >[0];
+                blockConfirmation: BlockConfirmationStruct;
                 onChainTimestamp?: number;
             }) => {
                 this.sm.storage.queues.queueBlock(
@@ -503,7 +510,7 @@ export class StateRoutes {
 
         server.register(
             ROUTES.p2p.isBlacklisted,
-            async ({ addr }: { addr: string }) => {
+            async ({ addr }: { addr: Address }) => {
                 return this.sm.p2pManager.isBlacklisted(addr);
             }
         );

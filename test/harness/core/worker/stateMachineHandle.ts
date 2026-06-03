@@ -2,7 +2,7 @@ import type { ForkId, Hash } from "@/types/types";
 import type { Bytes } from "@/types";
 import type { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { StateMachineInterface } from "../interfaces/StateMachineInterface";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
 import { ROUTES } from "../../threaded/worker/routeNames";
 
 export class WorkerStateMachineHandle implements StateMachineInterface {

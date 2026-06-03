@@ -4,7 +4,6 @@ import { LocalDiscoveryServer, Logger } from "@/utils";
 import { ForkId, Address } from "@/types/types";
 import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
-import ATransport from "@/transport/ATransport";
 import { InlinePeer } from "@test/harness/core/InlinePeer";
 
 /**
@@ -30,15 +29,6 @@ export class RPCActions {
 
     getLocalRpc(peerIndex: number) {
         return this.getInlineRecord(peerIndex).stateManager.p2pManager.localRpc;
-    }
-    /**
-     * (alias) Get the transport in fromPeerIndex p2pManager towards toPeerIndex
-     */
-    getTransport(
-        fromPeerIndex: number,
-        toPeerIndex: number
-    ): ATransport | undefined {
-        return this.harness.query.getTransport(fromPeerIndex, toPeerIndex);
     }
     /**
      * Check if handshake is completed between two peers
@@ -94,7 +84,7 @@ export class RPCActions {
     ): Promise<void> {
         const handle = this.harness.getPeerHandle(newPeerIndex);
         await handle.network.tryOpenConnectionToChannel(
-            this.harness.channelId!.toString()
+            this.harness.channelId!
         );
         // Worker peers already dialed discovery during p2pSetup.
         if (!handle.__workerBackend) {

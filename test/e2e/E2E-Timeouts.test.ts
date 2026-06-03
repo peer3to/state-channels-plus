@@ -69,7 +69,6 @@ describe("E2E: Timeouts", function () {
         it("should create forced timeout when peer posts junk calldata that is rejected", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 2);
-            // step 1 - W1 - sub-handle read so worker peers answer via rpc.
             const currentBlock = await h
                 .getPeerHandle(0)
                 .blocks.queryLatestBlock(h.activeForkId!);
@@ -95,7 +94,6 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 3);
 
-            // step 1 - W1 - sub-handle read so worker peers answer via rpc.
             const currentBlock = await h
                 .getPeerHandle(0)
                 .blocks.queryLatestBlock(h.activeForkId!);

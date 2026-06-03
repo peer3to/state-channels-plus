@@ -1,12 +1,10 @@
 import type { Address, ChannelId, ForkId, Hash } from "@/types/types";
+import type { DisputeWindowStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import type {
     BlockStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type {
-    DisputeWindowStructOutput,
-    StateProofStruct
-} from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
+import type { StateProofStruct } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct,
@@ -40,17 +38,18 @@ export interface DisputeInterface {
 
     queryDisputeAuditingData(req: {
         forkId: ForkId;
-        args?: unknown[];
+        stateProof: StateProofStruct;
+        options?: { disputeLatestInboundMessageBlockHash?: Hash };
     }): Promise<DisputeAuditingDataStruct>;
+
+    queryLatestBlockFromStateProof(
+        stateProof: StateProofStruct
+    ): Promise<{ hasBlock: boolean; latestBlock: BlockStruct }>;
 
     queryDisputeWindows(req: {
         channelId: ChannelId;
         forkIds: ForkId[];
     }): Promise<DisputeWindowStructOutput[]>;
-
-    queryLatestBlockFromStateProof(
-        stateProof: StateProofStruct
-    ): Promise<{ hasBlock: boolean; latestBlock: BlockStruct }>;
 
     queryOutboundMessageBlock(
         hash: Hash

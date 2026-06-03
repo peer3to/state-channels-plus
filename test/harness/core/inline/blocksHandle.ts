@@ -5,6 +5,7 @@ import type {
     BlockHeight,
     ForkId,
     Hash,
+    Signature,
     Timestamp
 } from "@/types/types";
 import type {
@@ -17,13 +18,8 @@ import type { TestPeer } from "../types";
 export class InlineBlocksHandle implements BlocksInterface {
     constructor(private readonly peer: TestPeer) {}
 
-    async queryLatestBlock(
-        forkId: ForkId
-    ): Promise<{ hash: Hash; height: BlockHeight } | undefined> {
-        const block =
-            this.peer.stateManager.storage.blocks.getLatestBlock(forkId);
-        if (!block) return undefined;
-        return { hash: block.hash, height: block.height };
+    async queryLatestBlock(forkId: ForkId): Promise<Block | undefined> {
+        return this.peer.stateManager.storage.blocks.getLatestBlock(forkId);
     }
 
     async queryBlockAt(req: {
@@ -44,7 +40,7 @@ export class InlineBlocksHandle implements BlocksInterface {
         | {
               blockConfirmation: BlockConfirmationStruct;
               onChainTimestamp?: Timestamp;
-              confirmationSignatures: string[];
+              confirmationSignatures: Signature[];
           }
         | undefined
     > {
@@ -85,6 +81,19 @@ export class InlineBlocksHandle implements BlocksInterface {
     ): Promise<BlockConfirmationStruct | undefined> {
         return this.peer.stateManager.storage.blocks.getLatestBlock(forkId)
             ?.blockConfirmationStruct;
+    }
+
+    async queryBlockFullAt(req: {
+        forkId: ForkId;
+        height: BlockHeight;
+    }): Promise<Block | undefined> {
+        const r = await this.queryBlockConfirmationAt(req);
+        return r
+            ? Block.fromBlockConfirmation(
+                  r.blockConfirmation,
+                  r.onChainTimestamp
+              )
+            : undefined;
     }
 
     async queryPreviousBlockHash(req: {

@@ -22,7 +22,7 @@ export type TransportSummary = {
 };
 
 export type InitChallengeSummary = {
-    randomChallengeHash: string;
+    randomChallengeHash: Hash;
     initTime: number;
 };
 
@@ -38,16 +38,9 @@ export interface P2pInternalsInterface {
 
     getProfileByEvmAddress(addr: Address): Promise<ProfileSummary | undefined>;
 
-    getProfileByConnectionId(
-        connectionId: ConnectionId
-    ): Promise<ProfileSummary | undefined>;
-
     connectionCount(): Promise<number>;
 
     isHandshakeCompletedWith(otherAddr: Address): Promise<boolean>;
-
-    // Serialisable peer address for orchestrator-side LocalDiscoveryServer wiring.
-    self(): Promise<Address>;
 
     // --- dispute acknowledgment ---
 

@@ -1,11 +1,11 @@
-import type { BlockHeight, ForkId, Hash } from "@/types/types";
+import type { BlockHeight, ChannelId, ForkId, Hash } from "@/types/types";
 import type {
     MessageBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import type { SnapshotInterface } from "../interfaces/SnapshotInterface";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
 import { ROUTES } from "../../threaded/worker/routeNames";
 
 export class WorkerSnapshotHandle implements SnapshotInterface {
@@ -80,7 +80,9 @@ export class WorkerSnapshotHandle implements SnapshotInterface {
         }) as Promise<StateSnapshotStruct | undefined>;
     }
 
-    queryLocalStateSnapshot(channelId: string): Promise<StateSnapshotStruct> {
+    queryLocalStateSnapshot(
+        channelId: ChannelId
+    ): Promise<StateSnapshotStruct> {
         return this.rpc.call(ROUTES.dispute.localStateSnapshot, {
             channelId
         }) as Promise<StateSnapshotStruct>;

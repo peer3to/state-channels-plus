@@ -32,53 +32,49 @@ describe("E2E: Init Handshake", function () {
             await h.lifecycle.start(2, 0, { autoConnect: true });
             await h.event.waitUntilEventOccurs("onConnection", 5000);
             h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
-            const transportToPeer1Before = h.query.getTransport(0, 1); // ensure transport exists
-            if (!transportToPeer1Before) {
+
+            const peer1Addr = h.getPeerHandle(1).address;
+            const peer0Handle = h.getPeerHandle(0);
+
+            const statusBefore =
+                await peer0Handle.queryInternals.getTransportStatus(peer1Addr);
+            if (!statusBefore.present) {
                 throw new Error(
                     "Expected transport from peer 0 to peer 1 to exist after handshake completion"
                 );
             }
-            const peer1Profile = h.query.getProfile(0, {
-                transport: transportToPeer1Before
-            });
-            if (!peer1Profile) {
+
+            const typeBefore =
+                await peer0Handle.queryInternals.getPreferredTransportType();
+            if (typeBefore !== TransportType.HOLEPUNCH) {
                 throw new Error(
-                    "Expected to find profile for peer 1 in peer 0's profile manager using the transport after handshake completion"
-                );
-            }
-            if (peer1Profile.transport != transportToPeer1Before) {
-                throw new Error(
-                    "Expected profile transport to match the transport used for handshake completion"
+                    `Expected initial handshake to be completed using HOLEPUNCH transport, but was ${TransportType[typeBefore]}`
                 );
             }
 
-            if (
-                peer1Profile.transport.transportType !== TransportType.HOLEPUNCH
-            ) {
-                throw new Error(
-                    `Expected initial handshake to be completed using HOLEPUNCH transport, but was ${TransportType[peer1Profile.transport.transportType]}`
+            // White-box: initiateWebRTC requires the live transport object.
+            const peer0 = h.getPeer(0);
+            const transport =
+                peer0.stateManager.p2pManager.openConnections.find(
+                    (t) =>
+                        peer0.stateManager.p2pManager.profileManager.getProfileByTransport(
+                            t
+                        )?.evmAddress === peer1Addr
                 );
-            }
+            if (!transport)
+                throw new Error("Transport not found for initiateWebRTC");
+
             const peer0LocalRpc = h.rpc.getLocalRpc(0);
             h.event.resetEventSpies();
-            await peer0LocalRpc.webRTCSetupService.initiateWebRTC(
-                transportToPeer1Before
-            );
+            await peer0LocalRpc.webRTCSetupService.initiateWebRTC(transport);
 
             await h.event.waitUntilEventOccurs("onConnection", 10000);
-            if (
-                peer1Profile.transport.transportType === TransportType.HOLEPUNCH
-            ) {
-                const refreshedPeer1Profile = h.query.getProfile(0, {
-                    evmAddress: h.getPeerHandle(1).address
-                });
-                const isSameProfile = refreshedPeer1Profile === peer1Profile;
-                const transportType =
-                    TransportType[
-                        refreshedPeer1Profile!.transport!.transportType
-                    ];
+
+            const typeAfter =
+                await peer0Handle.queryInternals.getPreferredTransportType();
+            if (typeAfter === TransportType.HOLEPUNCH) {
                 throw new Error(
-                    `Transport didn't upgrade to WebRTC - still HOLEPUNCH, profile same: ${isSameProfile}, transport type: ${transportType}`
+                    `Transport didn't upgrade to WebRTC - still HOLEPUNCH`
                 );
             }
         });

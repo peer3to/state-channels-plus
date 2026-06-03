@@ -1,4 +1,4 @@
-import type { Hash } from "@/types/types";
+import type { Hash, ChannelId, Bytes } from "@/types/types";
 import type { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export interface BalanceInterface {
@@ -16,4 +16,9 @@ export interface BalanceInterface {
         upperBlockHash: Hash;
         lowerBlockHash?: Hash;
     }): Promise<BalanceStruct>;
+
+    verifyBalanceInvariant(req: {
+        channelId: ChannelId;
+        encodedStateMachineState?: Bytes;
+    }): Promise<boolean>;
 }

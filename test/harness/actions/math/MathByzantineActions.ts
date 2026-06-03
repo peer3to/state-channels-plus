@@ -12,7 +12,6 @@ import { hash } from "@/utils";
 import type { MathStateMachine } from "@typechain-types";
 import {
     BlockStruct,
-    BlockConfirmationStruct,
     TransactionStruct,
     MessageBlockStruct,
     MessageStruct,
@@ -62,14 +61,7 @@ export class MathByzantineActions extends ByzantineActions {
             `Peer ${peerIndex} creating invalid state transition block for fork ${forkId}`
         );
 
-        const latestBlockConfirmation =
-            await handle.blocks.queryLatestBlockConfirmation(forkId);
-        if (!latestBlockConfirmation) {
-            throw new Error(`No block found for fork ${forkId}`);
-        }
-        const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as BlockConfirmationStruct
-        );
+        const latestBlock = (await handle.blocks.queryLatestBlock(forkId))!;
 
         const nextBlockHeight =
             await handle.blocks.queryNextBlockHeight(forkId);
@@ -139,13 +131,7 @@ export class MathByzantineActions extends ByzantineActions {
 
         const nextBlockHeight =
             await handle.blocks.queryNextBlockHeight(forkId);
-        const previousBlockConfirmation =
-            await handle.blocks.queryLatestBlockConfirmation(forkId);
-        const previousBlock = previousBlockConfirmation
-            ? Block.fromBlockConfirmation(
-                  previousBlockConfirmation as BlockConfirmationStruct
-              )
-            : undefined;
+        const previousBlock = await handle.blocks.queryLatestBlock(forkId);
         const previousBlockHash = await handle.blocks.queryPreviousBlockHash({
             forkId,
             height: nextBlockHeight
@@ -294,14 +280,7 @@ export class MathByzantineActions extends ByzantineActions {
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const latestBlockConfirmation =
-            await handle.blocks.queryLatestBlockConfirmation(forkId);
-        if (!latestBlockConfirmation) {
-            throw new Error(`No block found for fork ${forkId}`);
-        }
-        const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as BlockConfirmationStruct
-        );
+        const latestBlock = (await handle.blocks.queryLatestBlock(forkId))!;
 
         const nextBlockHeight =
             await handle.blocks.queryNextBlockHeight(forkId);
@@ -375,14 +354,7 @@ export class MathByzantineActions extends ByzantineActions {
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const latestBlockConfirmation =
-            await handle.blocks.queryLatestBlockConfirmation(forkId);
-        if (!latestBlockConfirmation) {
-            throw new Error(`No block found for fork ${forkId}`);
-        }
-        const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as BlockConfirmationStruct
-        );
+        const latestBlock = (await handle.blocks.queryLatestBlock(forkId))!;
 
         const nextBlockHeight =
             await handle.blocks.queryNextBlockHeight(forkId);
@@ -511,14 +483,7 @@ export class MathByzantineActions extends ByzantineActions {
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const latestBlockConfirmation =
-            await handle.blocks.queryLatestBlockConfirmation(forkId);
-        if (!latestBlockConfirmation) {
-            throw new Error(`No block found for fork ${forkId}`);
-        }
-        const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as BlockConfirmationStruct
-        );
+        const latestBlock = (await handle.blocks.queryLatestBlock(forkId))!;
 
         const nextBlockHeight =
             await handle.blocks.queryNextBlockHeight(forkId);
@@ -576,14 +541,7 @@ export class MathByzantineActions extends ByzantineActions {
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const latestBlockConfirmation =
-            await handle.blocks.queryLatestBlockConfirmation(forkId);
-        if (!latestBlockConfirmation) {
-            throw new Error(`No block found for fork ${forkId}`);
-        }
-        const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as BlockConfirmationStruct
-        );
+        const latestBlock = (await handle.blocks.queryLatestBlock(forkId))!;
 
         const nextBlockHeight =
             await handle.blocks.queryNextBlockHeight(forkId);

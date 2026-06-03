@@ -2,7 +2,7 @@ import type { Signer } from "ethers";
 import type { ForkId } from "@/types/types";
 import type { Logger, EventBarrier } from "@/utils";
 
-import type { PeerCaller } from "../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../threaded/rpc/PeerCaller";
 
 import type {
     ByzantineInterface,
@@ -38,7 +38,6 @@ import { WorkerDisputeHandle } from "./worker/disputeHandle";
 import { WorkerBalanceHandle } from "./worker/balanceHandle";
 
 export class WorkerPeer implements PeerHandle {
-    // Backend discriminator for rejectClosureInWorkerMode (avoids import cycles).
     readonly __workerBackend = true as const;
 
     readonly index: number;

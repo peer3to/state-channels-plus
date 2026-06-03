@@ -9,10 +9,7 @@ const testConfig: Partial<Config> = {
     DEBUG_CHANNEL_CONTRACT: false,
     DEBUG_LOCAL_TRANSPORT: true,
     VM_DEDICATED_THREAD: true,
-    // Q2 - orchestrator-side event-loop delay ceiling. parallel-4 mocha
-    // runners + http-bridge to hardhat make the prior 1s ceiling flake; 5s
-    // keeps the safety net while letting legit-slow loops complete.
-    EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 5
+    EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 1
 };
 
 export default testConfig;

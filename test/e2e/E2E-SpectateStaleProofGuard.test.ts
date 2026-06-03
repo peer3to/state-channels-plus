@@ -76,8 +76,6 @@ describe("E2E: Spectate stale-proof guard", function () {
             "Spectator should not have reached SYNCED with stale proofs"
         );
 
-        // step 1 - read connection count via PeerHandle -> worker mode safe.
-        // live p2pManager doesn't cross the boundary.
         const spectatorConns = await h
             .getPeerHandle(2)
             .queryInternals.connectionCount();

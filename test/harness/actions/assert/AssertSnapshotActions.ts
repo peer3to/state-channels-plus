@@ -163,15 +163,14 @@ export class AssertSnapshotActions {
                 this.harness.channelId
             );
 
+        // Strip ethers Proxy before postMessage — BalanceStructOutput is not cloneable.
+        const toPlain = (b: { amount: bigint; data: string }) => ({
+            amount: b.amount,
+            data: b.data
+        });
         const actualDelta = await handle.balance.subtractBalance({
-            a: {
-                amount: String(channelBalanceAfter.totalWithdrawals.amount),
-                data: String(channelBalanceAfter.totalWithdrawals.data)
-            },
-            b: {
-                amount: String(channelBalanceBefore.totalWithdrawals.amount),
-                data: String(channelBalanceBefore.totalWithdrawals.data)
-            }
+            a: toPlain(channelBalanceAfter.totalWithdrawals),
+            b: toPlain(channelBalanceBefore.totalWithdrawals)
         });
         const expectedWithdrawalsDelta =
             this.harness.context.expectedWithdrawalsDelta;
@@ -183,10 +182,7 @@ export class AssertSnapshotActions {
 
         const deltaMatches = await handle.balance.areBalancesEqual({
             a: actualDelta,
-            b: {
-                amount: String(expectedWithdrawalsDelta.amount),
-                data: String(expectedWithdrawalsDelta.data)
-            }
+            b: expectedWithdrawalsDelta
         });
 
         if (!deltaMatches) {
@@ -203,41 +199,12 @@ export class AssertSnapshotActions {
         const { peerIndex = 0, encodedStateMachineState } = options || {};
         const handle = this.harness.getPeerHandle(peerIndex);
 
-        const onChainSnapshot = StateSnapshot.from(
-            await this.harness.channelManager.getStateSnapshot(
-                this.harness.channelId
-            )
-        );
+        const isValid = await handle.balance.verifyBalanceInvariant({
+            channelId: this.harness.channelId,
+            encodedStateMachineState
+        });
 
-        const encodedState =
-            encodedStateMachineState ??
-            (await handle.stateMachine.queryStateMachineState(
-                String(onChainSnapshot.stateMachineStateHash)
-            ));
-
-        if (!encodedState) {
-            throw new Error(
-                `No encoded state machine state found for on-chain snapshot state hash ${onChainSnapshot.stateMachineStateHash}`
-            );
-        }
-
-        // Frozen ethers tuples break staticCall arg conversion; deep-clone snapshotData first.
-        const channelManager = this.harness.channelManager.connect(
-            handle.signer
-        );
-        const cloneSnapshotData = JSON.parse(
-            JSON.stringify(onChainSnapshot.snapshotData, (_k, v) =>
-                typeof v === "bigint" ? v.toString() : v
-            )
-        );
-        const isValidBalanceInvariant =
-            await channelManager.verifyBalanceInvariantCheckSnapshot.staticCall(
-                this.harness.channelId,
-                cloneSnapshotData,
-                encodedState
-            );
-
-        if (!isValidBalanceInvariant) {
+        if (!isValid) {
             throw new Error("On-chain snapshot balance invariant check failed");
         }
     }

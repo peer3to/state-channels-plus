@@ -1,6 +1,9 @@
-import type { PeerHandler } from "../../rpc/rpc-server";
+import type { PeerHandler } from "../../rpc/PeerHandler";
 import type StateManager from "@/stateManager";
+import type { ATransport } from "@/transport";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ROUTES } from "../routeNames";
+import { Block } from "@/models";
 
 export class QueryInternalsRoutes {
     private stateManager?: StateManager;
@@ -21,18 +24,11 @@ export class QueryInternalsRoutes {
         return this.stateManager;
     }
 
-    private resolveTransport(otherAddr: string): unknown {
-        const pmAny = this.sm.p2pManager as unknown as {
-            openConnections: Iterable<unknown>;
-            profileManager: {
-                getProfileByTransport: (
-                    t: unknown
-                ) => { evmAddress?: string } | undefined;
-            };
-        };
+    private resolveTransport(otherAddr: string): ATransport | undefined {
         const target = String(otherAddr).toLowerCase();
-        for (const t of pmAny.openConnections) {
-            const profile = pmAny.profileManager.getProfileByTransport(t);
+        for (const t of this.sm.p2pManager.openConnections) {
+            const profile =
+                this.sm.p2pManager.profileManager.getProfileByTransport(t);
             if (String(profile?.evmAddress ?? "").toLowerCase() === target)
                 return t;
         }
@@ -46,78 +42,36 @@ export class QueryInternalsRoutes {
                 peerAddress?: string;
                 kind?: string;
             };
-            const out: Array<{
-                connectionId: string;
-                peerAddress: string;
-                kind: string;
-            }> = [];
-            for (const t of this.sm.p2pManager
-                .openConnections as unknown as TransportRuntime[]) {
-                out.push({
-                    connectionId: t.connectionId ?? "",
-                    peerAddress: t.peerAddress ?? "0x",
-                    kind: t.kind ?? "unknown"
-                });
-            }
-            return out;
+            return (
+                this.sm.p2pManager.openConnections as TransportRuntime[]
+            ).map((t) => ({
+                connectionId: t.connectionId ?? "",
+                peerAddress: t.peerAddress ?? "0x",
+                kind: t.kind ?? "unknown"
+            }));
         });
 
         server.register(
             ROUTES.queryInternals.getProfileByEvmAddress,
-            async (args) => {
-                const { addr } = (args ?? {}) as { addr?: string };
+            async ({ addr }: { addr: string }) => {
                 if (!addr)
                     throw new Error(
                         "queryInternals.getProfileByEvmAddress: missing 'addr'"
                     );
                 const profile =
-                    this.sm.p2pManager.profileManager?.getProfileByEvmAddress?.(
+                    this.sm.p2pManager.profileManager.getProfileByEvmAddress(
                         addr
-                    ) as
-                        | {
-                              evmAddress?: string;
-                              transport?: { connectionId?: string };
-                          }
-                        | undefined;
+                    );
                 if (!profile) return undefined;
                 return {
                     evmAddress: profile.evmAddress ?? addr,
-                    connectionId: profile.transport?.connectionId ?? ""
+                    connectionId:
+                        (
+                            profile.transport as unknown as {
+                                connectionId?: string;
+                            }
+                        )?.connectionId ?? ""
                 };
-            }
-        );
-
-        server.register(
-            ROUTES.queryInternals.getProfileByConnectionId,
-            async (args) => {
-                const { connectionId } = (args ?? {}) as {
-                    connectionId?: string;
-                };
-                if (!connectionId)
-                    throw new Error(
-                        "queryInternals.getProfileByConnectionId: missing 'connectionId'"
-                    );
-                type TransportRuntime = { connectionId?: string };
-                for (const t of this.sm.p2pManager
-                    .openConnections as unknown as TransportRuntime[]) {
-                    if (t.connectionId === connectionId) {
-                        const getProfile = this.sm.p2pManager.profileManager
-                            ?.getProfileByTransport as unknown as
-                            | ((
-                                  t: unknown
-                              ) => { evmAddress?: string } | undefined)
-                            | undefined;
-                        const profile = getProfile?.(t) as
-                            | { evmAddress?: string }
-                            | undefined;
-                        if (!profile) return undefined;
-                        return {
-                            evmAddress: profile.evmAddress ?? "0x",
-                            connectionId
-                        };
-                    }
-                }
-                return undefined;
             }
         );
 
@@ -127,39 +81,18 @@ export class QueryInternalsRoutes {
 
         server.register(
             ROUTES.queryInternals.isHandshakeCompletedWith,
-            async (req) => {
-                const { otherAddr } = (req ?? {}) as { otherAddr: string };
-                const sm = this.sm as unknown as {
-                    p2pManager: {
-                        profileManager: {
-                            getProfileByEvmAddress: (
-                                a: string
-                            ) =>
-                                | { getIsHandshakeCompleted: () => boolean }
-                                | undefined;
-                        };
-                    };
-                };
+            async ({ otherAddr }: { otherAddr: string }) => {
                 const profile =
-                    sm.p2pManager.profileManager.getProfileByEvmAddress(
+                    this.sm.p2pManager.profileManager.getProfileByEvmAddress(
                         otherAddr
                     );
                 return profile?.getIsHandshakeCompleted() ?? false;
             }
         );
 
-        server.register(ROUTES.queryInternals.self, async () => {
-            return (this.sm as unknown as { signerAddress: string })
-                .signerAddress;
-        });
-
         server.register(
             ROUTES.queryInternals.isForkDisputedService,
-            async (args) => {
-                const { op, args: opArgs } = (args ?? {}) as {
-                    op?: string;
-                    args?: unknown;
-                };
+            async ({ op, args: opArgs }: { op: string; args: unknown }) => {
                 if (!op)
                     throw new Error(
                         "queryInternals.isForkDisputedService: missing 'op'"
@@ -170,18 +103,17 @@ export class QueryInternalsRoutes {
 
         server.register(
             ROUTES.queryInternals.callServiceWithTransport,
-            async (args) => {
-                const {
-                    serviceName,
-                    methodName,
-                    otherAddr,
-                    args: callArgs
-                } = (args ?? {}) as {
-                    serviceName?: string;
-                    methodName?: string;
-                    otherAddr?: string;
-                    args?: unknown[];
-                };
+            async ({
+                serviceName,
+                methodName,
+                otherAddr,
+                args: callArgs
+            }: {
+                serviceName: string;
+                methodName: string;
+                otherAddr: string;
+                args: unknown[];
+            }) => {
                 if (!serviceName || !methodName || !otherAddr)
                     throw new Error(
                         "queryInternals.callServiceWithTransport: missing required args"
@@ -191,10 +123,9 @@ export class QueryInternalsRoutes {
                     throw new Error(
                         `queryInternals.callServiceWithTransport: no transport to ${otherAddr}`
                     );
-                const pmAny = this.sm.p2pManager as unknown as {
-                    localRpc: Record<string, unknown>;
-                };
-                const svc = pmAny.localRpc[serviceName] as
+                const localRpc = this.sm.p2pManager
+                    .localRpc as unknown as Record<string, unknown>;
+                const svc = localRpc[serviceName] as
                     | {
                           createRPCMethods: (
                               t: unknown
@@ -211,27 +142,23 @@ export class QueryInternalsRoutes {
                     throw new Error(
                         `queryInternals.callServiceWithTransport: '${serviceName}.${methodName}' not a function`
                     );
-                return await (fn as (...a: unknown[]) => unknown).apply(
-                    methods,
-                    callArgs ?? []
-                );
+                return await fn.apply(methods, callArgs ?? []);
             }
         );
 
         server.register(
             ROUTES.queryInternals.callServiceMethodWithTransport,
-            async (args) => {
-                const {
-                    serviceName,
-                    methodName,
-                    otherAddr,
-                    args: callArgs
-                } = (args ?? {}) as {
-                    serviceName?: string;
-                    methodName?: string;
-                    otherAddr?: string;
-                    args?: unknown[];
-                };
+            async ({
+                serviceName,
+                methodName,
+                otherAddr,
+                args: callArgs
+            }: {
+                serviceName: string;
+                methodName: string;
+                otherAddr: string;
+                args: unknown[];
+            }) => {
                 if (!serviceName || !methodName || !otherAddr)
                     throw new Error(
                         "queryInternals.callServiceMethodWithTransport: missing required args"
@@ -241,10 +168,9 @@ export class QueryInternalsRoutes {
                     throw new Error(
                         `queryInternals.callServiceMethodWithTransport: no transport to ${otherAddr}`
                     );
-                const pmAny = this.sm.p2pManager as unknown as {
-                    localRpc: Record<string, unknown>;
-                };
-                const svc = pmAny.localRpc[serviceName] as
+                const localRpc = this.sm.p2pManager
+                    .localRpc as unknown as Record<string, unknown>;
+                const svc = localRpc[serviceName] as
                     | Record<string, (...a: unknown[]) => unknown>
                     | undefined;
                 if (!svc)
@@ -256,7 +182,7 @@ export class QueryInternalsRoutes {
                     throw new Error(
                         `queryInternals.callServiceMethodWithTransport: '${serviceName}.${methodName}' not a function`
                     );
-                return await (fn as (...a: unknown[]) => unknown).apply(svc, [
+                return await fn.apply(svc, [
                     resolvedTransport,
                     ...(callArgs ?? [])
                 ]);
@@ -265,38 +191,22 @@ export class QueryInternalsRoutes {
 
         server.register(
             ROUTES.queryInternals.getPreferredTransportType,
-            async () => {
-                return (
-                    this.sm.p2pManager as unknown as {
-                        preferredTransport: number;
-                    }
-                ).preferredTransport;
-            }
+            async () => this.sm.p2pManager.preferredTransport
         );
 
         server.register(
             ROUTES.queryInternals.getInitChallenge,
-            async (args) => {
-                const { otherAddr } = (args ?? {}) as { otherAddr?: string };
+            async ({ otherAddr }: { otherAddr: string }) => {
                 if (!otherAddr)
                     throw new Error(
                         "queryInternals.getInitChallenge: missing otherAddr"
                     );
                 const t = this.resolveTransport(otherAddr);
                 if (!t) return undefined;
-                const svc = this.sm.p2pManager.localRpc[
-                    "initHandshakeService"
-                ] as
-                    | {
-                          getChallenge: (t: unknown) =>
-                              | {
-                                    randomChallengeHash: string;
-                                    initTime: number;
-                                }
-                              | undefined;
-                      }
-                    | undefined;
-                const c = svc?.getChallenge(t);
+                const c =
+                    this.sm.p2pManager.localRpc.initHandshakeService.getChallenge(
+                        t
+                    );
                 if (!c) return undefined;
                 return {
                     randomChallengeHash: c.randomChallengeHash,
@@ -307,39 +217,28 @@ export class QueryInternalsRoutes {
 
         server.register(
             ROUTES.queryInternals.clearInitChallenge,
-            async (args) => {
-                const { otherAddr } = (args ?? {}) as { otherAddr?: string };
+            async ({ otherAddr }: { otherAddr: string }) => {
                 if (!otherAddr)
                     throw new Error(
                         "queryInternals.clearInitChallenge: missing otherAddr"
                     );
                 const t = this.resolveTransport(otherAddr);
                 if (!t) return {};
-                const svc = this.sm.p2pManager.localRpc[
-                    "initHandshakeService"
-                ] as unknown as
-                    | {
-                          mapTransportToChallenge: {
-                              delete: (k: unknown) => void;
-                          };
-                      }
-                    | undefined;
-                svc?.mapTransportToChallenge.delete(t);
+                this.sm.p2pManager.localRpc.initHandshakeService.mapTransportToChallenge.delete(
+                    t
+                );
                 return {};
             }
         );
 
         server.register(
             ROUTES.queryInternals.getTransportStatus,
-            async (args) => {
-                const { otherAddr } = (args ?? {}) as { otherAddr?: string };
+            async ({ otherAddr }: { otherAddr: string }) => {
                 if (!otherAddr)
                     throw new Error(
                         "queryInternals.getTransportStatus: missing otherAddr"
                     );
-                const t = this.resolveTransport(otherAddr) as
-                    | { isClosed?: boolean }
-                    | undefined;
+                const t = this.resolveTransport(otherAddr);
                 if (!t) return { present: false };
                 return { present: true, isClosed: t.isClosed };
             }
@@ -347,11 +246,13 @@ export class QueryInternalsRoutes {
 
         server.register(
             ROUTES.queryInternals.blockForkIsDisputed,
-            async (args) => {
-                const { block, peerAddress } = (args ?? {}) as {
-                    block?: unknown;
-                    peerAddress?: string;
-                };
+            async ({
+                block,
+                peerAddress
+            }: {
+                block: BlockConfirmationStruct;
+                peerAddress: string;
+            }) => {
                 if (!block)
                     throw new Error(
                         "queryInternals.blockForkIsDisputed: missing 'block'"
@@ -360,14 +261,9 @@ export class QueryInternalsRoutes {
                     throw new Error(
                         "queryInternals.blockForkIsDisputed: missing 'peerAddress'"
                     );
-                const Block = (await import("@/models")).Block;
-                const reconstructed = Block.fromBlockConfirmation(
-                    block as Parameters<typeof Block.fromBlockConfirmation>[0]
-                );
+                const reconstructed = Block.fromBlockConfirmation(block);
                 await this.sm.blockValidationStrategy.blockForkIsDisputed(
-                    reconstructed as Parameters<
-                        typeof this.sm.blockValidationStrategy.blockForkIsDisputed
-                    >[0],
+                    reconstructed,
                     peerAddress
                 );
                 return {};
@@ -380,9 +276,13 @@ export class QueryInternalsRoutes {
         opName: string,
         opArgs: unknown
     ): Promise<unknown> {
-        const svc = (
-            this.sm.p2pManager.localRpc as unknown as Record<string, unknown>
-        )[svcName] as Record<string, (...a: unknown[]) => unknown> | undefined;
+        const localRpc = this.sm.p2pManager.localRpc as unknown as Record<
+            string,
+            unknown
+        >;
+        const svc = localRpc[svcName] as
+            | Record<string, (...a: unknown[]) => unknown>
+            | undefined;
         if (!svc) throw new Error(`${svcName} not present on localRpc`);
         const fn = svc[opName];
         if (typeof fn !== "function")

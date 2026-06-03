@@ -1,5 +1,3 @@
-import "./bigintJson";
-
 // Stub Hyperswarm so Holepunch does not open UDP sockets that keep the worker alive at terminate().
 (global as unknown as { Hyperswarm: unknown }).Hyperswarm = {
     on: () => undefined,
@@ -14,8 +12,8 @@ import { MessagePort, parentPort, workerData } from "node:worker_threads";
 import { ethers } from "ethers";
 import type { Wallet } from "ethers";
 
-import { PeerHandler } from "../rpc/rpc-server";
-import { PeerCaller } from "../rpc/rpc-client";
+import { PeerHandler } from "../rpc/PeerHandler";
+import { PeerCaller } from "../rpc/PeerCaller";
 import type { RpcPort } from "../rpc/rpc-types";
 import { SpyRegistry } from "./SpyRegistry";
 import { WorkerRoutes } from "./subHandleRoutes";

@@ -6,14 +6,9 @@ import {
     TransitionActions,
     TransitionOptions
 } from "@test/harness/actions/TransitionActions";
-import type { NamedOpRequest } from "@test/harness/core/PeerHandle";
 import { ROUTES } from "@test/harness/threaded/worker/routeNames";
 import { MathPeerTestHarness } from "test-harness";
 import { MainRpcService } from "@/rpc";
-
-type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
-    txFn?: NamedOpRequest;
-};
 
 type ParticipantLeaveOptions = TransitionOptions & {
     statusTimeoutMs?: number;
@@ -41,29 +36,11 @@ export class MathTransitionActions extends TransitionActions<
         );
     }
 
-    override async advanceState(
-        options?: MathAdvanceStateOptions
-    ): Promise<void> {
-        if (options?.txFn) {
-            return super.advanceState({ ...options, txFn: options.txFn });
-        }
-        const txFn: NamedOpRequest = {
-            op: ROUTES.math.add,
-            args: { value: 1 }
-        };
-
-        const count = options?.count ?? 1;
-        const total = options?.rounds
-            ? options.rounds * this.harness.peerCount
-            : count;
-
-        for (let i = 0; i < total; i++) {
-            await this.submitNext(txFn, {
-                ...options,
-                waitForFinalization:
-                    i === total - 1 ? options?.waitForFinalization : false
-            });
-        }
+    override advanceState(options?: AdvanceStateBaseOptions): Promise<void> {
+        return super.advanceState({
+            ...options,
+            txFn: options?.txFn ?? { op: ROUTES.math.add, args: { value: 1 } }
+        });
     }
 
     async peerWrite(options: {

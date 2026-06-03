@@ -52,20 +52,6 @@ export class InlineP2pInternalsHandle implements P2pInternalsInterface {
         };
     }
 
-    async getProfileByConnectionId(
-        connectionId: string
-    ): Promise<ProfileSummary | undefined> {
-        for (const t of this.p2pManager.openConnections) {
-            if ((t as TransportRuntime).connectionId === connectionId) {
-                const profile =
-                    this.p2pManager.profileManager.getProfileByTransport(t);
-                if (!profile) return undefined;
-                return { evmAddress: profile.evmAddress, connectionId };
-            }
-        }
-        return undefined;
-    }
-
     async connectionCount(): Promise<number> {
         return this.p2pManager.openConnections.length;
     }
@@ -74,10 +60,6 @@ export class InlineP2pInternalsHandle implements P2pInternalsInterface {
         const profile =
             this.p2pManager.profileManager.getProfileByEvmAddress(otherAddr);
         return profile?.getIsHandshakeCompleted() ?? false;
-    }
-
-    async self(): Promise<Address> {
-        return this.peer.address;
     }
 
     async didPeerAcknowledgeDisputedFork(

@@ -3,7 +3,6 @@
 export const ROUTES = {
     query: {
         status: "query.status",
-        latestBlock: "query.latestBlock",
         blockAt: "query.blockAt",
         nextToWrite: "query.nextToWrite",
         participants: "query.participants",
@@ -46,12 +45,13 @@ export const ROUTES = {
     },
     balance: {
         subtract: "balance.subtract",
-        areEqual: "balance.areEqual"
+        areEqual: "balance.areEqual",
+        verifyInvariant: "balance.verifyInvariant"
     },
     dispute: {
         construct: "dispute.construct",
         latestBlockFromStateProof: "dispute.latestBlockFromStateProof",
-        windows: "dispute.windows",
+        disputeWindows: "dispute.disputeWindows",
         localStateSnapshot: "dispute.localStateSnapshot",
         getAuditingData: "dispute.getAuditingData"
     },
@@ -95,7 +95,6 @@ export const ROUTES = {
     queryInternals: {
         openConnections: "queryInternals.openConnections",
         getProfileByEvmAddress: "queryInternals.getProfileByEvmAddress",
-        getProfileByConnectionId: "queryInternals.getProfileByConnectionId",
         connectionCount: "queryInternals.connectionCount",
         isHandshakeCompletedWith: "queryInternals.isHandshakeCompletedWith",
         self: "queryInternals.self",
@@ -112,8 +111,7 @@ export const ROUTES = {
     network: {
         disconnectAll: "network.disconnectAll",
         tryOpenConnectionToChannel: "network.tryOpenConnectionToChannel",
-        installDisconnectFilter: "network.installDisconnectFilter",
-        restoreDisconnectFilter: "network.restoreDisconnectFilter"
+        installDisconnectFilter: "network.installDisconnectFilter"
     },
     math: {
         add: "math.add",
@@ -127,9 +125,7 @@ export const ROUTES = {
         dispose: "lifecycle.dispose"
     },
     stub: {
-        stubMethod: "stub.stubMethod",
-        restoreStubbedMethod: "stub.restoreStubbedMethod",
-        restoreAllStubbedMethods: "stub.restoreAllStubbedMethods"
+        stubMethod: "stub.stubMethod"
     },
     spy: {
         reset: "spy.reset"

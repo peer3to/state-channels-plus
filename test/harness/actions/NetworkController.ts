@@ -2,8 +2,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger, LocalDiscoveryServer } from "@/utils";
 
 /**
- * Handles network connectivity and P2P connections between peers.
- * Peer-side ops use the network sub-handle; discovery wiring stays here.
+ * Handles network connectivity and P2P connections between peers
  */
 export class NetworkController {
     constructor(
@@ -33,18 +32,13 @@ export class NetworkController {
 
         await Promise.all(
             peers.map((peer) =>
-                this.harness
-                    .getPeerHandle(peer.index)
-                    .network.tryOpenConnectionToChannel(
-                        this.harness.channelId!.toString()
-                    )
+                peer.network.tryOpenConnectionToChannel(this.harness.channelId!)
             )
         );
         // Worker peers already dialed discovery during p2pSetup.
         await Promise.all(
             peers.map((peer) => {
-                const handle = this.harness.getPeerHandle(peer.index);
-                if (handle.__workerBackend) return Promise.resolve();
+                if (peer.__workerBackend) return Promise.resolve();
                 return LocalDiscoveryServer.connectToPeers(
                     this.harness.getPeer(peer.index).stateManager.p2pManager
                         .self,

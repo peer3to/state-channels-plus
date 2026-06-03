@@ -27,10 +27,7 @@ export class MathJoinActions extends JoinActions {
                 .getPeerHandle(best.index)
                 .blocks.queryInboundLatestBlockHeight()) ?? 0;
         for (const peer of candidates.slice(1)) {
-            const h =
-                (await this.harness
-                    .getPeerHandle(peer.index)
-                    .blocks.queryInboundLatestBlockHeight()) ?? 0;
+            const h = (await peer.blocks.queryInboundLatestBlockHeight()) ?? 0;
             if (h > bestHeight) {
                 bestHeight = h;
                 best = peer;

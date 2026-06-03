@@ -56,3 +56,12 @@ export function connectDefaultMathSigner(
 
 export const DEFAULT_MATH_HARNESS_DEPLOYMENT_MODULE =
     "@test/harness/core/defaultMathHarnessDeployment";
+
+const DEFAULT_MATH_HARNESS_DEPLOYMENT: HarnessDeploymentConfig<MathStateMachine> =
+    {
+        deployOnChainContracts: deployDefaultMathOnChainContracts,
+        deployLocalStateMachine: deployDefaultMathLocalStateMachine,
+        connectSigner: connectDefaultMathSigner
+    };
+
+export default DEFAULT_MATH_HARNESS_DEPLOYMENT;

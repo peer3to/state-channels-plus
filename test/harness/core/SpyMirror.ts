@@ -1,10 +1,3 @@
-// W4 - orchestrator-side spy mirror. ingests {topic:"spy"} push frames,
-// stores per-peer (name -> {count, lastArgs}), wakes the harness-wide
-// eventCountsBarrier so EventActions.waitForEventCounts resumes.
-//
-// W4 D-12 - EventBarrier stays orchestrator-side, untouched. mirror writes
-//           signal the barrier; other barriers stay orchestrator-local.
-
 import type { EventBarrier } from "@/utils";
 
 export type SpyMirrorFramePayload = {
@@ -16,7 +9,9 @@ export type SpyMirrorFramePayload = {
 
 type MirrorSlot = {
     count: number;
+    resetAt: number;
     lastArgs: readonly unknown[] | undefined;
+    history: (readonly unknown[])[];
 };
 
 export class SpyMirror {
@@ -24,30 +19,38 @@ export class SpyMirror {
 
     constructor(private readonly eventCountsBarrier: EventBarrier) {}
 
-    // step 1 - W3 routes every {topic:"spy"} push frame here.
-    // count carries a post-increment value -> max() converges even with
-    // re-delivery or out-of-order frames (fifo means usually just assign).
-    // lastArgs follows the count; on >= we overwrite (== keeps the latest
-    // args under redelivery without losing the most-recent tuple).
     ingest(payload: SpyMirrorFramePayload): void {
         const row =
             this.rows.get(payload.peerIndex) ?? new Map<string, MirrorSlot>();
         const slot = row.get(payload.name) ?? {
             count: 0,
-            lastArgs: undefined
+            resetAt: 0,
+            lastArgs: undefined,
+            history: []
         };
+        if (payload.count > slot.count) {
+            slot.history.push(payload.lastArgs);
+        }
         if (payload.count >= slot.count) {
             slot.count = payload.count;
             slot.lastArgs = payload.lastArgs;
         }
         row.set(payload.name, slot);
         this.rows.set(payload.peerIndex, row);
-        // step 1 - wake the existing harness barrier.
         void this.eventCountsBarrier.signal();
     }
 
+    reset(peerIndex: number, name: string): void {
+        const slot = this.rows.get(peerIndex)?.get(name);
+        if (!slot) return;
+        slot.resetAt = slot.count;
+        slot.lastArgs = undefined;
+        slot.history = [];
+    }
+
     getCount(peerIndex: number, name: string): number {
-        return this.rows.get(peerIndex)?.get(name)?.count ?? 0;
+        const slot = this.rows.get(peerIndex)?.get(name);
+        return slot ? slot.count - slot.resetAt : 0;
     }
 
     getLastArgs(
@@ -56,23 +59,15 @@ export class SpyMirror {
     ): readonly unknown[] | undefined {
         return this.rows.get(peerIndex)?.get(name)?.lastArgs;
     }
+
+    getHistory(
+        peerIndex: number,
+        name: string
+    ): readonly (readonly unknown[])[] {
+        return this.rows.get(peerIndex)?.get(name)?.history ?? [];
+    }
 }
 
-function workerSpyUnsupportedError(name: string, member: string): Error {
-    const err = new Error(
-        `WorkerEventSpy.${member} is inline-only (W4 D-14). ` +
-            `spy '${name}' cannot expose per-call history in worker mode; ` +
-            `restrict the scenario to inline peers or add per-call args ` +
-            `propagation to the spy push frame.`
-    );
-    err.name = "WorkerSpyUnsupportedError";
-    return err;
-}
-
-// step 1 - synthetic spy shape that mirrors the sinon members tests read.
-// inline peers return real sinon.SinonSpy (structurally compatible); worker
-// peers return one of these per event-name, backed by the mirror.
-// see W4 §one-class EventActions audit table.
 export interface WorkerEventSpy {
     readonly callCount: number;
     readonly lastCall: { args: readonly unknown[] } | undefined;
@@ -80,8 +75,6 @@ export interface WorkerEventSpy {
     getCalls(): readonly { args: readonly unknown[] }[];
 }
 
-// step 1 - build a WorkerEventSpy backed by a SpyMirror for a given (peer, name).
-// resetHistory is a no-op in worker mode.
 export function makeWorkerEventSpy(
     mirror: SpyMirror,
     peerIndex: number,
@@ -96,10 +89,10 @@ export function makeWorkerEventSpy(
             return args === undefined ? undefined : { args };
         },
         resetHistory() {
-            // step 1 - no-op in worker mode.
+            mirror.reset(peerIndex, name);
         },
-        getCalls(): never {
-            throw workerSpyUnsupportedError(name, "getCalls");
+        getCalls() {
+            return mirror.getHistory(peerIndex, name).map((args) => ({ args }));
         }
     };
 }

@@ -11,7 +11,7 @@ import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
 import { config } from "@/utils/config";
-import { Address } from "./types/types";
+import { Address, ChannelId } from "./types/types";
 import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
@@ -118,7 +118,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             console.error(e);
         }
     }
-    public async tryOpenConnectionToChannel(channelId: string) {
+    public async tryOpenConnectionToChannel(channelId: ChannelId) {
         if (config.DEBUG_LOCAL_TRANSPORT) {
             return;
             await LocalDiscoveryServer.tryStart();

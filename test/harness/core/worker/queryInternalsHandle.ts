@@ -1,4 +1,5 @@
 import type {
+    InitChallengeSummary,
     P2pInternalsInterface,
     ProfileSummary,
     TransportSummary
@@ -13,47 +14,39 @@ import type {
 } from "@/types/types";
 import type { TransportType } from "@/transport";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { PeerCaller } from "../../threaded/rpc/rpc-client";
+import type { PeerCaller } from "../../threaded/rpc/PeerCaller";
+import { ROUTES } from "@test/harness/threaded/worker/routeNames";
 
 export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
     constructor(private readonly rpc: PeerCaller) {}
 
     openConnections(): Promise<TransportSummary[]> {
-        return this.rpc.call("queryInternals.openConnections", {}) as Promise<
-            TransportSummary[]
-        >;
+        return this.rpc.call(
+            ROUTES.queryInternals.openConnections,
+            {}
+        ) as Promise<TransportSummary[]>;
     }
     getProfileByEvmAddress(addr: Address): Promise<ProfileSummary | undefined> {
-        return this.rpc.call("queryInternals.getProfileByEvmAddress", {
+        return this.rpc.call(ROUTES.queryInternals.getProfileByEvmAddress, {
             addr
-        }) as Promise<ProfileSummary | undefined>;
-    }
-    getProfileByConnectionId(
-        connectionId: string
-    ): Promise<ProfileSummary | undefined> {
-        return this.rpc.call("queryInternals.getProfileByConnectionId", {
-            connectionId
         }) as Promise<ProfileSummary | undefined>;
     }
     connectionCount(): Promise<number> {
         return this.rpc.call(
-            "queryInternals.connectionCount",
+            ROUTES.queryInternals.connectionCount,
             {}
         ) as Promise<number>;
     }
     isHandshakeCompletedWith(otherAddr: Address): Promise<boolean> {
-        return this.rpc.call("queryInternals.isHandshakeCompletedWith", {
+        return this.rpc.call(ROUTES.queryInternals.isHandshakeCompletedWith, {
             otherAddr
         }) as Promise<boolean>;
-    }
-    self(): Promise<Address> {
-        return this.rpc.call("queryInternals.self", {}) as Promise<Address>;
     }
     didPeerAcknowledgeDisputedFork(
         peerAddress: Address,
         forkId: ForkId
     ): Promise<boolean> {
-        return this.rpc.call("queryInternals.isForkDisputedService", {
+        return this.rpc.call(ROUTES.queryInternals.isForkDisputedService, {
             op: "didPeerAcknowledgeDisputedFork",
             args: [peerAddress, forkId]
         }) as Promise<boolean>;
@@ -62,7 +55,7 @@ export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
         peerAddress: Address,
         forkId: ForkId
     ): Promise<boolean> {
-        return this.rpc.call("queryInternals.isForkDisputedService", {
+        return this.rpc.call(ROUTES.queryInternals.isForkDisputedService, {
             op: "didIAcknowledgeDisputedFork",
             args: [peerAddress, forkId]
         }) as Promise<boolean>;
@@ -71,7 +64,7 @@ export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<boolean> {
-        return this.rpc.call("queryInternals.isForkDisputedService", {
+        return this.rpc.call(ROUTES.queryInternals.isForkDisputedService, {
             op: "requestDisputeAcknowledgment",
             args: [channelId, forkId]
         }) as Promise<boolean>;
@@ -81,7 +74,7 @@ export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<void> {
-        return this.rpc.call("queryInternals.isForkDisputedService", {
+        return this.rpc.call(ROUTES.queryInternals.isForkDisputedService, {
             op: "respondToDisputeAcknowledgment",
             args: [peerAddress, channelId, forkId]
         }) as Promise<void>;
@@ -91,7 +84,7 @@ export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<void> {
-        return this.rpc.call("queryInternals.callServiceWithTransport", {
+        return this.rpc.call(ROUTES.queryInternals.callServiceWithTransport, {
             serviceName: "isForkDisputedService",
             methodName: "onDisputeAcknowledgmentRequest",
             otherAddr: fromAddr,
@@ -103,7 +96,7 @@ export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
         hash: Hash,
         time: Timestamp
     ): Promise<void> {
-        return this.rpc.call("queryInternals.callServiceWithTransport", {
+        return this.rpc.call(ROUTES.queryInternals.callServiceWithTransport, {
             serviceName: "initHandshakeService",
             methodName: "onInitHandshakeRequest",
             otherAddr: fromAddr,
@@ -116,7 +109,7 @@ export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
         time: Timestamp,
         preferred: TransportType
     ): Promise<void> {
-        return this.rpc.call("queryInternals.callServiceWithTransport", {
+        return this.rpc.call(ROUTES.queryInternals.callServiceWithTransport, {
             serviceName: "initHandshakeService",
             methodName: "onInitHandshakeResponse",
             otherAddr: fromAddr,
@@ -124,37 +117,38 @@ export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
         }) as Promise<void>;
     }
     initHandshakeTo(toAddr: Address): Promise<void> {
-        return this.rpc.call("queryInternals.callServiceMethodWithTransport", {
-            serviceName: "initHandshakeService",
-            methodName: "initHandshake",
-            otherAddr: toAddr,
-            args: []
-        }) as Promise<void>;
+        return this.rpc.call(
+            ROUTES.queryInternals.callServiceMethodWithTransport,
+            {
+                serviceName: "initHandshakeService",
+                methodName: "initHandshake",
+                otherAddr: toAddr,
+                args: []
+            }
+        ) as Promise<void>;
     }
     getPreferredTransportType(): Promise<number> {
         return this.rpc.call(
-            "queryInternals.getPreferredTransportType",
+            ROUTES.queryInternals.getPreferredTransportType,
             {}
         ) as Promise<number>;
     }
     getInitChallenge(
         otherAddr: Address
-    ): Promise<{ randomChallengeHash: string; initTime: number } | undefined> {
-        return this.rpc.call("queryInternals.getInitChallenge", {
+    ): Promise<InitChallengeSummary | undefined> {
+        return this.rpc.call(ROUTES.queryInternals.getInitChallenge, {
             otherAddr
-        }) as Promise<
-            { randomChallengeHash: string; initTime: number } | undefined
-        >;
+        }) as Promise<InitChallengeSummary | undefined>;
     }
     clearInitChallenge(otherAddr: Address): Promise<void> {
-        return this.rpc.call("queryInternals.clearInitChallenge", {
+        return this.rpc.call(ROUTES.queryInternals.clearInitChallenge, {
             otherAddr
         }) as Promise<void>;
     }
     getTransportStatus(
         otherAddr: Address
     ): Promise<{ present: boolean; isClosed?: boolean }> {
-        return this.rpc.call("queryInternals.getTransportStatus", {
+        return this.rpc.call(ROUTES.queryInternals.getTransportStatus, {
             otherAddr
         }) as Promise<{
             present: boolean;
@@ -163,9 +157,9 @@ export class WorkerP2pInternalsHandle implements P2pInternalsInterface {
     }
     blockForkIsDisputed(
         block: BlockConfirmationStruct,
-        peerAddress: string
+        peerAddress: Address
     ): Promise<void> {
-        return this.rpc.call("queryInternals.blockForkIsDisputed", {
+        return this.rpc.call(ROUTES.queryInternals.blockForkIsDisputed, {
             block,
             peerAddress
         }) as Promise<void>;

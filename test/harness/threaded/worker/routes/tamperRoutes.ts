@@ -1,5 +1,5 @@
-import type { PeerHandler } from "../../rpc/rpc-server";
-import type { PeerCaller } from "../../rpc/rpc-client";
+import type { PeerHandler } from "../../rpc/PeerHandler";
+import type { PeerCaller } from "../../rpc/PeerCaller";
 import type StateManager from "@/stateManager";
 import { ROUTES } from "../routeNames";
 

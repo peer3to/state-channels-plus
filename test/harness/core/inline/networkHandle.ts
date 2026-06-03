@@ -1,3 +1,4 @@
+import { ChannelId } from "@/types";
 import type {
     NetworkInterface,
     DisconnectFilterFn
@@ -17,7 +18,7 @@ export class InlineNetworkHandle implements NetworkInterface {
         }
     }
 
-    async tryOpenConnectionToChannel(channelId: string): Promise<void> {
+    async tryOpenConnectionToChannel(channelId: ChannelId): Promise<void> {
         await this.peer.stateManager.p2pManager.tryOpenConnectionToChannel(
             channelId
         );
@@ -44,9 +45,5 @@ export class InlineNetworkHandle implements NetworkInterface {
             this.filterRestore = undefined;
         };
         return { id: "disconnectFilter" };
-    }
-
-    async restoreDisconnectFilter(): Promise<void> {
-        this.filterRestore?.();
     }
 }

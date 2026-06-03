@@ -90,15 +90,14 @@ describe("E2E: Join/Leave Sequence", function () {
         );
 
         for (const i of spectatorIndices) {
-            // spectators disconnected from the channel when the dispute started
-            expect(
-                await h.getPeerHandle(i).queryInternals.connectionCount()
-            ).to.equal(
+            const handle = h.getPeerHandle(i);
+            // disconnected from participants who moved to newForkId
+            expect(await handle.queryInternals.connectionCount()).to.equal(
                 0,
                 `spectator peer ${i} should have 0 open P2P connections after dispute`
             );
-            // spectator should have stayes on the pre-dispute fork
-            expect(h.getPeerHandle(i).forkId).to.equal(
+            // stayed on pre-dispute fork, did not follow dispute resolution
+            expect(handle.forkId).to.equal(
                 preDisputeForkId,
                 `spectator peer ${i} should be on pre-dispute fork`
             );

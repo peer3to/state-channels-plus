@@ -4,7 +4,8 @@ import type {
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { Bytes, Hash } from "@/types/types";
+import type { Bytes, ForkId, Hash } from "@/types/types";
+import { corruptValidatorSnapshotForBalanceInvariant } from "@test/harness/actions/DisputeTamperingActions";
 import type { EventHandler } from "@/eventHandlers/EventHandler";
 import type { MessageBlockStorage } from "@/storage/MessageBlockStorage";
 import type { TestPeer } from "../types";
@@ -91,6 +92,15 @@ export class InlineByzantineHandle implements ByzantineInterface {
     async storeStateSnapshot(snapshot: StateSnapshotStruct): Promise<void> {
         this.peer.stateManager.storage.stateSnapshots.storeStateSnapshot(
             StateSnapshot.from(snapshot)
+        );
+    }
+
+    corruptValidatorSnapshotForBalanceInvariant(forkId: ForkId): Promise<Hash> {
+        return Promise.resolve(
+            corruptValidatorSnapshotForBalanceInvariant(
+                this.peer.stateManager.storage,
+                forkId
+            )
         );
     }
 }

@@ -13,6 +13,4 @@ export interface NetworkInterface {
     tryOpenConnectionToChannel(channelId: ChannelId): Promise<void>;
 
     installDisconnectFilter(filter: DisconnectFilterFn): Promise<RestoreToken>;
-
-    restoreDisconnectFilter(): Promise<void>;
 }

@@ -1,5 +1,5 @@
-import type { PeerHandler } from "../../rpc/rpc-server";
-import type { PeerCaller } from "../../rpc/rpc-client";
+import type { PeerHandler } from "../../rpc/PeerHandler";
+import type { PeerCaller } from "../../rpc/PeerCaller";
 import type StateManager from "@/stateManager";
 import { ROUTES } from "../routeNames";
 import { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -30,11 +30,8 @@ export class NetworkRoutes {
     private register(server: PeerHandler): void {
         server.register(ROUTES.network.disconnectAll, async () => {
             const pm = this.sm.p2pManager;
-            const disconnectConnection = pm.disconnectConnection.bind(pm) as (
-                conn: unknown
-            ) => void;
             for (const conn of [...pm.openConnections]) {
-                disconnectConnection(conn);
+                pm.disconnectConnection(conn);
             }
             return {};
         });
@@ -85,10 +82,5 @@ export class NetworkRoutes {
                 return { id: "disconnectFilter" };
             }
         );
-
-        server.register(ROUTES.network.restoreDisconnectFilter, async () => {
-            this.disconnectFilterRestore?.();
-            return {};
-        });
     }
 }

@@ -1,4 +1,4 @@
-import type { Address, ForkId, Hash } from "@/types/types";
+import type { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import type {
     BlockStruct,
     MessageBlockStruct
@@ -55,27 +55,18 @@ export class InlineDisputeHandle implements DisputeInterface {
             .map((p) => ({ proofType: Number(p.proofType) }));
     }
 
-    async queryDisputeAuditingData(req: {
+    queryDisputeAuditingData(req: {
         forkId: ForkId;
-        args?: unknown[];
+        stateProof: StateProofStruct;
+        options?: { disputeLatestInboundMessageBlockHash?: Hash };
     }): Promise<DisputeAuditingDataStruct> {
-        // getAuditingData has a variadic test-only call pattern not captured in its signature
-        const getAuditingData = this.stateManager.disputeManager
-            .getAuditingData as unknown as (
-            f: ForkId,
-            ...args: unknown[]
-        ) => Promise<DisputeAuditingDataStruct>;
-        return await getAuditingData(req.forkId, ...(req.args ?? []));
-    }
-
-    async queryDisputeWindows(req: {
-        channelId: string;
-        forkIds: ForkId[];
-    }): Promise<DisputeWindowStructOutput[]> {
-        return await this.stateManager.diamondStateMachine.localDiamondContract.getDisputeWindows(
-            req.channelId,
-            req.forkIds
-        );
+        const { auditingData } =
+            this.stateManager.disputeManager.getAuditingData(
+                req.forkId,
+                req.stateProof,
+                req.options
+            );
+        return Promise.resolve(auditingData);
     }
 
     async queryLatestBlockFromStateProof(
@@ -86,6 +77,16 @@ export class InlineDisputeHandle implements DisputeInterface {
                 stateProof
             );
         return { hasBlock: Boolean(hasBlock), latestBlock };
+    }
+
+    async queryDisputeWindows(req: {
+        channelId: ChannelId;
+        forkIds: ForkId[];
+    }): Promise<DisputeWindowStructOutput[]> {
+        return this.stateManager.diamondStateMachine.localDiamondContract.getDisputeWindows(
+            req.channelId,
+            req.forkIds
+        );
     }
 
     async queryOutboundMessageBlock(

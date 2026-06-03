@@ -1,5 +1,5 @@
-export { PeerCaller, RpcClient } from "./rpc-client";
-export { PeerHandler, RpcServer } from "./rpc-server";
+export { PeerCaller, RpcClient } from "./PeerCaller";
+export { PeerHandler, RpcServer } from "./PeerHandler";
 export { serializeError, deserializeError } from "./rpc-errors";
 export type {
     Frame,

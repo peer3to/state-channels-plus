@@ -1,21 +1,16 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { rejectClosureInWorkerMode } from "@test/harness/core/namedOpGuards";
 import { Logger, Codec, Type } from "@/utils";
 import { ForkId, Bytes, Hash, BlockHeight } from "@/types/types";
 import Block from "@/models/Block";
 import {
     BlockStruct,
     TransactionStruct,
-    SignedBlockStruct,
-    BlockConfirmationStruct
+    SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers } from "ethers";
 import Clock from "@/Clock";
 import { hash } from "@/utils";
-import {
-    DisputeTampering,
-    DisputeTamper
-} from "@test/harness/actions/DisputeTamperingActions";
+import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 export class ByzantineActions {
@@ -47,14 +42,8 @@ export class ByzantineActions {
             `Peer ${peerIndex} creating double-sign block for fork ${forkId}`
         );
 
-        const blockConfirmation =
-            await peerHandle.blocks.queryLatestBlockConfirmation(forkId);
-        if (!blockConfirmation) {
-            throw new Error(`No block found for fork ${forkId}`);
-        }
-        const originalBlock = Block.fromBlockConfirmation(
-            blockConfirmation as BlockConfirmationStruct
-        );
+        const originalBlock =
+            (await peerHandle.blocks.queryLatestBlock(forkId))!;
 
         this.logger.debug(
             `Original block found: height=${originalBlock.height}, hash=${originalBlock.hash}`
@@ -119,7 +108,6 @@ export class ByzantineActions {
             encodedData?: Bytes;
         }
     ): Promise<BlockStruct> {
-        const peer = this.harness.getPeer(peerIndex);
         const peerHandle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
@@ -127,7 +115,6 @@ export class ByzantineActions {
         const forkId = options.forkId || this.harness.activeForkId!;
         const height = options.height;
 
-        void peer; // unused once query.* migrated
         const previousBlockHash =
             await peerHandle.blocks.queryPreviousBlockHash({
                 forkId
@@ -198,69 +185,19 @@ export class ByzantineActions {
         return blockStruct;
     }
 
-    async postTamperedDisputeWith(
-        peerIndex: number,
-        tamperFn: DisputeTamper
+    async tamperedDisputeDoubleFault(
+        peerIndex: number
     ): Promise<DisputeStruct> {
-        rejectClosureInWorkerMode(
-            "ByzantineActions.postTamperedDisputeWith(tamperFn)",
-            this.harness.getPeerHandle(peerIndex)
-        );
         const forkId = this.harness.activeForkId;
         if (!forkId) {
             throw new Error("No active fork ID - channel must be opened first");
         }
-
         const { dispute } = await this.harness.tamper.postTamperedDispute(
             peerIndex,
-            tamperFn,
+            DisputeTampering.tamperDoubleFault,
             { forkId }
         );
-        this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: peerIndex
-        });
         return dispute;
-    }
-
-    async postTamperedDisputeAuditingData(
-        peerIndex: number
-    ): Promise<DisputeStruct> {
-        return this.postTamperedDisputeWith(
-            peerIndex,
-            DisputeTampering.tamperAuditingDataHash
-        );
-    }
-
-    async tamperedDisputePartialAuditing(
-        peerIndex: number
-    ): Promise<DisputeStruct> {
-        return this.postTamperedDisputeWith(
-            peerIndex,
-            DisputeTampering.tamperPartialAuditing
-        );
-    }
-
-    async tamperedDisputeDoubleFault(
-        peerIndex: number
-    ): Promise<DisputeStruct> {
-        return this.postTamperedDisputeWith(
-            peerIndex,
-            DisputeTampering.tamperDoubleFault
-        );
-    }
-
-    async stubDisputeConstruction(options: {
-        peerIndex: number;
-        tamperFn: DisputeTamper;
-    }): Promise<void> {
-        rejectClosureInWorkerMode(
-            "ByzantineActions.stubDisputeConstruction(tamperFn)",
-            this.harness.getPeerHandle(options.peerIndex)
-        );
-        await this.harness.tamper.stubConstructDispute(
-            options.peerIndex,
-            options.tamperFn
-        );
     }
 
     restoreDisputeConstruction(peerIndex: number): void {

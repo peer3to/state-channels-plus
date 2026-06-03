@@ -17,7 +17,6 @@ import {
 import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ForkId, Address, Hash } from "@/types/types";
 import StateSnapshot from "@/models/StateSnapshot";
-
 import Block from "@/models/Block";
 import { BytesLike, Signer, ZeroAddress } from "ethers";
 import {
@@ -31,29 +30,14 @@ import DisputeManager, {
 import { WorkerPeer } from "@test/harness/core/WorkerPeer";
 import type {
     BlockStruct,
-    BlockConfirmationStruct,
     SignedBlockStruct,
     SnapshotDataStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
-type SnapshotStorage = {
-    blocks: {
-        getLatestBlock: (
-            forkId: BytesLike
-        ) => { stateSnapshotHash: BytesLike } | undefined;
-    };
-    stateSnapshots: {
-        getStateSnapshotByHash: (h: string) => StateSnapshot | undefined;
-        storeStateSnapshot: (
-            snapshot: StateSnapshot,
-            opts: { hash: string }
-        ) => unknown;
-    };
-};
+import type Storage from "@/storage";
 
 export function corruptValidatorSnapshotForBalanceInvariant(
-    storage: SnapshotStorage,
+    storage: Storage,
     forkId: ForkId
 ): string {
     const latestBlock = storage.blocks.getLatestBlock(forkId);
@@ -345,14 +329,7 @@ export class DisputeTamperingActions {
         }
         const handle = this.harness.getPeerHandle(disputerIndex);
         const nextPeer = await this.harness.query.getNextPeerToWrite();
-        const latestConfirmation =
-            await handle.blocks.queryLatestBlockConfirmation(forkId);
-        if (!latestConfirmation) {
-            throw new Error(
-                `plantFreshTimeoutForNextWriter: no latest block for fork ${forkId}`
-            );
-        }
-        const latestBlock = Block.fromBlockConfirmation(latestConfirmation);
+        const latestBlock = (await handle.blocks.queryLatestBlock(forkId))!;
         await handle.dispute.storeTimeout({
             forkId,
             timeout: {
@@ -379,21 +356,10 @@ export class DisputeTamperingActions {
         }
 
         const handle = this.harness.getPeerHandle(validatorPeerIndex);
-        let originalHash: string;
-        if (handle instanceof WorkerPeer) {
-            const result = (await handle
-                .getRpc()
-                .call("byzantine.corruptValidatorSnapshotForBalanceInvariant", {
-                    forkId
-                })) as { hash: string };
-            originalHash = result.hash;
-        } else {
-            const peer = this.harness.getPeer(validatorPeerIndex);
-            originalHash = corruptValidatorSnapshotForBalanceInvariant(
-                peer.stateManager.storage,
+        const originalHash =
+            await handle.byzantine.corruptValidatorSnapshotForBalanceInvariant(
                 forkId
             );
-        }
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: validatorPeerIndex
         });
@@ -413,16 +379,7 @@ export class DisputeTamperingActions {
             throw new Error("buildForgedSnapshot: no active fork ID");
         }
 
-        const latestBlockConfirmation =
-            await handle.blocks.queryLatestBlockConfirmation(forkId);
-        if (!latestBlockConfirmation) {
-            throw new Error(
-                `buildForgedSnapshot: no latest block for fork ${forkId}`
-            );
-        }
-        const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation
-        );
+        const latestBlock = (await handle.blocks.queryLatestBlock(forkId))!;
 
         const latestStateSnapshotHash = latestBlock.stateSnapshotHash;
         const originalStruct = await handle.snapshots.queryStateSnapshotByHash(
@@ -486,7 +443,6 @@ export class DisputeTamperingActions {
         }
     ): Promise<DisputeAuditingDataStruct> {
         const { disputerPeerIndex, targetHeight } = options;
-        const peer = this.harness.getPeer(disputerPeerIndex);
         const stateProof = dispute.input.stateProof;
         const handle = this.harness.getPeerHandle(disputerPeerIndex);
 
@@ -531,7 +487,7 @@ export class DisputeTamperingActions {
 
         const auditingData = await handle.dispute.queryDisputeAuditingData({
             forkId: dispute.input.forkId,
-            args: [stateProof]
+            stateProof
         });
 
         dispute.input.latestStateSnapshotHash = StateSnapshot.from(

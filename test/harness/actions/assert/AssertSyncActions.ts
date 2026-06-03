@@ -78,9 +78,7 @@ export class AssertSyncActions {
         }
 
         for (const peer of peers) {
-            const latestBlock = await this.harness
-                .getPeerHandle(peer.index)
-                .blocks.queryLatestBlock(forkId);
+            const latestBlock = await peer.blocks.queryLatestBlock(forkId);
             expect(latestBlock).to.not.equal(
                 undefined,
                 `Peer ${peer.index} should have a latest block`
@@ -115,11 +113,8 @@ export class AssertSyncActions {
         ]);
 
         const peerForks = peers
-            .map((p) => this.harness.getPeerHandle(p.index).forkId)
-            .filter(
-                (fid): fid is ForkId =>
-                    fid !== undefined && !excludeSet.has(fid)
-            );
+            .map((p) => p.forkId)
+            .filter((fid) => fid !== undefined && !excludeSet.has(fid));
 
         if (peerForks.length != peers.length)
             throw new Error(
@@ -225,13 +220,11 @@ export class AssertSyncActions {
         }
 
         const forkUnchanged = this.harness.peerHandles.every(
-            (p) => this.harness.getPeerHandle(p.index).forkId === originalForkId
+            (p) => p.forkId === originalForkId
         );
 
         if (!forkUnchanged) {
-            const forkIds = this.harness.peerHandles.map(
-                (p) => this.harness.getPeerHandle(p.index).forkId
-            );
+            const forkIds = this.harness.peerHandles.map((p) => p.forkId);
             throw new Error(
                 `Expected fork to remain ${originalForkId}, but found: ${JSON.stringify(forkIds)}`
             );
@@ -276,12 +269,8 @@ export class AssertSyncActions {
             throw new Error("No active fork ID");
         }
 
-        const heightFor = async (i: number): Promise<number> => {
-            const latest = await this.harness
-                .getPeerHandle(i)
-                .blocks.queryLatestBlock(forkId);
-            return (latest?.height ?? -1) + 1;
-        };
+        const heightFor = (i: number): Promise<number> =>
+            this.harness.getPeerHandle(i).blocks.queryNextBlockHeight(forkId);
         const condition = async () => {
             const [a, b] = await Promise.all([
                 heightFor(peerIndex),
@@ -328,20 +317,26 @@ export class AssertSyncActions {
         timeoutMs?: number;
     }): Promise<void> {
         const { spectatorPeerIndex, peerIndices, timeoutMs = 15000 } = options;
+        const spectatorHandle = this.harness.getPeerHandle(spectatorPeerIndex);
+        const spectatorAddr = spectatorHandle.address;
 
         await this.harness.disconnectionBarrier.waitFor(
-            () =>
-                peerIndices.every(
-                    (i) =>
-                        this.harness.query.getTransport(
-                            spectatorPeerIndex,
-                            i
-                        ) === undefined &&
-                        this.harness.query.getTransport(
-                            i,
-                            spectatorPeerIndex
-                        ) === undefined
-                ),
+            async () => {
+                const checks = await Promise.all(
+                    peerIndices.flatMap((i) => {
+                        const peerHandle = this.harness.getPeerHandle(i);
+                        return [
+                            spectatorHandle.queryInternals.getTransportStatus(
+                                peerHandle.address
+                            ),
+                            peerHandle.queryInternals.getTransportStatus(
+                                spectatorAddr
+                            )
+                        ];
+                    })
+                );
+                return checks.every((s) => !s.present || s.isClosed === true);
+            },
             {
                 timeoutMs,
                 timeoutMessage: `Spectator ${spectatorPeerIndex} should have no transport to/from peers [${peerIndices.join(", ")}] within ${timeoutMs}ms`

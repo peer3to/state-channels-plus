@@ -52,16 +52,11 @@ export class ContextActions {
         );
         const expectedWithdrawalsDeltaBalance =
             await peerHandle.balance.computeExpectedWithdrawalsDelta({
-                upperBlockHash: String(
-                    lastSnapshot.snapshotData.latestOutboundMessageBlockHash
-                ),
-                lowerBlockHash: onChainSnapshotBefore.snapshotData
-                    .latestOutboundMessageBlockHash
-                    ? String(
-                          onChainSnapshotBefore.snapshotData
-                              .latestOutboundMessageBlockHash
-                      )
-                    : undefined
+                upperBlockHash:
+                    lastSnapshot.snapshotData.latestOutboundMessageBlockHash,
+                lowerBlockHash:
+                    onChainSnapshotBefore.snapshotData
+                        .latestOutboundMessageBlockHash
             });
 
         const channelBalance =

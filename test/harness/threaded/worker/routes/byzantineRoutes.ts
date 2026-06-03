@@ -1,15 +1,21 @@
-import type { PeerHandler } from "../../rpc/rpc-server";
+import type { PeerHandler } from "../../rpc/PeerHandler";
 import type StateManager from "@/stateManager";
-import type { Bytes, Hash } from "@/types/types";
-import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { Bytes, ForkId, Hash } from "@/types/types";
+import type {
+    BlockConfirmationStruct,
+    StateSnapshotStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import type { EventHandler } from "@/eventHandlers/EventHandler";
+import type { MessageBlockStorage } from "@/storage/MessageBlockStorage";
+import type RpcHandler from "@/rpc/RpcHandler";
 import StateSnapshot from "@/models/StateSnapshot";
 import { ROUTES } from "../routeNames";
 import { corruptValidatorSnapshotForBalanceInvariant } from "@test/harness/actions/DisputeTamperingActions";
 
 export class ByzantineRoutes {
     private stateManager?: StateManager;
-    private savedCalldataHandler: unknown;
-    private savedInboundGetLatestBlockHash: unknown;
+    private savedCalldataHandler?: EventHandler["onBlockCalldataPosted"];
+    private savedInboundGetLatestBlockHash?: MessageBlockStorage["getLatestBlockHash"];
 
     constructor(server: PeerHandler) {
         this.register(server);
@@ -31,8 +37,7 @@ export class ByzantineRoutes {
         server.register(ROUTES.byzantine.stubCalldataHandler, async () => {
             const eh = this.sm.eventHandler;
             this.savedCalldataHandler = eh.onBlockCalldataPosted.bind(eh);
-            eh.onBlockCalldataPosted =
-                (async () => {}) as unknown as typeof eh.onBlockCalldataPosted;
+            eh.onBlockCalldataPosted = async () => {};
             return {};
         });
 
@@ -43,8 +48,7 @@ export class ByzantineRoutes {
                     "byzantine.restoreCalldataHandler: no original captured"
                 );
             const eh = this.sm.eventHandler;
-            eh.onBlockCalldataPosted =
-                original as typeof eh.onBlockCalldataPosted;
+            eh.onBlockCalldataPosted = original;
             this.savedCalldataHandler = undefined;
             return {};
         });
@@ -69,8 +73,7 @@ export class ByzantineRoutes {
                         "byzantine.restorePendingInboundInclusion: no original captured"
                     );
                 const storage = this.sm.storage.inboundMessages;
-                storage.getLatestBlockHash =
-                    original as typeof storage.getLatestBlockHash;
+                storage.getLatestBlockHash = original;
                 this.savedInboundGetLatestBlockHash = undefined;
                 return {};
             }
@@ -78,61 +81,61 @@ export class ByzantineRoutes {
 
         server.register(ROUTES.byzantine.stubBroadcast, async () => {
             const remoteRpc = this.sm.p2pManager.remoteRpc;
-            const stub = () => ({
+            const fakeHandler = {
                 broadcast: () => {},
                 sendOne: () => {},
                 sendMultiple: () => {}
-            });
-            remoteRpc.stateTransitionService.onBlockConfirmation =
-                stub as unknown as typeof remoteRpc.stateTransitionService.onBlockConfirmation;
+            } as unknown as RpcHandler;
+            remoteRpc.stateTransitionService.onBlockConfirmation = () =>
+                fakeHandler;
             return {};
         });
 
         server.register(
             ROUTES.byzantine.broadcastBlockConfirmation,
-            async (args) => {
-                const { blockConfirmation } = (args ?? {}) as {
-                    blockConfirmation?: unknown;
-                };
+            async ({
+                blockConfirmation
+            }: {
+                blockConfirmation: BlockConfirmationStruct;
+            }) => {
                 if (!blockConfirmation)
                     throw new Error(
                         "byzantine.broadcastBlockConfirmation: missing blockConfirmation"
                     );
-                const onBlockConfirmation = this.sm.p2pManager.remoteRpc
-                    .stateTransitionService.onBlockConfirmation as unknown as (
-                    arg: unknown
-                ) => { broadcast: () => void };
-                onBlockConfirmation(blockConfirmation).broadcast();
+                this.sm.p2pManager.remoteRpc.stateTransitionService
+                    .onBlockConfirmation(blockConfirmation)
+                    .broadcast();
                 return {};
             }
         );
 
         server.register(
             ROUTES.byzantine.submitDoubleSignBlock,
-            async (args) => {
-                const { signedBlockConfirmation } = (args ?? {}) as {
-                    signedBlockConfirmation?: unknown;
-                };
+            async ({
+                signedBlockConfirmation
+            }: {
+                signedBlockConfirmation: BlockConfirmationStruct;
+            }) => {
                 if (!signedBlockConfirmation)
                     throw new Error(
                         "byzantine.submitDoubleSignBlock: missing signedBlockConfirmation"
                     );
-                const onBlockConfirmation = this.sm.p2pManager.remoteRpc
-                    .stateTransitionService.onBlockConfirmation as unknown as (
-                    arg: unknown
-                ) => { broadcast: () => void };
-                onBlockConfirmation(signedBlockConfirmation).broadcast();
+                this.sm.p2pManager.remoteRpc.stateTransitionService
+                    .onBlockConfirmation(signedBlockConfirmation)
+                    .broadcast();
                 return {};
             }
         );
 
         server.register(
             ROUTES.byzantine.storeStateMachineState,
-            async (args) => {
-                const { encodedState, hash } = (args ?? {}) as {
-                    encodedState?: Bytes;
-                    hash?: Hash;
-                };
+            async ({
+                encodedState,
+                hash
+            }: {
+                encodedState: Bytes;
+                hash: Hash;
+            }) => {
                 if (encodedState === undefined || hash === undefined)
                     throw new Error(
                         "byzantine.storeStateMachineState: missing 'encodedState' or 'hash'"
@@ -145,30 +148,26 @@ export class ByzantineRoutes {
             }
         );
 
-        server.register(ROUTES.byzantine.storeStateSnapshot, async (args) => {
-            const { snapshot } = (args ?? {}) as {
-                snapshot?: StateSnapshotStruct;
-            };
-            if (!snapshot)
-                throw new Error(
-                    "byzantine.storeStateSnapshot: missing 'snapshot'"
+        server.register(
+            ROUTES.byzantine.storeStateSnapshot,
+            async ({ snapshot }: { snapshot: StateSnapshotStruct }) => {
+                if (!snapshot)
+                    throw new Error(
+                        "byzantine.storeStateSnapshot: missing 'snapshot'"
+                    );
+                this.sm.storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(snapshot)
                 );
-            this.sm.storage.stateSnapshots.storeStateSnapshot(
-                StateSnapshot.from(snapshot)
-            );
-            return {};
-        });
+                return {};
+            }
+        );
 
         server.register(
             ROUTES.byzantine.corruptValidatorSnapshotForBalanceInvariant,
-            async (args) => {
-                const { forkId } = (args ?? {}) as { forkId?: unknown };
-                const storage = this.sm.storage as unknown as Parameters<
-                    typeof corruptValidatorSnapshotForBalanceInvariant
-                >[0];
+            async ({ forkId }: { forkId: ForkId }) => {
                 const hash = corruptValidatorSnapshotForBalanceInvariant(
-                    storage,
-                    forkId as import("@/types/types").ForkId
+                    this.sm.storage,
+                    forkId
                 );
                 return { hash };
             }

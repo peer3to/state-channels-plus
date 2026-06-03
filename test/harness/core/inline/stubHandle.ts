@@ -1,10 +1,14 @@
 import type { StubInterface, StubMethodFn } from "../interfaces/StubInterface";
-import type { RestoreToken } from "../interfaces/common";
+import type {
+    RestoreToken,
+    RestoreTokenId,
+    StubMethodPath
+} from "../interfaces/common";
 import type { TestPeer } from "../types";
 
 function walkDottedPath(
     root: Record<string, unknown>,
-    path: string
+    path: StubMethodPath
 ): { target: Record<string, unknown>; leaf: string } {
     const parts = path.split(".");
     if (parts.length === 0 || parts.some((p) => p.length === 0))
@@ -23,31 +27,25 @@ function walkDottedPath(
 
 export class InlineStubHandle implements StubInterface {
     private nextTokenId = 1;
-    private readonly restoresByToken = new Map<string, () => void>();
+    private readonly restoresByToken = new Map<RestoreTokenId, () => void>();
 
     constructor(private readonly peer: TestPeer) {}
 
-    async stubMethod(path: string, fn: StubMethodFn): Promise<RestoreToken> {
+    async stubMethod(
+        path: StubMethodPath,
+        fn: StubMethodFn
+    ): Promise<RestoreToken> {
         const { target, leaf } = walkDottedPath(
             this.peer.stateManager as unknown as Record<string, unknown>,
             path
         );
         const original = target[leaf];
         target[leaf] = fn;
-        const id = `stubMethod#${this.nextTokenId++}`;
+        const id = `stubMethod#${this.nextTokenId++}` as RestoreTokenId;
         this.restoresByToken.set(id, () => {
             target[leaf] = original;
             this.restoresByToken.delete(id);
         });
         return { id };
-    }
-
-    async restoreStubbedMethod(token: RestoreToken): Promise<void> {
-        this.restoresByToken.get(token.id)?.();
-    }
-
-    async restoreAllStubbedMethods(): Promise<void> {
-        for (const restore of this.restoresByToken.values()) restore();
-        this.restoresByToken.clear();
     }
 }

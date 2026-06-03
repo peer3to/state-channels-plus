@@ -1,4 +1,4 @@
-import type { Hash } from "@/types/types";
+import type { Bytes, ChannelId, Hash } from "@/types/types";
 import type { BalanceInterface } from "../interfaces/BalanceInterface";
 import type { TestPeer } from "../types";
 import { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -44,5 +44,30 @@ export class InlineBalanceHandle implements BalanceInterface {
                         message.balance
                     );
         return total;
+    }
+
+    async verifyBalanceInvariant(req: {
+        channelId: ChannelId;
+        encodedStateMachineState?: Bytes;
+    }): Promise<boolean> {
+        const cm = this.peer.stateManager.stateChannelManagerContract;
+        const rawSnapshot = await cm.getStateSnapshot(req.channelId);
+        const stateHash = rawSnapshot.snapshotData
+            .stateMachineStateHash as string;
+        const encodedState =
+            req.encodedStateMachineState ??
+            this.peer.stateManager.storage.stateMachineStates.getStateMachineState(
+                stateHash
+            );
+        if (!encodedState) {
+            throw new Error(
+                `No encoded state machine state found for snapshot hash ${stateHash}`
+            );
+        }
+        return cm.verifyBalanceInvariantCheckSnapshot.staticCall(
+            req.channelId,
+            rawSnapshot.snapshotData,
+            encodedState
+        );
     }
 }

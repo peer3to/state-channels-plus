@@ -1,4 +1,4 @@
-import type { PeerHandler } from "../../rpc/rpc-server";
+import type { PeerHandler } from "../../rpc/PeerHandler";
 import type { P2pInstance } from "@/evm";
 import type { AStateMachine } from "@typechain-types";
 import { ROUTES } from "../routeNames";
@@ -30,18 +30,21 @@ export class MathRoutes {
     }
 
     private register(server: PeerHandler): void {
-        server.register(ROUTES.math.add, async (req) => {
-            const { value = 1 } = (req ?? {}) as { value?: number | bigint };
-            return await this.contract.add(value);
-        });
-        server.register(ROUTES.math.sub, async (req) => {
-            const { value = 1 } = (req ?? {}) as { value?: number | bigint };
-            return await this.contract.sub(value);
-        });
-        server.register(ROUTES.math.set, async (req) => {
-            const { value } = (req ?? {}) as { value: number | bigint };
-            return await this.contract.set(value);
-        });
+        server.register(
+            ROUTES.math.add,
+            async ({ value = 1 }: { value?: number | bigint }) =>
+                this.contract.add(value)
+        );
+        server.register(
+            ROUTES.math.sub,
+            async ({ value = 1 }: { value?: number | bigint }) =>
+                this.contract.sub(value)
+        );
+        server.register(
+            ROUTES.math.set,
+            async ({ value }: { value: number | bigint }) =>
+                this.contract.set(value)
+        );
         server.register(ROUTES.math.leaveChannel, async () => {
             return await this.contract.leaveChannel();
         });
