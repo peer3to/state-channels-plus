@@ -45,7 +45,6 @@ import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
 import { ContextActions } from "@test/harness/actions/ContextActions";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import {
-    HarnessConstructorOptions,
     HarnessDeploymentConfig,
     HarnessContext,
     TestPeer,
@@ -90,8 +89,8 @@ export class PeerTestHarness<
     public channelId!: ChannelId;
     public options!: HarnessOptions<TCustomRpc>;
     private harnessConfig!: Partial<Config>;
-    private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
-    private readonly deploymentModule?: string;
+    private deployment!: HarnessDeploymentConfig<TStateMachine>;
+    private readonly deploymentModule: string;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator;
     private autoTimeAdvanceInterval?: NodeJS.Timeout;
@@ -168,10 +167,7 @@ export class PeerTestHarness<
         return honestPeers[0].forkId;
     }
 
-    constructor({
-        deployment,
-        deploymentModule
-    }: HarnessConstructorOptions<TStateMachine>) {
+    constructor(deploymentModule: string) {
         // JSON.stringify cannot serialize BigInt.
         if (typeof (BigInt.prototype as any).toJSON !== "function") {
             (BigInt.prototype as any).toJSON = function () {
@@ -180,7 +176,6 @@ export class PeerTestHarness<
         }
         dotenv.config(); // use .env since it's gitignored and it's only for testing - not altering SDK usage
         createConfig(testConfig); // Ensure config is initialized for tests
-        this.deployment = deployment;
         this.deploymentModule = deploymentModule;
 
         // Logger starts with config default and is reconfigured in setup().
@@ -271,6 +266,8 @@ export class PeerTestHarness<
             this.eventCountsBarrier
         );
 
+        this.deployment = (await import(this.deploymentModule))
+            .default as HarnessDeploymentConfig<TStateMachine>;
         await this.deployContracts();
         if (this.options.dedicatedPeerThread) {
             this.httpHardhatNode = new HttpHardhatNode();

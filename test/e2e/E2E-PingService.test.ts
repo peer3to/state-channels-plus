@@ -7,8 +7,8 @@ import MainRpcService from "@/rpc/MainRpcService";
 import type P2PManager from "@/P2PManager";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import type ATransport from "@/transport/ATransport";
-import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { DEFAULT_MATH_HARNESS_DEPLOYMENT_MODULE } from "@test/harness/core/defaultMathHarnessDeployment";
 
 type PingPongOptions = {
     onRpcHandled: () => void;
@@ -114,9 +114,9 @@ describe("E2E: PingPongService (custom RPC)", function () {
     });
 
     it("should let two peers call custom Ping/Pong RPC services", async function () {
-        harness = new PeerTestHarness<PingPongRpc, MathStateMachine>({
-            deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
-        });
+        harness = new PeerTestHarness<PingPongRpc, MathStateMachine>(
+            DEFAULT_MATH_HARNESS_DEPLOYMENT_MODULE
+        );
 
         await harness.setup(2, {
             autoConnect: false,

@@ -83,15 +83,6 @@ export type HarnessDeploymentConfig<
     connectSigner: (address: string, signer: Signer) => TContract;
 };
 
-export type HarnessConstructorOptions<
-    TContract extends AStateMachineContract = AStateMachineContract
-> = {
-    deployment: HarnessDeploymentConfig<TContract>;
-    // Module path that exports the HarnessDeploymentConfig as its default export.
-    // Required when dedicatedPeerThread=true.
-    deploymentModule?: string;
-};
-
 /**
  * Options for configuring the test harness
  */
