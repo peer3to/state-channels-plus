@@ -21,6 +21,14 @@ export type SharedLoggerContext = {
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "verbose";
 
+// A logger living in another thread (e.g. the EVM worker) that mirrors this
+// logger's attribution and uploads its own store. Fire-and-forget: the owning
+// logger never awaits it.
+export interface RemoteLoggerSibling {
+    updateSharedContext(context: SharedLoggerContext): void;
+    uploadLogs(message?: string): void;
+}
+
 // Serializable recipe for rebuilding an equivalent logger on a worker thread,
 // where a live Logger can't cross the structured-clone boundary.
 export type SerializableLoggerConfig = {
@@ -63,6 +71,7 @@ export abstract class Logger {
     protected readonly skipWriting: boolean;
     protected parent?: Logger;
     protected readonly children: Set<Logger> = new Set();
+    private remoteSibling?: RemoteLoggerSibling;
     private destroyed = false;
     private performanceMonitorStop?: () => void;
 
@@ -106,6 +115,25 @@ export abstract class Logger {
     public updateSharedContext(update: SharedLoggerContext): void {
         const newSharedContext = { ...this.sharedContext, ...update };
         Object.assign(this.sharedContext, newSharedContext);
+        // Forward only the delta: the sibling keeps its own base context (e.g. its
+        // own threadName) and merges the changed fields (e.g. channelId).
+        this.resolveSibling()?.updateSharedContext(update);
+    }
+
+    public setRemoteSibling(sibling: RemoteLoggerSibling): void {
+        this.remoteSibling = sibling;
+    }
+
+    // The sibling is registered on one logger in the chain (the SDK logger, which
+    // may sit mid-tree if a consumer passes their own peerLogger). Walk up to the
+    // nearest ancestor that has one.
+    private resolveSibling(): RemoteLoggerSibling | undefined {
+        let node: Logger | undefined = this;
+        while (node) {
+            if (node.remoteSibling) return node.remoteSibling;
+            node = node.parent;
+        }
+        return undefined;
     }
 
     protected storeLog(logEntry: LogEntry): void {
@@ -188,6 +216,9 @@ export abstract class Logger {
         await LoggerUtils.logTimestamp(this);
         const localTime = new Date().getTime() / 1000;
         this.warn(message, ...meta, localTime);
+        this.resolveSibling()?.uploadLogs(
+            typeof message === "string" ? message : undefined
+        );
         await this.logUploader?.uploadLogs();
     }
 

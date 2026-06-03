@@ -63,6 +63,19 @@ async function init(request: Extract<WorkerRequestPayload, { type: "init" }>) {
     return null;
 }
 
+function diagnostics(
+    request: Extract<WorkerRequestPayload, { type: "diagnostics" }>
+): void {
+    if (request.op === "updateContext") {
+        workerLogger.updateSharedContext(request.context);
+    } else {
+        // Fire-and-forget: ack immediately, let the upload run detached.
+        void workerLogger.uploadLogs(
+            request.message ?? "worker report-bug flush"
+        );
+    }
+}
+
 function getExecutor(): ContractExecutor {
     if (!executor) {
         throw new Error("Contract executor worker has not been initialized");
@@ -96,9 +109,8 @@ async function handleRequest(request: WorkerRequest): Promise<WorkerResponse> {
             case "init":
                 result = await init(workerRequestPayload);
                 break;
-            case "uploadLogs":
-                // Fire-and-forget: ack immediately, let the upload run detached.
-                void workerLogger.uploadLogs("worker report-bug flush");
+            case "diagnostics":
+                diagnostics(workerRequestPayload);
                 result = null;
                 break;
             default:

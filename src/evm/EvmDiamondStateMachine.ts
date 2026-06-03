@@ -27,6 +27,7 @@ import {
     type AContractExecutor,
     type ContractExecutionLog
 } from "./contractExecutor";
+import WorkerContractExecutor from "./contractExecutor/WorkerContractExecutor";
 import { Address, Bytes } from "@/types/types";
 import {
     BalanceStruct,
@@ -377,6 +378,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             customPrecompiles,
             logger
         });
+
+        // The worker logger is a sibling of this logger; forward context updates
+        // (e.g. channelId, learned only after the channel opens) and report-bug
+        // uploads across the thread boundary.
+        if (contractExecutor instanceof WorkerContractExecutor) {
+            logger.setRemoteSibling(contractExecutor);
+        }
 
         const localSigner = new LocalDiamondSigner(signer, contractExecutor);
 

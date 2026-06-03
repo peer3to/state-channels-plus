@@ -8,7 +8,9 @@ const noOpLogger = {
     warn: noop,
     info: noop,
     error: noop,
-    verbose: noop
+    verbose: noop,
+    updateSharedContext: noop,
+    uploadLogs: noop
 } as unknown as Logger;
 
 export default noOpLogger;

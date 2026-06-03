@@ -1,5 +1,8 @@
 import type { ContractExecutionResult } from "./AContractExecutor";
-import type { SerializableLoggerConfig } from "@/utils/logging/Logger";
+import type {
+    SerializableLoggerConfig,
+    SharedLoggerContext
+} from "@/utils/logging/Logger";
 
 export type WorkerCustomPrecompile = {
     address: string;
@@ -28,7 +31,14 @@ export type WorkerRequestPayload =
           data: string;
       }
     | {
-          type: "uploadLogs";
+          type: "diagnostics";
+          op: "updateContext";
+          context: SharedLoggerContext;
+      }
+    | {
+          type: "diagnostics";
+          op: "upload";
+          message?: string;
       };
 
 export type WorkerRequest = {

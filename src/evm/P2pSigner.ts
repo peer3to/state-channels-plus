@@ -124,6 +124,12 @@ class P2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         await this.p2pManager.stateManager.setChannelId(channelId);
     }
 
+    // Report-bug entry point: flushes this peer's logs. The logger fans the
+    // upload out to its worker sibling, so both threads' logs are sent.
+    async uploadLogs(message: string = "report-bug"): Promise<void> {
+        await this.logger.uploadLogs(message);
+    }
+
     public setIsLeader(value: boolean) {
         this.isLeader = value;
     }

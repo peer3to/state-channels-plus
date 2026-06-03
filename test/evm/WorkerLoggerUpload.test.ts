@@ -9,7 +9,10 @@ import { createLogger } from "@/utils";
 describe("worker logger upload", function () {
     this.timeout(15000); // worker spawn + axios jitter (0-3s) + retry
 
-    it("uploads worker logs tagged threadName 'evm'", async () => {
+    const CHANNEL_ID =
+        "0x2222222222222222222222222222222222222222222222222222222222222222";
+
+    it("tags worker uploads with threadName 'evm' and the pushed channelId", async () => {
         const received: Array<Record<string, unknown>> = [];
         const server = http.createServer((req, res) => {
             let body = "";
@@ -28,10 +31,14 @@ describe("worker logger upload", function () {
         const port = (server.address() as AddressInfo).port;
         const endpoint = `http://127.0.0.1:${port}/logs/upload`;
 
-        // Factory derives the worker's "evm" recipe from this logger.
+        // Factory derives the worker's "evm" recipe from this logger. This
+        // logger's own threadName ("sdk") must NOT clobber the worker's "evm"
+        // when context is later forwarded.
         const logger = createLogger(
             {
-                peerAddress: "0x1111111111111111111111111111111111111111" as any
+                peerAddress:
+                    "0x1111111111111111111111111111111111111111" as any,
+                threadName: "sdk"
             },
             { component: "Test" },
             {
@@ -45,6 +52,13 @@ describe("worker logger upload", function () {
             customPrecompiles: [],
             logger
         })) as WorkerContractExecutor;
+        logger.setRemoteSibling(executor);
+
+        // channelId is unknown at worker spawn; it arrives later via a child
+        // logger (mirrors StateManager.setChannelId) and must reach the worker.
+        logger
+            .child({ component: "StateManager" })
+            .updateSharedContext({ channelId: CHANNEL_ID });
 
         try {
             await executor.uploadLogs();
@@ -60,6 +74,7 @@ describe("worker logger upload", function () {
             expect(received[0].peerAddress).to.equal(
                 "0x1111111111111111111111111111111111111111"
             );
+            expect(received[0].channelId).to.equal(CHANNEL_ID);
         } finally {
             await executor.dispose();
             await new Promise<void>((r) => server.close(() => r()));

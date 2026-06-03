@@ -10,7 +10,10 @@ import type {
     WorkerRequestPayload,
     WorkerResponse
 } from "./types";
-import type { SerializableLoggerConfig } from "@/utils/logging/Logger";
+import type {
+    SerializableLoggerConfig,
+    SharedLoggerContext
+} from "@/utils/logging/Logger";
 import {
     createContractExecutorWorker,
     type WorkerLike
@@ -99,8 +102,26 @@ export default class WorkerContractExecutor extends AContractExecutor {
         return this.callWorker("simulateCall", data, contractAddress);
     }
 
-    async uploadLogs(): Promise<void> {
-        await this.request({ type: "uploadLogs" });
+    // Best-effort diagnostics: the worker may be gone (disposed/crashed). These
+    // mirror RemoteLoggerSibling's fire-and-forget contract, so they never throw.
+    async updateSharedContext(context: SharedLoggerContext): Promise<void> {
+        try {
+            await this.request({
+                type: "diagnostics",
+                op: "updateContext",
+                context
+            });
+        } catch {
+            /* swallow */
+        }
+    }
+
+    async uploadLogs(message?: string): Promise<void> {
+        try {
+            await this.request({ type: "diagnostics", op: "upload", message });
+        } catch {
+            /* swallow */
+        }
     }
 
     async dispose(): Promise<void> {
