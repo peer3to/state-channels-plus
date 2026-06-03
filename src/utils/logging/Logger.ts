@@ -201,8 +201,8 @@ export abstract class Logger {
     }
     public error(message: any, ...meta: any[]): void {
         this.log("error", message, meta);
-        const prommise = this.logUploader?.uploadLogs();
-        if (prommise) DetachedPromises.collect(prommise);
+        const promise = this.flushUploads();
+        if (promise) DetachedPromises.collect(promise);
     }
     public verbose(message: any, ...meta: any[]): void {
         this.log("verbose", message, meta);
@@ -216,10 +216,14 @@ export abstract class Logger {
         await LoggerUtils.logTimestamp(this);
         const localTime = new Date().getTime() / 1000;
         this.warn(message, ...meta, localTime);
-        this.resolveSibling()?.uploadLogs(
-            typeof message === "string" ? message : undefined
-        );
-        await this.logUploader?.uploadLogs();
+        await this.flushUploads();
+    }
+
+    // Single fan-out for error()/uploadLogs() so they can't diverge; returns the
+    // local promise so the caller can await (uploadLogs) or detach (error) it.
+    private flushUploads(): Promise<void> | undefined {
+        this.resolveSibling()?.uploadLogs();
+        return this.logUploader?.uploadLogs();
     }
 
     public startPerformanceMonitoring(
