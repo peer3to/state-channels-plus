@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 import ContractExecutor from "./ContractExecutor";
+import type { ContractExecutionResult } from "./AContractExecutor";
 import { createEvm } from "../EvmFactory";
 import noOpLogger from "./NoOpLogger";
 import { createLogger } from "@platform/createLogger";
@@ -90,10 +91,19 @@ async function call(request: Extract<WorkerRequestPayload, { type: "call" }>) {
 async function handleRequest(request: WorkerRequest): Promise<WorkerResponse> {
     const { requestId, workerRequestPayload } = request;
     try {
-        const result =
-            workerRequestPayload.type === "init"
-                ? await init(workerRequestPayload)
-                : await call(workerRequestPayload);
+        let result: null | ContractExecutionResult;
+        switch (workerRequestPayload.type) {
+            case "init":
+                result = await init(workerRequestPayload);
+                break;
+            case "uploadLogs":
+                // Fire-and-forget: ack immediately, let the upload run detached.
+                void workerLogger.uploadLogs("worker report-bug flush");
+                result = null;
+                break;
+            default:
+                result = await call(workerRequestPayload);
+        }
 
         return {
             requestId,

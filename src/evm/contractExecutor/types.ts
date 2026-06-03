@@ -26,6 +26,9 @@ export type WorkerRequestPayload =
           contractAddress: string;
           method: WorkerCallMethod;
           data: string;
+      }
+    | {
+          type: "uploadLogs";
       };
 
 export type WorkerRequest = {

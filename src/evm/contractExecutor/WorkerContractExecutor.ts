@@ -99,6 +99,10 @@ export default class WorkerContractExecutor extends AContractExecutor {
         return this.callWorker("simulateCall", data, contractAddress);
     }
 
+    async uploadLogs(): Promise<void> {
+        await this.request({ type: "uploadLogs" });
+    }
+
     async dispose(): Promise<void> {
         this.rejectAll(new Error("Contract executor worker disposed"));
         await this.worker.terminate?.();
