@@ -5,6 +5,7 @@ import { AddressInfo } from "node:net";
 import { createContractExecutorFactory } from "@/evm";
 import WorkerContractExecutor from "@/evm/contractExecutor/WorkerContractExecutor";
 import { createLogger } from "@/utils";
+import { decodeLogs, decompressFromBase64 } from "@/utils/logging/logEncoder";
 
 describe("worker logger upload", function () {
     this.timeout(15000); // worker spawn + axios jitter (0-3s) + retry
@@ -75,6 +76,18 @@ describe("worker logger upload", function () {
                 "0x1111111111111111111111111111111111111111"
             );
             expect(received[0].channelId).to.equal(CHANNEL_ID);
+
+            // The envelope must carry real worker logs, not []. The flush itself
+            // records a "worker report-bug flush" line, so it's always present.
+            const entries = decodeLogs(
+                decompressFromBase64(received[0].compressedLogs as string)
+            );
+            expect(entries.length).to.be.greaterThan(0);
+            expect(
+                entries.some((e) =>
+                    e.message.includes("worker report-bug flush")
+                )
+            ).to.equal(true);
         } finally {
             await executor.dispose();
             await new Promise<void>((r) => server.close(() => r()));

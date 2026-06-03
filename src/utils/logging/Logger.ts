@@ -213,7 +213,13 @@ export abstract class Logger {
     }
 
     public async uploadLogs(message: any, ...meta: any[]): Promise<void> {
-        await LoggerUtils.logTimestamp(this);
+        // logTimestamp needs a live Clock; a worker thread has none, so don't let
+        // it abort the flush (log() guards Clock the same way).
+        try {
+            await LoggerUtils.logTimestamp(this);
+        } catch {
+            /* no Clock on this thread — skip the timestamp diagnostic */
+        }
         const localTime = new Date().getTime() / 1000;
         this.warn(message, ...meta, localTime);
         await this.flushUploads();
