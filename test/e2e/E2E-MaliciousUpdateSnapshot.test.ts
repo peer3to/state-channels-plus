@@ -9,7 +9,6 @@ import {
 } from "@test/utils/mathHarnessAbi";
 import { Status } from "@/types";
 import { expect } from "chai";
-import * as sinon from "sinon";
 import type {
     MessageBlockStruct,
     BalanceStruct,
@@ -170,18 +169,18 @@ describe("E2E: Malicious updateSnapshot", function () {
             }
         });
 
-        const block = h
-            .getPeer(0)
-            .stateManager.storage.blocks.getLatestBlock(h.activeForkId!)!;
-        const snapshot = h
-            .getPeer(0)
-            .stateManager.storage.stateSnapshots.getStateSnapshotByHash(
-                block.stateSnapshotHash
-            )!;
-        const encodedStatemachineState = h
-            .getPeer(0)
-            .stateManager.storage.stateMachineStates.getStateMachineState(
-                snapshot.stateMachineStateHash
+        const p0 = h.peerHandles[0];
+        const latestBlock = await p0.blocks.queryLatestBlock(h.activeForkId!);
+        if (!latestBlock) throw new Error("no latest block for peer 0");
+        const snapshotAt = await p0.snapshots.queryStateSnapshotAt({
+            forkId: h.activeForkId!,
+            height: latestBlock.height
+        });
+        if (!snapshotAt)
+            throw new Error("no snapshot at latest block for peer 0");
+        const encodedStatemachineState =
+            await p0.stateMachine.queryStateMachineState(
+                snapshotAt.stateMachineStateHash
             );
         if (!encodedStatemachineState) {
             throw new Error("seed encoded state not found");
@@ -229,41 +228,33 @@ describe("E2E: Malicious updateSnapshot", function () {
         // The spectator fetches stateMachine bytes via p2p, keyed by on-chain
         // hash; every peer must serve the inflated bytes for the spectator to
         // reach the balance-invariant check.
-        for (const p of h.peers) {
-            p.stateManager.storage.stateMachineStates.storeStateMachineState(
-                inflatedEncodedState,
-                { hash: inflatedHash }
-            );
-        }
-
-        // We add the spectator via the private `addSpectator` so we can install spies
-        // before sync starts and observe the abort directly.
-        const spectator = await (
-            h.join as unknown as {
-                addSpectator: (typeof h.join)["addSpectatorWait"];
-            }
-        ).addSpectator();
-
-        // Spy on the abort method directly
-        const spectateService =
-            spectator.stateManager.p2pManager.localRpc.spectateService;
-        const abortSpy = sinon.spy(spectateService, "abort");
-
-        // Wait for abort.
-        await h.eventCountsBarrier.waitFor(() => abortSpy.callCount > 0, {
-            timeoutMs: 5000,
-            timeoutMessage:
-                "expected SpectateService.abort to fire on the inflated-state spectator within 5000ms"
-        });
-
-        expect(abortSpy.callCount).to.be.greaterThan(
-            0,
-            "SpectateService.abort must be called"
+        await Promise.all(
+            h.peerHandles.map((p) =>
+                p.byzantine.storeStateMachineState(
+                    inflatedEncodedState,
+                    inflatedHash
+                )
+            )
         );
 
-        expect(spectator.stateManager.getStatus()).to.not.equal(Status.SYNCED);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const spectator = await (h.join as any).addSpectator();
+
+        await h.eventCountsBarrier.waitFor(
+            async () =>
+                (await spectator.queryInternals.connectionCount()) === 0,
+            {
+                timeoutMs: 5000,
+                timeoutMessage:
+                    "spectator connections did not drop to 0 within 5000ms (abort expected)"
+            }
+        );
+
+        expect(await spectator.channel.queryStatus()).to.not.equal(
+            Status.SYNCED
+        );
         expect(
-            spectator.stateManager.p2pManager.openConnections.length
+            (await spectator.queryInternals.openConnections()).length
         ).to.equal(
             0,
             "spectator should have 0 open connections after aborting on balance invariant"

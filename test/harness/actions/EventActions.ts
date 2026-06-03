@@ -22,11 +22,8 @@ export class EventActions {
      * Get the number of times an event was called for a peer
      */
     getEventCallCount(peerIndex: number, eventName: keyof EventSpies): number {
-        const peer = this.harness.getPeer(peerIndex);
-        if (!peer) throw new Error(`Peer ${peerIndex} not found`);
-        const spy = peer.eventSpies[eventName];
-        const count = spy ? spy.callCount : 0;
-        return count;
+        const handle = this.harness.getPeerHandle(peerIndex);
+        return handle.eventSpies[eventName]?.callCount ?? 0;
     }
 
     /**
@@ -137,7 +134,7 @@ export class EventActions {
             keepConnection,
             timeoutMs = 5000
         } = options;
-        const peer = this.harness.getPeer(peerIndex);
+        const handle = this.harness.getPeerHandle(peerIndex);
 
         // Worker spy getCalls may fail; fall back to lastCall.
         const matchesCall = (args: readonly unknown[]): boolean => {
@@ -150,7 +147,7 @@ export class EventActions {
         };
         await this.harness.eventCountsBarrier.waitFor(
             () => {
-                const spy = peer.eventSpies.onBlockConfirmationProcessed;
+                const spy = handle.eventSpies.onBlockConfirmationProcessed;
                 if (!spy) return false;
                 try {
                     return spy
@@ -173,15 +170,11 @@ export class EventActions {
         expectedStatus: Status,
         options?: { timeoutMs?: number; timeoutMessage?: string }
     ): Promise<void> {
-        const peer = this.harness.getPeer(peerIndex);
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
         const { timeoutMs = 15000, timeoutMessage } = options ?? {};
         const statusName = Status[expectedStatus] ?? String(expectedStatus);
         const handle = this.harness.getPeerHandle(peerIndex);
         await this.harness.eventCountsBarrier.waitFor(
-            async () => (await handle.queryStatus()) === expectedStatus,
+            async () => (await handle.channel.queryStatus()) === expectedStatus,
             {
                 timeoutMs,
                 timeoutMessage:
@@ -196,7 +189,7 @@ export class EventActions {
         expectedCountPerPeer: number,
         options?: { timeoutMs?: number; mode?: "exact" | "atLeast" }
     ): Promise<void> {
-        const expectedCounts = this.harness.peers.map((peer) => ({
+        const expectedCounts = this.harness.peerHandles.map((peer) => ({
             peerId: peer.index,
             expectedCount: expectedCountPerPeer
         }));

@@ -1,10 +1,10 @@
 import { Logger } from "@/utils";
 import { ForkId } from "@/types/types";
 import { Status } from "@/types";
+import type { PeerHandle } from "@test/harness/core/PeerHandle";
 import {
     CreateAndResolveDisputeResult,
-    HarnessOptions,
-    TestPeer
+    HarnessOptions
 } from "@test/harness/core/types";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { MathPeerTestHarness } from "test-harness";
@@ -46,13 +46,12 @@ export class MathScenarioActions extends ScenarioActions {
         const originalForkId = options.forkId || this.harness.activeForkId!;
         const honestPeerIndices =
             options.honestPeerIndices ??
-            this.harness.peers
+            this.harness.peerHandles
                 .map((_, i) => i)
                 .filter((i) => i !== options.maliciousPeerIndex);
 
         this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: options.maliciousPeerIndex,
-            honestPeerIndices
+            maliciousPeerIndex: options.maliciousPeerIndex
         });
 
         await this.harness.dispute.createInvalidStateTransitionDispute(
@@ -299,11 +298,12 @@ export class MathScenarioActions extends ScenarioActions {
 
     async syncSpectatorAndPrepareJoin(initialTransitions: number = 4) {
         const h = this.harness;
+        const workerMode = process.env.HARNESS_DEDICATED_PEER_THREAD === "true";
         await h.lifecycle.start(3, initialTransitions, {
             timeConfig: {
-                p2pTime: 5,
-                agreementTime: 4,
-                chainFallbackTime: 2,
+                p2pTime: workerMode ? 10 : 5,
+                agreementTime: workerMode ? 6 : 4,
+                chainFallbackTime: workerMode ? 4 : 2,
                 evidenceTime: 4
             }
         });
@@ -317,7 +317,7 @@ export class MathScenarioActions extends ScenarioActions {
         const confirmation = await h.join.buildJoinChannelConfirmation({
             joiner,
             channelId: h.channelId,
-            existingParticipantSigners: h.peers
+            existingParticipantSigners: h.peerHandles
                 .filter((p) => p.index !== joiner.index)
                 .map((p) => p.signer)
         });
@@ -329,7 +329,7 @@ export class MathScenarioActions extends ScenarioActions {
         initialTransitions?: number;
         postPromotionTransitions?: number;
         timeConfig?: HarnessOptions["timeConfig"];
-    }): Promise<TestPeer> {
+    }): Promise<PeerHandle> {
         const initialPeers = options?.initialPeers ?? 2;
         const initialTransitions = options?.initialTransitions ?? 2;
         const postPromotionTransitions = options?.postPromotionTransitions ?? 2;
@@ -349,13 +349,14 @@ export class MathScenarioActions extends ScenarioActions {
 
         await this.harness.join.joinChannelWait({
             joiner,
-            existingParticipantSigners: this.harness.peers
+            existingParticipantSigners: this.harness.peerHandles
                 .slice(0, initialPeers)
                 .map((p) => p.signer)
         });
-        if (joiner.stateManager.getStatus() !== Status.PENDING_PARTICIPANT) {
+        const joinerStatus = await joiner.channel.queryStatus();
+        if (joinerStatus !== Status.PENDING_PARTICIPANT) {
             throw new Error(
-                `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joiner.stateManager.getStatus()}`
+                `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joinerStatus}`
             );
         }
 
@@ -401,7 +402,7 @@ export class MathScenarioActions extends ScenarioActions {
         initialPeers?: number;
         initialTransitions?: number;
         timeConfig?: HarnessOptions["timeConfig"];
-    }): Promise<{ spectator: TestPeer; initialPeers: number }> {
+    }): Promise<{ spectator: PeerHandle; initialPeers: number }> {
         const initialPeers = options?.initialPeers ?? 3;
         const initialTransitions = options?.initialTransitions ?? 2;
         const timeConfig = options?.timeConfig ?? {
@@ -422,7 +423,7 @@ export class MathScenarioActions extends ScenarioActions {
         initialPeers?: number;
         initialTransitions?: number;
         timeConfig?: HarnessOptions["timeConfig"];
-    }): Promise<TestPeer> {
+    }): Promise<PeerHandle> {
         const { spectator } = await this.setupChannelWithSpectator(options);
         await this.harness.join.forceInboundJoinWait({
             participant: spectator.address

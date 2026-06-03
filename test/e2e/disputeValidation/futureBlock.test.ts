@@ -30,7 +30,9 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         // Verify the asymmetric storage state: peer 3 has block 3,
         // honest peers still at block 2.
-        const peer3Latest = await h.getPeerHandle(3).queryLatestBlock(forkId);
+        const peer3Latest = await h
+            .getPeerHandle(3)
+            .blocks.queryLatestBlock(forkId);
         if (!peer3Latest || peer3Latest.height !== 3) {
             throw new Error(
                 `expected peer 3 to have height 3 after suppressed write, got ${peer3Latest?.height}`
@@ -39,7 +41,7 @@ describe("E2E: dispute validation / futureBlock", function () {
         for (const honestIndex of [0, 1, 2]) {
             const honestLatest = await h
                 .getPeerHandle(honestIndex)
-                .queryLatestBlock(forkId);
+                .blocks.queryLatestBlock(forkId);
             if (honestLatest && (honestLatest.height ?? 0) > 2) {
                 throw new Error(
                     `expected honest peer ${honestIndex} at height == 2, got ${honestLatest.height} (broadcast suppression failed)`
@@ -83,7 +85,7 @@ describe("E2E: dispute validation / futureBlock", function () {
         for (const honestIndex of [0, 1, 2]) {
             const latestBlock = await h
                 .getPeerHandle(honestIndex)
-                .queryLatestBlock(forkId);
+                .blocks.queryLatestBlock(forkId);
             if (!latestBlock) {
                 throw new Error(
                     `peer ${honestIndex} has no latest block on the original fork`

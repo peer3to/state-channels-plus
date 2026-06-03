@@ -57,7 +57,7 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
             if (this.currentTest?.state === "failed" || firstDetachedError) {
                 console.trace("Test failed - trying to upload logs!");
                 const h = testSession.getHarness();
-                h.peers.forEach((peer, index) => {
+                h.peerHandles.forEach((peer, index) => {
                     const promise = peer.logger.uploadLogs(
                         `FAILED (Peer ${index}): ${this.currentTest?.title}`,
                         {

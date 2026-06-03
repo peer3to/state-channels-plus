@@ -12,7 +12,10 @@ import {
     JoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
+import type { PeerHandle } from "@test/harness/core/PeerHandle";
 import { TestPeer } from "@test/harness/core/types";
+
+export type JoinerRef = Pick<TestPeer, "index" | "address" | "signer">;
 
 export type AddPeerOptions = {
     signer?: Signer;
@@ -21,7 +24,7 @@ export type AddPeerOptions = {
 };
 
 export type BuildJoinChannelConfirmationParams = {
-    joiner: { address: string; signer: Signer };
+    joiner: JoinerRef;
     channelId: JoinChannelStruct["channelId"];
     existingParticipantSigners: readonly Signer[];
     jcOverrides?: Partial<JoinChannelStruct>;
@@ -30,12 +33,12 @@ export type BuildJoinChannelConfirmationParams = {
 export class JoinActions {
     constructor(protected harness: PeerTestHarness) {}
 
-    private async addSpectator(options?: AddPeerOptions): Promise<TestPeer> {
+    private async addSpectator(options?: AddPeerOptions): Promise<PeerHandle> {
         if (!this.harness.canAddPeer) {
             throw new Error("Harness not initialized; call setup() first");
         }
 
-        const index = this.harness.peers.length;
+        const index = this.harness.peerCount;
         const signers = await hre.ethers.getSigners();
         const resolvedSigner = options?.signer ?? signers[index];
         if (!resolvedSigner) {
@@ -45,18 +48,13 @@ export class JoinActions {
         }
 
         await this.harness.createPeer(index, resolvedSigner);
-        const peer = this.harness.peers[index];
-        if (!peer) {
-            throw new Error(`Failed to create peer ${index}`);
-        }
+        const handle = this.harness.getPeerHandle(index);
 
         if (this.harness.channelId) {
-            await this.harness
-                .getPeerHandle(index)
-                .lifecycle.connectToChannel(this.harness.channelId.toString());
+            await handle.lifecycle.connectToChannel(this.harness.channelId);
             // Worker peers already dialed discovery during p2pSetup.
-            const handle = this.harness.getPeerHandle(index);
             if (!handle.__workerBackend) {
+                const peer = this.harness.getPeer(index);
                 await LocalDiscoveryServer.connectToPeers(
                     peer.stateManager.p2pManager.self,
                     this.harness.channelId,
@@ -65,46 +63,46 @@ export class JoinActions {
             }
         }
 
-        return peer;
+        return handle;
     }
 
-    async addSpectatorWait(options?: AddPeerOptions): Promise<TestPeer> {
-        const peer = await this.addSpectator(options);
+    async addSpectatorWait(options?: AddPeerOptions): Promise<PeerHandle> {
+        const handle = await this.addSpectator(options);
         if (this.harness.channelId) {
             await this.harness.event.waitUntilPeerStatus(
-                peer.index,
+                handle.index,
                 Status.SYNCED,
                 {
                     timeoutMs: options?.statusTimeoutMs ?? 15000,
                     timeoutMessage:
                         options?.statusTimeoutMessage ??
-                        `Spectator peer ${peer.index} did not reach SYNCED after connect`
+                        `Spectator peer ${handle.index} did not reach SYNCED after connect`
                 }
             );
         }
-        return peer;
+        return handle;
     }
 
-    async addSpectatorDetached(options?: AddPeerOptions): Promise<TestPeer> {
-        const peer = await this.addSpectator(options);
+    async addSpectatorDetached(options?: AddPeerOptions): Promise<PeerHandle> {
+        const handle = await this.addSpectator(options);
         if (this.harness.channelId) {
             const promise = this.harness.event.waitUntilPeerStatus(
-                peer.index,
+                handle.index,
                 Status.SYNCED,
                 {
                     timeoutMs: options?.statusTimeoutMs ?? 15000,
                     timeoutMessage:
                         options?.statusTimeoutMessage ??
-                        `Spectator peer ${peer.index} did not reach SYNCED after connect`
+                        `Spectator peer ${handle.index} did not reach SYNCED after connect`
                 }
             );
             DetachedPromises.collect(promise);
         }
-        return peer;
+        return handle;
     }
 
     async joinChannelWait(params: {
-        joiner: TestPeer;
+        joiner: JoinerRef;
         existingParticipantSigners: readonly Signer[];
         channelId?: JoinChannelStruct["channelId"];
         jcOverrides?: Partial<JoinChannelStruct>;

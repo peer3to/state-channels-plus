@@ -5,6 +5,8 @@ import { Block } from "@/models";
 import { FraudProofType } from "@/types/sol-enums";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
+import { decodeMathState } from "@test/utils/mathHarnessAbi";
+import type { PeerHandle } from "@test/harness/core/PeerHandle";
 
 /**
  * E2E Tests: Fraud Proofs — onBlockConfirmation (BlockValidationStrategy)
@@ -27,24 +29,37 @@ describe("E2E: Block Fraud Proofs", function () {
         expect(forkId).to.not.be.undefined;
         // step 1 - stub maybePostBlockOnChain via debug.stubMethod -> works in
         // both inline + worker mode (target[leaf] = fn on the live stateManager).
-        for (const peer of h.peers) {
+        for (const peer of h.peerHandles) {
             await h
                 .getPeerHandle(peer.index)
                 .stub.stubMethod("maybePostBlockOnChain", () => {});
         }
 
         const observerIndex = 3;
-        const observer = h.getPeer(observerIndex);
         const observerHandle = h.getPeerHandle(observerIndex);
+        const queryObserverSum = async (
+            handle: PeerHandle
+        ): Promise<bigint> => {
+            let stateHash =
+                await handle.stateMachine.queryLatestStateMachineStateHash(
+                    forkId!
+                );
+            if (!stateHash) {
+                // no blocks yet — fall back to genesis snapshot state
+                const genesis = await handle.snapshots.queryGenesisSnapshot(
+                    forkId!
+                );
+                stateHash = genesis?.snapshotData.stateMachineStateHash as
+                    | string
+                    | undefined;
+            }
+            const encoded = await handle.stateMachine.queryStateMachineState(
+                stateHash!
+            );
+            return decodeMathState(encoded! as string).number;
+        };
+        const observerInitialSum = await queryObserverSum(observerHandle);
         await h.network.disconnectPeer(observerIndex);
-        // step 4 - contractInstance lives in the worker isolate in dedicated-
-        // thread mode -> the orchestrator ref is undefined. only the inline
-        // path can read the math machine's sum directly; the queue/execute
-        // behaviour itself is checked via queryBlockByHash below.
-        const observerInitialSum =
-            observer.contractInstance !== undefined
-                ? await observer.contractInstance.getSum()
-                : undefined;
 
         await h.transition.advanceState({
             count: 2,
@@ -54,14 +69,16 @@ describe("E2E: Block Fraud Proofs", function () {
 
         const source = await h.peerWithHighestBlock(forkId!);
         const sourceHandle = h.getPeerHandle(source.index);
-        const block1Confirmation = await sourceHandle.queryBlockConfirmationAt({
-            forkId: forkId!,
-            height: 0
-        });
-        const block2Confirmation = await sourceHandle.queryBlockConfirmationAt({
-            forkId: forkId!,
-            height: 1
-        });
+        const block1Confirmation =
+            await sourceHandle.blocks.queryBlockConfirmationAt({
+                forkId: forkId!,
+                height: 0
+            });
+        const block2Confirmation =
+            await sourceHandle.blocks.queryBlockConfirmationAt({
+                forkId: forkId!,
+                height: 1
+            });
         expect(block1Confirmation).to.not.be.undefined;
         expect(block2Confirmation).to.not.be.undefined;
         // step 2 - rehydrate orchestrator-side. Block class instances don't
@@ -74,7 +91,9 @@ describe("E2E: Block Fraud Proofs", function () {
             block2Confirmation!.blockConfirmation as BlockConfirmationStruct,
             block2Confirmation!.onChainTimestamp
         );
-        expect(await observerHandle.queryNextBlockHeight(forkId!)).to.equal(0);
+        expect(
+            await observerHandle.blocks.queryNextBlockHeight(forkId!)
+        ).to.equal(0);
 
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observerIndex,
@@ -82,18 +101,19 @@ describe("E2E: Block Fraud Proofs", function () {
             keepConnection: true,
             waitForProcessed: false
         });
-        expect(await observerHandle.queryBlockByHash(String(block2.hash))).to.be
-            .undefined;
+        expect(
+            await observerHandle.blocks.queryBlockByHash(String(block2.hash))
+        ).to.be.undefined;
 
         const postBlockCalldata = async (block: Block) => {
-            const author = h.peers.find(
+            const author = h.peerHandles.find(
                 (peer) =>
                     peer.address.toLowerCase() ===
                     String(block.author).toLowerCase()
             );
             expect(author).to.not.be.undefined;
 
-            await h.getPeerHandle(author!.index).postBlockCalldata({
+            await h.getPeerHandle(author!.index).blocks.postBlockCalldata({
                 signedBlock: block.signedBlock,
                 maxTimestamp: Clock.getTimeInSeconds() + 1000
             });
@@ -104,8 +124,9 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.event.waitUntilEventOccurs("onBlockCalldataPosted", 5000, [
             observerIndex
         ]);
-        expect(await observerHandle.queryBlockByHash(String(block2.hash))).to.be
-            .undefined;
+        expect(
+            await observerHandle.blocks.queryBlockByHash(String(block2.hash))
+        ).to.be.undefined;
 
         await sleep((timeConfig.agreementTime + 1) * 1000);
 
@@ -116,10 +137,12 @@ describe("E2E: Block Fraud Proofs", function () {
 
         await h.eventCountsBarrier.waitFor(
             async () =>
-                (await observerHandle.queryBlockByHash(String(block1.hash))) !==
-                    undefined &&
-                (await observerHandle.queryBlockByHash(String(block2.hash))) !==
-                    undefined,
+                (await observerHandle.blocks.queryBlockByHash(
+                    String(block1.hash)
+                )) !== undefined &&
+                (await observerHandle.blocks.queryBlockByHash(
+                    String(block2.hash)
+                )) !== undefined,
             {
                 timeoutMs: 5000,
                 timeoutMessage:
@@ -127,15 +150,13 @@ describe("E2E: Block Fraud Proofs", function () {
             }
         );
 
-        const storedBlock2 = await observerHandle.queryBlockByHash(
+        const storedBlock2 = await observerHandle.blocks.queryBlockByHash(
             String(block2.hash)
         );
         expect(storedBlock2?.onChainTimestamp).to.not.be.undefined;
-        if (observer.contractInstance !== undefined) {
-            expect(await observer.contractInstance.getSum()).to.equal(
-                observerInitialSum! + 2n
-            );
-        }
+        expect(await queryObserverSum(observerHandle)).to.equal(
+            observerInitialSum + 2n
+        );
     });
 
     it("queued duplicate block does not fall through to double sign", async function () {
@@ -148,13 +169,13 @@ describe("E2E: Block Fraud Proofs", function () {
         expect(forkId).to.not.be.undefined;
 
         const latestConfirmation =
-            (await observerHandle.queryLatestBlockConfirmation(forkId!)) as
-                | BlockConfirmationStruct
-                | undefined;
+            (await observerHandle.blocks.queryLatestBlockConfirmation(
+                forkId!
+            )) as BlockConfirmationStruct | undefined;
         expect(latestConfirmation).to.not.be.undefined;
         const block = Block.fromBlockConfirmation(latestConfirmation!);
 
-        await observerHandle.queueBlock({
+        await observerHandle.blocks.queueBlock({
             blockConfirmation: latestConfirmation!
         });
 
@@ -182,15 +203,14 @@ describe("E2E: Block Fraud Proofs", function () {
         expect(forkId).to.not.be.undefined;
 
         const latestConfirmation =
-            (await observerHandle.queryLatestBlockConfirmation(forkId!)) as
-                | BlockConfirmationStruct
-                | undefined;
+            (await observerHandle.blocks.queryLatestBlockConfirmation(
+                forkId!
+            )) as BlockConfirmationStruct | undefined;
         expect(latestConfirmation).to.not.be.undefined;
         const block = Block.fromBlockConfirmation(latestConfirmation!);
 
-        const initialNextHeight = await observerHandle.queryNextBlockHeight(
-            forkId!
-        );
+        const initialNextHeight =
+            await observerHandle.blocks.queryNextBlockHeight(forkId!);
         const initialSum =
             observer.contractInstance !== undefined
                 ? await observer.contractInstance.getSum()
@@ -210,23 +230,26 @@ describe("E2E: Block Fraud Proofs", function () {
 
         await h.eventCountsBarrier.waitFor(
             async () =>
-                (await observerHandle.queryBlockByHash(String(block.hash)))
-                    ?.onChainTimestamp === expectedTimestamp,
+                (
+                    await observerHandle.blocks.queryBlockByHash(
+                        String(block.hash)
+                    )
+                )?.onChainTimestamp === expectedTimestamp,
             {
                 timeoutMs: 5000,
                 timeoutMessage:
                     "Stored duplicate timestamp was not merged into storage"
             }
         );
-        expect(await observerHandle.queryNextBlockHeight(forkId!)).to.equal(
-            initialNextHeight
-        );
+        expect(
+            await observerHandle.blocks.queryNextBlockHeight(forkId!)
+        ).to.equal(initialNextHeight);
         if (observer.contractInstance !== undefined) {
             expect(await observer.contractInstance.getSum()).to.equal(
                 initialSum
             );
         }
-        const storedBlock = await observerHandle.queryBlockByHash(
+        const storedBlock = await observerHandle.blocks.queryBlockByHash(
             String(block.hash)
         );
         expect(storedBlock?.onChainTimestamp).to.equal(expectedTimestamp);
@@ -242,9 +265,9 @@ describe("E2E: Block Fraud Proofs", function () {
         expect(forkId).to.not.be.undefined;
 
         const latestConfirmation =
-            (await observerHandle.queryLatestBlockConfirmation(forkId!)) as
-                | BlockConfirmationStruct
-                | undefined;
+            (await observerHandle.blocks.queryLatestBlockConfirmation(
+                forkId!
+            )) as BlockConfirmationStruct | undefined;
         expect(latestConfirmation).to.not.be.undefined;
         const block = Block.fromBlockConfirmation(latestConfirmation!);
 
@@ -269,9 +292,9 @@ describe("E2E: Block Fraud Proofs", function () {
         });
 
         expect(
-            await observerHandle.isBlacklisted(h.getPeer(1).address)
+            await observerHandle.channel.isBlacklisted(h.getPeer(1).address)
         ).to.equal(true);
-        const storedBlock = await observerHandle.queryBlockByHash(
+        const storedBlock = await observerHandle.blocks.queryBlockByHash(
             String(block.hash)
         );
         expect(

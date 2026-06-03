@@ -4,15 +4,25 @@ import type {
 } from "../interfaces/TransitionInterface";
 import type { TestPeer } from "../types";
 
-export class InlineTransitionHandle implements TransitionInterface {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    constructor(private readonly _peer: TestPeer) {}
+type ContractMethods = Record<
+    string,
+    ((...a: unknown[]) => Promise<unknown>) | undefined
+>;
 
-    async submitNext(_req: NamedOpRequest): Promise<unknown> {
-        throw new Error(
-            "InlinePeer.transition.submitNext is not available in inline mode. " +
-                "Use action class methods (e.g. h.transition.increment()) which " +
-                "call the contract instance directly."
+export class InlineTransitionHandle implements TransitionInterface {
+    constructor(private readonly peer: TestPeer) {}
+
+    async submitNext(req: NamedOpRequest): Promise<unknown> {
+        const method = req.op.split(".").pop()!;
+        const contract = this.peer.p2pInstance
+            .p2pContractInstance as unknown as ContractMethods;
+        const fn = contract[method];
+        if (typeof fn !== "function")
+            throw new Error(`InlineTransitionHandle: no method '${req.op}'`);
+        const args = req.args as { value?: unknown } | undefined;
+        return fn.call(
+            contract,
+            ...(args && "value" in args ? [args.value] : [])
         );
     }
 }

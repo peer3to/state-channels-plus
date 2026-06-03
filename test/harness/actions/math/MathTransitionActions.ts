@@ -1,19 +1,18 @@
 import { DetachedPromises } from "@/utils";
 import { Status } from "@/types";
 import { MathStateMachine } from "@typechain-types";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import {
     AdvanceStateBaseOptions,
     TransitionActions,
     TransitionOptions
 } from "@test/harness/actions/TransitionActions";
+import type { NamedOpRequest } from "@test/harness/core/PeerHandle";
+import { ROUTES } from "@test/harness/threaded/worker/routeNames";
 import { MathPeerTestHarness } from "test-harness";
 import { MainRpcService } from "@/rpc";
 
 type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
-    txFn?:
-        | ((contract: MathStateMachine) => Promise<any>)
-        | { op: string; args?: unknown };
+    txFn?: NamedOpRequest;
 };
 
 type ParticipantLeaveOptions = TransitionOptions & {
@@ -36,9 +35,10 @@ export class MathTransitionActions extends TransitionActions<
         value: number = 1,
         options?: TransitionOptions
     ): Promise<any> {
-        return this.harness.options.dedicatedPeerThread
-            ? this.submitNext({ op: "math.add", args: { value } }, options)
-            : this.submitNext((contract) => contract.add(value), options);
+        return this.submitNext(
+            { op: ROUTES.math.add, args: { value } },
+            options
+        );
     }
 
     override async advanceState(
@@ -47,13 +47,14 @@ export class MathTransitionActions extends TransitionActions<
         if (options?.txFn) {
             return super.advanceState({ ...options, txFn: options.txFn });
         }
-        const txFn = this.harness.options.dedicatedPeerThread
-            ? { op: "math.add", args: { value: 1 } }
-            : (contract: MathStateMachine) => contract.add(1);
+        const txFn: NamedOpRequest = {
+            op: ROUTES.math.add,
+            args: { value: 1 }
+        };
 
         const count = options?.count ?? 1;
         const total = options?.rounds
-            ? options.rounds * this.harness.peers.length
+            ? options.rounds * this.harness.peerCount
             : count;
 
         for (let i = 0; i < total; i++) {
@@ -71,21 +72,11 @@ export class MathTransitionActions extends TransitionActions<
         waitForPeers?: number[];
     }): Promise<void> {
         const { peer, value = 1, waitForPeers } = options;
-        const peerObj = this.harness.peers[peer];
-        if (!peerObj) throw new Error(`Peer ${peer} not found`);
-        if (this.harness.options.dedicatedPeerThread) {
-            await this.submitOp(
-                peerObj,
-                { op: "math.add", args: { value } },
-                {
-                    waitForPeers
-                }
-            );
-        } else {
-            await this.submit(peerObj, (contract) => contract.add(value), {
-                waitForPeers
-            });
-        }
+        await this.submitOp(
+            this.harness.getPeerHandle(peer),
+            { op: ROUTES.math.add, args: { value } },
+            { waitForPeers }
+        );
     }
 
     async participantLeaveWait(
@@ -133,16 +124,16 @@ export class MathTransitionActions extends TransitionActions<
         const leaver = await this.harness.query.getNextPeerToWrite();
         const leaverIndex = leaver.index;
 
-        const leaveOp = this.harness.options.dedicatedPeerThread
-            ? { op: "math.leaveChannel" }
-            : (contract: MathStateMachine) => contract.leaveChannel();
-        await this.submitNext(leaveOp, {
-            waitForTurn: true,
-            waitForSync: options?.waitForSync ?? true,
-            waitForPeers: options?.waitForPeers,
-            waitForFinalization: options?.waitForFinalization ?? true,
-            delayMs: options?.delayMs
-        });
+        await this.submitNext(
+            { op: ROUTES.math.leaveChannel },
+            {
+                waitForTurn: true,
+                waitForSync: options?.waitForSync ?? true,
+                waitForPeers: options?.waitForPeers,
+                waitForFinalization: options?.waitForFinalization ?? true,
+                delayMs: options?.delayMs
+            }
+        );
 
         this.logger.debug(`Peer ${leaverIndex} left channel`);
 

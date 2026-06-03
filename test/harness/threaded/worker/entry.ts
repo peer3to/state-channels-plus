@@ -34,6 +34,7 @@ import {
     type DetachedRejectionPayload,
     type WorkerData
 } from "./types";
+import { PUSH_TOPICS } from "./routeNames";
 
 if (!parentPort) {
     throw new Error(
@@ -102,7 +103,7 @@ class PeerWorkerProcess {
             try {
                 port.postMessage({
                     kind: "push",
-                    topic: "lifecycle.detachedRejection",
+                    topic: PUSH_TOPICS.lifecycleDetachedRejection,
                     payload
                 });
             } catch {
@@ -127,7 +128,7 @@ class PeerWorkerProcess {
         try {
             this.port.postMessage({
                 kind: "push",
-                topic: "lifecycle.crash",
+                topic: PUSH_TOPICS.lifecycleCrash,
                 payload
             });
         } catch {
@@ -140,7 +141,7 @@ class PeerWorkerProcess {
         const fid = typeof raw === "string" ? raw : undefined;
         if (fid === undefined || fid === this.lastPushedForkId) return;
         this.lastPushedForkId = fid;
-        this.peerHandler.push("fork.changed", { forkId: fid });
+        this.peerHandler.push(PUSH_TOPICS.forkChanged, { forkId: fid });
     }
 
     private async bootstrap(data: WorkerData): Promise<void> {
@@ -159,7 +160,7 @@ class PeerWorkerProcess {
         const ready = { peerAddress };
         this.port.postMessage({
             kind: "push",
-            topic: "lifecycle.ready",
+            topic: PUSH_TOPICS.lifecycleReady,
             payload: ready
         });
     }
@@ -285,11 +286,11 @@ class PeerWorkerProcess {
                 { level: logConfig.level, attachErrorListener: false }
             )
         );
+        LocalDiscoveryServer.setRegistryPort(discoveryRegistryPort);
         await LocalDiscoveryServer.connectToPeers(
             p2pInstance.p2pSigner.p2pManager,
             channelId,
-            peerAddress,
-            discoveryRegistryPort
+            peerAddress
         );
     }
 }

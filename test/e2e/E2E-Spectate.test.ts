@@ -32,8 +32,8 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const peer0 = harness.peers[0];
-            const peer1 = harness.peers[1];
+            const peer0 = harness.getPeer(0);
+            const peer1 = harness.getPeer(1);
 
             // Peer 1: Block handshake completely to ensure guard activates
             const peer1InitHandshakeService =
@@ -154,8 +154,9 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorWait();
-            const spectatorIndex = spectator.index;
+            const spectatorHandle = await h.join.addSpectatorWait();
+            const spectator = h.getPeer(spectatorHandle.index);
+            const spectatorIndex = spectatorHandle.index;
             const participantIndices = [0, 1, 2];
             const forkId = h.activeForkId;
             expect(forkId).to.not.be.undefined;
@@ -170,7 +171,8 @@ describe("E2E: Spectate Service", function () {
                 waitForFinalization: true
             });
 
-            const sourcePeer = await h.peerWithHighestBlock(forkId!);
+            const sourcePeerHandle = await h.peerWithHighestBlock(forkId!);
+            const sourcePeer = h.getPeer(sourcePeerHandle.index);
             const blockToQueue =
                 sourcePeer.stateManager.storage.blocks.getLatestBlock(forkId!);
             expect(blockToQueue).to.not.be.undefined;
@@ -280,7 +282,8 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorWait();
+            const spectatorHandle = await h.join.addSpectatorWait();
+            const spectator = h.getPeer(spectatorHandle.index);
             const forkId = h.activeForkId;
             expect(forkId).to.not.be.undefined;
 
@@ -294,7 +297,8 @@ describe("E2E: Spectate Service", function () {
             expect(localLatestBlock).to.not.be.undefined;
             expect(localLatestBlock!.height).to.be.greaterThan(0);
 
-            const sourcePeer = await h.peerWithHighestBlock(forkId!);
+            const sourcePeerHandle = await h.peerWithHighestBlock(forkId!);
+            const sourcePeer = h.getPeer(sourcePeerHandle.index);
             const syncPayload =
                 await sourcePeer.stateManager.p2pManager.localRpc.spectateService.generateSyncPayload(
                     h.channelId!,
@@ -352,8 +356,9 @@ describe("E2E: Spectate Service", function () {
                 waitForFinalization: true
             });
 
-            const spectator = await h.join.addSpectatorWait();
-            const spectatorIndex = spectator.index;
+            const spectatorHandle = await h.join.addSpectatorWait();
+            const spectator = h.getPeer(spectatorHandle.index);
+            const spectatorIndex = spectatorHandle.index;
             const participantIndices = [0, 1, 2, 3];
             const forkId = h.activeForkId;
             expect(forkId).to.not.be.undefined;
@@ -373,7 +378,8 @@ describe("E2E: Spectate Service", function () {
                 waitForFinalization: true
             });
 
-            const sourcePeer = await h.peerWithHighestBlock(forkId!);
+            const sourcePeerHandle = await h.peerWithHighestBlock(forkId!);
+            const sourcePeer = h.getPeer(sourcePeerHandle.index);
             const sourceLatestBlock =
                 sourcePeer.stateManager.storage.blocks.getLatestBlock(forkId!);
             expect(sourceLatestBlock).to.not.be.undefined;
@@ -612,7 +618,7 @@ describe("E2E: Spectate Service", function () {
             const h = TestSession.getHarness();
             const spectator =
                 await h.scenario.spectatorPromotedViaForceInboundWait();
-            expect(spectator.stateManager.getStatus()).to.equal(
+            expect(await spectator.channel.queryStatus()).to.equal(
                 Status.PARTICIPATING
             );
             await h.assert.sync.participantCount({
@@ -631,7 +637,7 @@ describe("E2E: Spectate Service", function () {
             const h = TestSession.getHarness();
             const joiner =
                 await h.scenario.spectatorPromotedViaJoinChannelWait();
-            expect(joiner.stateManager.getStatus()).to.equal(
+            expect(await joiner.channel.queryStatus()).to.equal(
                 Status.PARTICIPATING
             );
         });
@@ -657,18 +663,16 @@ describe("E2E: Spectate Service", function () {
                 forkSettleTimeoutMs: 15000
             });
 
-            const joinerPeer = h.getPeer(joiner.index);
-            expect(joinerPeer.stateManager.forkId).to.equal(
+            expect(joiner.forkId).to.equal(
                 newForkId,
                 "Joiner must be on the post-dispute (reduced) fork"
             );
-            expect(joinerPeer.stateManager.getStatus()).to.equal(
+            expect(await joiner.channel.queryStatus()).to.equal(
                 Status.PARTICIPATING,
                 "Joiner must remain PARTICIPATING after dispute resolution"
             );
 
-            const joinerParticipants =
-                await joinerPeer.stateManager.diamondStateMachine.getParticipants();
+            const joinerParticipants = await joiner.channel.queryParticipants();
             expect(joinerParticipants).to.include(
                 joiner.address,
                 "Joiner must be in getParticipants() on the post-dispute fork"
@@ -709,7 +713,7 @@ describe("E2E: Spectate Service", function () {
 
             await h.join.joinChannelWait({
                 joiner: joinerA,
-                existingParticipantSigners: h.peers
+                existingParticipantSigners: h.peerHandles
                     .slice(0, 3)
                     .map((p) => p.signer)
             });
@@ -731,8 +735,8 @@ describe("E2E: Spectate Service", function () {
             for (const joiner of [joinerA, joinerB]) {
                 const localParticipants = (
                     await h
-                        .getPeer(joiner.index)
-                        .stateManager.diamondStateMachine.getParticipants()
+                        .getPeerHandle(joiner.index)
+                        .channel.queryParticipants()
                 ).map((a) => String(a).toLowerCase());
 
                 expect(localParticipants).to.include(
@@ -751,15 +755,16 @@ describe("E2E: Spectate Service", function () {
                 timeConfig: concurrentTimeConfig
             });
 
-            const joinerA = await h.join.addSpectatorWait();
+            const joinerAHandle = await h.join.addSpectatorWait();
+            const joinerA = h.getPeer(joinerAHandle.index);
             const joinerB = await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait();
 
             // joinerA pre-signs its confirmation while pending is empty.
             const confirmation = await h.join.buildJoinChannelConfirmation({
-                joiner: joinerA,
+                joiner: joinerAHandle,
                 channelId: h.channelId,
-                existingParticipantSigners: h.peers
+                existingParticipantSigners: h.peerHandles
                     .slice(0, 3)
                     .map((p) => p.signer)
             });
@@ -802,13 +807,17 @@ describe("E2E: Spectate Service", function () {
                 expectedCount: 3,
                 peerIndex: spectator.index
             });
-            expect(spectator.stateManager.getStatus()).to.equal(Status.SYNCED);
+            expect(await spectator.channel.queryStatus()).to.equal(
+                Status.SYNCED
+            );
 
             // forceInboundJoin appends inbound for the spectator. Status stays SYNCED.
             await h.join.forceInboundJoinWait({
                 participant: spectator.address
             });
-            expect(spectator.stateManager.getStatus()).to.equal(Status.SYNCED);
+            expect(await spectator.channel.queryStatus()).to.equal(
+                Status.SYNCED
+            );
 
             const pendingBefore = await h.channelManager.getPendingParticipants(
                 h.channelId
@@ -821,7 +830,7 @@ describe("E2E: Spectate Service", function () {
             // block consumes the spectator's inbound. agreementTime=4s gives a
             // window where no peer has posted a block yet.
             const leaverIndex = 0;
-            await h.getPeerHandle(leaverIndex).setForceExit(true);
+            await h.getPeerHandle(leaverIndex).dispute.setForceExit(true);
             h.context.leftChannelPeerIndices = [
                 ...h.context.leftChannelPeerIndices,
                 leaverIndex

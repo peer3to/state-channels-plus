@@ -5,7 +5,7 @@ export class HarnessDebug {
 
     logPeerIndexMap(): void {
         console.log("[DEBUG] harness peers (index -> address):");
-        for (const p of this.harness.peers) {
+        for (const p of this.harness.peerHandles) {
             console.log(`[DEBUG]   peer ${p.index} -> ${p.address}`);
         }
     }

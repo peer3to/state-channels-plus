@@ -1,5 +1,8 @@
 import type { PeerHandler } from "../../rpc/rpc-server";
 import type StateManager from "@/stateManager";
+import type { Bytes, Hash } from "@/types/types";
+import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import StateSnapshot from "@/models/StateSnapshot";
 import { ROUTES } from "../routeNames";
 import { corruptValidatorSnapshotForBalanceInvariant } from "@test/harness/actions/DisputeTamperingActions";
 
@@ -122,6 +125,39 @@ export class ByzantineRoutes {
                 return {};
             }
         );
+
+        server.register(
+            ROUTES.byzantine.storeStateMachineState,
+            async (args) => {
+                const { encodedState, hash } = (args ?? {}) as {
+                    encodedState?: Bytes;
+                    hash?: Hash;
+                };
+                if (encodedState === undefined || hash === undefined)
+                    throw new Error(
+                        "byzantine.storeStateMachineState: missing 'encodedState' or 'hash'"
+                    );
+                this.sm.storage.stateMachineStates.storeStateMachineState(
+                    encodedState,
+                    { hash }
+                );
+                return {};
+            }
+        );
+
+        server.register(ROUTES.byzantine.storeStateSnapshot, async (args) => {
+            const { snapshot } = (args ?? {}) as {
+                snapshot?: StateSnapshotStruct;
+            };
+            if (!snapshot)
+                throw new Error(
+                    "byzantine.storeStateSnapshot: missing 'snapshot'"
+                );
+            this.sm.storage.stateSnapshots.storeStateSnapshot(
+                StateSnapshot.from(snapshot)
+            );
+            return {};
+        });
 
         server.register(
             ROUTES.byzantine.corruptValidatorSnapshotForBalanceInvariant,

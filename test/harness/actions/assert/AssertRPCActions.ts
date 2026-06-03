@@ -66,7 +66,7 @@ export class AssertRPCActions {
 
         const requestingHandle = this.harness.getPeerHandle(requestingPeer);
 
-        const totalPeers = this.harness.peerHandles.length;
+        const totalPeers = this.harness.peerCount;
         const expectedAcknowledgments = totalPeers - excludePeers.length - 1;
 
         // candidate peers for the acknowledgment check; computed once.

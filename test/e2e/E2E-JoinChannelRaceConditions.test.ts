@@ -62,13 +62,13 @@ describe("E2E: Join channel race conditions", function () {
                 "RaceConditionJoinChannelSnapshotMismatch"
             );
 
-            expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
-                Status.SYNCED
-            );
+            expect(
+                await h.getPeerHandle(joiner.index).channel.queryStatus()
+            ).to.equal(Status.SYNCED);
 
             const onChainParticipants = await h
                 .getPeerHandle(joiner.index)
-                .queryParticipants();
+                .channel.queryParticipants();
             expect(
                 onChainParticipants.map((a) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
@@ -93,9 +93,9 @@ describe("E2E: Join channel race conditions", function () {
             await h
                 .getPeerHandle(joiner.index)
                 .lifecycle.joinChannel(confirmation);
-            expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
-                Status.PENDING_PARTICIPANT
-            );
+            expect(
+                await h.getPeerHandle(joiner.index).channel.queryStatus()
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             await h.transition.advanceState({
                 count: 2,
@@ -165,13 +165,13 @@ describe("E2E: Join channel race conditions", function () {
                 "RaceConditionJoinChannelForkDisputed"
             );
 
-            expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
-                Status.SYNCED
-            );
+            expect(
+                await h.getPeerHandle(joiner.index).channel.queryStatus()
+            ).to.equal(Status.SYNCED);
 
             const onChainParticipants = await h
                 .getPeerHandle(joiner.index)
-                .queryParticipants();
+                .channel.queryParticipants();
             expect(
                 onChainParticipants.map((a: unknown) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
@@ -215,9 +215,9 @@ describe("E2E: Join channel race conditions", function () {
             await h
                 .getPeerHandle(joiner.index)
                 .lifecycle.joinChannel(confirmation);
-            expect(await h.getPeerHandle(joiner.index).queryStatus()).to.equal(
-                Status.PENDING_PARTICIPANT
-            );
+            expect(
+                await h.getPeerHandle(joiner.index).channel.queryStatus()
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             const pendingBefore = await h.channelManager.getPendingParticipants(
                 h.channelId
@@ -230,7 +230,7 @@ describe("E2E: Join channel race conditions", function () {
             // dispute. The dispute is valid (selfRemoval=true) and not slashed.
             const leaverIndex = 0;
             const leaverAddress = h.getPeerHandle(leaverIndex).address;
-            await h.getPeerHandle(leaverIndex).setForceExit(true);
+            await h.getPeerHandle(leaverIndex).dispute.setForceExit(true);
             h.context.leftChannelPeerIndices = [
                 ...h.context.leftChannelPeerIndices,
                 leaverIndex

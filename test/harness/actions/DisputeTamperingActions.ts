@@ -18,6 +18,25 @@ import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/Pro
 import { ForkId, Address, Hash } from "@/types/types";
 import StateSnapshot from "@/models/StateSnapshot";
 
+import Block from "@/models/Block";
+import { BytesLike, Signer, ZeroAddress } from "ethers";
+import {
+    DisputeStruct,
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import DisputeManager, {
+    ConstructDisputeResult
+} from "@/disputeManager/DisputeManager";
+import { WorkerPeer } from "@test/harness/core/WorkerPeer";
+import type {
+    BlockStruct,
+    BlockConfirmationStruct,
+    SignedBlockStruct,
+    SnapshotDataStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+
 type SnapshotStorage = {
     blocks: {
         getLatestBlock: (
@@ -68,24 +87,6 @@ export function corruptValidatorSnapshotForBalanceInvariant(
     });
     return originalHash;
 }
-import Block from "@/models/Block";
-import { BytesLike, Signer, ZeroAddress } from "ethers";
-import {
-    DisputeStruct,
-    DisputeConfirmationStruct,
-    DisputeAuditingDataStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
-import DisputeManager, {
-    ConstructDisputeResult
-} from "@/disputeManager/DisputeManager";
-import { WorkerPeer } from "@test/harness/core/WorkerPeer";
-import type {
-    BlockStruct,
-    BlockConfirmationStruct,
-    SignedBlockStruct,
-    SnapshotDataStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
 export type DisputeTamper = (
     dispute: DisputeStruct,
     disputeConfirmation: DisputeConfirmationStruct,
@@ -170,7 +171,7 @@ export class DisputeTamperingActions {
         const markMalicious = options?.markMalicious ?? true;
         const forkId = options?.forkId;
 
-        const handle = this.harness.getPeerHandle(authorPeerIndex);
+        const authorHandle = this.harness.getPeerHandle(authorPeerIndex);
         if (markMalicious) {
             this.harness.contextApi.markMaliciousPeer({
                 maliciousPeerIndex: authorPeerIndex
@@ -179,21 +180,21 @@ export class DisputeTamperingActions {
         const targetForkId = forkId || this.harness.activeForkId!;
 
         const { dispute, disputeConfirmation, auditingData } =
-            (await handle.constructDispute(targetForkId)) as {
-                dispute: DisputeStruct;
-                disputeConfirmation: DisputeConfirmationStruct;
-                auditingData: DisputeAuditingDataStruct;
-            };
+            await authorHandle.dispute.constructDispute(targetForkId);
 
         await tamper(dispute, disputeConfirmation, auditingData);
-        await this.resignDispute(handle.signer, dispute, disputeConfirmation);
+        await this.resignDispute(
+            authorHandle.signer,
+            dispute,
+            disputeConfirmation
+        );
 
         this.logger.debug(
             `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
         );
 
         const channelManager = this.harness.channelManager.connect(
-            handle.signer
+            authorHandle.signer
         );
         const txResp = dispute.postedAuditingData
             ? await channelManager.uploadDisputeWithCalldata(
@@ -221,7 +222,9 @@ export class DisputeTamperingActions {
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
         const genesisSnapshot = StateSnapshot.from(
-            (await handle.queryGenesisSnapshot(this.harness.activeForkId!))!
+            (await handle.snapshots.queryGenesisSnapshot(
+                this.harness.activeForkId!
+            ))!
         );
         const proofStruct = buildProof({ dispute, genesisSnapshot });
         const forged: DisputeFraudProofStruct = {
@@ -250,7 +253,6 @@ export class DisputeTamperingActions {
 
         const handle = this.harness.getPeerHandle(peerIndex);
         if (handle instanceof WorkerPeer) {
-            const peer = this.harness.getPeer(peerIndex);
             this.harness.tamperFnsByPeer.set(
                 peerIndex,
                 async (dispute, disputeConfirmation, auditingData) => {
@@ -260,7 +262,7 @@ export class DisputeTamperingActions {
                         auditingData as DisputeAuditingDataStruct
                     );
                     await this.resignDispute(
-                        peer.signer,
+                        handle.signer,
                         dispute as DisputeStruct,
                         disputeConfirmation as DisputeConfirmationStruct
                     );
@@ -344,18 +346,14 @@ export class DisputeTamperingActions {
         const handle = this.harness.getPeerHandle(disputerIndex);
         const nextPeer = await this.harness.query.getNextPeerToWrite();
         const latestConfirmation =
-            await handle.queryLatestBlockConfirmation(forkId);
+            await handle.blocks.queryLatestBlockConfirmation(forkId);
         if (!latestConfirmation) {
             throw new Error(
                 `plantFreshTimeoutForNextWriter: no latest block for fork ${forkId}`
             );
         }
-        const latestBlock = (
-            await import("@/models/Block")
-        ).default.fromBlockConfirmation(
-            latestConfirmation as BlockConfirmationStruct
-        );
-        await handle.storeTimeout({
+        const latestBlock = Block.fromBlockConfirmation(latestConfirmation);
+        await handle.dispute.storeTimeout({
             forkId,
             timeout: {
                 participant: nextPeer.address,
@@ -416,20 +414,20 @@ export class DisputeTamperingActions {
         }
 
         const latestBlockConfirmation =
-            await handle.queryLatestBlockConfirmation(forkId);
+            await handle.blocks.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
             throw new Error(
                 `buildForgedSnapshot: no latest block for fork ${forkId}`
             );
         }
         const latestBlock = Block.fromBlockConfirmation(
-            latestBlockConfirmation as BlockConfirmationStruct
+            latestBlockConfirmation
         );
 
-        const latestStateSnapshotHash = latestBlock.stateSnapshotHash as string;
-        const originalStruct = (await handle.queryStateSnapshotByHash(
+        const latestStateSnapshotHash = latestBlock.stateSnapshotHash;
+        const originalStruct = await handle.snapshots.queryStateSnapshotByHash(
             latestStateSnapshotHash
-        )) as ReturnType<StateSnapshot["toStruct"]> | null;
+        );
         if (!originalStruct) {
             throw new Error(
                 `buildForgedSnapshot: no snapshot for hash ${latestStateSnapshotHash}`
@@ -438,10 +436,9 @@ export class DisputeTamperingActions {
         const originalSnapshot = StateSnapshot.from(originalStruct);
 
         const originalOutboundBlock =
-            ((await handle.queryOutboundMessageBlock(
-                originalStruct.snapshotData
-                    .latestOutboundMessageBlockHash as string
-            )) as MessageBlockStruct | null) ?? undefined;
+            await handle.dispute.queryOutboundMessageBlock(
+                originalStruct.snapshotData.latestOutboundMessageBlockHash
+            );
 
         const mutated = mutate({
             peerIndex,
@@ -465,7 +462,7 @@ export class DisputeTamperingActions {
             author.signer
         );
         const confirmationSigs = await Promise.all(
-            this.harness.peers
+            this.harness.peerHandles
                 .filter((p) => p !== author)
                 .map((p) => forgedBlock.sign(p.signer))
         );
@@ -499,13 +496,7 @@ export class DisputeTamperingActions {
                     stateProof.signedBlocks.at(-1)!.encodedBlock,
                     Type.Block
                 );
-                const h = Number(
-                    (
-                        lastBlock as {
-                            transaction: { header: { transactionCnt: bigint } };
-                        }
-                    ).transaction.header.transactionCnt
-                );
+                const h = Number(lastBlock.transaction.header.transactionCnt);
                 if (h <= targetHeight) return false;
                 stateProof.signedBlocks.pop();
                 return true;
@@ -520,13 +511,7 @@ export class DisputeTamperingActions {
                     lastBc.signedBlock.encodedBlock,
                     Type.Block
                 );
-                const h = Number(
-                    (
-                        lastBlock as {
-                            transaction: { header: { transactionCnt: bigint } };
-                        }
-                    ).transaction.header.transactionCnt
-                );
+                const h = Number(lastBlock.transaction.header.transactionCnt);
                 if (h <= targetHeight) return false;
                 bcs.pop();
                 if (bcs.length === 0) {
@@ -539,12 +524,12 @@ export class DisputeTamperingActions {
 
         while (truncate()) {
             const { hasBlock, latestBlock } =
-                await handle.queryLatestBlockFromStateProof(stateProof);
+                await handle.dispute.queryLatestBlockFromStateProof(stateProof);
             const h = Number(latestBlock.transaction.header.transactionCnt);
             if (!hasBlock || h <= targetHeight) break;
         }
 
-        const auditingData = await handle.queryDisputeAuditingData({
+        const auditingData = await handle.dispute.queryDisputeAuditingData({
             forkId: dispute.input.forkId,
             args: [stateProof]
         });
@@ -683,13 +668,13 @@ export class DisputeTamperingActions {
         const mapped = transformBlockStruct(
             Block.fromSignedBlock(signedBlock).blockStruct
         );
-        const author = mapped.transaction.header.participant as Address;
+        const author = mapped.transaction.header.participant;
         const peer = this.peerForBlockAuthor(author);
         return (await Block.fromBlockStruct(mapped, peer.signer)).signedBlock;
     }
 
     private peerForBlockAuthor(participant: Address) {
-        const peer = this.harness.peers.find((p) =>
+        const peer = this.harness.peerHandles.find((p) =>
             addressesEqual(p.address, participant)
         );
         if (!peer) {

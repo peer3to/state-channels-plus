@@ -1,12 +1,11 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { TestPeer } from "@test/harness/core/types";
+import type { PeerHandle, NamedOpRequest } from "@test/harness/core/PeerHandle";
 import { Logger, sleep } from "@/utils";
 import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
 import { MainRpcService } from "@/rpc";
 import { Block, StateSnapshot } from "@/models";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/BlockQueueManager";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { rejectClosureInWorkerMode } from "@test/harness/core/namedOpGuards";
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -35,12 +34,8 @@ export type AdvanceStateBaseOptions = {
     waitForFinalization?: boolean;
 };
 
-export type AdvanceStateOptions<
-    TContract extends AStateMachineContract = AStateMachineContract
-> = AdvanceStateBaseOptions & {
-    txFn:
-        | ((contract: TContract) => Promise<any>)
-        | { op: string; args?: unknown };
+export type AdvanceStateOptions = AdvanceStateBaseOptions & {
+    txFn: NamedOpRequest;
 };
 
 export function effectiveWaitForFinalization(
@@ -71,31 +66,16 @@ export class TransitionActions<
      * Submit a valid transaction from the next peer to write
      */
     async submitNext(
-        txFn:
-            | ((contract: TContract) => Promise<any>)
-            | { op: string; args?: unknown },
+        opRequest: NamedOpRequest,
         options: TransitionOptions = { waitForTurn: true, waitForSync: true }
     ): Promise<any> {
-        const nextPeer =
-            (await this.harness.query.getNextPeerToWrite()) as TestPeer<
-                TCustomRpc,
-                TContract
-            >;
+        const nextPeer = await this.harness.query.getNextPeerToWrite();
 
         if (options.waitForTurn) {
             await this.waitForTurn(nextPeer);
         }
 
-        if (typeof txFn !== "function") {
-            return this.submitOp(nextPeer, txFn, {
-                waitForSync: options.waitForSync ?? true,
-                waitForPeers: options.waitForPeers,
-                waitForTurn: false,
-                waitForFinalization: options.waitForFinalization
-            });
-        }
-
-        return this.submit(nextPeer, txFn, {
+        return this.submitOp(nextPeer, opRequest, {
             waitForSync: options.waitForSync ?? true,
             waitForPeers: options.waitForPeers,
             waitForTurn: false, // already waited above
@@ -103,10 +83,10 @@ export class TransitionActions<
         });
     }
 
-    async advanceState(options: AdvanceStateOptions<TContract>): Promise<void> {
+    async advanceState(options: AdvanceStateOptions): Promise<void> {
         const count = options?.count ?? 1;
         const total = options?.rounds
-            ? options.rounds * this.harness.peers.length
+            ? options.rounds * this.harness.peerCount
             : count;
 
         for (let i = 0; i < total; i++) {
@@ -119,9 +99,7 @@ export class TransitionActions<
     }
 
     async fromHonestPeersOnly(
-        txFn:
-            | ((contract: TContract) => Promise<any>)
-            | { op: string; args?: unknown },
+        txFn: NamedOpRequest,
         options?: { waitForSync?: boolean }
     ): Promise<void> {
         const syncIndices = this.harness
@@ -137,12 +115,7 @@ export class TransitionActions<
         });
     }
 
-    async sequenceFromHonestPeers(
-        txFns: Array<
-            | ((contract: TContract) => Promise<any>)
-            | { op: string; args?: unknown }
-        >
-    ): Promise<void> {
+    async sequenceFromHonestPeers(txFns: NamedOpRequest[]): Promise<void> {
         const syncIndices = this.harness
             .getPeersExcludingMaliciousAndLeavers()
             .map((p) => p.index);
@@ -173,14 +146,10 @@ export class TransitionActions<
             throw new Error("No active fork ID - channel must be opened first");
         }
 
-        const raw = await this.harness
+        const struct = await this.harness
             .getPeerHandle(peerIndex)
-            .postStateSnapshot(forkId);
-        if (!raw) return undefined;
-        if (raw instanceof StateSnapshot) return raw;
-        return StateSnapshot.from(
-            raw as Parameters<typeof StateSnapshot.from>[0]
-        );
+            .snapshots.postStateSnapshot(forkId);
+        return struct ? StateSnapshot.from(struct) : undefined;
     }
 
     async postSnapshotWait(options?: {
@@ -223,7 +192,8 @@ export class TransitionActions<
         }
 
         const handle = this.harness.getPeerHandle(peerIndex);
-        const sameForkData = await handle.prepareUpdateSnapshotSameFork(forkId);
+        const sameForkData =
+            await handle.snapshots.prepareUpdateSnapshotSameFork(forkId);
         if (!sameForkData || sameForkData.callData.length === 0)
             return undefined;
 
@@ -243,56 +213,22 @@ export class TransitionActions<
             : undefined;
     }
 
-    async validWithoutPeer(
-        excludePeer: number,
-        txFn: (contract: TContract) => Promise<any>
-    ): Promise<void> {
-        const includedPeers = this.harness.peers
-            .map((_: unknown, i: number) => i)
-            .filter((i: number) => i !== excludePeer);
-
-        await this.submitNext(txFn, {
-            waitForPeers: includedPeers,
-            waitForSync: true,
-            // Exclude one peer from the sync barrier only; still require finalized tips on included peers.
-            waitForFinalization: true
-        });
-    }
-
-    /**
-     * Submit a transaction from a specific peer
-     */
-    async submit(
-        peer: TestPeer<TCustomRpc, TContract>,
-        txFn: (contract: TContract) => Promise<any>,
-        options: TransitionOptions = {}
-    ): Promise<any> {
-        rejectClosureInWorkerMode(
-            "TransitionActions.submit(txFn)",
-            this.harness.getPeerHandle(peer.index)
-        );
-        return this.submitInner(
-            peer,
-            () => txFn(peer.p2pInstance.p2pContractInstance),
-            options
-        );
-    }
-
+    // Submit a named transition op from a specific peer. Polymorphic: inline
+    // runs the op via the injected handler table, worker via the rpc route.
     async submitOp(
-        peer: TestPeer<TFactories, TContract>,
-        opRequest: { op: string; args?: unknown },
+        peer: PeerHandle,
+        opRequest: NamedOpRequest,
         options: TransitionOptions = {}
     ): Promise<any> {
-        const handle = this.harness.getPeerHandle(peer.index);
         return this.submitInner(
             peer,
-            () => handle.transition.submitNext(opRequest),
+            () => peer.transition.submitNext(opRequest),
             options
         );
     }
 
     private async submitInner(
-        peer: TestPeer<TFactories, TContract>,
+        peer: PeerHandle,
         txExec: () => Promise<unknown>,
         options: TransitionOptions
     ): Promise<unknown> {
@@ -312,17 +248,8 @@ export class TransitionActions<
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
-            let minHeight: number | undefined;
-            if (this.harness.options.dedicatedPeerThread) {
-                const latest = await this.harness
-                    .getPeerHandle(peer.index)
-                    .queryLatestBlock(forkId);
-                minHeight = latest?.height;
-            } else {
-                const latest =
-                    peer.stateManager.storage.blocks.getLatestBlock(forkId);
-                minHeight = latest?.height;
-            }
+            const latest = await peer.blocks.queryLatestBlock(forkId);
+            const minHeight = latest?.height;
 
             const peers =
                 options.waitForPeers !== undefined
@@ -363,7 +290,7 @@ export class TransitionActions<
         );
         const keepConnection = (await this.harness
             .getPeerHandle(peerIndex)
-            .ingestBlockConfirmation({
+            .blocks.ingestBlockConfirmation({
                 blockConfirmation,
                 ingestOptions
             })) as boolean;
@@ -393,18 +320,14 @@ export class TransitionActions<
      * Wait for a peer to receive their turn
      */
     private async waitForTurn(
-        peer: TestPeer<TCustomRpc, TContract>,
+        peer: PeerHandle,
         timeoutMs = 3000
     ): Promise<void> {
-        const handle = this.harness.getPeerHandle(peer.index);
         try {
-            await peer.turnBarrier.waitFor(
-                async () => await handle.queryIsMyTurn(),
-                {
-                    timeoutMs,
-                    timeoutMessage: `Turn not received within ${timeoutMs}ms`
-                }
-            );
+            await peer.turnBarrier.waitFor(() => peer.channel.queryIsMyTurn(), {
+                timeoutMs,
+                timeoutMessage: `Turn not received within ${timeoutMs}ms`
+            });
             this.logger.debug(`Peer ${peer.index} turn`);
         } catch (e) {
             this.logger.error(`Peer ${peer.index} turn wait timed out`);

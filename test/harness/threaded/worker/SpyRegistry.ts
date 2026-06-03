@@ -2,11 +2,13 @@
 
 import type { PeerHandler } from "../rpc/rpc-server";
 
+import { PUSH_TOPICS, ROUTES } from "./routeNames";
+
 export type EventName = string;
 
 export type SpyPushFrame = {
     kind: "push";
-    topic: "spy";
+    topic: typeof PUSH_TOPICS.spy;
     peerIndex: number;
     payload: {
         name: EventName;
@@ -14,9 +16,6 @@ export type SpyPushFrame = {
         lastArgs: readonly unknown[];
     };
 };
-
-export const SPY_PUSH_TOPIC = "spy";
-export const SPY_RESET_RPC = "spy.reset";
 
 export class SpyRegistry {
     private counts = new Map<EventName, number>();
@@ -29,7 +28,7 @@ export class SpyRegistry {
     bump(name: EventName, args: readonly unknown[]): void {
         const c = (this.counts.get(name) ?? 0) + 1;
         this.counts.set(name, c);
-        this.server.push(SPY_PUSH_TOPIC, {
+        this.server.push(PUSH_TOPICS.spy, {
             peerIndex: this.peerIndex,
             name,
             count: c,
@@ -42,7 +41,7 @@ export class SpyRegistry {
     }
 
     register(): void {
-        this.server.register(SPY_RESET_RPC, async () => {
+        this.server.register(ROUTES.spy.reset, async () => {
             this.reset();
             return {};
         });

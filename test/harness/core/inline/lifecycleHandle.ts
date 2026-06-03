@@ -7,9 +7,7 @@ export class InlineLifecycleHandle implements LifecycleInterface {
     constructor(private readonly peer: TestPeer) {}
 
     async connectToChannel(channelId: ChannelId): Promise<void> {
-        await this.peer.p2pInstance.p2pSigner.connectToChannel(
-            channelId as string
-        );
+        await this.peer.p2pInstance.p2pSigner.connectToChannel(channelId);
     }
 
     async joinChannel(

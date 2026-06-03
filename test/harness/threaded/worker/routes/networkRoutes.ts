@@ -2,6 +2,7 @@ import type { PeerHandler } from "../../rpc/rpc-server";
 import type { PeerCaller } from "../../rpc/rpc-client";
 import type StateManager from "@/stateManager";
 import { ROUTES } from "../routeNames";
+import { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export class NetworkRoutes {
     private stateManager?: StateManager;
@@ -40,47 +41,27 @@ export class NetworkRoutes {
 
         server.register(
             ROUTES.network.tryOpenConnectionToChannel,
-            async (args) => {
-                const { channelId } = (args ?? {}) as { channelId?: string };
-                if (!channelId)
-                    throw new Error(
-                        "network.tryOpenConnectionToChannel: missing 'channelId'"
-                    );
+            async ({ channelId }: { channelId: string }) => {
                 await this.sm.p2pManager.tryOpenConnectionToChannel(channelId);
                 return {};
             }
         );
 
-        server.register(ROUTES.lifecycle.joinChannel, async (args) => {
-            const { confirmation, expectedSnapshotHash } = (args ?? {}) as {
-                confirmation?: unknown;
-                expectedSnapshotHash?: string;
-            };
-            if (!confirmation)
-                throw new Error(
-                    "lifecycle.joinChannel: missing 'confirmation'"
-                );
-            if (!expectedSnapshotHash)
-                throw new Error(
-                    "lifecycle.joinChannel: missing 'expectedSnapshotHash'"
-                );
-            const joinChannel = this.sm.p2pManager.p2pSigner
-                .joinChannel as unknown as (
-                conf: unknown,
-                hash: string
-            ) => Promise<void>;
-            await joinChannel(confirmation, expectedSnapshotHash);
-            return {};
-        });
+        server.register(
+            ROUTES.lifecycle.joinChannel,
+            async ({
+                confirmation
+            }: {
+                confirmation: JoinChannelConfirmationStruct;
+            }) => {
+                await this.sm.joinChannel(confirmation);
+                return {};
+            }
+        );
 
         server.register(
             ROUTES.network.installDisconnectFilter,
-            async (args) => {
-                const { callbackId } = (args ?? {}) as { callbackId?: string };
-                if (!callbackId)
-                    throw new Error(
-                        "network.installDisconnectFilter: missing 'callbackId'"
-                    );
+            async ({ callbackId }: { callbackId: string }) => {
                 const pm = this.sm.p2pManager;
                 const original =
                     pm.disconnectAndBlacklistPeerByEvmAddress.bind(pm);

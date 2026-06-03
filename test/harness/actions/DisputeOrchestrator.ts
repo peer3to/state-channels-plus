@@ -103,7 +103,7 @@ export class DisputeOrchestrator {
                 .filter((p) => p.forkId === newForkId);
 
             for (const peer of settledPeers) {
-                const participants = await peer.queryParticipants();
+                const participants = await peer.channel.queryParticipants();
                 if (participants.length > cap || participants.length === 0) {
                     throw new Error(
                         `Peer ${peer.index} has unexpected participant count ${participants.length} (expected 1..${cap}) on new fork ${newForkId}`

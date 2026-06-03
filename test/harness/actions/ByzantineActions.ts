@@ -48,7 +48,7 @@ export class ByzantineActions {
         );
 
         const blockConfirmation =
-            await peerHandle.queryLatestBlockConfirmation(forkId);
+            await peerHandle.blocks.queryLatestBlockConfirmation(forkId);
         if (!blockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
@@ -128,11 +128,12 @@ export class ByzantineActions {
         const height = options.height;
 
         void peer; // unused once query.* migrated
-        const previousBlockHash = await peerHandle.queryPreviousBlockHash({
-            forkId
-        });
+        const previousBlockHash =
+            await peerHandle.blocks.queryPreviousBlockHash({
+                forkId
+            });
         const stateSnapshotHash =
-            await peerHandle.queryStateSnapshotHashForFork({
+            await peerHandle.snapshots.queryStateSnapshotHashForFork({
                 forkId,
                 previousBlockHash
             });

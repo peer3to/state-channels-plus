@@ -92,7 +92,7 @@ export class AssertStorageActions {
             for (const peer of honestPeers) {
                 const latestHash = await this.harness
                     .getPeerHandle(peer.index)
-                    .queryInboundLatestBlockHash();
+                    .blocks.queryInboundLatestBlockHash();
                 if (!latestHash || latestHash === options?.previousLatestHash) {
                     return false;
                 }
@@ -179,7 +179,7 @@ export class AssertStorageActions {
         } = options;
         const fraudProof = await this.harness
             .getPeerHandle(honestPeerIndex)
-            .queryFraudProofForParticipant(maliciousPeerAddress);
+            .dispute.queryFraudProofForParticipant(maliciousPeerAddress);
         if (!fraudProof) {
             throw new Error(
                 `Peer ${honestPeerIndex} has no fraud proofs for malicious peer ${maliciousPeerIndex}`
@@ -215,7 +215,7 @@ export class AssertStorageActions {
         for (const peer of peers) {
             const proofs = await this.harness
                 .getPeerHandle(peer.index)
-                .queryDisputeFraudProofs();
+                .dispute.queryDisputeFraudProofs();
             if (!proofs.some((p) => p.proofType === want)) {
                 throw new Error(
                     `Peer ${peer.index} should store dispute fraud proof type ${disputeFraudProofType}`
@@ -279,7 +279,7 @@ export class AssertStorageActions {
 
         const timeout = await this.harness
             .getPeerHandle(peerToCheck)
-            .queryTimeoutForFork(forkId);
+            .dispute.queryTimeoutForFork(forkId);
 
         if (!timeout) {
             throw new Error(`No timeout found for fork ${forkId}`);
@@ -323,7 +323,9 @@ export class AssertStorageActions {
             const handle = this.harness.getPeerHandle(peer.index);
             for (const disputeHash of disputeHashes) {
                 const disputeConfirmation =
-                    await handle.queryDisputeConfirmation(String(disputeHash));
+                    await handle.dispute.queryDisputeConfirmation(
+                        String(disputeHash)
+                    );
                 if (!disputeConfirmation) {
                     throw new Error(
                         `No dispute confirmation found for hash ${disputeHash} on peer ${peer.index}`

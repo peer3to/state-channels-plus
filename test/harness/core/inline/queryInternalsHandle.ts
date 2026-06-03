@@ -12,118 +12,102 @@ import type {
     Timestamp
 } from "@/types/types";
 import type { TransportType } from "@/transport";
+import type ATransport from "@/transport/ATransport";
+import { Block } from "@/models";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { TestPeer } from "../types";
+
+// connectionId / kind live on transport subclasses, not the ATransport base.
+type TransportRuntime = ATransport & { connectionId?: string; kind?: string };
 
 export class InlineP2pInternalsHandle implements P2pInternalsInterface {
     constructor(private readonly peer: TestPeer) {}
 
+    private get p2pManager() {
+        return this.peer.stateManager.p2pManager;
+    }
+
     async openConnections(): Promise<TransportSummary[]> {
-        const conns = this.peer.stateManager.p2pManager
-            .openConnections as unknown as Array<{
-            connectionId?: string;
-            peerAddress?: string;
-            kind?: string;
-        }>;
-        return conns.map((t) => ({
-            connectionId: t.connectionId ?? "",
-            peerAddress: (t.peerAddress ?? "0x") as Address,
-            kind: t.kind ?? "unknown"
-        }));
+        return this.p2pManager.openConnections.map((t) => {
+            const rt = t as TransportRuntime;
+            return {
+                connectionId: rt.connectionId ?? "",
+                peerAddress: rt.peerAddress ?? "0x",
+                kind: rt.kind ?? "unknown"
+            };
+        });
     }
 
     async getProfileByEvmAddress(
         addr: Address
     ): Promise<ProfileSummary | undefined> {
-        const pm = this.peer.stateManager.p2pManager as unknown as {
-            profileManager?: {
-                getProfileByEvmAddress?: (a: Address) =>
-                    | {
-                          evmAddress?: string;
-                          transport?: { connectionId?: string };
-                      }
-                    | undefined;
-            };
-        };
-        const profile = pm.profileManager?.getProfileByEvmAddress?.(addr);
+        const profile =
+            this.p2pManager.profileManager.getProfileByEvmAddress(addr);
         if (!profile) return undefined;
         return {
-            evmAddress: (profile.evmAddress ?? addr) as Address,
-            connectionId: profile.transport?.connectionId ?? ""
+            evmAddress: profile.evmAddress ?? addr,
+            connectionId:
+                (profile.transport as TransportRuntime | undefined)
+                    ?.connectionId ?? ""
         };
     }
 
     async getProfileByConnectionId(
         connectionId: string
     ): Promise<ProfileSummary | undefined> {
-        const pm = this.peer.stateManager.p2pManager as unknown as {
-            openConnections: Array<{ connectionId?: string }>;
-            profileManager?: {
-                getProfileByTransport?: (
-                    t: unknown
-                ) => { evmAddress?: string } | undefined;
-            };
-        };
-        for (const t of pm.openConnections) {
-            if (t.connectionId === connectionId) {
-                const profile = pm.profileManager?.getProfileByTransport?.(t);
+        for (const t of this.p2pManager.openConnections) {
+            if ((t as TransportRuntime).connectionId === connectionId) {
+                const profile =
+                    this.p2pManager.profileManager.getProfileByTransport(t);
                 if (!profile) return undefined;
-                return {
-                    evmAddress: (profile.evmAddress ?? "0x") as Address,
-                    connectionId
-                };
+                return { evmAddress: profile.evmAddress, connectionId };
             }
         }
         return undefined;
     }
 
     async connectionCount(): Promise<number> {
-        return this.peer.stateManager.p2pManager.openConnections.length;
+        return this.p2pManager.openConnections.length;
     }
 
     async isHandshakeCompletedWith(otherAddr: Address): Promise<boolean> {
         const profile =
-            this.peer.stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-                otherAddr
-            );
+            this.p2pManager.profileManager.getProfileByEvmAddress(otherAddr);
         return profile?.getIsHandshakeCompleted() ?? false;
     }
 
     async self(): Promise<Address> {
-        return this.peer.address as Address;
+        return this.peer.address;
     }
 
     async didPeerAcknowledgeDisputedFork(
         peerAddress: Address,
         forkId: ForkId
     ): Promise<boolean> {
-        return (await this.runLocalRpcOp(
-            "isForkDisputedService",
-            "didPeerAcknowledgeDisputedFork",
-            [peerAddress, forkId]
-        )) as boolean;
+        return this.p2pManager.localRpc.isForkDisputedService.didPeerAcknowledgeDisputedFork(
+            String(peerAddress),
+            forkId
+        );
     }
 
     async didIAcknowledgeDisputedFork(
         peerAddress: Address,
         forkId: ForkId
     ): Promise<boolean> {
-        return (await this.runLocalRpcOp(
-            "isForkDisputedService",
-            "didIAcknowledgeDisputedFork",
-            [peerAddress, forkId]
-        )) as boolean;
+        return this.p2pManager.localRpc.isForkDisputedService.didIAcknowledgeDisputedFork(
+            String(peerAddress),
+            forkId
+        );
     }
 
     async requestDisputeAcknowledgment(
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<boolean> {
-        return (await this.runLocalRpcOp(
-            "isForkDisputedService",
-            "requestDisputeAcknowledgment",
-            [channelId, forkId]
-        )) as boolean;
+        return this.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
+            channelId,
+            forkId
+        );
     }
 
     async respondToDisputeAcknowledgment(
@@ -131,10 +115,10 @@ export class InlineP2pInternalsHandle implements P2pInternalsInterface {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<void> {
-        await this.runLocalRpcOp(
-            "isForkDisputedService",
-            "respondToDisputeAcknowledgment",
-            [peerAddress, channelId, forkId]
+        await this.p2pManager.localRpc.isForkDisputedService.respondToDisputeAcknowledgment(
+            String(peerAddress),
+            channelId,
+            forkId
         );
     }
 
@@ -143,12 +127,10 @@ export class InlineP2pInternalsHandle implements P2pInternalsInterface {
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<void> {
-        await this.callServiceWithTransport(
-            "isForkDisputedService",
-            "onDisputeAcknowledgmentRequest",
-            fromAddr,
-            [channelId, forkId]
-        );
+        const transport = this.requireTransport(fromAddr);
+        await this.p2pManager.localRpc.isForkDisputedService
+            .createRPCMethods(transport)
+            .onDisputeAcknowledgmentRequest(channelId, forkId);
     }
 
     async onInitHandshakeRequest(
@@ -156,12 +138,10 @@ export class InlineP2pInternalsHandle implements P2pInternalsInterface {
         hash: Hash,
         time: Timestamp
     ): Promise<void> {
-        await this.callServiceWithTransport(
-            "initHandshakeService",
-            "onInitHandshakeRequest",
-            fromAddr,
-            [hash, time]
-        );
+        const transport = this.requireTransport(fromAddr);
+        await this.p2pManager.localRpc.initHandshakeService
+            .createRPCMethods(transport)
+            .onInitHandshakeRequest(hash, time);
     }
 
     async onInitHandshakeResponse(
@@ -170,128 +150,30 @@ export class InlineP2pInternalsHandle implements P2pInternalsInterface {
         time: Timestamp,
         preferred: TransportType
     ): Promise<void> {
-        await this.callServiceWithTransport(
-            "initHandshakeService",
-            "onInitHandshakeResponse",
-            fromAddr,
-            [signature, time, preferred]
-        );
+        const transport = this.requireTransport(fromAddr);
+        await this.p2pManager.localRpc.initHandshakeService
+            .createRPCMethods(transport)
+            .onInitHandshakeResponse(signature, time, preferred);
     }
 
     async initHandshakeTo(toAddr: Address): Promise<void> {
-        await this.callServiceMethodWithTransport(
-            "initHandshakeService",
-            "initHandshake",
-            toAddr,
-            []
-        );
-    }
-
-    private async callServiceMethodWithTransport(
-        serviceName: string,
-        methodName: string,
-        otherAddr: Address,
-        args: unknown[]
-    ): Promise<unknown> {
-        const pmAny = this.peer.stateManager.p2pManager as unknown as {
-            openConnections: Iterable<unknown>;
-            profileManager: {
-                getProfileByTransport: (
-                    t: unknown
-                ) => { evmAddress?: string } | undefined;
-            };
-            localRpc: Record<string, unknown>;
-        };
-        const resolvedTransport = this.resolveTransport(pmAny, otherAddr);
-        if (!resolvedTransport)
-            throw new Error(
-                `InlinePeer.callServiceMethodWithTransport: no transport to ${otherAddr}`
-            );
-        const svc = pmAny.localRpc[serviceName] as
-            | Record<string, (...a: unknown[]) => unknown>
-            | undefined;
-        if (!svc)
-            throw new Error(
-                `InlinePeer.callServiceMethodWithTransport: missing service '${serviceName}'`
-            );
-        const fn = svc[methodName];
-        if (typeof fn !== "function")
-            throw new Error(
-                `InlinePeer.callServiceMethodWithTransport: '${serviceName}.${methodName}' not a function`
-            );
-        return await (fn as (...a: unknown[]) => unknown).apply(svc, [
-            resolvedTransport,
-            ...args
-        ]);
-    }
-
-    private async callServiceWithTransport(
-        serviceName: string,
-        methodName: string,
-        otherAddr: Address,
-        args: unknown[]
-    ): Promise<unknown> {
-        const pmAny = this.peer.stateManager.p2pManager as unknown as {
-            openConnections: Iterable<unknown>;
-            profileManager: {
-                getProfileByTransport: (
-                    t: unknown
-                ) => { evmAddress?: string } | undefined;
-            };
-            localRpc: Record<string, unknown>;
-        };
-        const resolvedTransport = this.resolveTransport(pmAny, otherAddr);
-        if (!resolvedTransport)
-            throw new Error(
-                `InlinePeer.callServiceWithTransport: no transport to ${otherAddr}`
-            );
-        const svc = pmAny.localRpc[serviceName] as
-            | {
-                  createRPCMethods: (
-                      t: unknown
-                  ) => Record<string, (...a: unknown[]) => unknown>;
-              }
-            | undefined;
-        if (!svc)
-            throw new Error(
-                `InlinePeer.callServiceWithTransport: missing service '${serviceName}'`
-            );
-        const methods = svc.createRPCMethods(resolvedTransport);
-        const fn = methods[methodName];
-        if (typeof fn !== "function")
-            throw new Error(
-                `InlinePeer.callServiceWithTransport: '${serviceName}.${methodName}' not a function`
-            );
-        return await (fn as (...a: unknown[]) => unknown).apply(methods, args);
+        const transport = this.requireTransport(toAddr);
+        this.p2pManager.localRpc.initHandshakeService.initHandshake(transport);
     }
 
     async getPreferredTransportType(): Promise<number> {
-        return (
-            this.peer.stateManager.p2pManager as unknown as {
-                preferredTransport: number;
-            }
-        ).preferredTransport;
+        return this.p2pManager.preferredTransport;
     }
 
     async getInitChallenge(
         otherAddr: Address
     ): Promise<{ randomChallengeHash: string; initTime: number } | undefined> {
-        const t = this.resolveTransportByAddr(otherAddr);
-        if (!t) return undefined;
-        const svc = (
-            this.peer.stateManager.p2pManager as unknown as {
-                localRpc: Record<string, unknown>;
-            }
-        ).localRpc["initHandshakeService"] as
-            | {
-                  getChallenge: (
-                      t: unknown
-                  ) =>
-                      | { randomChallengeHash: string; initTime: number }
-                      | undefined;
-              }
-            | undefined;
-        const c = svc?.getChallenge(t);
+        const transport = this.resolveTransport(otherAddr);
+        if (!transport) return undefined;
+        const c =
+            this.p2pManager.localRpc.initHandshakeService.getChallenge(
+                transport
+            );
         if (!c) return undefined;
         return {
             randomChallengeHash: c.randomChallengeHash,
@@ -300,91 +182,49 @@ export class InlineP2pInternalsHandle implements P2pInternalsInterface {
     }
 
     async clearInitChallenge(otherAddr: Address): Promise<void> {
-        const t = this.resolveTransportByAddr(otherAddr);
-        if (!t) return;
-        const svc = (
-            this.peer.stateManager.p2pManager as unknown as {
-                localRpc: Record<string, unknown>;
-            }
-        ).localRpc["initHandshakeService"] as
-            | { mapTransportToChallenge: Map<unknown, unknown> }
-            | undefined;
-        svc?.mapTransportToChallenge.delete(t);
+        const transport = this.resolveTransport(otherAddr);
+        if (!transport) return;
+        this.p2pManager.localRpc.initHandshakeService.mapTransportToChallenge.delete(
+            transport
+        );
     }
 
     async getTransportStatus(
         otherAddr: Address
     ): Promise<{ present: boolean; isClosed?: boolean }> {
-        const t = this.resolveTransportByAddr(otherAddr) as
-            | { isClosed?: boolean }
-            | undefined;
-        if (!t) return { present: false };
-        return { present: true, isClosed: t.isClosed };
+        const transport = this.resolveTransport(otherAddr);
+        if (!transport) return { present: false };
+        return { present: true, isClosed: transport.isClosed };
     }
 
     async blockForkIsDisputed(
         block: BlockConfirmationStruct,
         peerAddress: string
     ): Promise<void> {
-        const Block = (await import("@/models")).Block;
         const reconstructed = Block.fromBlockConfirmation(block);
         await this.peer.stateManager.blockValidationStrategy.blockForkIsDisputed(
-            reconstructed as never,
+            reconstructed,
             peerAddress
         );
     }
 
-    private resolveTransportByAddr(addr: Address): unknown {
-        const pmAny = this.peer.stateManager.p2pManager as unknown as {
-            openConnections: Iterable<unknown>;
-            profileManager: {
-                getProfileByTransport: (
-                    t: unknown
-                ) => { evmAddress?: string } | undefined;
-            };
-        };
-        return this.resolveTransport(pmAny, addr);
-    }
-
-    private resolveTransport(
-        pmAny: {
-            openConnections: Iterable<unknown>;
-            profileManager: {
-                getProfileByTransport: (
-                    t: unknown
-                ) => { evmAddress?: string } | undefined;
-            };
-        },
-        addr: Address
-    ): unknown {
+    private resolveTransport(addr: Address): ATransport | undefined {
+        const pm = this.p2pManager;
         const target = String(addr).toLowerCase();
-        for (const t of pmAny.openConnections) {
-            const profile = pmAny.profileManager.getProfileByTransport(t);
+        for (const t of pm.openConnections) {
+            const profile = pm.profileManager.getProfileByTransport(t);
             if (String(profile?.evmAddress ?? "").toLowerCase() === target)
                 return t;
         }
         return undefined;
     }
 
-    private async runLocalRpcOp(
-        svcName: string,
-        opName: string,
-        opArgs: unknown
-    ): Promise<unknown> {
-        const localRpc = (
-            this.peer.stateManager.p2pManager as unknown as {
-                localRpc: Record<string, unknown>;
-            }
-        ).localRpc;
-        const svc = localRpc[svcName] as
-            | Record<string, (...a: unknown[]) => unknown>
-            | undefined;
-        if (!svc) throw new Error(`${svcName} not present on localRpc`);
-        const fn = svc[opName];
-        if (typeof fn !== "function")
-            throw new Error(`${svcName}.${opName} not a function`);
-        const bound = fn.bind(svc);
-        if (Array.isArray(opArgs)) return await bound(...opArgs);
-        return await bound(opArgs);
+    private requireTransport(addr: Address): ATransport {
+        const transport = this.resolveTransport(addr);
+        if (!transport)
+            throw new Error(
+                `InlineP2pInternalsHandle: no transport to ${addr}`
+            );
+        return transport;
     }
 }

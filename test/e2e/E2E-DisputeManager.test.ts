@@ -176,7 +176,7 @@ describe("E2E: Dispute Manager", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
             await h.byzantine.stubCalldataHandler(2);
-            h.contextApi.storeSnapshotCount(2, "before_isolation");
+            await h.contextApi.storeSnapshotCount(2, "before_isolation");
             await h.byzantine.disconnect(2);
             h.event.resetEventSpies();
 

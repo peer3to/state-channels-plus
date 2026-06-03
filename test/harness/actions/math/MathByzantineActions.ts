@@ -52,7 +52,6 @@ export class MathByzantineActions extends ByzantineActions {
             wrongStateSnapshotHash?: Hash;
         }
     ): Promise<Block> {
-        const peer = this.harness.getPeer(peerIndex);
         const handle = this.harness.getPeerHandle(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
@@ -64,7 +63,7 @@ export class MathByzantineActions extends ByzantineActions {
         );
 
         const latestBlockConfirmation =
-            await handle.queryLatestBlockConfirmation(forkId);
+            await handle.blocks.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
@@ -72,14 +71,15 @@ export class MathByzantineActions extends ByzantineActions {
             latestBlockConfirmation as BlockConfirmationStruct
         );
 
-        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
-        const previousBlockHash = await handle.queryPreviousBlockHash({
+        const nextBlockHeight =
+            await handle.blocks.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.blocks.queryPreviousBlockHash({
             forkId,
             height: nextBlockHeight
         });
 
         const transactionData =
-            options?.transactionData ?? this.encodeMathAdd(peer);
+            options?.transactionData ?? this.encodeMathAdd();
 
         const transaction: TransactionStruct = {
             header: {
@@ -137,34 +137,37 @@ export class MathByzantineActions extends ByzantineActions {
         });
         const forkId = options?.forkId || this.harness.activeForkId!;
 
-        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
+        const nextBlockHeight =
+            await handle.blocks.queryNextBlockHeight(forkId);
         const previousBlockConfirmation =
-            await handle.queryLatestBlockConfirmation(forkId);
+            await handle.blocks.queryLatestBlockConfirmation(forkId);
         const previousBlock = previousBlockConfirmation
             ? Block.fromBlockConfirmation(
                   previousBlockConfirmation as BlockConfirmationStruct
               )
             : undefined;
-        const previousBlockHash = await handle.queryPreviousBlockHash({
+        const previousBlockHash = await handle.blocks.queryPreviousBlockHash({
             forkId,
             height: nextBlockHeight
         });
-        const stateSnapshotHash = await handle.queryStateSnapshotHashForFork({
-            forkId,
-            previousBlockHash: previousBlock?.hash
-                ? String(previousBlock.hash)
-                : undefined
-        });
+        const stateSnapshotHash =
+            await handle.snapshots.queryStateSnapshotHashForFork({
+                forkId,
+                previousBlockHash: previousBlock?.hash
+                    ? String(previousBlock.hash)
+                    : undefined
+            });
 
-        const previousStateSnapshot = (await handle.queryPreviousStateSnapshot({
-            forkId,
-            height: nextBlockHeight
-        })) as {
-            snapshotData: {
-                latestInboundMessageBlockHash?: Hash;
-                latestInboundMessageBlockHeight?: bigint | number;
-            };
-        } | null;
+        const previousStateSnapshot =
+            (await handle.snapshots.queryPreviousStateSnapshot({
+                forkId,
+                height: nextBlockHeight
+            })) as {
+                snapshotData: {
+                    latestInboundMessageBlockHash?: Hash;
+                    latestInboundMessageBlockHeight?: bigint | number;
+                };
+            } | null;
         if (!previousStateSnapshot) {
             throw new Error(
                 `Unable to compute previous snapshot for fork ${forkId}`
@@ -292,7 +295,7 @@ export class MathByzantineActions extends ByzantineActions {
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         const latestBlockConfirmation =
-            await handle.queryLatestBlockConfirmation(forkId);
+            await handle.blocks.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
@@ -300,8 +303,9 @@ export class MathByzantineActions extends ByzantineActions {
             latestBlockConfirmation as BlockConfirmationStruct
         );
 
-        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
-        const previousBlockHash = await handle.queryPreviousBlockHash({
+        const nextBlockHeight =
+            await handle.blocks.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.blocks.queryPreviousBlockHash({
             forkId,
             height: nextBlockHeight
         });
@@ -323,13 +327,14 @@ export class MathByzantineActions extends ByzantineActions {
         };
 
         const validEncodedData = this.encodeMathAdd();
-        const { success, encodedState } = (await handle.applyTransaction({
-            ...transaction,
-            body: {
-                encodedData: validEncodedData,
-                data: validEncodedData
-            }
-        })) as { success: boolean; encodedState: string };
+        const { success, encodedState } =
+            (await handle.stateMachine.applyTransaction({
+                ...transaction,
+                body: {
+                    encodedData: validEncodedData,
+                    data: validEncodedData
+                }
+            })) as { success: boolean; encodedState: string };
 
         if (!success) {
             throw new Error("Failed to compute valid state for fraud block");
@@ -371,7 +376,7 @@ export class MathByzantineActions extends ByzantineActions {
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         const latestBlockConfirmation =
-            await handle.queryLatestBlockConfirmation(forkId);
+            await handle.blocks.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
@@ -379,8 +384,9 @@ export class MathByzantineActions extends ByzantineActions {
             latestBlockConfirmation as BlockConfirmationStruct
         );
 
-        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
-        const previousBlockHash = await handle.queryPreviousBlockHash({
+        const nextBlockHeight =
+            await handle.blocks.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.blocks.queryPreviousBlockHash({
             forkId,
             height: nextBlockHeight
         });
@@ -506,7 +512,7 @@ export class MathByzantineActions extends ByzantineActions {
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         const latestBlockConfirmation =
-            await handle.queryLatestBlockConfirmation(forkId);
+            await handle.blocks.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
@@ -514,8 +520,9 @@ export class MathByzantineActions extends ByzantineActions {
             latestBlockConfirmation as BlockConfirmationStruct
         );
 
-        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
-        const previousBlockHash = await handle.queryPreviousBlockHash({
+        const nextBlockHeight =
+            await handle.blocks.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.blocks.queryPreviousBlockHash({
             forkId,
             height: nextBlockHeight
         });
@@ -570,7 +577,7 @@ export class MathByzantineActions extends ByzantineActions {
         const forkId = options?.forkId || this.harness.activeForkId!;
 
         const latestBlockConfirmation =
-            await handle.queryLatestBlockConfirmation(forkId);
+            await handle.blocks.queryLatestBlockConfirmation(forkId);
         if (!latestBlockConfirmation) {
             throw new Error(`No block found for fork ${forkId}`);
         }
@@ -578,8 +585,9 @@ export class MathByzantineActions extends ByzantineActions {
             latestBlockConfirmation as BlockConfirmationStruct
         );
 
-        const nextBlockHeight = await handle.queryNextBlockHeight(forkId);
-        const previousBlockHash = await handle.queryPreviousBlockHash({
+        const nextBlockHeight =
+            await handle.blocks.queryNextBlockHeight(forkId);
+        const previousBlockHash = await handle.blocks.queryPreviousBlockHash({
             forkId,
             height: nextBlockHeight
         });
@@ -640,7 +648,7 @@ export class MathByzantineActions extends ByzantineActions {
             ? [forgedSnapshot.mutated.outboundMessageBlock]
             : [];
 
-        const submitter = this.harness.getPeer(poster);
+        const submitter = this.harness.getPeerHandle(poster);
         const channelManager = this.harness.channelManager.connect(
             submitter.signer
         );
@@ -659,6 +667,15 @@ export class MathByzantineActions extends ByzantineActions {
                 outboundBlocks
             ]
         );
+        // store forged snapshot in all peers before mining so on-chain
+        // StateSnapshotUpdated events don't fatal on unknown-snapshot lookup
+        const snapshotStruct = forgedSnapshot.forgedSnapshot.toStruct();
+        await Promise.all(
+            this.harness.peerHandles.map((p) =>
+                p.byzantine.storeStateSnapshot(snapshotStruct)
+            )
+        );
+
         const tx = await channelManager.multicall([callData]);
         await tx.wait();
     }

@@ -75,6 +75,16 @@ export class LocalDiscoveryServer {
         return this.discoveryPort;
     }
 
+    /** Point this isolate at an existing registry (worker path). Orchestrator uses tryStart() instead. */
+    public static setRegistryPort(port: number): void {
+        if (this.discoveryServer) {
+            throw new Error(
+                "LocalDiscoveryServer.setRegistryPort: registry server already running in this isolate"
+            );
+        }
+        this.discoveryPort = port;
+    }
+
     private constructor() {}
 
     private static createOutboundWebSocket(options: {
@@ -530,12 +540,7 @@ export class LocalDiscoveryServer {
     public static async connectToPeers(
         p2pManager: P2PManager,
         channelId: ChannelId,
-        myPeerAddress: string,
-        // W2 D-17 - explicit registry port for cross-isolate callers. workers
-        // have their own (null) static `discoveryPort` -> orchestrator ships
-        // the resolved port over workerData. inline callers still rely on
-        // the static set by tryStart().
-        registryPortOverride?: number
+        myPeerAddress: string
     ): Promise<void> {
         const peerLog = {
             mode: "peer" as const,
@@ -584,12 +589,10 @@ export class LocalDiscoveryServer {
         });
 
         // 2. Connect to Registry
-        // step 1 - prefer the explicit override (worker-isolate path) -> fall back
-        // to the static set by tryStart() (inline path).
-        const registryPort = registryPortOverride ?? this.discoveryPort;
+        const registryPort = this.discoveryPort;
         if (!registryPort) {
             throw new Error(
-                "Discovery server not started. Call tryStart() before connectToPeers()."
+                "Discovery registry port not configured. Call tryStart() or setRegistryPort() before connectToPeers()."
             );
         }
         const registryUrl = `ws://${LOCAL_WS_HOST}:${registryPort}`;

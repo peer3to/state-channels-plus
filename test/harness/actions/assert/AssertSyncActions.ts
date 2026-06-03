@@ -80,7 +80,7 @@ export class AssertSyncActions {
         for (const peer of peers) {
             const latestBlock = await this.harness
                 .getPeerHandle(peer.index)
-                .queryLatestBlock(forkId);
+                .blocks.queryLatestBlock(forkId);
             expect(latestBlock).to.not.equal(
                 undefined,
                 `Peer ${peer.index} should have a latest block`
@@ -224,12 +224,12 @@ export class AssertSyncActions {
             );
         }
 
-        const forkUnchanged = this.harness.peers.every(
+        const forkUnchanged = this.harness.peerHandles.every(
             (p) => this.harness.getPeerHandle(p.index).forkId === originalForkId
         );
 
         if (!forkUnchanged) {
-            const forkIds = this.harness.peers.map(
+            const forkIds = this.harness.peerHandles.map(
                 (p) => this.harness.getPeerHandle(p.index).forkId
             );
             throw new Error(
@@ -279,7 +279,7 @@ export class AssertSyncActions {
         const heightFor = async (i: number): Promise<number> => {
             const latest = await this.harness
                 .getPeerHandle(i)
-                .queryLatestBlock(forkId);
+                .blocks.queryLatestBlock(forkId);
             return (latest?.height ?? -1) + 1;
         };
         const condition = async () => {
@@ -307,7 +307,7 @@ export class AssertSyncActions {
 
         const handle = this.harness.getPeerHandle(peerIndex);
         const condition = async () => {
-            const participants = await handle.queryParticipants();
+            const participants = await handle.channel.queryParticipants();
             return participants.length === expectedCount;
         };
 
@@ -318,7 +318,7 @@ export class AssertSyncActions {
             });
         }
 
-        const participants = await handle.queryParticipants();
+        const participants = await handle.channel.queryParticipants();
         expect(participants.length).to.equal(expectedCount);
     }
 

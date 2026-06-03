@@ -1,8 +1,7 @@
 import { ForkId, Hash, BlockHeight } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
-import type { TestPeer } from "@test/harness/core/types";
-import type { Block } from "@/models";
+import type { PeerHandle } from "@test/harness/core/PeerHandle";
 
 type BlockTip = { hash: Hash; height: BlockHeight };
 
@@ -12,40 +11,16 @@ export type WaitForPeersToSyncOptions = {
     waitForFinalization: boolean;
 };
 
-// step 1 - worker-mode hook: async tip + finalization probes per peer. when
-// set, SyncCoordinator routes reads through these instead of the live
-// `peer.stateManager.*` (which doesn't exist on worker peers). inline mode
-// leaves this undefined and keeps the sync reads.
-export type SyncProbe = {
-    loadTip: (
-        peerIndex: number,
-        forkId: ForkId
-    ) => Promise<BlockTip | undefined>;
-    didEveryoneSignBlock: (
-        peerIndex: number,
-        blockHash: string
-    ) => Promise<boolean>;
-};
-
 /**
  * Handles synchronization operations and assertions for test peers.
- * Provides both async waiting and synchronous checking methods.
  */
 export class SyncCoordinator {
     private logger: Logger;
     private eventBarrier: EventBarrier;
-    private probe?: SyncProbe;
 
     constructor(logger: Logger, eventBarrier: EventBarrier) {
         this.logger = logger.child({ component: "SyncCoordinator" });
         this.eventBarrier = eventBarrier;
-    }
-
-    // step 1 - inject a worker-mode probe. one-shot setter; PeerTestHarness
-    // wires this immediately after creating the syncCoordinator when
-    // dedicatedPeerThread=true.
-    setProbe(probe: SyncProbe): void {
-        this.probe = probe;
     }
 
     /**
@@ -54,7 +29,7 @@ export class SyncCoordinator {
      * (`didEveryoneSignBlock`) on that tip.
      */
     public async waitForPeersToSync(
-        peers: TestPeer[],
+        peers: PeerHandle[],
         forkId: ForkId,
         options?: WaitForPeersToSyncOptions
     ): Promise<void> {
@@ -71,17 +46,10 @@ export class SyncCoordinator {
             minHeight
         });
 
-        const probe = this.probe;
-        const loadTips = async (): Promise<(BlockTip | undefined)[]> => {
-            if (probe) {
-                return Promise.all(
-                    peers.map((peer) => probe.loadTip(peer.index, forkId))
-                );
-            }
-            return peers.map((peer) =>
-                peer.stateManager.storage.blocks.getLatestBlock(forkId)
+        const loadTips = (): Promise<(BlockTip | undefined)[]> =>
+            Promise.all(
+                peers.map((peer) => peer.blocks.queryLatestBlock(forkId))
             );
-        };
 
         const checkSync = async () => {
             if (peers.length === 0) return true;
@@ -105,23 +73,14 @@ export class SyncCoordinator {
             }
 
             if (waitForFinalization) {
-                for (let i = 0; i < peers.length; i++) {
-                    if (probe) {
-                        const ok = await probe.didEveryoneSignBlock(
-                            peers[i].index,
+                const finalized = await Promise.all(
+                    peers.map((peer, i) =>
+                        peer.blocks.queryDidEveryoneSignBlock(
                             String(blocks[i].hash)
-                        );
-                        if (!ok) return false;
-                    } else if (
-                        !peers[
-                            i
-                        ].stateManager.agreementManager.didEveryoneSignBlock(
-                            blocks[i] as unknown as Block
                         )
-                    ) {
-                        return false;
-                    }
-                }
+                    )
+                );
+                if (!finalized.every(Boolean)) return false;
             }
 
             return true;
@@ -141,28 +100,28 @@ export class SyncCoordinator {
         }
 
         const tipMaybe = await loadTips();
+        const finalizedMaybe = waitForFinalization
+            ? await Promise.all(
+                  peers.map((peer, i) => {
+                      const block = tipMaybe[i];
+                      return block
+                          ? peer.blocks.queryDidEveryoneSignBlock(
+                                String(block.hash)
+                            )
+                          : Promise.resolve(false);
+                  })
+              )
+            : [];
 
-        // step 1 - in worker mode the live `peer.stateManager.*` reads below
-        // are not safe (no in-thread record). degrade diagnostics to tip-only
-        // info; finalization detail loses the union count which lives only
-        // inside the worker isolate.
         const peerStates = peers.map((peer, i) => {
             const block = tipMaybe[i];
             const base = block
                 ? `hash=${block.hash} height=${block.height}`
                 : "no_block";
-            if (probe) return `Peer ${peer.index}: ${base}`;
-            let fin = "";
-            if (waitForFinalization && block) {
-                const b = block as unknown as Block;
-                const ok =
-                    peer.stateManager.agreementManager.didEveryoneSignBlock(b);
-                const union = peer.stateManager.storage.getParticipantsUnion(
-                    b.coordinates,
-                    b.stateSnapshotHash
-                ).length;
-                fin = ` finalize@h=${block.height} ok=${ok} sigs=${b.allSignatures.size}/${union}`;
-            }
+            const fin =
+                waitForFinalization && block
+                    ? ` finalize@h=${block.height} ok=${finalizedMaybe[i]}`
+                    : "";
             return `Peer ${peer.index}: ${base}${fin}`;
         });
 
@@ -171,20 +130,9 @@ export class SyncCoordinator {
         if (minHeight !== undefined) {
             reason = ` (expected height ${minHeight}, have ${latest?.height ?? "?"})`;
         }
-        if (waitForFinalization && latest && !probe) {
-            const latestBlock = latest as unknown as Block;
-            const union = peers[0].stateManager.storage.getParticipantsUnion(
-                latestBlock.coordinates,
-                latestBlock.stateSnapshotHash
-            ).length;
-            const allOk = tipMaybe.every(
-                (block, i) =>
-                    block &&
-                    peers[i].stateManager.agreementManager.didEveryoneSignBlock(
-                        block as unknown as Block
-                    )
-            );
-            reason += ` (finalization@h=${latest.height}: allPeers=${allOk} sigs=${latestBlock.allSignatures.size} union=${union})`;
+        if (waitForFinalization && latest) {
+            const allOk = finalizedMaybe.every(Boolean);
+            reason += ` (finalization@h=${latest.height}: allPeers=${allOk})`;
         } else if (waitForFinalization) {
             reason += " (finalization: no tip block)";
         }

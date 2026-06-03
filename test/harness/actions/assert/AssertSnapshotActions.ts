@@ -116,9 +116,9 @@ export class AssertSnapshotActions {
 
         const blockHeight =
             options?.blockHeight ||
-            (await handle.queryNextBlockHeight(forkId)) - 1;
+            (await handle.blocks.queryNextBlockHeight(forkId)) - 1;
 
-        const localSnapshot = await handle.queryStateSnapshotAt({
+        const localSnapshot = await handle.snapshots.queryStateSnapshotAt({
             forkId,
             height: blockHeight
         });
@@ -163,7 +163,7 @@ export class AssertSnapshotActions {
                 this.harness.channelId
             );
 
-        const actualDelta = await handle.subtractBalance({
+        const actualDelta = await handle.balance.subtractBalance({
             a: {
                 amount: String(channelBalanceAfter.totalWithdrawals.amount),
                 data: String(channelBalanceAfter.totalWithdrawals.data)
@@ -181,7 +181,7 @@ export class AssertSnapshotActions {
             );
         }
 
-        const deltaMatches = await handle.areBalancesEqual({
+        const deltaMatches = await handle.balance.areBalancesEqual({
             a: actualDelta,
             b: {
                 amount: String(expectedWithdrawalsDelta.amount),
@@ -211,7 +211,7 @@ export class AssertSnapshotActions {
 
         const encodedState =
             encodedStateMachineState ??
-            (await handle.queryStateMachineState(
+            (await handle.stateMachine.queryStateMachineState(
                 String(onChainSnapshot.stateMachineStateHash)
             ));
 
@@ -259,7 +259,7 @@ export class AssertSnapshotActions {
         }
 
         const condition = async () =>
-            (await handle.queryStateSnapshotCount()) > countBefore;
+            (await handle.snapshots.queryStateSnapshotCount()) > countBefore;
 
         if (!(await condition())) {
             await this.harness.eventCountsBarrier.waitFor(condition, {

@@ -4,7 +4,7 @@ export class AssertCalldataActions {
     constructor(private readonly harness: PeerTestHarness) {}
 
     noCalldataPosted(): void {
-        const totalPosted = this.harness.peers.reduce((sum, peer) => {
+        const totalPosted = this.harness.peerHandles.reduce((sum, peer) => {
             return (
                 sum +
                 this.harness.event.getEventCallCount(
@@ -14,15 +14,18 @@ export class AssertCalldataActions {
             );
         }, 0);
 
-        const totalBlockCalldata = this.harness.peers.reduce((sum, peer) => {
-            return (
-                sum +
-                this.harness.event.getEventCallCount(
-                    peer.index,
-                    "onBlockCalldataPosted"
-                )
-            );
-        }, 0);
+        const totalBlockCalldata = this.harness.peerHandles.reduce(
+            (sum, peer) => {
+                return (
+                    sum +
+                    this.harness.event.getEventCallCount(
+                        peer.index,
+                        "onBlockCalldataPosted"
+                    )
+                );
+            },
+            0
+        );
 
         if (totalPosted > 0 || totalBlockCalldata > 0) {
             throw new Error(
@@ -35,7 +38,7 @@ export class AssertCalldataActions {
         const { timeoutMs = 5000 } = options || {};
 
         const condition = () => {
-            return this.harness.peers.some(
+            return this.harness.peerHandles.some(
                 (peer) =>
                     this.harness.event.getEventCallCount(
                         peer.index,

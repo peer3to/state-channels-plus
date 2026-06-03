@@ -46,7 +46,8 @@ export class NetworkController {
                 const handle = this.harness.getPeerHandle(peer.index);
                 if (handle.__workerBackend) return Promise.resolve();
                 return LocalDiscoveryServer.connectToPeers(
-                    peer.stateManager.p2pManager.self,
+                    this.harness.getPeer(peer.index).stateManager.p2pManager
+                        .self,
                     this.harness.channelId!,
                     peer.address
                 );
@@ -70,7 +71,7 @@ export class NetworkController {
             );
             return (
                 counts.filter((n) => n > 0).length >=
-                Math.min(2, this.harness.peerHandles.length)
+                Math.min(2, this.harness.peerCount)
             );
         };
 

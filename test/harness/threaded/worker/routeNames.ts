@@ -1,5 +1,5 @@
-// All worker RPC route name constants. Both worker-side registration and
-// orchestrator-side calling (WorkerPeer) import from here.
+// Worker RPC route names (req/res). Orchestrator calls via PeerCaller.call;
+// worker registers handlers in opRoutes.
 export const ROUTES = {
     query: {
         status: "query.status",
@@ -80,6 +80,8 @@ export const ROUTES = {
         stubBroadcast: "byzantine.stubBroadcast",
         broadcastBlockConfirmation: "byzantine.broadcastBlockConfirmation",
         submitDoubleSignBlock: "byzantine.submitDoubleSignBlock",
+        storeStateMachineState: "byzantine.storeStateMachineState",
+        storeStateSnapshot: "byzantine.storeStateSnapshot",
         corruptValidatorSnapshotForBalanceInvariant:
             "byzantine.corruptValidatorSnapshotForBalanceInvariant",
         installDisputeTamperHook: "byzantine.installDisputeTamperHook",
@@ -128,5 +130,17 @@ export const ROUTES = {
         stubMethod: "stub.stubMethod",
         restoreStubbedMethod: "stub.restoreStubbedMethod",
         restoreAllStubbedMethods: "stub.restoreAllStubbedMethods"
+    },
+    spy: {
+        reset: "spy.reset"
     }
+} as const;
+
+// Worker → orchestrator push topics (PeerHandler.push / PeerCaller.on).
+export const PUSH_TOPICS = {
+    forkChanged: "fork.changed",
+    spy: "spy",
+    lifecycleReady: "lifecycle.ready",
+    lifecycleCrash: "lifecycle.crash",
+    lifecycleDetachedRejection: "lifecycle.detachedRejection"
 } as const;

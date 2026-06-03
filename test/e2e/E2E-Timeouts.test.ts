@@ -72,7 +72,7 @@ describe("E2E: Timeouts", function () {
             // step 1 - W1 - sub-handle read so worker peers answer via rpc.
             const currentBlock = await h
                 .getPeerHandle(0)
-                .queryLatestBlock(h.activeForkId!);
+                .blocks.queryLatestBlock(h.activeForkId!);
             if (!currentBlock) {
                 throw new Error("No current block found");
             }
@@ -98,7 +98,7 @@ describe("E2E: Timeouts", function () {
             // step 1 - W1 - sub-handle read so worker peers answer via rpc.
             const currentBlock = await h
                 .getPeerHandle(0)
-                .queryLatestBlock(h.activeForkId!);
+                .blocks.queryLatestBlock(h.activeForkId!);
             if (!currentBlock) {
                 throw new Error("No current block found");
             }

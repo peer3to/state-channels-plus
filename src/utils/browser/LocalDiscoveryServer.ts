@@ -1,6 +1,8 @@
 export class LocalDiscoveryServer {
     static setLogger(_logger: unknown): void {}
 
+    static setRegistryPort(_port: number): void {}
+
     static async tryStart(): Promise<boolean> {
         return false;
     }

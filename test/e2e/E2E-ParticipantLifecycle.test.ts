@@ -34,7 +34,9 @@ describe("E2E: Participant Lifecycle", function () {
                 (p) => p.index !== leaverIndex
             );
             for (const p of remaining) {
-                expect(await h.getPeerHandle(p.index).queryStatus()).to.equal(
+                expect(
+                    await h.getPeerHandle(p.index).channel.queryStatus()
+                ).to.equal(
                     Status.PARTICIPATING,
                     `Peer ${p.index} should remain PARTICIPATING`
                 );
@@ -46,16 +48,27 @@ describe("E2E: Participant Lifecycle", function () {
         it("should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block", async function () {
             const h = TestSession.getHarness();
 
-            await h.lifecycle.start(2);
+            const workerMode =
+                process.env.HARNESS_DEDICATED_PEER_THREAD === "true";
+            await h.lifecycle.start(2, 0, {
+                timeConfig: {
+                    agreementTime: workerMode ? 30 : 8,
+                    p2pTime: workerMode ? 5 : 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
 
-            const spectator = await h.join.addSpectatorWait({
-                statusTimeoutMs: 5000,
+            const spectatorHandle = await h.join.addSpectatorWait({
+                statusTimeoutMs: workerMode ? 15000 : 5000,
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, spectatorHandle.index]
+            });
 
             const confirmation = await h.join.buildJoinChannelConfirmation({
-                joiner: spectator,
+                joiner: spectatorHandle,
                 channelId: h.channelId,
                 existingParticipantSigners: [
                     h.getPeerHandle(0).signer,
@@ -63,21 +76,23 @@ describe("E2E: Participant Lifecycle", function () {
                 ]
             });
 
-            // Fire joinChannel WITHOUT awaiting — the synchronous portion of
-            // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
-            // before the first `await`, so the promotion is observable
-            // immediately after the call starts.
+            // Fire joinChannel WITHOUT awaiting. In inline mode the
+            // synchronous portion sets PENDING_PARTICIPANT before the first
+            // internal await; in worker mode the RPC dispatch is concurrent so
+            // the status is also set before the tx mines and queryStatus returns.
             const joinPromise =
-                spectator.p2pInstance.p2pSigner.joinChannel(confirmation);
+                spectatorHandle.lifecycle.joinChannel(confirmation);
 
-            // step 1 - joinChannel sets PENDING_PARTICIPANT synchronously before
-            // the first internal await -> by the time queryStatus yields once,
-            // status is already set and joinChannel is parked on tx mining.
-            expect(
-                await h.getPeerHandle(spectator.index).queryStatus()
-            ).to.equal(
+            // Poll until PENDING_PARTICIPANT is visible — handles both inline
+            // (synchronous) and worker (concurrent RPC) timing.
+            await h.event.waitUntilPeerStatus(
+                spectatorHandle.index,
                 Status.PENDING_PARTICIPANT,
-                "Status should be PENDING_PARTICIPANT immediately on broadcast, before tx is mined"
+                {
+                    timeoutMs: 5000,
+                    timeoutMessage:
+                        "Status should be PENDING_PARTICIPANT immediately on broadcast, before tx is mined"
+                }
             );
 
             // Wait for the tx to land on-chain
@@ -89,13 +104,16 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.transition.advanceState({ count: 1 });
 
-            // Joiner is now PARTICIPATING — promoted inside success() when the first
-            // block that includes them in the resulting participant set was processed.
-            expect(
-                await h.getPeerHandle(spectator.index).queryStatus()
-            ).to.equal(
+            // Poll until PARTICIPATING — in worker mode the status update from
+            // the block confirmation may arrive slightly after advanceState resolves.
+            await h.event.waitUntilPeerStatus(
+                spectatorHandle.index,
                 Status.PARTICIPATING,
-                "Joiner should be PARTICIPATING after the first block that includes them"
+                {
+                    timeoutMs: workerMode ? 15000 : 10000,
+                    timeoutMessage:
+                        "Joiner should be PARTICIPATING after the first block that includes them"
+                }
             );
         });
     });

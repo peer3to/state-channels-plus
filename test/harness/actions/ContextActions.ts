@@ -1,6 +1,5 @@
 import { StateSnapshot } from "@/models";
 import { ForkId } from "@/types";
-import type StateManager from "@/stateManager";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -11,17 +10,8 @@ export class ContextActions {
         private _logger: Logger
     ) {}
 
-    markMaliciousPeer(options: {
-        maliciousPeerIndex: number;
-        honestPeerIndices?: number[];
-    }): void {
-        const { maliciousPeerIndex, honestPeerIndices } = options;
-        const totalPeers = this.harness.peers.length;
-        const honest =
-            honestPeerIndices ||
-            Array.from({ length: totalPeers }, (_, i) => i).filter(
-                (i) => i !== maliciousPeerIndex
-            );
+    markMaliciousPeer(options: { maliciousPeerIndex: number }): void {
+        const { maliciousPeerIndex } = options;
 
         this.harness.context.maliciousPeerIndices.push(maliciousPeerIndex);
     }
@@ -35,16 +25,11 @@ export class ContextActions {
             throw new Error("No active fork ID");
         }
 
-        const handle = this.harness.getPeerHandle(peerIndex);
-        const lastSnapshotRaw = await handle.queryLastMilestoneSnapshot(forkId);
-        const lastSnapshot = lastSnapshotRaw
-            ? lastSnapshotRaw instanceof StateSnapshot
-                ? lastSnapshotRaw
-                : StateSnapshot.from(
-                      lastSnapshotRaw as Parameters<
-                          typeof StateSnapshot.from
-                      >[0]
-                  )
+        const peerHandle = this.harness.getPeerHandle(peerIndex);
+        const lastSnapshotStruct =
+            await peerHandle.snapshots.queryLastMilestoneSnapshot(forkId);
+        const lastSnapshot = lastSnapshotStruct
+            ? StateSnapshot.from(lastSnapshotStruct)
             : undefined;
 
         const onChainSnapshotBefore = StateSnapshot.from(
@@ -66,7 +51,7 @@ export class ContextActions {
             }
         );
         const expectedWithdrawalsDeltaBalance =
-            await handle.computeExpectedWithdrawalsDelta({
+            await peerHandle.balance.computeExpectedWithdrawalsDelta({
                 upperBlockHash: String(
                     lastSnapshot.snapshotData.latestOutboundMessageBlockHash
                 ),
@@ -90,44 +75,17 @@ export class ContextActions {
         this.harness.context.channelBalanceBefore = channelBalance;
     }
 
-    storeSnapshotCount(peerIndex: number, contextKey: string): void {
-        const snapshotStorage = this.harness.peers[peerIndex].stateManager
-            .storage.stateSnapshots as any;
-        const count = Array.from(snapshotStorage.snapshotsByHash.keys()).length;
+    async storeSnapshotCount(
+        peerIndex: number,
+        contextKey: string
+    ): Promise<void> {
+        const count = await this.harness
+            .getPeerHandle(peerIndex)
+            .snapshots.queryStateSnapshotCount();
         this.harness.context[`snapshotCount_${contextKey}`] = count;
     }
 
     captureOriginalFork(): void {
         this.harness.context.originalForkId = this.harness.activeForkId;
-    }
-
-    private async computeExpectedWithdrawalsDelta(
-        peer: { stateManager: StateManager },
-        lastSnapshot: StateSnapshot,
-        onChainSnapshotBefore: StateSnapshot
-    ) {
-        const outboundMessageBlocksForDelta =
-            peer.stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                upperBlockHash:
-                    lastSnapshot.snapshotData.latestOutboundMessageBlockHash,
-                lowerBlockHash:
-                    onChainSnapshotBefore.snapshotData
-                        .latestOutboundMessageBlockHash
-            });
-
-        const stateMachine = peer.stateManager.diamondStateMachine;
-        const zeroBalance = await stateMachine.getZeroBalance();
-        let expectedWithdrawalsDeltaBalance = zeroBalance;
-
-        for (const outboundBlock of outboundMessageBlocksForDelta) {
-            for (const message of outboundBlock.messages) {
-                expectedWithdrawalsDeltaBalance = await stateMachine.addBalance(
-                    expectedWithdrawalsDeltaBalance,
-                    message.balance
-                );
-            }
-        }
-
-        return expectedWithdrawalsDeltaBalance;
     }
 }

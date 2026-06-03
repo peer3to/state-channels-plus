@@ -6,6 +6,8 @@ export type StubMethodFn = (...args: any[]) => unknown | Promise<unknown>;
 
 export interface StubInterface {
     stubMethod(path: string, fn: StubMethodFn): Promise<RestoreToken>;
+
     restoreStubbedMethod(token: RestoreToken): Promise<void>;
+
     restoreAllStubbedMethods(): Promise<void>;
 }

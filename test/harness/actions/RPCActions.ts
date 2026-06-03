@@ -92,13 +92,13 @@ export class RPCActions {
         newPeerIndex: number,
         observingPeerIndex: number
     ): Promise<void> {
-        const newPeer = this.harness.getPeer(newPeerIndex);
         const handle = this.harness.getPeerHandle(newPeerIndex);
         await handle.network.tryOpenConnectionToChannel(
             this.harness.channelId!.toString()
         );
         // Worker peers already dialed discovery during p2pSetup.
         if (!handle.__workerBackend) {
+            const newPeer = this.harness.getPeer(newPeerIndex);
             await LocalDiscoveryServer.connectToPeers(
                 newPeer.stateManager.p2pManager.self,
                 this.harness.channelId!,
@@ -107,7 +107,7 @@ export class RPCActions {
         }
         await this.waitForHandshakeCompleted(
             observingPeerIndex,
-            newPeer.address
+            handle.address
         );
     }
 
@@ -163,7 +163,9 @@ export class RPCActions {
         );
 
         const buildingLatestBlock =
-            await buildingPeerHandle.queryLatestBlockConfirmation(activeForkId);
+            await buildingPeerHandle.blocks.queryLatestBlockConfirmation(
+                activeForkId
+            );
 
         if (!buildingLatestBlock) {
             throw new Error(`No latest block found for fork ${activeForkId}`);
@@ -356,7 +358,7 @@ export class RPCActions {
         const requestingPeerHandle = this.harness.getPeerHandle(requestingPeer);
         const skipAddress = requestingPeerHandle.address;
 
-        for (let i = 0; i < this.harness.peers.length; i++) {
+        for (let i = 0; i < this.harness.peerCount; i++) {
             if (i === requestingPeer) continue;
             const peer = this.harness.getPeerHandle(i);
             await peer.network.installDisconnectFilter(

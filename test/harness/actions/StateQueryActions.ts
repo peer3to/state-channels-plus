@@ -1,5 +1,6 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
+import type { PeerHandle } from "@test/harness/core/PeerHandle";
 import { InlinePeer } from "@test/harness/core/InlinePeer";
 import { Logger } from "@/utils";
 import { Address, BlockHeight, ForkId, Hash } from "@/types/types";
@@ -8,7 +9,6 @@ import PeerProfile from "@/PeerProfile";
 import { ethers } from "@/index";
 import Block from "@/models/Block";
 import { StateSnapshot } from "@/models";
-import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -36,7 +36,8 @@ export class StateQueryActions {
         const forkId = this.harness.activeForkId;
         if (!forkId) return null;
         const handle = this.harness.getPeerHandle(peerIndex);
-        const hash = await handle.queryLatestStateMachineStateHash(forkId);
+        const hash =
+            await handle.stateMachine.queryLatestStateMachineStateHash(forkId);
         return hash as Hash | null;
     }
 
@@ -86,17 +87,18 @@ export class StateQueryActions {
         ).hash;
     }
 
-    public async getLocalStateSnapshot(peer: TestPeer): Promise<StateSnapshot> {
-        const handle = this.harness.getPeerHandle(peer.index);
-        const struct = await handle.queryLocalStateSnapshot(
+    public async getLocalStateSnapshot(
+        peer: PeerHandle
+    ): Promise<StateSnapshot> {
+        const struct = await peer.snapshots.queryLocalStateSnapshot(
             this.harness.channelId as string
         );
-        return StateSnapshot.from(struct as StateSnapshotStruct);
+        return StateSnapshot.from(struct);
     }
     /**
      * Get the next peer that should write a block
      */
-    async getNextPeerToWrite(): Promise<TestPeer> {
+    async getNextPeerToWrite(): Promise<PeerHandle> {
         try {
             const forkId = this.harness.activeForkId;
             if (!forkId) {
@@ -104,23 +106,24 @@ export class StateQueryActions {
             }
 
             const sourcePeer = await this.harness.peerWithHighestBlock(forkId);
-            const sourceHandle = this.harness.getPeerHandle(sourcePeer.index);
-            const nextAddress = await sourceHandle.queryNextToWrite();
+            const nextAddress = await sourcePeer.channel.queryNextToWrite();
 
             this.logger.verbose(`getNextPeerToWrite returned: ${nextAddress}`);
 
-            const nextPeer = this.harness.peers.find(
+            const nextPeer = this.harness.peerHandles.find(
                 (peer) => peer.address === nextAddress
             );
             if (!nextPeer) {
-                const peerAddresses = this.harness.peers.map((p) => p.address);
+                const peerAddresses = this.harness.peerHandles.map(
+                    (p) => p.address
+                );
 
                 const participantStates = await Promise.all(
-                    this.harness.peers.map(async (_peer, i) => {
+                    this.harness.peerHandles.map(async (_peer, i) => {
                         try {
                             const participants = await this.harness
                                 .getPeerHandle(i)
-                                .queryParticipants();
+                                .channel.queryParticipants();
                             return `Peer ${i}: ${participants.length} participants`;
                         } catch {
                             return `Peer ${i}: error getting participants`;
@@ -243,15 +246,13 @@ export class StateQueryActions {
 
         const disputeHashes = new Set<Hash>();
 
-        const disputeWindowsByPeer = (await Promise.all(
+        const disputeWindowsByPeer = await Promise.all(
             peers.map((peer) => {
                 return this.harness
                     .localDiamondView(peer.index)
                     .getDisputeWindows(this.harness.channelId!, [forkId]);
             })
-        )) as Array<
-            Array<{ evidence: { disputeCommitments: Hash[] } } | undefined>
-        >;
+        );
 
         for (const disputeWindows of disputeWindowsByPeer) {
             const disputeWindow = disputeWindows[0];

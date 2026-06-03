@@ -9,7 +9,10 @@ export type DisconnectFilterFn = (
 
 export interface NetworkInterface {
     disconnectAll(): Promise<void>;
+
     tryOpenConnectionToChannel(channelId: ChannelId): Promise<void>;
+
     installDisconnectFilter(filter: DisconnectFilterFn): Promise<RestoreToken>;
+
     restoreDisconnectFilter(): Promise<void>;
 }

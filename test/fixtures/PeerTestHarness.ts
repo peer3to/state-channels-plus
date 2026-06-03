@@ -20,7 +20,10 @@ import {
     retry,
     EventBarrier
 } from "@/utils";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeStruct,
+    StateProofStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
 import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
@@ -50,10 +53,7 @@ import {
     HarnessOptions
 } from "@test/harness/core/types";
 import { InlinePeer } from "@test/harness/core/InlinePeer";
-import type {
-    LocalDiamondView,
-    PeerHandle
-} from "@test/harness/core/PeerHandle";
+import type { PeerHandle } from "@test/harness/core/PeerHandle";
 import { StubCallbackRegistry } from "@test/harness/core/StubCallbackRegistry";
 import { WorkerPeer } from "@test/harness/core/WorkerPeer";
 import {
@@ -62,9 +62,12 @@ import {
     type WorkerEventSpy
 } from "@test/harness/core/SpyMirror";
 import { PeerWorker } from "@test/harness/threaded/PeerWorker";
+import { PUSH_TOPICS } from "@test/harness/threaded/worker/routeNames";
 import { HttpHardhatNode } from "@test/harness/threaded/HttpHardhatNode";
 import { HarnessDebug } from "./HarnessDebug";
 import { LogLevel } from "@/utils/logging/Logger";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { DisputeWindowStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/LocalDiamond";
 
 const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
@@ -75,8 +78,13 @@ export class PeerTestHarness<
     TCustomRpc extends MainRpcService = MainRpcService,
     TStateMachine extends AStateMachineContract = AStateMachineContract
 > {
-    public peers: TestPeer<TCustomRpc, TStateMachine>[] = [];
-    public peerHandles: PeerHandle[] = [];
+    private _peerHandles: PeerHandle[] = [];
+    public get peerHandles(): readonly PeerHandle[] {
+        return this._peerHandles;
+    }
+    public get peerCount(): number {
+        return this._peerHandles.length;
+    }
     public channelManager!: StateChannelManagerProxy;
     private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
@@ -157,11 +165,7 @@ export class PeerTestHarness<
             );
         }
 
-        if (this.options.dedicatedPeerThread) {
-            // Worker peers have no inline stateManager; forkId comes from the handle cache.
-            return this.peerHandles[honestPeers[0].index]?.forkId;
-        }
-        return honestPeers[0].stateManager.forkId;
+        return honestPeers[0].forkId;
     }
 
     constructor({
@@ -266,16 +270,6 @@ export class PeerTestHarness<
             this.logger,
             this.eventCountsBarrier
         );
-        if (this.options.dedicatedPeerThread) {
-            this.syncCoordinator.setProbe({
-                loadTip: (peerIndex, forkId) =>
-                    this.getPeerHandle(peerIndex).queryLatestBlock(forkId),
-                didEveryoneSignBlock: async (peerIndex, blockHash) =>
-                    this.getPeerHandle(peerIndex).queryDidEveryoneSignBlock(
-                        blockHash
-                    )
-            });
-        }
 
         await this.deployContracts();
         if (this.options.dedicatedPeerThread) {
@@ -562,8 +556,7 @@ export class PeerTestHarness<
             this.wrapEventHandlerWithSpies(peer);
         }
 
-        this.peers[index] = peer;
-        this.peerHandles[index] = await this.createPeerHandle(peer);
+        this._peerHandles[index] = await this.createPeerHandle(peer);
 
         this.logger.debug(`Peer ${index} created successfully`);
     }
@@ -603,6 +596,20 @@ export class PeerTestHarness<
             deploymentModule: this.requireDeploymentModule()
         });
         this.spawnedWorkers.push(worker);
+
+        worker.on("detached-rejection", (payload) => {
+            const p = payload as {
+                name?: string;
+                message?: string;
+                stack?: string;
+            };
+            const err = new Error(
+                p.message ?? "unknown worker detached rejection"
+            );
+            err.name = p.name ?? "Error";
+            if (p.stack) err.stack = p.stack;
+            process.emit("unhandledRejection", err, Promise.resolve());
+        });
 
         const stubCallbackRegistry = new StubCallbackRegistry();
         const rpcServer = worker.getRpcServer();
@@ -647,7 +654,7 @@ export class PeerTestHarness<
         });
 
         const mirror = new SpyMirror(this.eventCountsBarrier);
-        worker.getRpcClient().on("spy", (payload: unknown) => {
+        worker.getRpcClient().on(PUSH_TOPICS.spy, (payload: unknown) => {
             const frame = payload as Parameters<SpyMirror["ingest"]>[0];
             mirror.ingest(frame);
             switch (frame.name) {
@@ -670,20 +677,19 @@ export class PeerTestHarness<
         for (const name of Object.keys(peer.eventSpies)) {
             workerSpies[name] = makeWorkerEventSpy(mirror, peer.index, name);
         }
-        return new WorkerPeer({
-            index: peer.index,
-            address: peer.address,
-            signer: peer.signer,
-            logger: peer.logger,
-            eventSpies: peer.eventSpies,
-            turnBarrier: peer.turnBarrier,
-            rpc: worker.getRpcClient(),
-            mirror,
+        return new WorkerPeer(
+            peer.index,
+            peer.address,
+            peer.signer,
+            peer.logger,
+            peer.eventSpies,
+            peer.turnBarrier,
+            worker.getRpcClient(),
             stubCallbackRegistry,
-            onDispose: async () => {
+            async () => {
                 await worker.dispose();
             }
-        });
+        );
     }
 
     private requireDeploymentModule(): string {
@@ -868,25 +874,27 @@ export class PeerTestHarness<
 
         const disposePromises: Promise<unknown>[] = [];
 
-        for (const peer of this.peers) {
+        // Inline peers dispose their p2pInstance here; worker peers tear down
+        // separately below (ordering-sensitive: RPC sockets before the HTTP node).
+        for (const handle of this.peerHandles) {
             try {
-                peer.logger.verbose("Cleaning up peer", {
+                handle.logger.verbose("Cleaning up peer", {
                     component: "TestHarness"
                 });
 
-                if (peer.p2pInstance) {
-                    disposePromises.push(peer.p2pInstance.dispose());
+                if (handle instanceof InlinePeer) {
+                    disposePromises.push(handle.dispose());
                 }
 
-                Object.values(peer.eventSpies).forEach((spy) =>
+                Object.values(handle.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
                 );
 
-                peer.logger.verbose("Peer cleanup completed", {
+                handle.logger.verbose("Peer cleanup completed", {
                     component: "TestHarness"
                 });
             } catch (error) {
-                peer.logger.error(`Error during cleanup: ${error}`, {
+                handle.logger.error(`Error during cleanup: ${error}`, {
                     component: "TestHarness"
                 });
             }
@@ -909,8 +917,7 @@ export class PeerTestHarness<
 
         await new Promise((resolve) => setImmediate(resolve));
 
-        this.peers = [];
-        this.peerHandles = [];
+        this._peerHandles = [];
 
         // Fully reset the context object to ensure no properties leak between tests
         this.context = new HarnessContext();
@@ -921,78 +928,63 @@ export class PeerTestHarness<
         this.logger.dispose();
     }
 
+    // Inline-only escape hatch: reaches the in-process TestPeer (stateManager,
+    // contractInstance, p2pInstance) through the InlinePeer handle. Throws in
+    // worker mode, where no in-process peer exists.
     getPeer(index: number): TestPeer<TCustomRpc, TStateMachine> {
-        const peer = this.peers[index];
-        if (!peer) throw new Error(`Peer ${index} not found`);
-        return peer;
+        const handle = this.getPeerHandle(index);
+        if (!(handle instanceof InlinePeer))
+            throw new Error(
+                `getPeer(${index}) is inline-only; worker peers expose no in-process TestPeer`
+            );
+        return handle.peer as unknown as TestPeer<TCustomRpc, TStateMachine>;
     }
 
     getPeerAddresses(): Address[] {
         return this.peerHandles.map((h) => h.address);
     }
 
-    getFilteredPeers(
-        peerIndices?: number[]
-    ): TestPeer<TCustomRpc, TStateMachine>[] {
+    getFilteredPeers(peerIndices?: number[]): PeerHandle[] {
         return peerIndices
-            ? peerIndices.map((i) => this.getPeer(i))
-            : this.peers;
+            ? peerIndices.map((i) => this.getPeerHandle(i))
+            : [...this._peerHandles];
     }
 
-    getHonestPeers(
-        excludePeerIndices?: number[]
-    ): TestPeer<TCustomRpc, TStateMachine>[] {
+    getHonestPeers(excludePeerIndices?: number[]): PeerHandle[] {
         const excludeSet = new Set<number>([
             ...(excludePeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? [])
         ]);
-        return this.peers.filter((peer) => !excludeSet.has(peer.index));
+        return this.peerHandles.filter((h) => !excludeSet.has(h.index));
     }
 
-    async peerWithHighestBlock(
-        forkId: ForkId
-    ): Promise<TestPeer<TCustomRpc, TStateMachine>> {
+    async peerWithHighestBlock(forkId: ForkId): Promise<PeerHandle> {
         const malicious = new Set(this.context.maliciousPeerIndices ?? []);
-        let best: TestPeer<TCustomRpc, TStateMachine> | undefined;
+        let best: PeerHandle | undefined;
         let bestHeight = Number.NEGATIVE_INFINITY;
-        for (const peer of this.peers) {
-            if (malicious.has(peer.index)) continue;
-            let h: number | undefined;
-            if (this.options.dedicatedPeerThread) {
-                const latest = await this.getPeerHandle(
-                    peer.index
-                ).queryLatestBlock(forkId);
-                h = latest?.height;
-            } else {
-                h =
-                    peer.stateManager.storage.blocks.getLatestBlock(
-                        forkId
-                    )?.height;
-            }
+        for (const handle of this.peerHandles) {
+            if (malicious.has(handle.index)) continue;
+            const latest = await handle.blocks.queryLatestBlock(forkId);
+            const h = latest?.height;
             if (h === undefined) continue;
             if (h > bestHeight) {
                 bestHeight = h;
-                best = peer;
+                best = handle;
             }
         }
-        return best ?? this.peers[0];
+        return best ?? this.peerHandles[0];
     }
 
-    /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
-    getPeersExcludingMaliciousAndLeavers(): TestPeer<
-        TCustomRpc,
-        TStateMachine
-    >[] {
+    /** Every peer except leavers and malicious (same nodes as post-`addPeer` spectators). */
+    getPeersExcludingMaliciousAndLeavers(): PeerHandle[] {
         const exclude = new Set([
             ...(this.context.leftChannelPeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? [])
         ]);
-        return this.peers.filter((p) => !exclude.has(p.index));
+        return this.peerHandles.filter((h) => !exclude.has(h.index));
     }
 
-    getFilteredOrHonestPeers(
-        peerIndices?: number[]
-    ): TestPeer<TCustomRpc, TStateMachine>[] {
+    getFilteredOrHonestPeers(peerIndices?: number[]): PeerHandle[] {
         if (peerIndices) {
             return this.getFilteredPeers(peerIndices);
         }
@@ -1002,18 +994,22 @@ export class PeerTestHarness<
         return this.harnessConfig;
     }
 
-    localDiamondView(peerIndex: number): LocalDiamondView {
+    localDiamondView(peerIndex: number): {
+        getLatestBlockFromStateProof(stateProof: StateProofStruct): Promise<{
+            hasBlock: boolean;
+            latestBlock: BlockStruct;
+        }>;
+        getDisputeWindows(
+            channelId: ChannelId,
+            forkIds: ForkId[]
+        ): Promise<DisputeWindowStructOutput[]>;
+    } {
         const handle = this.getPeerHandle(peerIndex);
         return {
-            async getLatestBlockFromStateProof(stateProof) {
-                return await handle.queryLatestBlockFromStateProof(stateProof);
-            },
-            async getDisputeWindows(channelId, forkIds) {
-                return handle.queryDisputeWindows({
-                    channelId: channelId as string,
-                    forkIds: forkIds as string[]
-                });
-            }
+            getLatestBlockFromStateProof: (stateProof) =>
+                handle.dispute.queryLatestBlockFromStateProof(stateProof),
+            getDisputeWindows: (channelId, forkIds) =>
+                handle.dispute.queryDisputeWindows({ channelId, forkIds })
         };
     }
 }

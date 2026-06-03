@@ -195,7 +195,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 const forkId = h.activeForkId!;
                 const blockAtH = (await h
                     .getPeerHandle(1)
-                    .queryBlockAt({ forkId, height: 1 }))!;
+                    .blocks.queryBlockAt({ forkId, height: 1 }))!;
                 dispute.input.timeout.blockHeight = 1n;
                 dispute.input.timeout.participant = blockAtH.author;
             },
@@ -263,7 +263,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 const forkId = h.activeForkId!;
                 const blockAtH = (await h
                     .getPeerHandle(1)
-                    .queryBlockAt({ forkId, height: 1 }))!;
+                    .blocks.queryBlockAt({ forkId, height: 1 }))!;
                 dispute.input.timeout.blockHeight = 1n;
                 dispute.input.timeout.participant = blockAtH.author;
                 dispute.input.timeout.isForced = true;

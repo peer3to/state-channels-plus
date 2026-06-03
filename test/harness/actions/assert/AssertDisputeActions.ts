@@ -58,7 +58,7 @@ export class AssertDisputeActions {
             return;
         }
 
-        const nonInitiators = this.harness.peers.filter(
+        const nonInitiators = this.harness.peerHandles.filter(
             (peer) => !peers.includes(peer)
         );
 
@@ -119,7 +119,7 @@ export class AssertDisputeActions {
     }
 
     noDisputes(): void {
-        const totalInitiated = this.harness.peers.reduce((sum, peer) => {
+        const totalInitiated = this.harness.peerHandles.reduce((sum, peer) => {
             return (
                 sum +
                 this.harness.event.getEventCallCount(
@@ -129,7 +129,7 @@ export class AssertDisputeActions {
             );
         }, 0);
 
-        const totalCommitted = this.harness.peers.reduce((sum, peer) => {
+        const totalCommitted = this.harness.peerHandles.reduce((sum, peer) => {
             return (
                 sum +
                 this.harness.event.getEventCallCount(
