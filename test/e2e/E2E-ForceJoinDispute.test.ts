@@ -5,21 +5,15 @@ import { Status } from "@/types";
 describe("E2E: Force Join Dispute", function () {
     it("should trigger force-join dispute after N turns of non-inclusion, then resolve with joiner PARTICIPATING", async function () {
         const h = TestSession.getHarness();
-        const workerMode = process.env.HARNESS_DEDICATED_PEER_THREAD === "true";
 
-        // Worker threads need longer agreementTime so a timeout dispute does not
-        // fire during spectator sync / join setup.
         await h.lifecycle.start(2, 2, {
             timeConfig: {
-                agreementTime: workerMode ? 30 : 12,
-                p2pTime: workerMode ? 10 : 5,
-                chainFallbackTime: workerMode ? 4 : 2,
-                evidenceTime: 4
+                agreementTime: 6
             }
         });
 
         const joiner = await h.join.addSpectatorWait({
-            statusTimeoutMs: workerMode ? 15000 : 5000,
+            statusTimeoutMs: 5000,
             statusTimeoutMessage: "Joiner did not reach SYNCED"
         });
         await h.assert.sync.peersInSyncWait();

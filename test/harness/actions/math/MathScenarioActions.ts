@@ -298,12 +298,11 @@ export class MathScenarioActions extends ScenarioActions {
 
     async syncSpectatorAndPrepareJoin(initialTransitions: number = 4) {
         const h = this.harness;
-        const workerMode = process.env.HARNESS_DEDICATED_PEER_THREAD === "true";
         await h.lifecycle.start(3, initialTransitions, {
             timeConfig: {
-                p2pTime: workerMode ? 10 : 5,
-                agreementTime: workerMode ? 6 : 4,
-                chainFallbackTime: workerMode ? 4 : 2,
+                p2pTime: 5,
+                agreementTime: 4,
+                chainFallbackTime: 2,
                 evidenceTime: 4
             }
         });

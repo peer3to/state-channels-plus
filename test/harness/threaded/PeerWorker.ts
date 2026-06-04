@@ -58,6 +58,8 @@ export class PeerWorker {
                 "--require",
                 "tsconfig-paths/register"
             ],
+            // transpile-only: skip per-worker typecheck (~7s); main build already covers it
+            env: { ...process.env, TS_NODE_TRANSPILE_ONLY: "1" },
             workerData: args
         });
 

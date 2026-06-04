@@ -181,8 +181,15 @@ class PeerWorkerProcess {
 
         createConfig(harnessConfig.configOverrides as Partial<Config>);
 
-        const provider = new ethers.JsonRpcProvider(chainProviderUrl);
-        provider.pollingInterval = 200;
+        const provider = new ethers.JsonRpcProvider(
+            chainProviderUrl,
+            undefined,
+            {
+                batchMaxCount: 1,
+                cacheTimeout: -1
+            }
+        );
+        provider.pollingInterval = 50;
         const signer = wallet.connect(provider);
 
         const channelManager = StateChannelManagerProxy__factory.connect(

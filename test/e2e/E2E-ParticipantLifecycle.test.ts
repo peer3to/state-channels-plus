@@ -48,19 +48,14 @@ describe("E2E: Participant Lifecycle", function () {
         it("should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block", async function () {
             const h = TestSession.getHarness();
 
-            const workerMode =
-                process.env.HARNESS_DEDICATED_PEER_THREAD === "true";
             await h.lifecycle.start(2, 0, {
                 timeConfig: {
-                    agreementTime: workerMode ? 30 : 8,
-                    p2pTime: workerMode ? 5 : 2,
-                    chainFallbackTime: 2,
-                    evidenceTime: 3
+                    agreementTime: 6
                 }
             });
 
             const spectatorHandle = await h.join.addSpectatorWait({
-                statusTimeoutMs: workerMode ? 15000 : 5000,
+                statusTimeoutMs: 5000,
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });
             await h.assert.sync.peersInSyncWait({
@@ -110,7 +105,7 @@ describe("E2E: Participant Lifecycle", function () {
                 spectatorHandle.index,
                 Status.PARTICIPATING,
                 {
-                    timeoutMs: workerMode ? 15000 : 10000,
+                    timeoutMs: 10000,
                     timeoutMessage:
                         "Joiner should be PARTICIPATING after the first block that includes them"
                 }
