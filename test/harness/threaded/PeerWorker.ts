@@ -52,14 +52,15 @@ export class PeerWorker {
     ): Promise<PeerWorker> {
         const entry = path.join(__dirname, "worker", "entry.ts");
         const worker = new Worker(entry, {
+            // @swc-node/register (Rust transpiler, no typecheck - main build
+            // covers that) boots a fresh peer worker in ~0.5s vs ~2.5s for
+            // ts-node; spawn->ready drops ~6s -> ~4s.
             execArgv: [
                 "--require",
-                "ts-node/register",
+                "@swc-node/register",
                 "--require",
                 "tsconfig-paths/register"
             ],
-            // transpile-only: skip per-worker typecheck (~7s); main build already covers it
-            env: { ...process.env, TS_NODE_TRANSPILE_ONLY: "1" },
             workerData: args
         });
 
