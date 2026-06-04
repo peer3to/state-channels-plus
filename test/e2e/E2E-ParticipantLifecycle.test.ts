@@ -50,7 +50,7 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.lifecycle.start(2, 0, {
                 timeConfig: {
-                    agreementTime: 6
+                    agreementTime: 8
                 }
             });
 
