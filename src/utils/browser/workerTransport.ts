@@ -5,11 +5,9 @@ import type {
     WorkerResult
 } from "@/utils/worker/types";
 
-// The sentinel first message that hands the worker its transferred gossip port.
 export type GossipInitMessage = { __gossipInit: true; port: MessagePort };
 
-// Spawn a module worker; its gossip port is transferred via a sentinel init message
-// (the browser Worker ctor has no transferList). The host peels it off its first message.
+// Spawn a module worker; gossip port transferred via a sentinel init message (no transferList in the browser Worker ctor).
 export function createWorkerClientTransport(entry: {
     url: URL;
 }): WorkerClientTransport {

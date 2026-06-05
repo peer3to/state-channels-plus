@@ -50,7 +50,6 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.client = new WorkerClient(createContractExecutorTransport());
     }
 
-    // Wire the SDK logger's gossip into the worker client (composition root).
     attachLogger(logger: Logger): void {
         this.client.attachLogger(logger);
     }

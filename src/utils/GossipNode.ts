@@ -1,5 +1,4 @@
-// One edge to a neighbouring thread: `post` sends outbound, `subscribe` registers
-// the inbound handler. Built over a dedicated MessagePort at the @platform entry.
+// One edge to a neighbouring thread: `post` = outbound, `subscribe` = inbound handler.
 export type Neighbour = {
     post: (msg: unknown) => void;
     subscribe: (handler: (msg: unknown) => void) => void;
@@ -11,8 +10,7 @@ export class GossipNode {
     private readonly neighbours = new Set<Neighbour>();
     private readonly onLocal?: (msg: unknown) => void;
 
-    // `onLocal` is the consumer's interpreter for messages that reach this node
-    // (e.g. Logger.applyOp). Optional so a pure relay node is possible.
+    // `onLocal` interprets messages reaching this node (e.g. Logger.applyOp); optional for a pure relay.
     constructor(onLocal?: (msg: unknown) => void) {
         this.onLocal = onLocal;
     }

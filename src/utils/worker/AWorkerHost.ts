@@ -2,9 +2,8 @@ import { GossipNode } from "@/utils/GossipNode";
 import type { Logger, LoggerOp } from "@/utils/logging/Logger";
 import type { WorkerEnvelope, WorkerHostTransport } from "./types";
 
-// Worker-side base: envelope framing (receive → handle → reply), a GossipNode
-// (neighbour = parent port), logger, and the ready post. Subclasses implement
-// `handle`. Posts {type:"ready"} at end of construction, so construction must be sync.
+// Worker-side base: envelope framing (receive → handle → reply), a GossipNode, logger,
+// ready post. Subclasses implement `handle`. Posts {type:"ready"} in ctor, so ctor must be sync.
 export abstract class AWorkerHost<TRequest, TResult> {
     private readonly transport: WorkerHostTransport;
     private readonly gossip: GossipNode;

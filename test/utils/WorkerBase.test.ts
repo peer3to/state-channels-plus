@@ -169,7 +169,6 @@ describe("worker base", function () {
         host.attachForTest(worker.logger);
         client.attachLogger(main.logger);
 
-        // Originate on the worker side.
         await worker.logger.uploadLogs("worker report-bug");
         await new Promise((r) => setTimeout(r, 30)); // yield for gossip MessagePort delivery
 

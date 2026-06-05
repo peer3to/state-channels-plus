@@ -4,8 +4,7 @@ import {
 } from "@platform/workerTransport";
 import { ContractExecutorWorkerHost } from "../ContractExecutorWorkerHostCore";
 
-// The first inbound message carries the transferred gossip port; build the host
-// from it. createWorkerHostTransport then rebinds globalThis.onmessage for RPC.
+// First inbound message carries the transferred gossip port; build the host from it.
 globalThis.onmessage = (event: MessageEvent<GossipInitMessage>) => {
     const init = event.data;
     if (!init || init.__gossipInit !== true) {
