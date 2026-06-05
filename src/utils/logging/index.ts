@@ -3,6 +3,7 @@ import type {
     SharedLoggerContext,
     LoggerDestroyOptions,
     LoggerPerformanceMonitorOptions,
+    LoggerOp,
     Logger
 } from "./Logger";
 import { decodeLogs, decompressFromBase64 } from "./logEncoder";
@@ -15,6 +16,7 @@ export type {
     SharedLoggerContext,
     LoggerDestroyOptions,
     LoggerPerformanceMonitorOptions,
+    LoggerOp,
     CreateLoggerOptions
 };
 export { decodeLogs, decompressFromBase64 };

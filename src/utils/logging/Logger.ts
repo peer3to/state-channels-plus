@@ -4,6 +4,7 @@ import type { LogUploader } from "./LogUploader";
 import type { LogStore } from "./logStore";
 import { LoggerUtils } from "../LoggerUtils";
 import { DetachedPromises } from "../DetachedPromises";
+import type { GossipNode } from "@/utils/GossipNode";
 
 // The context exclusive to each logger
 export type ExclusiveLoggerContext = {
@@ -18,6 +19,13 @@ export type SharedLoggerContext = {
     channelId?: string;
     threadName?: string;
 };
+
+// The Logger's cross-thread vocabulary: operations every logger in the thread tree
+// applies to its OWN state. Type-discriminated like the worker's WorkerRequestPayload
+// (evm/contractExecutor/types.ts:16). Carried opaquely by the GossipNode.
+export type LoggerOp =
+    | { type: "flush" }
+    | { type: "updateContext"; context: SharedLoggerContext };
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "verbose";
 
@@ -72,6 +80,7 @@ export abstract class Logger {
     protected parent?: Logger;
     protected readonly children: Set<Logger> = new Set();
     private remoteSibling?: RemoteLoggerSibling;
+    private node?: GossipNode;
     private destroyed = false;
     private performanceMonitorStop?: () => void;
 
@@ -134,6 +143,36 @@ export abstract class Logger {
             node = node.parent;
         }
         return undefined;
+    }
+
+    public setGossipNode(node: GossipNode): void {
+        this.node = node;
+    }
+
+    // The node is registered on one logger in the chain; any descendant walks up to
+    // the nearest ancestor that has one. (Mirror of resolveSibling; replaces it in
+    // the Task-4 cutover.)
+    private resolveGossipNode(): GossipNode | undefined {
+        let logger: Logger | undefined = this;
+        while (logger) {
+            if (logger.node) return logger.node;
+            logger = logger.parent;
+        }
+        return undefined;
+    }
+
+    // The SINGLE interpreter of a LoggerOp, applied to THIS thread's logger. Used by
+    // both the local trigger path (flushUploads/updateSharedContext) and the inbound
+    // gossip path (GossipNode onLocal). Returns the flush promise so local callers can
+    // await/detach it; inbound callers ignore the return (fire-and-forget).
+    public applyOp(op: LoggerOp): Promise<void> | void {
+        switch (op.type) {
+            case "flush":
+                return this.logUploader?.uploadLogs();
+            case "updateContext":
+                Object.assign(this.sharedContext, op.context);
+                return;
+        }
     }
 
     protected storeLog(logEntry: LogEntry): void {

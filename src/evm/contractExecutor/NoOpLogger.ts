@@ -10,7 +10,9 @@ const noOpLogger = {
     error: noop,
     verbose: noop,
     updateSharedContext: noop,
-    uploadLogs: noop
+    uploadLogs: noop,
+    applyOp: noop,
+    setGossipNode: noop
 } as unknown as Logger;
 
 export default noOpLogger;
