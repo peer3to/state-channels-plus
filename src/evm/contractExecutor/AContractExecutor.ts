@@ -1,4 +1,5 @@
 import type { Address, Bytes } from "@/types/types";
+import type { Logger } from "@/utils/logging/Logger";
 
 export type ContractExecutionLog = {
     address: Address;
@@ -24,6 +25,9 @@ abstract class AContractExecutor {
     ): Promise<ContractExecutionResult>;
 
     dispose(): Promise<void> | void {}
+
+    // Wire the SDK logger into a worker executor's gossip node; no-op for the inline one.
+    attachLogger(_logger: Logger): void {}
 }
 
 export default AContractExecutor;

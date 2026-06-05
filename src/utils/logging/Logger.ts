@@ -108,11 +108,7 @@ export abstract class Logger {
     }
 
     public updateSharedContext(update: SharedLoggerContext): void {
-        this.applyOp({ type: "updateContext", context: update });
-        this.resolveGossipNode()?.broadcast({
-            type: "updateContext",
-            context: update
-        });
+        this.originate({ type: "updateContext", context: update });
     }
 
     public setGossipNode(node: GossipNode): void {
@@ -130,8 +126,7 @@ export abstract class Logger {
         return undefined;
     }
 
-    // Single interpreter for a LoggerOp on this thread; returns the flush promise
-    // so local callers can await/detach it.
+    // Single interpreter for a LoggerOp on this thread; returns the flush promise to await/detach.
     public applyOp(op: LoggerOp): Promise<void> | void {
         switch (op.type) {
             case "flush":
@@ -232,16 +227,14 @@ export abstract class Logger {
         }
         const localTime = new Date().getTime() / 1000;
         this.warn(message, ...meta, localTime);
-        await this.flushUploads();
+        await this.originate({ type: "flush" });
     }
 
-    // Local flush + cross-thread gossip (report-bug path); returns the local promise.
-    private flushUploads(): Promise<void> | undefined {
-        const own = this.applyOp({ type: "flush" }) as
-            | Promise<void>
-            | undefined;
-        this.resolveGossipNode()?.broadcast({ type: "flush" });
-        return own;
+    // Apply an op locally AND gossip it to the rest of the tree; returns the flush promise.
+    private originate(op: LoggerOp): Promise<void> | undefined {
+        const result = this.applyOp(op) as Promise<void> | undefined;
+        this.resolveGossipNode()?.broadcast(op);
+        return result;
     }
 
     public startPerformanceMonitoring(

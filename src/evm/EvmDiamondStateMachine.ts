@@ -27,7 +27,6 @@ import {
     type AContractExecutor,
     type ContractExecutionLog
 } from "./contractExecutor";
-import WorkerContractExecutor from "./contractExecutor/WorkerContractExecutor";
 import { Address, Bytes } from "@/types/types";
 import {
     BalanceStruct,
@@ -379,11 +378,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             logger
         });
 
-        // Wire the SDK logger into the worker client's gossip node so flush/context
-        // ops fan out across threads.
-        if (contractExecutor instanceof WorkerContractExecutor) {
-            contractExecutor.attachLogger(logger);
-        }
+        contractExecutor.attachLogger(logger); // no-op unless it's a worker executor
 
         const localSigner = new LocalDiamondSigner(signer, contractExecutor);
 
