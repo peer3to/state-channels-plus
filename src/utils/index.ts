@@ -19,6 +19,7 @@ export * from "./DetachedPromises";
 export * from "./logging";
 export * from "./EthersResultProxy";
 export * from "./address";
+export * from "./GossipNode";
 
 export function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
