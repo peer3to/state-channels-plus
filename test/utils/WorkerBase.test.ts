@@ -7,6 +7,35 @@ import type {
     WorkerHostTransport
 } from "@/utils/worker/types";
 import type { Neighbour } from "@/utils/GossipNode";
+import { createLogger } from "@/utils";
+import { LogUploader } from "@/utils/logging/LogUploader";
+import { LogStore } from "@/utils/logging/logStore";
+
+// Counts uploadLogs() calls without network I/O (mirrors LoggerApplyOp.test.ts).
+class FakeUploader extends LogUploader {
+    public uploadCount = 0;
+    protected attachListeners(): void {}
+    protected detachListeners(): void {}
+    public async uploadLogs(): Promise<void> {
+        this.uploadCount++;
+    }
+}
+
+function makeRealLogger(threadName: string) {
+    const shared = { threadName } as Record<string, unknown>;
+    const uploader = new FakeUploader(
+        new LogStore(1024, true),
+        { uploadEndpoint: "http://example.test", apiToken: "" },
+        { component: threadName },
+        shared as any
+    );
+    const logger = createLogger(
+        shared as any,
+        { component: threadName },
+        { logUploader: uploader, level: "info" }
+    );
+    return { logger, uploader };
+}
 
 function portNeighbour(port: {
     postMessage: (m: unknown) => void;
@@ -117,5 +146,35 @@ describe("worker base", function () {
         await new Promise((r) => setTimeout(r, 30)); // yield for MessagePort delivery
 
         expect(applied).to.deep.equal([{ type: "flush" }]);
+    });
+
+    // Worker → main report-bug cascade through REAL Loggers: a report-bug on the
+    // worker flushes its own store AND reaches the main logger's uploader.
+    it("worker-originated report-bug flushes its own store and cascades to the main logger", async function () {
+        const { clientTransport, hostTransport } = connectInProcess();
+
+        class AttachableHost extends AWorkerHost<number, number> {
+            protected async handle(n: number): Promise<number> {
+                return n;
+            }
+            attachForTest(logger: unknown): void {
+                this.attachLogger(logger as any);
+            }
+        }
+        const host = new AttachableHost(hostTransport);
+        const client = new WorkerClient<number, number>(clientTransport);
+
+        const worker = makeRealLogger("evm");
+        const main = makeRealLogger("sdk");
+        host.attachForTest(worker.logger);
+        client.attachLogger(main.logger);
+
+        // Originate on the worker side.
+        await worker.logger.uploadLogs("worker report-bug");
+        await new Promise((r) => setTimeout(r, 30)); // yield for gossip MessagePort delivery
+
+        expect(worker.uploader.uploadCount).to.equal(1); // flushed its own store
+        expect(main.uploader.uploadCount).to.equal(1); // cascaded to main
+        await client.dispose();
     });
 });
