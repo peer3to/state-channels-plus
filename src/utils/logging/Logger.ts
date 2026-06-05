@@ -20,17 +20,14 @@ export type SharedLoggerContext = {
     threadName?: string;
 };
 
-// The Logger's cross-thread vocabulary: operations every logger in the thread tree
-// applies to its OWN state. Type-discriminated like the worker's WorkerRequestPayload
-// (evm/contractExecutor/types.ts:16). Carried opaquely by the GossipNode.
+// Cross-thread ops every logger applies to its own state; carried opaquely by GossipNode.
 export type LoggerOp =
     | { type: "flush" }
     | { type: "updateContext"; context: SharedLoggerContext };
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "verbose";
 
-// Serializable recipe for rebuilding an equivalent logger on a worker thread,
-// where a live Logger can't cross the structured-clone boundary.
+// Recipe to rebuild an equivalent logger on a worker thread (a live Logger can't be cloned).
 export type SerializableLoggerConfig = {
     sharedContext: SharedLoggerContext;
     uploadEndpoint: string;
@@ -91,8 +88,6 @@ export abstract class Logger {
         this.skipWriting = skipWriting;
     }
 
-    // Project this logger into a serializable recipe so a worker thread can
-    // rebuild an equivalent sibling (a live Logger can't be structured-cloned).
     public toSerializableConfig(overrides: {
         threadName: string;
     }): SerializableLoggerConfig {
@@ -124,10 +119,8 @@ export abstract class Logger {
         this.node = node;
     }
 
-    // The node is registered on one logger in the chain; any descendant walks up
-    // to the nearest ancestor that has one. Broadcasting through it after the
-    // worker is disposed is a silent no-op (postMessage to a closed port does not
-    // throw), so the callers (updateSharedContext/flushUploads) need no guard.
+    // Walk up to the nearest ancestor holding the node. Posting to a disposed
+    // worker's port is a silent no-op, so callers need no guard.
     private resolveGossipNode(): GossipNode | undefined {
         let logger: Logger | undefined = this;
         while (logger) {
@@ -137,10 +130,8 @@ export abstract class Logger {
         return undefined;
     }
 
-    // The SINGLE interpreter of a LoggerOp, applied to THIS thread's logger. Used by
-    // both the local trigger path (flushUploads/updateSharedContext) and the inbound
-    // gossip path (GossipNode onLocal). Returns the flush promise so local callers can
-    // await/detach it; inbound callers ignore the return (fire-and-forget).
+    // Single interpreter for a LoggerOp on this thread; returns the flush promise
+    // so local callers can await/detach it.
     public applyOp(op: LoggerOp): Promise<void> | void {
         switch (op.type) {
             case "flush":
@@ -216,7 +207,12 @@ export abstract class Logger {
     }
     public error(message: any, ...meta: any[]): void {
         this.log("error", message, meta);
-        const promise = this.flushUploads();
+        // Flush only this thread's own store — NO cross-thread gossip (error() has
+        // 60+ call sites; fanning out would re-upload every thread on every error).
+        // The report-bug path (uploadLogs) is what pulls all threads.
+        const promise = this.applyOp({ type: "flush" }) as
+            | Promise<void>
+            | undefined;
         if (promise) DetachedPromises.collect(promise);
     }
     public verbose(message: any, ...meta: any[]): void {
@@ -228,8 +224,7 @@ export abstract class Logger {
     }
 
     public async uploadLogs(message: any, ...meta: any[]): Promise<void> {
-        // logTimestamp needs a live Clock; a worker thread has none, so don't let
-        // it abort the flush (log() guards Clock the same way).
+        // logTimestamp needs a live Clock; the worker has none — don't abort the flush.
         try {
             await LoggerUtils.logTimestamp(this);
         } catch {
@@ -240,8 +235,7 @@ export abstract class Logger {
         await this.flushUploads();
     }
 
-    // Single fan-out for error()/uploadLogs() so they can't diverge; returns the
-    // local promise so the caller can await (uploadLogs) or detach (error) it.
+    // Local flush + cross-thread gossip (report-bug path); returns the local promise.
     private flushUploads(): Promise<void> | undefined {
         const own = this.applyOp({ type: "flush" }) as
             | Promise<void>
