@@ -14,6 +14,7 @@
                 "src/evm/contractExecutor/browser/ContractExecutorWorkerRuntime"
             ],
             "@platform/DeployUtils": ["src/utils/browser/DeployUtils"],
+            "@platform/workerTransport": ["src/utils/browser/workerTransport"],
             "@platform/LocalDiscoveryServer": [
                 "src/utils/browser/LocalDiscoveryServer"
             ],

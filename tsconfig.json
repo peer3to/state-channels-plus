@@ -18,6 +18,7 @@
                 "src/evm/contractExecutor/node/ContractExecutorWorkerRuntime"
             ],
             "@platform/DeployUtils": ["src/utils/node/DeployUtils"],
+            "@platform/workerTransport": ["src/utils/node/workerTransport"],
             "@platform/LocalDiscoveryServer": [
                 "src/utils/node/LocalDiscoveryServer"
             ],
