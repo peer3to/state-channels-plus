@@ -127,7 +127,7 @@ export abstract class Logger {
     }
 
     // Single interpreter for a LoggerOp on this thread; returns the flush promise to await/detach.
-    public applyOp(op: LoggerOp): Promise<void> | void {
+    public applyOp(op: LoggerOp): Promise<void> | undefined {
         switch (op.type) {
             case "flush":
                 return this.logUploader?.uploadLogs();
@@ -205,9 +205,7 @@ export abstract class Logger {
         // Flush only this thread's own store — NO cross-thread gossip (error() has
         // 60+ call sites; fanning out would re-upload every thread on every error).
         // The report-bug path (uploadLogs) is what pulls all threads.
-        const promise = this.applyOp({ type: "flush" }) as
-            | Promise<void>
-            | undefined;
+        const promise = this.applyOp({ type: "flush" });
         if (promise) DetachedPromises.collect(promise);
     }
     public verbose(message: any, ...meta: any[]): void {
@@ -232,7 +230,7 @@ export abstract class Logger {
 
     // Apply an op locally AND gossip it to the rest of the tree; returns the flush promise.
     private originate(op: LoggerOp): Promise<void> | undefined {
-        const result = this.applyOp(op) as Promise<void> | undefined;
+        const result = this.applyOp(op);
         this.resolveGossipNode()?.broadcast(op);
         return result;
     }
