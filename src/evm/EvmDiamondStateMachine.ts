@@ -379,11 +379,11 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             logger
         });
 
-        // The worker logger is a sibling of this logger; forward context updates
-        // (e.g. channelId, learned only after the channel opens) and report-bug
-        // uploads across the thread boundary.
+        // The worker logger is a gossip neighbour of this logger: wire the SDK
+        // logger into the worker client's gossip node so flush/context ops fan out
+        // across the thread tree in both directions.
         if (contractExecutor instanceof WorkerContractExecutor) {
-            logger.setRemoteSibling(contractExecutor);
+            contractExecutor.attachLogger(logger);
         }
 
         const localSigner = new LocalDiamondSigner(signer, contractExecutor);

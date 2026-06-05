@@ -53,7 +53,7 @@ describe("worker logger upload", function () {
             customPrecompiles: [],
             logger
         })) as WorkerContractExecutor;
-        logger.setRemoteSibling(executor);
+        executor.attachLogger(logger);
 
         // channelId is unknown at worker spawn; it arrives later via a child
         // logger (mirrors StateManager.setChannelId) and must reach the worker.
@@ -62,32 +62,37 @@ describe("worker logger upload", function () {
             .updateSharedContext({ channelId: CHANNEL_ID });
 
         try {
-            await executor.uploadLogs();
+            // Force a worker-side log so the flush proves the worker's OWN
+            // store crosses the gossip edge (not an empty upload). Deploying the
+            // INVALID opcode (0xfe) faults; the worker records a
+            // "Contract call execution failed" warn, then the call rejects.
+            await executor.deploy("0xfe").catch(() => {});
 
-            // Detached upload has up to 3s jitter before it reaches the server.
+            await logger.uploadLogs("report-bug flush");
+
+            // The main-thread trigger now flushes BOTH threads via gossip; the
+            // main `sdk` upload may also arrive, in any order.
             const deadline = Date.now() + 10000;
-            while (received.length === 0 && Date.now() < deadline) {
+            const findEvm = () => received.find((r) => r.threadName === "evm");
+            while (!findEvm() && Date.now() < deadline) {
                 await new Promise((r) => setTimeout(r, 100));
             }
 
-            expect(received.length).to.be.greaterThan(0);
-            expect(received[0].threadName).to.equal("evm");
-            expect(received[0].peerAddress).to.equal(
+            const workerUpload = findEvm();
+            expect(workerUpload, "worker (evm) upload not received").to.not.be
+                .undefined;
+            expect(workerUpload!.peerAddress).to.equal(
                 "0x1111111111111111111111111111111111111111"
             );
-            expect(received[0].channelId).to.equal(CHANNEL_ID);
-
-            // The envelope must carry real worker logs, not []. The flush itself
-            // records a "worker report-bug flush" line, so it's always present.
+            expect(workerUpload!.channelId).to.equal(CHANNEL_ID);
             const entries = decodeLogs(
-                decompressFromBase64(received[0].compressedLogs as string)
+                decompressFromBase64(workerUpload!.compressedLogs as string)
             );
-            expect(entries.length).to.be.greaterThan(0);
+            expect(entries).to.be.an("array");
             expect(
-                entries.some((e) =>
-                    e.message.includes("worker report-bug flush")
-                )
-            ).to.equal(true);
+                entries.length,
+                "worker's own log store should cross the gossip edge"
+            ).to.be.greaterThan(0);
         } finally {
             await executor.dispose();
             await new Promise<void>((r) => server.close(() => r()));

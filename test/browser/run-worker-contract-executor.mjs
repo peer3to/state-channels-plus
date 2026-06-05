@@ -48,6 +48,10 @@ const server = await createServer({
                 projectRoot,
                 "src/evm/browser/precompileModuleLoader.ts"
             ),
+            "@platform/workerTransport": path.join(
+                projectRoot,
+                "src/utils/browser/workerTransport.ts"
+            ),
             "@": path.join(projectRoot, "src"),
             "@test": path.join(projectRoot, "test"),
             "@typechain-types": path.join(projectRoot, "typechain-types")

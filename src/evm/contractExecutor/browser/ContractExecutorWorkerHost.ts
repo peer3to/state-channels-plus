@@ -1,13 +1,15 @@
-import { startContractExecutorWorkerHost } from "../ContractExecutorWorkerHostCore";
-import type { WorkerRequest, WorkerResponse } from "../types";
+import {
+    createWorkerHostTransport,
+    type GossipInitMessage
+} from "@platform/workerTransport";
+import { ContractExecutorWorkerHost } from "../ContractExecutorWorkerHostCore";
 
-startContractExecutorWorkerHost(
-    (response: WorkerResponse) => {
-        globalThis.postMessage(response);
-    },
-    (handler: (message: WorkerRequest) => void) => {
-        globalThis.onmessage = (event: MessageEvent<WorkerRequest>) => {
-            handler(event.data);
-        };
+// The first inbound message carries the transferred gossip port; build the host
+// from it. createWorkerHostTransport then rebinds globalThis.onmessage for RPC.
+globalThis.onmessage = (event: MessageEvent<GossipInitMessage>) => {
+    const init = event.data;
+    if (!init || init.__gossipInit !== true) {
+        throw new Error("Contract executor worker host expected gossip init");
     }
-);
+    new ContractExecutorWorkerHost(createWorkerHostTransport(init.port));
+};
