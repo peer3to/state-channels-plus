@@ -2,10 +2,8 @@ import { GossipNode } from "@/utils/GossipNode";
 import type { Logger, LoggerOp } from "@/utils/logging/Logger";
 import type { WorkerClientTransport, WorkerResult } from "./types";
 
-// Main-side base for a worker runtime: owns the ready handshake, requestId/pending
-// request-response correlation, a GossipNode (its sole neighbour is the worker's
-// gossip port), logger attachment, and dispose. Concrete and composed (the EVM
-// executor already extends AContractExecutor, so it holds a WorkerClient).
+// Main-side base for a worker runtime: ready handshake, requestId/pending
+// correlation, a GossipNode (neighbour = worker's gossip port), logger, dispose.
 export class WorkerClient<TRequest, TResult> {
     private nextRequestId = 1;
     private readonly pending = new Map<
@@ -29,6 +27,9 @@ export class WorkerClient<TRequest, TResult> {
             this.resolveReady = resolve;
             this.rejectReady = reject;
         });
+        // dispose()/onError reject `ready`; mark it handled so a never-awaited
+        // rejection can't surface as an unhandledRejection.
+        void this.ready.catch(() => {});
         transport.onMessage((result) =>
             this.handleResult(result as WorkerResult<TResult>)
         );
@@ -38,14 +39,12 @@ export class WorkerClient<TRequest, TResult> {
         });
     }
 
-    // Wire a logger's gossip into this client's node (main-side composition root).
     attachLogger(logger: Logger): void {
         this.logger = logger;
         logger.setGossipNode(this.gossip);
     }
 
-    // Send a request and resolve with the worker's result. Waits for the worker's
-    // ready handshake first, so callers never sequence it manually.
+    // Send a request; awaits the ready handshake first so callers needn't sequence it.
     async request(payload: TRequest): Promise<TResult> {
         await this.ready;
         const requestId = this.nextRequestId++;
