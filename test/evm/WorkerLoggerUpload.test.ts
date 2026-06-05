@@ -32,9 +32,8 @@ describe("worker logger upload", function () {
         const port = (server.address() as AddressInfo).port;
         const endpoint = `http://127.0.0.1:${port}/logs/upload`;
 
-        // Factory derives the worker's "evm" recipe from this logger. This
-        // logger's own threadName ("sdk") must NOT clobber the worker's "evm"
-        // when context is later forwarded.
+        // Factory derives the worker's "evm" recipe from this logger; its own
+        // threadName ("sdk") must NOT clobber the worker's "evm".
         const logger = createLogger(
             {
                 peerAddress:
@@ -62,16 +61,13 @@ describe("worker logger upload", function () {
             .updateSharedContext({ channelId: CHANNEL_ID });
 
         try {
-            // Force a worker-side log so the flush proves the worker's OWN
-            // store crosses the gossip edge (not an empty upload). Deploying the
-            // INVALID opcode (0xfe) faults; the worker records a
-            // "Contract call execution failed" warn, then the call rejects.
+            // Force a worker-side log (deploy INVALID opcode 0xfe → warn) so the
+            // flush proves the worker's OWN store crosses the gossip edge.
             await executor.deploy("0xfe").catch(() => {});
 
             await logger.uploadLogs("report-bug flush");
 
-            // The main-thread trigger now flushes BOTH threads via gossip; the
-            // main `sdk` upload may also arrive, in any order.
+            // The main-thread trigger flushes BOTH threads; uploads arrive in any order.
             const deadline = Date.now() + 10000;
             const findEvm = () => received.find((r) => r.threadName === "evm");
             while (!findEvm() && Date.now() < deadline) {

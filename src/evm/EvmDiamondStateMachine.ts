@@ -379,9 +379,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             logger
         });
 
-        // The worker logger is a gossip neighbour of this logger: wire the SDK
-        // logger into the worker client's gossip node so flush/context ops fan out
-        // across the thread tree in both directions.
+        // Wire the SDK logger into the worker client's gossip node so flush/context
+        // ops fan out across threads.
         if (contractExecutor instanceof WorkerContractExecutor) {
             contractExecutor.attachLogger(logger);
         }

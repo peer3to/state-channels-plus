@@ -8,9 +8,8 @@ import type {
 // The sentinel first message that hands the worker its transferred gossip port.
 export type GossipInitMessage = { __gossipInit: true; port: MessagePort };
 
-// Spawn a module worker from a URL, with a dedicated gossip MessageChannel whose
-// worker end is transferred via a sentinel init postMessage (the browser Worker
-// ctor has no transferList). The host peels that init off its first message.
+// Spawn a module worker; its gossip port is transferred via a sentinel init message
+// (the browser Worker ctor has no transferList). The host peels it off its first message.
 export function createWorkerClientTransport(entry: {
     url: URL;
 }): WorkerClientTransport {
@@ -54,8 +53,7 @@ export function createWorkerClientTransport(entry: {
     };
 }
 
-// The browser host entry peels the transferred gossip port off the first message,
-// then passes it here. RPC rides globalThis.onmessage/postMessage.
+// Host entry peels the gossip port off its first message and passes it here.
 export function createWorkerHostTransport(
     gossipPort: MessagePort
 ): WorkerHostTransport {

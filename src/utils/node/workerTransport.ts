@@ -6,9 +6,8 @@ import type {
     WorkerResult
 } from "@/utils/worker/types";
 
-// Spawn a worker from a script directory + basename (the .js/.ts + ts-node
-// resolution mirrors the prior ContractExecutor runtime), with a dedicated gossip
-// MessageChannel whose worker end is transferred via workerData.
+// Spawn a worker from dir + basename (.js/.ts + ts-node resolution mirrors the prior
+// runtime); its gossip port is transferred via workerData.
 export function createWorkerClientTransport(entry: {
     dir: string;
     basename: string;
