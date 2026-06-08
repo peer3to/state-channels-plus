@@ -9,6 +9,7 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs").promises;
 const path = require("path");
+const { decodeLogs, buildAppendLines, parseLastSeq } = require("./logStitch");
 
 const PORT = process.env.CRASH_LOG_SERVER_PORT || 3001;
 const LOG_DIR =
@@ -16,6 +17,8 @@ const LOG_DIR =
 
 const app = express();
 const channelDirCache = new Map();
+// lastWrittenSeq per "<channel>/<peer>/<thread>" file path.
+const fileSeqCache = new Map();
 let uploadInFlight = 0;
 let uploadRequestSeq = 0;
 
@@ -225,43 +228,65 @@ app.use("/logs/upload", (req, res, next) => {
 app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
     try {
         const meta = getRequestMeta(req);
-        const parseDoneMs = meta ? Date.now() - meta.startedAt : -1;
-        const { channelId, peerAddress, compressedLogs } = req.body || {};
+        const { channelId, peerAddress, threadName, compressedLogs, fromSeq } =
+            req.body || {};
 
         if (meta && meta.uploadId) {
             res.setHeader("x-upload-id", meta.uploadId);
         }
 
-        if (!channelId || !peerAddress || !compressedLogs) {
+        if (
+            !channelId ||
+            !peerAddress ||
+            !compressedLogs ||
+            typeof fromSeq !== "number"
+        ) {
             console.warn(
-                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} missing required fields channelId=${Boolean(channelId)} peerAddress=${Boolean(peerAddress)} compressedLogs=${Boolean(compressedLogs)}`
+                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: missing fields channelId=${Boolean(channelId)} peerAddress=${Boolean(peerAddress)} compressedLogs=${Boolean(compressedLogs)} fromSeq=${typeof fromSeq}`
             );
-            res.status(400).json({
-                error: "Incorrect request data"
-            });
+            res.status(400).json({ error: "Incorrect request data" });
             return;
         }
 
         const payloadBytes = Buffer.byteLength(String(compressedLogs), "utf8");
-        const resolveStartedAt = Date.now();
 
-        const { dir: channelDir, timestamp } = await resolveChannelDir(
-            channelId,
-            { rotateIfOld: true }
-        );
-        const resolveMs = Date.now() - resolveStartedAt;
+        const safeChannel = sanitizeSegment(channelId);
         const safePeer = sanitizeSegment(peerAddress);
-        const filename = `${safePeer}`;
-        const filepath = path.join(channelDir, filename);
+        const safeThread = sanitizeSegment(threadName || "sdk");
+        const peerDir = path.join(LOG_DIR, safeChannel, safePeer);
+        await fs.mkdir(peerDir, { recursive: true });
+        const filename = `${safeThread}.ndjson`;
+        const filepath = path.join(peerDir, filename);
+
+        // Recover lastWrittenSeq (in-memory, or by reading the file once).
+        let lastWrittenSeq = fileSeqCache.get(filepath);
+        if (lastWrittenSeq === undefined) {
+            let existing = "";
+            try {
+                existing = await fs.readFile(filepath, "utf8");
+            } catch {
+                existing = "";
+            }
+            lastWrittenSeq = parseLastSeq(existing);
+        }
+
+        const entries = decodeLogs(compressedLogs);
+        const { lines, newLastSeq, gap } = buildAppendLines(
+            entries,
+            fromSeq,
+            lastWrittenSeq
+        );
 
         const writeStartedAt = Date.now();
-
-        await fs.writeFile(filepath, compressedLogs, "utf8");
-
+        if (lines.length > 0) {
+            await fs.appendFile(filepath, lines.join("\n") + "\n", "utf8");
+            fileSeqCache.set(filepath, newLastSeq);
+        }
         const writeMs = Date.now() - writeStartedAt;
+        const timestamp = formatTimestamp();
 
         console.log(
-            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} payloadBytes=${payloadBytes} parseMs=${parseDoneMs} resolveDirMs=${resolveMs} writeMs=${writeMs} timestamp=${timestamp}`
+            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} thread=${safeThread} appended=${lines.length} gap=${gap ? `[${gap[0]},${gap[1]}]` : "none"} lastSeq=${newLastSeq} payloadBytes=${payloadBytes} writeMs=${writeMs} timestamp=${timestamp}`
         );
 
         res.status(200).json({
@@ -269,7 +294,8 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
             uploadId: meta && meta.uploadId ? meta.uploadId : null,
             channelId,
             peerAddress,
-            filename
+            filename,
+            lastSeq: newLastSeq
         });
     } catch (err) {
         console.error("[CrashLogServer] Upload failed:", err);
@@ -370,7 +396,11 @@ async function start() {
     });
 }
 
-start().catch((err) => {
-    console.error("[CrashLogServer] Failed to start:", err);
-    process.exit(1);
-});
+if (require.main === module) {
+    start().catch((err) => {
+        console.error("[CrashLogServer] Failed to start:", err);
+        process.exit(1);
+    });
+}
+
+module.exports = { app, start };
