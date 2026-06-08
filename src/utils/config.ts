@@ -20,6 +20,7 @@ export type Config = {
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
     CRASH_LOG_MAX_SIZE_MB: number;
+    CRASH_LOG_FLUSH_MIN_INTERVAL_MS: number;
 };
 
 const DEFAULT_CONFIG: Config = {
@@ -41,7 +42,8 @@ const DEFAULT_CONFIG: Config = {
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
-    CRASH_LOG_MAX_SIZE_MB: 10
+    CRASH_LOG_MAX_SIZE_MB: 10,
+    CRASH_LOG_FLUSH_MIN_INTERVAL_MS: 2000
 };
 
 export function isNodeRuntime() {
