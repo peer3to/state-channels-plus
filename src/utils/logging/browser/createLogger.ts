@@ -22,7 +22,8 @@ export const createLogger = (
         options.logUploaderConfig ||
         ({
             uploadEndpoint: config.CRASH_LOG_UPLOAD_ENDPOINT,
-            apiToken: config.CRASH_LOG_API_TOKEN || ""
+            apiToken: config.CRASH_LOG_API_TOKEN || "",
+            flushMinIntervalMs: config.CRASH_LOG_FLUSH_MIN_INTERVAL_MS
         } as LogUploaderConfig);
 
     // Store-enable follows the EFFECTIVE endpoint (injected recipe or global),

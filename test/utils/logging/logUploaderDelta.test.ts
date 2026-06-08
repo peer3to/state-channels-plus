@@ -21,7 +21,11 @@ function entry(message: string): LogEntry {
 function makeUploader(store: LogStore) {
     return new NodeLogUploader(
         store,
-        { uploadEndpoint: "http://localhost:9/logs/upload", apiToken: "" },
+        {
+            uploadEndpoint: "http://localhost:9/logs/upload",
+            apiToken: "",
+            flushMinIntervalMs: 0
+        },
         {},
         {
             peerAddress: "0x1111111111111111111111111111111111111111" as any,

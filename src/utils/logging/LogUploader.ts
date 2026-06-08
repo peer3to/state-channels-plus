@@ -22,12 +22,15 @@ export type LogUploaderOptions = {
 export type LogUploaderConfig = {
     uploadEndpoint: string;
     apiToken?: string;
+    flushMinIntervalMs?: number;
 };
 
 export abstract class LogUploader {
     protected logger?: Logger;
     private destroyed = false;
     private lastUploadedSeq = -1;
+    private lastUploadAt = -Infinity;
+    private trailingTimer?: ReturnType<typeof setTimeout>;
 
     constructor(
         protected readonly logStore: LogStore,
@@ -72,8 +75,29 @@ export abstract class LogUploader {
 
     public async uploadLogs(
         _unhandledError?: Error,
-        _isUserInitiated = false
+        isUserInitiated = false
     ): Promise<void> {
+        if (!this.isEnabled()) return;
+        if (isUserInitiated) {
+            await this.doUpload();
+            return;
+        }
+        const interval = this.config.flushMinIntervalMs ?? 2000;
+        const elapsed = Date.now() - this.lastUploadAt;
+        if (elapsed >= interval) {
+            await this.doUpload();
+            return;
+        }
+        // Within the window: ensure exactly one trailing upload at the boundary.
+        if (!this.trailingTimer) {
+            this.trailingTimer = setTimeout(() => {
+                this.trailingTimer = undefined;
+                void this.doUpload();
+            }, interval - elapsed);
+        }
+    }
+
+    private async doUpload(): Promise<void> {
         if (!this.isEnabled()) return;
 
         const { entries, fromSeq, toSeq } = this.logStore.getLogsSince(
@@ -138,6 +162,7 @@ export abstract class LogUploader {
             // Advance the watermark ONLY on success; failures merge into the
             // next delta.
             this.lastUploadedSeq = toSeq;
+            this.lastUploadAt = Date.now();
             console.trace(
                 `Logs uploaded. uploadId=${uploadId} responseUploadId=${response.headers?.["x-upload-id"] || "N/A"} seq=[${fromSeq}..${toSeq}]`
             );
@@ -162,6 +187,10 @@ export abstract class LogUploader {
         // console.trace("Destroying LogUploader");
 
         this.destroyed = true;
+        if (this.trailingTimer) {
+            clearTimeout(this.trailingTimer);
+            this.trailingTimer = undefined;
+        }
         this.detachListeners();
     }
 }
