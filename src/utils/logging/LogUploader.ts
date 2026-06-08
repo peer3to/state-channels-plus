@@ -8,7 +8,6 @@ import {
 } from "./Logger";
 import { ethers } from "ethers";
 import { retry } from "../retry";
-import { sleep } from "..";
 import {
     getAxiosFailureSummary,
     getAxiosRetrySummary,
@@ -28,7 +27,7 @@ export type LogUploaderConfig = {
 export abstract class LogUploader {
     protected logger?: Logger;
     private destroyed = false;
-    private uploadInitiated = false;
+    private lastUploadedSeq = -1;
 
     constructor(
         protected readonly logStore: LogStore,
@@ -72,50 +71,41 @@ export abstract class LogUploader {
     }
 
     public async uploadLogs(
-        unhandledError?: Error,
-        isUserInitiated = false
+        _unhandledError?: Error,
+        _isUserInitiated = false
     ): Promise<void> {
-        // TODO - use the above arguments
-        let rawLogsSize;
-        let compressedLogsSize;
+        if (!this.isEnabled()) return;
+
+        const { entries, fromSeq, toSeq } = this.logStore.getLogsSince(
+            this.lastUploadedSeq
+        );
+        if (entries.length === 0) return; // nothing new
+
+        const channelId = this.sharedContext.channelId || ethers.ZeroHash;
+        const peerAddress =
+            this.sharedContext.peerAddress || ethers.ZeroAddress;
+        const threadName = this.sharedContext.threadName;
+        if (!channelId || !peerAddress) return;
+
         const uploadStartedAt = Date.now();
+        const serializedLogs = encodeLogs(entries);
+        const rawLogsSize = serializedLogs.length * 2;
+        const compressedLogs = compressToBase64(serializedLogs);
+        const compressedLogsSize = compressedLogs.length * 2;
+
+        const headers: Record<string, string> = {
+            "Content-Type": "application/json"
+        };
+        if (this.config.apiToken) {
+            headers["Authorization"] = `Bearer ${this.config.apiToken}`;
+        }
+        const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        headers["x-upload-id"] = uploadId;
+        console.trace(
+            `Log uploading started. uploadId=${uploadId} channelId=${channelId} peerAddress=${peerAddress} seq=[${fromSeq}..${toSeq}] Raw: ${rawLogsSize / 1e6}MB, Compressed: ${compressedLogsSize / 1e6}MB.`
+        );
+
         try {
-            if (!this.isEnabled()) return;
-
-            // Random jitter (0-3s) to spread upload bursts
-            const jitterMs = Math.floor(Math.random() * 3000);
-            if (this.uploadInitiated) return;
-            this.uploadInitiated = true;
-            await sleep(jitterMs);
-            this.uploadInitiated = false;
-
-            const storedLogs = this.logStore.getAllLogs();
-            const channelId = this.sharedContext.channelId || ethers.ZeroHash;
-            const peerAddress =
-                this.sharedContext.peerAddress || ethers.ZeroAddress;
-            const threadName = this.sharedContext.threadName;
-
-            if (!channelId || !peerAddress) {
-                return; // ignore
-            }
-
-            // Generate plain log and compress before upload
-            const serializedLogs = encodeLogs(storedLogs);
-            rawLogsSize = serializedLogs.length * 2;
-            const compressedLogs = compressToBase64(serializedLogs);
-            compressedLogsSize = compressedLogs.length * 2;
-
-            const headers: Record<string, string> = {
-                "Content-Type": "application/json"
-            };
-            if (this.config.apiToken) {
-                headers["Authorization"] = `Bearer ${this.config.apiToken}`;
-            }
-            const uploadId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-            headers["x-upload-id"] = uploadId;
-            console.trace(
-                `Log uploading started. uploadId=${uploadId} channelId=${channelId} peerAddress=${peerAddress} Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
-            );
             const response = await retry(
                 async () =>
                     axios.post(
@@ -124,7 +114,9 @@ export abstract class LogUploader {
                             channelId,
                             peerAddress,
                             threadName,
-                            compressedLogs
+                            compressedLogs,
+                            fromSeq,
+                            toSeq
                         },
                         {
                             headers,
@@ -137,57 +129,28 @@ export abstract class LogUploader {
                     delayMs: 1000,
                     onRetry: (attempt, error) => {
                         const { code, status } = getAxiosRetrySummary(error);
-                        const networkSnapshot = this.getSyncNetworkSnapshot(
-                            this.config.uploadEndpoint,
-                            error
-                        );
                         console.warn(
                             `Log upload retrying. uploadId=${uploadId} attempt=${attempt + 1} code=${code || "N/A"} status=${status || "N/A"}`
-                        );
-                        console.warn(
-                            `Log upload retry diagnostics. uploadId=${uploadId}`,
-                            networkSnapshot
                         );
                     }
                 }
             );
+            // Advance the watermark ONLY on success; failures merge into the
+            // next delta.
+            this.lastUploadedSeq = toSeq;
             console.trace(
-                `Logs uploaded successfully. uploadId=${uploadId} responseUploadId=${response.headers?.["x-upload-id"] || "N/A"} channelId=${channelId} peerAddress=${peerAddress} Raw size: ${rawLogsSize / 1e6}MB, Compressed size: ${compressedLogsSize / 1e6}MB.`
+                `Logs uploaded. uploadId=${uploadId} responseUploadId=${response.headers?.["x-upload-id"] || "N/A"} seq=[${fromSeq}..${toSeq}]`
             );
-            // don't clear logs, since if multiple uploads are started, only the first will have the logs
         } catch (uploadError) {
             sanitizeAxiosErrorForLogging(uploadError);
-
-            const {
-                code,
-                status,
-                statusText,
-                timeout,
-                requestUploadId,
-                responseUploadId
-            } = getAxiosFailureSummary(uploadError);
+            const { code, status, statusText, timeout } =
+                getAxiosFailureSummary(uploadError);
             const elapsedMs = Date.now() - uploadStartedAt;
-            const networkSnapshot = this.getSyncNetworkSnapshot(
-                this.config.uploadEndpoint,
-                uploadError
-            );
-            const dnsSnapshot = await this.getDnsLookupSnapshot(
-                this.config.uploadEndpoint
-            );
-
             console.error(
-                `Log upload failed: requestUploadId=${requestUploadId || "N/A"} responseUploadId=${responseUploadId || "N/A"} channelId=${this.sharedContext.channelId || ethers.ZeroHash} peerAddress=${this.sharedContext.peerAddress || ethers.ZeroAddress} Raw size: ${rawLogsSize ? rawLogsSize / 1e6 : "N/A"}MB, Compressed size: ${compressedLogsSize ? compressedLogsSize / 1e6 : "N/A"}MB - endpoint: ${this.config.uploadEndpoint}\n Error: ${String(uploadError)}\n`,
-                {
-                    code,
-                    status,
-                    statusText,
-                    timeout,
-                    elapsedMs,
-                    networkSnapshot,
-                    dnsSnapshot
-                }
+                `Log upload failed: uploadId=${uploadId} channelId=${channelId} peerAddress=${peerAddress} seq=[${fromSeq}..${toSeq}] endpoint=${this.config.uploadEndpoint}\n Error: ${String(uploadError)}\n`,
+                { code, status, statusText, timeout, elapsedMs }
             );
-            // Swallow the error — uploads are best-effort and must not block test teardown
+            // Swallow — uploads are best-effort and must not block teardown.
         }
     }
 
