@@ -29,8 +29,11 @@ export async function createContractExecutorFactory(
 
         return new InlineContractExecutor(evm, logger);
     }
-    return WorkerContractExecutor.create(
+    const workerExecutor = await WorkerContractExecutor.create(
         options.customPrecompiles,
         options.logger?.toSerializableConfig({ threadName: "evm" })
     );
+    // Single site that builds the worker, so attach the logger's gossip edge here.
+    if (options.logger) workerExecutor.attachLogger(options.logger);
+    return workerExecutor;
 }

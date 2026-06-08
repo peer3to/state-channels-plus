@@ -378,8 +378,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             logger
         });
 
-        contractExecutor.attachLogger(logger); // no-op unless it's a worker executor
-
         const localSigner = new LocalDiamondSigner(signer, contractExecutor);
 
         const stateMachineAddress = await deployStateMachine(localSigner);
