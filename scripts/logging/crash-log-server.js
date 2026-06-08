@@ -278,7 +278,7 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
         }
 
         const entries = decodeLogs(compressedLogs);
-        const { lines, newLastSeq, gap } = buildAppendLines(
+        const { lines, newLastSeq } = buildAppendLines(
             entries,
             fromSeq,
             lastWrittenSeq
@@ -293,7 +293,7 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
         const timestamp = formatTimestamp();
 
         console.log(
-            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} thread=${safeThread} appended=${lines.length} gap=${gap ? `[${gap[0]},${gap[1]}]` : "none"} lastSeq=${newLastSeq} payloadBytes=${payloadBytes} writeMs=${writeMs} timestamp=${timestamp}`
+            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} thread=${safeThread} appended=${lines.length} lastSeq=${newLastSeq} payloadBytes=${payloadBytes} writeMs=${writeMs} timestamp=${timestamp}`
         );
 
         res.status(200).json({

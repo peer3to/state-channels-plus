@@ -75,6 +75,8 @@ export abstract class LogUploader {
         return Promise.resolve(undefined);
     }
 
+    // POST-side throttle, separate from Logger.error()'s gossip throttle: that bounds
+    // fan-out per originating thread; this bounds POSTs on the shared receiving uploader.
     public async uploadLogs(
         _unhandledError?: Error,
         isUserInitiated = false

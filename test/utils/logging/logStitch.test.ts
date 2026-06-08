@@ -18,12 +18,11 @@ const e = (m: string) => ({
 
 describe("logStitch.buildAppendLines", () => {
     it("appends new entries with seq prefixes from a fresh file", () => {
-        const { lines, newLastSeq, gap } = buildAppendLines(
+        const { lines, newLastSeq } = buildAppendLines(
             [e("a"), e("b")],
             0, // fromSeq
             -1 // lastWrittenSeq (empty file)
         );
-        expect(gap).to.equal(null);
         expect(newLastSeq).to.equal(1);
         expect(lines.map((l: string) => JSON.parse(l).seq)).to.deep.equal([
             0, 1
@@ -41,21 +40,20 @@ describe("logStitch.buildAppendLines", () => {
         expect(lines.map((l: string) => JSON.parse(l).seq)).to.deep.equal([2]);
     });
 
-    it("writes a gap marker when fromSeq jumps past lastWrittenSeq+1", () => {
-        const { lines, newLastSeq, gap } = buildAppendLines(
+    it("does not materialize a gap marker when fromSeq jumps past lastWrittenSeq+1", () => {
+        const { lines, newLastSeq } = buildAppendLines(
             [e("x")],
             16, // fromSeq
             7 // lastWrittenSeq → 8..15 missing
         );
-        expect(gap).to.deep.equal([8, 15]);
-        expect(JSON.parse(lines[0]).gap).to.deep.equal([8, 15]);
-        expect(JSON.parse(lines[1]).seq).to.equal(16);
+        expect(lines.length).to.equal(1);
+        expect(JSON.parse(lines[0]).seq).to.equal(16);
+        expect(JSON.parse(lines[0]).gap).to.equal(undefined);
         expect(newLastSeq).to.equal(16);
     });
 
     it("parseLastSeq reads the seq of the last seq-bearing NDJSON line", () => {
-        const ndjson =
-            '{"seq":0,"message":"a"}\n{"gap":[1,2]}\n{"seq":3,"message":"b"}\n';
+        const ndjson = '{"seq":0,"message":"a"}\n\n{"seq":3,"message":"b"}\n';
         expect(parseLastSeq(ndjson)).to.equal(3);
         expect(parseLastSeq("")).to.equal(-1);
     });
