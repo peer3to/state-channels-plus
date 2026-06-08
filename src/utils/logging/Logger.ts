@@ -5,6 +5,7 @@ import type { LogStore } from "./logStore";
 import { LoggerUtils } from "../LoggerUtils";
 import { DetachedPromises } from "../DetachedPromises";
 import type { GossipNode } from "@/utils/GossipNode";
+import { config } from "@/utils/config";
 
 // The context exclusive to each logger
 export type ExclusiveLoggerContext = {
@@ -22,7 +23,7 @@ export type SharedLoggerContext = {
 
 // Cross-thread ops every logger applies to its own state; carried opaquely by GossipNode.
 export type LoggerOp =
-    | { type: "flush" }
+    | { type: "flush"; userInitiated?: boolean }
     | { type: "updateContext"; context: SharedLoggerContext };
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "verbose";
@@ -70,6 +71,7 @@ export abstract class Logger {
     protected readonly children: Set<Logger> = new Set();
     private node?: GossipNode;
     private destroyed = false;
+    private lastErrorFlushAt = -Infinity;
     private performanceMonitorStop?: () => void;
 
     constructor(
@@ -132,7 +134,10 @@ export abstract class Logger {
     public applyOp(op: LoggerOp): Promise<void> | undefined {
         switch (op.type) {
             case "flush":
-                return this.logUploader?.uploadLogs();
+                return this.logUploader?.uploadLogs(
+                    undefined,
+                    op.userInitiated ?? false
+                );
             case "updateContext":
                 Object.assign(this.sharedContext, op.context);
                 return;
@@ -206,10 +211,14 @@ export abstract class Logger {
     }
     public error(message: any, ...meta: any[]): void {
         this.log("error", message, meta);
-        // Flush only this thread's own store — NO cross-thread gossip (error() has
-        // 60+ call sites; fanning out would re-upload every thread on every error).
-        // The report-bug path (uploadLogs) is what pulls all threads.
-        const promise = this.applyOp({ type: "flush" });
+        // Restored cross-thread fan-out: an error() now flushes ALL threads so
+        // report-bug captures a stuck-but-not-crashed worker. Throttled per
+        // logger so an error storm can't flood the gossip tree or the uploader.
+        const interval = config.CRASH_LOG_FLUSH_MIN_INTERVAL_MS;
+        const now = Date.now();
+        if (now - this.lastErrorFlushAt < interval) return;
+        this.lastErrorFlushAt = now;
+        const promise = this.originate({ type: "flush" });
         if (promise) DetachedPromises.collect(promise);
     }
     public verbose(message: any, ...meta: any[]): void {
@@ -229,7 +238,7 @@ export abstract class Logger {
         }
         const localTime = new Date().getTime() / 1000;
         this.warn(message, ...meta, localTime);
-        await this.originate({ type: "flush" });
+        await this.originate({ type: "flush", userInitiated: true });
     }
 
     // Apply an op locally AND gossip it to the rest of the tree; returns the flush promise.
