@@ -83,4 +83,43 @@ describe("LogUploader throttle", () => {
         await uploader.uploadLogs(undefined, true); // bypass → immediate
         expect(postStub.callCount).to.equal(2);
     });
+
+    it("never POSTs two deltas concurrently (single-flight)", async () => {
+        const store = new LogStore(10 * 1024 * 1024, true);
+        const uploader = makeUploader(store, 0); // no throttle window
+
+        // First POST hangs until released; later POSTs resolve at once.
+        let calls = 0;
+        let releaseFirst: (v: any) => void = () => {};
+        postStub.callsFake(() => {
+            calls++;
+            if (calls === 1) {
+                return new Promise((res) => {
+                    releaseFirst = res;
+                });
+            }
+            return Promise.resolve({ headers: {}, data: {} } as any);
+        });
+
+        store.store(entry("a"));
+        const first = uploader.uploadLogs(); // starts doUpload, awaits the hanging POST
+        store.store(entry("b"));
+        // A second trigger (e.g. user-initiated report-bug) while the first is
+        // in flight must NOT launch a concurrent POST.
+        await uploader.uploadLogs(undefined, true);
+        expect(postStub.callCount).to.equal(1);
+
+        releaseFirst({ headers: {}, data: {} });
+        await first;
+
+        // The pending trigger flushed the newer delta only after the first
+        // completed — two sequential POSTs, never overlapping.
+        expect(postStub.callCount).to.equal(2);
+        expect(
+            (postStub.firstCall.args[1] as Record<string, unknown>).toSeq
+        ).to.equal(0);
+        expect(
+            (postStub.secondCall.args[1] as Record<string, unknown>).toSeq
+        ).to.equal(1);
+    });
 });

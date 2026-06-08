@@ -228,8 +228,14 @@ app.use("/logs/upload", (req, res, next) => {
 app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
     try {
         const meta = getRequestMeta(req);
-        const { channelId, peerAddress, threadName, compressedLogs, fromSeq } =
-            req.body || {};
+        const {
+            channelId,
+            peerAddress,
+            threadName,
+            compressedLogs,
+            fromSeq,
+            toSeq
+        } = req.body || {};
 
         if (meta && meta.uploadId) {
             res.setHeader("x-upload-id", meta.uploadId);
@@ -239,10 +245,11 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
             !channelId ||
             !peerAddress ||
             !compressedLogs ||
-            typeof fromSeq !== "number"
+            typeof fromSeq !== "number" ||
+            typeof toSeq !== "number"
         ) {
             console.warn(
-                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: missing fields channelId=${Boolean(channelId)} peerAddress=${Boolean(peerAddress)} compressedLogs=${Boolean(compressedLogs)} fromSeq=${typeof fromSeq}`
+                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: missing fields channelId=${Boolean(channelId)} peerAddress=${Boolean(peerAddress)} compressedLogs=${Boolean(compressedLogs)} fromSeq=${typeof fromSeq} toSeq=${typeof toSeq}`
             );
             res.status(400).json({ error: "Incorrect request data" });
             return;

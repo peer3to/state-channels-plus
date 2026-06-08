@@ -31,6 +31,8 @@ export abstract class LogUploader {
     private lastUploadedSeq = -1;
     private lastUploadAt = -Infinity;
     private trailingTimer?: ReturnType<typeof setTimeout>;
+    private uploading = false;
+    private pendingUpload = false;
 
     constructor(
         protected readonly logStore: LogStore,
@@ -100,16 +102,44 @@ export abstract class LogUploader {
     private async doUpload(): Promise<void> {
         if (!this.isEnabled()) return;
 
+        // Single-flight: never POST two deltas concurrently (they'd send the
+        // same range twice). A trigger arriving mid-flight sets a pending flag,
+        // and the in-flight loop re-sends the newly accumulated delta before
+        // releasing — so nothing is lost and nothing overlaps.
+        if (this.uploading) {
+            this.pendingUpload = true;
+            return;
+        }
+        this.uploading = true;
+        try {
+            do {
+                this.pendingUpload = false;
+                const sent = await this.postDelta();
+                if (!sent) break; // nothing new, or POST failed — a later trigger retries
+            } while (this.pendingUpload);
+        } catch (err) {
+            // postDelta swallows POST errors; this guards encode/compress so a
+            // fire-and-forget doUpload() (the trailing timer) never rejects.
+            console.error(`Log upload aborted: ${String(err)}`);
+        } finally {
+            this.uploading = false;
+        }
+    }
+
+    // Upload the current delta once. Returns true if a batch was POSTed
+    // successfully (watermark advanced), false if nothing was new or the POST
+    // failed (the watermark holds so the entries merge into the next delta).
+    private async postDelta(): Promise<boolean> {
         const { entries, fromSeq, toSeq } = this.logStore.getLogsSince(
             this.lastUploadedSeq
         );
-        if (entries.length === 0) return; // nothing new
+        if (entries.length === 0) return false; // nothing new
 
         const channelId = this.sharedContext.channelId || ethers.ZeroHash;
         const peerAddress =
             this.sharedContext.peerAddress || ethers.ZeroAddress;
         const threadName = this.sharedContext.threadName;
-        if (!channelId || !peerAddress) return;
+        if (!channelId || !peerAddress) return false;
 
         const uploadStartedAt = Date.now();
         const serializedLogs = encodeLogs(entries);
@@ -166,6 +196,7 @@ export abstract class LogUploader {
             console.trace(
                 `Logs uploaded. uploadId=${uploadId} responseUploadId=${response.headers?.["x-upload-id"] || "N/A"} seq=[${fromSeq}..${toSeq}]`
             );
+            return true;
         } catch (uploadError) {
             sanitizeAxiosErrorForLogging(uploadError);
             const { code, status, statusText, timeout } =
@@ -176,6 +207,7 @@ export abstract class LogUploader {
                 { code, status, statusText, timeout, elapsedMs }
             );
             // Swallow — uploads are best-effort and must not block teardown.
+            return false;
         }
     }
 
