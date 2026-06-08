@@ -211,9 +211,7 @@ export abstract class Logger {
     }
     public error(message: any, ...meta: any[]): void {
         this.log("error", message, meta);
-        // Restored cross-thread fan-out: an error() now flushes ALL threads so
-        // report-bug captures a stuck-but-not-crashed worker. Throttled per
-        // logger so an error storm can't flood the gossip tree or the uploader.
+        // flush all threads (stuck-worker capture), throttled so a storm can't flood gossip/HTTP
         const interval = config.CRASH_LOG_FLUSH_MIN_INTERVAL_MS;
         const now = Date.now();
         if (now - this.lastErrorFlushAt < interval) return;

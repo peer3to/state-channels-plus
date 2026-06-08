@@ -265,7 +265,7 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
         const filename = `${safeThread}.ndjson`;
         const filepath = path.join(peerDir, filename);
 
-        // Recover lastWrittenSeq (in-memory, or by reading the file once).
+        // lastWrittenSeq: cached, else read once from the file
         let lastWrittenSeq = fileSeqCache.get(filepath);
         if (lastWrittenSeq === undefined) {
             let existing = "";

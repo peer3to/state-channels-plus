@@ -90,7 +90,7 @@ export abstract class LogUploader {
             await this.doUpload();
             return;
         }
-        // Within the window: ensure exactly one trailing upload at the boundary.
+        // within window: schedule one trailing upload at the boundary
         if (!this.trailingTimer) {
             this.trailingTimer = setTimeout(() => {
                 this.trailingTimer = undefined;
@@ -102,10 +102,7 @@ export abstract class LogUploader {
     private async doUpload(): Promise<void> {
         if (!this.isEnabled()) return;
 
-        // Single-flight: never POST two deltas concurrently (they'd send the
-        // same range twice). A trigger arriving mid-flight sets a pending flag,
-        // and the in-flight loop re-sends the newly accumulated delta before
-        // releasing — so nothing is lost and nothing overlaps.
+        // single-flight: a mid-flight trigger sets pendingUpload; the loop re-sends after
         if (this.uploading) {
             this.pendingUpload = true;
             return;
@@ -115,20 +112,17 @@ export abstract class LogUploader {
             do {
                 this.pendingUpload = false;
                 const sent = await this.postDelta();
-                if (!sent) break; // nothing new, or POST failed — a later trigger retries
+                if (!sent) break; // nothing new or POST failed
             } while (this.pendingUpload);
         } catch (err) {
-            // postDelta swallows POST errors; this guards encode/compress so a
-            // fire-and-forget doUpload() (the trailing timer) never rejects.
+            // guard encode/compress throws so the fire-and-forget timer never rejects
             console.error(`Log upload aborted: ${String(err)}`);
         } finally {
             this.uploading = false;
         }
     }
 
-    // Upload the current delta once. Returns true if a batch was POSTed
-    // successfully (watermark advanced), false if nothing was new or the POST
-    // failed (the watermark holds so the entries merge into the next delta).
+    // Upload the delta once; true if POSTed (watermark advanced), false if empty/failed.
     private async postDelta(): Promise<boolean> {
         const { entries, fromSeq, toSeq } = this.logStore.getLogsSince(
             this.lastUploadedSeq
@@ -189,8 +183,7 @@ export abstract class LogUploader {
                     }
                 }
             );
-            // Advance the watermark ONLY on success; failures merge into the
-            // next delta.
+            // advance watermark only on success; failures merge into the next delta
             this.lastUploadedSeq = toSeq;
             this.lastUploadAt = Date.now();
             console.trace(
@@ -206,7 +199,7 @@ export abstract class LogUploader {
                 `Log upload failed: uploadId=${uploadId} channelId=${channelId} peerAddress=${peerAddress} seq=[${fromSeq}..${toSeq}] endpoint=${this.config.uploadEndpoint}\n Error: ${String(uploadError)}\n`,
                 { code, status, statusText, timeout, elapsedMs }
             );
-            // Swallow — uploads are best-effort and must not block teardown.
+            // best-effort; swallow so it can't block teardown
             return false;
         }
     }
@@ -215,9 +208,6 @@ export abstract class LogUploader {
         if (this.destroyed) {
             return;
         }
-
-        // console.trace("Destroying LogUploader");
-
         this.destroyed = true;
         if (this.trailingTimer) {
             clearTimeout(this.trailingTimer);

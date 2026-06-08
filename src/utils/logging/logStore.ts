@@ -26,7 +26,7 @@ export class LogStore {
         });
         this.currentSize += entrySize;
 
-        // Maintain circular buffer (evicts oldest seqs from the front)
+        // circular buffer: evict oldest from the front
         while (this.currentSize > this.maxSize && this.logs.length > 0) {
             const removed = this.logs.shift();
             if (removed) {
@@ -35,9 +35,7 @@ export class LogStore {
         }
     }
 
-    // Entries with seq > sinceSeq. Buffer is always a contiguous seq run, so
-    // fromSeq is the oldest retained seq past the cursor (a fromSeq jump past
-    // sinceSeq+1 means eviction outran the cursor — acceptable loss).
+    // Delta after sinceSeq; fromSeq jumping past sinceSeq+1 = eviction outran the cursor (lossy).
     getLogsSince(sinceSeq: number): {
         entries: LogEntry[];
         fromSeq: number;
