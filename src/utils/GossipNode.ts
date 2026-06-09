@@ -10,10 +10,15 @@ export type Neighbour = {
 export class GossipNode {
     // neighbour → its unsubscribe, so removal can un-wire the inbound listener.
     private readonly neighbours = new Map<Neighbour, () => void>();
-    private readonly onLocal?: (msg: unknown) => void;
+    private onLocal?: (msg: unknown) => void;
 
     // `onLocal` interprets messages reaching this node (e.g. Logger.applyOp); optional for a pure relay.
     constructor(onLocal?: (msg: unknown) => void) {
+        this.onLocal = onLocal;
+    }
+
+    // Point local delivery at the thread's one root logger (a node may be shared across edges).
+    setLocalHandler(onLocal: (msg: unknown) => void): void {
         this.onLocal = onLocal;
     }
 

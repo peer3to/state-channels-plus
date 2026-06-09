@@ -6,7 +6,7 @@ import type {
     WorkerClientTransport,
     WorkerHostTransport
 } from "@/utils/worker/types";
-import type { Neighbour } from "@/utils/GossipNode";
+import { GossipNode, type Neighbour } from "@/utils/GossipNode";
 import { createLogger } from "@/utils";
 import { LogUploader } from "@/utils/logging/LogUploader";
 import { LogStore } from "@/utils/logging/logStore";
@@ -82,6 +82,18 @@ class DoublingHost extends AWorkerHost<number, number> {
         return n * 2;
     }
 }
+
+// A host that exposes attachLogger to the test and forwards an injected shared node.
+class AttachableHost extends AWorkerHost<number, number> {
+    protected async handle(n: number): Promise<number> {
+        return n;
+    }
+    attachForTest(logger: unknown): void {
+        this.attachLogger(logger as any);
+    }
+}
+
+const yieldGossip = () => new Promise((r) => setTimeout(r, 30));
 
 describe("worker base", function () {
     it("request round-trips through the host's handle", async function () {
@@ -179,5 +191,94 @@ describe("worker base", function () {
         expect(worker.uploader.uploadCount).to.equal(1); // flushed its own store
         expect(main.uploader.uploadCount).to.equal(1); // cascaded to main
         await client.dispose();
+    });
+
+    // Star M → {W1, W2}: one node shared across two clients fans main's flush to both,
+    // and relays a worker's flush to main + the sibling (skip-sender), never to itself.
+    it("a shared node fans a main flush to both workers and relays worker→worker", async function () {
+        const a = connectInProcess();
+        const b = connectInProcess();
+
+        const gMain = new GossipNode();
+        const client1 = new WorkerClient<number, number>(
+            a.clientTransport,
+            gMain
+        );
+        const client2 = new WorkerClient<number, number>(
+            b.clientTransport,
+            gMain
+        );
+        const host1 = new AttachableHost(a.hostTransport);
+        const host2 = new AttachableHost(b.hostTransport);
+
+        const main = makeRealLogger("main");
+        const w1 = makeRealLogger("w1");
+        const w2 = makeRealLogger("w2");
+        client1.attachLogger(main.logger); // attach root logger to the shared node once
+        host1.attachForTest(w1.logger);
+        host2.attachForTest(w2.logger);
+
+        // main-originated flush fans to BOTH workers (and applies on main).
+        await main.logger.uploadLogs("main report-bug");
+        await yieldGossip();
+        expect(main.uploader.uploadCount, "main applies own flush").to.equal(1);
+        expect(w1.uploader.uploadCount, "fan to w1").to.equal(1);
+        expect(w2.uploader.uploadCount, "fan to w2").to.equal(1);
+
+        // worker1-originated flush relays to main AND to worker2, never back to w1.
+        await w1.logger.uploadLogs("w1 report-bug");
+        await yieldGossip();
+        expect(
+            w1.uploader.uploadCount,
+            "w1 applies own flush, no echo"
+        ).to.equal(2);
+        expect(main.uploader.uploadCount, "relayed up to main").to.equal(2);
+        expect(w2.uploader.uploadCount, "relayed across to w2").to.equal(2);
+
+        await client1.dispose();
+        await client2.dispose();
+        gMain.close();
+    });
+
+    // Line M–A–B: A shares one node across its host (up to M) and client (down to B),
+    // so a flush from either end is applied on A and relayed to the far end, once.
+    it("an intermediate thread relays gossip across a shared node (M–A–B line)", async function () {
+        const ma = connectInProcess(); // M(client) ↔ A(host)
+        const ab = connectInProcess(); // A(client) ↔ B(host)
+
+        const gA = new GossipNode(); // A's single node, shared up + down
+        const hostA = new AttachableHost(ma.hostTransport, gA); // up-edge to M
+        const clientA = new WorkerClient<number, number>(
+            ab.clientTransport,
+            gA
+        ); // down-edge to B
+
+        const clientM = new WorkerClient<number, number>(ma.clientTransport);
+        const hostB = new AttachableHost(ab.hostTransport);
+
+        const M = makeRealLogger("M");
+        const A = makeRealLogger("A");
+        const B = makeRealLogger("B");
+        clientM.attachLogger(M.logger);
+        hostA.attachForTest(A.logger); // sets gA's local handler to A's logger
+        hostB.attachForTest(B.logger);
+
+        // flush from B: applied on A, relayed up to M.
+        await B.logger.uploadLogs("from B");
+        await yieldGossip();
+        expect(B.uploader.uploadCount, "B applies own flush").to.equal(1);
+        expect(A.uploader.uploadCount, "applied on intermediate A").to.equal(1);
+        expect(M.uploader.uploadCount, "relayed up to M").to.equal(1);
+
+        // flush from M: applied on A, relayed down to B.
+        await M.logger.uploadLogs("from M");
+        await yieldGossip();
+        expect(M.uploader.uploadCount, "M applies own flush").to.equal(2);
+        expect(A.uploader.uploadCount, "applied on intermediate A").to.equal(2);
+        expect(B.uploader.uploadCount, "relayed down to B").to.equal(2);
+
+        await clientM.dispose();
+        await clientA.dispose();
+        gA.close();
     });
 });

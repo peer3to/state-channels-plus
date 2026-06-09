@@ -12,16 +12,16 @@ export class WorkerClient<TRequest, TResult> {
     >();
     private readonly transport: WorkerClientTransport;
     private readonly gossip: GossipNode;
-    private logger?: Logger;
+    private readonly ownsGossip: boolean;
     private readonly ready: Promise<void>;
     private resolveReady!: () => void;
     private rejectReady!: (error: Error) => void;
 
-    constructor(transport: WorkerClientTransport) {
+    // `gossip` injected → shared with sibling edges (caller owns lifecycle); omitted → owns a fresh node.
+    constructor(transport: WorkerClientTransport, gossip?: GossipNode) {
         this.transport = transport;
-        this.gossip = new GossipNode((op) =>
-            this.logger?.applyOp(op as LoggerOp)
-        );
+        this.ownsGossip = gossip === undefined;
+        this.gossip = gossip ?? new GossipNode();
         this.gossip.addNeighbour(transport.gossipNeighbour);
         this.ready = new Promise<void>((resolve, reject) => {
             this.resolveReady = resolve;
@@ -40,7 +40,7 @@ export class WorkerClient<TRequest, TResult> {
     }
 
     attachLogger(logger: Logger): void {
-        this.logger = logger;
+        this.gossip.setLocalHandler((op) => logger.applyOp(op as LoggerOp));
         logger.setGossipNode(this.gossip);
     }
 
@@ -65,8 +65,9 @@ export class WorkerClient<TRequest, TResult> {
         const error = new Error("Worker client disposed");
         this.rejectReady(error);
         this.rejectAll(error);
-        // Un-wire the gossip edge before the transport closes the port.
-        this.gossip.close();
+        // Un-wire this edge before the transport closes the port; a shared node stays up for siblings.
+        if (this.ownsGossip) this.gossip.close();
+        else this.gossip.removeNeighbour(this.transport.gossipNeighbour);
         await this.transport.terminate();
     }
 

@@ -7,13 +7,13 @@ import type { WorkerEnvelope, WorkerHostTransport } from "./types";
 export abstract class AWorkerHost<TRequest, TResult> {
     private readonly transport: WorkerHostTransport;
     private readonly gossip: GossipNode;
-    private logger?: Logger;
+    private readonly ownsGossip: boolean;
 
-    constructor(transport: WorkerHostTransport) {
+    // `gossip` injected → shared with sibling edges (caller owns lifecycle); omitted → owns a fresh node.
+    constructor(transport: WorkerHostTransport, gossip?: GossipNode) {
         this.transport = transport;
-        this.gossip = new GossipNode((op) =>
-            this.logger?.applyOp(op as LoggerOp)
-        );
+        this.ownsGossip = gossip === undefined;
+        this.gossip = gossip ?? new GossipNode();
         this.gossip.addNeighbour(transport.gossipNeighbour);
         transport.onMessage((envelope) => {
             void this.dispatch(envelope as WorkerEnvelope<TRequest>);
@@ -23,14 +23,14 @@ export abstract class AWorkerHost<TRequest, TResult> {
 
     // Subclasses call this once their real logger exists (e.g. after init).
     protected attachLogger(logger: Logger): void {
-        this.logger = logger;
+        this.gossip.setLocalHandler((op) => logger.applyOp(op as LoggerOp));
         logger.setGossipNode(this.gossip);
     }
 
-    // Symmetric with the client end; only load-bearing for a reused host (the thread is
-    // otherwise discarded on terminate).
+    // Symmetric with the client end; a shared node stays up for siblings.
     dispose(): void {
-        this.gossip.close();
+        if (this.ownsGossip) this.gossip.close();
+        else this.gossip.removeNeighbour(this.transport.gossipNeighbour);
     }
 
     protected abstract handle(payload: TRequest): Promise<TResult>;
