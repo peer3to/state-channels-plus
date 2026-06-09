@@ -2,20 +2,27 @@ import { expect } from "chai";
 import { GossipNode, type Neighbour } from "@/utils/GossipNode";
 
 // A fake neighbour: records what it was told to post, and lets the test push
-// inbound messages by capturing the subscribe handler.
+// inbound messages by capturing the subscribe handler. Unsubscribe drops the handler
+// (so deliver() no longer reaches) and bumps a count for assertions.
 function fakeNeighbour() {
     const posted: unknown[] = [];
     let handler: ((msg: unknown) => void) | undefined;
+    let unsubscribed = 0;
     const neighbour: Neighbour = {
         post: (msg) => posted.push(msg),
         subscribe: (h) => {
             handler = h;
+            return () => {
+                handler = undefined;
+                unsubscribed++;
+            };
         }
     };
     return {
         neighbour,
         posted,
-        deliver: (msg: unknown) => handler?.(msg)
+        deliver: (msg: unknown) => handler?.(msg),
+        unsubscribedCount: () => unsubscribed
     };
 }
 
@@ -28,12 +35,18 @@ function wire(x: GossipNode, y: GossipNode): void {
         post: (m) => yInbound?.(m),
         subscribe: (h) => {
             xInbound = h;
+            return () => {
+                xInbound = undefined;
+            };
         }
     });
     y.addNeighbour({
         post: (m) => xInbound?.(m),
         subscribe: (h) => {
             yInbound = h;
+            return () => {
+                yInbound = undefined;
+            };
         }
     });
 }
@@ -153,5 +166,61 @@ describe("GossipNode", function () {
         only.deliver({ type: "flush" });
 
         expect(seen).to.deep.equal([{ type: "flush" }]); // delivered once, not twice
+    });
+
+    it("removeNeighbour un-wires inbound and drops the edge from broadcast", function () {
+        const seen: unknown[] = [];
+        const node = new GossipNode((m) => seen.push(m));
+        const a = fakeNeighbour();
+        const b = fakeNeighbour();
+        node.addNeighbour(a.neighbour);
+        node.addNeighbour(b.neighbour);
+
+        node.removeNeighbour(a.neighbour);
+
+        expect(a.unsubscribedCount()).to.equal(1); // unsubscribe ran once
+        a.deliver("gone"); // its handler is un-wired
+        node.broadcast("y");
+
+        expect(seen).to.deep.equal([]); // removed edge no longer delivers locally
+        expect(a.posted).to.deep.equal([]); // nor receives broadcasts
+        expect(b.posted).to.deep.equal(["y"]); // surviving edge still does
+    });
+
+    it("removeNeighbour on an unknown neighbour is a no-op", function () {
+        const node = new GossipNode();
+        const a = fakeNeighbour();
+        node.removeNeighbour(a.neighbour); // never added
+
+        expect(a.unsubscribedCount()).to.equal(0);
+    });
+
+    it("close() unsubscribes every neighbour and leaves the node inert", function () {
+        const node = new GossipNode();
+        const a = fakeNeighbour();
+        const b = fakeNeighbour();
+        node.addNeighbour(a.neighbour);
+        node.addNeighbour(b.neighbour);
+
+        node.close();
+
+        expect(a.unsubscribedCount()).to.equal(1);
+        expect(b.unsubscribedCount()).to.equal(1);
+        node.broadcast("z");
+        expect(a.posted).to.deep.equal([]);
+        expect(b.posted).to.deep.equal([]);
+    });
+
+    it("re-adding after removeNeighbour re-subscribes cleanly", function () {
+        const seen: unknown[] = [];
+        const node = new GossipNode((m) => seen.push(m));
+        const a = fakeNeighbour();
+        node.addNeighbour(a.neighbour);
+        node.removeNeighbour(a.neighbour);
+        node.addNeighbour(a.neighbour); // re-add
+
+        a.deliver("again");
+
+        expect(seen).to.deep.equal(["again"]);
     });
 });

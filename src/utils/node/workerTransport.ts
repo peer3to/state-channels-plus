@@ -49,7 +49,10 @@ export function createWorkerClientTransport(entry: {
     const port1 = gossip.port1;
     const gossipNeighbour: Neighbour = {
         post: (msg) => port1.postMessage(msg),
-        subscribe: (handler) => port1.on("message", handler)
+        subscribe: (handler) => {
+            port1.on("message", handler);
+            return () => port1.off("message", handler);
+        }
     };
 
     return {
@@ -85,7 +88,10 @@ export function createWorkerHostTransport(): WorkerHostTransport {
     ).gossipPort;
     const gossipNeighbour: Neighbour = {
         post: (msg) => gossipPort.postMessage(msg),
-        subscribe: (handler) => gossipPort.on("message", handler)
+        subscribe: (handler) => {
+            gossipPort.on("message", handler);
+            return () => gossipPort.off("message", handler);
+        }
     };
     let messageHandler:
         | ((envelope: WorkerEnvelope<unknown>) => void)

@@ -29,8 +29,11 @@ export function createWorkerClientTransport(entry: {
     const gossipNeighbour: Neighbour = {
         post: (msg) => port1.postMessage(msg),
         subscribe: (handler) => {
-            // assigning .onmessage auto-starts the port and replaces any prior handler
-            port1.onmessage = (event: MessageEvent) => handler(event.data);
+            const listener = (event: MessageEvent) => handler(event.data);
+            // addEventListener (vs onmessage=) is removable; start() is required as it doesn't auto-start.
+            port1.addEventListener("message", listener);
+            port1.start();
+            return () => port1.removeEventListener("message", listener);
         }
     };
 
@@ -58,7 +61,10 @@ export function createWorkerHostTransport(
     const gossipNeighbour: Neighbour = {
         post: (msg) => gossipPort.postMessage(msg),
         subscribe: (handler) => {
-            gossipPort.onmessage = (event: MessageEvent) => handler(event.data);
+            const listener = (event: MessageEvent) => handler(event.data);
+            gossipPort.addEventListener("message", listener);
+            gossipPort.start();
+            return () => gossipPort.removeEventListener("message", listener);
         }
     };
     return {

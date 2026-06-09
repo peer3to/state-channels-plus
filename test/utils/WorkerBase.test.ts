@@ -40,10 +40,14 @@ function makeRealLogger(threadName: string) {
 function portNeighbour(port: {
     postMessage: (m: unknown) => void;
     on: (e: "message", h: (m: unknown) => void) => void;
+    off: (e: "message", h: (m: unknown) => void) => void;
 }): Neighbour {
     return {
         post: (msg) => port.postMessage(msg),
-        subscribe: (handler) => port.on("message", handler)
+        subscribe: (handler) => {
+            port.on("message", handler);
+            return () => port.off("message", handler);
+        }
     };
 }
 

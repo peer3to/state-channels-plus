@@ -164,6 +164,8 @@ export abstract class Logger {
         }
 
         this.logUploader?.destroy();
+        // Drop the borrowed node (owned by WorkerClient/AWorkerHost); never close it here.
+        this.node = undefined;
         this.unlinkAll();
     }
 

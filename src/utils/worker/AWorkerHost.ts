@@ -27,6 +27,12 @@ export abstract class AWorkerHost<TRequest, TResult> {
         logger.setGossipNode(this.gossip);
     }
 
+    // Symmetric with the client end; only load-bearing for a reused host (the thread is
+    // otherwise discarded on terminate).
+    dispose(): void {
+        this.gossip.close();
+    }
+
     protected abstract handle(payload: TRequest): Promise<TResult>;
 
     private async dispatch(envelope: WorkerEnvelope<TRequest>): Promise<void> {

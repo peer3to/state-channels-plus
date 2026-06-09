@@ -65,6 +65,8 @@ export class WorkerClient<TRequest, TResult> {
         const error = new Error("Worker client disposed");
         this.rejectReady(error);
         this.rejectAll(error);
+        // Un-wire the gossip edge before the transport closes the port.
+        this.gossip.close();
         await this.transport.terminate();
     }
 
