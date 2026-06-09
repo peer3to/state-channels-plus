@@ -1,9 +1,8 @@
 import { GossipNode } from "@/utils/GossipNode";
-import type { Logger, LoggerOp } from "@/utils/logging/Logger";
 import type { WorkerClientTransport, WorkerResult } from "./types";
 
 // Main-side base for a worker runtime: ready handshake, requestId/pending
-// correlation, a GossipNode (neighbour = worker's gossip port), logger, dispose.
+// correlation, a GossipNode (neighbour = worker's gossip port), dispose.
 export class WorkerClient<TRequest, TResult> {
     private nextRequestId = 1;
     private readonly pending = new Map<
@@ -39,9 +38,9 @@ export class WorkerClient<TRequest, TResult> {
         });
     }
 
-    attachLogger(logger: Logger): void {
-        this.gossip.setLocalHandler((op) => logger.applyOp(op as LoggerOp));
-        logger.setGossipNode(this.gossip);
+    // Gossip edge to the worker; consumers self-wire (logger.setGossipNode).
+    get gossipNode(): GossipNode {
+        return this.gossip;
     }
 
     // Send a request; awaits the ready handshake first so callers needn't sequence it.

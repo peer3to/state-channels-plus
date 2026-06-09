@@ -83,13 +83,13 @@ class DoublingHost extends AWorkerHost<number, number> {
     }
 }
 
-// A host that exposes attachLogger to the test and forwards an injected shared node.
+// A host that exposes its gossip node so a test logger can self-wire to it.
 class AttachableHost extends AWorkerHost<number, number> {
     protected async handle(n: number): Promise<number> {
         return n;
     }
     attachForTest(logger: unknown): void {
-        this.attachLogger(logger as any);
+        (logger as any).setGossipNode(this.gossipNode);
     }
 }
 
@@ -126,9 +126,10 @@ describe("worker base", function () {
         const applied: unknown[] = [];
         const fakeLogger = {
             applyOp: (op: unknown) => applied.push(op),
-            setGossipNode: () => {}
+            setGossipNode: (node: GossipNode) =>
+                node.setLocalHandler((op) => fakeLogger.applyOp(op))
         } as any;
-        client.attachLogger(fakeLogger);
+        fakeLogger.setGossipNode(client.gossipNode);
 
         // Simulate the worker side posting a gossip op into the dedicated port; it
         // must reach the client logger's applyOp via the client's GossipNode.
@@ -147,14 +148,16 @@ describe("worker base", function () {
                 return n;
             }
             attachForTest(logger: unknown): void {
-                this.attachLogger(logger as any);
+                (logger as any).setGossipNode(this.gossipNode);
             }
         }
         const host = new AttachableHost(hostTransport);
-        host.attachForTest({
+        const fakeLogger = {
             applyOp: (op: unknown) => applied.push(op),
-            setGossipNode: () => {}
-        });
+            setGossipNode: (node: GossipNode) =>
+                node.setLocalHandler((op) => fakeLogger.applyOp(op))
+        };
+        host.attachForTest(fakeLogger);
 
         // Parent posts a gossip op into the host's dedicated port (gossip.port1 →
         // port2, which the host subscribes to).
@@ -174,7 +177,7 @@ describe("worker base", function () {
                 return n;
             }
             attachForTest(logger: unknown): void {
-                this.attachLogger(logger as any);
+                (logger as any).setGossipNode(this.gossipNode);
             }
         }
         const host = new AttachableHost(hostTransport);
@@ -183,7 +186,7 @@ describe("worker base", function () {
         const worker = makeRealLogger("evm");
         const main = makeRealLogger("sdk");
         host.attachForTest(worker.logger);
-        client.attachLogger(main.logger);
+        main.logger.setGossipNode(client.gossipNode);
 
         await worker.logger.uploadLogs("worker report-bug");
         await new Promise((r) => setTimeout(r, 30)); // yield for gossip MessagePort delivery
@@ -214,7 +217,7 @@ describe("worker base", function () {
         const main = makeRealLogger("main");
         const w1 = makeRealLogger("w1");
         const w2 = makeRealLogger("w2");
-        client1.attachLogger(main.logger); // attach root logger to the shared node once
+        main.logger.setGossipNode(client1.gossipNode); // attach root logger to the shared node once
         host1.attachForTest(w1.logger);
         host2.attachForTest(w2.logger);
 
@@ -259,7 +262,7 @@ describe("worker base", function () {
         const M = makeRealLogger("M");
         const A = makeRealLogger("A");
         const B = makeRealLogger("B");
-        clientM.attachLogger(M.logger);
+        M.logger.setGossipNode(clientM.gossipNode);
         hostA.attachForTest(A.logger); // sets gA's local handler to A's logger
         hostB.attachForTest(B.logger);
 

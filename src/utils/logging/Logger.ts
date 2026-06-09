@@ -111,8 +111,10 @@ export abstract class Logger {
         this.originate({ type: "updateContext", context: update });
     }
 
+    // Bind local delivery here so the generic base never imports Logger.
     public setGossipNode(node: GossipNode): void {
         this.node = node;
+        node.setLocalHandler((op) => this.applyOp(op as LoggerOp));
     }
 
     // Walk up to the nearest ancestor holding the node. Posting to a disposed

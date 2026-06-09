@@ -9,7 +9,8 @@ import type {
     WorkerCustomPrecompile,
     WorkerRequestPayload
 } from "./types";
-import type { SerializableLoggerConfig, Logger } from "@/utils/logging/Logger";
+import type { SerializableLoggerConfig } from "@/utils/logging/Logger";
+import type { GossipNode } from "@/utils/GossipNode";
 import { WorkerClient } from "@/utils/worker/WorkerClient";
 import { createContractExecutorTransport } from "@platform/contractExecutorWorkerRuntime";
 
@@ -50,8 +51,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.client = new WorkerClient(createContractExecutorTransport());
     }
 
-    attachLogger(logger: Logger): void {
-        this.client.attachLogger(logger);
+    get gossipNode(): GossipNode {
+        return this.client.gossipNode;
     }
 
     async deploy(data: Bytes): Promise<ContractExecutionResult> {

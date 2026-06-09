@@ -56,7 +56,7 @@ export class ContractExecutorWorkerHost extends AWorkerHost<
               )
             : noOpLogger;
         // Only wire gossip with a real logger; the no-op sink would swallow the ops.
-        if (loggerConfig) this.attachLogger(this.workerLogger);
+        if (loggerConfig) this.workerLogger.setGossipNode(this.gossipNode);
 
         this.evm = await createEvm(
             {

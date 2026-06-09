@@ -1,8 +1,7 @@
 import { GossipNode } from "@/utils/GossipNode";
-import type { Logger, LoggerOp } from "@/utils/logging/Logger";
 import type { WorkerEnvelope, WorkerHostTransport } from "./types";
 
-// Worker-side base: envelope framing (receive → handle → reply), a GossipNode, logger,
+// Worker-side base: envelope framing (receive → handle → reply), a GossipNode,
 // ready post. Subclasses implement `handle`. Posts {type:"ready"} in ctor, so ctor must be sync.
 export abstract class AWorkerHost<TRequest, TResult> {
     private readonly transport: WorkerHostTransport;
@@ -21,10 +20,9 @@ export abstract class AWorkerHost<TRequest, TResult> {
         transport.post({ type: "ready" });
     }
 
-    // Subclasses call this once their real logger exists (e.g. after init).
-    protected attachLogger(logger: Logger): void {
-        this.gossip.setLocalHandler((op) => logger.applyOp(op as LoggerOp));
-        logger.setGossipNode(this.gossip);
+    // Gossip edge to the parent; subclass self-wires (logger.setGossipNode).
+    protected get gossipNode(): GossipNode {
+        return this.gossip;
     }
 
     // Symmetric with the client end; a shared node stays up for siblings.

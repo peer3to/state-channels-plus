@@ -33,7 +33,7 @@ export async function createContractExecutorFactory(
         options.customPrecompiles,
         options.logger?.toSerializableConfig({ threadName: "evm" })
     );
-    // Single site that builds the worker, so attach the logger's gossip edge here.
-    if (options.logger) workerExecutor.attachLogger(options.logger);
+    // Single site that builds the worker, so wire the logger to its gossip edge here.
+    options.logger?.setGossipNode(workerExecutor.gossipNode);
     return workerExecutor;
 }

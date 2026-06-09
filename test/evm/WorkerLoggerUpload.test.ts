@@ -52,7 +52,7 @@ describe("worker logger upload", function () {
             customPrecompiles: [],
             logger
         })) as WorkerContractExecutor;
-        executor.attachLogger(logger);
+        logger.setGossipNode(executor.gossipNode);
 
         // channelId is unknown at worker spawn; it arrives later via a child
         // logger (mirrors StateManager.setChannelId) and must reach the worker.
