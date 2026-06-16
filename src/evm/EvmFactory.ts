@@ -3,7 +3,7 @@ import type { ExecResult, PrecompileInput } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
 import type { Logger } from "@/utils";
-import { importPrecompileModule } from "@platform/precompileModuleLoader";
+import { importModuleFromManifest } from "@platform/moduleLoader";
 
 export type EvmCustomPrecompileManifest<TOptions = unknown> = {
     address: Address | string;
@@ -101,7 +101,7 @@ async function resolveCustomPrecompileManifest(
     manifest: EvmCustomPrecompileManifest,
     logger: Logger
 ): Promise<EvmNativeCustomPrecompile> {
-    const module = await importPrecompileModule(manifest.module);
+    const module = await importModuleFromManifest(manifest.module);
     const exported = manifest.exportName
         ? module[manifest.exportName]
         : module.default || module.createPrecompile;

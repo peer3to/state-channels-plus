@@ -14,26 +14,30 @@ export type ForceInboundJoinOptions = {
 };
 
 export class MathJoinActions extends JoinActions {
-    private pickSubmitterWithLatestInbound(): TestPeer {
+    private async pickSubmitterWithLatestInbound(): Promise<TestPeer> {
         const candidates = this.harness.getPeersExcludingMaliciousAndLeavers();
         if (candidates.length === 0) {
             throw new Error(
                 "forceInboundJoin: no honest non-leaver peers to submit from (all peers are malicious or have left)"
             );
         }
+        const heights = await Promise.all(
+            candidates.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .query.getInboundLatestHeight()
+                    .request()
+            )
+        );
         let best = candidates[0];
-        let bestHeight =
-            best.stateManager.storage.inboundMessages.getLatestBlockHeight() ??
-            0;
-        for (const peer of candidates.slice(1)) {
-            const h =
-                peer.stateManager.storage.inboundMessages.getLatestBlockHeight() ??
-                0;
+        let bestHeight = heights[0] ?? 0;
+        candidates.forEach((peer, i) => {
+            const h = heights[i] ?? 0;
             if (h > bestHeight) {
                 bestHeight = h;
                 best = peer;
             }
-        }
+        });
         return best;
     }
 
@@ -44,11 +48,14 @@ export class MathJoinActions extends JoinActions {
         previousLatestHash: Hash | undefined;
     }> {
         const deposit = options?.deposit ?? 250n;
-        const submitter = this.pickSubmitterWithLatestInbound();
+        const submitter = await this.pickSubmitterWithLatestInbound();
         const participant =
             options?.participant ?? hre.ethers.Wallet.createRandom().address;
         const previousLatestHash =
-            submitter.stateManager.storage.inboundMessages.getLatestBlockHash();
+            ((await this.harness
+                .control(submitter)
+                .query.getLatestInboundMessageHash()
+                .request()) as Hash | null) ?? undefined;
 
         const consumerFacet = MathConsumerFacet__factory.connect(
             await this.harness.channelManager.getAddress(),

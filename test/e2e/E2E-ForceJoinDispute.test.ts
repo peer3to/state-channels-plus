@@ -15,15 +15,17 @@ describe("E2E: Force Join Dispute", function () {
         await h.assert.sync.peersInSyncWait();
 
         const restoreInboundInclusion0 =
-            h.byzantine.stubPendingInboundInclusion(0);
+            await h.byzantine.stubPendingInboundInclusion(0);
         const restoreInboundInclusion1 =
-            h.byzantine.stubPendingInboundInclusion(1);
+            await h.byzantine.stubPendingInboundInclusion(1);
 
         await h.join.joinChannelWait({
             joiner,
             existingParticipantSigners: [h.peers[0].signer, h.peers[1].signer]
         });
-        expect(joiner.stateManager.getStatus()).to.equal(
+        expect(
+            await h.control(h.getPeer(joiner.index)).query.getStatus().request()
+        ).to.equal(
             Status.PENDING_PARTICIPANT,
             "Joiner should be PENDING_PARTICIPANT after joinChannel"
         );
@@ -41,7 +43,9 @@ describe("E2E: Force Join Dispute", function () {
 
         await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
 
-        expect(joiner.stateManager.getStatus()).to.equal(
+        expect(
+            await h.control(h.getPeer(joiner.index)).query.getStatus().request()
+        ).to.equal(
             Status.PARTICIPATING,
             "Joiner should be PARTICIPATING after force-join dispute resolves via reduction"
         );
@@ -52,8 +56,10 @@ describe("E2E: Force Join Dispute", function () {
             joiner.address
         ]);
         for (const peer of h.peers) {
-            const actual =
-                await peer.stateManager.diamondStateMachine.getParticipants();
+            const actual = await h
+                .control(peer)
+                .query.getParticipants()
+                .request();
             expect(new Set(actual)).to.deep.equal(
                 expected,
                 `Peer ${peer.index} on-chain participants should match 3-player fork after reduction`

@@ -1,5 +1,4 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
-import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("E2E: dispute validation / stateProof / milestone block content integrity", function () {
@@ -14,12 +13,12 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
             h.event.resetEventSpies();
 
-            h.tamper.stubConstructDispute(0, async (dispute) => {
+            h.tamper.stubConstructDispute(0, async (dispute, sm) => {
+                const svc = sm.p2pManager.localRpc.dispute;
                 const stateProof = dispute.input.stateProof;
 
-                const localDiamond = h.getLocalDiamond(0);
                 const [hasBlock, latestBlock] =
-                    await localDiamond.getLatestBlockFromStateProof(stateProof);
+                    await svc.getLatestBlockFromStateProof(stateProof);
                 if (!hasBlock) {
                     throw new Error(
                         "State proof does not contain a block to tamper with"
@@ -32,7 +31,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 stateProof.milestones
                     .at(-1)!
                     .blockConfirmations.at(-1)!.signedBlock.encodedBlock =
-                    Codec.encode(latestBlock, Type.Block);
+                    svc.encodeBlock(latestBlock);
             });
 
             await h.byzantine.submitInvalidStateTransitionBlock(1);

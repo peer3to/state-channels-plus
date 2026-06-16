@@ -72,6 +72,15 @@ export {
 };
 export { Status } from "@/types";
 
+export { startP2pRuntimeWorker } from "@/evm/p2pRuntime/worker/startP2pRuntimeWorker";
+export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
+export type {
+    P2pRuntimeWorker,
+    SetupPayload,
+    SerializedContract,
+    WorkerBootstrapMessage
+} from "@/evm/p2pRuntime/types";
+
 export { Address } from "@ethereumjs/util";
 
 export * from "@/utils/logging";

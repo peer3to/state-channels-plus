@@ -8,10 +8,10 @@ import { MathScenarioActions } from "@test/harness/actions/math/MathScenarioActi
 import { MathByzantineActions } from "@test/harness/actions/math/MathByzantineActions";
 import { MathDisputeOrchestrator } from "@test/harness/actions/math/MathDisputeOrchestrator";
 import PeerTestHarness from "./PeerTestHarness";
-import { MainRpcService } from "@/rpc";
+import type { HarnessControlRpc } from "./customRpc/harnessControl/HarnessControlRpc";
 
 export class MathPeerTestHarness extends PeerTestHarness<
-    MainRpcService,
+    HarnessControlRpc,
     MathStateMachine
 > {
     declare public transition: MathTransitionActions;
@@ -31,7 +31,5 @@ export class MathPeerTestHarness extends PeerTestHarness<
         this.scenario = new MathScenarioActions(this, this.logger);
     }
 }
-
-export type MathContract = MathStateMachine;
 
 export default MathPeerTestHarness;

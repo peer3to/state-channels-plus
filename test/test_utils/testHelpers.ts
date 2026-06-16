@@ -146,14 +146,6 @@ export async function deployMathChannelProxyFixture(
         mathInstance: mathContactInstance
     };
 }
-export async function getMathDeploymentTransaction(
-    _ethers: typeof ethers & HardhatEthersHelpers,
-    gasLimit: number = 500000
-) {
-    const MathStateMachineFactory =
-        await _ethers.getContractFactory("MathStateMachine");
-    return await MathStateMachineFactory.getDeployTransaction(gasLimit);
-}
 
 export async function deployUtilityFacetTestContract(
     _ethers: typeof ethers & HardhatEthersHelpers

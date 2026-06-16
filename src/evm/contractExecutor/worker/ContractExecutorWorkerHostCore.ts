@@ -1,12 +1,12 @@
 import { Buffer } from "buffer";
-import ContractExecutor from "./ContractExecutor";
-import { createEvm } from "../EvmFactory";
-import noOpLogger from "./NoOpLogger";
+import ContractExecutor from "../ContractExecutor";
+import { createEvm } from "../../EvmFactory";
+import noOpLogger from "../NoOpLogger";
 import type {
-    WorkerRequest,
-    WorkerRequestPayload,
-    WorkerResponse
-} from "./types";
+    ContractExecutorRequestPayload,
+    WorkerHostMessage,
+    WorkerRequestMessage
+} from "./protocol";
 
 const workerGlobal = globalThis as unknown as {
     Buffer?: typeof Buffer;
@@ -21,7 +21,9 @@ workerGlobal.window ||= globalThis;
 let evm: Awaited<ReturnType<typeof createEvm>> | undefined;
 let executor: ContractExecutor | undefined;
 
-async function init(request: Extract<WorkerRequestPayload, { type: "init" }>) {
+async function init(
+    request: Extract<ContractExecutorRequestPayload, { type: "init" }>
+) {
     evm = await createEvm(
         {
             allowUnlimitedContractSize: true,
@@ -47,7 +49,9 @@ function getExecutor(): ContractExecutor {
     return executor;
 }
 
-async function call(request: Extract<WorkerRequestPayload, { type: "call" }>) {
+async function call(
+    request: Extract<ContractExecutorRequestPayload, { type: "call" }>
+) {
     const executor = getExecutor();
     const result =
         request.method === "deploy"
@@ -65,15 +69,16 @@ async function call(request: Extract<WorkerRequestPayload, { type: "call" }>) {
     return result;
 }
 
-async function handleRequest(request: WorkerRequest): Promise<WorkerResponse> {
-    const { requestId, workerRequestPayload } = request;
+async function handleRequest(
+    message: WorkerRequestMessage
+): Promise<WorkerHostMessage> {
+    const { requestId, payload } = message;
     try {
         const result =
-            workerRequestPayload.type === "init"
-                ? await init(workerRequestPayload)
-                : await call(workerRequestPayload);
+            payload.type === "init" ? await init(payload) : await call(payload);
 
         return {
+            type: "response",
             requestId,
             ok: true,
             result
@@ -81,6 +86,7 @@ async function handleRequest(request: WorkerRequest): Promise<WorkerResponse> {
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         return {
+            type: "response",
             requestId,
             ok: false,
             error: {
@@ -94,11 +100,12 @@ async function handleRequest(request: WorkerRequest): Promise<WorkerResponse> {
 }
 
 export function startContractExecutorWorkerHost(
-    post: (response: WorkerResponse) => void,
-    onMessage: (handler: (message: WorkerRequest) => void) => void
+    post: (response: WorkerHostMessage) => void,
+    onMessage: (handler: (message: WorkerRequestMessage) => void) => void
 ): void {
-    onMessage((request) => {
-        void handleRequest(request).then(post);
+    onMessage((message) => {
+        if (message.type !== "request") return;
+        void handleRequest(message).then(post);
     });
 
     post({ type: "ready" });

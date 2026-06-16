@@ -1,10 +1,5 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
-import { hash as randomHash } from "@test/factory";
-import {
-    expectMilestonesOnlyStateProof,
-    expectSignedBlocksOnlyStateProof,
-    MathTestSession as TestSession
-} from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 
 //   (1) no milestones, no signedBlocks → genesis
 //   (2) signedBlocks only → last signedBlock commits to the hash
@@ -19,10 +14,11 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetup();
                     await h.assert.sync.peersInSyncWait();
 
-                    h.tamper.stubConstructDispute(1, (dispute) => {
+                    h.tamper.stubConstructDispute(1, (dispute, sm) => {
                         dispute.input.stateProof.milestones = [];
                         dispute.input.stateProof.signedBlocks = [];
-                        dispute.input.latestStateSnapshotHash = randomHash();
+                        dispute.input.latestStateSnapshotHash =
+                            sm.p2pManager.localRpc.dispute.randomHash();
                     });
 
                     await h.byzantine.submitInvalidStateTransitionBlock(2);
@@ -54,9 +50,10 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetup();
                     await h.assert.sync.peersInSyncWait();
 
-                    h.tamper.stubConstructDispute(1, (d) => {
-                        expectMilestonesOnlyStateProof(d.input.stateProof);
-                        d.input.latestStateSnapshotHash = randomHash();
+                    h.tamper.stubConstructDispute(1, (d, sm) => {
+                        const svc = sm.p2pManager.localRpc.dispute;
+                        svc.expectMilestonesOnlyStateProof(d.input.stateProof);
+                        d.input.latestStateSnapshotHash = svc.randomHash();
                     });
 
                     await h.byzantine.submitInvalidStateTransitionBlock(2);
@@ -88,9 +85,10 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const disconnectedAuditorIndex = 3;
                     await h.network.disconnectPeer(disconnectedAuditorIndex);
 
-                    h.tamper.stubConstructDispute(1, (d) => {
-                        expectMilestonesOnlyStateProof(d.input.stateProof);
-                        d.input.latestStateSnapshotHash = randomHash();
+                    h.tamper.stubConstructDispute(1, (d, sm) => {
+                        const svc = sm.p2pManager.localRpc.dispute;
+                        svc.expectMilestonesOnlyStateProof(d.input.stateProof);
+                        d.input.latestStateSnapshotHash = svc.randomHash();
                     });
 
                     await h.byzantine.submitInvalidStateTransitionBlock(2);
@@ -126,9 +124,12 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupDisconnectedPeer();
 
-                    h.tamper.stubConstructDispute(3, (d) => {
-                        expectSignedBlocksOnlyStateProof(d.input.stateProof);
-                        d.input.latestStateSnapshotHash = randomHash();
+                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                        const svc = sm.p2pManager.localRpc.dispute;
+                        svc.expectSignedBlocksOnlyStateProof(
+                            d.input.stateProof
+                        );
+                        d.input.latestStateSnapshotHash = svc.randomHash();
                     });
 
                     await h.byzantine.submitDoubleSignBlock(1);
@@ -158,9 +159,12 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         timeConfig: { p2pTime: 3 }
                     });
 
-                    h.tamper.stubConstructDispute(3, (d) => {
-                        expectSignedBlocksOnlyStateProof(d.input.stateProof);
-                        d.input.latestStateSnapshotHash = randomHash();
+                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                        const svc = sm.p2pManager.localRpc.dispute;
+                        svc.expectSignedBlocksOnlyStateProof(
+                            d.input.stateProof
+                        );
+                        d.input.latestStateSnapshotHash = svc.randomHash();
                     });
 
                     await h.byzantine.submitDoubleSignBlock(1);
@@ -194,10 +198,11 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetupCalldataPath();
                     await h.assert.sync.peersInSyncWait();
 
-                    h.tamper.stubConstructDispute(3, (d) => {
+                    h.tamper.stubConstructDispute(3, (d, sm) => {
                         d.input.stateProof.milestones = [];
                         d.input.stateProof.signedBlocks = [];
-                        d.input.latestStateSnapshotHash = randomHash();
+                        d.input.latestStateSnapshotHash =
+                            sm.p2pManager.localRpc.dispute.randomHash();
                     });
 
                     await h.byzantine.submitDoubleSignBlock(1);
@@ -231,8 +236,9 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetupCalldataPath();
                     await h.assert.sync.peersInSyncWait();
 
-                    h.tamper.stubConstructDispute(3, (d) => {
-                        d.input.latestStateSnapshotHash = randomHash();
+                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                        d.input.latestStateSnapshotHash =
+                            sm.p2pManager.localRpc.dispute.randomHash();
                     });
 
                     await h.byzantine.submitDoubleSignBlock(1);
@@ -287,13 +293,14 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     h.contextApi.captureOriginalFork();
                     h.event.resetEventSpies();
 
-                    h.tamper.stubConstructDispute(3, (d) => {
+                    h.tamper.stubConstructDispute(3, (d, sm) => {
                         if (d.input.stateProof.milestones.length === 0) {
                             throw new Error(
                                 `expected milestones in stateProof (leaver was peer ${leaverIndex})`
                             );
                         }
-                        d.input.latestStateSnapshotHash = randomHash();
+                        d.input.latestStateSnapshotHash =
+                            sm.p2pManager.localRpc.dispute.randomHash();
                     });
 
                     await h.byzantine.submitInvalidStateTransitionBlock(0);
@@ -331,9 +338,12 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     });
 
                     // signedBlocks-only disputes do not auto-post calldata (no milestones).
-                    h.tamper.stubConstructDispute(3, (d) => {
-                        expectSignedBlocksOnlyStateProof(d.input.stateProof);
-                        d.input.latestStateSnapshotHash = randomHash();
+                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                        const svc = sm.p2pManager.localRpc.dispute;
+                        svc.expectSignedBlocksOnlyStateProof(
+                            d.input.stateProof
+                        );
+                        d.input.latestStateSnapshotHash = svc.randomHash();
                         d.postedAuditingData = true;
                     });
 

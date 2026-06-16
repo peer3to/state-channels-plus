@@ -1,109 +1,12 @@
 import { expect } from "chai";
 import { MathStateMachine } from "@typechain-types";
+import path from "node:path";
 
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
-import MainRpcService from "@/rpc/MainRpcService";
-import type P2PManager from "@/P2PManager";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import type ATransport from "@/transport/ATransport";
 import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-
-type PingPongOptions = {
-    onRpcHandled: () => void;
-};
-
-class PingPongRpc extends MainRpcService {
-    pingService: PingService;
-    relayService: RelayService;
-
-    constructor(p2pManager: P2PManager<PingPongRpc>, options: PingPongOptions) {
-        super(p2pManager);
-        this.pingService = new PingService(p2pManager, options);
-        this.relayService = new RelayService(p2pManager, options);
-    }
-}
-
-class PingService extends ARpcService<PingRpcMethods, P2PManager<PingPongRpc>> {
-    public receivedPingNonces: string[] = [];
-    public receivedPongNonces: string[] = [];
-
-    constructor(
-        p2pManager: P2PManager<PingPongRpc>,
-        readonly options: PingPongOptions
-    ) {
-        super(
-            p2pManager,
-            p2pManager.stateManager.logger.child({ component: "PingService" })
-        );
-        this.guards = [new HandshakeCompletedGuard(this)];
-    }
-
-    public createRPCMethods(transport: ATransport): PingRpcMethods {
-        return new PingRpcMethods(transport, this);
-    }
-}
-
-class PingRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
-    constructor(
-        transport: ATransport,
-        private readonly service: PingService
-    ) {
-        super(transport, service.p2pManager);
-    }
-
-    public ping(nonce: string): void {
-        this.service.receivedPingNonces.push(nonce);
-        this.service.options.onRpcHandled();
-
-        this.remoteRpc.pingService.pong(nonce).sendOne(this.senderTransport);
-        this.remoteRpc.relayService
-            .recordPing(nonce)
-            .sendOne(this.senderTransport);
-    }
-
-    public pong(nonce: string): void {
-        this.service.receivedPongNonces.push(nonce);
-        this.service.options.onRpcHandled();
-    }
-}
-
-class RelayService extends ARpcService<
-    RelayRpcMethods,
-    P2PManager<PingPongRpc>
-> {
-    public receivedRelayPingNonces: string[] = [];
-
-    constructor(
-        p2pManager: P2PManager<PingPongRpc>,
-        readonly options: PingPongOptions
-    ) {
-        super(
-            p2pManager,
-            p2pManager.stateManager.logger.child({ component: "RelayService" })
-        );
-        this.guards = [new HandshakeCompletedGuard(this)];
-    }
-
-    public createRPCMethods(transport: ATransport): RelayRpcMethods {
-        return new RelayRpcMethods(transport, this);
-    }
-}
-
-class RelayRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
-    constructor(
-        transport: ATransport,
-        private readonly service: RelayService
-    ) {
-        super(transport, service.p2pManager);
-    }
-
-    public recordPing(nonce: string): void {
-        this.service.receivedRelayPingNonces.push(nonce);
-        this.service.options.onRpcHandled();
-    }
-}
+import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
+import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import { waitFor } from "@test/utils/waitFor";
 
 describe("E2E: PingPongService (custom RPC)", function () {
     let harness: PeerTestHarness<PingPongRpc, MathStateMachine> | undefined;
@@ -120,9 +23,11 @@ describe("E2E: PingPongService (custom RPC)", function () {
 
         await harness.setup(2, {
             autoConnect: false,
-            customRpc: PingPongRpc,
-            customRpcOptions: {
-                onRpcHandled: () => harness?.rpcBarrier.signal()
+            customRpcManifest: {
+                module: path.resolve(
+                    __dirname,
+                    "../fixtures/customRpc/PingPongRpcManifest.ts"
+                )
             },
             timeConfig: {
                 agreementTime: 10,
@@ -137,81 +42,66 @@ describe("E2E: PingPongService (custom RPC)", function () {
 
         const peer0 = harness.getPeer(0);
         const peer1 = harness.getPeer(1);
-        const transport0To1 = await harness.query.waitForPeerTransport(
-            0,
-            1,
+        // The custom RPC services hang off the same loopback hostRpc as the
+        // harness-control services; target peers by EVM address.
+        const ctl = (p: typeof peer0) =>
+            harness!.control(p) as unknown as RemoteRpcProxyType<PingPongRpc>;
+
+        // --- Fire-and-forget: peer 0 pings peer 1 (by address) ---
+        ctl(peer0).pingService.ping("from-0").sendOne(peer1.address);
+        await waitFor(
+            async () =>
+                (
+                    await ctl(peer1)
+                        .pingService.getReceivedPingNonces()
+                        .request()
+                ).includes("from-0") &&
+                (
+                    await ctl(peer0)
+                        .pingService.getReceivedPongNonces()
+                        .request()
+                ).includes("from-0") &&
+                (
+                    await ctl(peer0)
+                        .relayService.getReceivedRelayPingNonces()
+                        .request()
+                ).includes("from-0"),
             5000
         );
-        const transport1To0 = await harness.query.waitForPeerTransport(
-            1,
-            0,
+
+        // --- Fire-and-forget: peer 1 pings peer 0 ---
+        ctl(peer1).pingService.ping("from-1").sendOne(peer0.address);
+        await waitFor(
+            async () =>
+                (
+                    await ctl(peer0)
+                        .pingService.getReceivedPingNonces()
+                        .request()
+                ).includes("from-1") &&
+                (
+                    await ctl(peer1)
+                        .pingService.getReceivedPongNonces()
+                        .request()
+                ).includes("from-1") &&
+                (
+                    await ctl(peer1)
+                        .relayService.getReceivedRelayPingNonces()
+                        .request()
+                ).includes("from-1"),
             5000
         );
 
-        peer0.stateManager.p2pManager.remoteRpc.pingService
-            .ping("from-0")
-            .sendOne(transport0To1);
-        await harness.rpcBarrier.waitFor(
-            () =>
-                peer1.stateManager.p2pManager.localRpc.pingService.receivedPingNonces.includes(
-                    "from-0"
-                ) &&
-                peer0.stateManager.p2pManager.localRpc.pingService.receivedPongNonces.includes(
-                    "from-0"
-                ) &&
-                peer0.stateManager.p2pManager.localRpc.relayService.receivedRelayPingNonces.includes(
-                    "from-0"
-                ),
-            {
-                timeoutMs: 5000,
-                timeoutMessage: "Peer 0 -> peer 1 ping/pong did not complete"
-            }
+        // --- Request/response: peer 0 asks peer 1 to sum and gets a value back ---
+        const sumResponse = await ctl(peer0)
+            .pingService.sum(2, 3, "sum-0")
+            .request(peer1.address);
+        expect(sumResponse.sum).to.equal(5);
+        expect(sumResponse.nonce).to.equal("sum-0");
+        expect(sumResponse.requester?.toLowerCase()).to.equal(
+            peer0.address.toLowerCase()
         );
-
-        peer1.stateManager.p2pManager.remoteRpc.pingService
-            .ping("from-1")
-            .sendOne(transport1To0);
-        await harness.rpcBarrier.waitFor(
-            () =>
-                peer0.stateManager.p2pManager.localRpc.pingService.receivedPingNonces.includes(
-                    "from-1"
-                ) &&
-                peer1.stateManager.p2pManager.localRpc.pingService.receivedPongNonces.includes(
-                    "from-1"
-                ) &&
-                peer1.stateManager.p2pManager.localRpc.relayService.receivedRelayPingNonces.includes(
-                    "from-1"
-                ),
-            {
-                timeoutMs: 5000,
-                timeoutMessage: "Peer 1 -> peer 0 ping/pong did not complete"
-            }
-        );
-
         expect(
-            peer1.stateManager.p2pManager.localRpc.pingService
-                .receivedPingNonces
-        ).to.include("from-0");
-        expect(
-            peer0.stateManager.p2pManager.localRpc.pingService
-                .receivedPongNonces
-        ).to.include("from-0");
-        expect(
-            peer0.stateManager.p2pManager.localRpc.relayService
-                .receivedRelayPingNonces
-        ).to.include("from-0");
-
-        expect(
-            peer0.stateManager.p2pManager.localRpc.pingService
-                .receivedPingNonces
-        ).to.include("from-1");
-        expect(
-            peer1.stateManager.p2pManager.localRpc.pingService
-                .receivedPongNonces
-        ).to.include("from-1");
-        expect(
-            peer1.stateManager.p2pManager.localRpc.relayService
-                .receivedRelayPingNonces
-        ).to.include("from-1");
+            await ctl(peer1).pingService.getReceivedSumNonces().request()
+        ).to.include("sum-0");
     });
 });

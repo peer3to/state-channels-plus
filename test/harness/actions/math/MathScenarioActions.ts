@@ -353,9 +353,13 @@ export class MathScenarioActions extends ScenarioActions {
                 .slice(0, initialPeers)
                 .map((p) => p.signer)
         });
-        if (joiner.stateManager.getStatus() !== Status.PENDING_PARTICIPANT) {
+        const joinerStatus = await this.harness
+            .control(this.harness.getPeer(joiner.index))
+            .query.getStatus()
+            .request();
+        if (joinerStatus !== Status.PENDING_PARTICIPANT) {
             throw new Error(
-                `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joiner.stateManager.getStatus()}`
+                `JOIN_RPC: expected joiner to be PENDING_PARTICIPANT after joinChannel, got ${joinerStatus}`
             );
         }
 

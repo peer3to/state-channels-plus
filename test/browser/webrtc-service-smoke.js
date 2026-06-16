@@ -64,7 +64,6 @@ function createP2PManager(localAddress, remoteAddress, errors, progress = []) {
         webRTCTransports: [],
         stateManager: {
             logger,
-            p2pEventHooks: {},
             forkId: 0n,
             getChannelId: () => "browser-webrtc-smoke"
         },

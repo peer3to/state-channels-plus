@@ -47,7 +47,6 @@ function createP2PManager(
         logger,
         stateManager: {
             logger,
-            p2pEventHooks: {},
             getChannelId: () => "0xchannel",
             forkId: "0xfork"
         },

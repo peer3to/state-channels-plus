@@ -909,7 +909,7 @@ class StateManager<
             "tryExecuteFromQueue"
         );
 
-        this.p2pEventHooks.onSetState?.();
+        this.p2pEventHooks.onSetState?.(forkId);
         P2pEventHooksUtils.notifyTurn({
             nextToWrite,
             nextBlockHeight: nextTransactionCnt,
