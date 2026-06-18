@@ -528,6 +528,21 @@ export class LoggerUtils {
         };
     }
 
+    // logging must tolerate attacker-supplied undecodable blocks (a malicious dispute can carry junk
+    // `encodedBlock`s). decode per-block defensively so a poison dispute can't crash a peer's logging.
+    private static safeBlockMetadata(decode: () => Block) {
+        try {
+            return this.getBlockMetadata(decode());
+        } catch (error) {
+            return {
+                undecodable: true,
+                decodeError:
+                    error instanceof Error ? error.message : String(error),
+                blockHeight: undefined
+            };
+        }
+    }
+
     static getStateProofMetadata(stateProof: StateProofStruct) {
         const milestones = stateProof.milestones.map(
             (milestone, milestoneIndex) => ({
@@ -535,7 +550,7 @@ export class LoggerUtils {
                 confirmationsCount: milestone.blockConfirmations.length,
                 confirmations: milestone.blockConfirmations.map(
                     (confirmation) =>
-                        this.getBlockMetadata(
+                        this.safeBlockMetadata(() =>
                             Block.fromBlockConfirmation(confirmation)
                         )
                 )
@@ -543,7 +558,7 @@ export class LoggerUtils {
         );
 
         const signedBlocks = stateProof.signedBlocks.map((signedBlock) =>
-            this.getBlockMetadata(Block.fromSignedBlock(signedBlock))
+            this.safeBlockMetadata(() => Block.fromSignedBlock(signedBlock))
         );
         const milestonesCount = milestones.length;
         const signedBlocksCount = signedBlocks.length;

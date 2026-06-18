@@ -60,10 +60,38 @@ export default class DisputeValidationService {
             return false;
         }
 
-        const hasHeaderMismatch =
-            await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
-                dispute
+        let hasHeaderMismatch: boolean;
+        try {
+            hasHeaderMismatch =
+                await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
+                    dispute
+                );
+        } catch (error) {
+            this.logger.warn(
+                "hasStateProofHeaderMismatch reverted — undecodable state proof block",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute),
+                    custom: tryDecodeCustomError(error)
+                }
             );
+            if (!this.hasPostedAuditingData(dispute)) {
+                this.logger.error(
+                    "Skipping dispute audit: undecodable state proof block with no posted auditing data, no fireable fraud proof",
+                    { dispute: LoggerUtils.getDisputeMetadata(dispute) }
+                );
+                return true;
+            }
+            if (!onChainDisputeAuditingData) {
+                throw new Error(
+                    "Dispute posted with auditing data, but auditing data missing"
+                );
+            }
+            this.disputeFraudProofService.createDisputeInvalidStateProof(
+                dispute,
+                onChainDisputeAuditingData
+            );
+            return false;
+        }
         if (hasHeaderMismatch) {
             this.logger.warn(
                 "DisputeStateProofHeaderMismatch: stateProof header channelId or forkId does not match dispute.input",
