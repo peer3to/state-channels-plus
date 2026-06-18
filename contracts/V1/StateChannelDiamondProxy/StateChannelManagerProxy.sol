@@ -108,6 +108,13 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         (bool isOpen,) = isChannelOpen(openChannelData.channelId);
         require(!isOpen, RaceConditionChannelAlreadyOpen());
 
+        // reject duplicate participants
+        for (uint256 i = 0; i < openChannelData.participants.length; i++) {
+            for (uint256 j = i + 1; j < openChannelData.participants.length; j++) {
+                require(openChannelData.participants[i] != openChannelData.participants[j], ErrorDuplicateParticipant());
+            }
+        }
+
         // set zero balance for on-chain deposits/withdrawals
         Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
         {
@@ -205,7 +212,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public override {
         _delegatecall(
-            disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.applyDisputeFraudProofs, (proofs))
+            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.applyDisputeFraudProofs, (proofs))
         );
     }
 
