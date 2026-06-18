@@ -5,6 +5,7 @@ import "./StateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 import "./UtilityFacet.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract DisputeManagerFacet is StateChannelCommon {
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public {
@@ -156,7 +157,8 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[dispute.input.channelId];
         SnapshotData storage snapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
         uint256 pendingCount = getPendingParticipants(dispute.input.channelId).length;
-        uint256 thresholdCount = snapshotData.participants.length + pendingCount - disputeData.onChainSlashes.length;
+        (, uint256 thresholdCount) =
+            Math.trySub(snapshotData.participants.length + pendingCount, disputeData.onChainSlashes.length);
         if (disputeConfirmation.signatures.length + 1 < thresholdCount) {
             return false;
         }
