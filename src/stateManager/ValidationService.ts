@@ -395,6 +395,26 @@ export default class ValidationService {
             const violatedRule =
                 "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
 
+            // test clock skew: after a reduction the fork's start time is future-dated
+            // (on-chain kill time + evidenceTime) while peers' local clocks move at real-time pace.
+            // forkStart > nowSeconds means it's clock skew, not a real bad-timestamp attack.
+            const forkStart = Number(previousOriginalTimestamp);
+            if (forkStart > nowSeconds) {
+                const windowUpper =
+                    Number(previousTimestamp) + this.timeConfig.p2pTime;
+                const blockTs = Number(block.timestamp);
+                this.logger.error(
+                    `TIMING-MISMATCH: localClock=${nowSeconds} forkStart=${forkStart} (+${forkStart - nowSeconds}s) blockTs=${blockTs} (+${blockTs - nowSeconds}s) — on-chain time ran ahead of local clock (test-only, see docs/reduced-fork-timestamp-mismatch.md)`,
+                    {
+                        blockHeight: block.height,
+                        forkStartAheadOfLocalClockBySeconds:
+                            forkStart - nowSeconds,
+                        blockAheadOfLocalClockBySeconds: blockTs - nowSeconds,
+                        windowUpperBound: windowUpper
+                    }
+                );
+            }
+
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
             if (
                 // first block
