@@ -13,7 +13,24 @@ import type {
 } from "./WebRTCConnectionTypes";
 import { loadWebRTCProvider, type WebRTCProvider } from "./WebRTCProvider";
 
+export type WebRTCChannelMode = "auto" | "transfer" | "proxy";
+
 export type WebRTCMainThreadBridgeOptions = {
+    /**
+     * How a freshly-created RTCDataChannel is handed to the worker:
+     *  - "auto" (default): attempt to transfer the channel to the worker and,
+     *    if the runtime can't transfer it, fall back to proxying its messages
+     *    over the bridge.
+     *  - "transfer": only transfer; throw if the runtime can't (strict).
+     *  - "proxy": always proxy — use when transfer is known-unsupported
+     *    (e.g. Firefox/Safari) or in tests.
+     */
+    channelMode?: WebRTCChannelMode;
+    /**
+     * Whether "auto" mode may fall back to proxying when a transfer attempt
+     * fails. Defaults to true so the bridge works on runtimes that do not
+     * support transferable RTCDataChannels.
+     */
     allowProxyFallback?: boolean;
 };
 
@@ -32,6 +49,9 @@ type ConnectionRecord = {
 
 class WebRTCMainThreadBridgeBroker {
     private provider?: WebRTCProvider;
+    // Cached the first time "auto" mode attempts a transfer: once we learn the
+    // runtime can't transfer channels we go straight to proxy for the rest.
+    private channelTransferSupported?: boolean;
     private readonly connectionsByPeerAddress = new Map<
         WebRTCPeerAddress,
         ConnectionRecord
@@ -134,9 +154,11 @@ class WebRTCMainThreadBridgeBroker {
         if (request.method === "close") {
             return this.close(request.peerAddress);
         }
-        if (request.method === "getState") {
-            return this.getState(request.peerAddress);
-        }
+        throw new Error(
+            `Unknown WebRTC bridge request method: ${
+                (request as { method?: string }).method
+            }`
+        );
     }
 
     private async createConnectionRecord(
@@ -255,22 +277,16 @@ class WebRTCMainThreadBridgeBroker {
         record.connection.close();
     }
 
-    private getState(
-        peerAddress: WebRTCPeerAddress
-    ): WebRTCConnectionStateSnapshot {
-        const connection =
-            this.connectionsByPeerAddress.get(peerAddress)?.connection;
-        if (!connection) {
-            return { connectionState: "unknown", iceState: "unknown" };
-        }
-        return this.getSnapshot(connection);
-    }
-
     private postChannel(
         peerAddress: WebRTCPeerAddress,
         record: ConnectionRecord,
         channel: WebRTCDataChannelLike
     ): void {
+        if (this.shouldProxyChannel()) {
+            this.postProxyChannel(peerAddress, record, channel);
+            return;
+        }
+
         const transferredMessage: WebRTCBridgePortMessage = {
             namespace: WEBRTC_BRIDGE_NAMESPACE,
             type: "channel",
@@ -281,13 +297,41 @@ class WebRTCMainThreadBridgeBroker {
 
         try {
             this.post(transferredMessage, [channel as unknown as Transferable]);
+            this.channelTransferSupported = true;
             return;
         } catch (error) {
-            if (!this.options.allowProxyFallback) {
+            this.channelTransferSupported = false;
+            const channelMode = this.options.channelMode ?? "auto";
+            const allowProxyFallback = this.options.allowProxyFallback ?? true;
+            if (channelMode === "transfer" || !allowProxyFallback) {
                 throw error;
             }
+            // Surface the reason once (subsequent channels skip the attempt via
+            // shouldProxyChannel) so a transfer-unsupported runtime is visible
+            // rather than silently degrading.
+            console.warn(
+                "[peer3:webrtc-bridge] RTCDataChannel transfer is unsupported in this runtime; " +
+                    "falling back to proxying channel messages over the bridge.",
+                error
+            );
         }
 
+        this.postProxyChannel(peerAddress, record, channel);
+    }
+
+    private shouldProxyChannel(): boolean {
+        const channelMode = this.options.channelMode ?? "auto";
+        if (channelMode === "proxy") return true;
+        if (channelMode === "transfer") return false;
+        // "auto": once a transfer attempt has failed, never attempt again.
+        return this.channelTransferSupported === false;
+    }
+
+    private postProxyChannel(
+        peerAddress: WebRTCPeerAddress,
+        record: ConnectionRecord,
+        channel: WebRTCDataChannelLike
+    ): void {
         record.proxiedChannel = channel;
         this.wireProxyChannel(peerAddress, record, channel);
         this.post({

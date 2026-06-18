@@ -228,6 +228,11 @@ class InitHandshakeRpcMethods extends ARpcMethods {
     /**
      * Sent after a peer verifies our handshake response. We only treat the handshake
      * as complete once we have both: (1) verified the remote, and (2) received this ack.
+     *
+     * `challengeHash` is a diagnostic correlation id only — it lets a single log
+     * stream be followed across the two threads/peers. It is NOT an authenticity
+     * check and MUST NOT be trusted for any decision: peer authenticity is
+     * established solely by signature verification in `onInitHandshakeResponse`.
      */
     public async onInitHandshakeAck(challengeHash?: Hash) {
         LoggerUtils.logInitHandshakeMessage(

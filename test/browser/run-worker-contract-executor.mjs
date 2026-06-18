@@ -97,7 +97,8 @@ try {
             () =>
                 Boolean(globalThis.runContractExecutorWorkerBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCMainThreadBrowserSmoke) &&
-                Boolean(globalThis.runWebRTCDedicatedWorkerBrowserSmoke)
+                Boolean(globalThis.runWebRTCDedicatedWorkerBrowserSmoke) &&
+                Boolean(globalThis.runWebRTCProxyWorkerBrowserSmoke)
         );
     } catch (error) {
         if (browserErrors.length) {
@@ -118,6 +119,11 @@ try {
         if (!globalThis.runWebRTCDedicatedWorkerBrowserSmoke) {
             throw new Error(
                 "WebRTC dedicated-worker smoke function was not registered"
+            );
+        }
+        if (!globalThis.runWebRTCProxyWorkerBrowserSmoke) {
+            throw new Error(
+                "WebRTC proxy-worker smoke function was not registered"
             );
         }
         const withTimeout = (label, promise) =>
@@ -143,10 +149,15 @@ try {
             "WebRTC dedicated-worker browser smoke",
             globalThis.runWebRTCDedicatedWorkerBrowserSmoke()
         );
+        const webRTCProxyWorker = await withTimeout(
+            "WebRTC proxy-worker browser smoke",
+            globalThis.runWebRTCProxyWorkerBrowserSmoke()
+        );
         return {
             contractExecutor,
             webRTCMainThread,
-            webRTCDedicatedWorker
+            webRTCDedicatedWorker,
+            webRTCProxyWorker
         };
     });
 
@@ -156,6 +167,8 @@ try {
     assert.equal(result.webRTCMainThread.receivedByResponder, 1);
     assert.equal(result.webRTCDedicatedWorker.receivedByMain, 1);
     assert.equal(result.webRTCDedicatedWorker.receivedByWorker, 1);
+    assert.equal(result.webRTCProxyWorker.receivedByMain, 1);
+    assert.equal(result.webRTCProxyWorker.receivedByWorker, 1);
     assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
 
     console.log("Browser worker and WebRTC smoke passed");

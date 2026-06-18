@@ -51,7 +51,14 @@ class LocalWebRTCConnectionFactory implements WebRTCConnectionFactory {
         this.connectionMap.set(peerAddress, connection);
 
         connection.onicecandidate = (event: { candidate?: any }) => {
-            if (event.candidate) callbacks.onIceCandidate(event.candidate);
+            if (!event.candidate) return;
+            // Normalize to a plain init dict so JSON.stringify downstream
+            // produces a candidate the remote can reconstruct across engines.
+            const candidate =
+                typeof event.candidate.toJSON === "function"
+                    ? event.candidate.toJSON()
+                    : event.candidate;
+            callbacks.onIceCandidate(candidate);
         };
 
         const notifyState = () => {
