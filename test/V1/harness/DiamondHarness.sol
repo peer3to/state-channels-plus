@@ -56,9 +56,9 @@ abstract contract DiamondHarness is Test {
         );
     }
 
-    // must match UtilityFacet.retrieveSignerAddress: EIP-191 over keccak256(encodedData)
     function _sign(uint256 pk, bytes memory encodedBlock) internal pure returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, MessageHashUtils.toEthSignedMessageHash(keccak256(encodedBlock)));
+        bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(encodedBlock)));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
         return abi.encodePacked(r, s, v);
     }
 
