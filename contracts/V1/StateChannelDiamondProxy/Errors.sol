@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 //Channel Open
 error ErrorInvalidJoinChannel();
 error ErrorAtLeastTwoParticipantsRequired();
+error ErrorDuplicateParticipant();
 
 //Calldata errors
 error ErrorBlockCalldataAlreadyPosted();
