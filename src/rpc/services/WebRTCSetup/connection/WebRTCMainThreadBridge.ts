@@ -12,6 +12,7 @@ import type {
     WebRTCPeerConnectionLike
 } from "./WebRTCConnectionTypes";
 import { loadWebRTCProvider, type WebRTCProvider } from "./WebRTCProvider";
+import type { Logger } from "@/utils/logging/Logger";
 
 export type WebRTCChannelMode = "auto" | "transfer" | "proxy";
 
@@ -27,11 +28,11 @@ export type WebRTCMainThreadBridgeOptions = {
      */
     channelMode?: WebRTCChannelMode;
     /**
-     * Whether "auto" mode may fall back to proxying when a transfer attempt
-     * fails. Defaults to true so the bridge works on runtimes that do not
-     * support transferable RTCDataChannels.
+     * Logger for bridge diagnostics on the main thread. Pass the logger
+     * returned by `p2pSetup` so notices reach the SDK log pipeline instead of
+     * the console.
      */
-    allowProxyFallback?: boolean;
+    logger?: Logger;
 };
 
 export type WebRTCMainThreadBridgeHandle = {
@@ -301,15 +302,13 @@ class WebRTCMainThreadBridgeBroker {
             return;
         } catch (error) {
             this.channelTransferSupported = false;
-            const channelMode = this.options.channelMode ?? "auto";
-            const allowProxyFallback = this.options.allowProxyFallback ?? true;
-            if (channelMode === "transfer" || !allowProxyFallback) {
+            if ((this.options.channelMode ?? "auto") === "transfer") {
                 throw error;
             }
             // Surface the reason once (subsequent channels skip the attempt via
             // shouldProxyChannel) so a transfer-unsupported runtime is visible
             // rather than silently degrading.
-            console.warn(
+            this.options.logger?.warn(
                 "[peer3:webrtc-bridge] RTCDataChannel transfer is unsupported in this runtime; " +
                     "falling back to proxying channel messages over the bridge.",
                 error
