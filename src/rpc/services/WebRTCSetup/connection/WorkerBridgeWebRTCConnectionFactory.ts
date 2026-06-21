@@ -18,6 +18,11 @@ const UNKNOWN_STATE: WebRTCConnectionStateSnapshot = {
     iceState: "unknown"
 };
 
+// Worker→main bridge requests are local postMessage round-trips that normally
+// settle in milliseconds. This bound only exists so a dropped/closed bridge can
+// never leave an awaiting WebRTC setup call hanging forever.
+const BRIDGE_REQUEST_TIMEOUT_MS = 30_000;
+
 function isWorkerRuntime(): boolean {
     const runtime = globalThis as any;
     return (
@@ -87,6 +92,7 @@ class WebRTCWorkerBridgeClient {
         {
             resolve: (value: any) => void;
             reject: (error: Error) => void;
+            timeoutId: ReturnType<typeof setTimeout>;
         }
     >();
     private readonly callbacksByPeerAddress = new Map<
@@ -122,7 +128,10 @@ class WebRTCWorkerBridgeClient {
         return this.stateByPeerAddress.get(peerAddress) || UNKNOWN_STATE;
     }
 
-    request(request: WebRTCBridgeRequest): Promise<any> {
+    request(
+        request: WebRTCBridgeRequest,
+        timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS
+    ): Promise<any> {
         const requestId = this.nextRequestId++;
         const message: WebRTCBridgePortMessage = {
             namespace: WEBRTC_BRIDGE_NAMESPACE,
@@ -132,9 +141,38 @@ class WebRTCWorkerBridgeClient {
         };
 
         return new Promise((resolve, reject) => {
-            this.pendingRequests.set(requestId, { resolve, reject });
+            const timeoutId = setTimeout(() => {
+                if (!this.pendingRequests.delete(requestId)) return;
+                reject(
+                    new Error(
+                        `WebRTC bridge request "${request.method}" timed out after ${timeoutMs}ms`
+                    )
+                );
+            }, timeoutMs);
+            this.pendingRequests.set(requestId, {
+                resolve,
+                reject,
+                timeoutId
+            });
             this.port.postMessage(message);
         });
+    }
+
+    /**
+     * Rejects every in-flight request and detaches the port. Called when the
+     * bridge port is replaced or torn down so awaiting WebRTC setup calls fail
+     * fast instead of hanging on a port that will never respond.
+     */
+    dispose(
+        reason = "WebRTC bridge port closed before the request completed"
+    ): void {
+        for (const pending of this.pendingRequests.values()) {
+            clearTimeout(pending.timeoutId);
+            pending.reject(new Error(reason));
+        }
+        this.pendingRequests.clear();
+        this.port.onmessage = null;
+        this.port.close?.();
     }
 
     private handleMessage(message: WebRTCBridgePortMessage): void {
@@ -144,6 +182,7 @@ class WebRTCWorkerBridgeClient {
             const pending = this.pendingRequests.get(message.requestId);
             if (!pending) return;
             this.pendingRequests.delete(message.requestId);
+            clearTimeout(pending.timeoutId);
             if (message.ok) {
                 pending.resolve(message.result);
             } else {
@@ -243,7 +282,9 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
     }
 
     registerPort(port: MessagePort): void {
-        this.bridgePort?.close?.();
+        this.client?.dispose(
+            "WebRTC bridge port was replaced before the request completed"
+        );
         this.bridgePort = port;
         this.client = new WebRTCWorkerBridgeClient(port);
 
@@ -278,13 +319,16 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
 
     ensureReceiverRegistered(): void {
         if (this.receiverRegistered) return;
-        this.receiverRegistered = true;
 
         if (!isWorkerRuntime()) return;
 
         const runtime = globalThis as any;
         if (typeof runtime.addEventListener !== "function") return;
         if (typeof runtime.removeEventListener !== "function") return;
+
+        // Only latch the flag once we are actually attaching the listener, so a
+        // premature main-thread call can't permanently suppress registration.
+        this.receiverRegistered = true;
 
         const listener = ((event: MessageEvent) => {
             if (!this.isBridgeInitMessage(event.data)) return;
