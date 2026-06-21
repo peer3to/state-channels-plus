@@ -6,11 +6,12 @@ import {
     SharedLoggerContext,
     LoggerPerformanceMonitorOptions
 } from "../Logger";
-import { BrowserLogUploader } from "../LogUploader";
+import { BrowserLogUploader } from "./BrowserLogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
 import type { LogStore } from "../logStore";
 import { BROWSER_PEER_COLORS, BROWSER_LEVEL_CSS } from "./colors";
 import { formatTimeFromSeconds } from "../formatUtils";
+import { config } from "../../config";
 
 export class BrowserLogger extends Logger {
     constructor(
@@ -115,6 +116,14 @@ export class BrowserLogger extends Logger {
         const intervalMs = options.intervalMs ?? 1000;
         const sampleIntervalMs = options.sampleIntervalMs ?? 50;
         const delayWarnThresholdMs = options.delayWarnThresholdMs ?? 200;
+        const getDelayErrorThresholdMs = () => {
+            if (options.delayErrorThresholdMs !== undefined) {
+                return options.delayErrorThresholdMs;
+            }
+            return (
+                (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS || 0) * 1000
+            );
+        };
         const utilizationWarnThreshold =
             options.utilizationWarnThreshold ?? 0.8;
 
@@ -168,6 +177,34 @@ export class BrowserLogger extends Logger {
                     longTaskMax: longTaskStats.dMax
                 }
             );
+
+            const delayErrorThresholdMs = getDelayErrorThresholdMs();
+            const maxDelayMs = Math.max(stats.dMax, longTaskStats.dMax);
+            if (
+                delayErrorThresholdMs > 0 &&
+                maxDelayMs > delayErrorThresholdMs
+            ) {
+                const error = new Error(
+                    `Event loop delay ${maxDelayMs}ms exceeded configured threshold ${delayErrorThresholdMs}ms`
+                );
+                (error as any).eventLoopDelay = {
+                    runtime: "browser",
+                    dMean: stats.dMean,
+                    d50: stats.d50,
+                    d90: stats.d90,
+                    d99: stats.d99,
+                    dMax: stats.dMax,
+                    estimatedUtilization,
+                    longTaskCount,
+                    longTaskMean: longTaskStats.dMean,
+                    longTaskMax: longTaskStats.dMax,
+                    delayErrorThresholdMs
+                };
+                clearInterval(sampleTimer);
+                clearInterval(reportTimer);
+                observer?.disconnect();
+                throw error;
+            }
 
             delaySamples = [];
             longTaskDurations = [];

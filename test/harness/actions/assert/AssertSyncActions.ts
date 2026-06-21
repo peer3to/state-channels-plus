@@ -1,11 +1,14 @@
 import type { ForkId, Hash } from "@/types/types";
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { ZeroHash } from "ethers";
 import StateSnapshot from "@/models/StateSnapshot";
 
-export class AssertSyncActions {
-    constructor(private readonly harness: PeerTestHarness) {}
+export class AssertSyncActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
 
     async peersInSyncWait(options?: {
         expectedStateMachineStateHash?: Hash;
@@ -37,12 +40,16 @@ export class AssertSyncActions {
 
         const firstPeerIndex = peers[0].index;
         const firstPeerState =
-            this.harness.query.getLatestStateMachineStateHash(firstPeerIndex);
+            await this.harness.query.getLatestStateMachineStateHash(
+                firstPeerIndex
+            );
 
         for (let i = 1; i < peers.length; i++) {
             const peerIndex = peers[i].index;
             const peerState =
-                this.harness.query.getLatestStateMachineStateHash(peerIndex);
+                await this.harness.query.getLatestStateMachineStateHash(
+                    peerIndex
+                );
 
             expect(peerState).to.deep.equal(
                 firstPeerState,
@@ -74,20 +81,22 @@ export class AssertSyncActions {
         }
 
         for (const peer of peers) {
-            const latestBlock =
-                peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            expect(latestBlock).to.not.equal(
-                undefined,
+            const height = await this.harness
+                .control(peer)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(height).to.not.equal(
+                null,
                 `Peer ${peer.index} should have a latest block`
             );
-            expect(latestBlock?.height).to.equal(
+            expect(height).to.equal(
                 expectedHeight,
                 `Peer ${peer.index} block height should be ${expectedHeight}`
             );
         }
     }
 
-    forkChanged(options?: {
+    async forkChanged(options?: {
         originalForkId?: ForkId;
         expectedForkId?: ForkId;
         excludeForkIds?: ForkId[];
@@ -109,9 +118,9 @@ export class AssertSyncActions {
             originalForkId
         ]);
 
-        const peerForks = peers
-            .map((p) => p.stateManager.forkId)
-            .filter((fid) => !excludeSet.has(fid));
+        const peerForks = (await this.harness.peerForkIds(peers)).filter(
+            (fid) => !excludeSet.has(fid)
+        );
 
         if (peerForks.length != peers.length)
             throw new Error(
@@ -144,21 +153,21 @@ export class AssertSyncActions {
         timeoutMs?: number;
     }): Promise<void> {
         const { timeoutMs = 5000 } = options || {};
-        const condition = () => {
+        const condition = async () => {
             try {
-                this.forkChanged(options);
+                await this.forkChanged(options);
                 return true;
-            } catch (error) {
+            } catch {
                 return false;
             }
         };
 
         await this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs,
-            timeoutMessageFn: () => {
+            timeoutMessageFn: async () => {
                 let errorMsg = `Fork change not detected within ${timeoutMs}ms`;
                 try {
-                    this.forkChanged(options);
+                    await this.forkChanged(options);
                 } catch (error) {
                     errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
                 }
@@ -209,7 +218,7 @@ export class AssertSyncActions {
         });
     }
 
-    forkUnchanged(): void {
+    async forkUnchanged(): Promise<void> {
         const originalForkId = this.harness.context.originalForkId;
         if (!originalForkId) {
             throw new Error(
@@ -217,14 +226,8 @@ export class AssertSyncActions {
             );
         }
 
-        const forkUnchanged = this.harness.peers.every(
-            (p) => p.stateManager.forkId === originalForkId
-        );
-
-        if (!forkUnchanged) {
-            const forkIds = this.harness.peers.map(
-                (p) => p.stateManager.forkId
-            );
+        const forkIds = await this.harness.peerForkIds();
+        if (!forkIds.every((fid) => fid === originalForkId)) {
             throw new Error(
                 `Expected fork to remain ${originalForkId}, but found: ${JSON.stringify(forkIds)}`
             );
@@ -269,19 +272,21 @@ export class AssertSyncActions {
             throw new Error("No active fork ID");
         }
 
-        const condition = () => {
-            const peerHeight =
-                this.harness.peers[
-                    peerIndex
-                ].stateManager.storage.blocks.getNextBlockHeight(forkId);
-            const otherHeight =
-                this.harness.peers[
-                    otherPeerIndex
-                ].stateManager.storage.blocks.getNextBlockHeight(forkId);
+        const condition = async () => {
+            const [peerHeight, otherHeight] = await Promise.all([
+                this.harness
+                    .control(this.harness.getPeer(peerIndex))
+                    .query.getNextBlockHeight(forkId)
+                    .request(),
+                this.harness
+                    .control(this.harness.getPeer(otherPeerIndex))
+                    .query.getNextBlockHeight(forkId)
+                    .request()
+            ]);
             return peerHeight > otherHeight;
         };
 
-        if (!condition()) {
+        if (!(await condition())) {
             await this.harness.eventCountsBarrier.waitFor(condition, {
                 timeoutMs,
                 timeoutMessage: `Peer ${peerIndex} height did not exceed peer ${otherPeerIndex} within ${timeoutMs}ms`
@@ -302,8 +307,10 @@ export class AssertSyncActions {
         }
 
         const condition = async () => {
-            const participants =
-                await peer.stateManager.diamondStateMachine.getParticipants();
+            const participants = await this.harness
+                .control(peer)
+                .query.getParticipants()
+                .request();
             return participants.length === expectedCount;
         };
 
@@ -314,8 +321,10 @@ export class AssertSyncActions {
             });
         }
 
-        const participants =
-            await peer.stateManager.diamondStateMachine.getParticipants();
+        const participants = await this.harness
+            .control(peer)
+            .query.getParticipants()
+            .request();
         expect(participants.length).to.equal(expectedCount);
     }
 
@@ -325,20 +334,27 @@ export class AssertSyncActions {
         timeoutMs?: number;
     }): Promise<void> {
         const { spectatorPeerIndex, peerIndices, timeoutMs = 15000 } = options;
+        const spectator = this.harness.getPeer(spectatorPeerIndex);
 
         await this.harness.disconnectionBarrier.waitFor(
-            () =>
-                peerIndices.every(
-                    (i) =>
-                        this.harness.query.getTransport(
-                            spectatorPeerIndex,
-                            i
-                        ) === undefined &&
-                        this.harness.query.getTransport(
-                            i,
-                            spectatorPeerIndex
-                        ) === undefined
-                ),
+            async () => {
+                for (const i of peerIndices) {
+                    const peer = this.harness.getPeer(i);
+                    const [spectatorConnected, peerConnected] =
+                        await Promise.all([
+                            this.harness
+                                .control(spectator)
+                                .query.isConnectedTo(peer.address)
+                                .request(),
+                            this.harness
+                                .control(peer)
+                                .query.isConnectedTo(spectator.address)
+                                .request()
+                        ]);
+                    if (spectatorConnected || peerConnected) return false;
+                }
+                return true;
+            },
             {
                 timeoutMs,
                 timeoutMessage: `Spectator ${spectatorPeerIndex} should have no transport to/from peers [${peerIndices.join(", ")}] within ${timeoutMs}ms`

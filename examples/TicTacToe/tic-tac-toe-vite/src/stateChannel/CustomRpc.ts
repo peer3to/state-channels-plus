@@ -1,13 +1,16 @@
 import {
-    defineRpcServices,
+    MainRpcService,
     OpenChannelNegotiationService
 } from "@peer3/state-channels-plus";
-import type { OpenChannelNegotiationFactories } from "@peer3/state-channels-plus";
+import type { P2PManager } from "@peer3/state-channels-plus";
 
-export const ticTacToeRpcServiceFactories =
-    defineRpcServices<OpenChannelNegotiationFactories>({
-        openChannelNegotiationService: (p2pManager) =>
-            new OpenChannelNegotiationService(p2pManager)
-    });
+export class TicTacToeRpc extends MainRpcService {
+    openChannelNegotiationService: OpenChannelNegotiationService;
 
-export type TicTacToeRpcFactories = typeof ticTacToeRpcServiceFactories;
+    constructor(p2pManager: P2PManager<TicTacToeRpc>) {
+        super(p2pManager);
+        this.openChannelNegotiationService = new OpenChannelNegotiationService(
+            p2pManager
+        );
+    }
+}

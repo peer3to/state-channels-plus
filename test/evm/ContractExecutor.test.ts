@@ -2,7 +2,7 @@ import { ethers } from "hardhat";
 import { expect } from "chai";
 import { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
-import { ContractExecutor } from "@/evm";
+import { ContractExecutor, type AContractExecutor } from "@/evm";
 import Clock from "@/Clock";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import {
@@ -13,12 +13,32 @@ import {
 describe("ContractExecutor", function () {
     let evm: EVM;
     let contractAddress: Address;
-    let contractExecutor: ContractExecutor;
+    let contractExecutor: AContractExecutor;
     let SimpleNumberStorage: any; // Store the contract factory
 
     const getUnderlyingDbSize = () => {
         return ((evm.stateManager as any)._trie.database().db as any)._database
             .size;
+    };
+    const getMixedCaseContractAddress = () =>
+        `0x${contractAddress
+            .toString()
+            .slice(2)
+            .split("")
+            .map((char, index) =>
+                index % 2 === 0 ? char.toUpperCase() : char.toLowerCase()
+            )
+            .join("")}`;
+    const executeContractCall = (data: string | Uint8Array) =>
+        contractExecutor.executeCall(data, getMixedCaseContractAddress());
+    const simulateContractCall = (data: string | Uint8Array) =>
+        contractExecutor.simulateCall(data, getMixedCaseContractAddress());
+    const createLogOnlyInitCode = (topic: string) => {
+        const runtime = `0x602a6000527f${topic.slice(2)}60206000a160006000f3`;
+        const runtimeBytes = ethers.getBytes(runtime);
+        const runtimeSize = runtimeBytes.length.toString(16).padStart(2, "0");
+        const header = `0x60${runtimeSize}600c60003960${runtimeSize}6000f3`;
+        return `${header}${runtime.slice(2)}`;
     };
 
     // Deploy the SimpleNumberStorage contract
@@ -39,7 +59,7 @@ describe("ContractExecutor", function () {
         expect(deploymentResult.createdAddress).to.not.be.undefined;
         contractAddress = deploymentResult.createdAddress!;
 
-        contractExecutor = new ContractExecutor(evm, contractAddress);
+        contractExecutor = new ContractExecutor(evm);
     });
 
     it("should successfully execute a call to get a value", async function () {
@@ -48,7 +68,7 @@ describe("ContractExecutor", function () {
         const getValueData =
             SimpleNumberStorage.interface.encodeFunctionData(getValueFunction);
 
-        const result = await contractExecutor.executeCall(getValueData);
+        const result = await executeContractCall(getValueData);
 
         expect(result.returnValue).to.not.be.undefined;
         const returnValue = ethers.hexlify(result.returnValue);
@@ -69,7 +89,7 @@ describe("ContractExecutor", function () {
             [setValue]
         );
 
-        await contractExecutor.executeCall(setValueData);
+        await executeContractCall(setValueData);
 
         // Get the value to verify it was set
         const getValueFunction =
@@ -77,7 +97,7 @@ describe("ContractExecutor", function () {
         const getValueData =
             SimpleNumberStorage.interface.encodeFunctionData(getValueFunction);
 
-        const result = await contractExecutor.executeCall(getValueData);
+        const result = await executeContractCall(getValueData);
         const returnValue = ethers.hexlify(result.returnValue);
         const decodedValue = ethers.AbiCoder.defaultAbiCoder().decode(
             ["uint256"],
@@ -101,7 +121,7 @@ describe("ContractExecutor", function () {
             [encodedValue]
         );
 
-        await contractExecutor.executeCall(setStateData);
+        await executeContractCall(setStateData);
 
         // Get the value to verify it was set
         const getValueFunction =
@@ -109,13 +129,42 @@ describe("ContractExecutor", function () {
         const getValueData =
             SimpleNumberStorage.interface.encodeFunctionData(getValueFunction);
 
-        const result = await contractExecutor.executeCall(getValueData);
+        const result = await executeContractCall(getValueData);
         const returnValue = ethers.hexlify(result.returnValue);
         const decodedValue = ethers.AbiCoder.defaultAbiCoder().decode(
             ["uint256"],
             returnValue
         );
         expect(decodedValue[0]).to.equal(newValue);
+    });
+
+    it("should return RPC-style logs", async function () {
+        const contractInterface = new ethers.Interface([
+            "event ValueSet(uint256 value)"
+        ]);
+        const topic = ethers.id("ValueSet(uint256)");
+        const deployment = await contractExecutor.deploy(
+            createLogOnlyInitCode(topic)
+        );
+
+        const result = await contractExecutor.executeCall(
+            "0x",
+            deployment.createdAddress!
+        );
+        const [log] = result.logs ?? [];
+        expect(log).to.not.be.undefined;
+        if (!log) throw new Error("Expected one contract execution log");
+
+        expect(Array.isArray(log)).to.equal(false);
+        expect(log.address).to.equal(deployment.createdAddress);
+        expect(log.topics).to.deep.equal([topic]);
+        expect(log.data).to.equal(
+            ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [42n])
+        );
+
+        const parsed = contractInterface.parseLog(log);
+        expect(parsed?.name).to.equal("ValueSet");
+        expect(parsed?.args[0]).to.equal(42n);
     });
 
     it("should simulate a mutating call without persisting it", async function () {
@@ -130,15 +179,15 @@ describe("ContractExecutor", function () {
             [777n]
         );
 
-        const beforeResult = await contractExecutor.executeCall(getValueData);
+        const beforeResult = await executeContractCall(getValueData);
         const beforeValue = ethers.AbiCoder.defaultAbiCoder().decode(
             ["uint256"],
             ethers.hexlify(beforeResult.returnValue)
         )[0];
 
-        await contractExecutor.simulateCall(setValueData);
+        await simulateContractCall(setValueData);
 
-        const afterResult = await contractExecutor.executeCall(getValueData);
+        const afterResult = await executeContractCall(getValueData);
         const afterValue = ethers.AbiCoder.defaultAbiCoder().decode(
             ["uint256"],
             ethers.hexlify(afterResult.returnValue)
@@ -157,7 +206,7 @@ describe("ContractExecutor", function () {
 
         const dbSizeBefore = getUnderlyingDbSize();
 
-        await contractExecutor.simulateCall(setValueData);
+        await simulateContractCall(setValueData);
 
         expect(getUnderlyingDbSize()).to.equal(dbSizeBefore);
     });
@@ -172,7 +221,7 @@ describe("ContractExecutor", function () {
 
         const dbSizeBefore = getUnderlyingDbSize();
 
-        await contractExecutor.executeCall(setValueData);
+        await executeContractCall(setValueData);
 
         expect(getUnderlyingDbSize()).to.be.greaterThan(dbSizeBefore);
     });
@@ -209,12 +258,12 @@ describe("ContractExecutor", function () {
             [888n]
         );
 
-        const canonicalCall = contractExecutor.executeCall(setValueData);
+        const canonicalCall = executeContractCall(setValueData);
         await canonicalCallStartedPromise;
 
         try {
             const result = await Promise.race([
-                contractExecutor.simulateCall(getValueData),
+                simulateContractCall(getValueData),
                 new Promise<never>((_, reject) =>
                     setTimeout(
                         () =>
@@ -254,7 +303,7 @@ describe("ContractExecutor", function () {
                 nextValue
             ]);
 
-        await contractExecutor.executeCall(setInitialValueData);
+        await executeContractCall(setInitialValueData);
 
         const evmWithPatchedRunCall = evm as EVM & {
             runCall: (...args: any[]) => ReturnType<EVM["runCall"]>;
@@ -272,12 +321,12 @@ describe("ContractExecutor", function () {
             };
         });
 
-        const canonicalCall = contractExecutor.executeCall(setNextValueData);
+        const canonicalCall = executeContractCall(setNextValueData);
         await canonicalLiveStateUpdated;
 
         try {
             const resultWhileCanonicalHeld =
-                await contractExecutor.simulateCall(getValueData);
+                await simulateContractCall(getValueData);
             const valueWhileCanonicalHeld =
                 ethers.AbiCoder.defaultAbiCoder().decode(
                     ["uint256"],
@@ -292,7 +341,7 @@ describe("ContractExecutor", function () {
         }
 
         const resultAfterCanonicalRelease =
-            await contractExecutor.simulateCall(getValueData);
+            await simulateContractCall(getValueData);
         const valueAfterCanonicalRelease =
             ethers.AbiCoder.defaultAbiCoder().decode(
                 ["uint256"],
@@ -339,7 +388,7 @@ describe("ContractExecutor", function () {
         try {
             await Promise.all(
                 Array.from({ length: 30 }, () =>
-                    contractExecutor.simulateCall(getValueData)
+                    simulateContractCall(getValueData)
                 )
             );
         } finally {
@@ -368,9 +417,9 @@ describe("ContractExecutor", function () {
                 initialValue
             ]);
 
-        await contractExecutor.executeCall(setInitialValueData);
+        await executeContractCall(setInitialValueData);
 
-        const initialResult = await contractExecutor.executeCall(getValueData);
+        const initialResult = await executeContractCall(getValueData);
         const valueBeforeIncrements = ethers.AbiCoder.defaultAbiCoder().decode(
             ["uint256"],
             ethers.hexlify(initialResult.returnValue)
@@ -382,7 +431,7 @@ describe("ContractExecutor", function () {
             initialValue + BigInt(canonicalIncrementCount);
 
         const simulatedIncrementResult =
-            await contractExecutor.simulateCall(incrementData);
+            await simulateContractCall(incrementData);
         const simulatedIncrementReturnValue = ethers.hexlify(
             simulatedIncrementResult.returnValue
         );
@@ -505,7 +554,7 @@ describe("ContractExecutor", function () {
         const runSimulatedIncrement = async () => {
             const expectedIndex =
                 expectedCanonicalIncrementsForSimulations.length;
-            const result = await contractExecutor.simulateCall(incrementData);
+            const result = await simulateContractCall(incrementData);
             const value = ethers.AbiCoder.defaultAbiCoder().decode(
                 ["uint256"],
                 ethers.hexlify(result.returnValue)
@@ -521,13 +570,13 @@ describe("ContractExecutor", function () {
             );
         };
 
-        const firstCanonicalWrite = contractExecutor.executeCall(incrementData);
+        const firstCanonicalWrite = executeContractCall(incrementData);
         await firstCanonicalRunCallStarted;
 
         try {
             const canonicalWrites = Array.from(
                 { length: canonicalIncrementCount - 1 },
-                () => contractExecutor.executeCall(incrementData)
+                () => executeContractCall(incrementData)
             );
             const allCanonicalWrites = [
                 firstCanonicalWrite,
@@ -556,7 +605,7 @@ describe("ContractExecutor", function () {
             }
         }
 
-        const finalResult = await contractExecutor.executeCall(getValueData);
+        const finalResult = await executeContractCall(getValueData);
         const finalValue = ethers.AbiCoder.defaultAbiCoder().decode(
             ["uint256"],
             ethers.hexlify(finalResult.returnValue)
@@ -610,7 +659,7 @@ describe("ContractExecutor", function () {
         try {
             const calls = Array.from({ length: 30 }, (_, index) => {
                 if (index % 3 === 0) {
-                    return contractExecutor.executeCall(getValueData);
+                    return executeContractCall(getValueData);
                 }
 
                 const setValueData =
@@ -618,7 +667,7 @@ describe("ContractExecutor", function () {
                         setValueFunction,
                         [BigInt(index)]
                     );
-                return contractExecutor.executeCall(setValueData);
+                return executeContractCall(setValueData);
             });
 
             await Promise.all(calls);
@@ -634,7 +683,7 @@ describe("ContractExecutor", function () {
         const invalidFunctionData = "0xffffffff";
 
         try {
-            await contractExecutor.executeCall(invalidFunctionData);
+            await executeContractCall(invalidFunctionData);
             // Should not reach here
             expect.fail("Expected call to fail");
         } catch (error: any) {
@@ -654,7 +703,7 @@ describe("ContractExecutor", function () {
             ]);
 
         try {
-            await contractExecutor.executeCall(revertFunctionData);
+            await executeContractCall(revertFunctionData);
             // Should not reach here
             expect.fail("Expected the function to revert");
         } catch (error: any) {

@@ -1,0 +1,44 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "declaration": false,
+        "module": "es2020",
+        "moduleResolution": "node",
+        "outDir": "./dist/browser",
+        "paths": {
+            "@/*": ["src/*"],
+            "@platform/createLogger": [
+                "src/utils/logging/browser/createLogger"
+            ],
+            "@platform/contractExecutorWorkerRuntime": [
+                "src/evm/contractExecutor/browser/ContractExecutorWorkerRuntime"
+            ],
+            "@platform/p2pRuntimeChannel": [
+                "src/evm/p2pRuntime/browser/P2pRuntimeChannel"
+            ],
+            "@platform/p2pRuntimeWorkerRuntime": [
+                "src/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime"
+            ],
+            "@platform/DeployUtils": ["src/utils/browser/DeployUtils"],
+            "@platform/LocalDiscoveryServer": [
+                "src/utils/browser/LocalDiscoveryServer"
+            ],
+            "@platform/moduleLoader": [
+                "src/utils/moduleLoader/browser/importModuleFromManifest"
+            ],
+            "@test/*": ["test/*"],
+            "@typechain-types/*": ["typechain-types/*"],
+            "@typechain-types": ["typechain-types/index"]
+        }
+    },
+    "exclude": [
+        "examples",
+        "dist",
+        "node_modules",
+        "src/evm/node",
+        "src/evm/contractExecutor/node",
+        "src/evm/p2pRuntime/node",
+        "src/utils/node",
+        "src/utils/logging/node"
+    ]
+}

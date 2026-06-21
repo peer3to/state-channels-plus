@@ -39,6 +39,7 @@ export type LoggerPerformanceMonitorOptions = {
     intervalMs?: number;
     sampleIntervalMs?: number;
     delayWarnThresholdMs?: number;
+    delayErrorThresholdMs?: number;
     utilizationWarnThreshold?: number;
 };
 

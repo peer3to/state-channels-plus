@@ -1,11 +1,14 @@
 import { StateSnapshot } from "@/models";
 import { ForkId } from "@/types";
-import { DetachedPromises } from "@/utils";
+import { Codec, DetachedPromises, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 
-export class AssertSnapshotActions {
-    constructor(private readonly harness: PeerTestHarness) {}
+export class AssertSnapshotActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
 
     async onChainSnapshotOnFork(options?: {
         expectedForkId?: string;
@@ -119,12 +122,20 @@ export class AssertSnapshotActions {
 
         const blockHeight =
             options?.blockHeight ||
-            peer.stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
+            (await this.harness
+                .control(peer)
+                .query.getNextBlockHeight(forkId)
+                .request()) - 1;
 
-        const localSnapshot = peer.stateManager.storage.getStateSnapshot({
-            forkId,
-            height: blockHeight
-        });
+        const localResult = await this.harness
+            .control(peer)
+            .query.getStateSnapshotStructAt(forkId, blockHeight)
+            .request();
+        const localSnapshot = localResult
+            ? StateSnapshot.from(
+                  Codec.decode(localResult.encodedSnapshot, Type.StateSnapshot)
+              )
+            : undefined;
 
         if (!localSnapshot) {
             throw new Error(
@@ -157,7 +168,7 @@ export class AssertSnapshotActions {
             throw new Error(`Peer ${peerIndex} not found`);
         }
 
-        const stateMachine = peer.stateManager.diamondStateMachine;
+        const balanceRpc = this.harness.control(peer).balance;
         const channelBalanceBefore = this.harness.context.channelBalanceBefore;
         if (!channelBalanceBefore) {
             throw new Error(
@@ -170,26 +181,41 @@ export class AssertSnapshotActions {
                 this.harness.channelId
             );
 
-        const actualDelta = await stateMachine.subtractBalance(
-            channelBalanceAfter.totalWithdrawals,
-            channelBalanceBefore.totalWithdrawals
-        );
-        const expectedWithdrawalsDelta =
-            this.harness.context.expectedWithdrawalsDelta;
-        if (!expectedWithdrawalsDelta) {
+        const { encodedBalance: encodedActualDelta } = await balanceRpc
+            .subtractBalance(
+                Codec.encode(
+                    channelBalanceAfter.totalWithdrawals,
+                    Type.Balance
+                ) as string,
+                Codec.encode(
+                    channelBalanceBefore.totalWithdrawals,
+                    Type.Balance
+                ) as string
+            )
+            .request();
+        const encodedExpectedWithdrawalsDelta =
+            this.harness.context.encodedExpectedWithdrawalsDelta;
+        if (!encodedExpectedWithdrawalsDelta) {
             throw new Error(
                 "No expectedWithdrawalsDelta in context. Call context capture first."
             );
         }
 
-        const deltaMatches = await stateMachine.areBalancesEqual(
-            actualDelta,
-            expectedWithdrawalsDelta
-        );
+        const deltaMatches = await balanceRpc
+            .areBalancesEqual(
+                encodedActualDelta,
+                encodedExpectedWithdrawalsDelta
+            )
+            .request();
 
         if (!deltaMatches) {
+            const expected = Codec.decode(
+                encodedExpectedWithdrawalsDelta,
+                Type.Balance
+            );
+            const actual = Codec.decode(encodedActualDelta, Type.Balance);
             throw new Error(
-                `Actual withdrawal delta does not match expected delta from outbound messages. Expected: ${expectedWithdrawalsDelta.amount.toString()}, Actual: ${actualDelta.amount.toString()}`
+                `Actual withdrawal delta does not match expected delta from outbound messages. Expected: ${expected.amount.toString()}, Actual: ${actual.amount.toString()}`
             );
         }
     }
@@ -212,9 +238,13 @@ export class AssertSnapshotActions {
 
         const encodedState =
             encodedStateMachineState ??
-            peer.stateManager.storage.stateMachineStates.getStateMachineState(
-                onChainSnapshot.stateMachineStateHash
-            );
+            (await this.harness
+                .control(peer)
+                .query.getStateMachineState(
+                    onChainSnapshot.stateMachineStateHash
+                )
+                .request()) ??
+            undefined;
 
         if (!encodedState) {
             throw new Error(
@@ -223,7 +253,7 @@ export class AssertSnapshotActions {
         }
 
         const isValidBalanceInvariant =
-            await peer.stateManager.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+            await this.harness.channelManager.verifyBalanceInvariantCheckSnapshot.staticCall(
                 this.harness.channelId,
                 onChainSnapshot.snapshotData,
                 encodedState
@@ -253,12 +283,13 @@ export class AssertSnapshotActions {
             );
         }
 
-        const snapshotStorage = peer.stateManager.storage.stateSnapshots as any;
-        const condition = () =>
-            Array.from(snapshotStorage.snapshotsByHash.keys()).length >
-            countBefore;
+        const condition = async () =>
+            (await this.harness
+                .control(peer)
+                .query.getSnapshotCount()
+                .request()) > countBefore;
 
-        if (!condition()) {
+        if (!(await condition())) {
             await this.harness.eventCountsBarrier.waitFor(condition, {
                 timeoutMs,
                 timeoutMessage: `Snapshot count did not increase within ${timeoutMs}ms`

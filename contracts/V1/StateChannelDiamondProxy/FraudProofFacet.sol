@@ -83,22 +83,16 @@ contract FraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        if (
-            !(
-                block1.transaction.header.forkId == block2.transaction.header.forkId
+        if (!(block1.transaction.header.forkId == block2.transaction.header.forkId
                     && block1.transaction.header.transactionCnt == block2.transaction.header.transactionCnt
-                    && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2))
-            )
-        ) {
+                    && keccak256(abi.encode(block1)) != keccak256(abi.encode(block2)))) {
             return _invalid();
         }
 
-        (address signer1,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
-            blockDoubleSignProof.block1.encodedBlock, blockDoubleSignProof.block1.signature
-        );
-        (address signer2,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
-            blockDoubleSignProof.block2.encodedBlock, blockDoubleSignProof.block2.signature
-        );
+        (address signer1,) = UtilityFacet(utilityFacetAddress)
+            .retrieveSignerAddress(blockDoubleSignProof.block1.encodedBlock, blockDoubleSignProof.block1.signature);
+        (address signer2,) = UtilityFacet(utilityFacetAddress)
+            .retrieveSignerAddress(blockDoubleSignProof.block2.encodedBlock, blockDoubleSignProof.block2.signature);
         if (signer1 != signer2) {
             return _invalid();
         }
@@ -109,15 +103,16 @@ contract FraudProofFacet is StateChannelCommon {
         FraudProof memory fraudProof,
         FraudProofVerificationContext memory fraudProofVerificationContext
     ) internal returns (address) {
-        BlockInvalidStateTransitionProof memory blockInvalidSTProof =
-            abi.decode(fraudProof.encodedProof, (BlockInvalidStateTransitionProof));
+        BlockInvalidStateTransitionProof memory
+            blockInvalidSTProof = abi.decode(fraudProof.encodedProof, (BlockInvalidStateTransitionProof));
         Block memory fraudBlock = abi.decode(blockInvalidSTProof.invalidBlock.encodedBlock, (Block));
         StateSnapshot memory previousStateSnapshot = blockInvalidSTProof.previousBlockStateSnapshot;
         bytes memory previousStateStateMachineState = blockInvalidSTProof.previousStateStateMachineState;
 
-        (address signer,) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
-            blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
-        );
+        (address signer,) = UtilityFacet(utilityFacetAddress)
+            .retrieveSignerAddress(
+                blockInvalidSTProof.invalidBlock.encodedBlock, blockInvalidSTProof.invalidBlock.signature
+            );
 
         bool isSuccess;
         bytes memory encodedModifiedState;
@@ -146,8 +141,8 @@ contract FraudProofFacet is StateChannelCommon {
 
         (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
             .executeStateTransition(
-            fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
-        );
+                fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
+            );
         if (!isSuccess) {
             return _valid(signer);
         }
@@ -155,8 +150,9 @@ contract FraudProofFacet is StateChannelCommon {
         SnapshotData memory newSnapshotData = previousStateSnapshot.snapshotData;
         if (outboundMessages.length > 0) {
             for (uint256 i = 0; i < outboundMessages.length; i++) {
-                newSnapshotData.totalWithdrawals =
-                    stateMachineImplementation.addBalance(newSnapshotData.totalWithdrawals, outboundMessages[i].balance);
+                newSnapshotData.totalWithdrawals = stateMachineImplementation.addBalance(
+                    newSnapshotData.totalWithdrawals, outboundMessages[i].balance
+                );
             }
 
             newSnapshotData.latestOutboundMessageBlockHeight += 1;
@@ -209,58 +205,64 @@ contract FraudProofFacet is StateChannelCommon {
     ) internal view returns (address) {
         InvalidTimestampProof memory proof = abi.decode(fraudProof.encodedProof, (InvalidTimestampProof));
 
-        if (!isBlockAuthentic(proof.invalidBlock)) return _invalid();
+        if (!_hasInvalidTimestamp(proof)) return _invalid();
+
         Block memory fraudBlock = abi.decode(proof.invalidBlock.encodedBlock, (Block));
         if (fraudProofVerificationContext.channelId != fraudBlock.transaction.header.channelId) {
             return _invalid();
         }
+        return _valid(fraudBlock.transaction.header.participant);
+    }
+
+    function _hasInvalidTimestamp(InvalidTimestampProof memory proof) internal view returns (bool) {
+        if (!isBlockAuthentic(proof.invalidBlock)) return false;
+        Block memory fraudBlock = abi.decode(proof.invalidBlock.encodedBlock, (Block));
+        uint256 fraudTimestamp = fraudBlock.transaction.header.timestamp;
+        uint256 p2pTime = getP2pTime();
 
         if (fraudBlock.transaction.header.transactionCnt == 0) {
             if (fraudBlock.previousBlockHash != keccak256(abi.encode(proof.previousStateSnapshot))) {
-                return _invalid();
+                return false;
             }
-            if (
-                _isFirstBlockTimestampValid(
-                    fraudBlock.transaction.header.timestamp, proof.previousStateSnapshot.timestamp, getP2pTime()
-                )
-            ) return _invalid();
-            return _valid(fraudBlock.transaction.header.participant);
+            uint256 prevSnapshotTimestamp = proof.previousStateSnapshot.timestamp;
+            return fraudTimestamp < prevSnapshotTimestamp || fraudTimestamp > prevSnapshotTimestamp + p2pTime;
         }
 
-        if (!isBlockAuthentic(proof.previousBlock)) return _invalid();
+        if (!isBlockAuthentic(proof.previousBlock)) return false;
         Block memory previousBlock = abi.decode(proof.previousBlock.encodedBlock, (Block));
-        if (fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))) return _invalid();
+        if (fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))) return false;
 
-        uint256 previousBlockOnChainTimestamp = 0;
-        bool hasForfeited = _hasForfeitedRightToExtraTime(
-            previousBlock, fraudBlock.transaction.header.participant, proof.participantSignatureOnPreviousBlock
-        );
+        // forfeit-of-extra-time: if author signed the previous block, they can't claim extra p2p time
+        bool hasForfeited = false;
+        if (proof.participantSignatureOnPreviousBlock.length > 0) {
+            (address signerAddr, bool isValid) = UtilityFacet(utilityFacetAddress)
+                .retrieveSignerAddress(abi.encode(previousBlock), proof.participantSignatureOnPreviousBlock);
+            hasForfeited = isValid && signerAddr == fraudBlock.transaction.header.participant;
+        }
+
+        uint256 relevantTimestamp = previousBlock.transaction.header.timestamp;
         if (!hasForfeited) {
             (bool found, bytes32 commitment) = getBlockCallDataCommitment(
-                fraudProofVerificationContext.channelId,
+                fraudBlock.transaction.header.channelId,
                 fraudBlock.transaction.header.forkId,
                 previousBlock.transaction.header.transactionCnt,
                 previousBlock.transaction.header.participant
             );
             if (found) {
-                if (proof.previousBlockOnChainTimestamp == 0) return _invalid();
+                if (proof.previousBlockOnChainTimestamp == 0) return false;
                 bytes32 expectedCommitment =
                     keccak256(abi.encode(proof.previousBlock, proof.previousBlockOnChainTimestamp));
-                if (commitment != expectedCommitment) return _invalid();
-                previousBlockOnChainTimestamp = proof.previousBlockOnChainTimestamp;
+                if (commitment != expectedCommitment) return false;
+                relevantTimestamp = proof.previousBlockOnChainTimestamp;
             }
         }
 
-        if (
-            _isBlockTimestampValid(
-                fraudBlock.transaction.header.timestamp,
-                previousBlock.transaction.header.timestamp,
-                hasForfeited,
-                previousBlockOnChainTimestamp,
-                getP2pTime()
-            )
-        ) return _invalid();
-        return _valid(fraudBlock.transaction.header.participant);
+        return
+            fraudTimestamp < previousBlock.transaction.header.timestamp || fraudTimestamp > relevantTimestamp + p2pTime;
+    }
+
+    function hasInvalidTimestamp(InvalidTimestampProof memory proof) public view returns (bool) {
+        return _hasInvalidTimestamp(proof);
     }
 
     function _handleWrongGenesis(FraudProof memory fraudProof, FraudProofVerificationContext memory)

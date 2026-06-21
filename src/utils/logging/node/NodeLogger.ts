@@ -6,7 +6,7 @@ import {
     SharedLoggerContext,
     LoggerPerformanceMonitorOptions
 } from "../Logger";
-import { NodeLogUploader } from "../LogUploader";
+import { NodeLogUploader } from "./NodeLogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
 import type { LogStore } from "../logStore";
 import { Colors } from "./colors";
@@ -143,16 +143,28 @@ export class NodeLogger extends Logger {
         let stopped = false;
         let stopMonitor: (() => void) | undefined;
 
+        const getDelayErrorThresholdMs = () => {
+            if (options.delayErrorThresholdMs !== undefined) {
+                return options.delayErrorThresholdMs;
+            }
+            return (
+                (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS || 0) * 1000
+            );
+        };
+
         void import("node:perf_hooks")
             .then(({ monitorEventLoopDelay, performance }) => {
                 if (stopped) return;
 
                 const intervalMs = options.intervalMs ?? 1000;
+                const sampleIntervalMs = options.sampleIntervalMs ?? 10;
                 const delayWarnThresholdMs =
                     options.delayWarnThresholdMs ?? 200;
                 const utilizationWarnThreshold =
                     options.utilizationWarnThreshold ?? 0.8;
-                const h = monitorEventLoopDelay();
+                const h = monitorEventLoopDelay({
+                    resolution: sampleIntervalMs
+                });
                 h.enable();
                 let last = performance.eventLoopUtilization();
 
@@ -162,6 +174,7 @@ export class NodeLogger extends Logger {
                 };
 
                 const timer = setInterval(() => {
+                    if (stopped) return;
                     const elu = performance.eventLoopUtilization(last);
                     last = performance.eventLoopUtilization();
                     const dMean = toMs(h.mean);
@@ -192,6 +205,29 @@ export class NodeLogger extends Logger {
                             utilization
                         }
                     );
+                    const delayErrorThresholdMs = getDelayErrorThresholdMs();
+                    if (
+                        delayErrorThresholdMs > 0 &&
+                        dMax > delayErrorThresholdMs
+                    ) {
+                        const details = {
+                            runtime: "node",
+                            dMean,
+                            d50,
+                            d90,
+                            d99,
+                            dMax,
+                            utilization,
+                            delayErrorThresholdMs
+                        };
+                        stopped = true;
+                        stopMonitor?.();
+                        const error = new Error(
+                            `Event loop delay ${dMax}ms exceeded configured threshold ${delayErrorThresholdMs}ms`
+                        );
+                        (error as any).eventLoopDelay = details;
+                        throw error;
+                    }
                     h.reset();
                 }, intervalMs);
 

@@ -1,12 +1,8 @@
 import MathStateMachineArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import hre from "hardhat";
-import { Signer } from "ethers";
+import { ContractFactory, Signer } from "ethers";
 
-import {
-    createLocalDeployerFromTx,
-    deployFullStack
-} from "../../../scripts/V1/deploy";
+import { deployFullStack } from "../../../scripts/V1/deploy";
 import type { MathStateMachine } from "@typechain-types";
 import { MathStateMachine__factory } from "@typechain-types";
 import type {
@@ -33,17 +29,22 @@ export async function deployDefaultMathOnChainContracts(
 export async function deployDefaultMathLocalStateMachine(
     params: HarnessLocalStateMachineDeploymentParams
 ): Promise<string> {
-    const stateMachineFactory = await hre.ethers.getContractFactoryFromArtifact(
-        MathStateMachineArtifact,
+    const stateMachineFactory = new ContractFactory(
+        MathStateMachineArtifact.abi,
+        MathStateMachineArtifact.bytecode,
         params.signer
     );
-    const deployTx = await stateMachineFactory.getDeployTransaction(
-        params.stateMachineGasLimit
+    const response = await params.signer.sendTransaction(
+        await stateMachineFactory.getDeployTransaction(
+            params.stateMachineGasLimit
+        )
     );
-    const deployLocalStateMachine = createLocalDeployerFromTx(deployTx);
-    const address = await deployLocalStateMachine(params.evm, params.signer);
+    const receipt = await response.wait();
+    if (!receipt?.contractAddress) {
+        throw new Error("No local MathStateMachine contract address created");
+    }
 
-    return address.toString();
+    return receipt.contractAddress;
 }
 
 export function connectDefaultMathSigner(

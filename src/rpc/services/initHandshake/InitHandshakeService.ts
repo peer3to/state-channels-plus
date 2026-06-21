@@ -35,6 +35,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         new WeakMap();
 
     private readonly handshakeBarrier: EventBarrier;
+
     constructor(p2pManager: P2PManager) {
         super(
             p2pManager,
@@ -55,14 +56,33 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         const randomChallengeHash = ethers.keccak256(ethers.randomBytes(32));
         const time = Clock.getTimeInSeconds();
         this.setChallenge(transport, { randomChallengeHash, initTime: time });
+        LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+            direction: "send",
+            message: "request",
+            challengeHash: randomChallengeHash,
+            messageTime: time
+        });
         this.remoteRpc.initHandshakeService
             .onInitHandshakeRequest(randomChallengeHash, time)
             .sendOne(transport);
         // expect a response or disconnect
         this.timeoutManager.scheduleTask(
             () => {
-                if (!this.didRespond(transport))
+                if (!this.didRespond(transport)) {
+                    const challenge = this.getChallenge(transport);
+                    LoggerUtils.logInitHandshakeMessage(
+                        this.logger,
+                        transport,
+                        {
+                            direction: "local",
+                            message: "response-timeout",
+                            challengeHash: challenge?.randomChallengeHash,
+                            challengeInitTime: challenge?.initTime,
+                            reason: "handshake response not received in time"
+                        }
+                    );
                     this.p2pManager.disconnectConnection(transport);
+                }
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "InitHandshakeService - initHandshake timeout"
@@ -171,15 +191,19 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         this.timeoutManager.scheduleTask(
             () => {
                 if (this.didReceiveAck(transport)) return;
-                this.logger.warn(
-                    `Handshake ack not received in time from transport ${TransportType[transport.transportType]}, disconnecting.`
-                );
                 // Handshake negotiation started but never finalized.
                 // If we have an authenticated peer address, blacklist by address;
                 // otherwise just disconnect the transport.
                 const peerAddress =
                     transport.peerAddress ||
                     this.verifiedPeerAddressByTransport.get(transport);
+
+                LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                    direction: "local",
+                    message: "ack-timeout",
+                    verifiedPeerAddress: peerAddress,
+                    reason: "handshake ack not received in time"
+                });
 
                 if (peerAddress) {
                     this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
@@ -202,10 +226,13 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             this.verifiedPeerAddressByTransport.get(transport);
         const didReceiveAck = this.didReceiveAck(transport);
         const remotePreferred = this.remotePreferredTransportMap.get(transport);
-        this.logger.debug(
-            `maybeFinalizeHandshakeOnceFromTransport called for transport ${TransportType[transport.transportType]}`,
-            { verifiedPeerAddress, didReceiveAck, remotePreferred }
-        );
+        LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+            direction: "local",
+            message: "finalize-check",
+            verifiedPeerAddress,
+            didReceiveAck,
+            remotePreferred
+        });
 
         if (!verifiedPeerAddress) return;
         if (!this.didReceiveAck(transport)) return;
@@ -232,9 +259,13 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         profile.setIsHandshakeCompleted(true);
 
         const completedPeerAddress = profile.getEvmAddress().toString();
-        this.logger.info(
-            `Handshake completed with peer ${completedPeerAddress} over transport ${TransportType[transport.transportType]}`
-        );
+        LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+            direction: "local",
+            message: "completed",
+            verifiedPeerAddress: completedPeerAddress,
+            didReceiveAck: true,
+            remotePreferred
+        });
 
         // Only treat the transport as an "open connection" after handshake is final.
         this.p2pManager.addConnection(transport);

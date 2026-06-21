@@ -177,9 +177,12 @@ class DisputeManager {
                         );
                     },
                     RaceConditionDisputeEvidencePeriodExpired: () => {
-                        this.logger.info(
+                        this.logger.error(
                             "dispute: evidence period already expired",
                             { forkId, channelId: this.channelId }
+                        );
+                        throw new Error(
+                            `dispute upload failed: evidence period expired for forkId=${forkId}`
                         );
                     }
                 }

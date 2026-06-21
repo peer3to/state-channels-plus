@@ -1,7 +1,5 @@
-import { ZeroHash } from "ethers";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
-import { hash as randomHash } from "@test/factory";
 import { Hash } from "@/types/types";
 
 // dispute.input.latestInboundMessageBlockHash is validated by walking the on-chain
@@ -14,8 +12,9 @@ describe("E2E: dispute validation / inboundHash", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
 
-        h.tamper.stubConstructDispute(0, (d) => {
-            d.input.latestInboundMessageBlockHash = randomHash() as Hash;
+        h.tamper.stubConstructDispute(0, (dispute, sm) => {
+            dispute.input.latestInboundMessageBlockHash =
+                sm.p2pManager.localRpc.dispute.randomHash() as Hash;
         });
 
         await h.byzantine.submitDoubleSignBlock(1);
@@ -40,9 +39,10 @@ describe("E2E: dispute validation / inboundHash", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
 
-        h.tamper.stubConstructDispute(0, (d) => {
-            d.input.latestInboundMessageBlockHash = ZeroHash as Hash;
-            d.input.lastInboundMessageBlockHeight = 999999n;
+        h.tamper.stubConstructDispute(0, (dispute, sm) => {
+            dispute.input.latestInboundMessageBlockHash = sm.p2pManager.localRpc
+                .dispute.zeroHash as Hash;
+            dispute.input.lastInboundMessageBlockHeight = 999999n;
         });
 
         await h.byzantine.submitDoubleSignBlock(1);
