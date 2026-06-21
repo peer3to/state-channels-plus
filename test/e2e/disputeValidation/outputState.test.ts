@@ -1,5 +1,4 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
-import { hash } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 
 // The dispute's `outputSnapshotDataHash` commits to the post-reduction state
@@ -12,8 +11,9 @@ describe("E2E: dispute validation / outputState", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
 
-        h.tamper.stubConstructDispute(2, async (dispute) => {
-            dispute.outputSnapshotDataHash = hash("0x42");
+        h.tamper.stubConstructDispute(2, async (dispute, sm) => {
+            dispute.outputSnapshotDataHash =
+                sm.p2pManager.localRpc.dispute.hash("0x42");
         });
 
         await h.byzantine.submitDoubleSignBlock(1);

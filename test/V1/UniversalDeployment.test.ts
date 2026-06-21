@@ -12,11 +12,11 @@ import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/Math
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { OpenChannelConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { createContractExecutorFactory } from "@/evm";
-import LocalDiamondSigner from "@/evm/LocalDiamondSigner";
+import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 
 describe("Universal Deployment", () => {
     let deployer: HardhatEthersSigner;
-    let localSigner: LocalDiamondSigner;
+    let localSigner: LocalContractExecutorSigner;
 
     const deployMathStateMachineLocally = async (signer: Signer) => {
         const factory = new ContractFactory(
@@ -38,7 +38,7 @@ describe("Universal Deployment", () => {
 
     before(async () => {
         [deployer] = await ethers.getSigners();
-        localSigner = new LocalDiamondSigner(
+        localSigner = new LocalContractExecutorSigner(
             deployer,
             await createContractExecutorFactory({ dedicatedThread: false })
         );

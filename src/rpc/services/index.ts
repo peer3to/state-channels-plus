@@ -3,6 +3,16 @@ export { default as InitHandshakeRpcMethods } from "./initHandshake/InitHandshak
 
 export { default as WebRTCSetupService } from "./WebRTCSetup/WebRTCSetupService";
 export { default as WebRTCSetupRpcMethods } from "./WebRTCSetup/WebRTCSetupRpcMethods";
+export {
+    installWebRTCMainThreadBridge,
+    type WebRTCMainThreadBridgeHandle,
+    type WebRTCMainThreadBridgeOptions
+} from "./WebRTCSetup/connection/WebRTCMainThreadBridge";
+export type {
+    WebRTCConnectionFactory,
+    WebRTCConnectionStateSnapshot,
+    WebRTCDataChannelLike
+} from "./WebRTCSetup/connection/WebRTCConnectionFactory";
 
 export { default as StateTransitionService } from "./stateTransition/StateTransitionService";
 export { default as StateTransitionRpcMethods } from "./stateTransition/StateTransitionRpcMethods";

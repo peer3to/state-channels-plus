@@ -909,7 +909,7 @@ class StateManager<
             "tryExecuteFromQueue"
         );
 
-        this.p2pEventHooks.onSetState?.();
+        this.p2pEventHooks.onSetState?.(forkId);
         P2pEventHooksUtils.notifyTurn({
             nextToWrite,
             nextBlockHeight: nextTransactionCnt,
@@ -1608,11 +1608,14 @@ class StateManager<
                 this.storage
             );
             const currentTime = Clock.getTimeInSeconds();
-            this.logger.info("Posting block calldata on-chain", {
-                block: blockMetadata,
-                maxTimestamp,
-                currentTime
-            });
+            this.logger.info(
+                `Posting block calldata on-chain #${blockMetadata.blockHeight}`,
+                {
+                    block: blockMetadata,
+                    maxTimestamp,
+                    currentTime
+                }
+            );
 
             let txResponse: TransactionResponse;
             const txResponsePromise = this.stateChannelManagerContract

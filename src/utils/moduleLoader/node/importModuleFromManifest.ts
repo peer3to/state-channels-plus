@@ -1,4 +1,4 @@
-export async function importPrecompileModule(
+export async function importModuleFromManifest(
     moduleSpecifier: string
 ): Promise<any> {
     if (typeof require === "function") {
@@ -31,7 +31,7 @@ function registerNodeTypeScriptLoader(moduleSpecifier: string): void {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === "MODULE_NOT_FOUND") {
             throw new Error(
-                `Loading TypeScript precompile module "${moduleSpecifier}" requires ts-node/register/transpile-only`
+                `Loading TypeScript module "${moduleSpecifier}" requires ts-node/register/transpile-only`
             );
         }
         throw error;

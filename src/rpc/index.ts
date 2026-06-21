@@ -7,4 +7,5 @@ export { ARpcService };
 import MainRpcService from "./MainRpcService";
 
 export { MainRpcService };
-export type { CustomRpcConstructor } from "./registry";
+export type { CustomRpcConstructor, CustomRpcManifest } from "./registry";
+export { resolveCustomRpcConstructor } from "./resolveCustomRpcManifest";

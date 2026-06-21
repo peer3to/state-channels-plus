@@ -1,9 +1,12 @@
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
-export class AssertDisputeActions {
-    constructor(private readonly harness: PeerTestHarness) {}
+export class AssertDisputeActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
 
     async initiatedAndCommitedWait(options?: {
         expectedCount?: number;

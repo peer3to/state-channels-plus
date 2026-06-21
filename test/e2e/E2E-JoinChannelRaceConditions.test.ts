@@ -46,8 +46,7 @@ describe("E2E: Join channel race conditions", function () {
                 "on-chain snapshot S' must differ from S before submitting the join confirmation built against S"
             );
 
-            const channelManager =
-                joiner.stateManager.stateChannelManagerContract;
+            const channelManager = h.channelManager.connect(joiner.signer);
             let revertError: unknown;
             try {
                 const tx = await channelManager.joinChannel(
@@ -68,10 +67,17 @@ describe("E2E: Join channel race conditions", function () {
                 "RaceConditionJoinChannelSnapshotMismatch"
             );
 
-            expect(joiner.stateManager.getStatus()).to.equal(Status.SYNCED);
+            expect(
+                await h
+                    .control(h.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.SYNCED);
 
-            const onChainParticipants =
-                await joiner.stateManager.diamondStateMachine.getParticipants();
+            const onChainParticipants = await h
+                .control(h.getPeer(joiner.index))
+                .query.getParticipants()
+                .request();
             expect(
                 onChainParticipants.map((a) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
@@ -94,9 +100,12 @@ describe("E2E: Join channel race conditions", function () {
                 h.byzantine.stubPendingInboundInclusion(i);
 
             await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
-            expect(joiner.stateManager.getStatus()).to.equal(
-                Status.PENDING_PARTICIPANT
-            );
+            expect(
+                await h
+                    .control(h.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             await h.transition.advanceState({
                 count: 2,
@@ -163,10 +172,17 @@ describe("E2E: Join channel race conditions", function () {
                 "RaceConditionJoinChannelForkDisputed"
             );
 
-            expect(joiner.stateManager.getStatus()).to.equal(Status.SYNCED);
+            expect(
+                await h
+                    .control(h.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.SYNCED);
 
-            const onChainParticipants =
-                await joiner.stateManager.diamondStateMachine.getParticipants();
+            const onChainParticipants = await h
+                .control(h.getPeer(joiner.index))
+                .query.getParticipants()
+                .request();
             expect(
                 onChainParticipants.map((a: unknown) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
@@ -208,9 +224,12 @@ describe("E2E: Join channel race conditions", function () {
                 await h.scenario.syncSpectatorAndPrepareJoin();
 
             await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
-            expect(joiner.stateManager.getStatus()).to.equal(
-                Status.PENDING_PARTICIPANT
-            );
+            expect(
+                await h
+                    .control(h.getPeer(joiner.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             const pendingBefore = await h.channelManager.getPendingParticipants(
                 h.channelId
@@ -223,9 +242,10 @@ describe("E2E: Join channel race conditions", function () {
             // dispute. The dispute is valid (selfRemoval=true) and not slashed.
             const leaverIndex = 0;
             const leaverAddress = h.getPeer(leaverIndex).address;
-            h.getPeer(leaverIndex).stateManager.storage.forceExit.setForceExit(
-                true
-            );
+            await h
+                .control(h.getPeer(leaverIndex))
+                .dispute.setForceExit(true)
+                .request();
             h.context.leftChannelPeerIndices = [
                 ...h.context.leftChannelPeerIndices,
                 leaverIndex
