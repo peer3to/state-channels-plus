@@ -25,8 +25,6 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     implements IOnMessage
 {
-    private static readonly DEFAULT_RPC_REQUEST_TIMEOUT_MS = 30_000;
-
     stateManager: StateManager<TCustomRpc>;
     logger: Logger;
     p2pSigner: P2pSigner<TCustomRpc>;
@@ -125,14 +123,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     ): Promise<T> {
         const requestId = `${++this.rpcRequestCounter}`;
         // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
-        const agreementTimeoutMs =
-            this.stateManager.timeConfig.agreementTime != null
-                ? this.stateManager.timeConfig.agreementTime * 1000
-                : undefined;
         const timeoutMs =
             options?.timeoutMs ??
-            agreementTimeoutMs ??
-            P2PManager.DEFAULT_RPC_REQUEST_TIMEOUT_MS;
+            this.stateManager.timeConfig.agreementTime * 1000;
 
         return new Promise<T>((resolve, reject) => {
             const timeout = this.stateManager.timeoutManager.scheduleTask(

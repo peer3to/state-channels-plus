@@ -18,6 +18,10 @@ export function adaptPort(port: MessagePort): RuntimePort {
         start() {
             port.start();
         },
+        onClose(handler: () => void) {
+            // Best-effort: the 'close' event isn't supported everywhere.
+            port.addEventListener("close", () => handler());
+        },
         close() {
             port.close();
         }

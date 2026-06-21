@@ -1,4 +1,6 @@
-import { parentPort, type MessagePort } from "node:worker_threads";
+import { parentPort, Worker, type MessagePort } from "node:worker_threads";
+import * as path from "node:path";
+import * as fs from "node:fs";
 import type {
     P2pRuntimeWorker,
     RuntimePort,
@@ -7,17 +9,6 @@ import type {
 import { adaptPort } from "./P2pRuntimeChannel";
 
 export function createP2pRuntimeWorker(): P2pRuntimeWorker {
-    const nodeRequire = typeof require === "function" ? require : undefined;
-    if (!nodeRequire) {
-        throw new Error("Node worker_threads require() is unavailable");
-    }
-
-    const path = nodeRequire("node:path") as typeof import("node:path");
-    const fs = nodeRequire("node:fs") as typeof import("node:fs");
-    const { Worker } = nodeRequire(
-        "node:worker_threads"
-    ) as typeof import("node:worker_threads");
-
     const jsWorkerPath = path.join(
         __dirname,
         "..",

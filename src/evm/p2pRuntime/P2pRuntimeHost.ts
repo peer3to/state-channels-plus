@@ -148,6 +148,18 @@ export async function startP2pRuntimeHost<
     );
 
     let runtimeHandle: RuntimeHostState | undefined;
+    let disposed = false;
+
+    // Idempotent: the `dispose` request and the port-close handler both call it.
+    const disposeRuntime = async (): Promise<void> => {
+        if (disposed) return;
+        disposed = true;
+        if (runtimeHandle) {
+            await runtimeHandle.stateManager.dispose();
+        } else {
+            await contractExecutor.dispose();
+        }
+    };
 
     const buildRuntime = async (
         localStateMachineAddress: string,
@@ -195,7 +207,7 @@ export async function startP2pRuntimeHost<
             port.post({ type: "contractEvent", name, args })
         );
 
-        forwardEventHandlerInvocations(stateManager, port);
+        forwardEventHandlerInvocations(stateManager.eventHandler, port);
 
         runtimeHandle = { stateManager, evmDiamondStateMachine };
         port.post({ type: "ready" });
@@ -317,11 +329,7 @@ export async function startP2pRuntimeHost<
                     break;
                 }
                 case "dispose":
-                    if (runtimeHandle) {
-                        await runtimeHandle.stateManager.dispose();
-                    } else {
-                        await contractExecutor.dispose();
-                    }
+                    await disposeRuntime();
                     break;
             }
             port.post({
@@ -342,6 +350,12 @@ export async function startP2pRuntimeHost<
 
     port.onMessage((raw) => {
         void handleRequest(raw as RuntimeClientRequest);
+    });
+    // Client went away without a clean `dispose` (thread died / port closed).
+    port.onClose(() => {
+        void disposeRuntime().catch((error) => {
+            logger.error("Runtime dispose on client close failed", { error });
+        });
     });
     port.start();
 }

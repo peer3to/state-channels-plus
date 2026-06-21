@@ -44,6 +44,7 @@ export interface P2pRuntimeClientOptions {
 interface PendingRequest {
     resolve: (value: unknown) => void;
     reject: (reason: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -55,6 +56,8 @@ interface PendingRequest {
  * worker thread.
  */
 class P2pRuntimeClient<T = ethers.Contract> {
+    private static readonly DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
     readonly signer: ClientP2pSigner;
     readonly contract: T;
     readonly ready: Promise<void>;
@@ -85,11 +88,22 @@ class P2pRuntimeClient<T = ethers.Contract> {
         this.port.onMessage((message) =>
             this.handleMessage(message as RuntimeHostMessage)
         );
+        this.port.onClose(() => this.handlePortClosed());
         this.port.start();
     }
 
-    /** Send a request to the host and await its correlated response. */
-    request<TResult>(request: RuntimeRequestInput): Promise<TResult> {
+    private handlePortClosed(): void {
+        if (this.disposed) return;
+        const error = new Error("P2P runtime host closed the connection");
+        for (const listener of this.hostErrorListeners) listener(error);
+        void this.dispose();
+    }
+
+    /** Send a request to the host; rejects on host error or after `timeoutMs`. */
+    request<TResult>(
+        request: RuntimeRequestInput,
+        options?: { timeoutMs?: number }
+    ): Promise<TResult> {
         if (this.disposed) {
             return Promise.reject(
                 new Error("P2P runtime client has been disposed")
@@ -97,16 +111,31 @@ class P2pRuntimeClient<T = ethers.Contract> {
         }
         const requestId = this.nextRequestId++;
         const message = { ...request, requestId } as RuntimeClientRequest;
+        const timeoutMs =
+            options?.timeoutMs ?? P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS;
         return new Promise<TResult>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                if (this.pending.delete(requestId)) {
+                    reject(
+                        new Error(
+                            `P2P runtime request '${request.type}' timed out after ${timeoutMs}ms`
+                        )
+                    );
+                }
+            }, timeoutMs);
+
             this.pending.set(requestId, {
                 resolve: resolve as (value: unknown) => void,
-                reject
+                reject,
+                timeout
             });
             try {
                 this.port.post(message);
             } catch (error) {
-                this.pending.delete(requestId);
-                reject(error as Error);
+                if (this.pending.delete(requestId)) {
+                    clearTimeout(timeout);
+                    reject(error as Error);
+                }
             }
         });
     }
@@ -153,6 +182,9 @@ class P2pRuntimeClient<T = ethers.Contract> {
     /** Tear down the runtime: dispose the host, reject pending work, close. */
     async dispose(): Promise<void> {
         if (this.disposed) return;
+        // Send the dispose request before flipping `disposed` so it isn't
+        // rejected by the guard in `request` — the host needs it to gracefully
+        // close its transport/timers before the worker is terminated.
         try {
             await this.request<void>({ type: "dispose" });
         } catch {
@@ -209,6 +241,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
         const pending = this.pending.get(message.requestId);
         if (!pending) return;
         this.pending.delete(message.requestId);
+        clearTimeout(pending.timeout);
         if (message.ok) {
             pending.resolve(message.result);
         } else {
@@ -229,6 +262,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
 
     private rejectAllPending(reason: Error): void {
         for (const pending of this.pending.values()) {
+            clearTimeout(pending.timeout);
             pending.reject(reason);
         }
         this.pending.clear();

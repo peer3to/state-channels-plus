@@ -18,6 +18,11 @@ export interface RuntimePort {
     onMessage(handler: (message: unknown) => void): void;
     /** Begin dispatching messages (no-op where not required). */
     start(): void;
+    /**
+     * Register a handler for when the other end goes away. Reliable on Node;
+     * best-effort in the browser, so callers keep a request timeout as backstop.
+     */
+    onClose(handler: () => void): void;
     /** Tear down the port. */
     close(): void;
 }
