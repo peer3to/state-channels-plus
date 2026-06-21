@@ -6,6 +6,7 @@ import "../types/DisputeTypes.sol";
 import "../types/MessageTypeHashes.sol";
 import "../StateChannelManagerEvents.sol";
 import "./utils/DisputeUtils.sol";
+import "./utils/BlockUtils.sol";
 import "hardhat/console.sol";
 
 /**
@@ -28,7 +29,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 _p2pTime,
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
-        uint256 _evidenceTime
+        uint256 _evidenceTime,
+        uint256 _disputeExecutionGasLimit
     )
         StateChannelManagerProxy(
             _stateMachineImplementation,
@@ -44,7 +46,8 @@ contract LocalDiamond is StateChannelManagerProxy {
             _p2pTime,
             _agreementTime,
             _chainFallbackTime,
-            _evidenceTime
+            _evidenceTime,
+            _disputeExecutionGasLimit
         )
     {}
 

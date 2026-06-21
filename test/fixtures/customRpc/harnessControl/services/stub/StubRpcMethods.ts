@@ -1,0 +1,415 @@
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type P2PManager from "@/P2PManager";
+import type ATransport from "@/transport/ATransport";
+import { Codec, Type } from "@/utils";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import type { Address } from "@/types/types";
+import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
+import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
+import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
+import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type { StubService } from "./StubService";
+
+/**
+ * Concrete method stub/restore sites. Each `stubX` saves the live original in
+ * the service registry (once) and installs a fault behavior; each `restoreX`
+ * reinstalls the saved original. Returns `false` from `restoreX` when nothing
+ * was stubbed.
+ *
+ * The registry holds heterogeneous originals as `unknown`, so `restoreX` casts
+ * each back to its concrete member type — the only casts here.
+ */
+export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
+    constructor(
+        transport: ATransport,
+        private readonly service: StubService
+    ) {
+        super(transport, service.p2pManager);
+    }
+
+    /** Suppress all outbound block-confirmation broadcasts from this peer. */
+    public stubBroadcast(): boolean {
+        const service = this.p2pManager.remoteRpc.stateTransitionService;
+        if (!this.service.stubOriginals.has("broadcast")) {
+            this.service.stubOriginals.set(
+                "broadcast",
+                service.onBlockConfirmation
+            );
+        }
+        // No-op delivery handler (test double for the real RpcHandler).
+        service.onBlockConfirmation = (() => ({
+            broadcast: () => {},
+            sendOne: () => {},
+            sendMultiple: () => {}
+        })) as unknown as typeof service.onBlockConfirmation;
+        return true;
+    }
+
+    public restoreBroadcast(): boolean {
+        const original = this.service.stubOriginals.get("broadcast");
+        if (original === undefined) return false;
+        const service = this.p2pManager.remoteRpc.stateTransitionService;
+        service.onBlockConfirmation =
+            original as typeof service.onBlockConfirmation;
+        this.service.stubOriginals.delete("broadcast");
+        return true;
+    }
+
+    /** Prevent this peer from acting on on-chain calldata-posted events. */
+    public stubCalldataPosting(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("calldataPosting")) {
+            this.service.stubOriginals.set(
+                "calldataPosting",
+                eventHandler.onBlockCalldataPosted
+            );
+        }
+        eventHandler.onBlockCalldataPosted = async () => {};
+        return true;
+    }
+
+    public restoreCalldataPosting(): boolean {
+        const original = this.service.stubOriginals.get("calldataPosting");
+        if (original === undefined) return false;
+        const eventHandler = this.service.sm.eventHandler;
+        eventHandler.onBlockCalldataPosted =
+            original as typeof eventHandler.onBlockCalldataPosted;
+        this.service.stubOriginals.delete("calldataPosting");
+        return true;
+    }
+
+    /** Make this peer report no pending inbound message inclusion. */
+    public stubPendingInboundInclusion(): boolean {
+        const inbound = this.service.sm.storage.inboundMessages;
+        if (!this.service.stubOriginals.has("pendingInboundInclusion")) {
+            this.service.stubOriginals.set(
+                "pendingInboundInclusion",
+                inbound.getLatestBlockHash
+            );
+        }
+        inbound.getLatestBlockHash = () => undefined;
+        return true;
+    }
+
+    public restorePendingInboundInclusion(): boolean {
+        const original = this.service.stubOriginals.get(
+            "pendingInboundInclusion"
+        );
+        if (original === undefined) return false;
+        const inbound = this.service.sm.storage.inboundMessages;
+        inbound.getLatestBlockHash =
+            original as typeof inbound.getLatestBlockHash;
+        this.service.stubOriginals.delete("pendingInboundInclusion");
+        return true;
+    }
+
+    /**
+     * Suppress this peer's `disconnectAndBlacklistPeerByEvmAddress` for a single
+     * allowed address (the peer won't disconnect/blacklist `allowedAddress`).
+     * Used to keep a fake-dispute requester connected while others react.
+     */
+    public stubSelectiveDisconnect(allowedAddress: Address): boolean {
+        const pm = this.p2pManager;
+        if (!this.service.stubOriginals.has("selectiveDisconnect")) {
+            this.service.stubOriginals.set(
+                "selectiveDisconnect",
+                pm.disconnectAndBlacklistPeerByEvmAddress
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "selectiveDisconnect"
+        ) as typeof pm.disconnectAndBlacklistPeerByEvmAddress;
+        const allowed = String(allowedAddress).toLowerCase();
+        pm.disconnectAndBlacklistPeerByEvmAddress = (addr) => {
+            if (String(addr).toLowerCase() === allowed) return;
+            return original.call(pm, addr);
+        };
+        return true;
+    }
+
+    public restoreSelectiveDisconnect(): boolean {
+        const original = this.service.stubOriginals.get("selectiveDisconnect");
+        if (original === undefined) return false;
+        const pm = this.p2pManager;
+        pm.disconnectAndBlacklistPeerByEvmAddress =
+            original as typeof pm.disconnectAndBlacklistPeerByEvmAddress;
+        this.service.stubOriginals.delete("selectiveDisconnect");
+        return true;
+    }
+
+    /**
+     * Suppress this peer posting its own block on-chain (forces the on-chain
+     * calldata path). `maybePostBlockOnChain` is private — cast to reach it.
+     */
+    public stubSuppressMaybePostBlockOnChain(): boolean {
+        const sm = this.service.sm as unknown as {
+            maybePostBlockOnChain: (blockHash: unknown) => void;
+        };
+        if (!this.service.stubOriginals.has("maybePostBlockOnChain")) {
+            this.service.stubOriginals.set(
+                "maybePostBlockOnChain",
+                sm.maybePostBlockOnChain
+            );
+        }
+        sm.maybePostBlockOnChain = () => {};
+        return true;
+    }
+
+    public restoreSuppressMaybePostBlockOnChain(): boolean {
+        const original = this.service.stubOriginals.get(
+            "maybePostBlockOnChain"
+        );
+        if (original === undefined) return false;
+        (
+            this.service.sm as unknown as {
+                maybePostBlockOnChain: unknown;
+            }
+        ).maybePostBlockOnChain = original;
+        this.service.stubOriginals.delete("maybePostBlockOnChain");
+        return true;
+    }
+
+    /** Suppress this peer's snapshot posting (stays dispute-eligible on-chain). */
+    public stubPostStateSnapshot(): boolean {
+        const sm = this.service.sm;
+        if (!this.service.stubOriginals.has("postStateSnapshot")) {
+            this.service.stubOriginals.set(
+                "postStateSnapshot",
+                sm.postStateSnapshot
+            );
+        }
+        sm.postStateSnapshot = async () => undefined;
+        return true;
+    }
+
+    public restorePostStateSnapshot(): boolean {
+        const original = this.service.stubOriginals.get("postStateSnapshot");
+        if (original === undefined) return false;
+        const sm = this.service.sm;
+        sm.postStateSnapshot = original as typeof sm.postStateSnapshot;
+        this.service.stubOriginals.delete("postStateSnapshot");
+        return true;
+    }
+
+    /**
+     * Wrap `unsafeSetLatestState` so it records when it fires (queried via
+     * `wasUnsafeSetLatestStateCalled`) but still runs the original.
+     */
+    public stubRecordUnsafeSetLatestState(): boolean {
+        const sm = this.service.sm;
+        if (!this.service.stubOriginals.has("unsafeSetLatestState")) {
+            this.service.stubOriginals.set(
+                "unsafeSetLatestState",
+                sm.unsafeSetLatestState
+            );
+        }
+        this.service.unsafeSetLatestStateCalled = false;
+        const original = this.service.stubOriginals.get(
+            "unsafeSetLatestState"
+        ) as typeof sm.unsafeSetLatestState;
+        const stubService = this.service;
+        sm.unsafeSetLatestState = async (...args) => {
+            stubService.unsafeSetLatestStateCalled = true;
+            return original.apply(stubService.sm, args);
+        };
+        return true;
+    }
+
+    public wasUnsafeSetLatestStateCalled(): boolean {
+        return this.service.unsafeSetLatestStateCalled;
+    }
+
+    public restoreUnsafeSetLatestState(): boolean {
+        const original = this.service.stubOriginals.get("unsafeSetLatestState");
+        if (original === undefined) return false;
+        const sm = this.service.sm;
+        sm.unsafeSetLatestState = original as typeof sm.unsafeSetLatestState;
+        this.service.stubOriginals.delete("unsafeSetLatestState");
+        return true;
+    }
+
+    // ===== RPC-method stubs (wrap a service's createRPCMethods) =====
+
+    /**
+     * Make `spectateService.onSpectateRequest` always answer with a proof at
+     * `staleBlockHeight`, regardless of what was requested (stale-proof guard).
+     */
+    public stubSpectateStaleProof(staleBlockHeight: number): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "spectateCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "spectateCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.onSpectateRequest = async function (
+                this: SpectateServiceRpcMethods,
+                syncRequest: SyncRequest
+            ) {
+                const peerAddress = this.senderTransport.peerAddress;
+                if (!peerAddress) return;
+                const syncPayload = await this.service.generateSyncPayload(
+                    syncRequest.channelId,
+                    syncRequest.forkId,
+                    staleBlockHeight
+                );
+                if (!syncPayload) return;
+                const encoded = Codec.encode(syncPayload, Type.SyncPayload);
+                this.remoteRpc.spectateService
+                    .onSpectateResponse(syncRequest.channelId, encoded)
+                    .sendOne(peerAddress);
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public restoreSpectateStaleProof(): boolean {
+        const original = this.service.stubOriginals.get(
+            "spectateCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.spectateService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("spectateCreateRpcMethods");
+        return true;
+    }
+
+    /**
+     * Replace `isForkDisputedService.onDisputeAcknowledgmentRequest` with a
+     * no-op that records it was called (queried via `wasDisputeAckRequestCalled`).
+     */
+    public stubRecordDisputeAckRequest(): boolean {
+        const service = this.p2pManager.localRpc.isForkDisputedService;
+        if (!this.service.stubOriginals.has("disputeAckCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "disputeAckCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        this.service.disputeAckRequestCalled = false;
+        const original = this.service.stubOriginals.get(
+            "disputeAckCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        const stubService = this.service;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.onDisputeAcknowledgmentRequest = async function (
+                this: IsForkDisputedRpcMethods
+            ) {
+                stubService.disputeAckRequestCalled = true;
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public wasDisputeAckRequestCalled(): boolean {
+        return this.service.disputeAckRequestCalled;
+    }
+
+    public restoreRecordDisputeAckRequest(): boolean {
+        const original = this.service.stubOriginals.get(
+            "disputeAckCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.isForkDisputedService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("disputeAckCreateRpcMethods");
+        return true;
+    }
+
+    /**
+     * Make handshake never complete, and install a recording
+     * `HandshakeCompletedGuard` on this peer's `spectateService` so an incoming
+     * spectate RPC is blocked (queried via `wasSpectateGuardBlocked`).
+     */
+    public stubBlockHandshakeAndRecordSpectateGuard(): boolean {
+        const initHandshakeService =
+            this.p2pManager.localRpc.initHandshakeService;
+        if (!this.service.stubOriginals.has("blockedInitHandshake")) {
+            this.service.stubOriginals.set(
+                "blockedInitHandshake",
+                initHandshakeService.initHandshake
+            );
+        }
+        initHandshakeService.initHandshake = () => {};
+
+        const spectateService = this.p2pManager.localRpc.spectateService;
+        this.service.spectateGuardBlocked = false;
+        const stubService = this.service;
+        // `guards` is protected on ARpcService; cast to install a test guard.
+        (spectateService as unknown as { guards: unknown[] }).guards = [
+            new HandshakeCompletedGuard(spectateService, {
+                onFailure: () => {
+                    stubService.spectateGuardBlocked = true;
+                }
+            })
+        ];
+        return true;
+    }
+
+    public wasSpectateGuardBlocked(): boolean {
+        return this.service.spectateGuardBlocked;
+    }
+
+    /**
+     * Wrap `spectateService.abort` to record when it fires (queried via
+     * `wasSpectateAbortCalled`) while still running the original — the host-side
+     * stand-in for spying on abort from the main thread.
+     */
+    public stubRecordSpectateAbort(): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateAbort")) {
+            this.service.stubOriginals.set(
+                "spectateAbort",
+                service.abort.bind(service)
+            );
+        }
+        this.service.spectateAbortCalled = false;
+        const original = this.service.stubOriginals.get(
+            "spectateAbort"
+        ) as typeof service.abort;
+        const stubService = this.service;
+        service.abort = (peerAddress) => {
+            stubService.spectateAbortCalled = true;
+            return original(peerAddress);
+        };
+        return true;
+    }
+
+    public wasSpectateAbortCalled(): boolean {
+        return this.service.spectateAbortCalled;
+    }
+
+    /**
+     * Capture the transport this peer initiates a handshake over (its outbound
+     * `initHandshake`), recording it on the service so a test can send an RPC
+     * over a pre-handshake transport (read via `execOnHost`). Runs the original.
+     */
+    public stubCaptureInitHandshakeTransport(): boolean {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        if (!this.service.stubOriginals.has("captureInitHandshake")) {
+            this.service.stubOriginals.set(
+                "captureInitHandshake",
+                service.initHandshake
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "captureInitHandshake"
+        ) as typeof service.initHandshake;
+        const stubService = this.service;
+        service.initHandshake = (transport) => {
+            stubService.capturedInitHandshakeTransport = transport;
+            return original.call(service, transport);
+        };
+        return true;
+    }
+}
+
+export default StubRpcMethods;

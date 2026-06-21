@@ -1,8 +1,6 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
-
-PeerTestHarness.setDefaultLogLevel("error");
 
 describe("E2E: Force Join Dispute", function () {
     it("should trigger force-join dispute after N turns of non-inclusion, then resolve with joiner PARTICIPATING", async function () {
@@ -10,26 +8,24 @@ describe("E2E: Force Join Dispute", function () {
 
         await h.lifecycle.start(2, 2);
 
-        const joiner = await h.join.addPeerWait({
+        const joiner = await h.join.addSpectatorWait({
             statusTimeoutMs: 5000,
             statusTimeoutMessage: "Joiner did not reach SYNCED"
         });
         await h.assert.sync.peersInSyncWait();
 
         const restoreInboundInclusion0 =
-            h.byzantine.stubPendingInboundInclusion(0);
+            await h.byzantine.stubPendingInboundInclusion(0);
         const restoreInboundInclusion1 =
-            h.byzantine.stubPendingInboundInclusion(1);
+            await h.byzantine.stubPendingInboundInclusion(1);
 
-        const confirmation = await h.join.buildJoinChannelConfirmation({
+        await h.join.joinChannelWait({
             joiner,
-            channelId: h.channelId,
             existingParticipantSigners: [h.peers[0].signer, h.peers[1].signer]
         });
-
-        // Fire joinChannel: status → PENDING_PARTICIPANT, joinSubmissionHeight recorded
-        await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
-        expect(joiner.stateManager.getStatus()).to.equal(
+        expect(
+            await h.control(h.getPeer(joiner.index)).query.getStatus().request()
+        ).to.equal(
             Status.PENDING_PARTICIPANT,
             "Joiner should be PENDING_PARTICIPANT after joinChannel"
         );
@@ -47,7 +43,9 @@ describe("E2E: Force Join Dispute", function () {
 
         await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
 
-        expect(joiner.stateManager.getStatus()).to.equal(
+        expect(
+            await h.control(h.getPeer(joiner.index)).query.getStatus().request()
+        ).to.equal(
             Status.PARTICIPATING,
             "Joiner should be PARTICIPATING after force-join dispute resolves via reduction"
         );
@@ -58,8 +56,10 @@ describe("E2E: Force Join Dispute", function () {
             joiner.address
         ]);
         for (const peer of h.peers) {
-            const actual =
-                await peer.stateManager.diamondStateMachine.getParticipants();
+            const actual = await h
+                .control(peer)
+                .query.getParticipants()
+                .request();
             expect(new Set(actual)).to.deep.equal(
                 expected,
                 `Peer ${peer.index} on-chain participants should match 3-player fork after reduction`

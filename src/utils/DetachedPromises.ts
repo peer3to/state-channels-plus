@@ -1,5 +1,5 @@
 export class DetachedPromises {
-    private static readonly DEFAULT_AWAIT_TIMEOUT_MS = 30000;
+    private static readonly AWAIT_ALL_TIMEOUT_MS = 30000;
     private static nextId = 1;
     private static pending: Array<{
         id: number;
@@ -101,13 +101,13 @@ export class DetachedPromises {
                     .join("\n\n");
 
                 const message =
-                    `DetachedPromises.awaitAllAndClear timed out after ${DetachedPromises.DEFAULT_AWAIT_TIMEOUT_MS}ms while waiting for ${unresolved.length}/${batch.length} promise(s).` +
+                    `DetachedPromises.awaitAllAndClear timed out after ${DetachedPromises.AWAIT_ALL_TIMEOUT_MS}ms while waiting for ${unresolved.length}/${batch.length} promise(s).` +
                     (unresolvedStacks
                         ? `\nUnresolved promise origins:\n${unresolvedStacks}`
                         : "");
 
                 reject(new Error(message));
-            }, DetachedPromises.DEFAULT_AWAIT_TIMEOUT_MS);
+            }, DetachedPromises.AWAIT_ALL_TIMEOUT_MS);
 
             Promise.allSettled(trackedPromises)
                 .then((results) => {

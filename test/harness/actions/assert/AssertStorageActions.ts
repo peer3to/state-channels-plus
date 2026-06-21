@@ -5,18 +5,19 @@ import {
     toSolidityDisputeFraudProofType,
     toSolidityFraudProofType
 } from "@/types/sol-enums";
-import { Codec, DetachedPromises, hash, Type } from "@/utils";
+import { DetachedPromises } from "@/utils";
 import PeerTestHarness from "@test/fixtures/PeerTestHarness";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { ethers } from "ethers";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 
-export class AssertStorageActions {
-    constructor(private readonly harness: PeerTestHarness) {}
+export class AssertStorageActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
 
-    honestPeersStoredBlockAndState(
+    async honestPeersStoredBlockAndState(
         height: number,
         forkId: ForkId = this.harness.activeForkId!
-    ): void {
+    ): Promise<void> {
         if (!forkId) {
             throw new Error("No active fork ID");
         }
@@ -27,14 +28,14 @@ export class AssertStorageActions {
         }
 
         const referencePeer = honestPeers[0];
-        const referenceBlockHash = this.assertStoredBlockAndStateExists(
+        const referenceBlockHash = await this.assertStoredBlockAndStateExists(
             referencePeer.index,
             forkId,
             height
         );
 
         for (const peer of honestPeers.slice(1)) {
-            const peerBlockHash = this.assertStoredBlockAndStateExists(
+            const peerBlockHash = await this.assertStoredBlockAndStateExists(
                 peer.index,
                 forkId,
                 height
@@ -55,28 +56,33 @@ export class AssertStorageActions {
     }): Promise<void> {
         const forkId = options.forkId ?? this.harness.activeForkId;
 
-        const condition = () => {
+        const condition = async () => {
             try {
-                this.honestPeersStoredBlockAndState(options.height, forkId);
+                await this.honestPeersStoredBlockAndState(
+                    options.height,
+                    forkId
+                );
                 return true;
-            } catch (error) {
+            } catch {
                 return false;
             }
         };
 
-        const promise = this.harness.eventCountsBarrier.waitFor(condition, {
+        return this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: options.timeoutMs,
             timeoutMessageFn: async () => {
                 let errorMsg = `Block and state were not stored on all honest peers within ${options.timeoutMs ?? 5000}ms for ${forkId}:${options.height}`;
                 try {
-                    this.honestPeersStoredBlockAndState(options.height, forkId);
+                    await this.honestPeersStoredBlockAndState(
+                        options.height,
+                        forkId
+                    );
                 } catch (error) {
                     errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
                 }
                 return errorMsg;
             }
         });
-        return promise;
     }
 
     honestPeersObserveInboundMessageWait(options?: {
@@ -88,10 +94,12 @@ export class AssertStorageActions {
             options?.peerIndices
         );
 
-        const condition = () => {
+        const condition = async () => {
             for (const peer of honestPeers) {
-                const latestHash =
-                    peer.stateManager.storage.inboundMessages.getLatestBlockHash();
+                const latestHash = await this.harness
+                    .control(peer)
+                    .query.getLatestInboundMessageHash()
+                    .request();
                 if (!latestHash || latestHash === options?.previousLatestHash) {
                     return false;
                 }
@@ -114,12 +122,12 @@ export class AssertStorageActions {
         DetachedPromises.collect(promise);
     }
 
-    honestPeersStoredFraudProof(options: {
+    async honestPeersStoredFraudProof(options: {
         fraudProofType?: FraudProofType;
         peerIndices?: number[];
         maliciousPeerIndex: number;
         atLeastOneHonestPeer?: boolean;
-    }): void {
+    }): Promise<void> {
         const {
             fraudProofType,
             peerIndices,
@@ -133,7 +141,7 @@ export class AssertStorageActions {
             const failures: string[] = [];
             for (const honestPeer of honestPeers) {
                 try {
-                    this.assertHonestPeerStoredFraudProofForMalicious({
+                    await this.assertHonestPeerStoredFraudProofForMalicious({
                         honestPeerIndex: honestPeer.index,
                         maliciousPeerAddress: maliciousPeer.address,
                         maliciousPeerIndex,
@@ -155,7 +163,7 @@ export class AssertStorageActions {
         }
 
         for (const honestPeer of honestPeers) {
-            this.assertHonestPeerStoredFraudProofForMalicious({
+            await this.assertHonestPeerStoredFraudProofForMalicious({
                 honestPeerIndex: honestPeer.index,
                 maliciousPeerAddress: maliciousPeer.address,
                 maliciousPeerIndex,
@@ -164,181 +172,110 @@ export class AssertStorageActions {
         }
     }
 
-    private assertHonestPeerStoredFraudProofForMalicious(options: {
+    private async assertHonestPeerStoredFraudProofForMalicious(options: {
         honestPeerIndex: number;
         maliciousPeerAddress: string;
         maliciousPeerIndex: number;
         fraudProofType?: FraudProofType;
-    }): void {
+    }): Promise<void> {
         const {
             honestPeerIndex,
             maliciousPeerAddress,
             maliciousPeerIndex,
             fraudProofType
         } = options;
-        const peerStorage = this.harness.query.getPeerStorage(honestPeerIndex);
-        const fraudProof =
-            peerStorage.fraudProofs.getFraudProofForParticipant(
-                maliciousPeerAddress
-            );
-        if (!fraudProof) {
+        const honestPeer = this.harness.getPeer(honestPeerIndex);
+        const proofType = await this.harness
+            .control(honestPeer)
+            .query.getFraudProofType(maliciousPeerAddress)
+            .request();
+        if (proofType === null) {
             throw new Error(
                 `Peer ${honestPeerIndex} has no fraud proofs for malicious peer ${maliciousPeerIndex}`
             );
         }
-        if (fraudProofType) {
-            if (
-                fraudProof.proofType !==
-                toSolidityFraudProofType(fraudProofType)
-            ) {
-                throw new Error(
-                    `Peer ${honestPeerIndex} has a fraud proof for malicious peer ${maliciousPeerIndex}, but it is of type ${fraudProof.proofType} instead of ${fraudProofType}`
-                );
-            }
-        }
-    }
-
-    honestPeersStoredDisputeFraudProof(options?: {
-        disputeFraudProofType?: DisputeFraudProofType;
-        disputes?: DisputeStruct[];
-        peerIndices?: number[];
-        atLeastOneHonestPeer?: boolean;
-    }): void {
-        const {
-            disputeFraudProofType,
-            disputes = this.harness.context.tamperedDisputes,
-            peerIndices,
-            atLeastOneHonestPeer = true
-        } = options || {};
-        const honestPeers = this.harness.getFilteredOrHonestPeers(peerIndices);
-        if (!disputes || disputes.length === 0)
+        if (
+            fraudProofType &&
+            proofType !== String(toSolidityFraudProofType(fraudProofType))
+        ) {
             throw new Error(
-                "No disputes provided and no tampered disputes in context"
+                `Peer ${honestPeerIndex} has a fraud proof for malicious peer ${maliciousPeerIndex}, but it is of type ${proofType} instead of ${fraudProofType}`
             );
-
-        if (atLeastOneHonestPeer) {
-            const failuresByDispute: string[] = [];
-            for (const dispute of disputes) {
-                const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
-                let stored = false;
-                const perPeerErrors: string[] = [];
-                for (const honestPeer of honestPeers) {
-                    try {
-                        this.assertPeerStoredDisputeFraudProof({
-                            honestPeerIndex: honestPeer.index,
-                            dispute,
-                            disputeFraudProofType
-                        });
-                        stored = true;
-                        break;
-                    } catch (err) {
-                        perPeerErrors.push(
-                            err instanceof Error ? err.message : String(err)
-                        );
-                    }
-                }
-                if (!stored) {
-                    failuresByDispute.push(
-                        `dispute ${disputeHash}: ${perPeerErrors.join(" | ")}`
-                    );
-                }
-            }
-            if (failuresByDispute.length > 0) {
-                const peerList = honestPeers.map((p) => p.index).join(", ");
-                throw new Error(
-                    `Expected at least one honest peer among [${peerList}] to store each dispute fraud proof` +
-                        (disputeFraudProofType
-                            ? ` (type ${disputeFraudProofType})`
-                            : "") +
-                        `. Missing: ${failuresByDispute.join(" || ")}`
-                );
-            }
-            return;
-        }
-
-        for (const honestPeer of honestPeers) {
-            for (const dispute of disputes) {
-                this.assertPeerStoredDisputeFraudProof({
-                    honestPeerIndex: honestPeer.index,
-                    dispute,
-                    disputeFraudProofType
-                });
-            }
         }
     }
 
-    private assertPeerStoredDisputeFraudProof(options: {
-        honestPeerIndex: number;
-        dispute: DisputeStruct;
-        disputeFraudProofType?: DisputeFraudProofType;
-    }): void {
-        const { honestPeerIndex, dispute, disputeFraudProofType } = options;
-        const peerStorage = this.harness.query.getPeerStorage(honestPeerIndex);
-        const dfp =
-            peerStorage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                dispute
-            );
-        const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
-        if (!dfp) {
-            throw new Error(
-                `Peer ${honestPeerIndex} has no dispute fraud proof for dispute ${disputeHash}`
-            );
-        }
-        if (disputeFraudProofType) {
-            if (
-                dfp.proofType !==
-                toSolidityDisputeFraudProofType(disputeFraudProofType)
-            ) {
-                throw new Error(
-                    `Peer ${honestPeerIndex} has dispute fraud proof type ${dfp.proofType} instead of ${toSolidityDisputeFraudProofType(disputeFraudProofType)} for dispute ${disputeHash}`
-                );
-            }
-        }
-    }
-
-    honestPeersStoredDisputeFraudProofWait(options?: {
-        disputeFraudProofType?: DisputeFraudProofType;
-        disputes?: DisputeStruct[];
+    async honestPeersStoredDisputeFraudProof(options: {
+        disputeFraudProofType: DisputeFraudProofType;
         peerIndices?: number[];
-        atLeastOneHonestPeer?: boolean;
+    }): Promise<void> {
+        const { disputeFraudProofType, peerIndices } = options;
+        const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
+        if (peers.length === 0) {
+            throw new Error(
+                peerIndices?.length
+                    ? `No peers found for peerIndices ${JSON.stringify(peerIndices)}`
+                    : "No honest peers in harness to check dispute fraud proof storage"
+            );
+        }
+        const want = String(
+            toSolidityDisputeFraudProofType(disputeFraudProofType)
+        );
+
+        for (const peer of peers) {
+            const proofTypes = await this.harness
+                .control(peer)
+                .query.getDisputeFraudProofTypes()
+                .request();
+            if (!proofTypes.includes(want)) {
+                throw new Error(
+                    `Peer ${peer.index} should store dispute fraud proof type ${disputeFraudProofType}`
+                );
+            }
+        }
+    }
+
+    honestPeersStoredDisputeFraudProofWait(options: {
+        disputeFraudProofType: DisputeFraudProofType;
+        peerIndices?: number[];
         timeoutMs?: number;
     }): Promise<void> {
-        const condition = () => {
-            try {
-                this.honestPeersStoredDisputeFraudProof(options);
-                return true;
-            } catch (error) {
-                return false;
+        const { timeoutMs, disputeFraudProofType, ...rest } = options;
+        return this.harness.eventCountsBarrier.waitFor(
+            async () => {
+                try {
+                    await this.honestPeersStoredDisputeFraudProof({
+                        disputeFraudProofType,
+                        ...rest
+                    });
+                    return true;
+                } catch {
+                    return false;
+                }
+            },
+            {
+                timeoutMs,
+                timeoutMessage: `Not all checked peers stored dispute fraud proof type ${disputeFraudProofType} within ${timeoutMs ?? 5000}ms`,
+                label: `disputeFraudProofWait:${disputeFraudProofType}`
             }
-        };
-
-        const promise = this.harness.eventCountsBarrier.waitFor(condition, {
-            timeoutMs: options?.timeoutMs,
-            timeoutMessage:
-                (options?.atLeastOneHonestPeer ?? true)
-                    ? `Dispute fraud proof was not stored by at least one honest peer within ${options?.timeoutMs ?? 5000}ms`
-                    : `Dispute fraud proof was not stored on all honest peers within ${options?.timeoutMs ?? 5000}ms`
-        });
-        return promise;
+        );
     }
 
-    async honestPeersStoredDisputeFraudProofDetached(options?: {
-        disputeFraudProofType?: DisputeFraudProofType;
-        disputes?: DisputeStruct[];
+    async honestPeersStoredDisputeFraudProofDetached(options: {
+        disputeFraudProofType: DisputeFraudProofType;
         peerIndices?: number[];
-        atLeastOneHonestPeer?: boolean;
         timeoutMs?: number;
     }): Promise<void> {
-        const promise = this.honestPeersStoredDisputeFraudProofWait(options);
-        DetachedPromises.collect(promise);
+        DetachedPromises.collect(
+            this.honestPeersStoredDisputeFraudProofWait(options)
+        );
     }
 
-    storedTimeout(options: {
+    async storedTimeout(options: {
         timedoutParticipantIndex: number;
         peerToCheck?: number;
         forkId?: ForkId;
         isForced?: boolean;
-    }): void {
+    }): Promise<void> {
         const {
             timedoutParticipantIndex,
             peerToCheck = 0,
@@ -350,9 +287,10 @@ export class AssertStorageActions {
             throw new Error("No active fork ID");
         }
 
-        const timeout = this.harness.query
-            .getPeerStorage(peerToCheck)
-            .timeout.getTimeout(forkId);
+        const timeout = await this.harness
+            .control(this.harness.getPeer(peerToCheck))
+            .query.getTimeout(forkId)
+            .request();
 
         if (!timeout) {
             throw new Error(`No timeout found for fork ${forkId}`);
@@ -393,16 +331,18 @@ export class AssertStorageActions {
         }
         const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         for (const peer of peers) {
-            const storage = this.harness.query.getPeerStorage(peer.index);
             for (const disputeHash of disputeHashes) {
-                const disputeConfirmation =
-                    storage.disputes.getDisputeConfirmation(disputeHash);
-                if (!disputeConfirmation) {
-                    const existingConfirmationHashes = Array.from(
-                        (storage.disputes as any).disputes.keys()
-                    );
+                const present = await this.harness
+                    .control(peer)
+                    .query.hasDisputeConfirmation(disputeHash)
+                    .request();
+                if (!present) {
+                    const existing = await this.harness
+                        .control(peer)
+                        .query.getDisputeConfirmationHashes()
+                        .request();
                     throw new Error(
-                        `No dispute confirmation found for hash ${disputeHash} on peer ${peer.index}, existing confirmations: ${JSON.stringify(existingConfirmationHashes)}`
+                        `No dispute confirmation found for hash ${disputeHash} on peer ${peer.index}, existing confirmations: ${JSON.stringify(existing)}`
                     );
                 }
             }
@@ -418,12 +358,12 @@ export class AssertStorageActions {
             try {
                 await this.storedDisputeConfirmations(options);
                 return true;
-            } catch (error) {
+            } catch {
                 return false;
             }
         };
 
-        const promise = this.harness.eventCountsBarrier.waitFor(condition, {
+        return this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: options?.timeoutMs,
             timeoutMessageFn: async () => {
                 let errorMsg = `Dispute confirmations were not stored on all peers within ${options?.timeoutMs ?? 5000}ms`;
@@ -435,76 +375,22 @@ export class AssertStorageActions {
                 return errorMsg;
             }
         });
-        return promise;
     }
 
-    private assertStoredBlockAndStateExists(
+    private async assertStoredBlockAndStateExists(
         peerIndex: number,
         forkId: ForkId,
         height: number
-    ): Hash {
-        const storage = this.harness.query.getPeerStorage(peerIndex);
-        const block = storage.blocks.getBlock(forkId, height);
-
-        if (!block) {
+    ): Promise<Hash> {
+        const result = await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.assertStoredBlockChain(forkId, height)
+            .request();
+        if (!result.ok) {
             throw new Error(
-                `Peer ${peerIndex} has no persisted block for ${forkId}:${height}`
+                `Peer ${peerIndex} block-chain incomplete for ${forkId}:${height}: ${result.reason}`
             );
         }
-
-        const snapshot = storage.stateSnapshots.getStateSnapshotByHash(
-            block.stateSnapshotHash
-        );
-        if (!snapshot) {
-            throw new Error(
-                `Peer ${peerIndex} is missing state snapshot ${block.stateSnapshotHash} for ${forkId}:${height}`
-            );
-        }
-
-        const stateMachineState =
-            storage.stateMachineStates.getStateMachineState(
-                snapshot.stateMachineStateHash
-            );
-        if (!stateMachineState) {
-            throw new Error(
-                `Peer ${peerIndex} is missing state machine state ${snapshot.stateMachineStateHash} for ${forkId}:${height}`
-            );
-        }
-
-        for (const messageBlock of block.messageBlocks) {
-            const messageBlockHash = hash(
-                Codec.encode(messageBlock, Type.MessageBlock)
-            ) as Hash;
-
-            if (!storage.inboundMessages.getMessageBlock(messageBlockHash)) {
-                throw new Error(
-                    `Peer ${peerIndex} is missing inbound message block ${messageBlockHash} referenced by ${forkId}:${height}`
-                );
-            }
-        }
-
-        if (
-            snapshot.latestInboundMessageBlockHash !== ethers.ZeroHash &&
-            !storage.inboundMessages.getMessageBlock(
-                snapshot.latestInboundMessageBlockHash
-            )
-        ) {
-            throw new Error(
-                `Peer ${peerIndex} is missing inbound message block ${snapshot.latestInboundMessageBlockHash} referenced by ${forkId}:${height}`
-            );
-        }
-
-        if (
-            snapshot.latestOutboundMessageBlockHash !== ethers.ZeroHash &&
-            !storage.outboundMessages.getMessageBlock(
-                snapshot.latestOutboundMessageBlockHash
-            )
-        ) {
-            throw new Error(
-                `Peer ${peerIndex} is missing outbound message block ${snapshot.latestOutboundMessageBlockHash} referenced by ${forkId}:${height}`
-            );
-        }
-
-        return block.hash;
+        return result.blockHash as Hash;
     }
 }

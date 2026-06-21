@@ -50,6 +50,33 @@ export default class DisputeValidationService {
         dispute: DisputeStruct,
         onChainDisputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<boolean> {
+        if (!(await this.isDisputeInboundHashValid(dispute))) {
+            this.logger.warn("Dispute inbound hash not in chain", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute)
+            });
+            this.disputeFraudProofService.createDisputeInboundHashNotInChain(
+                dispute
+            );
+            return false;
+        }
+
+        const hasHeaderMismatch =
+            await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
+                dispute
+            );
+        if (hasHeaderMismatch) {
+            this.logger.warn(
+                "DisputeStateProofHeaderMismatch: stateProof header channelId or forkId does not match dispute.input",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
+            );
+            this.disputeFraudProofService.createDisputeStateProofHeaderMismatch(
+                dispute
+            );
+            return false;
+        }
+
         const postedAuditingData = this.hasPostedAuditingData(dispute);
 
         if (postedAuditingData) {
@@ -213,25 +240,9 @@ export default class DisputeValidationService {
         );
 
         // (STATEFUL - view) check on-chain slashes
-        const disputeCreationTimestamp =
-            await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                dispute.input.channelId,
-                dispute.input.forkId
-            );
-        // This should always be synced since this was triggered by the on-chain event
-        if (Number(disputeCreationTimestamp) === 0) {
-            this.logger.error(
-                "Dispute creation timestamp = 0, in LocalDiamond",
-                {
-                    dispute: LoggerUtils.getDisputeMetadata(dispute)
-                }
-            );
-            return false;
-        }
         let onChainSlashes = new Set<Address>(
-            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
-                dispute.input.channelId,
-                disputeCreationTimestamp
+            await this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                dispute.input.channelId
             )
         );
         const disputeOnChainSlashes = new Set<Address>(
@@ -240,9 +251,8 @@ export default class DisputeValidationService {
         if (!isSubset(disputeOnChainSlashes, onChainSlashes)) {
             // double check with RPC node, maybe local state not synced
             onChainSlashes = new Set<Address>(
-                await this.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
-                    dispute.input.channelId,
-                    disputeCreationTimestamp
+                await this.stateChannelManagerContract.getOnChainSlashedParticipants(
+                    dispute.input.channelId
                 )
             );
             if (!isSubset(disputeOnChainSlashes, onChainSlashes)) {
@@ -394,10 +404,11 @@ export default class DisputeValidationService {
                     }
                 }
             }
-            // previousTimestamp is now correctly set
-            // TODO - think if it's <= or < (in the contract it's <=)
+            // Strict `<` mirrors DisputeFraudProofFacet._handleTimeoutTooEarly:
+            // contract slashes when timeoutTimestamp < previousTimestamp + waitTime;
+            // at equality the contract accepts the timeout, so we must too.
             if (
-                timeoutTimestamp <=
+                timeoutTimestamp <
                 previousTimestamp +
                     this.stateManager.getTimeoutWaitTimeSeconds()
             ) {
@@ -584,6 +595,22 @@ export default class DisputeValidationService {
         }
 
         return dispute.input.forkId === latestSnapshot.snapshotDataHash;
+    }
+
+    private async isDisputeInboundHashValid(
+        dispute: DisputeStruct
+    ): Promise<boolean> {
+        if (
+            await this.diamondStateMachine.localDiamondContract.isDisputeInboundHashValid.staticCall(
+                dispute
+            )
+        ) {
+            return true;
+        }
+        // double check with RPC node, maybe local state not synced
+        return this.stateChannelManagerContract.isDisputeInboundHashValid.staticCall(
+            dispute
+        );
     }
 
     private verifyInboundMessageBlocks(
@@ -783,6 +810,12 @@ export default class DisputeValidationService {
         dispute: DisputeStruct,
         disputeAuditingData: DisputeAuditingDataStruct
     ): void {
+        for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
+            this.storage.stateSnapshots.storeStateSnapshot(
+                StateSnapshot.from(milestoneSnapshot)
+            );
+        }
+
         const latestFinalizedSnapshot =
             this.agreementManager.getLatestFinalizedSnapshot(
                 dispute.input.stateProof,
@@ -795,12 +828,6 @@ export default class DisputeValidationService {
                 {
                     hash: latestFinalizedSnapshot.stateMachineStateHash
                 }
-            );
-        }
-
-        for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
-            this.storage.stateSnapshots.storeStateSnapshot(
-                StateSnapshot.from(milestoneSnapshot)
             );
         }
 

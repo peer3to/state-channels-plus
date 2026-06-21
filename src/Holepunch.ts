@@ -55,6 +55,13 @@ class Holepunch {
     //Mark resources for garbage collection
     public async dispose() {
         this.leaveTopics();
+        if (typeof this.swarm?.destroy === "function") {
+            await Promise.resolve(this.swarm.destroy());
+            return;
+        }
+        if (typeof this.swarm?.close === "function") {
+            await Promise.resolve(this.swarm.close());
+        }
     }
     public async join(topic: Buffer) {
         this.topics.push(topic);

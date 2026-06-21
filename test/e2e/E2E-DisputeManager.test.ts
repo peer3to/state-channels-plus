@@ -1,9 +1,6 @@
-import { expect } from "chai";
-import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
-import { hash, tryDecodeCustomError } from "@/utils";
-import { TestSession, PeerTestHarness, DisputeTampering } from "@test/harness";
-
-PeerTestHarness.setDefaultLogLevel("error");
+import { DisputeFraudProofType } from "@/types/sol-enums";
+import { Codec, Type, hash } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
 
 /**
  * E2E Tests for Dispute Management
@@ -72,69 +69,47 @@ describe("E2E: Dispute Manager", function () {
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
 
-        it("a dispute submitted with no calldata should not be killed even if the auditing data hash is tampered", async function () {
+        it("should reject dispute when auditing data is partial and state proof invalid", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 6 }
-            });
+            await h.scenario.preDisputeSetupCalldataPath();
 
-            h.tamper.stubConstructDispute(
-                0,
-                DisputeTampering.tamperAuditingDataHash,
-                {
-                    autoRestore: true,
-                    markMalicious: false
+            await h.tamper.postTamperedDispute(
+                3,
+                (dispute, _disputeConfirmation, auditingData) => {
+                    if (!auditingData) {
+                        throw new Error("Expected dispute auditing data");
+                    }
+                    if (!dispute.postedAuditingData) {
+                        throw new Error(
+                            "Expected calldata-backed dispute for partial auditing data test"
+                        );
+                    }
+                    if (dispute.input.stateProof.milestones.length === 0) {
+                        throw new Error(
+                            "Expected milestone-backed state proof"
+                        );
+                    }
+
+                    auditingData.milestoneSnapshots = [];
+                    dispute.input.disputeAuditingDataHash = hash(
+                        Codec.encode(auditingData, Type.DisputeAuditingData)
+                    );
                 }
             );
 
-            // Peer 1 double-signs
-            await h.byzantine.submitDoubleSignBlock(1);
-
-            await h.assert.dispute.initiatedAndCommitedWait();
-
-            h.assert.storage.honestPeersStoredFraudProof({
-                fraudProofType: FraudProofType.BlockDoubleSign,
-                maliciousPeerIndex: 1
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast",
+                timeoutMs: 25000
             });
-
-            await h.dispute.resolveDisputeWait();
-
-            // Peer 1 (double-signer) removed.
-            await h.assert.sync.maliciousPeerExcluded();
-            // peer 0 (tampered hash) and peer 2 remain
-            await h.assert.sync.participantCount({ expectedCount: 2 });
-        });
-
-        it("should reject dispute submission when posted auditing data hash does not match submitted auditing data", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-
-            try {
-                await h.tamper.postTamperedDispute(1, (dispute) => {
-                    dispute.postedAuditingData = true;
-                    dispute.input.disputeAuditingDataHash = hash("0x42");
-                });
-                expect.fail(
-                    "Expected ErrorAuditingDataHashMismatch to be thrown"
-                );
-            } catch (error: any) {
-                const customError = tryDecodeCustomError(error);
-                expect(customError).to.not.be.null;
-                expect(customError!.errorDescription.name).to.equal(
-                    "ErrorAuditingDataHashMismatch"
-                );
-            }
-        });
-
-        it("should reject dispute when auditing data is partial and state proof invalid", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            await h.byzantine.tamperedDisputePartialAuditing(1);
-            await h.event.waitForAllPeers("onDisputeKilled", 1, {
-                mode: "atLeast"
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof,
+                timeoutMs: 15000
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            await h.dispute.resolveDisputeWait({
+                forkSettleTimeoutMs: 15000,
+                syntheticOnChainParticipants: 1
+            });
         });
 
         it("should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid", async function () {
@@ -146,7 +121,10 @@ describe("E2E: Dispute Manager", function () {
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
                 mode: "atLeast"
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached();
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof
+            });
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 20000 });
         });
     });

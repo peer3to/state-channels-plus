@@ -46,4 +46,8 @@ export class DisputeFraudProofStorage {
         const disputeHash = hash(Codec.encode(dispute, Type.Dispute));
         return this.disputeFraudProofs.get(disputeHash);
     }
+
+    getDisputeFraudProofs(): DisputeFraudProofStruct[] {
+        return [...this.disputeFraudProofs.values()];
+    }
 }

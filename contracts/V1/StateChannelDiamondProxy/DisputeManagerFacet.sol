@@ -59,6 +59,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeWindow storage disputeWindow = disputeWindowMap[forkId];
         bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
 
+        uint256 throttleExpiry = disputerThrottle[dispute.input.channelId][msg.sender];
+        require(throttleExpiry == 0 || block.timestamp >= throttleExpiry, ErrorDisputeThrottled());
+        disputerThrottle[dispute.input.channelId][msg.sender] = block.timestamp + getEvidenceTime();
+
         //check if dispute window is created/opened for the disputed fork, otherwise create/open it
         if (disputeWindow.evidence.creationTimestamp == 0) {
             //create the dispute window
@@ -73,15 +77,6 @@ contract DisputeManagerFacet is StateChannelCommon {
                 !_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()) || hasNoCommitments,
                 RaceConditionDisputeEvidencePeriodExpired()
             );
-
-            if (hasNoCommitments) {
-                // Spam dispute: the window was opened while there were no on-chain commitments,
-                // so it was killed before any honest peer committed. The kill slashes the
-                // spammer at T > creationTimestamp. Reset creationTimestamp so the
-                // OnChainSlashesNotSubset check accepts that slash in the next round.
-                disputeWindow.evidence.creationTimestamp = block.timestamp;
-                delete disputeWindow.evidence.hasPosted;
-            }
 
             require(!_hadParticipantPostedEvidence(disputeWindow, dispute.input.disputer), ErrorDisputeAlreadyPosted());
 
