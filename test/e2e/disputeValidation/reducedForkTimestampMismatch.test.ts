@@ -1,15 +1,8 @@
 import { MathTestSession as TestSession } from "@test/harness";
 
 /**
- * Repro of the reduced-fork clock skew (writeup: docs/reduced-fork-timestamp-mismatch.md).
- * Two reductions (fork A→B→C) + honest activity. A reduced fork's genesisTimestamp =
- * onChainKillTimestamp + evidenceTime (StateManager.ts) is future-dated, but block.timestamp comes
- * from Clock.getTimeInSeconds(). When local clocks lag, block.timestamp < previousOriginalTimestamp
- * → hasInvalidTimestamp() rejects the honest block → peers desync.
- * Test-only: live peers share real time so the clocks stay aligned.
- * Proof: ValidationService logs "TIMING-MISMATCH" when previousOriginalTimestamp > Clock.getTimeInSeconds().
- * Deliberately RED; mark it.skip for CI once acknowledged.
- * Run: yarn test:e2e:log-file --grep "fork A→B→C; advanceState"
+ * Two consecutive reductions (fork A→B→C) followed by sustained honest state transitions, asserting
+ * every honest survivor stays in sync the whole way through.
  */
 
 const TIME = { evidenceTime: 10 };
@@ -20,7 +13,7 @@ const RESOLVE = {
 const WAIT = 45000;
 
 describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
-    it("fork A→B→C; advanceState → block.timestamp ∉ [previousOriginalTimestamp .. previousTimestamp+p2pTime] → peers desync", async function () {
+    it("fork A→B→C: two reductions then sustained honest activity → all survivors stay in sync", async function () {
         this.timeout(300000);
         const h = TestSession.getHarness();
         const survivors = () =>
@@ -58,7 +51,7 @@ describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
             timeout: WAIT
         });
 
-        // continued honest activity -> trips the future-dated fork-start timestamp check
+        // continued honest activity on the twice-reduced fork -> survivors stay in sync
         for (let k = 0; k < 6; k++) {
             await h.transition.advanceState({ waitForPeers: survivors() });
             await h.assert.sync.peersInSyncWait({

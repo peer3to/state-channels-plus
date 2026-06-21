@@ -478,8 +478,7 @@ class StateManager<
         }
 
         //TODO - see to put all genesisTimestamp logic in one place
-        const genesisTimestamp =
-            Number(onChainKillTimestamp) + this.timeConfig.evidenceTime;
+        const genesisTimestamp = Number(onChainKillTimestamp);
         // Step 4: Perform reduction
         try {
             await this.performReduction(forkId, genesisTimestamp);

@@ -230,7 +230,7 @@ contract FraudProofFacet is StateChannelCommon {
                 return false;
             }
             uint256 prevSnapshotTimestamp = proof.previousStateSnapshot.timestamp;
-            (bool ok, uint256 maxValidTimestamp) = Math.tryAdd(prevSnapshotTimestamp, p2pTime);
+            (bool ok, uint256 maxValidTimestamp) = Math.tryAdd(prevSnapshotTimestamp, getEvidenceTime() + p2pTime);
             return fraudTimestamp < prevSnapshotTimestamp || (ok && fraudTimestamp > maxValidTimestamp);
         }
 
