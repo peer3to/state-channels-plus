@@ -31,7 +31,6 @@ import {
     StateProofStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import Clock from "../Clock";
 import { BytesLike } from "ethers";
 import { config } from "@/utils/config";
 import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -54,7 +53,7 @@ class DisputeManager {
     self = config.DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
-    mutex: Mutex = new Mutex();
+    mutex: Mutex;
     private logger: Logger;
 
     constructor(
@@ -77,13 +76,16 @@ class DisputeManager {
         this.storage = storage;
         this.diamondStateMachine = diamondStateMachine;
         this.logger = logger.child({ component: "DisputeManager" });
+        this.mutex = new Mutex(
+            this.logger.child({ component: "DisputeManager:Mutex" })
+        );
         return this.self;
     }
 
     public async dispute(forkId: ForkId): Promise<void> {
         let txResponse;
         try {
-            await this.mutex.lock();
+            await this.mutex.lock({ taskName: "dispute" });
             if (this.storage.disputes.didIDispute(forkId)) {
                 this.logger.info(
                     `Already initiated dispute for forkId ${forkId}, skipping dispute attempt.`
@@ -162,17 +164,26 @@ class DisputeManager {
             );
             await txResponse.wait();
         } catch (error) {
-            const success = tryHandleEvmError(error, {
+            const success = await tryHandleEvmError(error, {
                 tx: txResponse,
                 logger: this.logger,
                 forkId,
                 signer: this.signer,
                 handlers: {
                     ErrorCantParticipateInDispute: () => {
-                        // No op -> malcious peer
+                        this.logger.warn(
+                            "dispute: signer cannot participate in dispute",
+                            { forkId, channelId: this.channelId }
+                        );
                     },
                     RaceConditionDisputeEvidencePeriodExpired: () => {
-                        // No op -> ignore race condition
+                        this.logger.error(
+                            "dispute: evidence period already expired",
+                            { forkId, channelId: this.channelId }
+                        );
+                        throw new Error(
+                            `dispute upload failed: evidence period expired for forkId=${forkId}`
+                        );
                     }
                 }
             });
@@ -194,6 +205,7 @@ class DisputeManager {
     public async killDispute(dispute: DisputeStruct): Promise<void> {
         const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
         const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
+        let txResponse;
         try {
             // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
             const disputeFraudProof =
@@ -203,22 +215,51 @@ class DisputeManager {
             if (!disputeFraudProof) {
                 throw new Error("No dispute fraud proof found for dispute");
             }
-            const txRespone =
+            txResponse =
                 await this.stateChannelManagerContract.applyDisputeFraudProofs([
                     disputeFraudProof
                 ]);
 
-            await txRespone.wait();
+            await txResponse.wait();
             this.logger.info(
                 `✅ Dispute killed successfully: ${formattedHash}`
             );
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
-                disputeMeta,
-                custom,
-                error: error instanceof Error ? error.message : String(error)
+            const success = await tryHandleEvmError(error, {
+                tx: txResponse,
+                logger: this.logger,
+                forkId: dispute.input.forkId,
+                signer: this.signer,
+                handlers: {
+                    RaceConditionOnChainSlashes: () => {
+                        this.logger.info(
+                            `killDispute no-op: on-chain slashes already cover dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    },
+                    RaceConditionGenesisTimestampNotAvailable: () => {
+                        this.logger.info(
+                            `killDispute no-op: genesis timestamp not available for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    },
+                    RaceConditionUnexpectedBlockCalldataPosted: () => {
+                        this.logger.info(
+                            `killDispute no-op: unexpected block calldata posted for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    }
+                }
             });
+            if (!success) {
+                const custom = tryDecodeCustomError(error);
+                this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
+                    disputeMeta,
+                    custom,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
         }
     }
 
@@ -240,9 +281,8 @@ class DisputeManager {
                 forkId,
                 height: latestBlockHeight
             }),
-            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
-                this.channelId,
-                Clock.getTimeInSeconds() // this is safe as long as our local clock isn't in front of the DLT clock
+            this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                this.channelId
             ),
             this.storage.getParticipantsUnion({
                 forkId,
