@@ -1,16 +1,14 @@
 import { ForkId } from "@/types/types";
 import { StateSnapshot } from "@/models";
-import { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
 import * as sinon from "sinon";
 import { Signer } from "ethers";
-import type { EVM } from "@ethereumjs/evm";
-import { P2pInstance, type EvmCustomPrecompile } from "@/evm";
-import StateManager from "@/stateManager";
+import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
 import { AStateMachine as AStateMachineContract } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
-import type { RpcServiceFactoryMap } from "@/rpc";
+import type { CustomRpcManifest } from "@/rpc";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { TimeConfig } from "@/types";
 import { Config } from "@/utils";
 
@@ -25,7 +23,7 @@ export class HarnessContext {
     /** Indices of malicious peers in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
     maliciousPeerIndices: number[] = [];
 
-    /** Excluded from `getPeersForTransitionSyncBarrier` (see `participantLeave`). */
+    /** Excluded from `getPeersExcludingMaliciousAndLeavers` (see `participantLeave`). */
     leftChannelPeerIndices: number[] = [];
 
     /** Last tampered dispute object (set by Byzantine blocks) */
@@ -37,8 +35,8 @@ export class HarnessContext {
     /** Channel balance before posting snapshot (set by Context.capturePrePostSnapshotContext) */
     channelBalanceBefore?: ChannelBalanceStructOutput;
 
-    /** Expected withdrawals delta from prepared outbound messages (set by Context.capturePrePostSnapshotContext) */
-    expectedWithdrawalsDelta?: BalanceStruct;
+    /** Expected withdrawals delta (Codec-encoded `Type.Balance`) from prepared outbound messages (set by Context.capturePrePostSnapshotContext) */
+    encodedExpectedWithdrawalsDelta?: string;
 
     /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Context.storeSnapshotCount) */
     [key: `snapshotCount_${string}`]: number;
@@ -67,10 +65,7 @@ export type HarnessDeploymentParams = {
 
 export type HarnessOnChainContractsDeploymentParams = HarnessDeploymentParams;
 
-export type HarnessLocalStateMachineDeploymentParams =
-    HarnessDeploymentParams & {
-        evm: EVM;
-    };
+export type HarnessLocalStateMachineDeploymentParams = HarnessDeploymentParams;
 
 export type HarnessDeploymentConfig<
     TContract extends AStateMachineContract = AStateMachineContract
@@ -104,10 +99,7 @@ export type HarnessConstructorOptions<
 /**
  * Options for configuring the test harness
  */
-export type HarnessOptions<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
+export type HarnessOptions = {
     /**
      * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
      *
@@ -134,20 +126,18 @@ export type HarnessOptions<
     disputeExecutionGasLimit?: number;
     autoConnect?: boolean;
     configOverrides?: Partial<Config>; // Direct config overrides
-    rpcServiceFactories?: TFactories;
-    customPrecompiles?: EvmCustomPrecompile[];
+    customRpcManifest?: CustomRpcManifest;
+    customPrecompiles?: EvmCustomPrecompileManifest[];
 };
 
 export type TestPeer<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {},
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     index: number;
     signer: Signer;
     address: string;
-    p2pInstance: P2pInstance<TContract, TFactories>;
-    stateManager: StateManager;
+    p2pInstance: P2pInstance<TContract, TCustomRpc>;
     contractInstance: TContract;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;
@@ -185,13 +175,12 @@ export type EventSpies = {
 };
 
 export type CreateAndResolveDisputeResult<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {},
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     originalForkId: ForkId;
     newForkId: ForkId;
     maliciousPeerIndices: number[];
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TFactories, TContract>>;
+    honestPeers: Array<TestPeer<TCustomRpc, TContract>>;
 };

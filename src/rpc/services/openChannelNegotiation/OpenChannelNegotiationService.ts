@@ -15,7 +15,6 @@ import {
 } from "@/utils";
 
 import OpenChannelNegotiationRpcMethods, {
-    type OpenChannelNegotiationFactories,
     type OpenChannelNegotiationP2PManager
 } from "./OpenChannelNegotiationRpcMethods";
 import {
@@ -276,15 +275,21 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 })
                 .catch((e) => {
                     const custom = tryDecodeCustomError(e);
-                    const msg = e instanceof Error ? e.message : String(e);
-                    this.logger.error("Error opening channel", {
-                        custom,
-                        error: msg
-                    });
-                    this.remoteRpc.openChannelNegotiationService
-                        .abort(`open failed: ${msg}`)
-                        .sendOne(peer);
-                    this.resetNegotiation("open tx failed");
+                    if (custom?.name === "RaceConditionChannelAlreadyOpen") {
+                        this.logger.info(
+                            "open race: channel already opened by peer; deferring to ChannelOpened event"
+                        );
+                    } else {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        this.logger.error("Error opening channel", {
+                            custom,
+                            error: msg
+                        });
+                        this.remoteRpc.openChannelNegotiationService
+                            .abort(`open failed: ${msg}`)
+                            .sendOne(peer);
+                        this.resetNegotiation("open tx failed");
+                    }
                 });
         DetachedPromises.collect(txResponsePromise);
         this.scheduleDeadlineCheck(deadlineSeconds, peer);
@@ -373,5 +378,3 @@ export default class OpenChannelNegotiationService extends ARpcService<
         };
     }
 }
-
-export type { OpenChannelNegotiationFactories };

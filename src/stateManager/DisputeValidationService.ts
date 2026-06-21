@@ -60,15 +60,18 @@ export default class DisputeValidationService {
             return false;
         }
 
-        const hasForkMismatch =
-            await this.stateChannelManagerContract.hasStateProofForkMismatch.staticCall(
+        const hasHeaderMismatch =
+            await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
                 dispute
             );
-        if (hasForkMismatch) {
-            this.logger.warn("Dispute has state proof fork mismatch", {
-                dispute: LoggerUtils.getDisputeMetadata(dispute)
-            });
-            this.disputeFraudProofService.createDisputeStateProofForkMismatch(
+        if (hasHeaderMismatch) {
+            this.logger.warn(
+                "DisputeStateProofHeaderMismatch: stateProof header channelId or forkId does not match dispute.input",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
+            );
+            this.disputeFraudProofService.createDisputeStateProofHeaderMismatch(
                 dispute
             );
             return false;
@@ -401,6 +404,9 @@ export default class DisputeValidationService {
                     }
                 }
             }
+            // Strict `<` mirrors DisputeFraudProofFacet._handleTimeoutTooEarly:
+            // contract slashes when timeoutTimestamp < previousTimestamp + waitTime;
+            // at equality the contract accepts the timeout, so we must too.
             if (
                 timeoutTimestamp <
                 previousTimestamp +
@@ -594,6 +600,14 @@ export default class DisputeValidationService {
     private async isDisputeInboundHashValid(
         dispute: DisputeStruct
     ): Promise<boolean> {
+        if (
+            await this.diamondStateMachine.localDiamondContract.isDisputeInboundHashValid.staticCall(
+                dispute
+            )
+        ) {
+            return true;
+        }
+        // double check with RPC node, maybe local state not synced
         return this.stateChannelManagerContract.isDisputeInboundHashValid.staticCall(
             dispute
         );

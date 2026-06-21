@@ -86,7 +86,8 @@ import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
+import type { CustomRpcConstructor } from "@/rpc/registry";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
 import BlockQueueManager, {
@@ -100,7 +101,10 @@ type ParticipantChanges = {
     joined: Set<Address>;
 };
 
-class StateManager {
+class StateManager<
+    TCustomRpc extends MainRpcService = MainRpcService,
+    TCustomRpcOptions = undefined
+> {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
     signer: ethers.Signer;
@@ -109,7 +113,7 @@ class StateManager {
     stateChannelEventListener: StateChannelEventListener;
     disputeManager: DisputeManager;
     stateChannelManagerContract: StateChannelManagerProxy;
-    p2pManager: P2PManager;
+    p2pManager: P2PManager<TCustomRpc>;
     timeConfig: TimeConfig;
     channelId: ChannelId = NULL;
     mutex: Mutex;
@@ -139,7 +143,8 @@ class StateManager {
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
         logger: Logger,
-        rpcServiceFactories?: RpcServiceFactoryMap
+        customRpc?: CustomRpcConstructor<TCustomRpc, TCustomRpcOptions>,
+        customRpcOptions?: TCustomRpcOptions
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
@@ -189,10 +194,11 @@ class StateManager {
             this.diamondStateMachine,
             logger
         );
-        this.p2pManager = new P2PManager<RpcServiceFactoryMap>(
+        this.p2pManager = new P2PManager<TCustomRpc>(
             this.self,
             signer,
-            rpcServiceFactories
+            customRpc,
+            customRpcOptions
         );
         this.blockQueueManager = new BlockQueueManager(
             this.self,
@@ -239,7 +245,8 @@ class StateManager {
             await Promise.all([
                 this.timeoutManager.dispose(),
                 this.stateChannelEventListener.dispose(),
-                this.p2pManager.dispose()
+                this.p2pManager.dispose(),
+                this.diamondStateMachine.dispose()
             ]);
         } finally {
             this.logger.dispose({
@@ -757,17 +764,40 @@ class StateManager {
         );
 
         try {
-            const tx =
-                await this.stateChannelManagerContract.joinChannel(
-                    confirmation
-                );
+            const expectedSnapshotHash = StateSnapshot.from(
+                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                    this.channelId
+                )
+            ).hash;
+            const tx = await this.stateChannelManagerContract.joinChannel(
+                confirmation,
+                expectedSnapshotHash
+            );
             await tx.wait();
         } catch (error) {
+            this.setStatus(Status.SYNCED);
+            this.storage.forceJoin.clear();
+
+            const custom = tryDecodeCustomError(error);
+            switch (custom?.name) {
+                case "RaceConditionJoinChannelExpired":
+                case "RaceConditionJoinChannelSnapshotMismatch":
+                case "RaceConditionJoinChannelForkDisputed":
+                    // TODO: call general abort() here once it exists outside spectate
+                    // (see SpectateService.abort + EventHandler.onStateSnapshotUpdated).
+                    this.logger.warn(
+                        `joinChannel - race condition: ${custom.name}`,
+                        {
+                            name: custom.name,
+                            args: custom.errorDescription.args
+                        }
+                    );
+                    // Rethrown as CustomEvmError
+                    throw custom;
+            }
             this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
                 error: error instanceof Error ? error.message : String(error)
             });
-            this.setStatus(Status.SYNCED);
-            this.storage.forceJoin.clear();
             throw error;
         }
     }
@@ -879,7 +909,7 @@ class StateManager {
             "tryExecuteFromQueue"
         );
 
-        this.p2pEventHooks.onSetState?.();
+        this.p2pEventHooks.onSetState?.(forkId);
         P2pEventHooksUtils.notifyTurn({
             nextToWrite,
             nextBlockHeight: nextTransactionCnt,
@@ -1578,11 +1608,14 @@ class StateManager {
                 this.storage
             );
             const currentTime = Clock.getTimeInSeconds();
-            this.logger.info("Posting block calldata on-chain", {
-                block: blockMetadata,
-                maxTimestamp,
-                currentTime
-            });
+            this.logger.info(
+                `Posting block calldata on-chain #${blockMetadata.blockHeight}`,
+                {
+                    block: blockMetadata,
+                    maxTimestamp,
+                    currentTime
+                }
+            );
 
             let txResponse: TransactionResponse;
             const txResponsePromise = this.stateChannelManagerContract
@@ -1690,20 +1723,55 @@ class StateManager {
                     DetachedPromises.collect(txReceiptPromise);
                     return txReceiptPromise;
                 })
-                .catch((error) => {
-                    const custom = tryHandleEvmError(error, {
+                .catch(async (error) => {
+                    const success = await tryHandleEvmError(error, {
                         tx: transactionResponse!,
                         logger: this.logger,
                         signer: this.signer,
-                        forkId
+                        forkId,
+                        handlers: {
+                            RaceConditionSnapshotForkMismatch: () => {
+                                this.logger.warn(
+                                    "postStateSnapshot: snapshot fork mismatch — another peer's snapshot landed first",
+                                    { forkId }
+                                );
+                            },
+                            RaceConditionBlockHeightTooOld: () => {
+                                this.logger.warn(
+                                    "postStateSnapshot: block height too old — newer snapshot already on-chain",
+                                    { forkId }
+                                );
+                            },
+                            RaceConditionPendingInboundNotConsumed: () => {
+                                this.logger.error(
+                                    "postStateSnapshot: pending inbound not consumed by our snapshot",
+                                    { forkId }
+                                );
+                                throw new Error(
+                                    `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
+                                );
+                            },
+                            RaceConditionReductionExpectationDoesntMatch:
+                                () => {
+                                    this.logger.error(
+                                        "postStateSnapshot: reduction already finalized to a different forkId",
+                                        { forkId }
+                                    );
+                                    throw new Error(
+                                        `postStateSnapshot: reduction already finalized to a different forkId for forkId=${forkId}`
+                                    );
+                                }
+                        }
                     });
+                    if (success) return;
+                    const custom = tryDecodeCustomError(error);
                     this.logger.error("Error posting state snapshot", {
+                        custom,
                         error:
                             error instanceof Error
                                 ? error.message
                                 : String(error)
                     });
-
                     throw error;
                 });
             DetachedPromises.collect(txResponsePromise);

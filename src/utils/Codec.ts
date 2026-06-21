@@ -11,7 +11,8 @@ import {
     JoinChannelBlockStruct,
     SnapshotDataStruct,
     SignedBlockStruct,
-    MessageBlockStruct
+    MessageBlockStruct,
+    BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
@@ -24,6 +25,7 @@ import {
     BlockEthersType,
     BlockCommitmentEthersType,
     DisputeEthersType,
+    DisputeConfirmationEthersType,
     JoinChannelEthersType,
     OpenChannelEthersType,
     TransactionEthersType,
@@ -45,7 +47,7 @@ import {
     DisputeInvalidBalanceInvariantProofEthersType,
     DisputeOnChainSlashesNotSubsetProofEthersType,
     DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType,
-    DisputeStateProofForkMismatchProofEthersType,
+    DisputeStateProofHeaderMismatchProofEthersType,
     DisputeInboundHashNotInChainProofEthersType,
     InvalidDisputeReasonProofEthersType,
     TimeoutThresholdProofEthersType,
@@ -54,17 +56,22 @@ import {
     TimeoutParticipantNotNextProofEthersType,
     TimeoutTooEarlyProofEthersType,
     DisputeInvalidBlockInStateProofApplyFraudProofEthersType,
-    MessageBlockEthersType
+    MessageBlockEthersType,
+    BalanceEthersType,
+    SignedBlockEthersType,
+    StateProofEthersType
 } from "@/types";
 import {
     DisputeStruct,
-    DisputeAuditingDataStruct
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct,
+    StateProofStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { SyncPayloadEthersType } from "@/types";
 import type { SyncPayload } from "@/types";
-import { ExecResult } from "@ethereumjs/evm";
+import type { ContractExecutionResult } from "@/evm/contractExecutor";
 import {
     DisputeInvalidBalanceInvariantStruct,
     DisputeOnChainSlashesNotSubsetStruct,
@@ -79,7 +86,7 @@ import {
     TimeoutTooEarlyStruct,
     DisputeLastMilestoneNotFinalAndNoAuditingDataStruct,
     InvalidDisputeReasonStruct,
-    DisputeStateProofForkMismatchStruct
+    DisputeStateProofHeaderMismatchStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 export type FraudStruct =
@@ -103,7 +110,7 @@ export type DisputeFraudStruct =
     | DisputeInvalidBlockInStateProofApplyFraudProofStruct
     | DisputeLastMilestoneNotFinalAndNoAuditingDataStruct
     | InvalidDisputeReasonStruct
-    | DisputeStateProofForkMismatchStruct;
+    | DisputeStateProofHeaderMismatchStruct;
 
 type StructType =
     | FraudStruct
@@ -115,6 +122,7 @@ type StructType =
     | OpenChannelStruct
     | TransactionStruct
     | DisputeStruct
+    | DisputeConfirmationStruct
     | StateSnapshotStruct
     | SnapshotDataStruct
     | JoinChannelBlockStruct
@@ -122,6 +130,9 @@ type StructType =
     | ExitChannelStruct
     | DisputeAuditingDataStruct
     | MessageBlockStruct
+    | BalanceStruct
+    | SignedBlockStruct
+    | StateProofStruct
     | SyncPayload;
 
 // Enum for better autocomplete and type safety
@@ -133,6 +144,7 @@ export enum Type {
     BlockConfirmation,
     Transaction,
     Dispute,
+    DisputeConfirmation,
     StateSnapshot,
     SnapshotData,
     JoinChannelBlock,
@@ -140,10 +152,15 @@ export enum Type {
     ExitChannel,
     DisputeAuditingData,
     MessageBlock,
+    Balance,
+    SignedBlock,
+    StateProof,
     SyncPayload
 }
 
 export class Codec {
+    private static readonly abiCoder = ethers.AbiCoder.defaultAbiCoder();
+
     private static readonly structToEthersType = new Map<
         Type | FraudProofType | DisputeFraudProofType,
         string
@@ -155,6 +172,7 @@ export class Codec {
         [Type.BlockConfirmation, BlockConfirmationEthersType],
         [Type.Transaction, TransactionEthersType],
         [Type.Dispute, DisputeEthersType],
+        [Type.DisputeConfirmation, DisputeConfirmationEthersType],
         [Type.StateSnapshot, StateSnapshotEthersType],
         [Type.SnapshotData, SnapshotDataEthersType],
         [Type.JoinChannelBlock, JoinChannelBlockEthersType],
@@ -162,6 +180,9 @@ export class Codec {
         [Type.ExitChannel, ExitChannelEthersType],
         [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
         [Type.MessageBlock, MessageBlockEthersType],
+        [Type.Balance, BalanceEthersType],
+        [Type.SignedBlock, SignedBlockEthersType],
+        [Type.StateProof, StateProofEthersType],
         [Type.SyncPayload, SyncPayloadEthersType],
         // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
@@ -226,8 +247,8 @@ export class Codec {
             InvalidDisputeReasonProofEthersType
         ],
         [
-            DisputeFraudProofType.DisputeStateProofForkMismatch,
-            DisputeStateProofForkMismatchProofEthersType
+            DisputeFraudProofType.DisputeStateProofHeaderMismatch,
+            DisputeStateProofHeaderMismatchProofEthersType
         ],
         [
             DisputeFraudProofType.DisputeInboundHashNotInChain,
@@ -235,19 +256,48 @@ export class Codec {
         ]
     ]);
 
+    private static readonly abiTypesCache = new Map<
+        Type | FraudProofType | DisputeFraudProofType,
+        readonly [ethers.ParamType]
+    >();
+
+    private static readonly evmAbiTypesCache = new Map<
+        string,
+        readonly [ethers.ParamType]
+    >();
+
+    private static getAbiTypes(
+        type: Type | FraudProofType | DisputeFraudProofType
+    ): readonly [ethers.ParamType] {
+        let abiTypes = this.abiTypesCache.get(type);
+        if (!abiTypes) {
+            const ethersType = this.structToEthersType.get(type);
+            if (!ethersType) {
+                throw new Error(`No ethers type mapping found for ${type}`);
+            }
+            abiTypes = [ethers.ParamType.from(ethersType)];
+            this.abiTypesCache.set(type, abiTypes);
+        }
+        return abiTypes;
+    }
+
+    private static getEvmAbiTypes(
+        ethersType: string
+    ): readonly [ethers.ParamType] {
+        let abiTypes = this.evmAbiTypesCache.get(ethersType);
+        if (!abiTypes) {
+            abiTypes = [ethers.ParamType.from(ethersType)];
+            this.evmAbiTypesCache.set(ethersType, abiTypes);
+        }
+        return abiTypes;
+    }
+
     public static encode(
         struct: StructType,
         type: Type | FraudProofType | DisputeFraudProofType
     ): Bytes {
-        const ethersType = this.structToEthersType.get(type);
-        if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${type}`);
-        }
         try {
-            return ethers.AbiCoder.defaultAbiCoder().encode(
-                [ethersType],
-                [struct]
-            );
+            return this.abiCoder.encode(this.getAbiTypes(type), [struct]);
         } catch (error) {
             const preview =
                 typeof struct === "object"
@@ -291,6 +341,14 @@ export class Codec {
     public static decode(encoded: Bytes, type: Type.Dispute): DisputeStruct;
     public static decode(
         encoded: Bytes,
+        type: Type.DisputeConfirmation
+    ): DisputeConfirmationStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.DisputeAuditingData
+    ): DisputeAuditingDataStruct;
+    public static decode(
+        encoded: Bytes,
         type: Type.StateSnapshot
     ): StateSnapshotStruct;
     public static decode(
@@ -310,20 +368,25 @@ export class Codec {
         encoded: Bytes,
         type: Type.MessageBlock
     ): MessageBlockStruct;
+    public static decode(encoded: Bytes, type: Type.Balance): BalanceStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.BlockConfirmation
+    ): BlockConfirmationStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.SignedBlock
+    ): SignedBlockStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.StateProof
+    ): StateProofStruct;
 
     public static decode<T extends StructType>(
         encoded: Bytes,
         type: Type | FraudProofType | DisputeFraudProofType
     ): T {
-        const ethersType = this.structToEthersType.get(type);
-        if (!ethersType) {
-            throw new Error(`No ethers type mapping found for ${type}`);
-        }
-
-        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
-            [ethersType],
-            encoded
-        );
+        const decoded = this.abiCoder.decode(this.getAbiTypes(type), encoded);
         return this.ethersResultToObjectRecursive(decoded[0]) as T;
     }
 
@@ -352,7 +415,7 @@ export class Codec {
     }
 
     public static decodeEvmResult<T>(
-        execResult: ExecResult,
+        execResult: ContractExecutionResult,
         ethersType: string,
         options: {
             useObjectConversion: boolean;
@@ -360,8 +423,8 @@ export class Codec {
             useObjectConversion: false
         }
     ): T {
-        const decoded = ethers.AbiCoder.defaultAbiCoder().decode(
-            [ethersType],
+        const decoded = this.abiCoder.decode(
+            this.getEvmAbiTypes(ethersType),
             execResult.returnValue
         );
 

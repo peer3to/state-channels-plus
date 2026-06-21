@@ -237,8 +237,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public override {
-        _delegatecall(joinChannelFacetAddress, abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations)));
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations, bytes32 expectedSnapshotHash)
+        public
+        override
+    {
+        _delegatecall(
+            joinChannelFacetAddress,
+            abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash))
+        );
     }
 
     // ********** public/external DIAMOND functions **********
@@ -322,6 +328,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
+    function hasInvalidTimestamp(InvalidTimestampProof memory proof) public returns (bool) {
+        bytes memory result =
+            _delegatecall(fraudProofFacetAddress, abi.encodeCall(FraudProofFacet.hasInvalidTimestamp, (proof)));
+        return abi.decode(result, (bool));
+    }
+
     function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
         public
         returns (bytes memory maliciousDisputesEncoded)
@@ -341,9 +353,9 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool));
     }
 
-    function hasStateProofForkMismatch(Dispute memory dispute) public returns (bool) {
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public returns (bool) {
         bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.hasStateProofForkMismatch, (dispute))
+            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.hasStateProofHeaderMismatch, (dispute))
         );
         return abi.decode(result, (bool));
     }

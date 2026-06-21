@@ -1,0 +1,131 @@
+# Test harness guide (`test/`)
+
+Root conventions still apply (see `../AGENTS.md`). This file covers the
+architecture that is specific to the test suite — especially the harness and the
+host-side control RPC, which are not obvious from the code alone.
+
+## The runtime-port boundary (read this first)
+
+On the `sdk-thread` branch the whole P2P engine runs behind a **serializable
+message-port boundary** (`src/evm/p2pRuntime/*`). It runs either inline or in a
+real worker thread depending on `RUN_SDK_IN_THREAD`, but **both modes
+structured-clone every value across the port** — inline is _not_ pass-by-
+reference. Consequences for tests:
+
+- `peer.p2pInstance.getStateManager()` **throws**; there is no client-side state
+  manager. `TestPeer` has no `stateManager` field.
+- The harness is a **thin client**. Anything that needs the live signer,
+  `p2pManager`, storage, disputeManager, or contracts must run **host-side** via
+  the harness-control RPC and return a **serializable projection** (hash, height,
+  address, plain struct) — never a live `Block`/transport/profile.
+- Don't reason about "inline is faster / by-reference." If something works inline
+  but not in a worker, it's almost always a serialization bug (e.g. `BigInt`,
+  an ethers `Result`, a `Map`/`Set`, or a revert that lost its `.data`), not a
+  mode difference.
+
+## HarnessControlRpc — the host-side control surface
+
+`test/fixtures/customRpc/harnessControl/HarnessControlRpc.ts` is a custom RPC
+(`extends MainRpcService`) that every peer is built with. It groups host-side
+operations into focused services. Call them from the client:
+
+```ts
+harness.control(peer).query.getForkId().request(); // loopback to self
+harness.control(peer).network.connectToChannel(id).request();
+ctl(peer0).pingService.ping("hi").sendOne(peer1.address); // target another peer by EVM address
+```
+
+`.request()` = loopback (run on this peer's host). Target _another_ peer by **EVM
+address** (`.sendOne(address)` / `.request(address)`) — never by passing an
+`ATransport` (not serializable).
+
+### Adding / changing a service (mirror `src/rpc/services/*`)
+
+Each service is a directory `services/<name>/` with two classes:
+
+- `<Name>Service extends ARpcService<<Name>RpcMethods>` — holds **all** accessors
+  and shared state (`get sm() { return this.p2pManager.stateManager }`, etc.) and
+  `createRPCMethods(transport)`. The service is **not** routable.
+- `<Name>RpcMethods extends ARpcMethods` — **only public endpoint functions**. At
+  runtime `private` doesn't exist and the dispatcher routes by name, so any
+  method here is callable by a crafted payload. Helpers go on the service; reach
+  them via `this.service.*`.
+
+Then register it in `HarnessControlRpc` (field + `new …Service(p2pManager)` in the
+constructor). **Map by the action that uses it**: balance math → `balance`,
+read-only queries → `query`, state-transition ops → `transition`, etc. If a
+harness `FooActions` drives it, its host methods belong in a `foo` service —
+don't grow a catch-all.
+
+Current services: `query`, `transition`, `balance`, `network`, `byzantine`,
+`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`.
+
+### Serialization rules for endpoints
+
+- Return projections, not live objects (`block.toStruct()`, hashes, addresses).
+- Cross ethers/typechain structs with `Codec.encode`/`Codec.decode`; name the hex
+  payloads `encoded*` (see root `AGENTS.md`).
+- Stub sites are **concrete methods**, not free-form path strings, so an SDK
+  rename breaks compilation here instead of failing silently (`stub` service).
+- Function-valued inputs become **named strategies**, never shipped source — the
+  one exception is `scenario.exec` / `harness.execOnHost(...)`, the deliberate
+  white-box escape hatch that ships a **closure-free** `fn.toString()` and reaches
+  everything through the injected `sm` (pass captured values via `args`).
+
+## The harness object model
+
+- `PeerTestHarness<TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+TStateMachine>` — the base is `HarnessControlRpc` (not `MainRpcService`), so
+  every harness instance is type-required to expose the control services.
+  `MathPeerTestHarness` fixes `TStateMachine = MathStateMachine`.
+- Behaviour lives in **action classes** (`test/harness/actions/*`), each generic
+  over the same `TCustomRpc` and taking `harness: PeerTestHarness<TCustomRpc>`.
+  `Math*` subclasses specialize them for the math state machine.
+- Events (spies + barriers) stay on the **main thread**: the host forwards
+  `p2pEventHooks` + `EventHandler` invocations over the port and
+  `registerPeerEventListeners` drives the sinon spies / `eventCountsBarrier` from
+  the client.
+
+### Typing model — why `control()` has the one cast
+
+`peer.p2pInstance.hostRpc` is `RemoteRpcProxyType<TCustomRpc>`. That proxy type is
+a **non-homomorphic mapped type** (it filters keys with an `as` clause), and TS
+will **not** expand it over a generic `TCustomRpc` — so even though
+`TCustomRpc extends HarnessControlRpc`, `.query`/`.network`/… are invisible on a
+generic peer, and `PeerTestHarness<TCustomRpc>` is not assignable to
+`PeerTestHarness<HarnessControlRpc>`.
+
+Resolution (don't re-litigate this):
+
+- The generic is propagated through every action class so `new XActions(this)`
+  type-checks with no cast.
+- `PeerTestHarness.control(peer)` holds the **single** bridge cast
+  (`hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpc>`) — the one spot
+  that narrows a generic peer to the services it actually runs. Member access
+  goes through `control()`; `SyncCoordinator` receives `control` as an injected
+  fn so it needs no cast of its own.
+- A test with its _own_ custom RPC (`PeerTestHarness<PingPongRpc>`) reads its
+  extra services off the concrete `peer.p2pInstance.hostRpc` directly, or casts
+  `control(p)` once to its RPC type (see `E2E-PingService`).
+
+Don't add `as unknown as` at call sites to reach control services — route through
+`control()`.
+
+## Config & modes
+
+- `peer3.test.config.ts` is loaded at **config-file precedence** inside
+  `setup()` (`createConfig(overrides, testConfig)`), so `process.env`
+  (`RUN_SDK_IN_THREAD`, `PROVIDER_URL`, `LOCAL_DISCOVERY_REGISTRY_URL`, …) and
+  explicit `configOverrides` still win over it.
+- Inline vs worker is `RUN_SDK_IN_THREAD`. Worker mode derives each peer's
+  `signerSecret` from the hardhat mnemonic so the host thread can sign.
+
+## Running tests
+
+- Typecheck: `yarn tsc --noEmit -p tsconfig.json` (the `TestPeer`/control surface
+  is fully typed — a removed/renamed field is a compile error, your free
+  checklist).
+- Unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
+- E2E in worker mode: `yarn test:e2e:worker` (per-file process isolation +
+  internal X/N progress; needs the hardhat node — `yarn infra:hardhat-node`).
+- Narrow first: run the single `*.test.ts` you touched before the suite.
