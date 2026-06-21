@@ -1,68 +1,44 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { LocalDiscoveryServer, Logger } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { TestPeer } from "@test/harness/core/types";
+import { Logger } from "@/utils";
 import { ForkId, Address } from "@/types/types";
-import IsForkDisputedService from "@/rpc/services/isForkDisputedService/IsForkDisputedService";
-import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
 import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
-import { ethers } from "ethers";
-import ATransport from "@/transport/ATransport";
 
 /**
- * Actions for RPC service testing
- * Provides access to RPC services and helper methods for test blocks
+ * Actions for RPC service testing.
+ *
+ * The handshake / dispute-acknowledgment flows run host-side via the
+ * harness-control `handshake` service (the live `localRpc` services and
+ * transports are behind the runtime port). Peers are targeted by EVM address;
+ * flows that span two peers (challenge held by the initiator, response signed by
+ * the responder) are orchestrated here across two `control(peer)` calls.
+ *
+ * NOTE: `getRemoteRpc` / `getLocalRpc` / `getTransport` / `getIsForkDisputedService`
+ * / `getInitHandshakeService` still return live, by-reference objects and will
+ * throw at runtime behind the port — they are pending the rpcStub/e2e milestone.
  */
-export class RPCActions {
+export class RPCActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        private harness: PeerTestHarness,
+        private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
-
-    getRemoteRpc(peerIndex: number) {
-        const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.p2pManager.remoteRpc;
-    }
-
-    getLocalRpc(peerIndex: number) {
-        const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.p2pManager.localRpc;
-    }
-    /**
-     * (alias) Get the transport in fromPeerIndex p2pManager towards toPeerIndex
-     */
-    getTransport(
-        fromPeerIndex: number,
-        toPeerIndex: number
-    ): ATransport | undefined {
-        return this.harness.query.getTransport(fromPeerIndex, toPeerIndex);
-    }
-    /**
-     * Get IsForkDisputed RPC service for a peer
-     */
-    getIsForkDisputedService(peerIndex: number): IsForkDisputedService {
-        return this.harness.getPeer(peerIndex).stateManager.p2pManager.localRpc
-            .isForkDisputedService;
-    }
-
-    /**
-     * Get InitHandshake RPC service for a peer
-     */
-    getInitHandshakeService(peerIndex: number): InitHandshakeService {
-        return this.harness.getPeer(peerIndex).stateManager.p2pManager.localRpc
-            .initHandshakeService;
-    }
 
     /**
      * Check if handshake is completed between two peers
      */
-    isHandshakeCompleted(
+    async isHandshakeCompleted(
         peerIndex: number,
         otherPeerAddress: Address
-    ): boolean {
-        const profile = this.harness.query.getProfile(peerIndex, {
-            evmAddress: otherPeerAddress
-        });
-        return profile?.getIsHandshakeCompleted() ?? false;
+    ): Promise<boolean> {
+        const peer = this.harness.getPeer(peerIndex);
+        return this.harness
+            .control(peer)
+            .handshake.isHandshakeCompleted(otherPeerAddress)
+            .request();
     }
 
     /**
@@ -85,16 +61,19 @@ export class RPCActions {
     /**
      * Check if a peer has acknowledged a disputed fork
      */
-    didPeerAcknowledgeDisputedFork(
+    async didPeerAcknowledgeDisputedFork(
         requestingPeerIndex: number,
         respondingPeerAddress: Address,
         forkId: ForkId
-    ): boolean {
-        const service = this.getIsForkDisputedService(requestingPeerIndex);
-        return service.didPeerAcknowledgeDisputedFork(
-            respondingPeerAddress.toString(),
-            forkId
-        );
+    ): Promise<boolean> {
+        const peer = this.harness.getPeer(requestingPeerIndex);
+        return this.harness
+            .control(peer)
+            .handshake.didPeerAcknowledgeDisputedFork(
+                respondingPeerAddress,
+                forkId
+            )
+            .request();
     }
 
     /**
@@ -106,14 +85,10 @@ export class RPCActions {
         observingPeerIndex: number
     ): Promise<void> {
         const newPeer = this.harness.getPeer(newPeerIndex);
-        await newPeer.stateManager.p2pManager.tryOpenConnectionToChannel(
-            this.harness.channelId!.toString()
-        );
-        await LocalDiscoveryServer.connectToPeers(
-            newPeer.stateManager.p2pManager.self,
-            this.harness.channelId!,
-            newPeer.address
-        );
+        await this.harness
+            .control(newPeer)
+            .network.connectToChannel(this.harness.channelId!.toString())
+            .request();
         await this.waitForHandshakeCompleted(
             observingPeerIndex,
             newPeer.address
@@ -130,11 +105,14 @@ export class RPCActions {
             throw new Error("No active fork ID");
         }
 
-        const service = this.getIsForkDisputedService(peerIndex);
-        await service.requestDisputeAcknowledgment(
-            this.harness.channelId!,
-            activeForkId
-        );
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .handshake.requestDisputeAcknowledgment(
+                this.harness.channelId!,
+                activeForkId
+            )
+            .request();
     }
 
     async sendFakeDisputeRequest(options: {
@@ -143,19 +121,17 @@ export class RPCActions {
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
-        const transport = await this.harness.query.waitForPeerTransport(
-            toPeer,
-            fromPeer,
-            5000
-        );
+        const fromAddress = this.harness.getPeer(fromPeer).address;
+        const toPeerObj = this.harness.getPeer(toPeer);
 
-        const receivingService = this.getIsForkDisputedService(toPeer);
-        await receivingService
-            .createRPCMethods(transport)
-            .onDisputeAcknowledgmentRequest(
+        await this.harness
+            .control(toPeerObj)
+            .handshake.deliverDisputeAckRequest(
+                fromAddress,
                 this.harness.channelId!,
                 fakeForkId
-            );
+            )
+            .request();
     }
 
     async simulateBuildOnDisputedFork(options: {
@@ -172,28 +148,22 @@ export class RPCActions {
         const buildingPeerObj = this.harness.getPeer(buildingPeer);
         const observingPeerObj = this.harness.getPeer(observingPeer);
 
-        const transport = await this.harness.query.waitForPeerTransport(
-            observingPeer,
-            buildingPeer,
-            5000
-        );
+        const blockConfirmation = await this.harness
+            .control(buildingPeerObj)
+            .query.getLatestBlockConfirmation(activeForkId)
+            .request();
 
-        const buildingLatestBlock =
-            buildingPeerObj.stateManager.storage.blocks.getLatestBlock(
-                activeForkId
-            );
-
-        if (!buildingLatestBlock) {
+        if (!blockConfirmation) {
             throw new Error(`No latest block found for fork ${activeForkId}`);
         }
 
-        const buildingPeerAddress =
-            transport.peerAddress ?? buildingPeerObj.address;
-
-        await observingPeerObj.stateManager.blockValidationStrategy.blockForkIsDisputed(
-            buildingLatestBlock,
-            buildingPeerAddress
-        );
+        await this.harness
+            .control(observingPeerObj)
+            .handshake.simulateBlockForkIsDisputed(
+                blockConfirmation.encodedBlockConfirmation,
+                buildingPeerObj.address
+            )
+            .request();
     }
 
     async connectPeers(peerIndices: number[]): Promise<void> {
@@ -216,21 +186,24 @@ export class RPCActions {
         timeOffset: number;
     }): Promise<void> {
         const { fromPeer, toPeer, timeOffset } = options;
-        const transport = await this.harness.query.waitForPeerTransport(
-            toPeer,
-            fromPeer,
-            5000
-        );
+        const fromAddress = this.harness.getPeer(fromPeer).address;
+        const toPeerObj = this.harness.getPeer(toPeer);
 
-        const receivingService = this.getInitHandshakeService(toPeer);
-        const agreementTime =
-            this.harness.peers[toPeer].stateManager.timeConfig.agreementTime;
+        const agreementTime = await this.harness
+            .control(toPeerObj)
+            .handshake.getAgreementTime()
+            .request();
         const invalidTime =
             Clock.getTimeInSeconds() + agreementTime + timeOffset;
 
-        await receivingService
-            .createRPCMethods(transport)
-            .onInitHandshakeRequest(fakeHash(), invalidTime);
+        await this.harness
+            .control(toPeerObj)
+            .handshake.deliverHandshakeRequest(
+                fromAddress,
+                fakeHash(),
+                invalidTime
+            )
+            .request();
     }
 
     async initiateHandshake(options: {
@@ -238,14 +211,13 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.query.waitForPeerTransport(
-            fromPeer,
-            toPeer,
-            5000
-        );
+        const fromPeerObj = this.harness.getPeer(fromPeer);
+        const toAddress = this.harness.getPeer(toPeer).address;
 
-        const service = this.getInitHandshakeService(fromPeer);
-        service.initHandshake(transport);
+        await this.harness
+            .control(fromPeerObj)
+            .handshake.initiateHandshake(toAddress)
+            .request();
     }
 
     async sendSlowHandshakeResponse(options: {
@@ -254,35 +226,29 @@ export class RPCActions {
         delaySeconds: number;
     }): Promise<void> {
         const { fromPeer, toPeer, delaySeconds } = options;
-        const transport = await this.harness.query.waitForPeerTransport(
-            toPeer,
-            fromPeer,
-            5000
-        );
+        const fromPeerObj = this.harness.getPeer(fromPeer);
+        const toPeerObj = this.harness.getPeer(toPeer);
 
-        const initiatingService = this.getInitHandshakeService(toPeer);
-        const challenge = initiatingService.getChallenge(transport);
-
+        const challenge = await this.harness
+            .control(toPeerObj)
+            .handshake.getChallenge(fromPeerObj.address)
+            .request();
         if (!challenge) {
             throw new Error("No challenge found - initiate handshake first");
         }
 
-        const fromPeerObj = this.harness.getPeer(fromPeer);
-        const agreementTime =
-            this.harness.peers[toPeer].stateManager.timeConfig.agreementTime;
+        const agreementTime = await this.harness
+            .control(toPeerObj)
+            .handshake.getAgreementTime()
+            .request();
         const slowResponseTime =
             challenge.initTime + agreementTime + delaySeconds;
 
-        const signature =
-            await fromPeerObj.stateManager.p2pManager.p2pSigner.signMessage(
-                challenge.randomChallengeHash
-            );
-
-        const rpcHandler = initiatingService.createRPCMethods(transport);
-        await rpcHandler.onInitHandshakeResponse(
-            signature,
-            slowResponseTime,
-            fromPeerObj.stateManager.p2pManager.preferredTransport
+        await this.deliverResponse(
+            fromPeerObj,
+            toPeerObj,
+            challenge.randomChallengeHash,
+            slowResponseTime
         );
     }
 
@@ -291,31 +257,24 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.query.waitForPeerTransport(
-            toPeer,
-            fromPeer,
-            5000
-        );
-
         const fromPeerObj = this.harness.getPeer(fromPeer);
-        const initiatingService = this.getInitHandshakeService(toPeer);
-        const challenge = initiatingService.getChallenge(transport);
+        const toPeerObj = this.harness.getPeer(toPeer);
+
+        const challenge = await this.harness
+            .control(toPeerObj)
+            .handshake.getChallenge(fromPeerObj.address)
+            .request();
         if (challenge) {
             throw new Error(
                 "Challenge already exists - this wouldn't be unsolicited"
             );
         }
 
-        const signature =
-            await fromPeerObj.stateManager.p2pManager.p2pSigner.signMessage(
-                fakeHash()
-            );
-
-        const rpcHandler = initiatingService.createRPCMethods(transport);
-        await rpcHandler.onInitHandshakeResponse(
-            signature,
-            Clock.getTimeInSeconds(),
-            fromPeerObj.stateManager.p2pManager.preferredTransport
+        await this.deliverResponse(
+            fromPeerObj,
+            toPeerObj,
+            fakeHash(),
+            Clock.getTimeInSeconds()
         );
     }
 
@@ -324,14 +283,13 @@ export class RPCActions {
         targetPeer: number;
     }): Promise<void> {
         const { peerIndex, targetPeer } = options;
-        const transport = await this.harness.query.waitForPeerTransport(
-            peerIndex,
-            targetPeer,
-            5000
-        );
+        const peer = this.harness.getPeer(peerIndex);
+        const targetAddress = this.harness.getPeer(targetPeer).address;
 
-        const service = this.getInitHandshakeService(peerIndex);
-        service.mapTransportToChallenge.delete(transport);
+        await this.harness
+            .control(peer)
+            .handshake.clearChallenge(targetAddress)
+            .request();
     }
 
     async sendValidHandshakeResponse(options: {
@@ -339,32 +297,23 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.query.waitForPeerTransport(
-            toPeer,
-            fromPeer,
-            5000
-        );
+        const fromPeerObj = this.harness.getPeer(fromPeer);
+        const toPeerObj = this.harness.getPeer(toPeer);
 
-        const initService = this.getInitHandshakeService(toPeer);
-        const challenge = initService.getChallenge(transport);
-
+        const challenge = await this.harness
+            .control(toPeerObj)
+            .handshake.getChallenge(fromPeerObj.address)
+            .request();
         if (!challenge) {
             throw new Error("No challenge found - initiate handshake first");
         }
 
-        const respondingPeer = this.harness.getPeer(fromPeer);
-        const signature =
-            await respondingPeer.stateManager.p2pManager.p2pSigner.signMessage(
-                challenge.randomChallengeHash
-            );
-
-        await initService
-            .createRPCMethods(transport)
-            .onInitHandshakeResponse(
-                signature,
-                Clock.getTimeInSeconds(),
-                respondingPeer.stateManager.p2pManager.preferredTransport
-            );
+        await this.deliverResponse(
+            fromPeerObj,
+            toPeerObj,
+            challenge.randomChallengeHash,
+            Clock.getTimeInSeconds()
+        );
     }
 
     async initiateHandshakeWithoutResponse(options: {
@@ -372,14 +321,13 @@ export class RPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.query.waitForPeerTransport(
-            fromPeer,
-            toPeer,
-            5000
-        );
+        const fromPeerObj = this.harness.getPeer(fromPeer);
+        const toAddress = this.harness.getPeer(toPeer).address;
 
-        const initService = this.getInitHandshakeService(fromPeer);
-        initService.initHandshake(transport);
+        await this.harness
+            .control(fromPeerObj)
+            .handshake.initiateHandshake(toAddress)
+            .request();
     }
 
     async sendDuplicateAcknowledgmentResponse(options: {
@@ -393,14 +341,17 @@ export class RPCActions {
             throw new Error("No active fork ID");
         }
 
-        const requestingPeerObj = this.harness.getPeer(requestingPeer);
-        const service = this.getIsForkDisputedService(respondingPeer);
+        const requestingAddress = this.harness.getPeer(requestingPeer).address;
+        const respondingPeerObj = this.harness.getPeer(respondingPeer);
 
-        await service.respondToDisputeAcknowledgment(
-            requestingPeerObj.address,
-            this.harness.channelId!,
-            activeForkId
-        );
+        await this.harness
+            .control(respondingPeerObj)
+            .handshake.respondToDisputeAcknowledgment(
+                requestingAddress,
+                this.harness.channelId!,
+                activeForkId
+            )
+            .request();
     }
 
     async requestFakeDisputeWithSpiedDisconnect(options: {
@@ -409,29 +360,55 @@ export class RPCActions {
         const { requestingPeer } = options;
         const fakeForkId = fakeHash() as ForkId;
         const requestingPeerObj = this.harness.getPeer(requestingPeer);
-        const service = this.getIsForkDisputedService(requestingPeer);
 
+        // Stop every other peer from disconnecting/blacklisting the requester so
+        // the fake request lands and is observed without tearing the link down.
         for (let i = 0; i < this.harness.peers.length; i++) {
             if (i === requestingPeer) continue;
-
             const peer = this.harness.getPeer(i);
-            const originalDisconnect =
-                peer.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress.bind(
-                    peer.stateManager.p2pManager
-                );
-
-            peer.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress =
-                (addr) => {
-                    if (addr === requestingPeerObj.address) {
-                        return;
-                    }
-                    return originalDisconnect(addr);
-                };
+            await this.harness
+                .control(peer)
+                .stub.stubSelectiveDisconnect(requestingPeerObj.address)
+                .request();
         }
 
-        service.requestDisputeAcknowledgment(
-            this.harness.channelId!,
-            fakeForkId
-        );
+        await this.harness
+            .control(requestingPeerObj)
+            .handshake.requestDisputeAcknowledgment(
+                this.harness.channelId!,
+                fakeForkId
+            )
+            .request();
+    }
+
+    /**
+     * Sign `challengeHash` as the responder and deliver an init-handshake
+     * response to the initiator (a two-peer flow: the initiator holds the
+     * challenge; the responder owns the signer).
+     */
+    private async deliverResponse(
+        responder: TestPeer<TCustomRpc>,
+        initiator: TestPeer<TCustomRpc>,
+        challengeHash: string,
+        responseTime: number
+    ): Promise<void> {
+        const signature = await this.harness
+            .control(responder)
+            .handshake.signMessage(challengeHash)
+            .request();
+        const preferredTransport = await this.harness
+            .control(responder)
+            .handshake.getPreferredTransport()
+            .request();
+
+        await this.harness
+            .control(initiator)
+            .handshake.deliverHandshakeResponse(
+                responder.address,
+                signature,
+                responseTime,
+                preferredTransport
+            )
+            .request();
     }
 }

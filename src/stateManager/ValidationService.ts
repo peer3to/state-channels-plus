@@ -7,7 +7,7 @@ import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
 import { Logger } from "@/utils";
 import { BlockValidationResult, OnChainBlockStatus, TimeConfig } from "@/types";
-import { Address, Bytes, ChannelId, ForkId, Timestamp } from "@/types/types";
+import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
@@ -384,31 +384,12 @@ export default class ValidationService {
         }
 
         // OBJECTIVE: isValidTimestamp check
-        const localDiamond = this.diamondStateMachine.localDiamondContract;
-        let isValidTimestamp: boolean;
-        if (previousBlock) {
-            const signature = previousBlock.findSignature(block.author);
-            const hasForfeited = signature
-                ? await localDiamond.hasForfeitedRightToExtraTime.staticCall(
-                      previousBlock.blockStruct,
-                      block.author,
-                      signature as Bytes
-                  )
-                : false;
-            isValidTimestamp =
-                await localDiamond.isBlockTimestampValid.staticCall(
-                    block.timestamp,
-                    previousBlock.timestamp,
-                    hasForfeited,
-                    BigInt(previousBlock.onChainTimestamp ?? 0)
-                );
-        } else {
-            isValidTimestamp =
-                await localDiamond.isFirstBlockTimestampValid.staticCall(
-                    block.timestamp,
-                    previousStateSnapshot!.timestamp
-                );
-        }
+        const invalidTimestampProof =
+            this.fraudProofService.buildInvalidTimestampProof(block);
+        const isValidTimestamp =
+            !(await this.diamondStateMachine.localDiamondContract.hasInvalidTimestamp.staticCall(
+                invalidTimestampProof
+            ));
 
         if (!isValidTimestamp) {
             const violatedRule =
@@ -524,6 +505,13 @@ export default class ValidationService {
         }
 
         if (onChainPostTiming === OnChainPostTiming.ON_TIME) {
+            LoggerUtils.logSubjectiveTimeValidationSucceeded(this.logger, {
+                block,
+                strategyName: strategy.name,
+                validationPath: "on-chain-post-on-time",
+                nowSeconds,
+                agreementTimeSeconds: this.timeConfig.agreementTime
+            });
             return BlockValidationResult.SUCCESS;
         }
 
@@ -545,27 +533,13 @@ export default class ValidationService {
             return await strategy.subjectiveInvalidTimestampDetected(block);
         }
 
-        if (strategy instanceof BlockValidationStrategy) {
-            const differenceSeconds = Math.abs(nowSeconds - block.timestamp);
-            this.logger.info("Time validation succeeded - subjective", {
-                checkType: "subjective",
-                validatedRule: "abs(now - blockTimestamp) <= agreementTime",
-                validationResult:
-                    BlockValidationResult[BlockValidationResult.SUCCESS],
-                forkId: block.forkId,
-                blockHeight: block.height,
-                blockHash: block.hash,
-                author: block.author,
-                nowSeconds,
-                blockTimestamp: block.timestamp,
-                differenceSeconds,
-                allowedSkewSeconds: this.timeConfig.agreementTime,
-                remainingSeconds: Math.max(
-                    0,
-                    this.timeConfig.agreementTime - differenceSeconds
-                )
-            });
-        }
+        LoggerUtils.logSubjectiveTimeValidationSucceeded(this.logger, {
+            block,
+            strategyName: strategy.name,
+            validationPath: "subjective-window",
+            nowSeconds,
+            agreementTimeSeconds: this.timeConfig.agreementTime
+        });
 
         return BlockValidationResult.SUCCESS;
     }

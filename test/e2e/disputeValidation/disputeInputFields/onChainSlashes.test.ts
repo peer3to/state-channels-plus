@@ -1,4 +1,3 @@
-import { ethers } from "ethers";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
 
@@ -8,12 +7,16 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         await h.scenario.preDisputeSetup();
 
         const fakeSlashedAddress = h.getPeer(0).address;
-        h.tamper.stubConstructDispute(1, async (dispute) => {
-            dispute.input.onChainSlashes = [
-                ...dispute.input.onChainSlashes,
-                fakeSlashedAddress
-            ];
-        });
+        h.tamper.stubConstructDispute(
+            1,
+            async (dispute, _sm, args) => {
+                dispute.input.onChainSlashes = [
+                    ...dispute.input.onChainSlashes,
+                    args.fakeSlashedAddress as string
+                ];
+            },
+            { args: { fakeSlashedAddress } }
+        );
 
         await h.byzantine.submitForgedInboundMessageBlock(2);
 
@@ -61,11 +64,16 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();
 
-        h.tamper.stubConstructDispute(3, async (dispute) => {
-            dispute.input.timeout.participant = ethers.ZeroAddress;
-            dispute.input.selfRemoval = false;
-            dispute.input.onChainSlashes = [slashedAddress];
-        });
+        h.tamper.stubConstructDispute(
+            3,
+            async (dispute, sm, args) => {
+                dispute.input.timeout.participant =
+                    sm.p2pManager.localRpc.dispute.zeroAddress;
+                dispute.input.selfRemoval = false;
+                dispute.input.onChainSlashes = [args.slashedAddress as string];
+            },
+            { args: { slashedAddress } }
+        );
 
         await h.byzantine.submitInvalidStateTransitionBlock(2);
 

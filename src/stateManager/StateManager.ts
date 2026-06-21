@@ -86,7 +86,8 @@ import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
+import type { CustomRpcConstructor } from "@/rpc/registry";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
 import BlockQueueManager, {
@@ -100,7 +101,10 @@ type ParticipantChanges = {
     joined: Set<Address>;
 };
 
-class StateManager {
+class StateManager<
+    TCustomRpc extends MainRpcService = MainRpcService,
+    TCustomRpcOptions = undefined
+> {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
     signer: ethers.Signer;
@@ -109,7 +113,7 @@ class StateManager {
     stateChannelEventListener: StateChannelEventListener;
     disputeManager: DisputeManager;
     stateChannelManagerContract: StateChannelManagerProxy;
-    p2pManager: P2PManager;
+    p2pManager: P2PManager<TCustomRpc>;
     timeConfig: TimeConfig;
     channelId: ChannelId = NULL;
     mutex: Mutex;
@@ -139,7 +143,8 @@ class StateManager {
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
         logger: Logger,
-        rpcServiceFactories?: RpcServiceFactoryMap
+        customRpc?: CustomRpcConstructor<TCustomRpc, TCustomRpcOptions>,
+        customRpcOptions?: TCustomRpcOptions
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
@@ -189,10 +194,11 @@ class StateManager {
             this.diamondStateMachine,
             logger
         );
-        this.p2pManager = new P2PManager<RpcServiceFactoryMap>(
+        this.p2pManager = new P2PManager<TCustomRpc>(
             this.self,
             signer,
-            rpcServiceFactories
+            customRpc,
+            customRpcOptions
         );
         this.blockQueueManager = new BlockQueueManager(
             this.self,
@@ -738,8 +744,7 @@ class StateManager {
     }
 
     public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct,
-        expectedSnapshotHash: Bytes
+        confirmation: JoinChannelConfirmationStruct
     ): Promise<void> {
         if (this.status !== Status.SYNCED) return;
 
@@ -759,6 +764,11 @@ class StateManager {
         );
 
         try {
+            const expectedSnapshotHash = StateSnapshot.from(
+                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                    this.channelId
+                )
+            ).hash;
             const tx = await this.stateChannelManagerContract.joinChannel(
                 confirmation,
                 expectedSnapshotHash
@@ -773,6 +783,8 @@ class StateManager {
                 case "RaceConditionJoinChannelExpired":
                 case "RaceConditionJoinChannelSnapshotMismatch":
                 case "RaceConditionJoinChannelForkDisputed":
+                    // TODO: call general abort() here once it exists outside spectate
+                    // (see SpectateService.abort + EventHandler.onStateSnapshotUpdated).
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
                         {
@@ -897,7 +909,7 @@ class StateManager {
             "tryExecuteFromQueue"
         );
 
-        this.p2pEventHooks.onSetState?.();
+        this.p2pEventHooks.onSetState?.(forkId);
         P2pEventHooksUtils.notifyTurn({
             nextToWrite,
             nextBlockHeight: nextTransactionCnt,
@@ -1596,11 +1608,14 @@ class StateManager {
                 this.storage
             );
             const currentTime = Clock.getTimeInSeconds();
-            this.logger.info("Posting block calldata on-chain", {
-                block: blockMetadata,
-                maxTimestamp,
-                currentTime
-            });
+            this.logger.info(
+                `Posting block calldata on-chain #${blockMetadata.blockHeight}`,
+                {
+                    block: blockMetadata,
+                    maxTimestamp,
+                    currentTime
+                }
+            );
 
             let txResponse: TransactionResponse;
             const txResponsePromise = this.stateChannelManagerContract
@@ -1728,16 +1743,22 @@ class StateManager {
                                 );
                             },
                             RaceConditionPendingInboundNotConsumed: () => {
-                                this.logger.warn(
+                                this.logger.error(
                                     "postStateSnapshot: pending inbound not consumed by our snapshot",
                                     { forkId }
+                                );
+                                throw new Error(
+                                    `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
                                 );
                             },
                             RaceConditionReductionExpectationDoesntMatch:
                                 () => {
-                                    this.logger.warn(
+                                    this.logger.error(
                                         "postStateSnapshot: reduction already finalized to a different forkId",
                                         { forkId }
+                                    );
+                                    throw new Error(
+                                        `postStateSnapshot: reduction already finalized to a different forkId for forkId=${forkId}`
                                     );
                                 }
                         }

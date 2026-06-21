@@ -3,7 +3,7 @@ import { Address as EthjsAddress } from "@ethereumjs/util";
 import { ethers } from "ethers";
 import type { Address, Bytes } from "@/types/types";
 import type { Logger } from "@/utils";
-import { Mutex, tryDecodeCustomError } from "@/utils";
+import { Mutex, toEthereumJsEvmAddress, tryDecodeCustomError } from "@/utils";
 import AContractExecutor, {
     type ContractExecutionLog,
     type ContractExecutionResult
@@ -77,7 +77,7 @@ export default class ContractExecutor extends AContractExecutor {
         contractAddress: Address
     ): Promise<ContractExecutionResult> {
         return this.runCall(evm, data, {
-            to: this.toEvmAddress(contractAddress)
+            to: toEthereumJsEvmAddress(contractAddress)
         });
     }
 
@@ -115,10 +115,6 @@ export default class ContractExecutor extends AContractExecutor {
             logs: this.toRpcLogs(result.execResult.logs),
             createdAddress: result.createdAddress?.toString().toLowerCase()
         };
-    }
-
-    private toEvmAddress(address: Address): EthjsAddress {
-        return EthjsAddress.fromString(address.toString().toLowerCase());
     }
 
     private toRpcLogs(logs?: any[]): ContractExecutionLog[] | undefined {

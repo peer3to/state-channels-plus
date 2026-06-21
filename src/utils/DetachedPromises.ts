@@ -29,10 +29,6 @@ export class DetachedPromises {
         return DetachedPromises.pending.length;
     }
 
-    public static last(): Promise<any> | undefined {
-        return DetachedPromises.pending.at(-1)?.promise;
-    }
-
     public static getAndClear(): Array<{
         id: number;
         promise: Promise<any>;
@@ -82,8 +78,6 @@ export class DetachedPromises {
             })
         );
 
-        const awaitTimeoutMs = DetachedPromises.AWAIT_ALL_TIMEOUT_MS;
-
         return new Promise<PromiseSettledResult<any>[]>((resolve, reject) => {
             let timedOut = false;
             const timeoutId = setTimeout(() => {
@@ -107,13 +101,13 @@ export class DetachedPromises {
                     .join("\n\n");
 
                 const message =
-                    `DetachedPromises.awaitAllAndClear timed out after ${awaitTimeoutMs}ms while waiting for ${unresolved.length}/${batch.length} promise(s).` +
+                    `DetachedPromises.awaitAllAndClear timed out after ${DetachedPromises.AWAIT_ALL_TIMEOUT_MS}ms while waiting for ${unresolved.length}/${batch.length} promise(s).` +
                     (unresolvedStacks
                         ? `\nUnresolved promise origins:\n${unresolvedStacks}`
                         : "");
 
                 reject(new Error(message));
-            }, awaitTimeoutMs);
+            }, DetachedPromises.AWAIT_ALL_TIMEOUT_MS);
 
             Promise.allSettled(trackedPromises)
                 .then((results) => {

@@ -270,6 +270,34 @@ export async function deployLocalDiamond(
     return { address: diamondAddress, signer };
 }
 
+export async function deployLocalDiamondWithStateMachineAddress(
+    stateMachineAddress: Address,
+    signer: Signer,
+    timeConfigOverrides?: TimeConfig,
+    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
+): Promise<DeploymentResult> {
+    const facetAddresses = await deployFacetsLocal(signer);
+    const timeConfig = getTimeConfig(timeConfigOverrides);
+
+    const diamondAddress = await deployArtifactLocal(
+        LocalDiamondArtifact,
+        signer,
+        {
+            args: [
+                stateMachineAddress.toString(),
+                ...facetAddresses,
+                timeConfig.p2pTime,
+                timeConfig.agreementTime,
+                timeConfig.chainFallbackTime,
+                timeConfig.evidenceTime,
+                disputeExecutionGasLimit
+            ]
+        }
+    );
+
+    return { address: diamondAddress, signer };
+}
+
 export function linkLibraries(
     artifact: Artifact,
     libs: Record<string, string>

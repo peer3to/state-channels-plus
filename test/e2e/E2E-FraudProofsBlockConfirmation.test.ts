@@ -1,9 +1,11 @@
 import { expect } from "chai";
 import { ethers } from "ethers";
 import Clock from "@/Clock";
-import { Block } from "@/models";
 import { FraudProofType } from "@/types/sol-enums";
+import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 
 /**
  * E2E Tests: Fraud Proofs — onBlockConfirmation (BlockValidationStrategy)
@@ -24,9 +26,16 @@ describe("E2E: Block Fraud Proofs", function () {
 
         const forkId = h.activeForkId;
         expect(forkId).to.not.be.undefined;
-        for (const peer of h.peers) {
-            (peer.stateManager as any).maybePostBlockOnChain = () => {};
-        }
+        // Suppress every peer posting its own block on-chain (forces the
+        // calldata path).
+        await Promise.all(
+            h.peers.map((peer) =>
+                h
+                    .control(peer)
+                    .stub.stubSuppressMaybePostBlockOnChain()
+                    .request()
+            )
+        );
 
         const observerIndex = 3;
         const observer = h.getPeer(observerIndex);
@@ -39,35 +48,55 @@ describe("E2E: Block Fraud Proofs", function () {
             waitForFinalization: false
         });
 
-        const source = h.peerWithHighestBlock(forkId!);
-        const block1 = source.stateManager.storage.blocks.getBlock(forkId!, 0);
-        const block2 = source.stateManager.storage.blocks.getBlock(forkId!, 1);
-        expect(block1).to.not.be.undefined;
-        expect(block2).to.not.be.undefined;
+        const source = await h.peerWithHighestBlock(forkId!);
+        const block1 = await h
+            .control(source)
+            .query.getBlockByHeight(forkId!, 0)
+            .request();
+        const block2 = await h
+            .control(source)
+            .query.getBlockByHeight(forkId!, 1)
+            .request();
+        expect(block1).to.not.be.null;
+        expect(block2).to.not.be.null;
         expect(
-            observer.stateManager.storage.blocks.getNextBlockHeight(forkId!)
+            Number(
+                await h
+                    .control(observer)
+                    .query.getNextBlockHeight(forkId!)
+                    .request()
+            )
         ).to.equal(0);
 
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observerIndex,
-            blockConfirmation: block2!.blockConfirmationStruct,
+            blockConfirmation: Codec.decode(
+                block2!.encodedBlockConfirmation,
+                Type.BlockConfirmation
+            ),
             keepConnection: true,
             waitForProcessed: false
         });
-        expect(observer.stateManager.storage.blocks.getBlock(block2!.hash)).to
-            .be.undefined;
+        expect(
+            await h
+                .control(observer)
+                .query.getBlockByHash(block2!.hash)
+                .request()
+        ).to.be.null;
 
-        const postBlockCalldata = async (block: Block) => {
+        // Posts the block's calldata on-chain via the author's signer (the SCM
+        // contract + signer are client-side, so this needs no host round-trip).
+        const postBlockCalldata = async (block: BlockBundle) => {
             const author = h.peers.find(
                 (peer) =>
-                    peer.address.toLowerCase() ===
-                    String(block.author).toLowerCase()
+                    peer.address.toLowerCase() === block.author.toLowerCase()
             );
             expect(author).to.not.be.undefined;
 
-            const tx =
-                await author!.stateManager.stateChannelManagerContract.postBlockCalldata(
-                    block.signedBlock,
+            const tx = await h.channelManager
+                .connect(author!.signer)
+                .postBlockCalldata(
+                    Codec.decode(block.encodedSignedBlock, Type.SignedBlock),
                     Clock.getTimeInSeconds() + 1000
                 );
             await tx.wait();
@@ -78,31 +107,36 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.event.waitUntilEventOccurs("onBlockCalldataPosted", 5000, [
             observerIndex
         ]);
-        expect(observer.stateManager.storage.blocks.getBlock(block2!.hash)).to
-            .be.undefined;
+        expect(
+            await h
+                .control(observer)
+                .query.getBlockByHash(block2!.hash)
+                .request()
+        ).to.be.null;
 
         await sleep((timeConfig.agreementTime + 1) * 1000);
 
         // maybePostBlockOnChain is stubbed ()=>{} + after AgreementTime the subjective check each peer does would fail, so if the block is accepted -> calldata path
         await postBlockCalldata(block1!);
 
-        await h.eventCountsBarrier.waitFor(
-            () =>
-                observer.stateManager.storage.blocks.getBlock(block1!.hash) !==
-                    undefined &&
-                observer.stateManager.storage.blocks.getBlock(block2!.hash) !==
-                    undefined,
-            {
-                timeoutMs: 5000,
-                timeoutMessage:
-                    "Queued block did not execute after predecessor calldata event"
-            }
+        await waitFor(
+            async () =>
+                (await h
+                    .control(observer)
+                    .query.getBlockByHash(block1!.hash)
+                    .request()) !== null &&
+                (await h
+                    .control(observer)
+                    .query.getBlockByHash(block2!.hash)
+                    .request()) !== null,
+            5000
         );
 
-        const storedBlock2 = observer.stateManager.storage.blocks.getBlock(
-            block2!.hash
-        );
-        expect(storedBlock2?.onChainTimestamp).to.not.be.undefined;
+        const storedBlock2 = await h
+            .control(observer)
+            .query.getBlockByHash(block2!.hash)
+            .request();
+        expect(storedBlock2?.onChainTimestamp).to.not.be.null;
         expect(await observer.contractInstance.getSum()).to.equal(
             observerInitialSum + 2n
         );
@@ -116,16 +150,29 @@ describe("E2E: Block Fraud Proofs", function () {
         const forkId = h.activeForkId;
         expect(forkId).to.not.be.undefined;
 
-        const block = observer.stateManager.storage.blocks.getLatestBlock(
-            forkId!
-        );
-        expect(block).to.not.be.undefined;
+        const block = await h
+            .control(observer)
+            .query.getLatestBlockBundle(forkId!)
+            .request();
+        expect(block).to.not.be.null;
 
-        observer.stateManager.storage.queues.queueBlock(block!);
+        // One-off white-box mutation: queue the latest block host-side.
+        await h.execOnHost(
+            observer,
+            (sm, args) => {
+                const latest = sm.storage.blocks.getLatestBlock(args.forkId);
+                if (!latest) throw new Error("no latest block to queue");
+                sm.storage.queues.queueBlock(latest);
+            },
+            { forkId: forkId! }
+        );
 
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observer.index,
-            blockConfirmation: block!.blockConfirmationStruct,
+            blockConfirmation: Codec.decode(
+                block!.encodedBlockConfirmation,
+                Type.BlockConfirmation
+            ),
             keepConnection: true,
             waitForProcessed: true
         });
@@ -141,20 +188,28 @@ describe("E2E: Block Fraud Proofs", function () {
         const forkId = h.activeForkId;
         expect(forkId).to.not.be.undefined;
 
-        const block = observer.stateManager.storage.blocks.getLatestBlock(
-            forkId!
-        );
-        expect(block).to.not.be.undefined;
+        const block = await h
+            .control(observer)
+            .query.getLatestBlockBundle(forkId!)
+            .request();
+        expect(block).to.not.be.null;
 
-        const initialNextHeight =
-            observer.stateManager.storage.blocks.getNextBlockHeight(forkId!);
+        const initialNextHeight = Number(
+            await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId!)
+                .request()
+        );
         const initialSum = await observer.contractInstance.getSum();
 
         const expectedTimestamp = block!.timestamp + 1000;
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observer.index,
             blockConfirmation: {
-                signedBlock: block!.signedBlock,
+                signedBlock: Codec.decode(
+                    block!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
                 signatures: []
             },
             ingestOptions: { onChainTimestamp: expectedTimestamp },
@@ -162,23 +217,32 @@ describe("E2E: Block Fraud Proofs", function () {
             processedKeepConnection: true
         });
 
-        await h.eventCountsBarrier.waitFor(
-            () =>
-                observer.stateManager.storage.blocks.getBlock(block!.hash)
-                    ?.onChainTimestamp === expectedTimestamp,
-            {
-                timeoutMs: 5000,
-                timeoutMessage:
-                    "Stored duplicate timestamp was not merged into storage"
-            }
+        await waitFor(
+            async () =>
+                (
+                    await h
+                        .control(observer)
+                        .query.getBlockByHash(block!.hash)
+                        .request()
+                )?.onChainTimestamp === expectedTimestamp,
+            5000
         );
         expect(
-            observer.stateManager.storage.blocks.getNextBlockHeight(forkId!)
+            Number(
+                await h
+                    .control(observer)
+                    .query.getNextBlockHeight(forkId!)
+                    .request()
+            )
         ).to.equal(initialNextHeight);
         expect(await observer.contractInstance.getSum()).to.equal(initialSum);
         expect(
-            observer.stateManager.storage.blocks.getBlock(block!.hash)
-                ?.onChainTimestamp
+            (
+                await h
+                    .control(observer)
+                    .query.getBlockByHash(block!.hash)
+                    .request()
+            )?.onChainTimestamp
         ).to.equal(expectedTimestamp);
     });
 
@@ -190,10 +254,11 @@ describe("E2E: Block Fraud Proofs", function () {
         const forkId = h.activeForkId;
         expect(forkId).to.not.be.undefined;
 
-        const block = observer.stateManager.storage.blocks.getLatestBlock(
-            forkId!
-        );
-        expect(block).to.not.be.undefined;
+        const block = await h
+            .control(observer)
+            .query.getLatestBlockBundle(forkId!)
+            .request();
+        expect(block).to.not.be.null;
 
         const outsider = ethers.Wallet.createRandom();
         const badSignature = await outsider.signMessage(
@@ -202,13 +267,11 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observer.index,
             blockConfirmation: {
-                signedBlock: block!.signedBlock,
-                signatures: [
-                    ...Array.from(block!.confirmationSignatures).map(
-                        (signature) => String(signature)
-                    ),
-                    badSignature
-                ]
+                signedBlock: Codec.decode(
+                    block!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: [...block!.confirmationSignatures, badSignature]
             },
             ingestOptions: { senderAddress: h.getPeer(1).address },
             keepConnection: true,
@@ -216,12 +279,17 @@ describe("E2E: Block Fraud Proofs", function () {
         });
 
         expect(
-            observer.stateManager.p2pManager.isBlacklisted(h.getPeer(1).address)
+            await h
+                .control(observer)
+                .query.isBlacklisted(h.getPeer(1).address)
+                .request()
         ).to.equal(true);
+        const storedBlock = await h
+            .control(observer)
+            .query.getBlockByHash(block!.hash)
+            .request();
         expect(
-            observer.stateManager.storage.blocks
-                .getBlock(block!.hash)
-                ?.confirmationSignatures.has(badSignature)
+            storedBlock?.confirmationSignatures.includes(badSignature)
         ).to.equal(false);
     });
 

@@ -1,6 +1,5 @@
 pragma solidity ^0.8.8;
 
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../../types/DisputeTypes.sol";
 import "../Errors.sol";
 import "./BlockUtils.sol";
@@ -24,14 +23,4 @@ function _isAddressInArray(address[] memory array, address adr) pure returns (bo
         if (array[i] == adr) return true;
     }
     return false;
-}
-
-function _recoverSigner(bytes memory encodedData, bytes memory signature) pure returns (address, bool) {
-    bytes32 _hash = keccak256(encodedData);
-    bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash));
-    (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signature);
-    if (error != ECDSA.RecoverError.NoError) {
-        return (recovered, false);
-    }
-    return (recovered, true);
 }

@@ -12,22 +12,26 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
             // verifyStateProof rejects any proof where both arrays are non-empty.
             // Copy a real milestone block so headers match dispute.input (factory.signedBlock
             // uses a dummy channelId which would trigger DisputeStateProofHeaderMismatch).
-            h.tamper.stubConstructDispute(3, (d) => {
-                if (d.input.stateProof.milestones.length === 0) {
-                    throw new Error(
-                        "Expected milestones in calldata-path state proof"
-                    );
-                }
-                const src =
-                    d.input.stateProof.milestones[0].blockConfirmations[0]
-                        .signedBlock;
-                d.input.stateProof.signedBlocks = [
-                    {
-                        encodedBlock: src.encodedBlock,
-                        signature: src.signature
+            h.tamper.stubConstructDispute(
+                3,
+                (d) => {
+                    if (d.input.stateProof.milestones.length === 0) {
+                        throw new Error(
+                            "Expected milestones in calldata-path state proof"
+                        );
                     }
-                ];
-            });
+                    const src =
+                        d.input.stateProof.milestones[0].blockConfirmations[0]
+                            .signedBlock;
+                    d.input.stateProof.signedBlocks = [
+                        {
+                            encodedBlock: src.encodedBlock,
+                            signature: src.signature
+                        }
+                    ];
+                },
+                { autoRestore: true }
+            );
 
             await h.byzantine.submitDoubleSignBlock(1);
 
@@ -58,14 +62,18 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
             // Empty blockConfirmations on the first milestone causes
             // _isMilestoneFinalWithExpectedParticipants to return (false, 0)
             // immediately, making _tryVerifyMilestones return false.
-            h.tamper.stubConstructDispute(3, (d) => {
-                if (d.input.stateProof.milestones.length === 0) {
-                    throw new Error(
-                        "Expected milestones in calldata-path state proof"
-                    );
-                }
-                d.input.stateProof.milestones[0].blockConfirmations = [];
-            });
+            h.tamper.stubConstructDispute(
+                3,
+                (d) => {
+                    if (d.input.stateProof.milestones.length === 0) {
+                        throw new Error(
+                            "Expected milestones in calldata-path state proof"
+                        );
+                    }
+                    d.input.stateProof.milestones[0].blockConfirmations = [];
+                },
+                { autoRestore: true }
+            );
 
             await h.byzantine.submitDoubleSignBlock(1);
 

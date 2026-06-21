@@ -20,10 +20,11 @@ import {
 
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
+import MainRpcService from "@/rpc/MainRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { defineRpcServices } from "@/rpc/registry";
 import { ATransport } from "@/transport";
 export * from "@/rpc/services";
+export type { CustomRpcConstructor } from "@/rpc";
 
 export { ethers } from "ethers";
 export type {
@@ -37,7 +38,6 @@ export type {
 export type {
     ContractExecutionLog,
     ContractExecutionResult,
-    ContractExecutorFactory,
     ContractExecutorFactoryOptions,
     EvmCustomPrecompile,
     EvmCustomPrecompileFactory,
@@ -63,13 +63,22 @@ export {
     config as config,
     ARpcMethods,
     ARpcService,
+    MainRpcService,
     HandshakeCompletedGuard,
-    defineRpcServices,
     ATransport,
     getChecksumAddress,
     createContractExecutorFactory
 };
 export { Status } from "@/types";
+
+export { startP2pRuntimeWorker } from "@/evm/p2pRuntime/worker/startP2pRuntimeWorker";
+export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
+export type {
+    P2pRuntimeWorker,
+    SetupPayload,
+    SerializedContract,
+    WorkerBootstrapMessage
+} from "@/evm/p2pRuntime/types";
 
 export { Address } from "@ethereumjs/util";
 

@@ -5,11 +5,11 @@ import AContractExecutor, {
     type ContractExecutionResult
 } from "./AContractExecutor";
 import type {
+    ContractExecutorRequestPayload,
     WorkerCallMethod,
     WorkerCustomPrecompile,
-    WorkerRequestPayload,
-    WorkerResponse
-} from "./types";
+    WorkerResponseMessage
+} from "./worker/protocol";
 import {
     createContractExecutorWorker,
     type WorkerLike
@@ -21,8 +21,8 @@ type PendingRequest = {
 };
 
 function isWorkerReadyResponse(
-    response: WorkerResponse
-): response is Extract<WorkerResponse, { type: "ready" }> {
+    response: WorkerResponseMessage
+): response is Extract<WorkerResponseMessage, { type: "ready" }> {
     return "type" in response && response.type === "ready";
 }
 
@@ -66,8 +66,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
             this.rejectWorkerReady = reject;
         });
         this.worker = createContractExecutorWorker(
-            (message) => this.handleResponse(message),
-            (error) => {
+            (message: WorkerResponseMessage) => this.handleResponse(message),
+            (error: Error) => {
                 this.rejectWorkerReady(error);
                 this.rejectAll(error);
             }
@@ -114,10 +114,11 @@ export default class WorkerContractExecutor extends AContractExecutor {
         })) as ContractExecutionResult;
     }
 
-    private request(message: WorkerRequestPayload) {
+    private request(message: ContractExecutorRequestPayload) {
         const request = {
+            type: "request" as const,
             requestId: this.nextRequestId++,
-            workerRequestPayload: message
+            payload: message
         };
 
         return new Promise<null | ContractExecutionResult>(
@@ -137,9 +138,13 @@ export default class WorkerContractExecutor extends AContractExecutor {
         );
     }
 
-    private handleResponse(response: WorkerResponse): void {
+    private handleResponse(response: WorkerResponseMessage): void {
         if (isWorkerReadyResponse(response)) {
             this.resolveWorkerReady();
+            return;
+        }
+
+        if (response.type !== "response") {
             return;
         }
 

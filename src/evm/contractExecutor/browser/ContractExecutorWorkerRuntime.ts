@@ -1,26 +1,29 @@
 import type {
-    ContractExecutorWorkerErrorHandler,
-    ContractExecutorWorkerMessageHandler,
-    WorkerLike,
-    WorkerResponse
-} from "../types";
+    WorkerRequestMessage,
+    WorkerResponseMessage
+} from "../worker/protocol";
 
-export type {
-    ContractExecutorWorkerErrorHandler,
-    ContractExecutorWorkerMessageHandler,
-    WorkerLike
+export type WorkerLike = {
+    postMessage(message: WorkerRequestMessage): void;
+    terminate?: () => Promise<unknown> | unknown;
 };
+
+export type ContractExecutorWorkerMessageHandler = (
+    message: WorkerResponseMessage
+) => void;
+
+export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
 
 export function createContractExecutorWorker(
     onMessage: ContractExecutorWorkerMessageHandler,
     onError: ContractExecutorWorkerErrorHandler
 ): WorkerLike {
     const worker = new Worker(
-        new URL("./ContractExecutorWorkerHost.js", import.meta.url),
+        new URL("./ContractExecutorWorkerEntry.js", import.meta.url),
         { type: "module" }
     );
 
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+    worker.onmessage = (event: MessageEvent<WorkerResponseMessage>) => {
         onMessage(event.data);
     };
     worker.onerror = (event: ErrorEvent) => {
