@@ -8,6 +8,7 @@ import {
     TransitionOptions
 } from "@test/harness/actions/TransitionActions";
 import { MathPeerTestHarness } from "test-harness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 
 type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
     txFn?: (contract: MathStateMachine) => Promise<any>;
@@ -19,7 +20,7 @@ type ParticipantLeaveOptions = TransitionOptions & {
 };
 
 export class MathTransitionActions extends TransitionActions<
-    {},
+    HarnessControlRpc,
     MathStateMachine
 > {
     constructor(

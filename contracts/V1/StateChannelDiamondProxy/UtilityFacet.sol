@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../types/DisputeTypes.sol";
+import "./utils/GeneralUtils.sol";
 
 contract UtilityFacet {
     /**
@@ -61,11 +62,8 @@ contract UtilityFacet {
         returns (address, bool)
     {
         bytes32 _hash = keccak256(encodedData);
-
-        // EIP-191 - This is what actually gets signed
+        // EIP-191
         bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash));
-
-        // Use tryRecover to handle invalid signatures (recover reverts if signature is invalid)
         (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signature);
         if (error != ECDSA.RecoverError.NoError) {
             return (recovered, false);
@@ -74,10 +72,7 @@ contract UtilityFacet {
     }
 
     function isAddressInArray(address[] memory array, address adr) public pure returns (bool) {
-        for (uint256 i = 0; i < array.length; i++) {
-            if (array[i] == adr) return true;
-        }
-        return false;
+        return _isAddressInArray(array, adr);
     }
 
     function inParticipantUnion(

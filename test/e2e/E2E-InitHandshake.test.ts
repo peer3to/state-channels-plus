@@ -1,3 +1,4 @@
+import { expect } from "chai";
 import { TransportType } from "@/transport/TransportType";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
 
@@ -32,55 +33,73 @@ describe("E2E: Init Handshake", function () {
             await h.lifecycle.start(2, 0, { autoConnect: true });
             await h.event.waitUntilEventOccurs("onConnection", 5000);
             h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
-            const transportToPeer1Before = h.query.getTransport(0, 1); // ensure transport exists
-            if (!transportToPeer1Before) {
-                throw new Error(
-                    "Expected transport from peer 0 to peer 1 to exist after handshake completion"
-                );
-            }
-            const peer1Profile = h.query.getProfile(0, {
-                transport: transportToPeer1Before
-            });
-            if (!peer1Profile) {
-                throw new Error(
-                    "Expected to find profile for peer 1 in peer 0's profile manager using the transport after handshake completion"
-                );
-            }
-            if (peer1Profile.transport != transportToPeer1Before) {
-                throw new Error(
-                    "Expected profile transport to match the transport used for handshake completion"
-                );
-            }
 
-            if (
-                peer1Profile.transport.transportType !== TransportType.HOLEPUNCH
-            ) {
-                throw new Error(
-                    `Expected initial handshake to be completed using HOLEPUNCH transport, but was ${TransportType[peer1Profile.transport.transportType]}`
-                );
-            }
-            const peer0LocalRpc = h.rpc.getLocalRpc(0);
+            const peer0 = h.getPeer(0);
+            const peer1Address = h.getPeer(1).address;
+
+            // The upgrade flow runs host-side, where the live transport/profile
+            // are. Assert peer 0's profile for peer 1 uses HOLEPUNCH, tag the
+            // profile so we can prove it's updated in place (not replaced), then
+            // trigger the WebRTC upgrade over its transport.
             h.event.resetEventSpies();
-            await peer0LocalRpc.webRTCSetupService.initiateWebRTC(
-                transportToPeer1Before
+            const before = await h.execOnHost(
+                peer0,
+                (sm, args) => {
+                    const profile =
+                        sm.p2pManager.profileManager.getProfileByEvmAddress(
+                            args.peer1Address
+                        );
+                    if (!profile?.transport) {
+                        throw new Error(
+                            "no profile/transport for peer 1 after handshake"
+                        );
+                    }
+                    const transportType = profile.transport.transportType;
+                    (profile as { upgradeTag?: number }).upgradeTag = 1;
+                    void sm.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
+                        profile.transport
+                    );
+                    return { transportType };
+                },
+                { peer1Address }
+            );
+            expect(before.transportType).to.equal(
+                TransportType.HOLEPUNCH,
+                "initial handshake should complete over HOLEPUNCH"
             );
 
             await h.event.waitUntilEventOccurs("onConnection", 10000);
-            if (
-                peer1Profile.transport.transportType === TransportType.HOLEPUNCH
-            ) {
-                const refreshedPeer1Profile = h.query.getProfile(0, {
-                    evmAddress: h.getPeer(1).address
-                });
-                const isSameProfile = refreshedPeer1Profile === peer1Profile;
-                const transportType =
-                    TransportType[
-                        refreshedPeer1Profile!.transport!.transportType
-                    ];
-                throw new Error(
-                    `Transport didn't upgrade to WebRTC - still HOLEPUNCH, profile same: ${isSameProfile}, transport type: ${transportType}`
-                );
-            }
+
+            // The same profile object must now point at a WEBRTC transport.
+            const after = await h.execOnHost(
+                peer0,
+                (sm, args) => {
+                    const profile =
+                        sm.p2pManager.profileManager.getProfileByEvmAddress(
+                            args.peer1Address
+                        );
+                    if (!profile?.transport) {
+                        throw new Error(
+                            "no profile/transport for peer 1 after upgrade"
+                        );
+                    }
+                    return {
+                        transportType: profile.transport.transportType,
+                        sameProfile:
+                            (profile as { upgradeTag?: number }).upgradeTag ===
+                            1
+                    };
+                },
+                { peer1Address }
+            );
+            expect(
+                after.sameProfile,
+                "existing profile should be updated in place"
+            ).to.equal(true);
+            expect(
+                after.transportType,
+                "transport should upgrade to WEBRTC"
+            ).to.equal(TransportType.WEBRTC);
         });
     });
 

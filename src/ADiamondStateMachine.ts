@@ -45,6 +45,8 @@ abstract class ADiamondStateMachine {
     public abstract getTotalStateBalance(): Promise<BalanceStruct>;
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
+
+    public abstract dispose(): Promise<void> | void;
 }
 
 export default ADiamondStateMachine;

@@ -12,6 +12,11 @@ contract SimpleNumberStorage {
         value = _value;
     }
 
+    function increment() public returns (uint256) {
+        value += 1;
+        return value;
+    }
+
     function getValue() public view returns (uint256) {
         return value;
     }

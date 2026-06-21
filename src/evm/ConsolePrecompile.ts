@@ -1,6 +1,6 @@
 import { PrecompileInput } from "@ethereumjs/evm";
 import { ethers } from "ethers";
-import { Logger } from "@/utils";
+import type { Logger } from "@/utils";
 
 /**
  * Hardhat's console.log contract address.

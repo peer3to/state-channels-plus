@@ -1,4 +1,5 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Logger, sleep } from "@/utils";
 import { ForkId } from "@/types/types";
 import { BytesLike } from "ethers";
@@ -14,15 +15,17 @@ const defaultTimeConfig: TimeConfig = {
     p2pTime: 1,
     agreementTime: 2,
     chainFallbackTime: 2,
-    evidenceTime: 3
+    evidenceTime: 8
 };
 
 /**
  * Handles channel-related operations: open channel and bootstrap.
  */
-export class LifecycleActions {
+export class LifecycleActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        protected harness: PeerTestHarness,
+        protected harness: PeerTestHarness<TCustomRpc>,
         protected logger: Logger
     ) {}
 
@@ -154,8 +157,7 @@ export class LifecycleActions {
         const isValidForkId = (forkId: ForkId | undefined): boolean =>
             !!forkId && forkId !== "0x00" && forkId !== "0x0";
 
-        const getPeerForkIds = () =>
-            this.harness.peers.map((peer) => peer.stateManager.forkId);
+        const getPeerForkIds = () => this.harness.peerForkIds();
 
         this.logger.debug("Waiting for fork ID to be set on all peers...");
 
@@ -173,7 +175,7 @@ export class LifecycleActions {
         );
 
         // Verify all peers have the same valid fork ID
-        const peerForkIds = getPeerForkIds();
+        const peerForkIds = await getPeerForkIds();
         const allValidAndSame =
             peerForkIds.every(isValidForkId) &&
             peerForkIds.every((id) => id === peerForkIds[0]);

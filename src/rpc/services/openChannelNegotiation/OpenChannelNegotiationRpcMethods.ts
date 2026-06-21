@@ -4,17 +4,16 @@ import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import { getChecksumAddress } from "@/utils";
 import type P2PManager from "@/P2PManager";
+import type MainRpcService from "@/rpc/MainRpcService";
 
 import type OpenChannelNegotiationService from "./OpenChannelNegotiationService";
 
-export type OpenChannelNegotiationFactories = {
-    openChannelNegotiationService: (
-        p2pManager: P2PManager<OpenChannelNegotiationFactories>
-    ) => OpenChannelNegotiationService;
+export type OpenChannelNegotiationCustomRpc = MainRpcService & {
+    openChannelNegotiationService: OpenChannelNegotiationService;
 };
 
 export type OpenChannelNegotiationP2PManager =
-    P2PManager<OpenChannelNegotiationFactories>;
+    P2PManager<OpenChannelNegotiationCustomRpc>;
 
 export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<OpenChannelNegotiationP2PManager> {
     constructor(
