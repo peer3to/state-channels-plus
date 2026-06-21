@@ -17,3 +17,10 @@ function _delegatecall(address target, bytes memory data) returns (bytes memory)
     }
     return result;
 }
+
+function _isAddressInArray(address[] memory array, address adr) pure returns (bool) {
+    for (uint256 i = 0; i < array.length; i++) {
+        if (array[i] == adr) return true;
+    }
+    return false;
+}

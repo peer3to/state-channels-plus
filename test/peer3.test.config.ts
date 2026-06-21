@@ -7,7 +7,9 @@ const testConfig: Partial<Config> = {
     DEBUG_P2P_MANAGER: false,
     DEBUG_RPC: false,
     DEBUG_CHANNEL_CONTRACT: false,
-    DEBUG_LOCAL_TRANSPORT: true
+    DEBUG_LOCAL_TRANSPORT: true,
+    VM_DEDICATED_THREAD: true,
+    EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 1
 };
 
 export default testConfig;
