@@ -1,6 +1,4 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
-
-PeerTestHarness.setDefaultLogLevel("error");
+import { MathTestSession as TestSession } from "@test/harness";
 
 /**
  * E2E Tests for State Transitions

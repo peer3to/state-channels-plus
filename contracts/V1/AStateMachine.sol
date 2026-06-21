@@ -138,7 +138,7 @@ abstract contract AStateMachine {
 
     function stateTransition(Transaction calldata transaction) external _nonReentrant returns (bool, Message[] memory) {
         _clearOutboundMessages();
-        _tx = transaction;
+        _tx.header = transaction.header;
         (bool success, bytes memory result) = address(this).call{gas: gasLimit}(transaction.body.data);
         // emit TxExecutedA(success, getState());
         if (!success) {

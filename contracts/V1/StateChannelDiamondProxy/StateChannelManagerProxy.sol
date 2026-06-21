@@ -22,6 +22,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     uint256 private constant DEFAULT_AGREEMENT_TIME = 5;
     uint256 private constant DEFAULT_CHAIN_FALLBACK_TIME = 30;
     uint256 private constant DEFAULT_EVIDENCE_TIME = 30;
+    uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
     constructor(
         address _stateMachineImplementation,
@@ -37,7 +38,8 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         uint256 _p2pTime,
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
-        uint256 _evidenceTime
+        uint256 _evidenceTime,
+        uint256 _disputeExecutionGasLimit
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacetAddress = _disputeManagerFacet;
@@ -53,7 +55,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         agreementTime = _agreementTime == 0 ? DEFAULT_AGREEMENT_TIME : _agreementTime;
         chainFallbackTime = _chainFallbackTime == 0 ? DEFAULT_CHAIN_FALLBACK_TIME : _chainFallbackTime;
         evidenceTime = _evidenceTime == 0 ? DEFAULT_EVIDENCE_TIME : _evidenceTime;
-        gasLimit = 3_000_000;
+        gasLimit = _disputeExecutionGasLimit == 0 ? DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT : _disputeExecutionGasLimit;
     }
 
     fallback() external {
@@ -117,9 +119,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
-        );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(
+                openChannelData.participants,
+                openChannelConfirmation.encodedOpenChannel,
+                openChannelConfirmation.signatures
+            );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -159,10 +164,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData,
-            forkId: forkId,
-            blockHeight: 0,
-            timestamp: block.timestamp
+            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
@@ -235,8 +237,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public override {
-        _delegatecall(joinChannelFacetAddress, abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations)));
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations, bytes32 expectedSnapshotHash)
+        public
+        override
+    {
+        _delegatecall(
+            joinChannelFacetAddress,
+            abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash))
+        );
     }
 
     // ********** public/external DIAMOND functions **********
@@ -320,6 +328,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
+    function hasInvalidTimestamp(InvalidTimestampProof memory proof) public returns (bool) {
+        bytes memory result =
+            _delegatecall(fraudProofFacetAddress, abi.encodeCall(FraudProofFacet.hasInvalidTimestamp, (proof)));
+        return abi.decode(result, (bool));
+    }
+
     function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
         public
         returns (bytes memory maliciousDisputesEncoded)
@@ -335,6 +349,20 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         bytes memory result = _delegatecall(
             disputeFraudProofFacetAddress,
             abi.encodeCall(DisputeFraudProofFacet.isLastMilestoneFinalByEveryone, (dispute))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public returns (bool) {
+        bytes memory result = _delegatecall(
+            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.hasStateProofHeaderMismatch, (dispute))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function isDisputeInboundHashValid(Dispute memory dispute) public returns (bool) {
+        bytes memory result = _delegatecall(
+            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.isDisputeInboundHashValid, (dispute))
         );
         return abi.decode(result, (bool));
     }

@@ -1,13 +1,15 @@
 import { StateSnapshot } from "@/models";
 import { ForkId } from "@/types";
-import type StateManager from "@/stateManager";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { Logger } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { Codec, Logger, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
-export class ContextActions {
+export class ContextActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        private harness: PeerTestHarness,
+        private harness: PeerTestHarness<TCustomRpc>,
         private _logger: Logger
     ) {}
 
@@ -40,9 +42,16 @@ export class ContextActions {
             throw new Error(`Peer ${peerIndex} not found`);
         }
 
-        const lastSnapshot = (
-            await peer.stateManager.prepareUpdateSnapshotSameFork(forkId)
-        )?.milestoneSnapshots.at(-1);
+        const sameFork = await this.harness
+            .control(peer)
+            .transition.prepareUpdateSnapshotSameFork(forkId)
+            .request();
+        const encodedLastSnapshot = sameFork?.encodedMilestoneSnapshots.at(-1);
+        const lastSnapshot = encodedLastSnapshot
+            ? StateSnapshot.from(
+                  Codec.decode(encodedLastSnapshot, Type.StateSnapshot)
+              )
+            : undefined;
 
         const onChainSnapshotBefore = StateSnapshot.from(
             await this.harness.channelManager.getStateSnapshot(
@@ -62,9 +71,9 @@ export class ContextActions {
                 newSnapshot: LoggerUtils.getSnapshotMetadata(lastSnapshot)
             }
         );
-        const expectedWithdrawalsDeltaBalance =
+        const encodedExpectedWithdrawalsDelta =
             await this.computeExpectedWithdrawalsDelta(
-                peer,
+                peerIndex,
                 lastSnapshot,
                 onChainSnapshotBefore
             );
@@ -75,15 +84,19 @@ export class ContextActions {
             );
 
         this.harness.context.lastMilestoneSnapshot = lastSnapshot;
-        this.harness.context.expectedWithdrawalsDelta =
-            expectedWithdrawalsDeltaBalance;
+        this.harness.context.encodedExpectedWithdrawalsDelta =
+            encodedExpectedWithdrawalsDelta;
         this.harness.context.channelBalanceBefore = channelBalance;
     }
 
-    storeSnapshotCount(peerIndex: number, contextKey: string): void {
-        const snapshotStorage = this.harness.peers[peerIndex].stateManager
-            .storage.stateSnapshots as any;
-        const count = Array.from(snapshotStorage.snapshotsByHash.keys()).length;
+    async storeSnapshotCount(
+        peerIndex: number,
+        contextKey: string
+    ): Promise<void> {
+        const count = await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getSnapshotCount()
+            .request();
         this.harness.context[`snapshotCount_${contextKey}`] = count;
     }
 
@@ -92,32 +105,19 @@ export class ContextActions {
     }
 
     private async computeExpectedWithdrawalsDelta(
-        peer: { stateManager: StateManager },
+        peerIndex: number,
         lastSnapshot: StateSnapshot,
         onChainSnapshotBefore: StateSnapshot
     ) {
-        const outboundMessageBlocksForDelta =
-            peer.stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                upperBlockHash:
-                    lastSnapshot.snapshotData.latestOutboundMessageBlockHash,
-                lowerBlockHash:
-                    onChainSnapshotBefore.snapshotData
-                        .latestOutboundMessageBlockHash
-            });
-
-        const stateMachine = peer.stateManager.diamondStateMachine;
-        const zeroBalance = await stateMachine.getZeroBalance();
-        let expectedWithdrawalsDeltaBalance = zeroBalance;
-
-        for (const outboundBlock of outboundMessageBlocksForDelta) {
-            for (const message of outboundBlock.messages) {
-                expectedWithdrawalsDeltaBalance = await stateMachine.addBalance(
-                    expectedWithdrawalsDeltaBalance,
-                    message.balance
-                );
-            }
-        }
-
-        return expectedWithdrawalsDeltaBalance;
+        const { encodedBalanceDelta } = await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .balance.computeWithdrawalsDelta(
+                lastSnapshot.snapshotData
+                    .latestOutboundMessageBlockHash as string,
+                onChainSnapshotBefore.snapshotData
+                    .latestOutboundMessageBlockHash as string
+            )
+            .request();
+        return encodedBalanceDelta;
     }
 }

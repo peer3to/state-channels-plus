@@ -223,6 +223,24 @@ class SpectateServiceRpcMethods extends ARpcMethods {
 
             if (!isCorrectGenesis) return this.service.abort(peerAddress);
 
+            // optimization: if the on-chain snapshot is on the same fork but more advanced than what
+            // peers proved, reject before running any contract verification.
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.length > 0
+                    ? syncPayload.milestoneSnapshots.at(-1)!
+                    : syncPayload.latestForkGenesisSnapshot;
+            if (
+                onChainSnapshot.forkID ===
+                    syncPayload.latestForkGenesisSnapshot.forkId &&
+                onChainSnapshot.blockHeight >
+                    Number(latestFinalizedSnapshot.blockHeight)
+            ) {
+                this.service.logger.debug(
+                    `onSpectateResponse - on-chain block height (${onChainSnapshot.blockHeight}) exceeds proved height (${Number(latestFinalizedSnapshot.blockHeight)}); aborting`
+                );
+                return this.service.abort(peerAddress);
+            }
+
             // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
             const genesisSnapshot = StateSnapshot.from(
                 syncPayload.latestForkGenesisSnapshot
@@ -270,25 +288,6 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 );
             if (!isValid) return this.service.abort(peerAddress);
 
-            const latestFinalizedSnapshot =
-                syncPayload.milestoneSnapshots.length > 0
-                    ? syncPayload.milestoneSnapshots.at(-1)!
-                    : syncPayload.latestForkGenesisSnapshot;
-
-            // if the on-chain snapshot is on the same fork but more advanced
-            // than what peers proved → abort.
-            if (
-                onChainSnapshot.forkID ===
-                    syncPayload.latestForkGenesisSnapshot.forkId &&
-                onChainSnapshot.blockHeight >
-                    Number(latestFinalizedSnapshot.blockHeight)
-            ) {
-                this.service.logger.debug(
-                    `onSpectateResponse - on-chain block height (${onChainSnapshot.blockHeight}) exceeds proved height (${Number(latestFinalizedSnapshot.blockHeight)}); aborting`
-                );
-                return this.service.abort(peerAddress);
-            }
-
             if (
                 latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
                 hash(syncPayload.latestFinalizedEncodedState)
@@ -324,7 +323,9 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             if (!isMulticallSuccess) return this.service.abort(peerAddress);
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            await this.service.persistSyncPayload(syncPayload);
+            const { shouldAbort } =
+                await this.service.persistSyncPayload(syncPayload);
+            if (shouldAbort) return this.service.abort(peerAddress);
 
             // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
             const blockConfirmations =
