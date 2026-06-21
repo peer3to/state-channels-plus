@@ -6,6 +6,15 @@ type TestSessionClass = typeof TestSession;
 
 Error.stackTraceLimit = Infinity;
 
+// Detached-promise lifecycle traces are debug-only; show them only at verbose+
+// log levels so a normal run shows just the mocha output.
+function hookTrace(message: string): void {
+    const level = process.env.LOG_LEVEL;
+    if (level === "verbose" || level === "debug") {
+        console.trace(message);
+    }
+}
+
 declare global {
     // eslint-disable-next-line no-var
     var __peer3SessionHooksRegistered__: boolean | undefined;
@@ -43,19 +52,27 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
         afterEach(async function () {
             this.timeout(120000);
             if (this.currentTest?.state === "passed") {
-                console.trace(
+                hookTrace(
                     "Test passed - awaiting any detached promises to surface before finishing test!"
                 );
+                // Settle host-side detached work over the port first (uniform
+                // whether a peer's host is inline, in a worker, or remote), then
+                // drain the orchestrator's own realm. Host rejections surface via
+                // the same first-detached-error channel.
+                const hostErrors = await testSession
+                    .getHarness()
+                    .quiesceHosts();
+                for (const error of hostErrors) {
+                    testSession.setFirstDetachedError(error);
+                }
                 await DetachedPromises.awaitAllAndClear();
-                console.trace(
-                    "All detached promises settled for passing test."
-                );
+                hookTrace("All detached promises settled for passing test.");
             }
             DetachedPromises.clear();
             const firstDetachedError = testSession.getFirstDetachedError();
 
             if (this.currentTest?.state === "failed" || firstDetachedError) {
-                console.trace("Test failed - trying to upload logs!");
+                hookTrace("Test failed - trying to upload logs!");
                 const h = testSession.getHarness();
                 h.peers.forEach((peer, index) => {
                     const promise = peer.logger.uploadLogs(
@@ -77,12 +94,12 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
                 DetachedPromises.collect(promise);
             }
             await DetachedPromises.awaitAllAndClear();
-            console.trace(
+            hookTrace(
                 "Test afterEach completed - all detached promises settled"
             );
             await testSession.clear();
             if (firstDetachedError) throw firstDetachedError;
-            console.trace("Test afterEach DONE");
+            hookTrace("Test afterEach DONE");
         });
     }
 }

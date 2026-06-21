@@ -1,6 +1,6 @@
-import { blockStructWithTransactionHeader } from "@test/factory";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import Clock from "@/Clock";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type StateManager from "@/stateManager/StateManager";
 import {
     Logger,
     SignatureUtils,
@@ -24,20 +24,34 @@ import {
     DisputeConfirmationStruct,
     DisputeAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import DisputeManager, {
-    ConstructDisputeResult
-} from "@/disputeManager/DisputeManager";
 import type {
     BlockStruct,
-    SignedBlockStruct,
     SnapshotDataStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { DisputeTamperStrategy } from "@test/fixtures/customRpc/harnessControl/services/dispute/tamperStrategies";
+
 export type DisputeTamper = (
     dispute: DisputeStruct,
     disputeConfirmation: DisputeConfirmationStruct,
     auditingData?: DisputeAuditingDataStruct
 ) => void | Promise<void>;
+
+/**
+ * Tamper for the host-side `constructDispute` stub. Runs host-side (the body is
+ * reconstructed via `new Function`), so it must be closure-free: reach helpers
+ * through the injected `sm` (`sm.p2pManager.localRpc.dispute.*`) and pass any
+ * captured value via `args`. Reused {@link DisputeTampering} statics are
+ * detected and forwarded as named host strategies instead.
+ */
+export type ConstructDisputeTamper = (
+    dispute: DisputeStruct,
+    sm: StateManager<HarnessControlRpc>,
+    args: Record<string, unknown>
+) => void | Promise<void>;
+
+/** Map the harness-side tamper statics to their host-side strategy names. */
+const DISPUTE_TAMPER_STRATEGY_BY_FN = new Map<unknown, DisputeTamperStrategy>();
 
 export type ForgeSubmitterSnapshotMutate = (ctx: {
     peerIndex: number;
@@ -97,12 +111,34 @@ export class DisputeTampering {
     }
 }
 
-export class DisputeTamperingActions {
-    private restoreByPeerIndex = new Map<number, () => void>();
-    private disputeDelayRestoreByPeerIndex = new Map<number, () => void>();
+// Reused tamper statics are forwarded to the host as named strategies (they use
+// Codec/hash, which a shipped `new Function` body could not reach).
+DISPUTE_TAMPER_STRATEGY_BY_FN.set(
+    DisputeTampering.tamperAuditingDataHash,
+    "tamperAuditingDataHash"
+);
+DISPUTE_TAMPER_STRATEGY_BY_FN.set(
+    DisputeTampering.tamperDoubleFault,
+    "tamperDoubleFault"
+);
+DISPUTE_TAMPER_STRATEGY_BY_FN.set(
+    DisputeTampering.tamperInvalidStateProof,
+    "tamperInvalidStateProof"
+);
+DISPUTE_TAMPER_STRATEGY_BY_FN.set(
+    DisputeTampering.tamperPartialAuditing,
+    "tamperPartialAuditing"
+);
+DISPUTE_TAMPER_STRATEGY_BY_FN.set(
+    DisputeTampering.flipSelfRemovalWithoutOutputRecompute,
+    "flipSelfRemovalWithoutOutputRecompute"
+);
 
+export class DisputeTamperingActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        private harness: PeerTestHarness,
+        private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
 
@@ -125,10 +161,26 @@ export class DisputeTamperingActions {
         }
         const targetForkId = forkId || this.harness.activeForkId!;
 
-        const { dispute, disputeConfirmation, auditingData } =
-            await peer.stateManager.disputeManager.constructDispute(
-                targetForkId
-            );
+        // Construct host-side; the structs come back ABI-encoded (raw ethers
+        // structs don't survive JSON across the port), so decode to plain
+        // mutable structs, then tamper, re-sign and submit on the main thread.
+        const {
+            encodedDispute,
+            encodedDisputeConfirmation,
+            encodedAuditingData
+        } = await this.harness
+            .control(peer)
+            .dispute.constructDispute(targetForkId)
+            .request();
+        const dispute = Codec.decode(encodedDispute, Type.Dispute);
+        const disputeConfirmation = Codec.decode(
+            encodedDisputeConfirmation,
+            Type.DisputeConfirmation
+        );
+        const auditingData = Codec.decode(
+            encodedAuditingData,
+            Type.DisputeAuditingData
+        );
 
         await tamper(dispute, disputeConfirmation, auditingData);
         await this.resignDispute(peer.signer, dispute, disputeConfirmation);
@@ -162,10 +214,18 @@ export class DisputeTamperingActions {
         const peer = this.harness.getPeer(disputerIndex);
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
-        const genesisSnapshot =
-            peer.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                this.harness.activeForkId!
-            )!;
+        const genesisResult = await this.harness
+            .control(peer)
+            .dispute.getGenesisSnapshotStruct(this.harness.activeForkId!)
+            .request();
+        if (!genesisResult) {
+            throw new Error(
+                `submitForgedFraudProof: no genesis snapshot for fork ${this.harness.activeForkId}`
+            );
+        }
+        const genesisSnapshot = StateSnapshot.from(
+            Codec.decode(genesisResult.encodedSnapshot, Type.StateSnapshot)
+        );
         const proofStruct = buildProof({ dispute, genesisSnapshot });
         const forged: DisputeFraudProofStruct = {
             proofType: toSolidityDisputeFraudProofType(proofType),
@@ -179,65 +239,65 @@ export class DisputeTamperingActions {
         await tx.wait();
     }
 
-    stubConstructDispute(
+    /**
+     * Install a host-side `constructDispute` tamper on a peer. Reused
+     * {@link DisputeTampering} statics are forwarded as named strategies;
+     * one-off `(dispute, args) => void` tampers are shipped by source (and must
+     * be closure-free — pass captured values via `options.args`).
+     */
+    async stubConstructDispute(
         peerIndex: number,
-        tamper: DisputeTamper,
-        options?: { autoRestore?: boolean; markMalicious?: boolean }
-    ): void {
+        tamper: ConstructDisputeTamper,
+        options?: {
+            autoRestore?: boolean;
+            markMalicious?: boolean;
+            args?: Record<string, unknown>;
+        }
+    ): Promise<void> {
         const peer = this.harness.getPeer(peerIndex);
-        const disputeManager: DisputeManager = peer.stateManager.disputeManager;
-
         if (options?.markMalicious ?? true) {
             this.harness.contextApi.markMaliciousPeer({
                 maliciousPeerIndex: peerIndex
             });
         }
-        this.restoreConstructDispute(peerIndex);
 
-        const originalConstructDispute =
-            disputeManager.constructDispute.bind(disputeManager);
+        const strategy = DISPUTE_TAMPER_STRATEGY_BY_FN.get(tamper);
+        const spec = strategy
+            ? { strategy, autoRestore: options?.autoRestore }
+            : {
+                  fnBody: tamper.toString(),
+                  args: options?.args,
+                  autoRestore: options?.autoRestore
+              };
 
-        disputeManager.constructDispute = async (
-            targetForkId: ForkId
-        ): Promise<ConstructDisputeResult> => {
-            const result = await originalConstructDispute(targetForkId);
+        // Shipped callbacks may re-sign inner blocks as any peer; give the host
+        // the peer keys so it can sign cross-author.
+        if (!strategy) {
+            await this.harness.ensurePeerSignersRegistered(peer);
+        }
 
-            await tamper(
-                result.dispute,
-                result.disputeConfirmation,
-                result.auditingData
-            );
-            await this.resignDispute(
-                peer.signer,
-                result.dispute,
-                result.disputeConfirmation
-            );
-
-            this.harness.context.tamperedDisputes.push(result.dispute);
-
-            if (options?.autoRestore) {
-                this.restoreConstructDispute(peerIndex);
-            }
-
-            return result;
-        };
-
-        this.restoreByPeerIndex.set(peerIndex, () => {
-            disputeManager.constructDispute = originalConstructDispute;
-        });
-
+        await this.harness
+            .control(peer)
+            .dispute.stubConstructDispute(spec)
+            .request();
         this.logger.debug(`Stubbed constructDispute for peer ${peerIndex}`);
     }
 
-    restoreConstructDispute(peerIndex: number): void {
-        const restore = this.restoreByPeerIndex.get(peerIndex);
-        if (!restore) {
-            return;
-        }
-
-        restore();
-        this.restoreByPeerIndex.delete(peerIndex);
+    async restoreConstructDispute(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .dispute.restoreConstructDispute()
+            .request();
         this.logger.debug(`Restored constructDispute for peer ${peerIndex}`);
+    }
+
+    /** Disputes a peer produced while `constructDispute` was stubbed. */
+    async getTamperedDisputes(peerIndex: number): Promise<DisputeStruct[]> {
+        const { encodedDisputes } = await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .dispute.getTamperedDisputes()
+            .request();
+        return encodedDisputes.map((e) => Codec.decode(e, Type.Dispute));
     }
 
     async plantFreshTimeoutForNextWriter(disputerIndex: number): Promise<void> {
@@ -249,23 +309,16 @@ export class DisputeTamperingActions {
         }
         const peer = this.harness.getPeer(disputerIndex);
         const nextPeer = await this.harness.query.getNextPeerToWrite();
-        const latestBlock =
-            peer.stateManager.storage.blocks.getLatestBlock(forkId)!;
-        peer.stateManager.storage.timeout.storeTimeout(forkId, {
-            participant: nextPeer.address,
-            blockHeight: BigInt(Number(latestBlock.height) + 1),
-            minTimeStamp: BigInt(Clock.getTimeInSeconds()),
-            isForced: false,
-            previousBlockProducer: ZeroAddress,
-            previousBlockProducerPostedCalldata: false,
-            participantSignatureOnPreviousBlock: "0x"
-        });
+        await this.harness
+            .control(peer)
+            .dispute.plantFreshTimeout(forkId, nextPeer.address)
+            .request();
     }
 
-    corruptValidatorSnapshotForBalanceInvariant(
+    async corruptValidatorSnapshotForBalanceInvariant(
         validatorPeerIndex: number,
         options?: { forkId?: ForkId }
-    ): void {
+    ): Promise<void> {
         const forkId = options?.forkId ?? this.harness.activeForkId;
         if (!forkId) {
             throw new Error(
@@ -273,53 +326,15 @@ export class DisputeTamperingActions {
             );
         }
 
-        const peer = this.harness.getPeer(validatorPeerIndex);
-        const storage = peer.stateManager.storage;
-        const latestBlock = storage.blocks.getLatestBlock(forkId);
-
-        if (!latestBlock) {
-            throw new Error(
-                `corruptValidatorSnapshotForBalanceInvariant: no latest block for fork ${forkId}`
-            );
-        }
-
-        const originalSnapshot = storage.stateSnapshots.getStateSnapshotByHash(
-            latestBlock.stateSnapshotHash
-        );
-        if (!originalSnapshot) {
-            throw new Error(
-                `corruptValidatorSnapshotForBalanceInvariant: no snapshot for hash ${latestBlock.stateSnapshotHash}`
-            );
-        }
-
-        const originalStateSnapshotStruct = originalSnapshot.toStruct();
-        const corruptedSnapshotData = {
-            ...originalStateSnapshotStruct.snapshotData
-        };
-        const originalAmount = BigInt(
-            originalStateSnapshotStruct.snapshotData.totalDeposits.amount
-        );
-        corruptedSnapshotData.totalDeposits = {
-            ...corruptedSnapshotData.totalDeposits,
-            amount: originalAmount + 1n
-        };
-
-        const corruptedStruct = {
-            ...originalStateSnapshotStruct,
-            snapshotData: corruptedSnapshotData
-        };
-        const corruptedSnapshot = StateSnapshot.from(corruptedStruct);
-        const originalHash = originalSnapshot.hash;
-
-        storage.stateSnapshots.storeStateSnapshot(corruptedSnapshot, {
-            hash: originalHash
-        });
+        await this.harness
+            .control(this.harness.getPeer(validatorPeerIndex))
+            .dispute.corruptSnapshotBalanceInvariant(forkId)
+            .request();
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: validatorPeerIndex
         });
-
         this.logger.debug(
-            `Corrupted validator ${validatorPeerIndex} snapshot for balance invariant (hash=${originalHash})`
+            `Corrupted validator ${validatorPeerIndex} snapshot for balance invariant`
         );
     }
 
@@ -328,31 +343,51 @@ export class DisputeTamperingActions {
         mutate: ForgeSubmitterSnapshotMutate
     ): Promise<ForgedSnapshotBuild> {
         const peer = this.harness.getPeer(peerIndex);
-        const storage = peer.stateManager.storage;
         const forkId = this.harness.activeForkId;
         if (!forkId) {
             throw new Error("buildForgedSnapshot: no active fork ID");
         }
 
-        const latestBlock = storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
+        // Fetch the head block + its snapshot/outbound block from the host; the
+        // forged snapshot/block are assembled and signed here (peers' signers
+        // are available on the main thread).
+        const latest = await this.harness
+            .control(peer)
+            .query.getLatestBlockInfo(forkId)
+            .request();
+        if (!latest) {
             throw new Error(
                 `buildForgedSnapshot: no latest block for fork ${forkId}`
             );
         }
 
-        const originalSnapshot = storage.stateSnapshots.getStateSnapshotByHash(
-            latestBlock.stateSnapshotHash
-        );
-        if (!originalSnapshot) {
+        const originalResult = await this.harness
+            .control(peer)
+            .query.getStateSnapshotStructByHash(latest.stateSnapshotHash)
+            .request();
+        if (!originalResult) {
             throw new Error(
-                `buildForgedSnapshot: no snapshot for hash ${latestBlock.stateSnapshotHash}`
+                `buildForgedSnapshot: no snapshot for hash ${latest.stateSnapshotHash}`
             );
         }
-        const originalStruct = originalSnapshot.toStruct();
-        const originalOutboundBlock = storage.outboundMessages.getMessageBlock(
-            originalStruct.snapshotData.latestOutboundMessageBlockHash as string
+        const originalStruct = Codec.decode(
+            originalResult.encodedSnapshot,
+            Type.StateSnapshot
         );
+        const originalSnapshot = StateSnapshot.from(originalStruct);
+        const outboundResult = await this.harness
+            .control(peer)
+            .query.getOutboundMessageBlock(
+                originalStruct.snapshotData
+                    .latestOutboundMessageBlockHash as string
+            )
+            .request();
+        const originalOutboundBlock = outboundResult
+            ? Codec.decode(
+                  outboundResult.encodedMessageBlock,
+                  Type.MessageBlock
+              )
+            : undefined;
 
         const mutated = mutate({
             peerIndex,
@@ -367,10 +402,10 @@ export class DisputeTamperingActions {
         });
 
         const forgedBlockStruct: BlockStruct = {
-            ...latestBlock.blockStruct,
+            ...Codec.decode(latest.encodedBlock, Type.Block),
             stateSnapshotHash: forgedSnapshot.hash
         };
-        const author = this.peerForBlockAuthor(latestBlock.author);
+        const author = this.peerForBlockAuthor(latest.author);
         const forgedBlock = await Block.fromBlockStruct(
             forgedBlockStruct,
             author.signer
@@ -386,218 +421,10 @@ export class DisputeTamperingActions {
             forgedSnapshot,
             forgedBlock,
             originalSnapshot,
-            originalBlockHash: latestBlock.hash,
+            originalBlockHash: latest.hash as Hash,
             originalOutboundBlock,
             mutated
         };
-    }
-
-    async truncateStateProofToHeight(
-        dispute: DisputeStruct,
-        options: {
-            disputerPeerIndex: number;
-            targetHeight: number;
-        }
-    ): Promise<DisputeAuditingDataStruct> {
-        const { disputerPeerIndex, targetHeight } = options;
-        const peer = this.harness.getPeer(disputerPeerIndex);
-        const stateProof = dispute.input.stateProof;
-        const localDiamond = this.harness.getLocalDiamond(disputerPeerIndex);
-
-        const truncate = (): boolean => {
-            if (stateProof.signedBlocks.length > 0) {
-                const lastBlock = Codec.decode(
-                    stateProof.signedBlocks.at(-1)!.encodedBlock,
-                    Type.Block
-                );
-                const h = Number(
-                    (
-                        lastBlock as {
-                            transaction: { header: { transactionCnt: bigint } };
-                        }
-                    ).transaction.header.transactionCnt
-                );
-                if (h <= targetHeight) return false;
-                stateProof.signedBlocks.pop();
-                return true;
-            }
-            if (stateProof.milestones.length > 0) {
-                const lastMilestone =
-                    stateProof.milestones[stateProof.milestones.length - 1]!;
-                const bcs = lastMilestone.blockConfirmations;
-                if (bcs.length === 0) return false;
-                const lastBc = bcs[bcs.length - 1]!;
-                const lastBlock = Codec.decode(
-                    lastBc.signedBlock.encodedBlock,
-                    Type.Block
-                );
-                const h = Number(
-                    (
-                        lastBlock as {
-                            transaction: { header: { transactionCnt: bigint } };
-                        }
-                    ).transaction.header.transactionCnt
-                );
-                if (h <= targetHeight) return false;
-                bcs.pop();
-                if (bcs.length === 0) {
-                    stateProof.milestones.pop();
-                }
-                return true;
-            }
-            return false;
-        };
-
-        while (truncate()) {
-            const [hasBlock, latestBlock] =
-                await localDiamond.getLatestBlockFromStateProof(stateProof);
-            const h = Number(latestBlock.transaction.header.transactionCnt);
-            if (!hasBlock || h <= targetHeight) break;
-        }
-
-        const { auditingData } =
-            peer.stateManager.disputeManager.getAuditingData(
-                dispute.input.forkId,
-                stateProof
-            );
-
-        dispute.input.latestStateSnapshotHash = StateSnapshot.from(
-            auditingData.latestStateSnapshot
-        ).hash as `0x${string}`;
-        dispute.input.disputeAuditingDataHash = hash(
-            Codec.encode(auditingData, Type.DisputeAuditingData)
-        ) as `0x${string}`;
-
-        this.logger.debug(
-            `Truncated state proof to height ${targetHeight} for disputer ${disputerPeerIndex}`
-        );
-
-        return auditingData;
-    }
-
-    /** Set `dispute.input.forkId` and rewrite every block in stateProof to the same forkId. */
-    async rewriteUniformForkIdInDispute(
-        dispute: DisputeStruct,
-        forkId: ForkId
-    ): Promise<void> {
-        dispute.input.forkId = forkId;
-        const proof = dispute.input.stateProof;
-        const setForkId = (bs: BlockStruct) =>
-            blockStructWithTransactionHeader(bs, { forkId });
-
-        for (let i = 0; i < proof.signedBlocks.length; i++) {
-            await this.rewriteSignedBlockAtIndex(dispute, i, setForkId);
-        }
-        for (let m = 0; m < proof.milestones.length; m++) {
-            const bcs = proof.milestones[m]!.blockConfirmations;
-            for (let j = 0; j < bcs.length; j++) {
-                await this.rewriteMilestoneSignedBlockAtIndex(
-                    dispute,
-                    m,
-                    j,
-                    setForkId
-                );
-            }
-        }
-    }
-
-    async rewriteLastSignedBlockInDispute(
-        dispute: DisputeStruct,
-        transformBlockStruct: (bs: BlockStruct) => BlockStruct
-    ): Promise<void> {
-        const proof = dispute.input.stateProof;
-        await this.rewriteSignedBlockAtIndex(
-            dispute,
-            proof.signedBlocks.length - 1,
-            transformBlockStruct
-        );
-    }
-
-    async rewriteSignedBlockAtIndex(
-        dispute: DisputeStruct,
-        index: number,
-        transformBlockStruct: (bs: BlockStruct) => BlockStruct
-    ): Promise<void> {
-        const proof = dispute.input.stateProof;
-        if (index < 0 || index >= proof.signedBlocks.length) {
-            throw new Error(
-                `rewriteSignedBlockAtIndex: index ${index} out of range (have ${proof.signedBlocks.length} signedBlocks)`
-            );
-        }
-        proof.signedBlocks[index] = await this.remapSignedBlock(
-            proof.signedBlocks[index],
-            transformBlockStruct
-        );
-    }
-
-    async rewriteLastMilestoneSignedBlockInDispute(
-        dispute: DisputeStruct,
-        transformBlockStruct: (bs: BlockStruct) => BlockStruct
-    ): Promise<void> {
-        const proof = dispute.input.stateProof;
-        if (proof.milestones.length === 0) {
-            throw new Error(
-                "rewriteLastMilestoneSignedBlockInDispute: stateProof.milestones is empty"
-            );
-        }
-        const lastMilestoneIndex = proof.milestones.length - 1;
-        const lastM = proof.milestones[lastMilestoneIndex];
-        if (lastM.blockConfirmations.length === 0) {
-            throw new Error(
-                "rewriteLastMilestoneSignedBlockInDispute: last milestone has no blockConfirmations"
-            );
-        }
-        await this.rewriteMilestoneSignedBlockAtIndex(
-            dispute,
-            lastMilestoneIndex,
-            lastM.blockConfirmations.length - 1,
-            transformBlockStruct
-        );
-    }
-
-    async rewriteMilestoneSignedBlockAtIndex(
-        dispute: DisputeStruct,
-        milestoneIndex: number,
-        blockConfirmationIndex: number,
-        transformBlockStruct: (bs: BlockStruct) => BlockStruct
-    ): Promise<void> {
-        const proof = dispute.input.stateProof;
-        if (milestoneIndex < 0 || milestoneIndex >= proof.milestones.length) {
-            throw new Error(
-                `rewriteMilestoneSignedBlockAtIndex: milestoneIndex ${milestoneIndex} out of range (have ${proof.milestones.length} milestones)`
-            );
-        }
-        const milestone = proof.milestones[milestoneIndex];
-        if (
-            blockConfirmationIndex < 0 ||
-            blockConfirmationIndex >= milestone.blockConfirmations.length
-        ) {
-            throw new Error(
-                `rewriteMilestoneSignedBlockAtIndex: blockConfirmationIndex ${blockConfirmationIndex} out of range (have ${milestone.blockConfirmations.length} blockConfirmations in milestone ${milestoneIndex})`
-            );
-        }
-        const { signedBlock, signatures } =
-            milestone.blockConfirmations[blockConfirmationIndex];
-        milestone.blockConfirmations[blockConfirmationIndex] = {
-            signedBlock: await this.remapSignedBlock(
-                signedBlock,
-                transformBlockStruct
-            ),
-            signatures
-        };
-    }
-
-    /** Re-encode and re-sign after `transformBlockStruct`, using the harness peer that matches the transformed block author. */
-    private async remapSignedBlock(
-        signedBlock: SignedBlockStruct,
-        transformBlockStruct: (bs: BlockStruct) => BlockStruct
-    ): Promise<SignedBlockStruct> {
-        const mapped = transformBlockStruct(
-            Block.fromSignedBlock(signedBlock).blockStruct
-        );
-        const author = mapped.transaction.header.participant as Address;
-        const peer = this.peerForBlockAuthor(author);
-        return (await Block.fromBlockStruct(mapped, peer.signer)).signedBlock;
     }
 
     private peerForBlockAuthor(participant: Address) {

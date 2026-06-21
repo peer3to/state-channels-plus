@@ -9,7 +9,7 @@ import {
 } from "@test/utils/mathHarnessAbi";
 import { Status } from "@/types";
 import { expect } from "chai";
-import * as sinon from "sinon";
+import { waitFor } from "@test/utils/waitFor";
 import type {
     MessageBlockStruct,
     BalanceStruct,
@@ -156,6 +156,12 @@ describe("E2E: Malicious updateSnapshot", function () {
         );
     });
 
+    // TODO(separate-PR): the test BODY passes, but the afterEach hook hits the
+    // known product teardown bug `onStateSnapshotUpdated: unknown snapshot while
+    // status=4` (EventHandler.apply) — a slashed/disputed peer (status=4)
+    // receiving an unknown snapshot after resolution, same class as the deferred
+    // E2E-Spectate case4 teardown. Not a harness-conversion issue; fix product
+    // side (status=4 unknown-snapshot handling).
     it("colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant", async function () {
         const h = TestSession.getHarness();
 
@@ -168,25 +174,32 @@ describe("E2E: Malicious updateSnapshot", function () {
             }
         });
 
-        const block = h
-            .getPeer(0)
-            .stateManager.storage.blocks.getLatestBlock(h.activeForkId!)!;
-        const snapshot = h
-            .getPeer(0)
-            .stateManager.storage.stateSnapshots.getStateSnapshotByHash(
-                block.stateSnapshotHash
-            )!;
-        const encodedStatemachineState = h
-            .getPeer(0)
-            .stateManager.storage.stateMachineStates.getStateMachineState(
-                snapshot.stateMachineStateHash
-            );
+        // Read the seed state-machine bytes host-side (latest block → its
+        // snapshot → its state-machine state).
+        const encodedStatemachineState = await h.execOnHost(
+            h.getPeer(0),
+            (sm, args) => {
+                const block = sm.storage.blocks.getLatestBlock(args.forkId);
+                if (!block) throw new Error("no latest block");
+                const snapshot =
+                    sm.storage.stateSnapshots.getStateSnapshotByHash(
+                        block.stateSnapshotHash
+                    );
+                if (!snapshot) throw new Error("seed snapshot not found");
+                const encoded =
+                    sm.storage.stateMachineStates.getStateMachineState(
+                        snapshot.stateMachineStateHash
+                    );
+                return encoded === undefined ? null : String(encoded);
+            },
+            { forkId: h.activeForkId! }
+        );
         if (!encodedStatemachineState) {
             throw new Error("seed encoded state not found");
         }
 
         const decodedStateMachineState = decodeMathState(
-            encodedStatemachineState as string
+            encodedStatemachineState
         );
 
         // Inflate balance
@@ -227,41 +240,44 @@ describe("E2E: Malicious updateSnapshot", function () {
         // The spectator fetches stateMachine bytes via p2p, keyed by on-chain
         // hash; every peer must serve the inflated bytes for the spectator to
         // reach the balance-invariant check.
-        for (const p of h.peers) {
-            p.stateManager.storage.stateMachineStates.storeStateMachineState(
-                inflatedEncodedState,
-                { hash: inflatedHash }
-            );
-        }
-
-        // We add the spectator via the private `addSpectator` so we can install spies
-        // before sync starts and observe the abort directly.
-        const spectator = await (
-            h.join as unknown as {
-                addSpectator: (typeof h.join)["addSpectatorWait"];
-            }
-        ).addSpectator();
-
-        // Spy on the abort method directly
-        const spectateService =
-            spectator.stateManager.p2pManager.localRpc.spectateService;
-        const abortSpy = sinon.spy(spectateService, "abort");
-
-        // Wait for abort.
-        await h.eventCountsBarrier.waitFor(() => abortSpy.callCount > 0, {
-            timeoutMs: 5000,
-            timeoutMessage:
-                "expected SpectateService.abort to fire on the inflated-state spectator within 5000ms"
-        });
-
-        expect(abortSpy.callCount).to.be.greaterThan(
-            0,
-            "SpectateService.abort must be called"
+        // Every peer must serve the inflated bytes for the spectator to reach
+        // the balance-invariant check — store them host-side on each peer.
+        await Promise.all(
+            h.peers.map((p) =>
+                h.execOnHost(
+                    p,
+                    (sm, args) => {
+                        sm.storage.stateMachineStates.storeStateMachineState(
+                            args.encoded,
+                            { hash: args.hash }
+                        );
+                    },
+                    { encoded: inflatedEncodedState, hash: inflatedHash }
+                )
+            )
         );
 
-        expect(spectator.stateManager.getStatus()).to.not.equal(Status.SYNCED);
+        // Add the spectator without waiting for sync so we can install the
+        // abort-recording stub host-side before sync starts. Re-fetch via
+        // getPeer to recover the harness's typed peer handle.
+        const added = await h.join.addSpectator();
+        const spectator = h.getPeer(added.index);
+        await h.control(spectator).stub.stubRecordSpectateAbort().request();
+
+        // Wait for abort.
+        await waitFor(
+            () => h.control(spectator).stub.wasSpectateAbortCalled().request(),
+            5000
+        );
         expect(
-            spectator.stateManager.p2pManager.openConnections.length
+            await h.control(spectator).stub.wasSpectateAbortCalled().request()
+        ).to.equal(true, "SpectateService.abort must be called");
+
+        expect(
+            await h.control(spectator).query.getStatus().request()
+        ).to.not.equal(Status.SYNCED);
+        expect(
+            await h.control(spectator).query.getOpenConnectionCount().request()
         ).to.equal(
             0,
             "spectator should have 0 open connections after aborting on balance invariant"

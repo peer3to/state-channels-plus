@@ -9,7 +9,4 @@ export type {
     ContractExecutionResult
 } from "./AContractExecutor";
 
-export type {
-    ContractExecutorFactory,
-    ContractExecutorFactoryOptions
-} from "./ContractExecutorFactory";
+export type { ContractExecutorFactoryOptions } from "./ContractExecutorFactory";

@@ -77,7 +77,6 @@ function createP2PManager() {
         webRTCTransports: [],
         stateManager: {
             logger,
-            p2pEventHooks: {},
             forkId: 0n,
             getChannelId: () => "browser-webrtc-worker-smoke"
         },

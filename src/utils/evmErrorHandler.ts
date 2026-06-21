@@ -64,11 +64,24 @@ export function tryDecodeCustomError(error: any): CustomEvmError | null {
     if (!errorData && error.execResult?.returnValue)
         errorData = ethers.hexlify(error.execResult.returnValue);
 
-    if (!errorData || errorData.length < 10) return null;
+    // Only ABI-decodable hex is a custom error. Non-hex error data (e.g. a
+    // nonce/"replacement underpriced" RPC error object) must not reach
+    // parseError — it throws `invalid BytesLike` and would propagate uncaught.
+    if (
+        typeof errorData !== "string" ||
+        !errorData.startsWith("0x") ||
+        errorData.length < 10
+    ) {
+        return null;
+    }
 
-    const errorDescription = errorInterface.parseError(errorData);
-    if (!errorDescription) return null;
-    return new CustomEvmError(errorDescription, error);
+    try {
+        const errorDescription = errorInterface.parseError(errorData);
+        if (!errorDescription) return null;
+        return new CustomEvmError(errorDescription, error);
+    } catch {
+        return null;
+    }
 }
 
 export function isCustomEvmError(error: any): error is CustomEvmError {

@@ -11,11 +11,11 @@ describe("E2E: dispute validation / notLatestState", function () {
 
         // Stub peer 0's constructDispute: truncate state proof to height 2 so the dispute
         // shows latest at block 2, while peer 0 has actually signed block 4.
-        h.tamper.stubConstructDispute(0, async (dispute) => {
-            await h.tamper.truncateStateProofToHeight(dispute, {
-                disputerPeerIndex: 0,
-                targetHeight: 2
-            });
+        h.tamper.stubConstructDispute(0, async (dispute, sm) => {
+            await sm.p2pManager.localRpc.dispute.truncateStateProofToHeight(
+                dispute,
+                2
+            );
         });
 
         //  peer 1 submits a double sign block

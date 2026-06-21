@@ -11,7 +11,8 @@ import {
     JoinChannelBlockStruct,
     SnapshotDataStruct,
     SignedBlockStruct,
-    MessageBlockStruct
+    MessageBlockStruct,
+    BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockDoubleSignProofStruct,
@@ -24,6 +25,7 @@ import {
     BlockEthersType,
     BlockCommitmentEthersType,
     DisputeEthersType,
+    DisputeConfirmationEthersType,
     JoinChannelEthersType,
     OpenChannelEthersType,
     TransactionEthersType,
@@ -54,11 +56,16 @@ import {
     TimeoutParticipantNotNextProofEthersType,
     TimeoutTooEarlyProofEthersType,
     DisputeInvalidBlockInStateProofApplyFraudProofEthersType,
-    MessageBlockEthersType
+    MessageBlockEthersType,
+    BalanceEthersType,
+    SignedBlockEthersType,
+    StateProofEthersType
 } from "@/types";
 import {
     DisputeStruct,
-    DisputeAuditingDataStruct
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct,
+    StateProofStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
@@ -115,6 +122,7 @@ type StructType =
     | OpenChannelStruct
     | TransactionStruct
     | DisputeStruct
+    | DisputeConfirmationStruct
     | StateSnapshotStruct
     | SnapshotDataStruct
     | JoinChannelBlockStruct
@@ -122,6 +130,9 @@ type StructType =
     | ExitChannelStruct
     | DisputeAuditingDataStruct
     | MessageBlockStruct
+    | BalanceStruct
+    | SignedBlockStruct
+    | StateProofStruct
     | SyncPayload;
 
 // Enum for better autocomplete and type safety
@@ -133,6 +144,7 @@ export enum Type {
     BlockConfirmation,
     Transaction,
     Dispute,
+    DisputeConfirmation,
     StateSnapshot,
     SnapshotData,
     JoinChannelBlock,
@@ -140,6 +152,9 @@ export enum Type {
     ExitChannel,
     DisputeAuditingData,
     MessageBlock,
+    Balance,
+    SignedBlock,
+    StateProof,
     SyncPayload
 }
 
@@ -157,6 +172,7 @@ export class Codec {
         [Type.BlockConfirmation, BlockConfirmationEthersType],
         [Type.Transaction, TransactionEthersType],
         [Type.Dispute, DisputeEthersType],
+        [Type.DisputeConfirmation, DisputeConfirmationEthersType],
         [Type.StateSnapshot, StateSnapshotEthersType],
         [Type.SnapshotData, SnapshotDataEthersType],
         [Type.JoinChannelBlock, JoinChannelBlockEthersType],
@@ -164,6 +180,9 @@ export class Codec {
         [Type.ExitChannel, ExitChannelEthersType],
         [Type.DisputeAuditingData, DisputeAuditingDataEthersType],
         [Type.MessageBlock, MessageBlockEthersType],
+        [Type.Balance, BalanceEthersType],
+        [Type.SignedBlock, SignedBlockEthersType],
+        [Type.StateProof, StateProofEthersType],
         [Type.SyncPayload, SyncPayloadEthersType],
         // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
@@ -322,6 +341,14 @@ export class Codec {
     public static decode(encoded: Bytes, type: Type.Dispute): DisputeStruct;
     public static decode(
         encoded: Bytes,
+        type: Type.DisputeConfirmation
+    ): DisputeConfirmationStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.DisputeAuditingData
+    ): DisputeAuditingDataStruct;
+    public static decode(
+        encoded: Bytes,
         type: Type.StateSnapshot
     ): StateSnapshotStruct;
     public static decode(
@@ -341,6 +368,19 @@ export class Codec {
         encoded: Bytes,
         type: Type.MessageBlock
     ): MessageBlockStruct;
+    public static decode(encoded: Bytes, type: Type.Balance): BalanceStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.BlockConfirmation
+    ): BlockConfirmationStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.SignedBlock
+    ): SignedBlockStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.StateProof
+    ): StateProofStruct;
 
     public static decode<T extends StructType>(
         encoded: Bytes,

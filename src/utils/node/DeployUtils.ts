@@ -2,12 +2,6 @@ import fs from "fs";
 import path from "path";
 import { ContractFactory } from "ethers";
 
-type ReturnTypeOfT<T extends ContractFactory> = T extends {
-    deploy(...args: any): infer U;
-}
-    ? U
-    : never;
-
 export class DeployUtils {
     contractsPath: string;
     contractsJSON: any;
@@ -27,7 +21,7 @@ export class DeployUtils {
         contractFactory: T,
         contractName: string,
         args: any[] = []
-    ): Promise<ReturnTypeOfT<T>> {
+    ): Promise<ReturnType<T["deploy"]>> {
         const contractsJSON = this.contractsJSON;
 
         const instance = await contractFactory.deploy(...args, {
@@ -41,6 +35,6 @@ export class DeployUtils {
             this.contractsPath,
             JSON.stringify(contractsJSON, null, 2)
         );
-        return instance as ReturnTypeOfT<T>;
+        return instance as ReturnType<T["deploy"]>;
     }
 }

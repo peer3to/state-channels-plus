@@ -1,13 +1,25 @@
 import ARpcMethods from "./ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import Rpc from "./Rpc";
-import RpcHandler from "./RpcHandler";
+import RpcHandler, {
+    FireAndForgetRpcHandler,
+    RequestRpcHandler
+} from "./RpcHandler";
 
 /**
- * Transforms a function's return type into a RpcHandler
+ * Picks the delivery API based on a method's return type:
+ * - `void`/`Promise<void>` -> fire-and-forget (broadcast/sendOne/sendMultiple)
+ * - any other value        -> request/response (`request(target)` returning that value)
  */
-type RpcHandleMethod<T> = T extends (...args: infer A) => any
-    ? (...args: A) => RpcHandler
+type RpcCallHandler<R> = [Awaited<R>] extends [void]
+    ? FireAndForgetRpcHandler
+    : RequestRpcHandler<Awaited<R>>;
+
+/**
+ * Transforms a function's return type into the matching RPC delivery handler
+ */
+type RpcHandleMethod<T> = T extends (...args: infer A) => infer R
+    ? (...args: A) => RpcCallHandler<R>
     : T;
 
 /**

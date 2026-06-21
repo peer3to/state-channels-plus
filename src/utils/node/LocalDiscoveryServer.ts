@@ -3,6 +3,7 @@ import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import { ChannelId } from "@/types/types";
 import type { Logger } from "@/utils";
+import { config } from "@/utils/config";
 
 const MAX_PORT_RETRIES = 20;
 const LOCAL_WS_HOST = "127.0.0.1";
@@ -72,6 +73,11 @@ export class LocalDiscoveryServer {
     private static _cleanupRequested: boolean = false;
 
     private constructor() {}
+
+    private static getExternalRegistryUrl(): string | undefined {
+        const url = config.LOCAL_DISCOVERY_REGISTRY_URL?.trim();
+        return url ? url : undefined;
+    }
 
     private static createOutboundWebSocket(options: {
         url: string;
@@ -421,6 +427,15 @@ export class LocalDiscoveryServer {
      * - When a peer connects: routes to handleIncomingRegistration().
      */
     public static async tryStart(): Promise<boolean> {
+        const externalRegistryUrl = this.getExternalRegistryUrl();
+        if (externalRegistryUrl) {
+            this.logger.debug("Using external discovery registry", {
+                mode: "registry",
+                registryUrl: externalRegistryUrl
+            });
+            return false;
+        }
+
         if (this.discoveryServer) {
             return false; // Already started
         }
@@ -575,23 +590,26 @@ export class LocalDiscoveryServer {
         });
 
         // 2. Connect to Registry
-        if (!this.discoveryPort) {
+        const externalRegistryUrl = this.getExternalRegistryUrl();
+        if (!externalRegistryUrl && !this.discoveryPort) {
             throw new Error(
                 "Discovery server not started. Call tryStart() before connectToPeers()."
             );
         }
         const registryPort = this.discoveryPort;
-        const registryUrl = `ws://${LOCAL_WS_HOST}:${registryPort}`;
+        const registryUrl =
+            externalRegistryUrl ?? `ws://${LOCAL_WS_HOST}:${registryPort}`;
 
         const connectRegistry = (attempt: number) => {
             if (this._cleanupRequested) {
                 return;
             }
-            if (!this.discoveryPort) {
+            if (!externalRegistryUrl && !this.discoveryPort) {
                 this.logger.warn(
                     "Discovery server port missing; cannot connect",
                     {
                         ...peerLog,
+                        registryUrl,
                         myPeerPort: port,
                         registryPort: this.discoveryPort
                     }
@@ -604,6 +622,7 @@ export class LocalDiscoveryServer {
                     "Discovery registry connect retries exhausted",
                     {
                         ...peerLog,
+                        registryUrl,
                         myPeerPort: port,
                         registryPort: this.discoveryPort,
                         attempts: attempt - 1
@@ -614,6 +633,7 @@ export class LocalDiscoveryServer {
 
             const log = {
                 ...peerLog,
+                registryUrl,
                 myPeerPort: port,
                 registryPort: this.discoveryPort,
                 attempt
@@ -628,6 +648,7 @@ export class LocalDiscoveryServer {
                     ws.send(JSON.stringify({ port, channelId }));
                     this.logger.debug("Connected to discovery registry", {
                         ...peerLog,
+                        registryUrl,
                         registryPort: this.discoveryPort,
                         myPeerPort: port,
                         attempt
@@ -653,6 +674,7 @@ export class LocalDiscoveryServer {
                     this.activeDiscoveryConnections.delete(discoveryWs);
                     this.logger.debug("Discovery connection closed", {
                         ...peerLog,
+                        registryUrl,
                         registryPort: this.discoveryPort,
                         myPeerPort: port
                     });
@@ -661,6 +683,7 @@ export class LocalDiscoveryServer {
                     // Note: connect failures are handled via onConnectFailure; this is for post-open errors.
                     this.logger.warn("Discovery connection error", {
                         ...peerLog,
+                        registryUrl,
                         registryPort: this.discoveryPort,
                         myPeerPort: port,
                         message: err?.message
@@ -672,6 +695,7 @@ export class LocalDiscoveryServer {
                         "Discovery registry connect failed; retrying",
                         {
                             ...peerLog,
+                            registryUrl,
                             myPeerPort: port,
                             registryPort: this.discoveryPort,
                             attempt,

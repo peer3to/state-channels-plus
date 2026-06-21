@@ -75,10 +75,17 @@ export const p2pSetup = async (
         TicTacToeSmInstance,
         deployStateMachine,
         {
-            p2pEventHooks,
             customRpc: TicTacToeRpc,
             config: peer3Config
         }
     );
+
+    // Event hooks are now registered as listeners on the instance.
+    for (const [name, fn] of Object.entries(p2pEventHooks)) {
+        if (typeof fn === "function") {
+            p2p.on(name as Parameters<typeof p2p.on>[0], fn as never);
+        }
+    }
+
     return p2p;
 };

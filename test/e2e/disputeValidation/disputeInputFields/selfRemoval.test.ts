@@ -18,9 +18,10 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         const leaverAddress = h.getPeer(leaverIndex).address;
 
         // forceExit yields a valid self-removal dispute; post untampered.
-        h.getPeer(leaverIndex).stateManager.storage.forceExit.setForceExit(
-            true
-        );
+        await h
+            .control(h.getPeer(leaverIndex))
+            .dispute.setForceExit(true)
+            .request();
         // Voluntary exit: skip sync barrier, don't mark malicious.
         h.context.leftChannelPeerIndices = [
             ...h.context.leftChannelPeerIndices,
@@ -56,8 +57,10 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         await h.assert.sync.participantCount({ expectedCount: 2 });
 
         for (const peer of h.getPeersExcludingMaliciousAndLeavers()) {
-            const participants =
-                await peer.stateManager.diamondStateMachine.getParticipants();
+            const participants = await h
+                .control(peer)
+                .query.getParticipants()
+                .request();
             expect(
                 participants.some((p) => addressesEqual(p, leaverAddress)),
                 `Peer ${peer.index} still has self-removed peer ${leaverIndex} in participants`
