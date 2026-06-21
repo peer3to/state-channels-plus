@@ -61,12 +61,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
-        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(
-            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-                getSnapshotParticipants(channelId), getPendingParticipants(channelId)
-            ),
-            getOnChainSlashedParticipants(channelId)
-        );
+        return UtilityFacet(utilityFacetAddress)
+            .subtractAddressArrays(
+                UtilityFacet(utilityFacetAddress)
+                    .concatAddressArraysNoDuplicates(
+                        getSnapshotParticipants(channelId), getPendingParticipants(channelId)
+                    ),
+                getOnChainSlashedParticipants(channelId)
+            );
     }
 
     function getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
@@ -80,7 +82,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && StateChannelManagerInterface(address(this)).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+                    && StateChannelManagerInterface(address(this))
+                        .isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
@@ -135,9 +138,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 i = 0; i < inboundBlock.messages.length; i++) {
                 if (inboundBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
                     JoinChannel memory joinChannel = abi.decode(inboundBlock.messages[i].data, (JoinChannel));
-                    pendingParticipants = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
-                        pendingParticipants, joinChannel.participant
-                    );
+                    pendingParticipants = UtilityFacet(utilityFacetAddress)
+                        .insertIntoAddressArrayNoDuplicates(pendingParticipants, joinChannel.participant);
                 }
             }
 
@@ -166,11 +168,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         address[] memory pendingParticipants =
             _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, bytes32(0));
 
-        address[] memory participants =
-            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
-        eligibleParticipants = UtilityFacet(utilityFacetAddress).subtractAddressArrays(
-            participants, getOnChainSlashedParticipants(channelId)
-        );
+        address[] memory participants = UtilityFacet(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
+        eligibleParticipants = UtilityFacet(utilityFacetAddress)
+            .subtractAddressArrays(participants, getOnChainSlashedParticipants(channelId));
         return eligibleParticipants;
     }
 
@@ -327,16 +328,24 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         if (lowerHash == bytes32(0)) {
             return outboundMessageBlocks;
         }
-        for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
+
+        uint256 n = outboundMessageBlocks.length;
+        uint256 startIndex = n;
+        for (uint256 i = 0; i < n; i++) {
             if (outboundMessageBlocks[i].previousBlockHash == lowerHash) {
-                MessageBlock[] memory pruned = new MessageBlock[](outboundMessageBlocks.length - i);
-                for (uint256 j = 0; j < pruned.length; j++) {
-                    pruned[j] = outboundMessageBlocks[i + j];
-                }
-                return pruned;
+                startIndex = i;
+                break;
             }
         }
-        return new MessageBlock[](0);
+
+        if (startIndex == 0) return outboundMessageBlocks;
+        if (startIndex == n) return new MessageBlock[](0);
+
+        MessageBlock[] memory pruned = new MessageBlock[](n - startIndex);
+        for (uint256 j = 0; j < pruned.length; j++) {
+            pruned[j] = outboundMessageBlocks[startIndex + j];
+        }
+        return pruned;
     }
 
     function _verifyOutboundMessageBlocks(
@@ -495,8 +504,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
                 require(success, ErrorDisputeStateMachineInboundProcessingFailed());
-                newTotalDeposits =
-                    stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
+                newTotalDeposits = stateMachineImplementation.addBalance(
+                    newTotalDeposits, inboundMessageBlocks[i].messages[j].balance
+                );
             }
         }
         encodedModifiedState = stateMachineImplementation.getState();
@@ -556,79 +566,33 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return UtilityFacet(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
     }
 
-    function _requireCanonicalDisputeInbound(Dispute memory dispute) internal view {
-        bytes32 channelId = dispute.input.channelId;
-        bytes32 disputeLatestInboundHash = dispute.input.latestInboundMessageBlockHash;
-        uint256 disputeLastInboundHeight = dispute.input.lastInboundMessageBlockHeight;
-        ChannelBalance memory channelBalance = channelBalances[channelId];
-        bytes32 onChainInboundHeadHash = channelBalance.latestInboundMessageBlockHash;
+    function _isDisputeInboundHashValid(Dispute memory dispute) internal view returns (bool) {
+        bytes32 disputeInboundHash = dispute.input.latestInboundMessageBlockHash;
+        uint256 disputeInboundHeight = dispute.input.lastInboundMessageBlockHeight;
 
-        if (disputeLatestInboundHash == bytes32(0)) {
-            require(onChainInboundHeadHash == bytes32(0), ErrorDisputeLatestInboundMessageBlockHashInvalid());
-            require(disputeLastInboundHeight == 0, ErrorDisputeLastInboundMessageBlockHeightInvalid());
-            require(
-                channelBalance.latestInboundMessageBlockHeight == 0, ErrorDisputeLastInboundMessageBlockHeightInvalid()
-            );
-            return;
+        if (disputeInboundHash == bytes32(0)) {
+            return disputeInboundHeight == 0;
         }
 
-        bytes32 walkHash = onChainInboundHeadHash;
+        bytes32 channelId = dispute.input.channelId;
+        ChannelBalance memory channelBalance = channelBalances[channelId];
+        bytes32 walkHash = channelBalance.latestInboundMessageBlockHash;
+
+        // Follow inbound blocks from latest toward genesis until we find the dispute's hash.
         while (walkHash != bytes32(0)) {
-            if (walkHash == disputeLatestInboundHash) {
-                uint256 onChainHeightAtDisputeHash = (walkHash == onChainInboundHeadHash)
-                    ? channelBalance.latestInboundMessageBlockHeight
-                    : inboundMessageBlockMap[channelId][walkHash].blockHeight;
-                require(
-                    disputeLastInboundHeight == onChainHeightAtDisputeHash,
-                    ErrorDisputeLastInboundMessageBlockHeightInvalid()
-                );
-                return;
+            if (walkHash == disputeInboundHash) {
+                uint256 onChainHeight;
+                if (walkHash == channelBalance.latestInboundMessageBlockHash) {
+                    onChainHeight = channelBalance.latestInboundMessageBlockHeight;
+                } else {
+                    onChainHeight = inboundMessageBlockMap[channelId][walkHash].blockHeight;
+                }
+                return disputeInboundHeight == onChainHeight;
             }
             walkHash = inboundMessageBlockMap[channelId][walkHash].previousBlockHash;
         }
-        revert ErrorDisputeLatestInboundMessageBlockHashInvalid();
-    }
 
-    function _requireStateProofHeaderChannelMatchesInput(Dispute memory dispute) internal pure {
-        bytes32 channelId = dispute.input.channelId;
-        StateProof memory sp = dispute.input.stateProof;
-
-        for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
-            Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
-            if (b.transaction.header.channelId != channelId) {
-                revert ErrorDisputeStateProofHeaderChannelMismatch();
-            }
-        }
-        for (uint256 m = 0; m < sp.milestones.length; m++) {
-            BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
-            for (uint256 j = 0; j < bcs.length; j++) {
-                Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
-                if (mb.transaction.header.channelId != channelId) {
-                    revert ErrorDisputeStateProofHeaderChannelMismatch();
-                }
-            }
-        }
-    }
-
-    function _requireStateProofHeaderForkMatchesInput(Dispute memory dispute) internal pure {
-        bytes32 forkId = dispute.input.forkId;
-        StateProof memory sp = dispute.input.stateProof;
-
-        for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
-            Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
-            if (b.transaction.header.forkId != forkId) {
-                revert ErrorDisputeStateProofHeaderForkMismatch();
-            }
-        }
-        for (uint256 m = 0; m < sp.milestones.length; m++) {
-            BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
-            for (uint256 j = 0; j < bcs.length; j++) {
-                Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
-                if (mb.transaction.header.forkId != forkId) {
-                    revert ErrorDisputeStateProofHeaderForkMismatch();
-                }
-            }
-        }
+        return false;
     }
 
     function _commitToDisputeReducedResult(

@@ -242,6 +242,18 @@ describe("Block Model", () => {
             expect(block.confirmationSignatures.has(signature2)).to.be.true;
         });
 
+        it("should grow cached signer addresses when expanding signatures", async () => {
+            const signer2 = signers[1];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+
+            expect(block.didSign(signer2.address)).to.equal(false);
+            block.expandSignatures([signature2]);
+
+            expect(block.didSign(signer2.address)).to.equal(true);
+        });
+
         it("should expand signatures with new signatures Set", async () => {
             const signer2 = signers[1];
             const signer3 = signers[2];

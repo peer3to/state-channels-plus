@@ -2,7 +2,13 @@ import { ForkId } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
 import type { TestPeer } from "@test/harness/core/types";
-import type { Block } from "@/models";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+
+/** Resolves a peer's typed harness-control RPC proxy (the harness's `control`). */
+type ControlFn<TCustomRpc extends HarnessControlRpc> = (
+    peer: TestPeer<TCustomRpc>
+) => RemoteRpcProxyType<HarnessControlRpc>;
 
 export type WaitForPeersToSyncOptions = {
     timeoutMs?: number;
@@ -11,25 +17,42 @@ export type WaitForPeersToSyncOptions = {
 };
 
 /**
- * Handles synchronization operations and assertions for test peers.
- * Provides both async waiting and synchronous checking methods.
+ * Handles synchronization operations and assertions for test peers. Tips are
+ * read host-side via each peer's harness-control RPC (the live state manager is
+ * behind the runtime port).
  */
-export class SyncCoordinator {
+export class SyncCoordinator<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     private logger: Logger;
     private eventBarrier: EventBarrier;
+    private control: ControlFn<TCustomRpc>;
 
-    constructor(logger: Logger, eventBarrier: EventBarrier) {
+    constructor(
+        logger: Logger,
+        eventBarrier: EventBarrier,
+        control: ControlFn<TCustomRpc>
+    ) {
         this.logger = logger.child({ component: "SyncCoordinator" });
         this.eventBarrier = eventBarrier;
+        this.control = control;
+    }
+
+    private loadTips(peers: TestPeer<TCustomRpc>[], forkId: ForkId) {
+        return Promise.all(
+            peers.map((peer) =>
+                this.control(peer).query.getSyncTip(forkId).request()
+            )
+        );
     }
 
     /**
      * Wait until all peers share the same tip (hash + height), optionally requiring
      * the tip to be at least `minHeight`, and optionally requiring union agreement
-     * (`didEveryoneSignBlock`) on that tip.
+     * (`finalized`) on that tip.
      */
     public async waitForPeersToSync(
-        peers: TestPeer[],
+        peers: TestPeer<TCustomRpc>[],
         forkId: ForkId,
         options?: WaitForPeersToSyncOptions
     ): Promise<void> {
@@ -46,25 +69,18 @@ export class SyncCoordinator {
             minHeight
         });
 
-        const loadTips = (): (Block | undefined)[] =>
-            peers.map((peer) =>
-                peer.stateManager.storage.blocks.getLatestBlock(forkId)
-            );
-
         const checkSync = async () => {
             if (peers.length === 0) return true;
 
-            const tipBlocks = loadTips();
+            const tips = await this.loadTips(peers, forkId);
+            const present = tips.filter((t) => t !== null);
 
-            if (tipBlocks.some((b) => b === undefined)) {
-                if (tipBlocks.every((b) => b === undefined)) return true;
-                return false;
-            }
+            if (present.length === 0) return true; // no peer has a tip yet
+            if (present.length < tips.length) return false; // only some do
 
-            const blocks = tipBlocks as Block[];
-            const { hash, height } = blocks[0];
+            const { hash, height } = present[0];
 
-            if (!blocks.every((b) => b.hash === hash && b.height === height)) {
+            if (!present.every((t) => t.hash === hash && t.height === height)) {
                 return false;
             }
 
@@ -72,18 +88,8 @@ export class SyncCoordinator {
                 return false;
             }
 
-            if (waitForFinalization) {
-                for (let i = 0; i < peers.length; i++) {
-                    if (
-                        !peers[
-                            i
-                        ].stateManager.agreementManager.didEveryoneSignBlock(
-                            blocks[i]
-                        )
-                    ) {
-                        return false;
-                    }
-                }
+            if (waitForFinalization && !present.every((t) => t.finalized)) {
+                return false;
             }
 
             return true;
@@ -102,24 +108,16 @@ export class SyncCoordinator {
             barrierError = error as EventBarrierCapturedError;
         }
 
-        const tipMaybe = loadTips();
+        const tipMaybe = await this.loadTips(peers, forkId);
 
         const peerStates = peers.map((peer, i) => {
-            const block = tipMaybe[i];
-            const base = block
-                ? `hash=${block.hash} height=${block.height}`
+            const tip = tipMaybe[i];
+            const base = tip
+                ? `hash=${tip.hash} height=${tip.height}`
                 : "no_block";
             let fin = "";
-            if (waitForFinalization && block) {
-                const ok =
-                    peer.stateManager.agreementManager.didEveryoneSignBlock(
-                        block
-                    );
-                const union = peer.stateManager.storage.getParticipantsUnion(
-                    block.coordinates,
-                    block.stateSnapshotHash
-                ).length;
-                fin = ` finalize@h=${block.height} ok=${ok} sigs=${block.allSignatures.size}/${union}`;
+            if (waitForFinalization && tip) {
+                fin = ` finalize@h=${tip.height} ok=${tip.finalized} sigs=${tip.signatures}/${tip.union}`;
             }
             return `Peer ${peer.index}: ${base}${fin}`;
         });
@@ -130,18 +128,8 @@ export class SyncCoordinator {
             reason = ` (expected height ${minHeight}, have ${latest?.height ?? "?"})`;
         }
         if (waitForFinalization && latest) {
-            const union = peers[0].stateManager.storage.getParticipantsUnion(
-                latest.coordinates,
-                latest.stateSnapshotHash
-            ).length;
-            const allOk = tipMaybe.every(
-                (block, i) =>
-                    block &&
-                    peers[i].stateManager.agreementManager.didEveryoneSignBlock(
-                        block
-                    )
-            );
-            reason += ` (finalization@h=${latest.height}: allPeers=${allOk} sigs=${latest.allSignatures.size} union=${union})`;
+            const allOk = tipMaybe.every((tip) => tip && tip.finalized);
+            reason += ` (finalization@h=${latest.height}: allPeers=${allOk} sigs=${latest.signatures} union=${latest.union})`;
         } else if (waitForFinalization) {
             reason += " (finalization: no tip block)";
         }

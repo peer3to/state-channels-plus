@@ -1,7 +1,10 @@
 import type { PeerTestHarness } from "./PeerTestHarness";
+import type { HarnessControlRpc } from "./customRpc/harnessControl/HarnessControlRpc";
 
-export class HarnessDebug {
-    constructor(private harness: PeerTestHarness) {}
+export class HarnessDebug<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    constructor(private harness: PeerTestHarness<TCustomRpc>) {}
 
     logPeerIndexMap(): void {
         console.log("[DEBUG] harness peers (index -> address):");

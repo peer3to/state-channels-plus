@@ -58,6 +58,11 @@ contract StateSnapshotFacet is StateChannelCommon {
             _verifyMilestones(currentStateSnapshot.forkId, milestoneProofs, milestoneSnapshots, currentStateSnapshot),
             ErrorInvalidStateProof()
         );
+        require(
+            newStateSnapshot.snapshotData.latestInboundMessageBlockHash
+                == channelBalances[channelId].latestInboundMessageBlockHash,
+            RaceConditionPendingInboundNotConsumed()
+        );
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);
     }

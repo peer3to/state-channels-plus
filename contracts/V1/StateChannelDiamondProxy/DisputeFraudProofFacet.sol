@@ -67,6 +67,12 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.InvalidDisputeReason) {
             return _handleInvalidDisputeReason;
         }
+        if (proofType == DisputeFraudProofType.DisputeStateProofHeaderMismatch) {
+            return _handleDisputeStateProofHeaderMismatch;
+        }
+        if (proofType == DisputeFraudProofType.DisputeInboundHashNotInChain) {
+            return _handleDisputeInboundHashNotInChain;
+        }
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -80,6 +86,23 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _handleInvalidDisputeFraudProofType(bytes memory, Dispute memory) internal pure returns (address) {
         return _invalid();
+    }
+
+    function _handleDisputeStateProofHeaderMismatch(bytes memory, Dispute memory dispute)
+        internal
+        pure
+        returns (address)
+    {
+        if (_hasStateProofHeaderMismatch(dispute)) return _valid(dispute.input.disputer);
+        return _invalid();
+    }
+
+    function _handleDisputeInboundHashNotInChain(bytes memory, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        return _isDisputeInboundHashValid(dispute) ? _invalid() : _valid(dispute.input.disputer);
     }
 
     function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -231,11 +254,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (address)
     {
-        uint256 timestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
-            dispute.input.channelId, dispute.input.forkId
-        );
-
-        address[] memory onChainSlashes = getOnChainSlashedParticipantsUpToTimestamp(dispute.input.channelId, timestamp);
+        address[] memory onChainSlashes = getOnChainSlashedParticipants(dispute.input.channelId);
         address[] memory disputeSlashes = dispute.input.onChainSlashes;
         for (uint256 i = 0; i < disputeSlashes.length; i++) {
             bool found = false;
@@ -248,7 +267,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             if (!found) return _valid(dispute.input.disputer);
         }
 
-        return _invalid();
+        revert RaceConditionOnChainSlashes();
     }
 
     function _handleTimeoutThreshold(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -383,7 +402,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 }
             }
         }
-        if (timeoutTimestamp <= previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()) {
+        if (timeoutTimestamp < previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()) {
             return _valid(dispute.input.disputer);
         }
         return _invalid();
@@ -603,6 +622,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
         return _isLastMilestoneFinalByEveryone(dispute);
+    }
+
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public pure returns (bool) {
+        return _hasStateProofHeaderMismatch(dispute);
+    }
+
+    function isDisputeInboundHashValid(Dispute memory dispute) public view returns (bool) {
+        return _isDisputeInboundHashValid(dispute);
     }
 
     function _deriveExpectedParticipantsForDispute(Dispute memory dispute)
