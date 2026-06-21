@@ -72,3 +72,4 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
   Keep it simple; add a named type later only if it actually earns reuse. (And
   don't reach for `Awaited<ReturnType<…>>`-style gymnastics to avoid a name —
   that's worse than the type it replaces; it's for generics, not one-offs.)
+- Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`.

@@ -19,24 +19,20 @@ export type WebRTCBridgeRequest =
     | {
           method: "acceptOffer";
           peerAddress: WebRTCPeerAddress;
-          offer: any;
+          offer: RTCSessionDescriptionInit;
       }
     | {
           method: "applyAnswer";
           peerAddress: WebRTCPeerAddress;
-          answer: any;
+          answer: RTCSessionDescriptionInit;
       }
     | {
           method: "addIceCandidate";
           peerAddress: WebRTCPeerAddress;
-          candidate: any;
+          candidate: RTCIceCandidateInit;
       }
     | {
           method: "close";
-          peerAddress: WebRTCPeerAddress;
-      }
-    | {
-          method: "getState";
           peerAddress: WebRTCPeerAddress;
       };
 
@@ -90,7 +86,7 @@ export type WebRTCBridgePortMessage =
           namespace: typeof WEBRTC_BRIDGE_NAMESPACE;
           type: "iceCandidate";
           peerAddress: WebRTCPeerAddress;
-          candidate: any;
+          candidate: RTCIceCandidateInit;
       }
     | {
           namespace: typeof WEBRTC_BRIDGE_NAMESPACE;

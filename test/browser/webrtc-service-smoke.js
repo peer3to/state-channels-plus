@@ -278,7 +278,7 @@ globalThis.runWebRTCMainThreadBrowserSmoke = async () => {
     };
 };
 
-globalThis.runWebRTCDedicatedWorkerBrowserSmoke = async () => {
+async function runWebRTCWorkerBridgeSmoke(bridgeOptions = {}) {
     const errors = [];
     const progress = [];
     const mainHarness = createServiceHarness(
@@ -298,7 +298,7 @@ globalThis.runWebRTCDedicatedWorkerBrowserSmoke = async () => {
         new URL("./webrtc-service-worker.js", import.meta.url),
         { type: "module" }
     );
-    const bridge = installWebRTCMainThreadBridge(worker);
+    const bridge = installWebRTCMainThreadBridge(worker, bridgeOptions);
 
     const postToWorker = (message) => worker.postMessage(message);
 
@@ -452,4 +452,14 @@ globalThis.runWebRTCDedicatedWorkerBrowserSmoke = async () => {
         bridge.dispose();
         worker.terminate();
     }
-};
+}
+
+globalThis.runWebRTCDedicatedWorkerBrowserSmoke = () =>
+    runWebRTCWorkerBridgeSmoke();
+
+// Force the proxy path: channel traffic is relayed over the bridge rather than
+// handed to the worker as a transferred RTCDataChannel. Chromium supports
+// channel transfer, so without forcing this the proxy path (the one
+// Firefox/Safari always take) is never exercised end-to-end.
+globalThis.runWebRTCProxyWorkerBrowserSmoke = () =>
+    runWebRTCWorkerBridgeSmoke({ channelMode: "proxy" });
