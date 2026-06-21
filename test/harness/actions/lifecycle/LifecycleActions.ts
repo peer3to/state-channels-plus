@@ -1,4 +1,5 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Logger, sleep } from "@/utils";
 import { ForkId } from "@/types/types";
 import { BytesLike } from "ethers";
@@ -9,20 +10,23 @@ import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { NetworkController } from "../NetworkController";
 import { HarnessOptions } from "@test/harness/core/types";
 import { TimeConfig } from "@/types";
+
 const defaultTimeConfig: TimeConfig = {
     p2pTime: 1,
     agreementTime: 2,
     chainFallbackTime: 2,
-    evidenceTime: 3
+    evidenceTime: 8
 };
 
 /**
  * Handles channel-related operations: open channel and bootstrap.
  */
-export class LifecycleActions {
+export class LifecycleActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        private harness: PeerTestHarness,
-        private logger: Logger
+        protected harness: PeerTestHarness<TCustomRpc>,
+        protected logger: Logger
     ) {}
 
     /**
@@ -32,16 +36,17 @@ export class LifecycleActions {
     async start(
         numPeers: number,
         transitionCount: number = 0,
-        options?: HarnessOptions & { waitForFinalization?: boolean }
+        options?: HarnessOptions & {
+            waitForFinalization?: boolean;
+        }
     ): Promise<ForkId> {
         await this.harness.setup(numPeers, options);
         const forkId = await this.openChannel();
 
         if (transitionCount > 0) {
-            await this.harness.transition.advanceState({
-                count: transitionCount,
-                waitForFinalization: options?.waitForFinalization ?? true
-            });
+            throw new Error(
+                "LifecycleActions.start is generic; provide explicit transitions after start() or use a concrete harness lifecycle"
+            );
         }
 
         return forkId;
@@ -152,8 +157,7 @@ export class LifecycleActions {
         const isValidForkId = (forkId: ForkId | undefined): boolean =>
             !!forkId && forkId !== "0x00" && forkId !== "0x0";
 
-        const getPeerForkIds = () =>
-            this.harness.peers.map((peer) => peer.stateManager.forkId);
+        const getPeerForkIds = () => this.harness.peerForkIds();
 
         this.logger.debug("Waiting for fork ID to be set on all peers...");
 
@@ -171,7 +175,7 @@ export class LifecycleActions {
         );
 
         // Verify all peers have the same valid fork ID
-        const peerForkIds = getPeerForkIds();
+        const peerForkIds = await getPeerForkIds();
         const allValidAndSame =
             peerForkIds.every(isValidForkId) &&
             peerForkIds.every((id) => id === peerForkIds[0]);

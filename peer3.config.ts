@@ -10,6 +10,7 @@ const config: Partial<Config> = {
     DEBUG_LOCAL_TRANSPORT: true,
     LOG_SKIP_WRITING: false,
     HOLEPUNCH_RELAYER_URLS: ["wss://dht1-relay.leet.ar:49443"],
+    LOCAL_DISCOVERY_REGISTRY_URL: "",
     // Crash log collection enabled when endpoint is set
     CRASH_LOG_UPLOAD_ENDPOINT: "http://localhost:3001/logs/upload",
     // CRASH_LOG_API_TOKEN: "",

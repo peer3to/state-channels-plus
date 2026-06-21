@@ -5,8 +5,8 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
-import { difference, isSubset, Logger } from "@/utils";
-import { BlockValidationResult, TimeConfig } from "@/types";
+import { Logger } from "@/utils";
+import { BlockValidationResult, OnChainBlockStatus, TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
@@ -15,6 +15,14 @@ import type StateManager from "@/stateManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
+import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
+
+enum OnChainPostTiming {
+    NOT_READY,
+    NOT_POSTED,
+    ON_TIME,
+    TOO_LATE
+}
 
 export default class ValidationService {
     private readonly fraudProofService: FraudProofService;
@@ -24,6 +32,7 @@ export default class ValidationService {
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
+        private readonly blockDataAvailabilityService: BlockDataAvailabilityService,
         private readonly stateManager: StateManager,
         logger: Logger
     ) {
@@ -68,20 +77,6 @@ export default class ValidationService {
             block,
             block.channelId
         );
-
-        // Check duplicate blocks
-        const duplicateResult = await this.checkDuplicateBlock(
-            block,
-            participants,
-            strategy
-        );
-
-        if (duplicateResult !== BlockValidationResult.SUCCESS) {
-            // this.logger.warn("validateBlockConfirmation - duplicate block", {
-            //     block
-            // });
-            return duplicateResult;
-        }
 
         // Author is a participant
         if (!participants.has(block.author)) {
@@ -252,88 +247,6 @@ export default class ValidationService {
         return prevBlock.hash === block.previousBlockHash;
     }
 
-    private async checkDuplicateBlock(
-        block: Block,
-        participants: Set<Address>,
-        strategy: AValidationStrategy
-    ): Promise<BlockValidationResult> {
-        // 1. Check if block is in queue
-        if (
-            this.storage.queues.isBlockQueued(block, {
-                hash: block.hash
-            })
-        ) {
-            const signerAddresses = block.confirmationSignerAddresses;
-            // TODO - This doesn't take into account the participant UNION, since the posterior state is not known, so a race condition is possible where the new participant signs, but is not accounted for
-            const areAllParticipants = isSubset(signerAddresses, participants);
-            if (!areAllParticipants) {
-                this.logger.warn(
-                    "BlockConfirmation - checkDuplicateBlock - not all signers are participants",
-                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
-                );
-                return await strategy.notAllSingersAreParticipants(block);
-            }
-
-            // Store in queue (handles signature merging automatically)
-            this.storage.queues.queueBlock(block);
-            return BlockValidationResult.SUCCESS;
-        }
-
-        // 2. Check if block is in block storage
-        const existingBlock = this.storage.blocks.getBlock(block.hash);
-        if (existingBlock !== undefined) {
-            const existingSignatures = existingBlock.confirmationSignatures;
-            const incomingSignatures = block.confirmationSignatures;
-            const newSignatures = difference(
-                incomingSignatures,
-                existingSignatures
-            );
-
-            if (block.onChainTimestamp) {
-                // Update the existing block's onChainTimestamp
-                this.storage.blocks.setOnChainTimestamp(
-                    block.hash,
-                    block.onChainTimestamp
-                );
-            }
-
-            // no new signatures
-            if (newSignatures.size === 0) {
-                return await strategy.noNewSignaturesOnExistingBlock(block);
-            }
-
-            // Validate new signatures are from participants
-            const newSignerAddresses: Set<Address> = new Set(
-                Array.from(newSignatures).map((sig) =>
-                    block.signatureToAddress(sig)
-                )
-            );
-
-            const areNewSignersParticipants = isSubset(
-                newSignerAddresses,
-                participants
-            );
-
-            if (!areNewSignersParticipants) {
-                this.logger.warn(
-                    "BlockConfirmation - checkDuplicateBlock - not all new signers are participants",
-                    { block: LoggerUtils.getBlockMetadata(block, this.storage) }
-                );
-                return await strategy.notAllSingersAreParticipants(block);
-            }
-
-            const mergeResult =
-                await strategy.goodNewSignaturesOnExistingBlock(block);
-            const persisted = this.storage.blocks.getBlock(block.hash);
-            if (persisted) {
-                this.stateManager.maybeNotifyBlockFinalized(persisted);
-            }
-            return mergeResult;
-        }
-
-        return BlockValidationResult.SUCCESS;
-    }
-
     private async checkConflictingBlock(
         block: Block,
         strategy: AValidationStrategy
@@ -380,7 +293,7 @@ export default class ValidationService {
         return await strategy.conflictingButNotLinkedBlockDetected(block);
     }
 
-    private async isDisputedFork(
+    public async isDisputedFork(
         forkId: ForkId,
         channelId: ChannelId
     ): Promise<boolean> {
@@ -471,27 +384,16 @@ export default class ValidationService {
         }
 
         // OBJECTIVE: isValidTimestamp check
-
-        // Check if block timestamp is not in the past
-        const isNotInPast = block.timestamp - previousOriginalTimestamp >= 0;
-
-        // Check if block timestamp is within P2P time window
-        const isWithinP2PTimeWindow =
-            block.timestamp - previousTimestamp <= this.timeConfig.p2pTime;
-
-        const isValidTimestamp = isNotInPast && isWithinP2PTimeWindow;
+        const invalidTimestampProof =
+            this.fraudProofService.buildInvalidTimestampProof(block);
+        const isValidTimestamp =
+            !(await this.diamondStateMachine.localDiamondContract.hasInvalidTimestamp.staticCall(
+                invalidTimestampProof
+            ));
 
         if (!isValidTimestamp) {
-            // Determine which rule was violated
-            let violatedRule: string;
-            if (!isNotInPast) {
-                violatedRule = "timestamp >= previousOriginalTimestamp";
-            } else if (!isWithinP2PTimeWindow) {
-                violatedRule = "timestamp <= previousTimestamp + p2pTime";
-            } else {
-                violatedRule =
-                    "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
-            }
+            const violatedRule =
+                "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
 
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
             if (
@@ -512,15 +414,43 @@ export default class ValidationService {
                 return await strategy.objectiveInvalidTimestampDetected(block);
             }
 
-            // Try on-chain query to update previous block on-chain timestamp
-            const previousBlockOnChainTimestamp = (
-                await this.stateManager.fetchUpdatedOnChainBlock(
+            // Try on-chain query to schedule validation for the previous block.
+            const scheduleStatus =
+                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
                     previousBlock.forkId,
                     previousBlock.height,
-                    previousBlock.author,
-                    { skipMutex: true }
+                    previousBlock.author
+                );
+
+            if (
+                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                    scheduleStatus
                 )
-            )?.onChainTimestamp;
+            ) {
+                await this.stateManager.ingestBlockConfirmation(
+                    block.blockConfirmationStruct,
+                    { onChainTimestamp: block.onChainTimestamp }
+                );
+                this.logger.info(
+                    "validateTimeLogic - queued block while waiting for previous on-chain block validation",
+                    {
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.storage
+                        ),
+                        previousBlock: LoggerUtils.getBlockMetadata(
+                            previousBlock,
+                            this.storage
+                        ),
+                        scheduleStatus: OnChainBlockStatus[scheduleStatus]
+                    }
+                );
+                return BlockValidationResult.NOT_READY;
+            }
+
+            const previousBlockOnChainTimestamp =
+                this.storage.blocks.getBlock(previousBlock.hash)
+                    ?.onChainTimestamp ?? previousBlock.onChainTimestamp;
 
             // if previousBlockOnChainTimestamp not set/updated or less than previousTimestamp -> we have the best timestamp already -> safe to create a fraud proof
             if (
@@ -552,7 +482,15 @@ export default class ValidationService {
         }
 
         // OBJECTIVE: Check if block was posted too late on-chain
-        if (await this.isPostedOnChainTooLate(previousTimestamp, block)) {
+        const onChainPostTiming = await this.getOnChainPostTiming(
+            previousTimestamp,
+            block
+        );
+        if (onChainPostTiming === OnChainPostTiming.NOT_READY) {
+            return BlockValidationResult.NOT_READY;
+        }
+
+        if (onChainPostTiming === OnChainPostTiming.TOO_LATE) {
             // Block posted too late - create InvalidTimestamp fraud proof
             logTimeFailure({
                 validationResult: BlockValidationResult.DISPUTE,
@@ -566,8 +504,16 @@ export default class ValidationService {
             return await strategy.objectiveInvalidTimestampDetected(block);
         }
 
-        if (block.onChainTimestamp !== undefined)
+        if (onChainPostTiming === OnChainPostTiming.ON_TIME) {
+            LoggerUtils.logSubjectiveTimeValidationSucceeded(this.logger, {
+                block,
+                strategyName: strategy.name,
+                validationPath: "on-chain-post-on-time",
+                nowSeconds,
+                agreementTimeSeconds: this.timeConfig.agreementTime
+            });
             return BlockValidationResult.SUCCESS;
+        }
 
         // SUBJECTIVE: hasOnChainTimestamp check
         const receivedWithinAgreementTime =
@@ -586,6 +532,14 @@ export default class ValidationService {
             });
             return await strategy.subjectiveInvalidTimestampDetected(block);
         }
+
+        LoggerUtils.logSubjectiveTimeValidationSucceeded(this.logger, {
+            block,
+            strategyName: strategy.name,
+            validationPath: "subjective-window",
+            nowSeconds,
+            agreementTimeSeconds: this.timeConfig.agreementTime
+        });
 
         return BlockValidationResult.SUCCESS;
     }
@@ -621,22 +575,51 @@ export default class ValidationService {
         return participants;
     }
 
-    private async isPostedOnChainTooLate(
+    private async getOnChainPostTiming(
         previousTimestamp: Timestamp,
         block: Block
-    ): Promise<boolean> {
+    ): Promise<OnChainPostTiming> {
+        const storedOnChainTimestamp = this.getStoredOnChainTimestamp(block);
+        if (storedOnChainTimestamp !== undefined) {
+            block.onChainTimestamp = storedOnChainTimestamp;
+        }
+
         // if doesn't have on-chain timestamp try and fetch it
-        if (!block.onChainTimestamp) {
-            const onChainTimestamp = (
-                await this.stateManager.fetchUpdatedOnChainBlock(
+        if (block.onChainTimestamp === undefined) {
+            const scheduleStatus =
+                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
                     block.forkId,
                     block.height,
-                    block.author,
-                    { skipMutex: true }
+                    block.author
+                );
+
+            if (
+                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                    scheduleStatus
                 )
-            )?.onChainTimestamp;
-            // if still doesn't have on-chain timestamp return false - not posted at all
-            if (!onChainTimestamp) return false;
+            ) {
+                await this.stateManager.ingestBlockConfirmation(
+                    block.blockConfirmationStruct,
+                    { onChainTimestamp: block.onChainTimestamp }
+                );
+                this.logger.info(
+                    "isPostedOnChainTooLate - queued block while waiting for current on-chain block validation",
+                    {
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.storage
+                        ),
+                        scheduleStatus: OnChainBlockStatus[scheduleStatus]
+                    }
+                );
+                return OnChainPostTiming.NOT_READY;
+            }
+
+            const onChainTimestamp = this.getStoredOnChainTimestamp(block);
+
+            if (onChainTimestamp === undefined) {
+                return OnChainPostTiming.NOT_POSTED;
+            }
             block.onChainTimestamp = onChainTimestamp;
             this.storage.blocks.setOnChainTimestamp(
                 block.hash,
@@ -652,6 +635,22 @@ export default class ValidationService {
             this.timeConfig.agreementTime +
             this.timeConfig.chainFallbackTime;
 
-        return block.onChainTimestamp > maxAllowedTimestamp;
+        if (block.onChainTimestamp > maxAllowedTimestamp) {
+            return OnChainPostTiming.TOO_LATE;
+        }
+
+        return OnChainPostTiming.ON_TIME;
+    }
+
+    private getStoredOnChainTimestamp(block: Block): Timestamp | undefined {
+        return (
+            this.storage.blocks.getBlock(block.hash)?.onChainTimestamp ??
+            this.storage.blockCalldata.getBlockCalldata(
+                block.forkId,
+                block.height,
+                block.author
+            )?.onChainTimestamp ??
+            block.onChainTimestamp
+        );
     }
 }

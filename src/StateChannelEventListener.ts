@@ -1,4 +1,5 @@
 import { LocalDiamond, StateChannelManagerProxy } from "@typechain-types";
+import { hexlify } from "ethers";
 
 import { ChannelId } from "@/types/types";
 
@@ -12,6 +13,10 @@ class StateChannelEventListener {
     eventHandler: EventHandler;
     localDiamondContract: LocalDiamond;
     private logger: Logger;
+    private currentChannelKey?: string;
+    private disposed = false;
+    private subscriptionChain: Promise<void> = Promise.resolve();
+    private seenLogs = new Set<string>();
     filters: Record<
         string,
         { filter: any; listener: (logObj: any) => Promise<void> }
@@ -29,37 +34,99 @@ class StateChannelEventListener {
         this.logger = logger.child({ component: "EventListener" });
     }
 
-    private async setListener(
+    private createListener(
         key: string,
-        filterFactory: () => any,
         handler: (logObj: any) => Promise<void>
     ) {
-        if (this.filters[key]) {
-            await this.stateChannelManagerContract.off(
-                this.filters[key].filter,
-                this.filters[key].listener
-            );
-        }
-        const filter = filterFactory();
-        const wrappedHandler = async (logObj: any) => {
+        return async (logObj: any) => {
+            const logKey = this.getLogKey(key, logObj);
+            if (logKey && this.seenLogs.has(logKey)) {
+                this.logger.debug(`Duplicate on-chain event skipped - ${key}`, {
+                    event: key,
+                    logKey
+                });
+                return;
+            }
+
+            if (logKey) {
+                this.seenLogs.add(logKey);
+            }
+
             this.logger.info(`On-chain event received - ${key}`, {
                 event: key,
                 args: logObj?.args
             });
             return handler(logObj);
         };
-        await this.stateChannelManagerContract.on(filter, wrappedHandler);
-        this.filters[key] = { filter, listener: wrappedHandler };
+    }
+
+    private async removeAllListeners() {
+        const filters = Object.values(this.filters);
+        this.filters = {};
+
+        await Promise.all(
+            filters.map(({ filter, listener }) =>
+                this.stateChannelManagerContract.off(filter, listener)
+            )
+        );
+    }
+
+    private getLogKey(key: string, logObj: any): string | undefined {
+        const transactionHash =
+            logObj?.transactionHash ?? logObj?.log?.transactionHash;
+        const index = logObj?.index ?? logObj?.logIndex ?? logObj?.log?.index;
+        if (!transactionHash || index === undefined) return undefined;
+
+        return `${key}:${transactionHash}:${String(index)}`;
+    }
+
+    private getChannelKey(channelId: ChannelId): string {
+        return typeof channelId === "string"
+            ? channelId.toLowerCase()
+            : hexlify(channelId).toLowerCase();
+    }
+
+    private async replaceChannelListeners(channelId: ChannelId) {
+        if (this.disposed) return;
+
+        const channelKey = this.getChannelKey(channelId);
+        const eventCount = Object.keys(this.eventHandlers).length;
+        if (
+            this.currentChannelKey === channelKey &&
+            Object.keys(this.filters).length === eventCount
+        ) {
+            return;
+        }
+
+        await this.removeAllListeners();
+        this.seenLogs.clear();
+        this.currentChannelKey = channelKey;
+
+        if (this.disposed) return;
+
+        for (const [key, { filterFactory, handler }] of Object.entries(
+            this.eventHandlers
+        )) {
+            const filter = filterFactory(channelId);
+            const listener = this.createListener(key, handler);
+            await this.stateChannelManagerContract.on(filter, listener);
+
+            if (this.disposed) {
+                await this.stateChannelManagerContract.off(filter, listener);
+                return;
+            }
+
+            this.filters[key] = { filter, listener };
+        }
     }
 
     //Mark resources for garbage collection
     public async dispose() {
-        const unsubscribePromises = Object.values(this.filters).map(
-            ({ filter, listener }) =>
-                this.stateChannelManagerContract.off(filter, listener)
-        );
-        await Promise.all(unsubscribePromises);
-        this.filters = {};
+        this.disposed = true;
+        await this.subscriptionChain.catch(() => undefined);
+        await this.removeAllListeners();
+        this.seenLogs.clear();
+        this.currentChannelKey = undefined;
     }
 
     private readonly eventHandlers = {
@@ -256,16 +323,11 @@ class StateChannelEventListener {
     };
 
     public async setChannelId(channelId: ChannelId) {
-        await Promise.all(
-            Object.entries(this.eventHandlers).map(
-                ([key, { filterFactory, handler }]) =>
-                    this.setListener(
-                        key,
-                        () => filterFactory(channelId),
-                        handler
-                    )
-            )
+        this.subscriptionChain = this.subscriptionChain.then(
+            () => this.replaceChannelListeners(channelId),
+            () => this.replaceChannelListeners(channelId)
         );
+        await this.subscriptionChain;
     }
 }
 

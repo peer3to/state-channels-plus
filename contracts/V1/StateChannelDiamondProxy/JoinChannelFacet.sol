@@ -9,9 +9,12 @@ contract JoinChannelFacet is StateChannelCommon {
     /**
      * @notice Joins participants to the channel by submitting a complete join channel request
      *
-     * @param joinChannelConfirmation Array of join channel confirmations to process
+     * @param joinChannelConfirmation Join channel confirmation to process
+     * @param expectedSnapshotHash Snapshot hash the off-chain join was bound to; checked against current on-chain snapshot
      */
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmation) external {
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmation, bytes32 expectedSnapshotHash)
+        external
+    {
         SignedJoinChannel memory sjc = joinChannelConfirmation.signedJoinChannel;
         JoinChannel memory jc = abi.decode(sjc.encodedJoinChannel, (JoinChannel));
         bytes32 channelId = jc.channelId;
@@ -19,6 +22,14 @@ contract JoinChannelFacet is StateChannelCommon {
 
         // Check deadline
         require(jc.deadlineTimestamp >= block.timestamp, RaceConditionJoinChannelExpired());
+        StateSnapshot memory currentSnapshot = getStateSnapshot(channelId);
+        require(
+            expectedSnapshotHash == keccak256(abi.encode(currentSnapshot)), RaceConditionJoinChannelSnapshotMismatch()
+        );
+        require(
+            !StateChannelManagerProxy(address(this)).isForkDisputed(channelId, currentSnapshot.forkId),
+            RaceConditionJoinChannelForkDisputed()
+        );
 
         //verify original signature
         (address retrievedAddress, bool isValidSignature) =

@@ -1,4 +1,5 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Logger } from "@/utils";
 import {
     AssertCalldataActions,
@@ -9,16 +10,18 @@ import {
 } from ".";
 import { AssertStorageActions } from "./AssertStorageActions";
 
-export class AssertActions {
-    public readonly calldata: AssertCalldataActions;
-    public readonly dispute: AssertDisputeActions;
-    public readonly rpc: AssertRPCActions;
-    public readonly snapshot: AssertSnapshotActions;
-    public readonly sync: AssertSyncActions;
-    public readonly storage: AssertStorageActions;
+export class AssertActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    public readonly calldata: AssertCalldataActions<TCustomRpc>;
+    public readonly dispute: AssertDisputeActions<TCustomRpc>;
+    public readonly rpc: AssertRPCActions<TCustomRpc>;
+    public readonly snapshot: AssertSnapshotActions<TCustomRpc>;
+    public readonly sync: AssertSyncActions<TCustomRpc>;
+    public readonly storage: AssertStorageActions<TCustomRpc>;
 
     constructor(
-        private harness: PeerTestHarness,
+        private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {
         this.calldata = new AssertCalldataActions(this.harness);

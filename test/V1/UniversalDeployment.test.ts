@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { ContractFactory, type Signer } from "ethers";
 
 import {
     deploy,
@@ -9,31 +10,55 @@ import {
 } from "../../scripts/V1/deploy";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import { EVM } from "@ethereumjs/evm";
 import { OpenChannelConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { createContractExecutorFactory } from "@/evm";
+import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 
 describe("Universal Deployment", () => {
     let deployer: HardhatEthersSigner;
-    let mathStateMachineDeployTx: any;
-    let evm: EVM;
+    let localSigner: LocalContractExecutorSigner;
+
+    const deployMathStateMachineLocally = async (signer: Signer) => {
+        const factory = new ContractFactory(
+            MathStateMachineArtifact.abi,
+            MathStateMachineArtifact.bytecode,
+            signer
+        );
+        const response = await signer.sendTransaction(
+            await factory.getDeployTransaction(5000000)
+        );
+        const receipt = await response.wait();
+        if (!receipt?.contractAddress) {
+            throw new Error(
+                "No local MathStateMachine contract address created"
+            );
+        }
+        return receipt.contractAddress;
+    };
 
     before(async () => {
-        evm = await EVM.create({ allowUnlimitedContractSize: true });
         [deployer] = await ethers.getSigners();
-
-        const MathStateMachine =
-            await ethers.getContractFactory("MathStateMachine");
-
-        mathStateMachineDeployTx =
-            await MathStateMachine.getDeployTransaction(5000000);
+        localSigner = new LocalContractExecutorSigner(
+            deployer,
+            await createContractExecutorFactory({ dedicatedThread: false })
+        );
     });
 
     describe("Local Diamond", () => {
+        it("deploys a local state machine directly with the signer", async () => {
+            const deployedAddress =
+                await deployMathStateMachineLocally(localSigner);
+
+            expect(deployedAddress.toString()).to.not.equal(ethers.ZeroAddress);
+            expect(deployedAddress.toString()).to.match(/^0x[a-fA-F0-9]{40}$/);
+        });
+
         it("deploys successfully", async () => {
             const { address: diamondAddress } = await deployLocalDiamond(
-                mathStateMachineDeployTx,
-                evm,
-                deployer
+                deployMathStateMachineLocally,
+                localSigner,
+                undefined,
+                12_000_000
             );
 
             expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
@@ -73,6 +98,19 @@ describe("Universal Deployment", () => {
 
             const times = await diamondContract.getAllTimes();
             expect(times).to.deep.equal([15n, 5n, 30n, 30n]);
+            expect(await diamondContract.getGasLimit()).to.equal(3_000_000n);
+        });
+
+        it("deploys with a custom dispute execution gas limit", async () => {
+            const { contract: diamondContract } = await deploy(
+                mathStateMachineAddress,
+                consumerFacetAddress,
+                deployer,
+                undefined,
+                12_000_000
+            );
+
+            expect(await diamondContract.getGasLimit()).to.equal(12_000_000n);
         });
 
         it("fails with invalid consumer facet", async () => {

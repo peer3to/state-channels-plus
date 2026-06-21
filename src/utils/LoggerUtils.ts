@@ -5,14 +5,16 @@ import {
     DisputeInputStruct,
     DisputeAuditingDataStruct,
     ReduceOutputStruct,
-    BlockStruct
+    BlockStruct,
+    BlockConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     DisputeFraudProofStruct,
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
-import { difference, hash } from "@/utils";
+import { hash } from "./hash";
+import { difference } from "./set";
 import { Address, BlockOrSnapshot, Hash } from "@/types/types";
 import {
     DisputeFraudProofType,
@@ -20,9 +22,9 @@ import {
     toSolidityFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
-import type { Logger } from "@/utils";
+import type { Logger, LogLevel } from "./logging/Logger";
 import { TransportType } from "@/transport/TransportType";
-import ATransport from "@/transport/ATransport";
+import type ATransport from "@/transport/ATransport";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import {
@@ -31,8 +33,40 @@ import {
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
-import { LogLevel } from "./logging/Logger";
 import { TimeConfig } from "@/types";
+import type Rpc from "@/rpc/Rpc";
+
+export type InitHandshakeMessage =
+    | "request"
+    | "response"
+    | "ack"
+    | "response-timeout"
+    | "ack-timeout"
+    | "rejected"
+    | "finalize-check"
+    | "completed";
+
+export type InitHandshakeDirection = "send" | "receive" | "local";
+
+export type InitHandshakeLogArgs = {
+    direction: InitHandshakeDirection;
+    message: InitHandshakeMessage;
+    challengeHash?: Hash;
+    challengeInitTime?: number;
+    messageTime?: number;
+    responseTime?: number;
+    rttSeconds?: number;
+    timeDifferenceSeconds?: number;
+    absoluteTimeDifferenceSeconds?: number;
+    agreementTimeSeconds?: number;
+    signerAddress?: string;
+    preferredTransport?: TransportType;
+    verifiedPeerAddress?: string;
+    didReceiveAck?: boolean;
+    remotePreferred?: TransportType;
+    reason?: string;
+};
+
 export class LoggerUtils {
     private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
         "0x9ce4e6bf06971600d59f74bebec9880ea91b2f4bdbfcc850572617eeaad2edc8":
@@ -40,6 +74,10 @@ export class LoggerUtils {
         "0x7fc958f6d896a018ea54afc012524ea8e277a718198f19cfe9d7795f10efadae":
             "EXIT_CHANNEL_MESSAGE"
     };
+
+    private static readonly TRANSPORT_DEBUG_IDS: WeakMap<ATransport, number> =
+        new WeakMap();
+    private static nextTransportDebugId = 1;
 
     // ====================================
     // SIMPLE FORMATTERS
@@ -82,6 +120,70 @@ export class LoggerUtils {
     // LOGGING PATTERNS
     // ====================================
 
+    static getRpcLogMetadata(rpc: Rpc): Rpc {
+        return {
+            service: rpc.service,
+            method: rpc.method,
+            params: rpc.params.map((param) => this.redactRpcParam(param))
+        };
+    }
+
+    private static redactRpcParam(param: any): any {
+        if (!param || typeof param !== "object") return param;
+
+        if ("encodedBlock" in param) {
+            return {
+                ...param,
+                encodedBlock: this.getEncodedBlockLogMetadata(
+                    param.encodedBlock
+                )
+            };
+        }
+
+        if (
+            "signedBlock" in param &&
+            param.signedBlock &&
+            typeof param.signedBlock === "object" &&
+            "encodedBlock" in param.signedBlock
+        ) {
+            return {
+                ...param,
+                signedBlock: {
+                    ...param.signedBlock,
+                    encodedBlock: this.getEncodedBlockLogMetadata(
+                        param.signedBlock.encodedBlock
+                    )
+                }
+            };
+        }
+
+        return param;
+    }
+
+    private static getEncodedBlockLogMetadata(encodedBlock: unknown) {
+        return {
+            redacted: true,
+            byteLength:
+                typeof encodedBlock === "string"
+                    ? this.getHexByteLength(encodedBlock)
+                    : undefined
+        };
+    }
+
+    private static getHexByteLength(value: string): number | undefined {
+        if (!/^0x[0-9a-fA-F]*$/.test(value)) return undefined;
+        return (value.length - 2) / 2;
+    }
+
+    private static getTransportDebugId(transport: ATransport): string {
+        const existing = this.TRANSPORT_DEBUG_IDS.get(transport);
+        if (existing !== undefined) return `transport-${existing}`;
+
+        const next = this.nextTransportDebugId++;
+        this.TRANSPORT_DEBUG_IDS.set(transport, next);
+        return `transport-${next}`;
+    }
+
     static logDisputeInitiated(
         logger: Logger,
         dispute: DisputeStruct,
@@ -112,6 +214,92 @@ export class LoggerUtils {
         logger.warn(`⏱️ Timeout @ block ${blockHeight}`, {
             timeoutStruct: this.getTimeoutStructMetadata(timeoutStruct),
             previousBlockOrSnapshot: block || snapshot
+        });
+    }
+
+    static logSubjectiveTimeValidationSucceeded(
+        logger: Logger,
+        args: {
+            block: Block;
+            strategyName: string;
+            validationPath: string;
+            nowSeconds: number;
+            agreementTimeSeconds: number;
+        }
+    ): void {
+        const differenceSeconds = Math.abs(
+            args.nowSeconds - args.block.timestamp
+        );
+
+        logger.info("Time validation succeeded - subjective", {
+            checkType: "subjective",
+            validationPath: args.validationPath,
+            validatedRule: "abs(now - blockTimestamp) <= agreementTime",
+            strategy: args.strategyName,
+            forkId: args.block.forkId,
+            blockHeight: args.block.height,
+            author: args.block.author,
+            nowSeconds: args.nowSeconds,
+            blockTimestamp: args.block.timestamp,
+            onChainTimestamp: args.block.onChainTimestamp,
+            differenceSeconds,
+            allowedSkewSeconds: args.agreementTimeSeconds,
+            remainingSeconds: Math.max(
+                0,
+                args.agreementTimeSeconds - differenceSeconds
+            )
+        });
+    }
+
+    static logInitHandshakeMessage(
+        logger: Logger,
+        transport: ATransport,
+        args: InitHandshakeLogArgs
+    ): void {
+        const localPeerAddress =
+            transport.p2pManager.p2pSigner.signerAddress.toString();
+        const knownRemotePeerAddress =
+            args.signerAddress ||
+            args.verifiedPeerAddress ||
+            transport.peerAddress ||
+            "unknown";
+        const level: LogLevel =
+            args.message === "ack-timeout" ||
+            args.message === "response-timeout" ||
+            args.message === "rejected"
+                ? "warn"
+                : "debug";
+
+        logger[level]("Init handshake message", {
+            ...this.getTransportMetadata(transport),
+            direction: args.direction,
+            message: args.message,
+            localPeerAddress,
+            knownRemotePeerAddress,
+            transportDebugId: this.getTransportDebugId(transport),
+            localTimeSeconds: Clock.getTimeInSeconds(),
+            challengeHash: args.challengeHash
+                ? this.formatHash(args.challengeHash, 8, 8)
+                : undefined,
+            challengeInitTime: args.challengeInitTime,
+            messageTime: args.messageTime,
+            responseTime: args.responseTime,
+            rttSeconds: args.rttSeconds,
+            timeDifferenceSeconds: args.timeDifferenceSeconds,
+            absoluteTimeDifferenceSeconds: args.absoluteTimeDifferenceSeconds,
+            agreementTimeSeconds: args.agreementTimeSeconds,
+            signerAddress: args.signerAddress,
+            preferredTransport:
+                args.preferredTransport !== undefined
+                    ? TransportType[args.preferredTransport]
+                    : undefined,
+            verifiedPeerAddress: args.verifiedPeerAddress,
+            didReceiveAck: args.didReceiveAck,
+            remotePreferred:
+                args.remotePreferred !== undefined
+                    ? TransportType[args.remotePreferred]
+                    : undefined,
+            reason: args.reason
         });
     }
 
@@ -191,6 +379,7 @@ export class LoggerUtils {
         return {
             author: String(block.author),
             blockHash: String(block.hash),
+            stateSnapshotHash: String(block.stateSnapshotHash),
             blockHeight: block.height,
             timestamp: block.timestamp,
             onChainTimestamp: block.onChainTimestamp,
@@ -216,6 +405,27 @@ export class LoggerUtils {
             messageBlocks: blockStruct.messageBlocks.map((messageBlock) =>
                 this.getMessageBlockMetadata(messageBlock)
             )
+        };
+    }
+
+    static getBlockConfirmationStructMetadata(
+        blockConfirmation: BlockConfirmationStruct
+    ) {
+        const blockStruct = Codec.decode(
+            blockConfirmation.signedBlock.encodedBlock,
+            Type.Block
+        );
+
+        return {
+            blockConfirmationHash: String(
+                hash(Codec.encode(blockConfirmation, Type.BlockConfirmation))
+            ),
+            ...this.getBlockStructMetadata(blockStruct),
+            originalSignature: String(blockConfirmation.signedBlock.signature),
+            confirmationSignatures: blockConfirmation.signatures.map(
+                (signature) => String(signature)
+            ),
+            confirmationsCount: blockConfirmation.signatures.length
         };
     }
 
