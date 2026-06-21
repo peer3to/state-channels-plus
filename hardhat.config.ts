@@ -18,13 +18,23 @@ const config: HardhatUserConfig = {
             initialDate: new Date().toISOString()
         },
         localhost: {
-            url: "http://127.0.0.1:8545"
+            // Env-driven so the worker-mode e2e run can point hardhat's deploy
+            // network, the worker's PROVIDER_URL, and the external node at one URL.
+            url: process.env.HARDHAT_NODE_URL ?? "http://127.0.0.1:8545",
+            accounts: {
+                mnemonic:
+                    "test test test test test test test test test test test junk"
+            }
         },
         node: {
             url: "http://srbpi.duckdns.org:8545"
         }
     },
-    mocha: {},
+    mocha: {
+        // hardhat-toolbox default is 40s; slowest E2E paths (e.g. setupTwoLeaversAcrossMilestones
+        // + dispute fraud-proof waits) are ~35–45s sequential, a bit more under parallel CI load.
+        timeout: 90000
+    },
     solidity: {
         version: "0.8.34",
         settings: {

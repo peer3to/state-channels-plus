@@ -311,6 +311,9 @@ export class BlockStorage {
 
         // They are equal => merge signatures
         existingBlock.expandSignatures(block.confirmationSignatures);
+        if (block.onChainTimestamp !== undefined) {
+            existingBlock.onChainTimestamp = block.onChainTimestamp;
+        }
 
         // Return the hash (same object in both maps)
         return blockHash;

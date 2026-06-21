@@ -1,11 +1,11 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
-import { DetachedPromises, Logger, sleep } from "@/utils";
-import { MathStateMachine } from "@typechain-types/index";
-import { StateSnapshot } from "@/models";
-import { Status } from "@/types";
-
-export type TransitionContract = MathStateMachine;
+import { Codec, Logger, sleep, Type } from "@/utils";
+import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { Block, StateSnapshot } from "@/models";
+import type { IngestBlockConfirmationOptions } from "@/stateManager/BlockQueueManager";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -25,6 +25,21 @@ export type TransitionOptions = {
     waitForFinalization?: boolean;
 };
 
+export type AdvanceStateBaseOptions = {
+    count?: number;
+    rounds?: number;
+    waitForSync?: boolean;
+    waitForPeers?: number[];
+    waitForTurn?: boolean;
+    waitForFinalization?: boolean;
+};
+
+export type AdvanceStateOptions<
+    TContract extends AStateMachineContract = AStateMachineContract
+> = AdvanceStateBaseOptions & {
+    txFn: (contract: TContract) => Promise<any>;
+};
+
 export function effectiveWaitForFinalization(
     options: Pick<TransitionOptions, "waitForFinalization" | "waitForPeers">
 ): boolean {
@@ -40,20 +55,27 @@ export function effectiveWaitForFinalization(
 /**
  * Handles state transition operations on the state machine
  */
-export class TransitionActions {
+export class TransitionActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+    TContract extends AStateMachineContract = AStateMachineContract
+> {
     constructor(
-        private harness: PeerTestHarness,
-        private logger: Logger
+        protected harness: PeerTestHarness<TCustomRpc, TContract>,
+        protected logger: Logger
     ) {}
 
     /**
      * Submit a valid transaction from the next peer to write
      */
     async submitNext(
-        txFn: (contract: TransitionContract) => Promise<any>,
+        txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = { waitForTurn: true, waitForSync: true }
     ): Promise<any> {
-        const nextPeer = await this.harness.query.getNextPeerToWrite();
+        const nextPeer =
+            (await this.harness.query.getNextPeerToWrite()) as TestPeer<
+                TCustomRpc,
+                TContract
+            >;
 
         if (options.waitForTurn) {
             await this.waitForTurn(nextPeer);
@@ -67,37 +89,14 @@ export class TransitionActions {
         });
     }
 
-    async increment(value: number = 1, options?: TransitionOptions) {
-        return this.submitNext((contract) => contract.add(value), options);
-    }
-
-    async advanceState(options?: {
-        count?: number;
-        rounds?: number;
-        txFn?: (contract: TransitionContract) => Promise<any>;
-        waitForSync?: boolean;
-        waitForPeers?: number[];
-        waitForTurn?: boolean;
-        waitForFinalization?: boolean;
-    }): Promise<void> {
+    async advanceState(options: AdvanceStateOptions<TContract>): Promise<void> {
         const count = options?.count ?? 1;
         const total = options?.rounds
             ? options.rounds * this.harness.peers.length
             : count;
 
-        if (options?.txFn) {
-            for (let i = 0; i < total; i++) {
-                await this.submitNext(options.txFn, {
-                    ...options,
-                    waitForFinalization:
-                        i === total - 1 ? options?.waitForFinalization : false
-                });
-            }
-            return;
-        }
-
         for (let i = 0; i < total; i++) {
-            await this.increment(1, {
+            await this.submitNext(options.txFn, {
                 ...options,
                 waitForFinalization:
                     i === total - 1 ? options?.waitForFinalization : false
@@ -105,28 +104,12 @@ export class TransitionActions {
         }
     }
 
-    async peerWrite(options: {
-        peer: number;
-        value?: number;
-        waitForPeers?: number[];
-    }): Promise<void> {
-        const { peer, value = 1, waitForPeers } = options;
-        const peerObj = this.harness.peers[peer];
-        if (!peerObj) {
-            throw new Error(`Peer ${peer} not found`);
-        }
-
-        await this.submit(peerObj, (contract) => contract.add(value), {
-            waitForPeers
-        });
-    }
-
     async fromHonestPeersOnly(
-        txFn: (contract: TransitionContract) => Promise<any>,
+        txFn: (contract: TContract) => Promise<any>,
         options?: { waitForSync?: boolean }
     ): Promise<void> {
         const syncIndices = this.harness
-            .getPeersForTransitionSyncBarrier()
+            .getPeersExcludingMaliciousAndLeavers()
             .map((p) => p.index);
 
         // waitForPeers limits who we barrier on, but we still want union finalization on those peers.
@@ -139,10 +122,10 @@ export class TransitionActions {
     }
 
     async sequenceFromHonestPeers(
-        txFns: Array<(contract: TransitionContract) => Promise<any>>
+        txFns: Array<(contract: TContract) => Promise<any>>
     ): Promise<void> {
         const syncIndices = this.harness
-            .getPeersForTransitionSyncBarrier()
+            .getPeersExcludingMaliciousAndLeavers()
             .map((p) => p.index);
         if (!syncIndices) {
             throw new Error(
@@ -176,12 +159,82 @@ export class TransitionActions {
             throw new Error(`Peer ${peerIndex} not found`);
         }
 
-        return await peer.stateManager.postStateSnapshot(forkId);
+        const result = await this.harness
+            .control(peer)
+            .transition.postStateSnapshot(forkId)
+            .request();
+        return result
+            ? StateSnapshot.from(
+                  Codec.decode(result.encodedSnapshot, Type.StateSnapshot)
+              )
+            : undefined;
+    }
+
+    async postSnapshotWait(options?: {
+        peerIndex?: number;
+        forkId?: string;
+        timeoutMs?: number;
+    }): Promise<StateSnapshot | undefined> {
+        const expectedSnapshot = await this.postSnapshot(options);
+        if (!expectedSnapshot) return undefined;
+
+        const timeoutMs = options?.timeoutMs ?? 8000;
+        await this.harness.eventCountsBarrier.waitFor(
+            async () => {
+                const honestPeers = this.harness.getHonestPeers();
+                const localSnapshots = await Promise.all(
+                    honestPeers.map((peer) =>
+                        this.harness.query.getLocalStateSnapshot(peer)
+                    )
+                );
+                return localSnapshots.every(
+                    (s) => s.hash === expectedSnapshot.hash
+                );
+            },
+            {
+                timeoutMs,
+                timeoutMessage: `postSnapshotWait: honest peers did not observe expected snapshot ${expectedSnapshot.hash} within ${timeoutMs}ms`
+            }
+        );
+        return expectedSnapshot;
+    }
+
+    async postSameForkSnapshotOnlyWait(options?: {
+        peerIndex?: number;
+        forkId?: string;
+    }): Promise<StateSnapshot | undefined> {
+        const { peerIndex = 0 } = options || {};
+        const forkId = options?.forkId || this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const sameForkData = await this.harness
+            .control(peer)
+            .transition.prepareUpdateSnapshotSameFork(forkId)
+            .request();
+        if (!sameForkData || sameForkData.callData.length === 0)
+            return undefined;
+
+        const channelManager = this.harness.channelManager.connect(peer.signer);
+        const tx = await channelManager.multicall(sameForkData.callData);
+        await tx.wait();
+        return StateSnapshot.from(
+            Codec.decode(
+                sameForkData.encodedExpectedSnapshot,
+                Type.StateSnapshot
+            )
+        );
     }
 
     async validWithoutPeer(
         excludePeer: number,
-        txFn: (contract: TransitionContract) => Promise<any>
+        txFn: (contract: TContract) => Promise<any>
     ): Promise<void> {
         const includedPeers = this.harness.peers
             .map((_: unknown, i: number) => i)
@@ -195,74 +248,12 @@ export class TransitionActions {
         });
     }
 
-    private async participantLeave(
-        options?: TransitionOptions
-    ): Promise<number> {
-        const leaver = await this.harness.query.getNextPeerToWrite();
-        const leaverIndex = leaver.index;
-
-        await this.submitNext((c) => c.leaveChannel(), {
-            waitForTurn: true,
-            waitForSync: options?.waitForSync ?? true,
-            waitForPeers: options?.waitForPeers,
-            waitForFinalization: options?.waitForFinalization ?? true,
-            delayMs: options?.delayMs
-        });
-
-        return leaverIndex;
-    }
-
-    async participantLeaveWait(
-        options?: TransitionOptions & {
-            statusTimeoutMs?: number;
-            statusTimeoutMessage?: string;
-        }
-    ): Promise<number> {
-        const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
-            options ?? {};
-        const leaverIndex = await this.participantLeave(leaveOptions);
-        await this.harness.event.waitUntilPeerStatus(
-            leaverIndex,
-            Status.SYNCED,
-            {
-                timeoutMs: statusTimeoutMs ?? 15000,
-                timeoutMessage:
-                    statusTimeoutMessage ??
-                    "Exiting peer did not reach SYNCED after snapshot update"
-            }
-        );
-        return leaverIndex;
-    }
-
-    async participantLeaveDetached(
-        options?: TransitionOptions & {
-            statusTimeoutMs?: number;
-            statusTimeoutMessage?: string;
-        }
-    ): Promise<number> {
-        const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
-            options ?? {};
-        const leaverIndex = await this.participantLeave(leaveOptions);
-        const promise = this.harness.event.waitUntilPeerStatus(
-            leaverIndex,
-            Status.SYNCED,
-            {
-                timeoutMs: statusTimeoutMs ?? 15000,
-                timeoutMessage:
-                    statusTimeoutMessage ??
-                    "Exiting peer did not reach SYNCED after snapshot update"
-            }
-        );
-        DetachedPromises.collect(promise);
-        return leaverIndex;
-    }
-
     /**
      * Submit a transaction from a specific peer
      */
     async submit(
-        peer: TestPeer,
-        txFn: (contract: TransitionContract) => Promise<any>,
+        peer: TestPeer<TCustomRpc, TContract>,
+        txFn: (contract: TContract) => Promise<any>,
         options: TransitionOptions = {}
     ): Promise<any> {
         const waitForSync = options.waitForSync ?? true;
@@ -281,14 +272,16 @@ export class TransitionActions {
                 throw new Error("No active fork ID - cannot wait for sync");
             }
 
-            const authorLatestBlock =
-                peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            const minHeight = authorLatestBlock?.height;
+            const minHeight =
+                (await this.harness
+                    .control(peer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()) ?? undefined;
 
             const peers =
                 options.waitForPeers !== undefined
                     ? this.harness.getFilteredPeers(options.waitForPeers)
-                    : this.harness.getPeersForTransitionSyncBarrier();
+                    : this.harness.getPeersExcludingMaliciousAndLeavers();
             const waitForFinalization = effectiveWaitForFinalization(options);
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
@@ -300,13 +293,72 @@ export class TransitionActions {
         return result;
     }
 
+    async ingestBlockConfirmationWait(options: {
+        peerIndex: number;
+        blockConfirmation: BlockConfirmationStruct;
+        ingestOptions?: IngestBlockConfirmationOptions;
+        keepConnection?: boolean;
+        waitForProcessed?: boolean;
+        processedKeepConnection?: boolean;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            peerIndex,
+            blockConfirmation,
+            ingestOptions,
+            keepConnection: expectedKeepConnection,
+            waitForProcessed = true,
+            processedKeepConnection,
+            timeoutMs
+        } = options;
+        const peer = this.harness.getPeer(peerIndex);
+        const block = Block.fromBlockConfirmation(
+            blockConfirmation,
+            ingestOptions?.onChainTimestamp
+        );
+        const keepConnection = await this.harness
+            .control(peer)
+            .transition.ingestBlockConfirmation(
+                Codec.encode(
+                    blockConfirmation,
+                    Type.BlockConfirmation
+                ) as string,
+                ingestOptions
+            )
+            .request();
+
+        if (
+            expectedKeepConnection !== undefined &&
+            keepConnection !== expectedKeepConnection
+        ) {
+            throw new Error(
+                `Expected ingestBlockConfirmation keepConnection=${expectedKeepConnection}, got ${keepConnection}`
+            );
+        }
+
+        if (!keepConnection || !waitForProcessed) {
+            return;
+        }
+
+        await this.harness.event.waitForBlockConfirmationProcessed({
+            peerIndex,
+            blockHash: block.hash,
+            keepConnection: processedKeepConnection,
+            timeoutMs
+        });
+    }
+
     /**
      * Wait for a peer to receive their turn
      */
-    private async waitForTurn(peer: TestPeer, timeoutMs = 3000): Promise<void> {
+    private async waitForTurn(
+        peer: TestPeer<TCustomRpc, TContract>,
+        timeoutMs = 3000
+    ): Promise<void> {
         try {
             await peer.turnBarrier.waitFor(
-                () => peer.stateManager.isMyTurn?.() ?? false,
+                async () =>
+                    await this.harness.control(peer).query.isMyTurn().request(),
                 {
                     timeoutMs,
                     timeoutMessage: `Turn not received within ${timeoutMs}ms`

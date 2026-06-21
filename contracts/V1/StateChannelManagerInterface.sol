@@ -97,7 +97,9 @@ abstract contract StateChannelManagerInterface {
         MessageBlock[] memory outboundMessageBlocks
     ) public virtual;
 
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations) public virtual;
+    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations, bytes32 expectedSnapshotHash)
+        public
+        virtual;
 
     function isForkDisputed(bytes32 channelId, bytes32 forkId) public view virtual returns (bool);
 

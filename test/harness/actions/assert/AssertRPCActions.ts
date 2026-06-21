@@ -1,8 +1,11 @@
 import type { ForkId } from "@/types/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 
-export class AssertRPCActions {
-    constructor(private readonly harness: PeerTestHarness) {}
+export class AssertRPCActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
 
     async peerDisconnectedFrom(options: {
         peerIndex: number;
@@ -12,20 +15,23 @@ export class AssertRPCActions {
         const { peerIndex, expectedFinalCount, timeoutMs = 5000 } = options;
 
         await this.harness.disconnectionBarrier.waitFor(
-            () =>
-                this.harness.query.getConnectionCount(peerIndex) ===
+            async () =>
+                (await this.harness.query.getConnectionCount(peerIndex)) ===
                 expectedFinalCount,
             {
                 timeoutMs,
-                timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms, actual: ${this.harness.query.getConnectionCount(peerIndex)}`
+                timeoutMessage: `Expected peer ${peerIndex} to have ${expectedFinalCount} connection(s) within ${timeoutMs}ms`
             }
         );
     }
 
-    handshakeCompleted(options: { peer1: number; peer2: number }): void {
+    async handshakeCompleted(options: {
+        peer1: number;
+        peer2: number;
+    }): Promise<void> {
         const { peer1, peer2 } = options;
         const peer2Obj = this.harness.getPeer(peer2);
-        const isCompleted = this.harness.rpc.isHandshakeCompleted(
+        const isCompleted = await this.harness.rpc.isHandshakeCompleted(
             peer1,
             peer2Obj.address
         );
@@ -41,7 +47,7 @@ export class AssertRPCActions {
         handshakes: Array<{ peer1: number; peer2: number }>
     ): Promise<void> {
         for (const { peer1, peer2 } of handshakes) {
-            this.handshakeCompleted({ peer1, peer2 });
+            await this.handshakeCompleted({ peer1, peer2 });
         }
     }
 
@@ -63,25 +69,24 @@ export class AssertRPCActions {
             throw new Error("No active fork ID");
         }
 
-        const requestingService =
-            this.harness.rpc.getIsForkDisputedService(requestingPeer);
-
         const totalPeers = this.harness.peers.length;
         const expectedAcknowledgments = totalPeers - excludePeers.length - 1;
 
         await this.harness.rpcBarrier.waitFor(
-            () => {
-                const acknowledgedPeers = this.harness.peers
-                    .filter((_, i) => !excludePeers.includes(i))
-                    .filter((_, i) => i !== requestingPeer)
-                    .filter((p) =>
-                        requestingService.didPeerAcknowledgeDisputedFork(
+            async () => {
+                const candidates = this.harness.peers.filter(
+                    (p, i) => !excludePeers.includes(i) && i !== requestingPeer
+                );
+                const acks = await Promise.all(
+                    candidates.map((p) =>
+                        this.harness.rpc.didPeerAcknowledgeDisputedFork(
+                            requestingPeer,
                             p.address,
                             activeForkId
                         )
-                    );
-
-                return acknowledgedPeers.length >= expectedAcknowledgments;
+                    )
+                );
+                return acks.filter(Boolean).length >= expectedAcknowledgments;
             },
             {
                 timeoutMs,
@@ -90,23 +95,32 @@ export class AssertRPCActions {
         );
     }
 
-    duplicateDisputeRequestIgnored(options: {
+    async duplicateDisputeRequestIgnored(options: {
         peerIndex: number;
         forkId?: ForkId;
-    }): void {
+    }): Promise<void> {
         const { peerIndex, forkId } = options;
         const activeForkId = forkId ?? this.harness.activeForkId;
         if (!activeForkId) {
             throw new Error("No active fork ID");
         }
 
-        const service = this.harness.rpc.getIsForkDisputedService(peerIndex);
-        const disputedForksBefore = service.disputedForks.size;
-        service.requestDisputeAcknowledgment(
-            this.harness.channelId!,
-            activeForkId
-        );
-        const disputedForksAfter = service.disputedForks.size;
+        const peer = this.harness.getPeer(peerIndex);
+        const disputedForksBefore = await this.harness
+            .control(peer)
+            .handshake.getDisputedForksCount()
+            .request();
+        await this.harness
+            .control(peer)
+            .handshake.requestDisputeAcknowledgment(
+                this.harness.channelId!,
+                activeForkId
+            )
+            .request();
+        const disputedForksAfter = await this.harness
+            .control(peer)
+            .handshake.getDisputedForksCount()
+            .request();
 
         if (disputedForksAfter !== disputedForksBefore) {
             throw new Error(
@@ -115,11 +129,11 @@ export class AssertRPCActions {
         }
     }
 
-    firstAcknowledgmentRecorded(options: {
+    async firstAcknowledgmentRecorded(options: {
         respondingPeer: number;
         requestingPeer: number;
         forkId?: ForkId;
-    }): void {
+    }): Promise<void> {
         const { respondingPeer, requestingPeer, forkId } = options;
         const activeForkId = forkId ?? this.harness.activeForkId;
         if (!activeForkId) {
@@ -127,13 +141,15 @@ export class AssertRPCActions {
         }
 
         const requestingPeerObj = this.harness.getPeer(requestingPeer);
-        const service =
-            this.harness.rpc.getIsForkDisputedService(respondingPeer);
+        const respondingPeerObj = this.harness.getPeer(respondingPeer);
 
-        const acknowledged = service.didIAcknowledgeDisputedFork(
-            requestingPeerObj.address,
-            activeForkId
-        );
+        const acknowledged = await this.harness
+            .control(respondingPeerObj)
+            .handshake.didIAcknowledgeDisputedFork(
+                requestingPeerObj.address,
+                activeForkId
+            )
+            .request();
 
         if (!acknowledged) {
             throw new Error(
@@ -147,11 +163,15 @@ export class AssertRPCActions {
         toPeer: number;
     }): Promise<void> {
         const { fromPeer, toPeer } = options;
-        const transport = await this.harness.query
-            .waitForPeerTransport(fromPeer, toPeer, 1000)
-            .catch(() => null);
+        const fromPeerObj = this.harness.getPeer(fromPeer);
+        const toAddress = this.harness.getPeer(toPeer).address;
 
-        if (transport && !transport.isClosed) {
+        const closedOrGone = await this.harness
+            .control(fromPeerObj)
+            .query.isTransportClosed(toAddress)
+            .request();
+
+        if (!closedOrGone) {
             throw new Error(
                 `Expected transport from peer ${fromPeer} to peer ${toPeer} to be closed, but it is still open`
             );

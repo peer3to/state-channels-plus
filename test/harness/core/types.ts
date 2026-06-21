@@ -1,15 +1,14 @@
 import { ForkId } from "@/types/types";
 import { StateSnapshot } from "@/models";
-import { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
 import * as sinon from "sinon";
 import { Signer } from "ethers";
-import { P2pInstance } from "@/evm";
-import StateManager from "@/stateManager";
-import { MathStateMachine } from "@typechain-types";
+import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
+import { AStateMachine as AStateMachineContract } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
-import type { RpcServiceFactoryMap } from "@/rpc";
+import type { CustomRpcManifest } from "@/rpc";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { TimeConfig } from "@/types";
 import { Config } from "@/utils";
 
@@ -24,7 +23,7 @@ export class HarnessContext {
     /** Indices of malicious peers in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
     maliciousPeerIndices: number[] = [];
 
-    /** Excluded from `getPeersForTransitionSyncBarrier` (see `participantLeave`). */
+    /** Excluded from `getPeersExcludingMaliciousAndLeavers` (see `participantLeave`). */
     leftChannelPeerIndices: number[] = [];
 
     /** Last tampered dispute object (set by Byzantine blocks) */
@@ -36,8 +35,8 @@ export class HarnessContext {
     /** Channel balance before posting snapshot (set by Context.capturePrePostSnapshotContext) */
     channelBalanceBefore?: ChannelBalanceStructOutput;
 
-    /** Expected withdrawals delta from prepared outbound messages (set by Context.capturePrePostSnapshotContext) */
-    expectedWithdrawalsDelta?: BalanceStruct;
+    /** Expected withdrawals delta (Codec-encoded `Type.Balance`) from prepared outbound messages (set by Context.capturePrePostSnapshotContext) */
+    encodedExpectedWithdrawalsDelta?: string;
 
     /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Context.storeSnapshotCount) */
     [key: `snapshotCount_${string}`]: number;
@@ -56,13 +55,51 @@ export class HarnessContext {
         | undefined;
 }
 
+export type HarnessDeploymentParams = {
+    signer: Signer;
+    stateMachineGasLimit: number;
+    disputeExecutionGasLimit: number;
+    timeConfig: TimeConfig;
+    harnessConfig: Partial<Config>;
+};
+
+export type HarnessOnChainContractsDeploymentParams = HarnessDeploymentParams;
+
+export type HarnessLocalStateMachineDeploymentParams = HarnessDeploymentParams;
+
+export type HarnessDeploymentConfig<
+    TContract extends AStateMachineContract = AStateMachineContract
+> = {
+    /**
+     * Deploy the on-chain state machine implementation, facets, and manager,
+     * then return the deployed manager address.
+     */
+    deployOnChainContracts: (
+        params: HarnessOnChainContractsDeploymentParams
+    ) => Promise<string>;
+    /**
+     * Deploy the state machine in the provided local EVM instance and return
+     * the deployed local state machine address.
+     */
+    deployLocalStateMachine: (
+        params: HarnessLocalStateMachineDeploymentParams
+    ) => Promise<string>;
+    /**
+     * Connect the provided signer to a state machine contract instance.
+     */
+    connectSigner: (address: string, signer: Signer) => TContract;
+};
+
+export type HarnessConstructorOptions<
+    TContract extends AStateMachineContract = AStateMachineContract
+> = {
+    deployment: HarnessDeploymentConfig<TContract>;
+};
+
 /**
  * Options for configuring the test harness
  */
-export type HarnessOptions<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
-> = {
+export type HarnessOptions = {
     /**
      * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
      *
@@ -78,29 +115,30 @@ export type HarnessOptions<
      * Scenario.startChannel(3, 0, { logLevel: "debug" })
      * ```
      *
-     * @default undefined (uses LOG_LEVEL env var or "info")
+     * @default undefined (uses LOG_LEVEL from config or "error")
      */
     logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
 
     timeConfig?: Partial<TimeConfig>;
     channelId?: string;
     initialBalance?: number;
-    gasLimit?: number;
+    stateMachineGasLimit?: number;
+    disputeExecutionGasLimit?: number;
     autoConnect?: boolean;
     configOverrides?: Partial<Config>; // Direct config overrides
-    rpcServiceFactories?: TFactories;
+    customRpcManifest?: CustomRpcManifest;
+    customPrecompiles?: EvmCustomPrecompileManifest[];
 };
 
 export type TestPeer<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+    TContract extends AStateMachineContract = AStateMachineContract
 > = {
     index: number;
     signer: Signer;
     address: string;
-    p2pInstance: P2pInstance<MathStateMachine, TFactories>;
-    stateManager: StateManager;
-    contractInstance: MathStateMachine;
+    p2pInstance: P2pInstance<TContract, TCustomRpc>;
+    contractInstance: TContract;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;
     logger: Logger;
@@ -121,6 +159,7 @@ export type EventSpies = {
     disputeStarted?: sinon.SinonSpy;
     onInitiatingDispute?: sinon.SinonSpy;
     onDisputeUpdate?: sinon.SinonSpy;
+    onBlockConfirmationProcessed?: sinon.SinonSpy;
 
     // EventHandler method spies
     onChannelOpened?: sinon.SinonSpy;
@@ -136,12 +175,12 @@ export type EventSpies = {
 };
 
 export type CreateAndResolveDisputeResult<
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    TFactories extends RpcServiceFactoryMap = {}
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
+    TContract extends AStateMachineContract = AStateMachineContract
 > = {
     originalForkId: ForkId;
     newForkId: ForkId;
     maliciousPeerIndices: number[];
     honestPeerIndices: number[];
-    honestPeers: Array<TestPeer<TFactories>>;
+    honestPeers: Array<TestPeer<TCustomRpc, TContract>>;
 };

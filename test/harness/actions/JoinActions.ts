@@ -1,12 +1,9 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import hre from "hardhat";
 import { Signer, BytesLike } from "ethers";
 import { Status } from "@/types";
-import {
-    DetachedPromises,
-    LocalDiscoveryServer,
-    SignatureUtils
-} from "@/utils";
+import { DetachedPromises, SignatureUtils } from "@/utils";
 import {
     JoinChannelConfirmationStruct,
     JoinChannelStruct
@@ -27,10 +24,16 @@ export type BuildJoinChannelConfirmationParams = {
     jcOverrides?: Partial<JoinChannelStruct>;
 };
 
-export class JoinActions {
-    constructor(private harness: PeerTestHarness) {}
+export class JoinActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    constructor(protected harness: PeerTestHarness<TCustomRpc>) {}
 
-    private async addPeer(options?: AddPeerOptions): Promise<TestPeer> {
+    /** Add a spectator without waiting for sync (lets a test install host-side
+     * stubs before sync starts). Prefer {@link addSpectatorWait}. */
+    async addSpectator(
+        options?: AddPeerOptions
+    ): Promise<TestPeer<TCustomRpc>> {
         if (!this.harness.canAddPeer) {
             throw new Error("Harness not initialized; call setup() first");
         }
@@ -51,21 +54,19 @@ export class JoinActions {
         }
 
         if (this.harness.channelId) {
-            await peer.p2pInstance.p2pSigner.connectToChannel(
-                this.harness.channelId
-            );
-            await LocalDiscoveryServer.connectToPeers(
-                peer.stateManager.p2pManager.self,
-                this.harness.channelId,
-                peer.address
-            );
+            await this.harness
+                .control(peer)
+                .network.connectToChannel(this.harness.channelId.toString())
+                .request();
         }
 
         return peer;
     }
 
-    async addPeerWait(options?: AddPeerOptions): Promise<TestPeer> {
-        const peer = await this.addPeer(options);
+    async addSpectatorWait(
+        options?: AddPeerOptions
+    ): Promise<TestPeer<TCustomRpc>> {
+        const peer = await this.addSpectator(options);
         if (this.harness.channelId) {
             await this.harness.event.waitUntilPeerStatus(
                 peer.index,
@@ -81,8 +82,10 @@ export class JoinActions {
         return peer;
     }
 
-    async addPeerDetached(options?: AddPeerOptions): Promise<TestPeer> {
-        const peer = await this.addPeer(options);
+    async addSpectatorDetached(
+        options?: AddPeerOptions
+    ): Promise<TestPeer<TCustomRpc>> {
+        const peer = await this.addSpectator(options);
         if (this.harness.channelId) {
             const promise = this.harness.event.waitUntilPeerStatus(
                 peer.index,
@@ -97,6 +100,23 @@ export class JoinActions {
             DetachedPromises.collect(promise);
         }
         return peer;
+    }
+
+    async joinChannelWait(params: {
+        joiner: TestPeer<TCustomRpc>;
+        existingParticipantSigners: readonly Signer[];
+        channelId?: JoinChannelStruct["channelId"];
+        jcOverrides?: Partial<JoinChannelStruct>;
+    }): Promise<JoinChannelConfirmationStruct> {
+        const channelId = params.channelId ?? this.harness.channelId;
+        const confirmation = await this.buildJoinChannelConfirmation({
+            joiner: params.joiner,
+            channelId,
+            existingParticipantSigners: params.existingParticipantSigners,
+            jcOverrides: params.jcOverrides
+        });
+        await params.joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+        return confirmation;
     }
 
     async buildJoinChannelConfirmation(
