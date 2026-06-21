@@ -1,4 +1,5 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { EventSpies } from "../core/types";
 import { Logger } from "@/utils";
 import { Status } from "@/types";
@@ -12,9 +13,11 @@ import { Hash } from "@/types/types";
  * - Reset event spy history
  * - Assert event calls
  */
-export class EventActions {
+export class EventActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        private harness: PeerTestHarness,
+        private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
 
@@ -176,7 +179,11 @@ export class EventActions {
         const { timeoutMs = 15000, timeoutMessage } = options ?? {};
         const statusName = Status[expectedStatus] ?? String(expectedStatus);
         await this.harness.eventCountsBarrier.waitFor(
-            () => peer.stateManager.getStatus() === expectedStatus,
+            async () =>
+                (await this.harness
+                    .control(peer)
+                    .query.getStatus()
+                    .request()) === expectedStatus,
             {
                 timeoutMs,
                 timeoutMessage:

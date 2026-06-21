@@ -7,11 +7,9 @@ import {
     JoinChannelStruct,
     SignedBlockStruct,
     BlockConfirmationStruct,
-    JoinChannelBlockStruct,
     StateSnapshotStruct,
     SnapshotDataStruct,
-    MessageBlockStruct,
-    MessageStruct
+    MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeStruct,
@@ -235,16 +233,6 @@ export function joinChannel(
 
     return { ...defaultJoinChannel, ...overrides };
 }
-export function joinChannelBlock(
-    overrides: Partial<JoinChannelBlockStruct> = {}
-): JoinChannelBlockStruct {
-    const defaultJoinChannelBlock: JoinChannelBlockStruct = {
-        previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
-        joinChannels: [joinChannel()]
-    };
-
-    return { ...defaultJoinChannelBlock, ...overrides };
-}
 export function signedBlock(
     overrides: Partial<SignedBlockStruct> = {},
     signer?: HardhatEthersSigner
@@ -392,67 +380,4 @@ export function milestoneProof(
             ...overrides
         }
     };
-}
-
-/**
- * Creates a state snapshot with exit channel block hash
- */
-export function snapshotWithExitChannelBlock(
-    forkId: ForkId,
-    blockHeight: BlockHeight,
-    exitBlockHash: Hash,
-    overrides: Partial<{
-        snapshotData: Partial<SnapshotDataStruct>;
-        timestamp?: Timestamp;
-    }> = {}
-): StateSnapshot {
-    return stateSnapshot({
-        forkId,
-        blockHeight,
-        snapshotData: {
-            ...stateSnapshot().snapshotData,
-            latestOutboundMessageBlockHash: exitBlockHash,
-            ...overrides.snapshotData
-        },
-        ...(overrides.timestamp !== undefined && {
-            timestamp: overrides.timestamp
-        })
-    });
-}
-
-export function exitChannelBlockChain(
-    length: number,
-    startHash?: Hash
-): Array<{ hash: Hash; block: MessageBlockStruct }> {
-    const chain: Array<{ hash: Hash; block: MessageBlockStruct }> = [];
-    const emptyBlockHash = ethers.hexlify(ethers.zeroPadBytes("0x00", 32));
-    let previousHash = startHash || emptyBlockHash;
-
-    for (let i = 0; i < length; i++) {
-        const hash = hexString(32);
-        const block: MessageBlockStruct = exitChannelBlock({
-            previousBlockHash: previousHash,
-            blockHeight: BigInt(i + 1),
-            messages: [
-                {
-                    messageType: hexString(4),
-                    participant: hexString(20) as Address,
-                    balance: {
-                        amount: BigInt((i + 1) * 10),
-                        data: "0x"
-                    },
-                    data: "0x"
-                } as MessageStruct
-            ],
-            totalBalance: {
-                amount: BigInt((i + 1) * 10),
-                data: "0x"
-            },
-            timestamp: BigInt(1000 + i)
-        });
-        chain.push({ hash, block });
-        previousHash = hash;
-    }
-
-    return chain;
 }

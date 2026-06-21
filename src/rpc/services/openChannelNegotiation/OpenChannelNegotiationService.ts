@@ -15,7 +15,6 @@ import {
 } from "@/utils";
 
 import OpenChannelNegotiationRpcMethods, {
-    type OpenChannelNegotiationFactories,
     type OpenChannelNegotiationP2PManager
 } from "./OpenChannelNegotiationRpcMethods";
 import {
@@ -379,5 +378,3 @@ export default class OpenChannelNegotiationService extends ARpcService<
         };
     }
 }
-
-export type { OpenChannelNegotiationFactories };

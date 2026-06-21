@@ -1,16 +1,24 @@
-import { ethers, Signer, TransactionResponse, hexlify } from "ethers";
-import { ContractExecutor } from "@/evm";
-import { Bytes } from "@/types/types";
-import { Address } from "@ethereumjs/util";
-class LocalDiamondSigner implements Signer {
+import { ethers, Signer, TransactionResponse } from "ethers";
+import type {
+    AContractExecutor,
+    ContractExecutionResult
+} from "../contractExecutor";
+import { Address, Bytes } from "@/types/types";
+
+/**
+ * Signer that executes EVM calls locally through the contract executor instead
+ * of sending transactions to a remote chain.
+ */
+class LocalContractExecutorSigner implements Signer {
     signer: Signer;
     provider: ethers.Provider | null;
-    private diamondExecutor: ContractExecutor;
 
-    constructor(signer: Signer, diamondExecutor: ContractExecutor) {
+    constructor(
+        signer: Signer,
+        private readonly contractExecutor: AContractExecutor
+    ) {
         this.signer = signer;
         this.provider = signer.provider;
-        this.diamondExecutor = diamondExecutor;
     }
 
     connect(provider: ethers.Provider | null): Signer {
@@ -42,17 +50,14 @@ class LocalDiamondSigner implements Signer {
     }
 
     async call(tx: ethers.TransactionRequest): Promise<string> {
-        const caller = tx.from
-            ? Address.fromString(tx.from.toString())
-            : undefined;
         try {
-            const result = await this.diamondExecutor.simulateCall(
+            const result = await this.contractExecutor.simulateCall(
                 tx.data as Bytes,
-                caller
+                this.getTxContractAddress(tx)
             );
-            return hexlify(result.returnValue);
+            return result.returnValue;
         } catch (error) {
-            const e = new Error(`LocalDiamond call failed: ${error}`);
+            const e = new Error(`Local contract call failed: ${error}`);
             (e as any).data = (error as any).data;
             throw e;
         }
@@ -76,15 +81,21 @@ class LocalDiamondSigner implements Signer {
         tx: ethers.TransactionRequest
     ): Promise<TransactionResponse> {
         try {
-            const caller = tx.from
-                ? Address.fromString(tx.from.toString())
-                : undefined;
-            await this.diamondExecutor.executeCall(tx.data as Bytes, caller);
+            const deployment = tx.to
+                ? undefined
+                : await this.contractExecutor.deploy(tx.data as Bytes);
+
+            if (tx.to) {
+                await this.contractExecutor.executeCall(
+                    tx.data as Bytes,
+                    this.getTxContractAddress(tx)
+                );
+            }
 
             // Return a simple mock TransactionResponse since LocalDiamond doesn't return one
             const mockResponse = {
                 hash: ethers.keccak256(tx.data as string),
-                to: null,
+                to: tx.to ? tx.to.toString() : null,
                 from: await this.getAddress(),
                 data: tx.data as string,
                 value: tx.value || BigInt(0),
@@ -100,13 +111,19 @@ class LocalDiamondSigner implements Signer {
                 blockNumber: null,
                 blockHash: null,
                 index: 0,
-                wait: async () => ({ status: 1, logs: [] }) as any
+                wait: async () =>
+                    this.createMockReceipt(deployment, tx.to?.toString())
             };
 
             return mockResponse as unknown as TransactionResponse;
         } catch (error) {
-            const e = new Error(`LocalDiamond transaction failed: ${error}`);
-            (e as any).data = (error as any).data;
+            const cause =
+                error instanceof Error ? error : new Error(String(error));
+            const e = new Error(
+                `Local contract transaction failed: ${cause.message}`
+            );
+            e.stack = `${e.stack}\nCaused by: ${cause.stack ?? cause.message}`;
+            (e as any).data = (cause as any).data;
             throw e;
         }
     }
@@ -123,9 +140,25 @@ class LocalDiamondSigner implements Signer {
         return this.signer.signTypedData(domain, types, value);
     }
 
-    getDiamondAddress(): string {
-        return this.diamondExecutor.getContractAddress().toString();
+    private getTxContractAddress(tx: ethers.TransactionRequest): Address {
+        if (!tx.to) {
+            throw new Error("Local contract call requires tx.to");
+        }
+        return tx.to.toString();
+    }
+
+    private createMockReceipt(
+        deployment?: ContractExecutionResult,
+        to?: string
+    ) {
+        return {
+            status: 1,
+            logs: [],
+            contractAddress: deployment?.createdAddress?.toString() ?? null,
+            to: to ?? null,
+            gasUsed: 0n
+        } as any;
     }
 }
 
-export default LocalDiamondSigner;
+export default LocalContractExecutorSigner;

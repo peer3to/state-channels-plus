@@ -1,5 +1,4 @@
 import type { Logger } from "./logging/Logger";
-import Clock from "@/Clock";
 
 export type MutexLockOptions = { taskName?: string; logMeta?: any };
 export type MutexUnlockOptions = { scheduleNextAsMacroTask?: boolean };
@@ -19,7 +18,7 @@ export class Mutex {
     }
 
     public lock(options?: MutexLockOptions): Promise<void> {
-        const queuedAt = Clock.getTimeInSeconds();
+        const queuedAt = Math.floor(Date.now() / 1000);
         const queuedAtMs = Date.now();
         return new Promise((resolve) => {
             const acquire = () => {

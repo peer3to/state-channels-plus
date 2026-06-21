@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { MathTestSession as TestSession } from "@test/harness";
+import { Codec, Type } from "@/utils";
 
 // Specific protocol-gap regression: an attacker authors a block H beyond the honest
 // peers' tip and suppresses its broadcast, then files a self-removal dispute whose
@@ -8,6 +9,11 @@ import { MathTestSession as TestSession } from "@test/harness";
 // dispute commitment — otherwise the attacker can move state forward unilaterally.
 
 describe("E2E: dispute validation / futureBlock", function () {
+    // TODO(separate-PR): the test BODY passes, but the afterEach hits the known
+    // product teardown bug `onStateSnapshotUpdated: unknown snapshot while
+    // status=4` (EventHandler.apply) — the self-removed peer (status=4) receives
+    // an unknown snapshot after resolution. Same class as the deferred
+    // E2E-Spectate case4 teardown; not a harness-conversion issue.
     it("dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height", async function () {
         const h = TestSession.getHarness();
 
@@ -30,21 +36,23 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         // Verify the asymmetric storage state: peer 3 has block 3,
         // honest peers still at block 2.
-        const peer3Latest = h
-            .getPeer(3)
-            .stateManager.storage.blocks.getLatestBlock(forkId)!;
-        if (peer3Latest.height !== 3) {
+        const peer3Height = await h
+            .control(h.getPeer(3))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+        if (peer3Height !== 3) {
             throw new Error(
-                `expected peer 3 to have height 3 after suppressed write, got ${peer3Latest.height}`
+                `expected peer 3 to have height 3 after suppressed write, got ${peer3Height}`
             );
         }
         for (const honestIndex of [0, 1, 2]) {
-            const honestLatest = h
-                .getPeer(honestIndex)
-                .stateManager.storage.blocks.getLatestBlock(forkId)!;
-            if (honestLatest.height > 2) {
+            const honestHeight = await h
+                .control(h.getPeer(honestIndex))
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            if (honestHeight !== null && honestHeight > 2) {
                 throw new Error(
-                    `expected honest peer ${honestIndex} at height == 2, got ${honestLatest.height} (broadcast suppression failed)`
+                    `expected honest peer ${honestIndex} at height == 2, got ${honestHeight} (broadcast suppression failed)`
                 );
             }
         }
@@ -59,20 +67,20 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         // confirm the latest block in the state proof is block 3
         const tampered = h.context.tamperedDisputes.at(-1)!;
-        const proofTopBlock = await h
-            .getLocalDiamond(0)
-            .getLatestBlockFromStateProof(tampered.input.stateProof);
-        const [hasBlock, latest] = proofTopBlock;
-        if (
-            !hasBlock ||
-            Number(latest.transaction.header.transactionCnt) !== 3
-        ) {
+        const proofTop = await h
+            .control(h.getPeer(0))
+            .query.getStateProofTopBlockHeight(
+                Codec.encode(
+                    tampered.input.stateProof,
+                    Type.StateProof
+                ) as string
+            )
+            .request();
+        if (!proofTop.hasBlock || proofTop.height !== 3) {
             throw new Error(
-                `dispute state proof must reference block 3 (got hasBlock=${hasBlock}, height=${
-                    hasBlock
-                        ? Number(latest.transaction.header.transactionCnt)
-                        : "n/a"
-                })`
+                `dispute state proof must reference block 3 (got hasBlock=${
+                    proofTop.hasBlock
+                }, height=${proofTop.height ?? "n/a"})`
             );
         }
 
@@ -84,17 +92,18 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         // confirm other peers did not modify their local state forward, their tip is at block height 2
         for (const honestIndex of [0, 1, 2]) {
-            const peer = h.getPeer(honestIndex);
-            const latestBlock =
-                peer.stateManager.storage.blocks.getLatestBlock(forkId);
-            if (!latestBlock) {
+            const latestHeight = await h
+                .control(h.getPeer(honestIndex))
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            if (latestHeight === null) {
                 throw new Error(
                     `peer ${honestIndex} has no latest block on the original fork`
                 );
             }
-            if (latestBlock.height > 2) {
+            if (latestHeight > 2) {
                 throw new Error(
-                    `peer ${honestIndex} fast-forwarded on original fork: height ${latestBlock.height} > 2 — height-above attack succeeded (PROTOCOL GAP)`
+                    `peer ${honestIndex} fast-forwarded on original fork: height ${latestHeight} > 2 — height-above attack succeeded (PROTOCOL GAP)`
                 );
             }
         }

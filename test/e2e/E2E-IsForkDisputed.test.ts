@@ -122,21 +122,15 @@ describe("E2E: Is Fork Disputed", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2);
 
-            let called = false;
-            const restore = h.rpcStub.stubServiceCreateRpcMethod({
-                peerIndex: 1,
-                serviceName: "isForkDisputedService",
-                methodName: "onDisputeAcknowledgmentRequest",
-                stubbedMethod: async (_channelId: string, _forkId: string) => {
-                    called = true;
-                }
-            });
+            const restore = await h.rpcStub.stubRecordDisputeAckRequest(1);
 
             await h.rpc.sendFakeDisputeRequest({ fromPeer: 0, toPeer: 1 });
 
-            expect(called).to.equal(true);
+            expect(await h.rpcStub.wasDisputeAckRequestCalled(1)).to.equal(
+                true
+            );
 
-            restore();
+            await restore();
         });
     });
 });

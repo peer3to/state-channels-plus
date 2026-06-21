@@ -1,5 +1,5 @@
-import { createEvm, type EvmFactoryOptions } from "./EvmFactory";
-import { ethers, Signer, hexlify } from "ethers";
+import type { EvmCustomPrecompileManifest } from "./EvmFactory";
+import { ethers, Signer } from "ethers";
 import {
     StateChannelManagerProxy,
     AStateMachine as AStateMachineContract,
@@ -8,59 +8,68 @@ import {
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import StateManager from "../stateManager/StateManager";
-import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
 import { BalanceEthersType, MessageEthersType } from "@/types/ethers";
-import {
-    DebugProxy,
-    Codec,
-    createLogger,
-    Logger,
-    createEthersResultProxy
-} from "@/utils";
-import P2pEventHooks from "@/P2pEventHooks";
+import { Codec, createLogger, Logger, createEthersResultProxy } from "@/utils";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { P2pInstance, ContractExecutor } from "@/evm";
-import P2pSigner from "./P2pSigner";
+import P2pInstance from "./P2pInstance";
+import {
+    type AContractExecutor,
+    type ContractExecutionLog
+} from "./contractExecutor";
 import { Address, Bytes } from "@/types/types";
 import {
     BalanceStruct,
     MessageStruct
 } from "@typechain-types/contracts/V1/AStateMachine";
-import Storage from "@/storage";
 import {
-    deployLocalDiamond,
+    deployLocalDiamondWithStateMachineAddress,
     DeploymentResult,
     LocalStateMachineDeployer
 } from "scripts/V1/deploy";
-import LocalDiamondSigner from "./LocalDiamondSigner";
+import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
 import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
-import { createConfig, config, Config } from "@/utils/config";
-import type { RpcServiceFactoryMap } from "@/rpc/registry";
-import { LoggerUtils } from "@/utils/LoggerUtils";
+import { createConfig, Config } from "@/utils/config";
+import MainRpcService from "@/rpc/MainRpcService";
+import {
+    createRuntimeChannel,
+    createTransferableChannel
+} from "@platform/p2pRuntimeChannel";
+import { createP2pRuntimeWorker } from "@platform/p2pRuntimeWorkerRuntime";
+import { startP2pRuntimeHost } from "./p2pRuntime/P2pRuntimeHost";
+import P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
+import DeploymentBridgeSigner from "./signer/DeploymentBridgeSigner";
+import type {
+    RuntimePort,
+    SerializedContract,
+    SetupPayload,
+    WorkerBootstrapMessage
+} from "./p2pRuntime/types";
+import type { CustomRpcManifest } from "@/rpc/registry";
 
 /**
  * Manages peer-to-peer communication and state machines
  * Also serves as the implementation of AStateMachine
  */
 class EvmDiamondStateMachine extends ADiamondStateMachine {
-    readonly stateMachineContractExecutor: ContractExecutor;
-    readonly diamondContractExecutor: ContractExecutor;
+    readonly contractExecutor: AContractExecutor;
     readonly contractInterface: ethers.Interface;
+    private readonly stateMachineAddress: Address;
     private p2pContractInstance?: AStateMachineContract;
+    private contractEventEmitter?: (name: string, args: unknown[]) => void;
     public stateManager?: StateManager;
 
     constructor(
-        stateMachineContractExecutor: ContractExecutor,
+        contractExecutor: AContractExecutor,
+        stateMachineAddress: Address,
         contractInterface: ethers.Interface,
-        diamondContractExecutor: ContractExecutor,
         localDiamondContract: LocalDiamond
     ) {
         super(localDiamondContract);
-        this.stateMachineContractExecutor = stateMachineContractExecutor;
+        this.contractExecutor = contractExecutor;
+        this.stateMachineAddress = stateMachineAddress;
         this.contractInterface = contractInterface;
-        this.diamondContractExecutor = diamondContractExecutor;
     }
 
     private getEncodedCalldata(
@@ -86,8 +95,24 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         this.p2pContractInstance = p2pContractInstance;
     }
 
+    /**
+     * Overrides how parsed contract events are dispatched. When set (e.g. by the
+     * runtime host), parsed events are forwarded to this emitter instead of
+     * being emitted directly on the local contract instance. This lets events
+     * cross the runtime channel to be re-emitted on the main-thread contract.
+     */
+    public setContractEventEmitter(
+        emitter: (name: string, args: unknown[]) => void
+    ) {
+        this.contractEventEmitter = emitter;
+    }
+
     public setStateManager(stateManager: StateManager) {
         this.stateManager = stateManager;
+    }
+
+    public async dispose(): Promise<void> {
+        await this.contractExecutor.dispose();
     }
 
     /**
@@ -95,17 +120,19 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      *
      * @param logs The log output from the EVM
      */
-    public processLogs(logs?: any[]): void {
+    public processLogs(logs?: ContractExecutionLog[]): void {
         if (!logs || logs.length === 0) return;
 
         for (const log of logs) {
-            const topics = log[1].map((topic: any) => hexlify(topic));
-            const data = hexlify(log[2]);
-            const parsedLog = { topics, data };
-
             try {
-                const event = this.contractInterface.parseLog(parsedLog);
-                if (event && this.p2pContractInstance) {
+                const event = this.contractInterface.parseLog(log);
+                if (!event) continue;
+                if (this.contractEventEmitter) {
+                    this.contractEventEmitter(
+                        event.name,
+                        Object.values(event.args)
+                    );
+                } else if (this.p2pContractInstance) {
                     this.p2pContractInstance.emit(
                         event.name,
                         ...Object.values(event.args)
@@ -121,16 +148,15 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const encodedData = this.getEncodedCalldata("stateTransition", [tx]);
 
         try {
-            const result =
-                await this.stateMachineContractExecutor.executeCall(
-                    encodedData
-                );
+            const result = await this.contractExecutor.executeCall(
+                encodedData,
+                this.stateMachineAddress
+            );
             // Decode the return values: (bool success, Message[] outboundMessages)
-            const hexResult = hexlify(result.returnValue);
             const [success, outboundMessages] =
                 ethers.AbiCoder.defaultAbiCoder().decode(
                     ["bool", `${MessageEthersType}[]`],
-                    hexResult
+                    result.returnValue
                 );
             return {
                 success: Boolean(success),
@@ -150,10 +176,11 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
     async runView(tx: ethers.TransactionRequest): Promise<string> {
         try {
-            const result = await this.stateMachineContractExecutor.simulateCall(
-                tx.data as Bytes
+            const result = await this.contractExecutor.simulateCall(
+                tx.data as Bytes,
+                this.stateMachineAddress
             );
-            return hexlify(result.returnValue);
+            return result.returnValue;
         } catch (error) {
             throw this.createContextError("runView", error);
         }
@@ -163,7 +190,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getParticipants");
 
         const addresses = Codec.decodeEvmResult<Address[]>(
-            await this.stateMachineContractExecutor.simulateCall(callData),
+            await this.contractExecutor.simulateCall(
+                callData,
+                this.stateMachineAddress
+            ),
             "address[]"
         );
         return addresses;
@@ -173,7 +203,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const callData = this.getEncodedCalldata("getNextToWrite");
         try {
             return Codec.decodeEvmResult<Address>(
-                await this.stateMachineContractExecutor.simulateCall(callData),
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
                 "address"
             );
         } catch (error) {
@@ -195,7 +228,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         ]);
 
         try {
-            await this.stateMachineContractExecutor.executeCall(encodedData);
+            await this.contractExecutor.executeCall(
+                encodedData,
+                this.stateMachineAddress
+            );
             return true;
         } catch (error) {
             throw this.createContextError("setState", error);
@@ -207,7 +243,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<Bytes>(
-                await this.stateMachineContractExecutor.simulateCall(callData),
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
                 "bytes"
             );
         } catch (error) {
@@ -220,7 +259,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<BalanceStruct>(
-                await this.stateMachineContractExecutor.simulateCall(callData),
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
                 BalanceEthersType
             );
         } catch (error) {
@@ -239,7 +281,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<BalanceStruct>(
-                await this.stateMachineContractExecutor.simulateCall(callData),
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
                 BalanceEthersType
             );
         } catch (error) {
@@ -258,7 +303,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<BalanceStruct>(
-                await this.stateMachineContractExecutor.simulateCall(callData),
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
                 BalanceEthersType
             );
         } catch (error) {
@@ -277,7 +325,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<boolean>(
-                await this.stateMachineContractExecutor.simulateCall(callData),
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
                 "bool"
             );
         } catch (error) {
@@ -291,12 +342,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         ]);
 
         try {
-            const result =
-                await this.stateMachineContractExecutor.executeCall(callData);
-            const hexResult = hexlify(result.returnValue);
+            const result = await this.contractExecutor.executeCall(
+                callData,
+                this.stateMachineAddress
+            );
             const [success] = ethers.AbiCoder.defaultAbiCoder().decode(
                 ["bool"],
-                hexResult
+                result.returnValue
             );
             this.processLogs(result.logs);
             return Boolean(success);
@@ -310,7 +362,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         try {
             return Codec.decodeEvmResult<BalanceStruct>(
-                await this.stateMachineContractExecutor.simulateCall(callData),
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
                 BalanceEthersType,
                 { useObjectConversion: true }
             );
@@ -325,63 +380,47 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      * @param contractInterface The interface of the state machine contract
      * @returns A new EvmStateMachine instance
      */
-    public static async createStandalone(
-        deployStateMachine: LocalStateMachineDeployer,
+    public static async createStandaloneFromLocalStateMachineWithExecutor(
+        contractExecutor: AContractExecutor,
+        localStateMachineAddress: Address,
+        diamondStateMachineAddress: Address,
         contractInterface: ethers.Interface,
         signer: Signer,
         timeConfig: TimeConfig,
-        logger: Logger,
-        disputeExecutionGasLimit: number,
-        customPrecompiles?: EvmFactoryOptions["customPrecompiles"]
+        disputeExecutionGasLimit: number
     ): Promise<{
         evmDiamondStateMachine: EvmDiamondStateMachine;
         deploymentResult: DeploymentResult;
     }> {
-        // since this is local deployment, we can allow unlimited contract size
-        const evm = await createEvm(
-            {
-                allowUnlimitedContractSize: true,
-                customPrecompiles
-            },
-            logger
+        const localSigner = new LocalContractExecutorSigner(
+            signer,
+            contractExecutor
         );
 
-        const stateMachineAddress = await deployStateMachine(evm, signer);
-
-        const diamondResult = await deployLocalDiamond(
-            deployStateMachine,
-            evm,
-            signer,
+        // The diamond gets its own dedicated state machine instance so its
+        // dispute execution never mutates the replicated working state held at
+        // `localStateMachineAddress`.
+        const diamondResult = await deployLocalDiamondWithStateMachineAddress(
+            diamondStateMachineAddress,
+            localSigner,
             timeConfig,
             disputeExecutionGasLimit
         );
 
-        const diamondExecutor = new ContractExecutor(
-            evm,
-            diamondResult.address,
-            logger
-        );
-        const localDiamondSigner = new LocalDiamondSigner(
-            signer,
-            diamondExecutor
-        );
-
-        // Create LocalDiamond contract instance
         const localDiamondContract = new ethers.Contract(
-            localDiamondSigner.getDiamondAddress(),
+            diamondResult.address.toString(),
             LocalDiamondArtifact.abi,
-            localDiamondSigner
+            localSigner
         ) as unknown as LocalDiamond;
 
-        // Wrap with staticCall proxy to auto-convert Result objects
         const proxiedLocalDiamond =
             createEthersResultProxy(localDiamondContract);
 
         return {
             evmDiamondStateMachine: new EvmDiamondStateMachine(
-                new ContractExecutor(evm, stateMachineAddress, logger),
+                contractExecutor,
+                localStateMachineAddress,
                 contractInterface,
-                diamondExecutor,
                 proxiedLocalDiamond
             ),
             deploymentResult: diamondResult
@@ -400,119 +439,121 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
      */
     public static async p2pSetup<
         T extends AStateMachineContract,
-        // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-        TFactories extends RpcServiceFactoryMap = {}
+        TCustomRpc extends MainRpcService = MainRpcService
     >(
         signer: Signer,
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
         deployStateMachine: LocalStateMachineDeployer,
         options?: {
-            p2pEventHooks?: P2pEventHooks;
             peerId?: number;
             peerLogger?: Logger;
-            rpcServiceFactories?: TFactories;
+            customRpcManifest?: CustomRpcManifest;
             config?: Partial<Config>;
-            customPrecompiles?: EvmFactoryOptions["customPrecompiles"];
+            customPrecompiles?: EvmCustomPrecompileManifest[];
+            /**
+             * Signer secret (private key or mnemonic) used to reconstruct the
+             * signer inside the worker. Required when `RUN_SDK_IN_THREAD`.
+             */
+            signerSecret?: string;
         }
-    ): Promise<P2pInstance<T, TFactories>> {
+    ): Promise<P2pInstance<T, TCustomRpc>> {
         // Initialize SDK config for this runtime (intended to be called once).
-        createConfig(options?.config);
+        const activeConfig = createConfig(options?.config);
 
-        const p2pEventHooks = options?.p2pEventHooks;
-        const pid = options?.peerId;
-        const peerLogger = options?.peerLogger;
-        const rpcServiceFactories = options?.rpcServiceFactories;
-        const customPrecompiles = options?.customPrecompiles;
-
-        // Resolve signer address early for logger context
+        // Resolve signer address early for logger context.
         const signerAddress = await signer.getAddress();
 
         const logger =
-            peerLogger ||
+            options?.peerLogger ||
             createLogger(
-                {
-                    peerId: pid,
-                    peerAddress: signerAddress
-                },
+                { peerId: options?.peerId, peerAddress: signerAddress },
                 { component: "ClientApp" },
                 { attachErrorListener: true }
             );
 
-        // Sync clock to DLT
-        await Clock.init(signer.provider!);
+        // Main-thread description of the app contract (rebuilt by the client).
+        const stateMachine: SerializedContract = {
+            address: (
+                await stateMachineContractInstance.getAddress()
+            ).toString(),
+            abiJson: stateMachineContractInstance.interface.formatJson()
+        };
 
-        // Connect signer to state channel contract
-        deployedStateChannelContractInstance =
-            await deployedStateChannelContractInstance.connect(signer);
+        const scm: SerializedContract = {
+            address: (
+                await deployedStateChannelContractInstance.getAddress()
+            ).toString(),
+            abiJson: deployedStateChannelContractInstance.interface.formatJson()
+        };
 
-        // Apply debug proxy if enabled
-        if (config.DEBUG_CHANNEL_CONTRACT) {
-            deployedStateChannelContractInstance = DebugProxy.createProxy(
-                deployedStateChannelContractInstance
-            );
+        const payload: SetupPayload = {
+            config: activeConfig,
+            scm,
+            stateMachine,
+            signerSecret: options?.signerSecret,
+            peerId: options?.peerId,
+            customRpcManifest: options?.customRpcManifest,
+            customPrecompiles: options?.customPrecompiles
+        };
+
+        let clientPort: RuntimePort;
+        let onClose: (() => void) | undefined;
+
+        if (activeConfig.RUN_SDK_IN_THREAD) {
+            if (!options?.signerSecret) {
+                throw new Error(
+                    "signerSecret is required when RUN_SDK_IN_THREAD is enabled"
+                );
+            }
+
+            const { localPort, transferablePort } = createTransferableChannel();
+            const worker = createP2pRuntimeWorker();
+            const bootstrap: WorkerBootstrapMessage = {
+                type: "connect",
+                payload,
+                port: transferablePort
+            };
+            worker.postMessage(bootstrap, [transferablePort]);
+            clientPort = localPort;
+            onClose = () => worker.terminate();
+        } else {
+            const channel = createRuntimeChannel();
+            clientPort = channel.port1;
+            void startP2pRuntimeHost(channel.port2, payload, {
+                signer
+            }).catch((error) => {
+                logger.error("Inline runtime host failed", { error });
+            });
         }
 
-        // Get time configuration from SCM proxy
-        const configTimes =
-            await deployedStateChannelContractInstance.getAllTimes();
-        const timeConfig: TimeConfig = {
-            p2pTime: Number(configTimes[0]),
-            agreementTime: Number(configTimes[1]),
-            chainFallbackTime: Number(configTimes[2]),
-            evidenceTime: Number(configTimes[3])
-        };
-        const disputeExecutionGasLimit = Number(
-            await deployedStateChannelContractInstance.getGasLimit()
-        );
-        await LoggerUtils.logTimestamp(logger, "info", timeConfig);
-
-        // Create the EvmStateMachine instance (which extends AStateMachine)
-        // Pass the SCM contract so local diamond can sync its time config
-        const { evmDiamondStateMachine } =
-            await EvmDiamondStateMachine.createStandalone(
-                deployStateMachine,
-                stateMachineContractInstance.interface,
-                signer,
-                timeConfig,
-                logger,
-                disputeExecutionGasLimit,
-                customPrecompiles
-            );
-
-        const storage = new Storage();
-
-        const stateManager = new StateManager(
-            signer,
+        const client = new P2pRuntimeClient<T>(clientPort, {
             signerAddress,
-            deployedStateChannelContractInstance,
-            evmDiamondStateMachine,
-            timeConfig,
-            p2pEventHooks || {},
-            storage,
-            logger,
-            rpcServiceFactories
+            stateMachine,
+            onClose
+        });
+
+        const deployBridgeSigner = new DeploymentBridgeSigner(
+            client,
+            signerAddress
         );
+        // Deploy two independent local state machine instances:
+        //  - one drives the replicated channel state (EvmDiamondStateMachine)
+        //  - one is embedded in the LocalDiamond for dispute execution
+        // They must be separate so dispute replay never clobbers live state.
+        const localStateMachineAddress =
+            await deployStateMachine(deployBridgeSigner);
+        const diamondStateMachineAddress =
+            await deployStateMachine(deployBridgeSigner);
+        await client.request<void>({
+            type: "deployComplete",
+            localStateMachineAddress: localStateMachineAddress.toString(),
+            diamondStateMachineAddress: diamondStateMachineAddress.toString()
+        });
 
-        // Set state manager on P2P communication manager
-        evmDiamondStateMachine.setStateManager(stateManager);
+        await client.ready;
 
-        // Create P2P contract instance
-        const p2pContractInstance = stateMachineContractInstance.connect(
-            stateManager.p2pManager.p2pSigner
-        ) as T;
-
-        // Set P2P contract instance on P2P manager
-        evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
-
-        const typedP2pSigner = stateManager.p2pManager
-            .p2pSigner as unknown as P2pSigner<TFactories>;
-
-        return new P2pInstance<T, TFactories>(
-            p2pContractInstance,
-            typedP2pSigner,
-            logger
-        );
+        return new P2pInstance<T, TCustomRpc>(client, logger);
     }
 }
 

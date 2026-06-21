@@ -68,11 +68,11 @@ class Clock {
         const pastTimestamp = pastBlock.timestamp;
 
         this.averageBlockTime = (latestTimestamp - pastTimestamp) / blockCnt;
-        console.log(
-            `Average block time calculated: ${this.averageBlockTime}s over ${blockCnt} blocks`,
-            `past block timestamp: ${pastTimestamp}, latest block timestamp: ${latestTimestamp}`,
-            `current time: ${currentTime}, difference: ${difference}s`
-        );
+        // console.log(
+        //     `Average block time calculated: ${this.averageBlockTime}s over ${blockCnt} blocks`,
+        //     `past block timestamp: ${pastTimestamp}, latest block timestamp: ${latestTimestamp}`,
+        //     `current time: ${currentTime}, difference: ${difference}s`
+        // );
         if (!this.averageBlockTime) {
             this.clockAdjustmentSeconds += difference;
             return;

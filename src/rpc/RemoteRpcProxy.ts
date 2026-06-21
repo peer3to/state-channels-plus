@@ -1,18 +1,22 @@
 import ARpcService from "@/rpc/ARpcService";
+import type MainRpcService from "@/rpc/MainRpcService";
 import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 
-/**
- * Substitue the type of every 'service' in MainRpcService to the type of the coresponding 'RpcMethods' class
- * E.g. initService: InitService -> initService : InitRpcMethods
- * Now we can use a simple interface: remoteProxy.initService.initHandshakre(...)
- */
-export type RemoteRpcProxyType<T extends object> = {
+type RemoteRpcServices<T extends object> = {
     [K in keyof T as T[K] extends ARpcService<any, any>
         ? K
         : never]: T[K] extends ARpcService<infer R, any>
         ? RpcHandleMethods<R>
         : never;
 };
+
+/**
+ * Substitue the type of every 'service' in MainRpcService to the type of the coresponding 'RpcMethods' class
+ * E.g. initService: InitService -> initService : InitRpcMethods
+ * Now we can use a simple interface: remoteProxy.initService.initHandshakre(...)
+ */
+export type RemoteRpcProxyType<T extends object> =
+    RemoteRpcServices<MainRpcService> & RemoteRpcServices<T>;
 
 class RemoteRpcProxy {
     public static createProxy<TLocalRpcRoot extends object>(
