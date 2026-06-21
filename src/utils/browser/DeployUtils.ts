@@ -1,11 +1,5 @@
 import type { ContractFactory } from "ethers";
 
-type ReturnTypeOfT<T extends ContractFactory> = T extends {
-    deploy(...args: any): infer U;
-}
-    ? U
-    : never;
-
 export class DeployUtils {
     constructor(_filePath?: string) {}
 
@@ -13,7 +7,7 @@ export class DeployUtils {
         _contractFactory: T,
         _contractName: string,
         _args: any[] = []
-    ): Promise<ReturnTypeOfT<T>> {
+    ): Promise<ReturnType<T["deploy"]>> {
         throw new Error("DeployUtils is only available in Node.js");
     }
 }
