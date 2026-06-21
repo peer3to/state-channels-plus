@@ -2,30 +2,60 @@ import hre from "hardhat";
 
 import { JoinActions } from "@test/harness/actions/JoinActions";
 import { MathConsumerFacet__factory } from "@typechain-types";
+import type { Hash } from "@/types/types";
+import { DetachedPromises } from "@/utils";
+import { TestPeer } from "@test/harness/core/types";
 
 export type ForceInboundJoinOptions = {
     deposit?: bigint;
     timeoutMs?: number;
     waitForHonestPeersObserve?: boolean;
+    participant?: string;
 };
 
 export class MathJoinActions extends JoinActions {
-    async forceInboundJoinWait(options?: ForceInboundJoinOptions): Promise<{
+    private async pickSubmitterWithLatestInbound(): Promise<TestPeer> {
+        const candidates = this.harness.getPeersExcludingMaliciousAndLeavers();
+        if (candidates.length === 0) {
+            throw new Error(
+                "forceInboundJoin: no honest non-leaver peers to submit from (all peers are malicious or have left)"
+            );
+        }
+        const heights = await Promise.all(
+            candidates.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .query.getInboundLatestHeight()
+                    .request()
+            )
+        );
+        let best = candidates[0];
+        let bestHeight = heights[0] ?? 0;
+        candidates.forEach((peer, i) => {
+            const h = heights[i] ?? 0;
+            if (h > bestHeight) {
+                bestHeight = h;
+                best = peer;
+            }
+        });
+        return best;
+    }
+
+    private async submitForceInboundJoinTxWait(
+        options?: ForceInboundJoinOptions
+    ): Promise<{
         participant: string;
+        previousLatestHash: Hash | undefined;
     }> {
         const deposit = options?.deposit ?? 250n;
-        const timeoutMs = options?.timeoutMs ?? 15000;
-        const waitForHonestPeersObserve =
-            options?.waitForHonestPeersObserve ?? true;
-
-        const submitter = this.harness.peers[0];
-        if (!submitter) {
-            throw new Error("forceInboundJoinWait: harness has no peers");
-        }
-
-        const participant = hre.ethers.Wallet.createRandom().address;
+        const submitter = await this.pickSubmitterWithLatestInbound();
+        const participant =
+            options?.participant ?? hre.ethers.Wallet.createRandom().address;
         const previousLatestHash =
-            submitter.stateManager.storage.inboundMessages.getLatestBlockHash();
+            ((await this.harness
+                .control(submitter)
+                .query.getLatestInboundMessageHash()
+                .request()) as Hash | null) ?? undefined;
 
         const consumerFacet = MathConsumerFacet__factory.connect(
             await this.harness.channelManager.getAddress(),
@@ -38,6 +68,19 @@ export class MathJoinActions extends JoinActions {
         );
         await tx.wait();
 
+        return { participant, previousLatestHash };
+    }
+
+    async forceInboundJoinWait(options?: ForceInboundJoinOptions): Promise<{
+        participant: string;
+    }> {
+        const timeoutMs = options?.timeoutMs ?? 15000;
+        const waitForHonestPeersObserve =
+            options?.waitForHonestPeersObserve ?? true;
+
+        const { participant, previousLatestHash } =
+            await this.submitForceInboundJoinTxWait(options);
+
         if (waitForHonestPeersObserve) {
             await this.harness.assert.storage.honestPeersObserveInboundMessageWait(
                 {
@@ -45,6 +88,29 @@ export class MathJoinActions extends JoinActions {
                     timeoutMs
                 }
             );
+        }
+
+        return { participant };
+    }
+    async forceInboundJoinObserveDetached(
+        options?: ForceInboundJoinOptions
+    ): Promise<{ participant: string }> {
+        const timeoutMs = options?.timeoutMs ?? 15000;
+        const waitForHonestPeersObserve =
+            options?.waitForHonestPeersObserve ?? true;
+
+        const { participant, previousLatestHash } =
+            await this.submitForceInboundJoinTxWait(options);
+
+        if (waitForHonestPeersObserve) {
+            const promise =
+                this.harness.assert.storage.honestPeersObserveInboundMessageWait(
+                    {
+                        previousLatestHash: previousLatestHash ?? undefined,
+                        timeoutMs
+                    }
+                );
+            DetachedPromises.collect(promise);
         }
 
         return { participant };

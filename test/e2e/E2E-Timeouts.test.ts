@@ -69,16 +69,16 @@ describe("E2E: Timeouts", function () {
         it("should create forced timeout when peer posts junk calldata that is rejected", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 2);
-            const currentBlock =
-                h.peers[0].stateManager.storage.blocks.getLatestBlock(
-                    h.activeForkId!
-                );
-            if (!currentBlock) {
+            const currentBlockHeight = await h
+                .control(h.peers[0])
+                .query.getLatestBlockHeight(h.activeForkId!)
+                .request();
+            if (currentBlockHeight === null) {
                 throw new Error("No current block found");
             }
 
             await h.byzantine.postJunkCalldataOnChain(2, {
-                height: currentBlock.height + 1
+                height: currentBlockHeight + 1
             });
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
             await h.assert.dispute.initiatedWait({
@@ -93,16 +93,16 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 3);
 
-            const currentBlock =
-                h.peers[0].stateManager.storage.blocks.getLatestBlock(
-                    h.activeForkId!
-                );
-            if (!currentBlock) {
+            const currentBlockHeight = await h
+                .control(h.peers[0])
+                .query.getLatestBlockHeight(h.activeForkId!)
+                .request();
+            if (currentBlockHeight === null) {
                 throw new Error("No current block found");
             }
 
             await h.byzantine.postJunkCalldataOnChain(2, {
-                height: currentBlock.height
+                height: currentBlockHeight
             });
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
             h.event.resetEventSpies();

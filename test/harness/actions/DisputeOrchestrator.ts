@@ -1,4 +1,5 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { CreateAndResolveDisputeResult } from "../core/types";
 import { Logger } from "@/utils";
 import { ForkId } from "@/types/types";
@@ -7,9 +8,11 @@ import { ZeroHash } from "ethers";
 /**
  * DisputeOrchestrator - High-level dispute resolution workflows
  */
-export class DisputeOrchestrator {
+export class DisputeOrchestrator<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        protected harness: PeerTestHarness,
+        protected harness: PeerTestHarness<TCustomRpc>,
         protected logger: Logger
     ) {}
 
@@ -28,7 +31,7 @@ export class DisputeOrchestrator {
             assertMaliciousRemoved?: boolean;
             syntheticOnChainParticipants?: number;
         } = {}
-    ): Promise<CreateAndResolveDisputeResult> {
+    ): Promise<CreateAndResolveDisputeResult<TCustomRpc>> {
         const originalForkId = options.forkId || this.harness.activeForkId!;
         const maliciousPeerIndices = Array.from(
             new Set<number>([
@@ -36,26 +39,26 @@ export class DisputeOrchestrator {
                 ...(this.harness.context.maliciousPeerIndices ?? [])
             ])
         );
-        const barrierPeerIndices = this.harness
-            .getPeersForTransitionSyncBarrier()
+        const peersExcludingMaliciousAndLeavers = this.harness
+            .getPeersExcludingMaliciousAndLeavers()
             .map((p) => p.index);
         const honestPeerIndices =
             options.honestPeerIndices !== undefined
-                ? barrierPeerIndices.filter((i) =>
+                ? peersExcludingMaliciousAndLeavers.filter((i) =>
                       options.honestPeerIndices!.includes(i)
                   )
-                : barrierPeerIndices;
+                : peersExcludingMaliciousAndLeavers;
         if (honestPeerIndices.length < 1) {
             throw new Error(
                 `Need at least 1 honest peer to resolve dispute (got ${honestPeerIndices.length})`
             );
         }
 
-        const syncPeerIndices = [...barrierPeerIndices];
+        const syncPeerIndices = [...honestPeerIndices];
 
         const disputesCommittedTimeoutMs =
             options.disputesCommittedTimeoutMs ?? 5000;
-        const forkSettleTimeoutMs = options.forkSettleTimeoutMs ?? 10000;
+        const forkSettleTimeoutMs = options.forkSettleTimeoutMs ?? 20000;
 
         await this.harness.event.waitForEventCounts(
             "onDisputeCommitted",
@@ -77,7 +80,9 @@ export class DisputeOrchestrator {
         const honestPeers = honestPeerIndices.map((idx) =>
             this.harness.getPeer(idx)
         );
-        const newForkId = honestPeers[0]!.stateManager.forkId;
+        const newForkId = (
+            await this.harness.peerForkIds([honestPeers[0]!])
+        )[0];
 
         if (newForkId === originalForkId || newForkId === ZeroHash) {
             throw new Error(
@@ -94,13 +99,20 @@ export class DisputeOrchestrator {
                 honestPeers.length +
                 (options.syntheticOnChainParticipants ?? 0);
 
-            const settledPeers = syncPeerIndices
-                .map((i) => this.harness.getPeer(i))
-                .filter((p) => p.stateManager.forkId === newForkId);
+            const candidatePeers = syncPeerIndices.map((i) =>
+                this.harness.getPeer(i)
+            );
+            const candidateForkIds =
+                await this.harness.peerForkIds(candidatePeers);
+            const settledPeers = candidatePeers.filter(
+                (_, idx) => candidateForkIds[idx] === newForkId
+            );
 
             for (const peer of settledPeers) {
-                const participants =
-                    await peer.stateManager.diamondStateMachine.getParticipants();
+                const participants = await this.harness
+                    .control(peer)
+                    .query.getParticipants()
+                    .request();
                 if (participants.length > cap || participants.length === 0) {
                     throw new Error(
                         `Peer ${peer.index} has unexpected participant count ${participants.length} (expected 1..${cap}) on new fork ${newForkId}`

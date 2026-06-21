@@ -1,4 +1,5 @@
 export enum TransportType {
     HOLEPUNCH,
-    WEBRTC
+    WEBRTC,
+    LOOPBACK
 }
