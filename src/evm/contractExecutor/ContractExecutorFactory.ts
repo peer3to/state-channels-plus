@@ -11,11 +11,9 @@ export type ContractExecutorFactoryOptions = {
     customPrecompiles?: EvmCustomPrecompileManifest[];
 };
 
-export type ContractExecutorFactory = AContractExecutor;
-
 export async function createContractExecutorFactory(
     options: ContractExecutorFactoryOptions
-): Promise<ContractExecutorFactory> {
+): Promise<AContractExecutor> {
     const logger = options.logger || noOpLogger;
 
     if (!options.dedicatedThread) {

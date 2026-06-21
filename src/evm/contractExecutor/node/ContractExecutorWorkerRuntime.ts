@@ -1,32 +1,28 @@
+import * as path from "node:path";
+import * as fs from "node:fs";
+import { Worker } from "node:worker_threads";
 import type {
-    ContractExecutorWorkerErrorHandler,
-    ContractExecutorWorkerMessageHandler,
-    WorkerLike
-} from "../types";
+    WorkerRequestMessage,
+    WorkerResponseMessage
+} from "../worker/protocol";
 
-export type {
-    ContractExecutorWorkerErrorHandler,
-    ContractExecutorWorkerMessageHandler,
-    WorkerLike
+export type WorkerLike = {
+    postMessage(message: WorkerRequestMessage): void;
+    terminate?: () => Promise<unknown> | unknown;
 };
+
+export type ContractExecutorWorkerMessageHandler = (
+    message: WorkerResponseMessage
+) => void;
+
+export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
 
 export function createContractExecutorWorker(
     onMessage: ContractExecutorWorkerMessageHandler,
     onError: ContractExecutorWorkerErrorHandler
 ): WorkerLike {
-    const nodeRequire = typeof require === "function" ? require : undefined;
-    if (!nodeRequire) {
-        throw new Error("Node worker_threads require() is unavailable");
-    }
-
-    const path = nodeRequire("node:path") as typeof import("node:path");
-    const fs = nodeRequire("node:fs") as typeof import("node:fs");
-    const { Worker } = nodeRequire(
-        "node:worker_threads"
-    ) as typeof import("node:worker_threads");
-
-    const jsWorkerPath = path.join(__dirname, "ContractExecutorWorkerHost.js");
-    const tsWorkerPath = path.join(__dirname, "ContractExecutorWorkerHost.ts");
+    const jsWorkerPath = path.join(__dirname, "ContractExecutorWorkerEntry.js");
+    const tsWorkerPath = path.join(__dirname, "ContractExecutorWorkerEntry.ts");
     const workerPath = fs.existsSync(jsWorkerPath)
         ? jsWorkerPath
         : tsWorkerPath;

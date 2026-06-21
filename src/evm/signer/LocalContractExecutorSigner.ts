@@ -2,9 +2,14 @@ import { ethers, Signer, TransactionResponse } from "ethers";
 import type {
     AContractExecutor,
     ContractExecutionResult
-} from "./contractExecutor";
+} from "../contractExecutor";
 import { Address, Bytes } from "@/types/types";
-class LocalDiamondSigner implements Signer {
+
+/**
+ * Signer that executes EVM calls locally through the contract executor instead
+ * of sending transactions to a remote chain.
+ */
+class LocalContractExecutorSigner implements Signer {
     signer: Signer;
     provider: ethers.Provider | null;
 
@@ -156,4 +161,4 @@ class LocalDiamondSigner implements Signer {
     }
 }
 
-export default LocalDiamondSigner;
+export default LocalContractExecutorSigner;

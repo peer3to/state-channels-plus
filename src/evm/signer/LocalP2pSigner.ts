@@ -9,9 +9,13 @@ import type P2PManager from "@/P2PManager";
 import MainRpcService from "@/rpc/MainRpcService";
 import { Address, Bytes } from "@/types/types";
 import { Status } from "@/types";
-import { Logger } from "..";
+import type { Logger } from "@/utils";
 
-class P2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
+/**
+ * Signer used by the live p2p runtime state manager for channel-scoped
+ * transactions and coordination actions.
+ */
+class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     implements Signer
 {
     signer: Signer;
@@ -142,13 +146,9 @@ class P2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct,
-        expectedSnapshotHash: Bytes
+        confirmation: JoinChannelConfirmationStruct
     ): Promise<void> {
-        return this.p2pManager.stateManager.joinChannel(
-            confirmation,
-            expectedSnapshotHash
-        );
+        return this.p2pManager.stateManager.joinChannel(confirmation);
     }
 
     public disconnectFromPeers() {
@@ -160,4 +160,4 @@ class P2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     }
 }
 
-export default P2pSigner;
+export default LocalP2pSigner;

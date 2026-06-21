@@ -1,163 +1,79 @@
-import ATransport from "@/transport/ATransport";
 import { Logger } from "@/utils";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 
-type AnyFn = (...args: any[]) => any;
-
-type ServiceWithCreateRPCMethods = {
-    createRPCMethods: (transport: ATransport) => unknown;
-};
-
-type RpcMethodsOf<TService extends ServiceWithCreateRPCMethods> = ReturnType<
-    TService["createRPCMethods"]
-> &
-    object;
-
-type MethodKeys<T> = {
-    [K in keyof T]-?: T[K] extends AnyFn ? K : never;
-}[keyof T];
-
-export class RpcStubActions {
-    private rpcMethodStubRestorers = new Map<string, () => void>();
-
+/**
+ * RPC-method stubs that wrap a service's `createRPCMethods` host-side.
+ *
+ * The original generic `stubServiceCreateRpcMethod(fn)` shipped an arbitrary
+ * main-thread function into the RPC layer; that can't cross the runtime port
+ * (the stub needs the host's `this.senderTransport`/`this.service`/`this.remoteRpc`
+ * and SDK imports). Each distinct stub is therefore a concrete, named host-side
+ * behavior selected here.
+ */
+export class RpcStubActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        private harness: PeerTestHarness,
+        private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
 
-    private getLocalRpc(peerIndex: number) {
-        const peer = this.harness.getPeer(peerIndex);
-        return peer.stateManager.p2pManager.localRpc;
-    }
-
-    private getStubKey(
-        peerIndex: number,
-        serviceName: string,
-        methodName: string
-    ): string {
-        return `${peerIndex}:${serviceName}:${methodName}`;
+    /**
+     * Make the given peers answer every spectate request with a proof at
+     * `staleBlockHeight` (stale-proof guard test). Returns a teardown.
+     */
+    async stubSpectateStaleProof(
+        peerIndices: number[],
+        staleBlockHeight: number
+    ): Promise<() => Promise<void>> {
+        await Promise.all(
+            peerIndices.map((i) =>
+                this.harness
+                    .control(this.harness.getPeer(i))
+                    .stub.stubSpectateStaleProof(staleBlockHeight)
+                    .request()
+            )
+        );
+        this.logger.debug(
+            `Stubbed spectate stale proof (height ${staleBlockHeight}) on peers [${peerIndices.join(", ")}]`
+        );
+        return async () => {
+            await Promise.all(
+                peerIndices.map((i) =>
+                    this.harness
+                        .control(this.harness.getPeer(i))
+                        .stub.restoreSpectateStaleProof()
+                        .request()
+                )
+            );
+        };
     }
 
     /**
-     * Wrap service.createRPCMethods(), call original first, then replace one method
-     * on the returned RPC methods instance.
+     * Replace a peer's `onDisputeAcknowledgmentRequest` with a no-op that records
+     * the call. Returns a teardown.
      */
-    stubServiceCreateRpcMethod<
-        TServiceName extends keyof ReturnType<RpcStubActions["getLocalRpc"]> &
-            string,
-        TMethodName extends MethodKeys<
-            RpcMethodsOf<
-                Extract<
-                    ReturnType<RpcStubActions["getLocalRpc"]>[TServiceName],
-                    ServiceWithCreateRPCMethods
-                >
-            >
-        > &
-            string
-    >(options: {
-        peerIndex: number;
-        serviceName: TServiceName;
-        methodName: TMethodName;
-        stubbedMethod: Extract<
-            RpcMethodsOf<
-                Extract<
-                    ReturnType<RpcStubActions["getLocalRpc"]>[TServiceName],
-                    ServiceWithCreateRPCMethods
-                >
-            >[TMethodName],
-            AnyFn
-        >;
-    }): () => void {
-        const { peerIndex, serviceName, methodName, stubbedMethod } = options;
-
-        const localRpc = this.getLocalRpc(peerIndex) as unknown as Record<
-            string,
-            unknown
-        >;
-        const service = localRpc[serviceName];
-
-        if (!service) {
-            throw new Error(
-                `Cannot stub RPC method: service '${serviceName}' not found on peer ${peerIndex}`
-            );
-        }
-
-        if (
-            typeof service !== "object" ||
-            service === null ||
-            !("createRPCMethods" in service) ||
-            typeof (service as ServiceWithCreateRPCMethods).createRPCMethods !==
-                "function"
-        ) {
-            throw new Error(
-                `Cannot stub RPC method: service '${serviceName}' on peer ${peerIndex} does not expose createRPCMethods()`
-            );
-        }
-
-        const typedService = service as ServiceWithCreateRPCMethods;
-        const originalCreateRPCMethods =
-            typedService.createRPCMethods.bind(typedService);
-        const key = this.getStubKey(peerIndex, serviceName, String(methodName));
-
-        this.rpcMethodStubRestorers.get(key)?.();
-
-        typedService.createRPCMethods = ((transport: ATransport) => {
-            const methods = originalCreateRPCMethods(transport) as Record<
-                string,
-                unknown
-            >;
-
-            if (!(methodName in methods)) {
-                throw new Error(
-                    `Stubbed RPC method '${String(methodName)}' missing in created RPC methods for service '${serviceName}' on peer ${peerIndex}`
-                );
-            }
-
-            methods[methodName] = stubbedMethod;
-            return methods;
-        }) as ServiceWithCreateRPCMethods["createRPCMethods"];
-
-        const restore = () => {
-            typedService.createRPCMethods = originalCreateRPCMethods;
-            this.rpcMethodStubRestorers.delete(key);
+    async stubRecordDisputeAckRequest(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubRecordDisputeAckRequest()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreRecordDisputeAckRequest()
+                .request();
         };
-
-        this.rpcMethodStubRestorers.set(key, restore);
-
-        this.logger.debug(
-            `Stubbed RPC method '${String(methodName)}' on service '${serviceName}' for peer ${peerIndex}`
-        );
-
-        return restore;
     }
 
-    restoreStubbedServiceCreateRpcMethod<
-        TServiceName extends keyof ReturnType<RpcStubActions["getLocalRpc"]> &
-            string,
-        TMethodName extends MethodKeys<
-            RpcMethodsOf<
-                Extract<
-                    ReturnType<RpcStubActions["getLocalRpc"]>[TServiceName],
-                    ServiceWithCreateRPCMethods
-                >
-            >
-        > &
-            string
-    >(options: {
-        peerIndex: number;
-        serviceName: TServiceName;
-        methodName: TMethodName;
-    }): void {
-        const { peerIndex, serviceName, methodName } = options;
-        const key = this.getStubKey(peerIndex, serviceName, String(methodName));
-        const restore = this.rpcMethodStubRestorers.get(key);
-        restore?.();
-    }
-
-    restoreAllStubbedServiceCreateRpcMethods(): void {
-        for (const restore of this.rpcMethodStubRestorers.values()) {
-            restore();
-        }
-        this.rpcMethodStubRestorers.clear();
+    async wasDisputeAckRequestCalled(peerIndex: number): Promise<boolean> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.wasDisputeAckRequestCalled()
+            .request();
     }
 }

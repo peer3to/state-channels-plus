@@ -1,9 +1,13 @@
 import IOnMessage from "@/IOnMessage";
 import type StateManager from "@/stateManager";
-import Rpc, { deserializeRpc } from "@/rpc/Rpc";
+import Rpc, {
+    deserializeRpc,
+    deserializeRpcResponse,
+    RpcResponse
+} from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
 import { P2pSigner } from "@/evm";
-import { ATransport, TransportType } from "@/transport";
+import { ATransport, LoopbackTransport, TransportType } from "@/transport";
 import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
@@ -27,11 +31,24 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     profileManager = new ProfileManager();
     localRpc: TCustomRpc;
     remoteRpc: RemoteRpcProxyType<TCustomRpc>;
+    /** In-process transport used for "send to self" (no-target) delivery. */
+    loopbackTransport: LoopbackTransport;
     //TODO - map EVM address to websocket
     openConnections: ATransport[] = [];
     holepunch: Holepunch;
     self = config.DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
+
+    private rpcRequestCounter = 0;
+    private pendingRpcRequests = new Map<
+        string,
+        {
+            resolve: (value: any) => void;
+            reject: (reason: Error) => void;
+            transport: ATransport;
+            timeout: ReturnType<typeof setTimeout>;
+        }
+    >();
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -66,11 +83,15 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.remoteRpc = RemoteRpcProxy.createProxy(
             this.localRpc
         ) as unknown as RemoteRpcProxyType<TCustomRpc>;
+        this.loopbackTransport = new LoopbackTransport(this.self);
         this.holepunch = new Holepunch(this.self);
         return this.self;
     }
     //Mark resources for garbage collection
     public async dispose() {
+        this.rejectAllPendingRpcRequests(
+            new Error("P2PManager disposed before RPC response arrived")
+        );
         await this.holepunch.dispose();
         this.disconnectAll();
     }
@@ -89,8 +110,103 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             transport.send(rpc);
         }
     }
+
+    /**
+     * Sends a request-style RPC to a single peer and resolves with the value the
+     * peer's handler returns. The promise rejects on a remote error, transport
+     * disconnect, or after `timeoutMs` (time safety).
+     */
+    public sendRpcRequest<T = unknown>(
+        rpc: Rpc,
+        transport: ATransport,
+        options?: { timeoutMs?: number }
+    ): Promise<T> {
+        const requestId = `${++this.rpcRequestCounter}`;
+        // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
+        const timeoutMs =
+            options?.timeoutMs ??
+            this.stateManager.timeConfig.agreementTime * 1000;
+
+        return new Promise<T>((resolve, reject) => {
+            const timeout = this.stateManager.timeoutManager.scheduleTask(
+                () => {
+                    if (this.pendingRpcRequests.delete(requestId)) {
+                        reject(
+                            new Error(
+                                `RPC request '${rpc.service}.${rpc.method}' timed out after ${timeoutMs}ms`
+                            )
+                        );
+                    }
+                },
+                timeoutMs,
+                `rpcRequest:${rpc.service}.${rpc.method}`
+            );
+
+            this.pendingRpcRequests.set(requestId, {
+                resolve,
+                reject,
+                transport,
+                timeout
+            });
+
+            try {
+                transport.send({ ...rpc, requestId });
+            } catch (e) {
+                if (this.pendingRpcRequests.delete(requestId)) {
+                    this.stateManager.timeoutManager.cancelTask(timeout);
+                    reject(e instanceof Error ? e : new Error(String(e)));
+                }
+            }
+        });
+    }
+
+    private handleRpcResponse(response: RpcResponse, transport: ATransport) {
+        const pending = this.pendingRpcRequests.get(response.requestId);
+        if (!pending) return;
+        // Only the peer we sent the request to may settle it. Compare by peer
+        // identity (not transport object) so a transport upgrade for the same
+        // peer (e.g. HOLEPUNCH -> WEBRTC) still settles the pending request.
+        if (!ATransport.isSamePeer(pending.transport, transport)) {
+            this.disconnectAndBlacklistPeer(transport);
+            return;
+        }
+        this.pendingRpcRequests.delete(response.requestId);
+        this.stateManager.timeoutManager.cancelTask(pending.timeout);
+        if (response.ok) {
+            pending.resolve(response.result);
+        } else {
+            pending.reject(
+                new Error(response.error ?? "RPC request failed on the peer")
+            );
+        }
+    }
+
+    private rejectPendingRpcRequestsForTransport(
+        transport: ATransport,
+        reason: Error
+    ): void {
+        for (const [requestId, pending] of this.pendingRpcRequests) {
+            if (pending.transport !== transport) continue;
+            this.pendingRpcRequests.delete(requestId);
+            this.stateManager.timeoutManager.cancelTask(pending.timeout);
+            pending.reject(reason);
+        }
+    }
+
+    private rejectAllPendingRpcRequests(reason: Error): void {
+        for (const [, pending] of this.pendingRpcRequests) {
+            this.stateManager.timeoutManager.cancelTask(pending.timeout);
+            pending.reject(reason);
+        }
+        this.pendingRpcRequests.clear();
+    }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
+            const response = deserializeRpcResponse(serializedRpc);
+            if (response) {
+                this.handleRpcResponse(response, transport);
+                return;
+            }
             const rpc = deserializeRpc(serializedRpc);
             this.logger.verbose("onRpc", {
                 rpc: rpc ? LoggerUtils.getRpcLogMetadata(rpc) : undefined,
@@ -127,7 +243,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 channelId,
                 this.stateManager.signerAddress.toString()
             );
-            return;
         }
         const topic = Buffer.alloc(32).fill(channelId);
         await this.holepunch.join(topic);
@@ -141,6 +256,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
 
     public disconnectConnection(transport: ATransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
+
+        this.rejectPendingRpcRequestsForTransport(
+            transport,
+            new Error("Peer disconnected before RPC response arrived")
+        );
 
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport

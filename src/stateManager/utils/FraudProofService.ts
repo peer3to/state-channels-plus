@@ -106,20 +106,8 @@ export default class FraudProofService {
         });
     }
 
-    /**
-     * Create invalid timestamp proof
-     */
-    createInvalidTimestampProof(block: Block): Hash {
-        this.logFraudDetection({
-            fraudType: FraudProofType.InvalidTimestamp,
-            reason: "Block timestamp is invalid or inconsistent with previous block",
-            block,
-            additionalFields: {
-                blockTimestamp: block.timestamp
-            }
-        });
-
-        let prevSignedBlock: SignedBlockStruct | undefined;
+    buildInvalidTimestampProof(block: Block): InvalidTimestampProofStruct {
+        let prevSignedBlock: SignedBlockStruct;
         let prevStateSnapshot: StateSnapshot;
         const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
             block.coordinates
@@ -139,12 +127,10 @@ export default class FraudProofService {
             const authorSignedPrevious = prevBlock.findSignature(block.author);
             if (authorSignedPrevious) {
                 participantSignatureOnPreviousBlock = authorSignedPrevious;
-            } else {
-                if (prevBlock.onChainTimestamp !== undefined) {
-                    previousBlockOnChainTimestamp = BigInt(
-                        prevBlock.onChainTimestamp
-                    );
-                }
+            } else if (prevBlock.onChainTimestamp !== undefined) {
+                previousBlockOnChainTimestamp = BigInt(
+                    prevBlock.onChainTimestamp
+                );
             }
         } else {
             // Height === 0 case - we have genesis state snapshot
@@ -152,7 +138,7 @@ export default class FraudProofService {
             prevStateSnapshot = previousBlockOrSnapshot.stateSnapshot!;
         }
 
-        const proof: InvalidTimestampProofStruct = {
+        return {
             invalidBlock: block.signedBlock,
             previousBlock: prevSignedBlock,
             previousStateSnapshot: prevStateSnapshot.toStruct(),
@@ -160,6 +146,19 @@ export default class FraudProofService {
                 participantSignatureOnPreviousBlock as Bytes,
             previousBlockOnChainTimestamp
         };
+    }
+
+    createInvalidTimestampProof(block: Block): Hash {
+        this.logFraudDetection({
+            fraudType: FraudProofType.InvalidTimestamp,
+            reason: "Block timestamp is invalid or inconsistent with previous block",
+            block,
+            additionalFields: {
+                blockTimestamp: block.timestamp
+            }
+        });
+
+        const proof = this.buildInvalidTimestampProof(block);
 
         return this.storeFraudProof(block.signerAddress, {
             type: FraudProofType.InvalidTimestamp,

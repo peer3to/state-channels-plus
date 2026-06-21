@@ -13,7 +13,9 @@ export type Config = {
     LOG_EXCLUDE_TAGS: string;
     EXCLUDE_LOG_TAGS: string;
     HOLEPUNCH_RELAYER_URLS: string[];
+    LOCAL_DISCOVERY_REGISTRY_URL: string;
     VM_DEDICATED_THREAD: boolean;
+    RUN_SDK_IN_THREAD: boolean;
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
@@ -34,7 +36,9 @@ const DEFAULT_CONFIG: Config = {
     LOG_EXCLUDE_TAGS: "",
     EXCLUDE_LOG_TAGS: "",
     HOLEPUNCH_RELAYER_URLS: [],
+    LOCAL_DISCOVERY_REGISTRY_URL: "",
     VM_DEDICATED_THREAD: false,
+    RUN_SDK_IN_THREAD: false,
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
@@ -139,18 +143,23 @@ export let config: Config = { ...DEFAULT_CONFIG };
 /**
  * Computes and applies config for the current process.
  * Intended to be called once during p2pSetup.
- * Precedence: overrides > process.env > peer3.config.ts > defaults
+ *
+ * Precedence: overrides > process.env > config file > defaults.
+ *
+ * The config file is `peer3.config.ts` by default, but `configFileOverride`
+ * replaces it at the same (file-level) precedence — so a caller can supply its
+ * own base config (e.g. the test harness's `peer3.test.config.ts`) while still
+ * letting `process.env` and explicit `overrides` win over it.
  */
-export function createConfig(overrides: PartialConfig = {}): Config {
+export function createConfig(
+    overrides: PartialConfig = {},
+    configFileOverride?: PartialConfig
+): Config {
     config = {
         ...DEFAULT_CONFIG,
-        ...baseConfig,
+        ...(configFileOverride ?? baseConfig),
         ...envOverrides(),
         ...overrides
     };
-    // console.log("Config:", config);
-    // console.log("Peer3 config", peer3Config);
-    // console.log("Env overrides:", envOverrides());
-    // console.log("Overrides:", overrides);
     return config;
 }

@@ -1,16 +1,14 @@
 import { ForkId } from "@/types/types";
 import { StateSnapshot } from "@/models";
-import { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
 import * as sinon from "sinon";
 import { Signer } from "ethers";
 import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
-import StateManager from "@/stateManager";
 import { AStateMachine as AStateMachineContract } from "@typechain-types";
 import { EventBarrier, Logger } from "@/utils";
-import type { CustomRpcConstructor } from "@/rpc";
-import MainRpcService from "@/rpc/MainRpcService";
+import type { CustomRpcManifest } from "@/rpc";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { TimeConfig } from "@/types";
 import { Config } from "@/utils";
 
@@ -37,8 +35,8 @@ export class HarnessContext {
     /** Channel balance before posting snapshot (set by Context.capturePrePostSnapshotContext) */
     channelBalanceBefore?: ChannelBalanceStructOutput;
 
-    /** Expected withdrawals delta from prepared outbound messages (set by Context.capturePrePostSnapshotContext) */
-    expectedWithdrawalsDelta?: BalanceStruct;
+    /** Expected withdrawals delta (Codec-encoded `Type.Balance`) from prepared outbound messages (set by Context.capturePrePostSnapshotContext) */
+    encodedExpectedWithdrawalsDelta?: string;
 
     /** Dynamic snapshot count storage for named contexts - indexed by context key (set by Context.storeSnapshotCount) */
     [key: `snapshotCount_${string}`]: number;
@@ -101,48 +99,45 @@ export type HarnessConstructorOptions<
 /**
  * Options for configuring the test harness
  */
-export type HarnessOptions<TCustomRpc extends MainRpcService = MainRpcService> =
-    {
-        /**
-         * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
-         *
-         * Set to "error" to suppress verbose logs during tests.
-         * Set to "debug" or "verbose" for detailed debugging.
-         *
-         * @example
-         * ```ts
-         * // Quiet tests (recommended for CI/passing tests)
-         * Scenario.startChannel(3, 0, { logLevel: "error" })
-         *
-         * // Verbose debugging (when investigating failures)
-         * Scenario.startChannel(3, 0, { logLevel: "debug" })
-         * ```
-         *
-         * @default undefined (uses LOG_LEVEL from config or "error")
-         */
-        logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
+export type HarnessOptions = {
+    /**
+     * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
+     *
+     * Set to "error" to suppress verbose logs during tests.
+     * Set to "debug" or "verbose" for detailed debugging.
+     *
+     * @example
+     * ```ts
+     * // Quiet tests (recommended for CI/passing tests)
+     * Scenario.startChannel(3, 0, { logLevel: "error" })
+     *
+     * // Verbose debugging (when investigating failures)
+     * Scenario.startChannel(3, 0, { logLevel: "debug" })
+     * ```
+     *
+     * @default undefined (uses LOG_LEVEL from config or "error")
+     */
+    logLevel?: "debug" | "verbose" | "info" | "warn" | "error";
 
-        timeConfig?: Partial<TimeConfig>;
-        channelId?: string;
-        initialBalance?: number;
-        stateMachineGasLimit?: number;
-        disputeExecutionGasLimit?: number;
-        autoConnect?: boolean;
-        configOverrides?: Partial<Config>; // Direct config overrides
-        customRpc?: CustomRpcConstructor<any, any>;
-        customRpcOptions?: any;
-        customPrecompiles?: EvmCustomPrecompileManifest[];
-    };
+    timeConfig?: Partial<TimeConfig>;
+    channelId?: string;
+    initialBalance?: number;
+    stateMachineGasLimit?: number;
+    disputeExecutionGasLimit?: number;
+    autoConnect?: boolean;
+    configOverrides?: Partial<Config>; // Direct config overrides
+    customRpcManifest?: CustomRpcManifest;
+    customPrecompiles?: EvmCustomPrecompileManifest[];
+};
 
 export type TestPeer<
-    TCustomRpc extends MainRpcService = MainRpcService,
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     index: number;
     signer: Signer;
     address: string;
     p2pInstance: P2pInstance<TContract, TCustomRpc>;
-    stateManager: StateManager<TCustomRpc>;
     contractInstance: TContract;
     eventSpies: EventSpies;
     turnBarrier: EventBarrier;
@@ -180,7 +175,7 @@ export type EventSpies = {
 };
 
 export type CreateAndResolveDisputeResult<
-    TCustomRpc extends MainRpcService = MainRpcService,
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc,
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
     originalForkId: ForkId;

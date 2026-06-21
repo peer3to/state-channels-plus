@@ -17,7 +17,9 @@ import {
     Bytes
 } from "@/types/types";
 
-import { union, isSubset, SignatureUtils, getChecksumAddress } from "@/utils";
+import { getChecksumAddress } from "@/utils/address";
+import { SignatureUtils } from "@/utils/SignatureUtils";
+import { isSubset, union } from "@/utils/set";
 
 export type BlockCoordinates = {
     forkId: ForkId;

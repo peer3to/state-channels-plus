@@ -1,7 +1,10 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 
-export class AssertCalldataActions {
-    constructor(private readonly harness: PeerTestHarness) {}
+export class AssertCalldataActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
+    constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
 
     noCalldataPosted(): void {
         const totalPosted = this.harness.peers.reduce((sum, peer) => {
