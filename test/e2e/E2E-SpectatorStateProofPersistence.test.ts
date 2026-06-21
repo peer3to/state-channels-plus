@@ -1,10 +1,8 @@
-import { TestSession, PeerTestHarness } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
-PeerTestHarness.setDefaultLogLevel("error");
-
 describe("E2E: Join/Leave Sequence", function () {
-    it.only("join/leave sequence and fork resolution", async function () {
+    it("join/leave sequence and fork resolution", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 0, {
@@ -94,16 +92,22 @@ describe("E2E: Join/Leave Sequence", function () {
         for (const i of spectatorIndices) {
             // spectators disconnected from the channel when the dispute started
             expect(
-                h.getPeer(i).stateManager.p2pManager.openConnections.length
+                await h
+                    .control(h.getPeer(i))
+                    .query.getOpenConnectionCount()
+                    .request()
             ).to.equal(
                 0,
                 `spectator peer ${i} should have 0 open P2P connections after dispute`
             );
             // spectator should have stayes on the pre-dispute fork
-            expect(h.getPeer(i).stateManager.forkId).to.equal(
+            expect(
+                await h.control(h.getPeer(i)).query.getForkId().request()
+            ).to.equal(
                 preDisputeForkId,
                 `spectator peer ${i} should be on pre-dispute fork`
             );
+            // TODO - don't forget to rethink this
         }
     });
 });

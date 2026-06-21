@@ -43,15 +43,18 @@ contract StateChannelManagerStorage {
     mapping(
         bytes32 channelId
             => mapping(
-                address signerAddress
-                    => mapping(bytes32 forkId => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
-            )
+            address signerAddress
+                => mapping(bytes32 forkId => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
+        )
     ) blockCalldataCommitments;
 
     // ================== Dispute on chain storage ==================
 
     /// @dev disputeData[channelId] => DisputeData
     mapping(bytes32 channelId => DisputeData) disputeData;
+
+    /// @dev Per-channel per-address throttle: address may not open a new dispute window until block.timestamp >= this value (0 = never submitted)
+    mapping(bytes32 channelId => mapping(address disputer => uint256 throttleExpiry)) disputerThrottle;
 
     // ================== Modifiers ==================
 

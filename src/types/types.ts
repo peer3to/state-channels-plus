@@ -1,5 +1,5 @@
-import { Block, StateSnapshot } from "@/models";
-import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { Block, StateSnapshot } from "@/models";
+import type { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { SignatureLike, BytesLike, AddressLike, BigNumberish } from "ethers";
 
 export type Hash = BytesLike;
@@ -22,12 +22,6 @@ export type BlockOrSnapshot = {
 export type ReductionTimeoutHandle = {
     handle: ReturnType<typeof setTimeout>;
     triggerTimestamp: number;
-};
-
-export type UpdatedBlockWithCalldata = {
-    signedBlock: SignedBlockStruct;
-    timestamp: Timestamp;
-    updatedBlock?: Block;
 };
 
 export type BlockCalldata = {

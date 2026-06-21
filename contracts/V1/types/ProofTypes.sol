@@ -57,6 +57,6 @@ enum DisputeFraudProofType {
     DisputeInvalidBlockInStateProofApplyFraudProof,
     DisputeLastMilestoneNotFinalAndNoAuditingData,
     InvalidDisputeReason,
-    DisputeStateProofForkMismatch,
+    DisputeStateProofHeaderMismatch,
     DisputeInboundHashNotInChain
 }

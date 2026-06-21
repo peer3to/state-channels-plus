@@ -1,7 +1,9 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { EventSpies } from "../core/types";
 import { Logger } from "@/utils";
 import { Status } from "@/types";
+import { Hash } from "@/types/types";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -11,9 +13,11 @@ import { Status } from "@/types";
  * - Reset event spy history
  * - Assert event calls
  */
-export class EventActions {
+export class EventActions<
+    TCustomRpc extends HarnessControlRpc = HarnessControlRpc
+> {
     constructor(
-        private harness: PeerTestHarness,
+        private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
 
@@ -124,6 +128,45 @@ export class EventActions {
         });
     }
 
+    async waitForBlockConfirmationProcessed(options: {
+        peerIndex: number;
+        blockHash: Hash;
+        keepConnection?: boolean;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            peerIndex,
+            blockHash,
+            keepConnection,
+            timeoutMs = 5000
+        } = options;
+        const peer = this.harness.getPeer(peerIndex);
+
+        await this.harness.eventCountsBarrier.waitFor(
+            () => {
+                return (
+                    peer.eventSpies.onBlockConfirmationProcessed
+                        ?.getCalls()
+                        .some((call) => {
+                            const [
+                                processedBlockHash,
+                                processedKeepConnection
+                            ] = call.args;
+                            return (
+                                processedBlockHash === blockHash &&
+                                (keepConnection === undefined ||
+                                    processedKeepConnection === keepConnection)
+                            );
+                        }) ?? false
+                );
+            },
+            {
+                timeoutMs,
+                timeoutMessage: `Block confirmation ${blockHash} was not processed by peer ${peerIndex} within ${timeoutMs}ms`
+            }
+        );
+    }
+
     async waitUntilPeerStatus(
         peerIndex: number,
         expectedStatus: Status,
@@ -136,7 +179,11 @@ export class EventActions {
         const { timeoutMs = 15000, timeoutMessage } = options ?? {};
         const statusName = Status[expectedStatus] ?? String(expectedStatus);
         await this.harness.eventCountsBarrier.waitFor(
-            () => peer.stateManager.getStatus() === expectedStatus,
+            async () =>
+                (await this.harness
+                    .control(peer)
+                    .query.getStatus()
+                    .request()) === expectedStatus,
             {
                 timeoutMs,
                 timeoutMessage:

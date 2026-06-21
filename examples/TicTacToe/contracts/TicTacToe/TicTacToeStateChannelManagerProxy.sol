@@ -22,7 +22,8 @@ contract TicTacToeStateChannelManagerProxy is StateChannelManagerProxy {
         uint256 _p2pTime,
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
-        uint256 _evidenceTime
+        uint256 _evidenceTime,
+        uint256 _disputeExecutionGasLimit
     )
         StateChannelManagerProxy(
             _stateMachineImplementation,
@@ -38,7 +39,8 @@ contract TicTacToeStateChannelManagerProxy is StateChannelManagerProxy {
             _p2pTime,
             _agreementTime,
             _chainFallbackTime,
-            _evidenceTime
+            _evidenceTime,
+            _disputeExecutionGasLimit
         )
     {}
 }

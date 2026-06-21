@@ -13,13 +13,40 @@
         "baseUrl": ".",
         "paths": {
             "@/*": ["src/*"],
+            "@platform/createLogger": ["src/utils/logging/node/createLogger"],
+            "@platform/contractExecutorWorkerRuntime": [
+                "src/evm/contractExecutor/node/ContractExecutorWorkerRuntime"
+            ],
+            "@platform/p2pRuntimeChannel": [
+                "src/evm/p2pRuntime/node/P2pRuntimeChannel"
+            ],
+            "@platform/p2pRuntimeWorkerRuntime": [
+                "src/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime"
+            ],
+            "@platform/DeployUtils": ["src/utils/node/DeployUtils"],
+            "@platform/LocalDiscoveryServer": [
+                "src/utils/node/LocalDiscoveryServer"
+            ],
+            "@platform/moduleLoader": [
+                "src/utils/moduleLoader/node/importModuleFromManifest"
+            ],
             "@test/*": ["test/*"],
             "@typechain-types/*": ["typechain-types/*"],
             "@typechain-types": ["typechain-types/index"]
         }
     },
-    "exclude": ["examples", "dist", "node_modules"],
+    "exclude": [
+        "examples",
+        "dist",
+        "node_modules",
+        "src/evm/browser",
+        "src/evm/contractExecutor/browser",
+        "src/evm/p2pRuntime/browser",
+        "src/utils/browser",
+        "src/utils/logging/browser"
+    ],
     "ts-node": {
-        "require": ["tsconfig-paths/register"]
+        "require": ["tsconfig-paths/register"],
+        "swc": true
     }
 }
