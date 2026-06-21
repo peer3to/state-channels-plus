@@ -10,7 +10,7 @@ import {
     getRandomSigner,
     p2pSetup
 } from "./TicTacToeStateChannel";
-import type { TicTacToeRpcFactories } from "./CustomRpc";
+import type { TicTacToeRpc } from "./CustomRpc";
 import {
     TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine
@@ -21,7 +21,7 @@ class TempSingleton {
     private joinChanel: DataTypes.JoinChannelStruct | undefined;
     signer: Signer = getRandomSigner();
     p2pContract: TicTacToeStateMachine | undefined;
-    p2pSigner: P2pSigner<TicTacToeRpcFactories> | undefined;
+    p2pSigner: P2pSigner<TicTacToeRpc> | undefined;
     stateChannelManagerContract: TicTacToeStateChannelManagerProxy | undefined;
     myBalance = 500;
     opponentBalance = 500;

@@ -1,15 +1,6 @@
 export class DetachedPromises {
-    private static readonly DEFAULT_AWAIT_TIMEOUT_MS = 30000;
+    private static readonly AWAIT_ALL_TIMEOUT_MS = 30000;
     private static nextId = 1;
-
-    /** Longer than scaled EventBarrier waits when EVENT_BARRIER_TIMEOUT_SCALE is set (e.g. parallel E2E). */
-    private static getAwaitAllTimeoutMs(): number {
-        const scale = Number(process?.env?.EVENT_BARRIER_TIMEOUT_SCALE) || 1;
-        return Math.max(
-            DetachedPromises.DEFAULT_AWAIT_TIMEOUT_MS,
-            Math.ceil(25000 * scale) + 5000
-        );
-    }
     private static pending: Array<{
         id: number;
         promise: Promise<any>;
@@ -87,8 +78,6 @@ export class DetachedPromises {
             })
         );
 
-        const awaitTimeoutMs = DetachedPromises.getAwaitAllTimeoutMs();
-
         return new Promise<PromiseSettledResult<any>[]>((resolve, reject) => {
             let timedOut = false;
             const timeoutId = setTimeout(() => {
@@ -112,13 +101,13 @@ export class DetachedPromises {
                     .join("\n\n");
 
                 const message =
-                    `DetachedPromises.awaitAllAndClear timed out after ${awaitTimeoutMs}ms while waiting for ${unresolved.length}/${batch.length} promise(s).` +
+                    `DetachedPromises.awaitAllAndClear timed out after ${DetachedPromises.AWAIT_ALL_TIMEOUT_MS}ms while waiting for ${unresolved.length}/${batch.length} promise(s).` +
                     (unresolvedStacks
                         ? `\nUnresolved promise origins:\n${unresolvedStacks}`
                         : "");
 
                 reject(new Error(message));
-            }, awaitTimeoutMs);
+            }, DetachedPromises.AWAIT_ALL_TIMEOUT_MS);
 
             Promise.allSettled(trackedPromises)
                 .then((results) => {

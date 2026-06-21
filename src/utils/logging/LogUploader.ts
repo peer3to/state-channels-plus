@@ -1,18 +1,19 @@
 import axios from "axios";
 import { compressToBase64, encodeLogs } from "./logEncoder";
 import { LogStore } from "./logStore";
-import { ExclusiveLoggerContext, Logger, SharedLoggerContext } from ".";
+import {
+    type ExclusiveLoggerContext,
+    type SharedLoggerContext,
+    Logger
+} from "./Logger";
 import { ethers } from "ethers";
 import { retry } from "../retry";
+import { sleep } from "..";
 import {
     getAxiosFailureSummary,
     getAxiosRetrySummary,
-    getDnsLookupSnapshot,
-    getSyncNetworkSnapshot,
     sanitizeAxiosErrorForLogging
-} from "./uploadDiagnostics";
-import { sleep } from "..";
-import { isNodeRuntime } from "../config";
+} from "./axiosErrorUtils";
 
 export type LogUploaderOptions = {
     logUploader?: LogUploader;
@@ -28,8 +29,6 @@ export abstract class LogUploader {
     protected logger?: Logger;
     private destroyed = false;
     private uploadInitiated = false;
-
-    private static uploadAgent?: import("https").Agent;
 
     constructor(
         protected readonly logStore: LogStore,
@@ -53,22 +52,19 @@ export abstract class LogUploader {
         return Boolean(this.config.uploadEndpoint);
     }
 
-    private static getUploadAgent(): import("https").Agent | undefined {
-        if (!isNodeRuntime()) {
-            return undefined;
-        }
+    protected getAxiosOptions(): Record<string, unknown> {
+        return {};
+    }
 
-        if (!LogUploader.uploadAgent) {
-            const { Agent } = require("https") as typeof import("https");
-            LogUploader.uploadAgent = new Agent({
-                keepAlive: true,
-                maxSockets: 6,
-                maxFreeSockets: 2,
-                timeout: 60_000
-            });
-        }
+    protected getSyncNetworkSnapshot(
+        _endpoint: string,
+        _uploadError?: unknown
+    ): unknown {
+        return undefined;
+    }
 
-        return LogUploader.uploadAgent;
+    protected getDnsLookupSnapshot(_endpoint: string): Promise<unknown> {
+        return Promise.resolve(undefined);
     }
 
     public async uploadLogs(
@@ -127,7 +123,7 @@ export abstract class LogUploader {
                         {
                             headers,
                             timeout: 10_000,
-                            httpsAgent: LogUploader.getUploadAgent()
+                            ...this.getAxiosOptions()
                         }
                     ),
                 {
@@ -135,7 +131,7 @@ export abstract class LogUploader {
                     delayMs: 1000,
                     onRetry: (attempt, error) => {
                         const { code, status } = getAxiosRetrySummary(error);
-                        const networkSnapshot = getSyncNetworkSnapshot(
+                        const networkSnapshot = this.getSyncNetworkSnapshot(
                             this.config.uploadEndpoint,
                             error
                         );
@@ -165,11 +161,11 @@ export abstract class LogUploader {
                 responseUploadId
             } = getAxiosFailureSummary(uploadError);
             const elapsedMs = Date.now() - uploadStartedAt;
-            const networkSnapshot = getSyncNetworkSnapshot(
+            const networkSnapshot = this.getSyncNetworkSnapshot(
                 this.config.uploadEndpoint,
                 uploadError
             );
-            const dnsSnapshot = await getDnsLookupSnapshot(
+            const dnsSnapshot = await this.getDnsLookupSnapshot(
                 this.config.uploadEndpoint
             );
 
@@ -198,93 +194,5 @@ export abstract class LogUploader {
 
         this.destroyed = true;
         this.detachListeners();
-    }
-}
-
-export class BrowserLogUploader extends LogUploader {
-    private onWindowError?: (e: ErrorEvent) => void;
-    private onWindowUnhandledRejection?: (e: PromiseRejectionEvent) => void;
-
-    protected attachListeners(): void {
-        if (typeof window === "undefined") return;
-
-        this.onWindowError = (e: ErrorEvent) => {
-            if (e.error) {
-                this.uploadLogs(e.error);
-            }
-        };
-        window.addEventListener("error", this.onWindowError);
-
-        this.onWindowUnhandledRejection = (e: PromiseRejectionEvent) => {
-            this.uploadLogs(
-                e.reason instanceof Error
-                    ? e.reason
-                    : new Error(String(e.reason))
-            );
-        };
-        window.addEventListener(
-            "unhandledrejection",
-            this.onWindowUnhandledRejection
-        );
-    }
-
-    protected detachListeners(): void {
-        if (typeof window === "undefined") return;
-
-        if (this.onWindowError) {
-            window.removeEventListener("error", this.onWindowError);
-            this.onWindowError = undefined;
-        }
-
-        if (this.onWindowUnhandledRejection) {
-            window.removeEventListener(
-                "unhandledrejection",
-                this.onWindowUnhandledRejection
-            );
-            this.onWindowUnhandledRejection = undefined;
-        }
-    }
-}
-
-export class NodeLogUploader extends LogUploader {
-    private onUncaughtException?: (error: unknown) => void;
-    private onUnhandledRejection?: (reason: unknown) => void;
-
-    protected attachListeners(): void {
-        if (typeof process === "undefined" || !process.on) return;
-
-        this.onUncaughtException = (error: unknown) => {
-            this.logger?.error(
-                " ######### Uncaught exception captured, uploading logs",
-                {
-                    error
-                }
-            );
-        };
-        process.on("uncaughtException", this.onUncaughtException);
-
-        this.onUnhandledRejection = (reason: unknown) => {
-            this.logger?.error(
-                " ######### Unhandled rejection captured, uploading logs",
-                {
-                    reason
-                }
-            );
-        };
-        process.on("unhandledRejection", this.onUnhandledRejection);
-    }
-
-    protected detachListeners(): void {
-        if (typeof process === "undefined" || !process.off) return;
-
-        if (this.onUncaughtException) {
-            process.off("uncaughtException", this.onUncaughtException);
-            this.onUncaughtException = undefined;
-        }
-
-        if (this.onUnhandledRejection) {
-            process.off("unhandledRejection", this.onUnhandledRejection);
-            this.onUnhandledRejection = undefined;
-        }
     }
 }

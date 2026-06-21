@@ -21,7 +21,7 @@ class StateTransitionRpcMethods extends ARpcMethods {
             return;
         }
         const keepConnection =
-            await this.p2pManager.stateManager.onBlockConfirmation(
+            await this.p2pManager.stateManager.ingestBlockConfirmation(
                 blockConfirmation,
                 {
                     senderAddress: peerAddress

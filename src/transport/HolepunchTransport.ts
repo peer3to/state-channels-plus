@@ -43,7 +43,7 @@ class HolepunchTransport extends ATransport {
 
     _close(): void {
         this.holepunchPeerInfo.ban(true);
-        this.holepunchSocket.end();
+        this.holepunchSocket.destroy();
     }
 }
 export default HolepunchTransport;

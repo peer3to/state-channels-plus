@@ -1,5 +1,12 @@
 import Clock from "@/Clock";
-import { EvmStateMachine, P2pSigner } from "@/evm";
+import {
+    AContractExecutor,
+    ContractExecutor,
+    EvmStateMachine,
+    LocalDiamondSigner,
+    P2pSigner,
+    createContractExecutorFactory
+} from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
 import {
@@ -13,10 +20,11 @@ import {
 
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
+import MainRpcService from "@/rpc/MainRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { defineRpcServices } from "@/rpc/registry";
 import { ATransport } from "@/transport";
 export * from "@/rpc/services";
+export type { CustomRpcConstructor } from "@/rpc";
 
 export { ethers } from "ethers";
 export type {
@@ -28,14 +36,23 @@ export type {
 } from "ethers";
 
 export type {
+    ContractExecutionLog,
+    ContractExecutionResult,
+    ContractExecutorFactoryOptions,
     EvmCustomPrecompile,
+    EvmCustomPrecompileFactory,
+    EvmCustomPrecompileManifest,
     EvmFactoryOptions,
+    EvmNativeCustomPrecompile,
     LocalStateMachineDeployer
 } from "@/evm";
 
 export {
+    AContractExecutor,
     Clock,
+    ContractExecutor,
     EvmStateMachine,
+    LocalDiamondSigner,
     P2pSigner,
     P2PManager,
     P2pEventHooks,
@@ -46,11 +63,24 @@ export {
     config as config,
     ARpcMethods,
     ARpcService,
+    MainRpcService,
     HandshakeCompletedGuard,
-    defineRpcServices,
     ATransport,
-    getChecksumAddress
+    getChecksumAddress,
+    createContractExecutorFactory
 };
+export { Status } from "@/types";
+
+export { startP2pRuntimeWorker } from "@/evm/p2pRuntime/worker/startP2pRuntimeWorker";
+export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
+export type {
+    P2pRuntimeWorker,
+    SetupPayload,
+    SerializedContract,
+    WorkerBootstrapMessage
+} from "@/evm/p2pRuntime/types";
+
+export { Address } from "@ethereumjs/util";
 
 export * from "@/utils/logging";
 
