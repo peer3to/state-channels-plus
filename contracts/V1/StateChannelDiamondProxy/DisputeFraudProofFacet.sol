@@ -13,30 +13,6 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract DisputeFraudProofFacet is StateChannelCommon {
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pass by reference, but this shares the context
-    function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
-        public
-        returns (Dispute[] memory maliciousDisputes)
-    {
-        maliciousDisputes = new Dispute[](disputeFraudProofs.length);
-        uint256 slashCount = 0;
-        for (uint256 i = 0; i < disputeFraudProofs.length; i++) {
-            Dispute memory dispute = disputeFraudProofs[i].dispute;
-            if (!isDisputeCommitted(dispute)) continue;
-            address slashedParticipant =
-                _getHandle(disputeFraudProofs[i].proofType)(disputeFraudProofs[i].encodedProof, dispute);
-            if (slashedParticipant == address(0) || slashedParticipant != disputeFraudProofs[i].participant) {
-                revert ErrorInvalidFraudProof(slashedParticipant, disputeFraudProofs[i].participant);
-            }
-            maliciousDisputes[slashCount] = dispute;
-            slashCount++;
-        }
-        Dispute[] memory finalDisputes = new Dispute[](slashCount);
-        for (uint256 i = 0; i < slashCount; i++) {
-            finalDisputes[i] = maliciousDisputes[i];
-        }
-        return finalDisputes;
-    }
-
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
         for (uint256 i = 0; i < proofs.length; i++) {
             Dispute memory dispute = proofs[i].dispute;

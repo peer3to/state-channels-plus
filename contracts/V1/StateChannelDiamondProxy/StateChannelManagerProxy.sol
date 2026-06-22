@@ -342,17 +342,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool));
     }
 
-    function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
-        public
-        returns (bytes memory maliciousDisputesEncoded)
-    {
-        bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress,
-            abi.encodeCall(DisputeFraudProofFacet.verifyDisputeFraudProofs, (disputeFraudProofs))
-        );
-        return result;
-    }
-
     function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
         bytes memory result = _delegatecall(
             disputeFraudProofFacetAddress,
