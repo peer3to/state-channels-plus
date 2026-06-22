@@ -1,7 +1,11 @@
 import { expect } from "chai";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
-import { tryDecodeCustomError, addressesEqual } from "@/utils";
+import {
+    DetachedPromises,
+    tryDecodeCustomError,
+    addressesEqual
+} from "@/utils";
 import { TimeoutTooEarlyStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 describe("E2E: dispute validation / disputeInputFields / timeout", function () {
@@ -64,6 +68,12 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             timeoutMs: 10000
         });
         await h.dispute.resolveDisputeWait();
+        await DetachedPromises.awaitAllAndClear();
+
+        await TestSession.expectFirstDetachedError({
+            includes: "unknown snapshot",
+            timeoutMs: 10000
+        });
     });
 
     describe("TimeoutTooEarly", function () {
@@ -233,8 +243,18 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         });
         // Dispute path kills tampered claim; slash/eligible-set update still settles fork.
         await h.dispute.resolveDisputeWait({
+            honestPeerIndices: [1, 2],
             forkSettleTimeoutMs: 20000,
             assertMaliciousRemoved: false
+        });
+        await DetachedPromises.awaitAllAndClear();
+
+        await TestSession.expectFirstDetachedError({
+            includes: [
+                "unknown snapshot",
+                "Dispute not available for commitment"
+            ],
+            required: false
         });
     });
 
@@ -311,6 +331,12 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         await h.dispute.resolveDisputeWait({
             forkSettleTimeoutMs: 25000,
             assertMaliciousRemoved: false
+        });
+        await DetachedPromises.awaitAllAndClear();
+
+        await TestSession.expectFirstDetachedError({
+            includes: "unknown snapshot",
+            required: false
         });
     });
 });

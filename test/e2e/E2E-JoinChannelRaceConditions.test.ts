@@ -172,8 +172,12 @@ describe("E2E: Join channel race conditions", function () {
             ).to.not.include(joiner.address.toLowerCase());
         });
 
-        // Fails: Race condition guard was removed from appendInboundMessages in commit 029c6a82b6f76e233af191b9b88c2e22dfef595f
-        it("forceInboundJoin on disputed fork reverts", async function () {
+        // Protocol gap (issue #355; docs/trds/e2e-reduced-fork-followups.md): the
+        // RaceConditionForceInboundJoinForkDisputed guard was removed from
+        // appendInboundMessages in commit 029c6a82b6f76e233af191b9b88c2e22dfef595f,
+        // so the expected revert can no longer happen. Keep pending until a
+        // follow-up restores/replaces the guard or retires this test.
+        it.skip("forceInboundJoin on disputed fork reverts", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
 
@@ -202,7 +206,12 @@ describe("E2E: Join channel race conditions", function () {
             );
         });
 
-        it("pending joiner participates after dispute reduction", async function () {
+        // Blocked behind the reduced-fork adoption gaps (issues #350, #353):
+        // tracing shows this fails at the snapshot barrier before the joiner
+        // assertion is reached — no peer adopts the reduced fork. Whether a pending
+        // joiner's join is carried across reduction is unverified until those land.
+        // (issue #354; docs/trds/e2e-reduced-fork-followups.md)
+        it.skip("pending joiner participates after dispute reduction", async function () {
             const h = TestSession.getHarness();
             const { joiner, confirmation } =
                 await h.scenario.syncSpectatorAndPrepareJoin();

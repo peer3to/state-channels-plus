@@ -17,7 +17,9 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.1: auditingData.milestoneSnapshots[1].snapshotData.latestInboundMessageBlockHash = random", function () {
         it("Case 1.1 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.scenario.setupTwoLeaversAcrossMilestones({
+                syncTimeoutMs: 15000
+            });
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -60,7 +62,9 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.3: auditingData.milestoneSnapshots[1] = milestoneSnapshots[2] (M2 row claims M3 snapshot, skip-ahead)", function () {
         it("Case 1.3 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.scenario.setupTwoLeaversAcrossMilestones({
+                syncTimeoutMs: 15000
+            });
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -97,7 +101,9 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.4: auditingData.milestoneSnapshots[1] = milestoneSnapshots[0] (M2 row claims M1 snapshot, stay-back)", function () {
         it("Case 1.4 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.scenario.setupTwoLeaversAcrossMilestones({
+                syncTimeoutMs: 15000
+            });
 
             await h.tamper.postTamperedDispute(
                 0,

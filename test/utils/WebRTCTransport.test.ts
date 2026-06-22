@@ -27,6 +27,10 @@ class FakeRTCDataChannel implements WebRTCDataChannelLike {
     emitMessage(data: any): void {
         this.onmessage?.({ data });
     }
+
+    emitOpen(): void {
+        this.onopen?.();
+    }
 }
 
 function createP2PManager(
@@ -69,13 +73,30 @@ function createP2PManager(
 }
 
 describe("WebRTCTransport", function () {
-    it("rejects a data channel that is not open", function () {
+    it("queues outbound RPCs while connecting until the channel opens", function () {
         const channel = new FakeRTCDataChannel();
         channel.readyState = "connecting";
+        let handshakes = 0;
 
-        expect(() => new WebRTCTransport(channel, createP2PManager())).to.throw(
-            "WebRTCTransport requires an open RTCDataChannel"
+        const transport = new WebRTCTransport(
+            channel,
+            createP2PManager({
+                onInitHandshake: () => {
+                    handshakes++;
+                }
+            })
         );
+
+        transport._send("queued");
+
+        expect(handshakes).to.equal(0);
+        expect(channel.sent).to.deep.equal([]);
+
+        channel.readyState = "open";
+        channel.emitOpen();
+
+        expect(handshakes).to.equal(1);
+        expect(channel.sent).to.deep.equal(["queued"]);
     });
 
     it("starts the WebRTC handshake when constructed with an open channel", function () {
@@ -101,5 +122,15 @@ describe("WebRTCTransport", function () {
         transport._send("outbound");
 
         expect(channel.sent).to.deep.equal(["outbound"]);
+    });
+
+    it("drops outbound RPCs after the channel closes", function () {
+        const channel = new FakeRTCDataChannel();
+        const transport = new WebRTCTransport(channel, createP2PManager());
+
+        channel.close();
+        transport._send("dropped");
+
+        expect(channel.sent).to.deep.equal([]);
     });
 });

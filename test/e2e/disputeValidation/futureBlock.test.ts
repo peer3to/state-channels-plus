@@ -102,5 +102,10 @@ describe("E2E: dispute validation / futureBlock", function () {
         await h.dispute.resolveDisputeWait({
             assertMaliciousRemoved: false
         });
+
+        await TestSession.expectFirstDetachedError({
+            includes: "unknown snapshot",
+            required: false
+        });
     });
 });

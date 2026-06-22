@@ -171,6 +171,7 @@ export class MathScenarioActions extends ScenarioActions {
             chainFallbackTime?: number;
             evidenceTime?: number;
         };
+        syncTimeoutMs?: number;
     }) {
         const timeConfig = {
             p2pTime: 1,
@@ -179,22 +180,26 @@ export class MathScenarioActions extends ScenarioActions {
             evidenceTime: 12,
             ...options?.timeConfig
         };
+        const syncTimeoutMs = options?.syncTimeoutMs ?? 8000;
 
         await this.harness.lifecycle.timeoutSetup(5, 2, { timeConfig });
 
         const firstLeaver =
             await this.harness.transition.participantLeaveDetached({
-                waitForPeers: [0, 1, 3, 4]
+                waitForPeers: [0, 1, 3, 4],
+                syncTimeoutMs
             });
 
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3, 4],
-            count: 1
+            count: 1,
+            syncTimeoutMs
         });
 
         const secondLeaver =
             await this.harness.transition.participantLeaveDetached({
-                waitForPeers: [0, 1, 3]
+                waitForPeers: [0, 1, 3],
+                syncTimeoutMs
             });
 
         this.harness.context.leftChannelPeerIndices = [
@@ -204,7 +209,8 @@ export class MathScenarioActions extends ScenarioActions {
 
         await this.harness.transition.advanceState({
             waitForPeers: [0, 1, 3],
-            count: 1
+            count: 1,
+            syncTimeoutMs
         });
 
         this.harness.event.resetEventSpies();

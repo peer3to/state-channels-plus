@@ -33,18 +33,23 @@ export class AssertSnapshotActions {
         previousForkId?: ForkId;
         expectedSnapshot?: StateSnapshot;
         timeoutMs?: number;
+        // Peers the barrier waits on. Defaults to all honest peers. Pass the
+        // remaining-in-channel indices when leavers are present: a self-removed
+        // peer never transitions to the reduced fork, so it must be excluded.
+        peerIndices?: number[];
     }): Promise<void> {
         const {
             expectedForkId,
             previousForkId,
             expectedSnapshot,
-            timeoutMs = 8000
+            timeoutMs = 8000,
+            peerIndices
         } = options || {};
 
         let honestPeers;
         let localSnapshots: StateSnapshot[] = [];
         const condition = async () => {
-            honestPeers = this.harness.getHonestPeers();
+            honestPeers = this.harness.getFilteredOrHonestPeers(peerIndices);
             localSnapshots = await Promise.all(
                 honestPeers.map((peer) =>
                     this.harness.query.getLocalStateSnapshot(peer)

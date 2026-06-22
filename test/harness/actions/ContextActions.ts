@@ -40,15 +40,16 @@ export class ContextActions {
             throw new Error(`Peer ${peerIndex} not found`);
         }
 
-        const lastSnapshot = (
-            await peer.stateManager.prepareUpdateSnapshotSameFork(forkId)
-        )?.milestoneSnapshots.at(-1);
-
         const onChainSnapshotBefore = StateSnapshot.from(
             await this.harness.channelManager.getStateSnapshot(
                 this.harness.channelId
             )
         );
+
+        const lastSnapshot =
+            onChainSnapshotBefore.forkID === forkId
+                ? await this.getLastSnapshotForSameFork(peer, forkId)
+                : this.getLatestMilestoneSnapshot(peer);
 
         if (!lastSnapshot) {
             throw new Error("No milestone snapshot available");
@@ -78,6 +79,36 @@ export class ContextActions {
         this.harness.context.expectedWithdrawalsDelta =
             expectedWithdrawalsDeltaBalance;
         this.harness.context.channelBalanceBefore = channelBalance;
+    }
+
+    private getLatestMilestoneSnapshot(peer: {
+        stateManager: StateManager;
+    }): StateSnapshot | undefined {
+        const snapshotStorage = peer.stateManager.storage.stateSnapshots as any;
+        const snapshots = Array.from(snapshotStorage.snapshotsByHash.values());
+        return snapshots[snapshots.length - 1] as StateSnapshot | undefined;
+    }
+
+    private async getLastSnapshotForSameFork(
+        peer: {
+            stateManager: StateManager;
+        },
+        forkId: ForkId
+    ): Promise<StateSnapshot | undefined> {
+        try {
+            return (
+                await peer.stateManager.prepareUpdateSnapshotSameFork(forkId)
+            )?.milestoneSnapshots.at(-1);
+        } catch (error) {
+            if (
+                error instanceof Error &&
+                error.message.includes("Fork mismatch")
+            ) {
+                return this.getLatestMilestoneSnapshot(peer);
+            }
+
+            throw error;
+        }
     }
 
     storeSnapshotCount(peerIndex: number, contextKey: string): void {

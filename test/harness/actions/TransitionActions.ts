@@ -9,6 +9,7 @@ import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/type
 
 export type TransitionOptions = {
     waitForSync?: boolean;
+    syncTimeoutMs?: number;
     /**
      * Only wait for tip agreement on these harness peer indices. Used when some peers are
      * disconnected or out of scope for the scenario; they are not treated as part of this sync wait.
@@ -29,6 +30,7 @@ export type AdvanceStateBaseOptions = {
     count?: number;
     rounds?: number;
     waitForSync?: boolean;
+    syncTimeoutMs?: number;
     waitForPeers?: number[];
     waitForTurn?: boolean;
     waitForFinalization?: boolean;
@@ -266,10 +268,11 @@ export class TransitionActions<
                     ? this.harness.getFilteredPeers(options.waitForPeers)
                     : this.harness.getPeersExcludingMaliciousAndLeavers();
             const waitForFinalization = effectiveWaitForFinalization(options);
+            const timeoutMs = options.syncTimeoutMs ?? 8000;
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
                 forkId,
-                { minHeight, waitForFinalization }
+                { timeoutMs, minHeight, waitForFinalization }
             );
         }
 

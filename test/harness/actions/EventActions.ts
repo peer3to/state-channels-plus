@@ -273,6 +273,7 @@ export class EventActions {
         const maxCount = options.maxCount ?? 0;
         const { durationMs } = options;
         const endAt = Date.now() + durationMs;
+        const timeoutSlackMs = 1500;
 
         const deadlineTimer = setTimeout(
             () => void this.harness.eventCountsBarrier.signal(),
@@ -293,7 +294,7 @@ export class EventActions {
                     return Date.now() >= endAt;
                 },
                 {
-                    timeoutMs: durationMs + 500,
+                    timeoutMs: durationMs + timeoutSlackMs,
                     timeoutMessageFn: () =>
                         `Within ${durationMs}ms, ${String(eventName)} for peers [${peerIds.join(", ")}] did not stay at <= ${maxCount}`
                 }

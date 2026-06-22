@@ -22,14 +22,14 @@ class PingRpc extends MainRpcService {
 }
 
 class PingService extends ARpcService<PingRpcMethods, P2PManager<PingRpc>> {
-    constructor(
-        p2pManager: P2PManager<PingRpc>,
-        readonly prefix: string
-    ) {
+    readonly prefix: string;
+
+    constructor(p2pManager: P2PManager<PingRpc>, prefix: string) {
         super(
             p2pManager,
             p2pManager.stateManager.logger.child({ component: "PingService" })
         );
+        this.prefix = prefix;
     }
 
     createRPCMethods(transport: ATransport): PingRpcMethods {
@@ -38,11 +38,11 @@ class PingService extends ARpcService<PingRpcMethods, P2PManager<PingRpc>> {
 }
 
 class PingRpcMethods extends ARpcMethods<P2PManager<PingRpc>> {
-    constructor(
-        transport: ATransport,
-        private readonly service: PingService
-    ) {
+    private readonly service: PingService;
+
+    constructor(transport: ATransport, service: PingService) {
         super(transport, service.p2pManager);
+        this.service = service;
     }
 
     ping(nonce: string): void {
@@ -67,11 +67,11 @@ class RelayService extends ARpcService<RelayRpcMethods, P2PManager<PingRpc>> {
 }
 
 class RelayRpcMethods extends ARpcMethods<P2PManager<PingRpc>> {
-    constructor(
-        transport: ATransport,
-        private readonly service: RelayService
-    ) {
+    private readonly service: RelayService;
+
+    constructor(transport: ATransport, service: RelayService) {
         super(transport, service.p2pManager);
+        this.service = service;
     }
 
     recordPing(nonce: string): void {

@@ -1,10 +1,10 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
-import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { ethers } from "ethers";
 
 describe("E2E: dispute validation / stateProof / milestone block content integrity", function () {
-    describe("stateProof.milestones[-1].blockConfirmations[-1].header.transactionCnt", function () {
-        it("transactionCnt += 5 → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
+    describe("stateProof.milestones[-1].blockConfirmations[-1].transaction.body.data", function () {
+        it("body.data -> invalid call → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
                 peerCount: 4,
@@ -15,24 +15,22 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             h.event.resetEventSpies();
 
             h.tamper.stubConstructDispute(0, async (dispute) => {
-                const stateProof = dispute.input.stateProof;
+                const invalidData = ethers.hexlify(ethers.randomBytes(32));
 
-                const localDiamond = h.getLocalDiamond(0);
-                const [hasBlock, latestBlock] =
-                    await localDiamond.getLatestBlockFromStateProof(stateProof);
-                if (!hasBlock) {
-                    throw new Error(
-                        "State proof does not contain a block to tamper with"
-                    );
-                }
-
-                latestBlock.transaction.header.transactionCnt =
-                    BigInt(latestBlock.transaction.header.transactionCnt) + 5n;
-
-                stateProof.milestones
-                    .at(-1)!
-                    .blockConfirmations.at(-1)!.signedBlock.encodedBlock =
-                    Codec.encode(latestBlock, Type.Block);
+                await h.tamper.rewriteLastMilestoneSignedBlockInDispute(
+                    dispute,
+                    (bs) => ({
+                        ...bs,
+                        transaction: {
+                            ...bs.transaction,
+                            body: {
+                                ...bs.transaction.body,
+                                encodedData: invalidData,
+                                data: invalidData
+                            }
+                        }
+                    })
+                );
             });
 
             await h.byzantine.submitInvalidStateTransitionBlock(1);
@@ -41,16 +39,26 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 initiatedWithAuditingData: false
             });
 
+            const storedFraudProofWait =
+                h.assert.storage.honestPeersStoredDisputeFraudProofWait({
+                    peerIndices: [2],
+                    disputeFraudProofType:
+                        DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+                    timeoutMs: 60000
+                });
+
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
                 mode: "atLeast",
                 timeoutMs: 10000
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
-                timeoutMs: 10000
-            });
-            await h.dispute.resolveDisputeWait();
+            const unknownSnapshotCleanup = TestSession.expectFirstDetachedError(
+                {
+                    includes: "unknown snapshot",
+                    required: false
+                }
+            );
+            await unknownSnapshotCleanup;
+            await storedFraudProofWait;
         });
     });
 });

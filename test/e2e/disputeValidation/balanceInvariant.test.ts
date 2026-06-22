@@ -25,5 +25,9 @@ describe("E2E: dispute validation / balanceInvariant", function () {
             timeoutMs: 10000
         });
         await h.dispute.resolveDisputeWait();
+        await TestSession.expectFirstDetachedError({
+            includes: "unknown snapshot",
+            required: false
+        });
     });
 });

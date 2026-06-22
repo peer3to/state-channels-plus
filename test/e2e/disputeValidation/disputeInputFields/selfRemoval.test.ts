@@ -53,7 +53,11 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
             honestPeerIndices: remainingPeerIndices
         });
 
-        await h.assert.sync.participantCount({ expectedCount: 2 });
+        await h.assert.sync.participantCount({
+            expectedCount: 2,
+            peerIndex: remainingPeerIndices[0],
+            timeoutMs: 15000
+        });
 
         for (const peer of h.getPeersExcludingMaliciousAndLeavers()) {
             const participants =
@@ -63,6 +67,12 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
                 `Peer ${peer.index} still has self-removed peer ${leaverIndex} in participants`
             ).to.equal(false);
         }
+
+        await TestSession.expectFirstDetachedError({
+            includes: "unknown snapshot",
+            timeoutMs: 10000,
+            required: false
+        });
     });
 
     it("dispute.input.selfRemoval flipped without recomputing outputSnapshotDataHash → DisputeInvalidOutputState", async function () {

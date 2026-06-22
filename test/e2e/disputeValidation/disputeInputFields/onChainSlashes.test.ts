@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import { DetachedPromises } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("E2E: dispute validation / disputeInputFields / onChainSlashes", function () {
@@ -32,6 +33,12 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
             timeoutMs: 10000
         });
         await h.dispute.resolveDisputeWait();
+        await DetachedPromises.awaitAllAndClear();
+
+        await TestSession.expectFirstDetachedError({
+            includes: "unknown snapshot",
+            timeoutMs: 10000
+        });
     });
 
     it("dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason", async function () {
@@ -82,7 +89,9 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
             timeoutMs: 10000
         });
         await h.dispute.resolveDisputeWait({
+            honestPeerIndices: [0, 3],
             forkSettleTimeoutMs: 15000
         });
+        await DetachedPromises.awaitAllAndClear();
     });
 });

@@ -254,6 +254,12 @@ describe("E2E: Malicious updateSnapshot", function () {
                 "expected SpectateService.abort to fire on the inflated-state spectator within 5000ms"
         });
 
+        await TestSession.expectFirstDetachedError({
+            includes: "unknown snapshot",
+            timeoutMs: 3000,
+            required: true
+        });
+
         expect(abortSpy.callCount).to.be.greaterThan(
             0,
             "SpectateService.abort must be called"

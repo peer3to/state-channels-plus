@@ -39,16 +39,11 @@ export class TestSession {
         await this.harness.cleanup();
         this.firstDetachedError = undefined;
         this.detachedErrorAllowlist = [];
+        this.detachedErrorNotify = undefined;
         this.harness = undefined;
     }
 
     static setFirstDetachedError(error: Error): void {
-        // drop errors a test has already claimed (multi-peer same-throw case)
-        if (
-            this.detachedErrorAllowlist.some((s) => error.message.includes(s))
-        ) {
-            return;
-        }
         if (this.firstDetachedError) return;
         this.firstDetachedError = error;
         // wake any consumer waiting on this error
@@ -58,6 +53,16 @@ export class TestSession {
     }
 
     static getFirstDetachedError(): Error | undefined {
+        if (!this.firstDetachedError) return undefined;
+
+        if (
+            this.detachedErrorAllowlist.some((s) =>
+                this.firstDetachedError?.message.includes(s)
+            )
+        ) {
+            return undefined;
+        }
+
         return this.firstDetachedError;
     }
 
@@ -85,14 +90,18 @@ export class TestSession {
         return err;
     }
 
-    // Expect a detached error matching `includes`; mismatch rethrows, timeout fails if required.
+    // Expect a detached error matching any `includes`; mismatch rethrows, timeout fails if required.
     static async expectFirstDetachedError(options: {
-        includes: string;
+        includes: string | string[];
         timeoutMs?: number;
         required?: boolean;
     }): Promise<void> {
+        const includes = Array.isArray(options.includes)
+            ? options.includes
+            : [options.includes];
+
         // Allowlist pattern so duplicate peer throws are ignored.
-        this.detachedErrorAllowlist.push(options.includes);
+        this.detachedErrorAllowlist.push(...includes);
 
         const err = await this.consumeFirstDetachedError(
             options.timeoutMs ?? 0
@@ -100,12 +109,14 @@ export class TestSession {
         if (!err) {
             if (options.required ?? true) {
                 throw new Error(
-                    `expected detached error including "${options.includes}", got none`
+                    `expected detached error including one of "${includes.join(
+                        '", "'
+                    )}", got none`
                 );
             }
             return;
         }
-        if (!err.message.includes(options.includes)) {
+        if (!includes.some((s) => err.message.includes(s))) {
             throw err;
         }
     }

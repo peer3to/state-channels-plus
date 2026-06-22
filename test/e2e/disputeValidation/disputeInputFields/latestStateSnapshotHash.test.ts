@@ -5,6 +5,7 @@ import {
     expectSignedBlocksOnlyStateProof,
     MathTestSession as TestSession
 } from "@test/harness";
+import { DetachedPromises } from "@/utils";
 
 //   (1) no milestones, no signedBlocks → genesis
 //   (2) signedBlocks only → last signedBlock commits to the hash
@@ -43,6 +44,13 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         }
                     );
                     await h.dispute.resolveDisputeWait();
+                    await DetachedPromises.awaitAllAndClear();
+
+                    await TestSession.expectFirstDetachedError({
+                        includes: "unknown snapshot",
+                        timeoutMs: 5000,
+                        required: false
+                    });
                 });
             });
         });
@@ -114,6 +122,13 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         }
                     );
                     await h.dispute.resolveDisputeWait();
+                    await DetachedPromises.awaitAllAndClear();
+
+                    await TestSession.expectFirstDetachedError({
+                        includes: "unknown snapshot",
+                        timeoutMs: 5000,
+                        required: false
+                    });
                 });
             });
         });
@@ -316,6 +331,13 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         }
                     );
                     await h.dispute.resolveDisputeWait();
+                    await DetachedPromises.awaitAllAndClear();
+
+                    await TestSession.expectFirstDetachedError({
+                        includes: "unknown snapshot",
+                        timeoutMs: 5000,
+                        required: false
+                    });
                 });
             });
         });

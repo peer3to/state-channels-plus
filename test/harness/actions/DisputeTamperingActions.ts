@@ -30,6 +30,7 @@ import DisputeManager, {
 import type {
     BlockStruct,
     SignedBlockStruct,
+    BlockConfirmationStruct,
     SnapshotDataStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -576,15 +577,11 @@ export class DisputeTamperingActions {
                 `rewriteMilestoneSignedBlockAtIndex: blockConfirmationIndex ${blockConfirmationIndex} out of range (have ${milestone.blockConfirmations.length} blockConfirmations in milestone ${milestoneIndex})`
             );
         }
-        const { signedBlock, signatures } =
-            milestone.blockConfirmations[blockConfirmationIndex];
-        milestone.blockConfirmations[blockConfirmationIndex] = {
-            signedBlock: await this.remapSignedBlock(
-                signedBlock,
+        milestone.blockConfirmations[blockConfirmationIndex] =
+            await this.remapMilestoneBlockConfirmation(
+                milestone.blockConfirmations[blockConfirmationIndex],
                 transformBlockStruct
-            ),
-            signatures
-        };
+            );
     }
 
     /** Re-encode and re-sign after `transformBlockStruct`, using the harness peer that matches the transformed block author. */
@@ -598,6 +595,32 @@ export class DisputeTamperingActions {
         const author = mapped.transaction.header.participant as Address;
         const peer = this.peerForBlockAuthor(author);
         return (await Block.fromBlockStruct(mapped, peer.signer)).signedBlock;
+    }
+
+    private async remapMilestoneBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct,
+        transformBlockStruct: (bs: BlockStruct) => BlockStruct
+    ): Promise<BlockConfirmationStruct> {
+        const originalBlock = Block.fromBlockConfirmation(blockConfirmation);
+        const mapped = transformBlockStruct(originalBlock.blockStruct);
+        const author = mapped.transaction.header.participant as Address;
+        const authorPeer = this.peerForBlockAuthor(author);
+        const remappedBlock = await Block.fromBlockStruct(
+            mapped,
+            authorPeer.signer
+        );
+
+        const confirmationSignerAddresses = Array.from(
+            originalBlock.confirmationSignerAddresses
+        ).filter((participant) => !addressesEqual(participant, author));
+        const confirmationSignatures = await Promise.all(
+            confirmationSignerAddresses.map((participant) =>
+                remappedBlock.sign(this.peerForBlockAuthor(participant).signer)
+            )
+        );
+        remappedBlock.expandSignatures(confirmationSignatures);
+
+        return remappedBlock.blockConfirmationStruct;
     }
 
     private peerForBlockAuthor(participant: Address) {

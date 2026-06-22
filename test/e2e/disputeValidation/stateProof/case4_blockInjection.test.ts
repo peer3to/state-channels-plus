@@ -43,6 +43,10 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait();
+            await TestSession.expectFirstDetachedError({
+                includes: "unknown snapshot",
+                required: false
+            });
         });
 
         it("stateProof.signedBlocks[-1].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
@@ -74,6 +78,10 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait();
+            await TestSession.expectFirstDetachedError({
+                includes: "unknown snapshot",
+                required: false
+            });
         });
     });
 
@@ -110,6 +118,10 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             await h.dispute.resolveDisputeWait({
                 syntheticOnChainParticipants: 1
             });
+            await TestSession.expectFirstDetachedError({
+                includes: "unknown snapshot",
+                required: false
+            });
         });
 
         it("stateProof.milestones[-1].blockConfirmations[-1].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
@@ -143,6 +155,10 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             });
             await h.dispute.resolveDisputeWait({
                 syntheticOnChainParticipants: 1
+            });
+            await TestSession.expectFirstDetachedError({
+                includes: "unknown snapshot",
+                required: false
             });
         });
     });
