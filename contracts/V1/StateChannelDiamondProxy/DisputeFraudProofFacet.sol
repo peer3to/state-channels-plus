@@ -40,10 +40,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
         for (uint256 i = 0; i < proofs.length; i++) {
             Dispute memory dispute = proofs[i].dispute;
-            address slashedParticipant = address(0);
-            if (isDisputeCommitted(dispute)) {
-                slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
-            }
+            // not committed -> already killed (lost the kill-race) or never committed; no-op.
+            if (!isDisputeCommitted(dispute)) continue;
+            address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
             if (slashedParticipant == proofs[i].participant) {
                 _delegatecall(
                     disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.killDispute, (dispute))
