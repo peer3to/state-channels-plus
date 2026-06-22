@@ -46,4 +46,24 @@ export class AssertActions<
             msg
         ).to.equal(true);
     }
+
+    async slashedOnChainExactly(addresses: string[]): Promise<void> {
+        const slashed =
+            await this.harness.channelManager.getOnChainSlashedParticipants(
+                this.harness.channelId
+            );
+        for (const address of addresses) {
+            expect(
+                slashed.some((a) => addressesEqual(a, address)),
+                `${address} must be on-chain slashed`
+            ).to.equal(true);
+        }
+        const unexpected = slashed.filter(
+            (a) => !addresses.some((addr) => addressesEqual(a, addr))
+        );
+        expect(
+            unexpected,
+            `unexpected on-chain slashes: ${unexpected.join(", ")}`
+        ).to.have.length(0);
+    }
 }

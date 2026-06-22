@@ -1,5 +1,6 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
+import { address as randomAddress } from "@test/factory";
 
 describe("E2E: dispute validation / disputeInputFields / onChainSlashes", function () {
     it("dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset", async function () {
@@ -92,5 +93,33 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         await h.dispute.resolveDisputeWait({
             forkSettleTimeoutMs: 15000
         });
+    });
+
+    it("dispute.input.onChainSlashes has > maxSlashCount distinct addresses → reduce must not OOB-panic, both offenders slashed", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.preDisputeSetup({ peerCount: 4 });
+
+        const junkSlashes = Array.from({ length: 8 }, randomAddress);
+        h.tamper.stubConstructDispute(
+            1,
+            (dispute, _sm, args) => {
+                dispute.input.onChainSlashes = args.junkSlashes as string[];
+            },
+            { args: { junkSlashes } }
+        );
+
+        await h.byzantine.submitForgedInboundMessageBlock(2);
+
+        await h.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [1],
+            initiatedWithAuditingData: false
+        });
+
+        await h.dispute.resolveDisputeWait();
+
+        await h.assert.slashedOnChainExactly([
+            h.getPeer(1).address,
+            h.getPeer(2).address
+        ]);
     });
 });
