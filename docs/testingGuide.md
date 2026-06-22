@@ -66,6 +66,20 @@ Run all tests:
 yarn hardhat test
 ```
 
+If you want to opt into Hardhat's parallel mode, use:
+
+```shell
+yarn test:parallel
+```
+
+`yarn test:parallel` runs the non-e2e suite in parallel after a short serial
+pre-pass for `WebRTCTransport.test.ts`, `CustomRpcTypes.test.ts`, and
+`test/V1/UniversalDeployment.test.ts`.
+
+Use the serial commands above, or the individual integration test commands below,
+when debugging failures that depend on execution order, shared state, timers,
+or time-travel behavior.
+
 ## Run individual tests:
 
 Cryptography tests:
