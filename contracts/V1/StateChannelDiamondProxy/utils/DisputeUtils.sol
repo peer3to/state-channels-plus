@@ -67,9 +67,6 @@ function _getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory state
     BlockConfirmation[] memory blockConfirmations = new BlockConfirmation[](0);
     if (stateProof.milestones.length > 0) {
         MilestoneProof memory lastMilestone = stateProof.milestones[stateProof.milestones.length - 1];
-        if (lastMilestone.blockConfirmations.length == 0) {
-            return blockConfirmations;
-        }
         // skip first block - the first block is finalized
         blockConfirmations = new BlockConfirmation[](lastMilestone.blockConfirmations.length - 1);
         for (uint256 i = 1; i < lastMilestone.blockConfirmations.length; i++) {
