@@ -127,18 +127,19 @@ export async function deployFacets(
     signer: Signer,
     libs: Record<string, string> = {}
 ): Promise<string[]> {
-    const nextNonce = await signer.getNonce("pending");
-    return Promise.all(
-        facetArtifacts.map((artifact, index) =>
-            deployArtifact(artifact, signer, {
-                libs,
-                txOverrides: {
-                    nonce: nextNonce + index,
-                    gasLimit: FACET_DEPLOY_GAS_LIMIT
-                }
-            }).then(({ address }) => address)
-        )
-    );
+    const facetAddresses: string[] = [];
+
+    for (const artifact of facetArtifacts) {
+        const { address } = await deployArtifact(artifact, signer, {
+            libs,
+            txOverrides: {
+                gasLimit: FACET_DEPLOY_GAS_LIMIT
+            }
+        });
+        facetAddresses.push(address);
+    }
+
+    return facetAddresses;
 }
 
 export async function deployFacetsLocal(

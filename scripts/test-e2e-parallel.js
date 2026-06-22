@@ -3,11 +3,27 @@ const { spawn } = require("child_process");
 const { createHash } = require("crypto");
 const fs = require("fs");
 const { globSync } = require("glob");
+const os = require("os");
 const path = require("path");
 const { Project, SyntaxKind } = require("ts-morph");
 
 const DEFAULT_LOG_DIR = "./logs";
-const DEFAULT_WORKERS = 8;
+
+// Derive the worker count from the host spec instead of hardcoding it. Each task
+// is a heavy hardhat process (an EVM worker thread + several peers) and the suite
+// is timing-sensitive, so over-subscribing CPU makes the timing-dependent tests
+// flake (empirically: cores+4 starts failing; cores-2 is the sweet spot). We also
+// cap by RAM since each worker is memory-hungry, to avoid thrashing low-memory
+// hosts. Override anytime with --workers/-w.
+const PER_WORKER_MEM_GB = 2; // rough budget per concurrent hardhat task
+function defaultWorkerCount() {
+    const cpuCount = os.cpus()?.length ?? 4;
+    const totalMemGb = os.totalmem() / 1024 ** 3;
+    const byCpu = cpuCount - 2; // leave 2 cores for the OS + this orchestrator
+    const byMem = Math.floor(totalMemGb / PER_WORKER_MEM_GB);
+    return Math.max(2, Math.min(byCpu, byMem));
+}
+const DEFAULT_WORKERS = defaultWorkerCount();
 const DEFAULT_WORKER_START_STAGGER_MS = 1000;
 const DEFAULT_STREAM_CHILD_OUTPUT = false;
 
