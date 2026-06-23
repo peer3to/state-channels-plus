@@ -10,6 +10,7 @@ import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import EventBarrier from "@/utils/EventBarrier";
 import { Status } from "@/types";
+import { Hash } from "@/types/types";
 import { DetachedPromises, getChecksumAddress } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { EventBarrierCapturedError } from "@/utils/EventBarrier";
@@ -20,6 +21,25 @@ type ConnectionChallenge = {
 };
 
 class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
+    /**
+     * Domain tag scoping a handshake signature to the handshake protocol.
+     * The responder signs this string, never the bare 32-byte challenge hash.
+     * Blocks/protocol messages are EIP-191 signatures over a raw 32-byte keccak
+     * hash, so signing a domain-tagged string makes a handshake signature
+     * structurally incapable of colliding with a block signature — closing the
+     * pre-auth signing-oracle (challengeHash = keccak256(encodedBlock)).
+     */
+    public static readonly HANDSHAKE_DOMAIN = "peer3:init-handshake:v1";
+
+    /**
+     * Canonical message both peers sign/verify for a given challenge. Uses
+     * `hexlify` so requester (locally generated) and responder (wire) derive an
+     * identical string regardless of input casing/representation.
+     */
+    public static buildHandshakeChallengeMessage(challengeHash: Hash): string {
+        return `${InitHandshakeService.HANDSHAKE_DOMAIN}:${ethers.hexlify(challengeHash)}`;
+    }
+
     mapTransportToChallenge: WeakMap<ATransport, ConnectionChallenge> =
         new WeakMap<ATransport, ConnectionChallenge>();
     timeoutManager: TimeoutManager;
