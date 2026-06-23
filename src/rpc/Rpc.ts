@@ -22,6 +22,12 @@ export type RpcResponse = {
     error?: string;
 };
 
+// Upper bound on a single RPC frame's size, enforced before parsing/dispatch so
+// an oversized frame can't force unbounded JSON.parse/handler work. Generous so
+// no legitimate payload (e.g. an encoded sync payload) is rejected; it only
+// caps absurd floods.
+export const MAX_RPC_FRAME_BYTES = 16 * 1024 * 1024;
+
 // RPC params/results must be JSON-serializable: every `*RpcMethods` endpoint
 // takes and returns plain values, with bigint-bearing ethers structs crossing as
 // `Codec.encode`d `encoded*` strings (one serialization mechanism — Codec). A
@@ -39,7 +45,9 @@ export function deserializeRpc(serializedRpc: string): Rpc | undefined {
             !rpc ||
             typeof rpc.service !== "string" ||
             typeof rpc.method !== "string" ||
-            !rpc.params
+            // `params` must be an array — the dispatcher spreads it
+            // (`method(...rpc.params)`), so a non-array would mis-dispatch.
+            !Array.isArray(rpc.params)
         ) {
             return undefined;
         }
