@@ -18,13 +18,30 @@ const DEFAULT_STREAM_CHILD_OUTPUT = false;
 // Thread-budget cost model
 // ---------------------------------------------------------------------------
 
-// Number of OS threads a single peer contributes under current env config.
-// VM_DEDICATED_THREAD (default true) = +1 thread/peer.
-// RUN_SDK_IN_THREAD (default false) = +1 thread/peer when true.
-function effectiveThreadsPerPeer() {
-    const vm = process.env.VM_DEDICATED_THREAD === "false" ? 0 : 1;
-    const sdk = process.env.RUN_SDK_IN_THREAD === "true" ? 1 : 0;
-    return Math.max(1, vm + sdk);
+// Resolve thread-mode booleans with precedence: CLI flag > inherited env > default.
+// Defaults: vmThread=true, sdkThread=false (matches today's effective config).
+function resolveThreadModes(cli) {
+    const sdkThread =
+        cli.sdkThread !== undefined
+            ? cli.sdkThread
+            : process.env.RUN_SDK_IN_THREAD !== undefined
+              ? process.env.RUN_SDK_IN_THREAD !== "false"
+              : false;
+
+    const vmThread =
+        cli.vmThread !== undefined
+            ? cli.vmThread
+            : process.env.VM_DEDICATED_THREAD !== undefined
+              ? process.env.VM_DEDICATED_THREAD !== "false"
+              : true;
+
+    return { sdkThread, vmThread };
+}
+
+// Number of OS threads a single peer contributes: 1 per enabled thread mode,
+// clamped to at least 1. VM_DEDICATED_THREAD defaults true / RUN_SDK_IN_THREAD defaults false.
+function threadsPerPeerFromModes({ sdkThread, vmThread }) {
+    return Math.max(1, (vmThread ? 1 : 0) + (sdkThread ? 1 : 0));
 }
 
 // One extra thread per hardhat process (the main node process itself).
@@ -151,7 +168,10 @@ function parseCliArgs(argv) {
         grep: undefined,
         threadFactor: undefined,
         threadBudget: undefined,
-        dryRun: false
+        dryRun: false,
+        // Thread-mode toggles: undefined = fall back to env/default in resolveThreadModes.
+        sdkThread: undefined,
+        vmThread: undefined
     };
 
     for (let i = 2; i < argv.length; i++) {
@@ -259,6 +279,26 @@ function parseCliArgs(argv) {
                 options.threadBudget = parsed;
                 i++;
             }
+            continue;
+        }
+
+        if (arg === "--sdk-thread") {
+            options.sdkThread = true;
+            continue;
+        }
+
+        if (arg === "--no-sdk-thread") {
+            options.sdkThread = false;
+            continue;
+        }
+
+        if (arg === "--vm-thread") {
+            options.vmThread = true;
+            continue;
+        }
+
+        if (arg === "--no-vm-thread") {
+            options.vmThread = false;
             continue;
         }
 
@@ -580,7 +620,8 @@ async function main() {
     // -----------------------------------------------------------------------
     // Thread-budget computation
     // -----------------------------------------------------------------------
-    const threadsPerPeer = effectiveThreadsPerPeer();
+    const threadModes = resolveThreadModes(cli);
+    const threadsPerPeer = threadsPerPeerFromModes(threadModes);
 
     // Assign a thread cost to every task.
     for (const task of tasks) {
@@ -631,6 +672,8 @@ async function main() {
             );
         }
         console.log(`\nBudget footer:`);
+        console.log(`  vmThread         : ${threadModes.vmThread}`);
+        console.log(`  sdkThread        : ${threadModes.sdkThread}`);
         console.log(`  threadsPerPeer   : ${threadsPerPeer}`);
         console.log(`  threadFactor     : ${threadFactor}`);
         console.log(`  threadBudget     : ${threadBudget}`);
@@ -650,7 +693,7 @@ async function main() {
             : `Running ${tasks.length} E2E task(s)`
     );
     console.log(
-        `  threadsPerPeer=${threadsPerPeer}  threadBudget=${threadBudget}  threadFactor=${threadFactor}  maxConcurrent=${maxConcurrent}`
+        `  threadsPerPeer=${threadsPerPeer}  vmThread=${threadModes.vmThread}  sdkThread=${threadModes.sdkThread}  threadBudget=${threadBudget}  threadFactor=${threadFactor}  maxConcurrent=${maxConcurrent}`
     );
 
     const logDir = cli.logDir;
@@ -676,7 +719,10 @@ async function main() {
         // Assign unique discovery port based on worker index or PID
         // Force color output even when piped
         FORCE_COLOR: "1",
-        TERM: process.env.TERM || "xterm-256color"
+        TERM: process.env.TERM || "xterm-256color",
+        // Force resolved thread modes onto children so cost model and runtime match.
+        RUN_SDK_IN_THREAD: threadModes.sdkThread ? "true" : "false",
+        VM_DEDICATED_THREAD: threadModes.vmThread ? "true" : "false"
     };
 
     const rerunEnv = {
