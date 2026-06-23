@@ -5,6 +5,14 @@
 - Run `yarn tsc --noEmit -p tsconfig.json` for TypeScript typechecking.
 - Run `yarn compile` for compile-level validation when changes affect the build or exported package surface.
 
+## Integration test harness
+
+End-to-end tests drive real peers + chain + custom precompiles in-process via
+`PeerTestHarness` (`test/fixtures/PeerTestHarness.ts`) — real signed blocks,
+on-chain events, and transitions, not mocks. For the control surface (action
+namespaces, the per-peer `harness.control(peer)` RPC services, and how to write
+a scenario) see [docs/harness.md](docs/harness.md).
+
 ## Conventions
 
 These are project rules to follow (and persist any future "remember this" instructions here).
