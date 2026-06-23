@@ -512,15 +512,20 @@ function formatResultLine({
     durationMs,
     completed,
     total,
-    rerunAttempt
+    rerunAttempt,
+    slotId
 }) {
     const status = code === 0 ? "PASS" : "FAIL";
-    const phasePrefix = rerunAttempt ? `${phase}#${rerunAttempt}` : phase;
+    // e.g. "run#s3" for initial runs, "rerun#1#s-" for reruns with placeholder slot
+    const slotSuffix = slotId !== undefined ? `#s${slotId}` : "";
+    const phaseTag = rerunAttempt
+        ? `${phase}#${rerunAttempt}${slotSuffix}`
+        : `${phase}${slotSuffix}`;
     const duration = formatDurationMs(durationMs);
     if (code === 0) {
-        return `[${completed}/${total}] ${phasePrefix} ${status} (${duration})`;
+        return `[${completed}/${total}] ${phaseTag} ${status} (${duration})`;
     }
-    return `[${completed}/${total}] ${phasePrefix} ${status} ${label} (${duration})`;
+    return `[${completed}/${total}] ${phaseTag} ${status} ${label} (${duration})`;
 }
 
 async function main() {
@@ -702,6 +707,9 @@ async function main() {
 
     console.log(`Using worker start stagger=${workerStartStaggerMs}ms`);
 
+    // Free-list of slot ids 0..maxConcurrent-1. Acquire on admission, release on completion.
+    const freeSlots = Array.from({ length: maxConcurrent }, (_, i) => i);
+
     let idx = 0;
     let active = 0;
     let usedThreads = 0;
@@ -728,6 +736,7 @@ async function main() {
                 const task = tasks[idx++];
                 usedThreads += task.cost;
                 active++;
+                const slotId = freeSlots.shift();
 
                 const now = Date.now();
                 const delayMs = Math.max(0, nextLaunchAt - now);
@@ -739,13 +748,16 @@ async function main() {
                         "yarn",
                         ["--silent", ...task.args],
                         {
-                            ...env
+                            ...env,
+                            E2E_SLOT_INDEX: String(slotId)
                         },
                         task.label,
                         getLogPath(logDir, task.logName)
                     ).then(({ code, label, stdout, stderr, durationMs }) => {
                         usedThreads -= task.cost;
                         active--;
+                        freeSlots.push(slotId);
+                        freeSlots.sort((a, b) => a - b);
 
                         // Classify event-loop starvation so we can rerun serially.
                         const starved =
@@ -767,7 +779,8 @@ async function main() {
                                 code,
                                 durationMs,
                                 completed,
-                                total: tasks.length
+                                total: tasks.length,
+                                slotId
                             })
                         );
                         maybeStartNext();
@@ -864,7 +877,8 @@ async function main() {
                 durationMs: result.durationMs,
                 completed,
                 total: tasks.length + failed.length,
-                rerunAttempt: 1
+                rerunAttempt: 1,
+                slotId: "-"
             })
         );
     }
