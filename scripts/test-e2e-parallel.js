@@ -15,6 +15,55 @@ const DEFAULT_WORKER_START_STAGGER_MS = 1000;
 const DEFAULT_STREAM_CHILD_OUTPUT = false;
 
 // ---------------------------------------------------------------------------
+// Adaptive load controller
+// ---------------------------------------------------------------------------
+
+// Target OS load per core. Runs that overload the machine produce load > cores,
+// so staying near 0.9x cores keeps headroom for OS scheduling overhead.
+const TARGET_LOAD_PER_CORE = 0.9;
+
+const MIN_THREAD_FACTOR = 1;
+const MAX_THREAD_FACTOR = 12;
+
+// How often we sample os.loadavg()[0] during the admission window.
+const LOAD_SAMPLE_INTERVAL_MS = 3000;
+
+// When starvation trips occurred, knock down the factor by this multiplier.
+const STARVATION_KNOCKDOWN = 0.8;
+
+// Guard against division by zero in the adaptation formula.
+const EPSILON = 1e-6;
+
+// Persisted tuning state shared across runs.
+const SCHEDULER_METADATA_PATH = path.join(
+    os.tmpdir(),
+    "scp-e2e-scheduler-metadata.json"
+);
+
+/** Read and parse the metadata file. Returns null on any error. */
+function readSchedulerMetadata() {
+    try {
+        const raw = fs.readFileSync(SCHEDULER_METADATA_PATH, "utf8");
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+/** Persist metadata. Swallows errors — a write failure must never abort a run. */
+function writeSchedulerMetadata(data) {
+    try {
+        fs.writeFileSync(
+            SCHEDULER_METADATA_PATH,
+            JSON.stringify(data, null, 2),
+            "utf8"
+        );
+    } catch {
+        // Non-fatal: metadata is best-effort.
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Thread-budget cost model
 // ---------------------------------------------------------------------------
 
@@ -168,6 +217,8 @@ function parseCliArgs(argv) {
         grep: undefined,
         threadFactor: undefined,
         threadBudget: undefined,
+        // targetLoad undefined → use env or built-in constant.
+        targetLoad: undefined,
         dryRun: false,
         // Thread-mode toggles: undefined = fall back to env/default in resolveThreadModes.
         sdkThread: undefined,
@@ -304,6 +355,25 @@ function parseCliArgs(argv) {
 
         if (arg === "--dry-run") {
             options.dryRun = true;
+            continue;
+        }
+
+        if (arg === "--target-load") {
+            const next = argv[i + 1];
+            const parsed = next ? Number.parseFloat(next) : NaN;
+            if (Number.isFinite(parsed) && parsed > 0) {
+                options.targetLoad = parsed;
+                i++;
+            }
+            continue;
+        }
+
+        if (arg.startsWith("--target-load=")) {
+            const value = arg.split("=").slice(1).join("=");
+            const parsed = Number.parseFloat(value);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                options.targetLoad = parsed;
+            }
             continue;
         }
     }
@@ -629,10 +699,70 @@ async function main() {
     }
 
     const cpuCount = os.cpus()?.length ?? 4;
-    const threadFactor =
+
+    // Seed factor: env var is a seed only and does NOT block adaptation.
+    const seedFactor =
         cli.threadFactor ??
         (Number(process.env.E2E_THREAD_OVERSUB_FACTOR) ||
             DEFAULT_THREAD_FACTOR);
+
+    // Target load per core: CLI wins over env wins over built-in constant.
+    const _envTargetLoad = process.env.E2E_TARGET_LOAD_PER_CORE
+        ? Number.parseFloat(process.env.E2E_TARGET_LOAD_PER_CORE)
+        : NaN;
+    const targetLoad =
+        cli.targetLoad ??
+        (Number.isFinite(_envTargetLoad) && _envTargetLoad > 0
+            ? _envTargetLoad
+            : TARGET_LOAD_PER_CORE);
+
+    // Adaptation gate: adapt only when neither --thread-factor nor --thread-budget
+    // was explicitly supplied. Those are manual wins → no adaptation.
+    const shouldAdapt =
+        cli.threadFactor === undefined && cli.threadBudget === undefined;
+
+    let threadFactor = seedFactor;
+    let didAdapt = false;
+
+    if (shouldAdapt) {
+        const meta = readSchedulerMetadata();
+        // Regime check: ignore metadata when threadsPerPeer changed — old
+        // tuning was calibrated for a different per-peer cost.
+        if (
+            meta !== null &&
+            Number.isFinite(meta.scalingFactor) &&
+            Number.isFinite(meta.avgLoadPerCore) &&
+            meta.threadsPerPeer === threadsPerPeer
+        ) {
+            const prevFactor = meta.scalingFactor;
+            const prevLoad = meta.avgLoadPerCore;
+            const prevStarvation = meta.starvationTrips ?? 0;
+
+            let nextFactor =
+                prevFactor * (targetLoad / Math.max(prevLoad, EPSILON));
+            nextFactor = Math.max(
+                MIN_THREAD_FACTOR,
+                Math.min(MAX_THREAD_FACTOR, nextFactor)
+            );
+
+            if (prevStarvation > 0) {
+                const knocked = prevFactor * STARVATION_KNOCKDOWN;
+                nextFactor = Math.min(
+                    nextFactor,
+                    Math.max(
+                        MIN_THREAD_FACTOR,
+                        Math.min(MAX_THREAD_FACTOR, knocked)
+                    )
+                );
+            }
+
+            console.log(
+                `adapting factor ${prevFactor.toFixed(3)} → ${nextFactor.toFixed(3)} from prior load/core ${prevLoad.toFixed(3)} toward ${targetLoad}`
+            );
+            threadFactor = nextFactor;
+            didAdapt = true;
+        }
+    }
 
     let threadBudget =
         cli.threadBudget ?? Math.max(1, Math.round(cpuCount * threadFactor));
@@ -654,7 +784,8 @@ async function main() {
     tasks.sort((a, b) => b.cost - a.cost);
 
     // -----------------------------------------------------------------------
-    // --dry-run: print schedule table and exit without running anything
+    // --dry-run: print schedule table and exit without running anything.
+    // No sampling and no metadata persist in dry-run mode.
     // -----------------------------------------------------------------------
     if (cli.dryRun) {
         const avgCost =
@@ -675,7 +806,14 @@ async function main() {
         console.log(`  vmThread         : ${threadModes.vmThread}`);
         console.log(`  sdkThread        : ${threadModes.sdkThread}`);
         console.log(`  threadsPerPeer   : ${threadsPerPeer}`);
-        console.log(`  threadFactor     : ${threadFactor}`);
+        const factorLabel = didAdapt
+            ? "adapted"
+            : !shouldAdapt
+              ? "manual"
+              : "seed";
+        console.log(
+            `  threadFactor     : ${threadFactor.toFixed(3)} (${factorLabel})`
+        );
         console.log(`  threadBudget     : ${threadBudget}`);
         console.log(`  maxConcurrent    : ${maxConcurrent}`);
         console.log(
@@ -765,6 +903,13 @@ async function main() {
     let rerunTotalDurationMs = 0;
     const initialRunStartedAt = Date.now();
 
+    // Start load sampling before the admission window. Take one sample
+    // immediately so runs shorter than the interval still record a reading.
+    const loadSamples = [os.loadavg()[0]];
+    const loadSampleTimer = setInterval(() => {
+        loadSamples.push(os.loadavg()[0]);
+    }, LOAD_SAMPLE_INTERVAL_MS);
+
     await new Promise((resolve) => {
         const maybeStartNext = () => {
             if (idx >= tasks.length && active === 0) {
@@ -836,6 +981,8 @@ async function main() {
         };
         maybeStartNext();
     });
+    // Stop sampling immediately after the admission window closes (before reruns).
+    clearInterval(loadSampleTimer);
     const initialRunWallDurationMs = Date.now() - initialRunStartedAt;
 
     const rerunFailures = [];
@@ -934,6 +1081,25 @@ async function main() {
 
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
+    // Compute avg load per core from samples (or fall back to a single snapshot).
+    const avgLoadPerCore =
+        loadSamples.length > 0
+            ? loadSamples.reduce((s, v) => s + v, 0) /
+              loadSamples.length /
+              cpuCount
+            : os.loadavg()[0] / cpuCount;
+
+    // Persist tuning metadata after starvationCount is final.
+    if (shouldAdapt) {
+        writeSchedulerMetadata({
+            avgLoadPerCore,
+            scalingFactor: threadFactor,
+            starvationTrips: starvationCount,
+            threadsPerPeer,
+            timestamp: new Date().toISOString()
+        });
+    }
+
     // Print final summary
     console.log("\n");
     if (totalPassing > 0) {
@@ -947,6 +1113,9 @@ async function main() {
             `  ${starvationCount} task(s) hit event-loop starvation (rerun serially) — consider lowering --thread-factor`
         );
     }
+    console.log(
+        `  avg load/core: ${avgLoadPerCore.toFixed(3)} (target ${targetLoad})`
+    );
     console.log(
         `  Initial run: wall=${formatDurationMs(initialRunWallDurationMs)}, sum=${formatDurationMs(initialRunTotalDurationMs)}`
     );
