@@ -593,11 +593,15 @@ export class PeerTestHarness<
      * {@link HarnessControlRpc}) takes precedence.
      */
     private resolveHarnessRpcManifest(): CustomRpcManifest {
+        // Resolve the sibling RPC with the same extension this module runs as:
+        // ".js" when consumed from the built dist, ".ts" under ts-node. A
+        // hardcoded ".ts" breaks dist consumers, where only ".js" ships.
+        const ext = __filename.endsWith(".ts") ? "ts" : "js";
         return (
             this.options.customRpcManifest ?? {
                 module: path.resolve(
                     __dirname,
-                    "customRpc/harnessControl/HarnessControlRpc.ts"
+                    `customRpc/harnessControl/HarnessControlRpc.${ext}`
                 )
             }
         );
