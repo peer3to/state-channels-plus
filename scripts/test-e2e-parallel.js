@@ -3,6 +3,7 @@ const { spawn } = require("child_process");
 const { createHash } = require("crypto");
 const fs = require("fs");
 const { globSync } = require("glob");
+const net = require("net");
 const os = require("os");
 const path = require("path");
 const { Project, SyntaxKind } = require("ts-morph");
@@ -222,7 +223,9 @@ function parseCliArgs(argv) {
         dryRun: false,
         // Thread-mode toggles: undefined = fall back to env/default in resolveThreadModes.
         sdkThread: undefined,
-        vmThread: undefined
+        vmThread: undefined,
+        // Shared discovery: undefined = fall back to env/default (on by default).
+        sharedDiscovery: undefined
     };
 
     for (let i = 2; i < argv.length; i++) {
@@ -350,6 +353,16 @@ function parseCliArgs(argv) {
 
         if (arg === "--no-vm-thread") {
             options.vmThread = false;
+            continue;
+        }
+
+        if (arg === "--shared-discovery") {
+            options.sharedDiscovery = true;
+            continue;
+        }
+
+        if (arg === "--no-shared-discovery") {
+            options.sharedDiscovery = false;
             continue;
         }
 
@@ -638,6 +651,94 @@ function formatResultLine({
     return `[${completed}/${total}] ${phaseTag} ${status} ${label} (${duration})`;
 }
 
+/** Probe the OS for an available TCP port by binding to :0 and reading back. */
+function getFreePort() {
+    return new Promise((resolve, reject) => {
+        const srv = net.createServer();
+        srv.listen(0, "127.0.0.1", () => {
+            const { port } = srv.address();
+            srv.close((err) => (err ? reject(err) : resolve(port)));
+        });
+        srv.on("error", reject);
+    });
+}
+
+/**
+ * Spawn the shared LocalDiscovery registry on `port` and wait for its ready
+ * line. Rejects if the process exits non-zero before emitting the ready line,
+ * or if the ready line doesn't arrive within 15 seconds.
+ */
+function startDiscoveryRegistry(port, logPath) {
+    return new Promise((resolve, reject) => {
+        fs.mkdirSync(path.dirname(logPath), { recursive: true });
+        const logStream = fs.createWriteStream(logPath, { flags: "w" });
+        const child = spawn(
+            process.execPath,
+            [path.join(__dirname, "infra", "local-discovery-registry.js")],
+            {
+                cwd: path.join(__dirname, ".."),
+                env: {
+                    ...process.env,
+                    LOCAL_DISCOVERY_HOST: "127.0.0.1",
+                    LOCAL_DISCOVERY_PORT: String(port)
+                },
+                // stdout piped so we can parse the ready line; stderr to log stream.
+                stdio: ["ignore", "pipe", "pipe"]
+            }
+        );
+
+        child.stderr.pipe(logStream, { end: false });
+
+        const READY_RE = /LocalDiscovery registry listening on (ws:\/\/\S+)/;
+        let settled = false;
+        let buffer = "";
+
+        const readyTimeout = setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                child.kill("SIGTERM");
+                reject(
+                    new Error(
+                        "LocalDiscovery registry did not become ready within 15s"
+                    )
+                );
+            }
+        }, 15000);
+
+        child.stdout.on("data", (chunk) => {
+            logStream.write(chunk);
+            buffer += chunk.toString();
+            const m = READY_RE.exec(buffer);
+            if (m && !settled) {
+                settled = true;
+                clearTimeout(readyTimeout);
+                resolve({ child, url: m[1] });
+            }
+        });
+
+        child.on("exit", (code) => {
+            clearTimeout(readyTimeout);
+            logStream.end();
+            if (!settled) {
+                settled = true;
+                reject(
+                    new Error(
+                        `LocalDiscovery registry exited with code ${code} before becoming ready`
+                    )
+                );
+            }
+        });
+
+        child.on("error", (err) => {
+            clearTimeout(readyTimeout);
+            if (!settled) {
+                settled = true;
+                reject(err);
+            }
+        });
+    });
+}
+
 async function main() {
     const cli = parseCliArgs(process.argv);
     const e2eDir = path.resolve("test/e2e");
@@ -836,171 +937,273 @@ async function main() {
 
     const logDir = cli.logDir;
 
-    // Clean logs from previous runs
+    // Clean logs from previous runs before starting any infra that writes there.
     safeEmptyDir(logDir, cli.allowLogdirPurge);
 
-    const env = {
-        ...process.env,
-        LOG_LEVEL: process.env.LOG_LEVEL || "error",
-        NODE_OPTIONS: [
-            process.env.NODE_OPTIONS,
-            "--enable-source-maps",
-            "--stack-trace-limit=1000"
-        ]
-            .filter(Boolean)
-            .join(" "),
-        // CRASH_LOG_UPLOAD_ENDPOINT: "",
-        // CRASH_LOG_API_TOKEN: "",
-        STREAM_PARALLEL_CHILD_OUTPUT:
-            process.env.STREAM_PARALLEL_CHILD_OUTPUT ||
-            (DEFAULT_STREAM_CHILD_OUTPUT ? "1" : "0"),
-        // Assign unique discovery port based on worker index or PID
-        // Force color output even when piped
-        FORCE_COLOR: "1",
-        TERM: process.env.TERM || "xterm-256color",
-        // Force resolved thread modes onto children so cost model and runtime match.
-        RUN_SDK_IN_THREAD: threadModes.sdkThread ? "true" : "false",
-        VM_DEDICATED_THREAD: threadModes.vmThread ? "true" : "false"
+    // -----------------------------------------------------------------------
+    // Shared discovery registry
+    // CLI --no-shared-discovery wins over env E2E_SHARED_DISCOVERY=0.
+    // Must start AFTER safeEmptyDir so the registry log isn't immediately
+    // deleted, and must be torn down on every exit path via the try/finally.
+    // -----------------------------------------------------------------------
+    const useSharedDiscovery =
+        cli.sharedDiscovery !== undefined
+            ? cli.sharedDiscovery
+            : process.env.E2E_SHARED_DISCOVERY !== "0";
+
+    let discoveryChild = null;
+    let discoveryRegistryUrl = undefined;
+
+    const teardownDiscovery = () => {
+        if (discoveryChild && !discoveryChild.killed) {
+            discoveryChild.kill("SIGTERM");
+        }
     };
+    // Expose to module-level catch handler so no throw path orphans the registry.
+    _teardownDiscovery = teardownDiscovery;
 
-    const rerunEnv = {
-        ...env,
-        CRASH_LOG_UPLOAD_ENDPOINT: undefined,
-        CRASH_LOG_API_TOKEN: undefined
-    };
-
-    console.log(`Failure log upload=off (empty upload endpoint)`);
-    console.log(
-        `Streaming child output=${env.STREAM_PARALLEL_CHILD_OUTPUT === "1" ? "on" : "off"}`
-    );
-    console.log(
-        "Rerun failure log upload=deferred to child env/dotenv resolution"
-    );
-
-    const startTime = Date.now();
-    const configuredStagger = Number.parseInt(
-        process.env.E2E_WORKER_START_STAGGER_MS ||
-            String(DEFAULT_WORKER_START_STAGGER_MS),
-        10
-    );
-    const workerStartStaggerMs =
-        Number.isFinite(configuredStagger) && configuredStagger >= 0
-            ? configuredStagger
-            : DEFAULT_WORKER_START_STAGGER_MS;
-    let nextLaunchAt = Date.now();
-
-    console.log(`Using worker start stagger=${workerStartStaggerMs}ms`);
-
-    // Free-list of slot ids 0..maxConcurrent-1. Acquire on admission, release on completion.
-    const freeSlots = Array.from({ length: maxConcurrent }, (_, i) => i);
-
-    let idx = 0;
-    let active = 0;
-    let usedThreads = 0;
-    let failed = [];
-    let completed = 0;
-    let initialRunTotalDurationMs = 0;
-    let rerunTotalDurationMs = 0;
-    const initialRunStartedAt = Date.now();
-
-    // Start load sampling before the admission window. Take one sample
-    // immediately so runs shorter than the interval still record a reading.
-    const loadSamples = [os.loadavg()[0]];
-    const loadSampleTimer = setInterval(() => {
-        loadSamples.push(os.loadavg()[0]);
-    }, LOAD_SAMPLE_INTERVAL_MS);
-
-    await new Promise((resolve) => {
-        const maybeStartNext = () => {
-            if (idx >= tasks.length && active === 0) {
-                resolve(undefined);
-                return;
+    // Belt-and-suspenders: signal handlers wait for the registry child to exit
+    // before forwarding the signal exit code. Idempotent via `shuttingDown`.
+    let shuttingDown = false;
+    for (const signal of ["SIGINT", "SIGTERM"]) {
+        process.on(signal, () => {
+            if (shuttingDown) return;
+            shuttingDown = true;
+            const sigCode = signal === "SIGINT" ? 130 : 143;
+            if (discoveryChild && !discoveryChild.killed) {
+                discoveryChild.kill("SIGTERM");
+                const fallback = setTimeout(() => process.exit(sigCode), 2000);
+                fallback.unref();
+                discoveryChild.once("exit", () => process.exit(sigCode));
+            } else {
+                process.exit(sigCode);
             }
-            // Admit tasks while budget allows.  The `active === 0` guard ensures
-            // at least one task is always running (prevents deadlock when a single
-            // task's cost exceeds the budget).
-            while (
-                idx < tasks.length &&
-                active < maxConcurrent &&
-                (usedThreads + tasks[idx].cost <= threadBudget || active === 0)
-            ) {
-                const task = tasks[idx++];
-                usedThreads += task.cost;
-                active++;
-                const slotId = freeSlots.shift();
-
-                const now = Date.now();
-                const delayMs = Math.max(0, nextLaunchAt - now);
-                nextLaunchAt =
-                    Math.max(nextLaunchAt, now) + workerStartStaggerMs;
-
-                setTimeout(() => {
-                    runTask(
-                        "yarn",
-                        ["--silent", ...task.args],
-                        {
-                            ...env,
-                            E2E_SLOT_INDEX: String(slotId)
-                        },
-                        task.label,
-                        getLogPath(logDir, task.logName)
-                    ).then(({ code, label, stdout, stderr, durationMs }) => {
-                        usedThreads -= task.cost;
-                        active--;
-                        freeSlots.push(slotId);
-                        freeSlots.sort((a, b) => a - b);
-
-                        // Classify event-loop starvation so we can rerun serially.
-                        const starved =
-                            code !== 0 && STARVATION_RE.test(stdout + stderr);
-                        task.starved = starved;
-                        if (starved) starvationCount++;
-
-                        initialRunTotalDurationMs += durationMs;
-
-                        completed++;
-                        if (code !== 0) {
-                            failed.push(task);
-                            markLogAsError(logDir, task.logName);
-                        }
-                        console.log(
-                            formatResultLine({
-                                phase: "run",
-                                label,
-                                code,
-                                durationMs,
-                                completed,
-                                total: tasks.length,
-                                slotId
-                            })
-                        );
-                        maybeStartNext();
-                    });
-                }, delayMs);
-            }
-        };
-        maybeStartNext();
-    });
-    // Stop sampling immediately after the admission window closes (before reruns).
-    clearInterval(loadSampleTimer);
-    const initialRunWallDurationMs = Date.now() - initialRunStartedAt;
-
-    const rerunFailures = [];
-    if (failed.length > 0) {
-        console.log(
-            `\nStarting reruns for ${failed.length} failed task(s): 1 parallel attempt each`
-        );
+        });
     }
 
-    // Split failed tasks: starved tasks are rerun serially to give them a
-    // contention-free shot; the rest are rerun in parallel as before.
-    const starvedTasks = failed.filter((t) => t.starved);
-    const otherTasks = failed.filter((t) => !t.starved);
+    try {
+        if (useSharedDiscovery) {
+            const discoveryLogPath = path.join(
+                path.resolve(logDir),
+                "infra",
+                "discovery.log"
+            );
+            const freePort = await getFreePort();
+            console.log(
+                `Starting shared LocalDiscovery registry on port ${freePort}...`
+            );
+            const { child, url } = await startDiscoveryRegistry(
+                freePort,
+                discoveryLogPath
+            );
+            discoveryChild = child;
+            discoveryRegistryUrl = url;
+            console.log(`Shared LocalDiscovery registry ready at ${url}`);
 
-    // Parallel rerun for non-starved failures (existing behaviour).
-    const parallelRerunResults = await Promise.all(
-        otherTasks.map(async (task) => {
-            console.log(`Rerunning failed task (parallel): ${task.label}`);
+            discoveryChild.on("exit", (code) => {
+                if (code !== 0 && code !== null) {
+                    console.error(
+                        `LocalDiscovery registry exited unexpectedly with code ${code}`
+                    );
+                }
+            });
+        }
+
+        const env = {
+            ...process.env,
+            LOG_LEVEL: process.env.LOG_LEVEL || "error",
+            NODE_OPTIONS: [
+                process.env.NODE_OPTIONS,
+                "--enable-source-maps",
+                "--stack-trace-limit=1000"
+            ]
+                .filter(Boolean)
+                .join(" "),
+            // CRASH_LOG_UPLOAD_ENDPOINT: "",
+            // CRASH_LOG_API_TOKEN: "",
+            STREAM_PARALLEL_CHILD_OUTPUT:
+                process.env.STREAM_PARALLEL_CHILD_OUTPUT ||
+                (DEFAULT_STREAM_CHILD_OUTPUT ? "1" : "0"),
+            // Force color output even when piped
+            FORCE_COLOR: "1",
+            TERM: process.env.TERM || "xterm-256color",
+            // Force resolved thread modes onto children so cost model and runtime match.
+            RUN_SDK_IN_THREAD: threadModes.sdkThread ? "true" : "false",
+            VM_DEDICATED_THREAD: threadModes.vmThread ? "true" : "false",
+            // Per-test channel isolation relies on channelId being process-unique
+            // (test-channel-${Date.now()}-${pid}-${rand}), so all tests share the
+            // registry without cross-channel leakage.
+            ...(discoveryRegistryUrl !== undefined
+                ? { LOCAL_DISCOVERY_REGISTRY_URL: discoveryRegistryUrl }
+                : {})
+        };
+
+        const rerunEnv = {
+            ...env,
+            CRASH_LOG_UPLOAD_ENDPOINT: undefined,
+            CRASH_LOG_API_TOKEN: undefined
+        };
+
+        console.log(`Failure log upload=off (empty upload endpoint)`);
+        console.log(
+            `Streaming child output=${env.STREAM_PARALLEL_CHILD_OUTPUT === "1" ? "on" : "off"}`
+        );
+        console.log(
+            "Rerun failure log upload=deferred to child env/dotenv resolution"
+        );
+        const startTime = Date.now();
+        const configuredStagger = Number.parseInt(
+            process.env.E2E_WORKER_START_STAGGER_MS ||
+                String(DEFAULT_WORKER_START_STAGGER_MS),
+            10
+        );
+        const workerStartStaggerMs =
+            Number.isFinite(configuredStagger) && configuredStagger >= 0
+                ? configuredStagger
+                : DEFAULT_WORKER_START_STAGGER_MS;
+        let nextLaunchAt = Date.now();
+
+        console.log(`Using worker start stagger=${workerStartStaggerMs}ms`);
+
+        // Free-list of slot ids 0..maxConcurrent-1. Acquire on admission, release on completion.
+        const freeSlots = Array.from({ length: maxConcurrent }, (_, i) => i);
+
+        let idx = 0;
+        let active = 0;
+        let usedThreads = 0;
+        let failed = [];
+        let completed = 0;
+        let initialRunTotalDurationMs = 0;
+        let rerunTotalDurationMs = 0;
+        const initialRunStartedAt = Date.now();
+
+        // Start load sampling before the admission window. Take one sample
+        // immediately so runs shorter than the interval still record a reading.
+        const loadSamples = [os.loadavg()[0]];
+        const loadSampleTimer = setInterval(() => {
+            loadSamples.push(os.loadavg()[0]);
+        }, LOAD_SAMPLE_INTERVAL_MS);
+
+        await new Promise((resolve) => {
+            const maybeStartNext = () => {
+                if (idx >= tasks.length && active === 0) {
+                    resolve(undefined);
+                    return;
+                }
+                // Admit tasks while budget allows.  The `active === 0` guard ensures
+                // at least one task is always running (prevents deadlock when a single
+                // task's cost exceeds the budget).
+                while (
+                    idx < tasks.length &&
+                    active < maxConcurrent &&
+                    (usedThreads + tasks[idx].cost <= threadBudget ||
+                        active === 0)
+                ) {
+                    const task = tasks[idx++];
+                    usedThreads += task.cost;
+                    active++;
+                    const slotId = freeSlots.shift();
+
+                    const now = Date.now();
+                    const delayMs = Math.max(0, nextLaunchAt - now);
+                    nextLaunchAt =
+                        Math.max(nextLaunchAt, now) + workerStartStaggerMs;
+
+                    setTimeout(() => {
+                        runTask(
+                            "yarn",
+                            ["--silent", ...task.args],
+                            {
+                                ...env,
+                                E2E_SLOT_INDEX: String(slotId)
+                            },
+                            task.label,
+                            getLogPath(logDir, task.logName)
+                        ).then(
+                            ({ code, label, stdout, stderr, durationMs }) => {
+                                usedThreads -= task.cost;
+                                active--;
+                                freeSlots.push(slotId);
+                                freeSlots.sort((a, b) => a - b);
+
+                                // Classify event-loop starvation so we can rerun serially.
+                                const starved =
+                                    code !== 0 &&
+                                    STARVATION_RE.test(stdout + stderr);
+                                task.starved = starved;
+                                if (starved) starvationCount++;
+
+                                initialRunTotalDurationMs += durationMs;
+
+                                completed++;
+                                if (code !== 0) {
+                                    failed.push(task);
+                                    markLogAsError(logDir, task.logName);
+                                }
+                                console.log(
+                                    formatResultLine({
+                                        phase: "run",
+                                        label,
+                                        code,
+                                        durationMs,
+                                        completed,
+                                        total: tasks.length,
+                                        slotId
+                                    })
+                                );
+                                maybeStartNext();
+                            }
+                        );
+                    }, delayMs);
+                }
+            };
+            maybeStartNext();
+        });
+        // Stop sampling immediately after the admission window closes (before reruns).
+        clearInterval(loadSampleTimer);
+        const initialRunWallDurationMs = Date.now() - initialRunStartedAt;
+
+        const rerunFailures = [];
+        if (failed.length > 0) {
+            console.log(
+                `\nStarting reruns for ${failed.length} failed task(s): 1 parallel attempt each`
+            );
+        }
+
+        // Split failed tasks: starved tasks are rerun serially to give them a
+        // contention-free shot; the rest are rerun in parallel as before.
+        const starvedTasks = failed.filter((t) => t.starved);
+        const otherTasks = failed.filter((t) => !t.starved);
+
+        // Parallel rerun for non-starved failures (existing behaviour).
+        const parallelRerunResults = await Promise.all(
+            otherTasks.map(async (task) => {
+                console.log(`Rerunning failed task (parallel): ${task.label}`);
+                const rerunLogName = `${task.logName}__rerun1`;
+                const { code, label, durationMs } = await runTask(
+                    "yarn",
+                    ["--silent", ...task.args],
+                    {
+                        ...rerunEnv
+                    },
+                    task.label,
+                    getLogPath(logDir, rerunLogName)
+                );
+
+                return {
+                    task,
+                    code,
+                    label,
+                    durationMs,
+                    rerunLogName
+                };
+            })
+        );
+
+        // Serial rerun for starvation-classified failures.
+        const serialRerunResults = [];
+        for (const task of starvedTasks) {
+            console.log(`Rerunning starved task (serial): ${task.label}`);
             const rerunLogName = `${task.logName}__rerun1`;
             const { code, label, durationMs } = await runTask(
                 "yarn",
@@ -1012,129 +1215,115 @@ async function main() {
                 getLogPath(logDir, rerunLogName)
             );
 
-            return {
+            serialRerunResults.push({
                 task,
                 code,
                 label,
                 durationMs,
                 rerunLogName
-            };
-        })
-    );
-
-    // Serial rerun for starvation-classified failures.
-    const serialRerunResults = [];
-    for (const task of starvedTasks) {
-        console.log(`Rerunning starved task (serial): ${task.label}`);
-        const rerunLogName = `${task.logName}__rerun1`;
-        const { code, label, durationMs } = await runTask(
-            "yarn",
-            ["--silent", ...task.args],
-            {
-                ...rerunEnv
-            },
-            task.label,
-            getLogPath(logDir, rerunLogName)
-        );
-
-        serialRerunResults.push({
-            task,
-            code,
-            label,
-            durationMs,
-            rerunLogName
-        });
-    }
-
-    const rerunResults = [...parallelRerunResults, ...serialRerunResults];
-
-    const rerunWallDurationMs = rerunResults.reduce(
-        (max, r) => Math.max(max, r.durationMs || 0),
-        0
-    );
-
-    for (const result of rerunResults) {
-        completed++;
-        rerunTotalDurationMs += result.durationMs;
-
-        if (result.code !== 0) {
-            rerunFailures.push(result.task.label);
-            markLogAsError(logDir, result.rerunLogName);
+            });
         }
 
-        console.log(
-            formatResultLine({
-                phase: "rerun",
-                label: result.label,
-                code: result.code,
-                durationMs: result.durationMs,
-                completed,
-                total: tasks.length + failed.length,
-                rerunAttempt: 1,
-                slotId: "-"
-            })
+        const rerunResults = [...parallelRerunResults, ...serialRerunResults];
+
+        const rerunWallDurationMs = rerunResults.reduce(
+            (max, r) => Math.max(max, r.durationMs || 0),
+            0
         );
-    }
 
-    const totalFailing = rerunFailures.length;
-    const totalPassing = tasks.length - totalFailing;
+        for (const result of rerunResults) {
+            completed++;
+            rerunTotalDurationMs += result.durationMs;
 
-    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+            if (result.code !== 0) {
+                rerunFailures.push(result.task.label);
+                markLogAsError(logDir, result.rerunLogName);
+            }
 
-    // Compute avg load per core from samples (or fall back to a single snapshot).
-    const avgLoadPerCore =
-        loadSamples.length > 0
-            ? loadSamples.reduce((s, v) => s + v, 0) /
-              loadSamples.length /
-              cpuCount
-            : os.loadavg()[0] / cpuCount;
+            console.log(
+                formatResultLine({
+                    phase: "rerun",
+                    label: result.label,
+                    code: result.code,
+                    durationMs: result.durationMs,
+                    completed,
+                    total: tasks.length + failed.length,
+                    rerunAttempt: 1,
+                    slotId: "-"
+                })
+            );
+        }
 
-    // Persist tuning metadata after starvationCount is final.
-    if (shouldAdapt) {
-        writeSchedulerMetadata({
-            avgLoadPerCore,
-            scalingFactor: threadFactor,
-            starvationTrips: starvationCount,
-            threadsPerPeer,
-            timestamp: new Date().toISOString()
-        });
-    }
+        const totalFailing = rerunFailures.length;
+        const totalPassing = tasks.length - totalFailing;
 
-    // Print final summary
-    console.log("\n");
-    if (totalPassing > 0) {
-        console.log(`\x1b[32m  ${totalPassing} passing (${totalTime}s)\x1b[0m`);
-    }
-    if (totalFailing > 0) {
-        console.log(`\x1b[31m  ${totalFailing} failing\x1b[0m`);
-    }
-    if (starvationCount > 0) {
+        const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+
+        // Compute avg load per core from samples (or fall back to a single snapshot).
+        const avgLoadPerCore =
+            loadSamples.length > 0
+                ? loadSamples.reduce((s, v) => s + v, 0) /
+                  loadSamples.length /
+                  cpuCount
+                : os.loadavg()[0] / cpuCount;
+
+        // Persist tuning metadata after starvationCount is final.
+        if (shouldAdapt) {
+            writeSchedulerMetadata({
+                avgLoadPerCore,
+                scalingFactor: threadFactor,
+                starvationTrips: starvationCount,
+                threadsPerPeer,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // Print final summary
+        console.log("\n");
+        if (totalPassing > 0) {
+            console.log(
+                `\x1b[32m  ${totalPassing} passing (${totalTime}s)\x1b[0m`
+            );
+        }
+        if (totalFailing > 0) {
+            console.log(`\x1b[31m  ${totalFailing} failing\x1b[0m`);
+        }
+        if (starvationCount > 0) {
+            console.log(
+                `  ${starvationCount} task(s) hit event-loop starvation (rerun serially) — consider lowering --thread-factor`
+            );
+        }
         console.log(
-            `  ${starvationCount} task(s) hit event-loop starvation (rerun serially) — consider lowering --thread-factor`
+            `  avg load/core: ${avgLoadPerCore.toFixed(3)} (target ${targetLoad})`
         );
-    }
-    console.log(
-        `  avg load/core: ${avgLoadPerCore.toFixed(3)} (target ${targetLoad})`
-    );
-    console.log(
-        `  Initial run: wall=${formatDurationMs(initialRunWallDurationMs)}, sum=${formatDurationMs(initialRunTotalDurationMs)}`
-    );
-    console.log(
-        `  Rerun: wall=${formatDurationMs(rerunWallDurationMs)}, sum=${formatDurationMs(rerunTotalDurationMs)}`
-    );
-    if (rerunFailures.length > 0) {
+        console.log(
+            `  Initial run: wall=${formatDurationMs(initialRunWallDurationMs)}, sum=${formatDurationMs(initialRunTotalDurationMs)}`
+        );
+        console.log(
+            `  Rerun: wall=${formatDurationMs(rerunWallDurationMs)}, sum=${formatDurationMs(rerunTotalDurationMs)}`
+        );
+        if (rerunFailures.length > 0) {
+            cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
+            console.error(
+                `\nFailed tasks after reruns:\n- ${rerunFailures.join("\n- ")}\n`
+            );
+            process.exitCode = 1;
+            return;
+        }
+
+        // Keep workspace tidy: keep only error_* logs
         cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
-        console.error(
-            `\nFailed tasks after reruns:\n- ${rerunFailures.join("\n- ")}\n`
-        );
-        process.exit(1);
+    } finally {
+        teardownDiscovery();
     }
-
-    // Keep workspace tidy: keep only error_* logs
-    cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
 }
 
+// Module-level reference so main().catch can tear down the registry on any
+// unhandled throw that escapes main() (belt-and-suspenders alongside finally).
+let _teardownDiscovery = () => {};
+
 main().catch((err) => {
+    _teardownDiscovery();
     console.error(err);
     process.exit(1);
 });
