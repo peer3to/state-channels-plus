@@ -192,18 +192,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         DisputeInvalidStateProof memory proof = abi.decode(encodedFraudProof, (DisputeInvalidStateProof));
 
-        if (dispute.postedAuditingData) {
-            if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(proof.auditingData))) {
-                return _invalid();
-            }
-        } else if (
-            !_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, proof.auditingData.genesisStateSnapshotData)
-        ) {
-            return _invalid();
-        }
-
         // TODO extract this into its own fraud proof and test it
         if (!dispute.postedAuditingData) {
+            // fraud prover supplies the genesis reference -> it must be linked to the fork
+            if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, proof.auditingData.genesisStateSnapshotData))
+            {
+                return _invalid();
+            }
             if (!_isLastMilestoneFinalByEveryone(dispute)) return _invalid();
 
             bytes memory latestStateData = abi.encodeCall(
@@ -218,11 +213,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        bytes memory data = abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, proof.auditingData));
-        (bool success, bytes memory returnData) = stateProofFacetAddress.delegatecall(data);
-        if (!success) return _invalid(); // auditingData hash mismatch -> proof is invalid
-        bool isValid = abi.decode(returnData, (bool));
-        if (!isValid) return _valid(dispute.input.disputer);
+        bytes memory returnData = _delegatecall(
+            stateProofFacetAddress, abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, proof.auditingData))
+        );
+        StateProofVerification result = abi.decode(returnData, (StateProofVerification));
+
+        // InvalidProof          -> fraud proof is correct, the state proof really is invalid -> slash disputer
+        // Valid                 -> fraud proof lied, the state proof is fine                -> slash prover
+        // AuditingDataMismatch  -> fraud prover referenced the wrong auditingData           -> slash prover
+        if (result == StateProofVerification.InvalidProof) return _valid(dispute.input.disputer);
         return _invalid();
     }
 

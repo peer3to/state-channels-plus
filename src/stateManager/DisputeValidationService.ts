@@ -21,6 +21,10 @@ import type StateManager from "./StateManager";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 import { Block, StateSnapshot, StateProof } from "@/models";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import {
+    StateProofVerification,
+    toSolidityStateProofVerification
+} from "@/types/sol-enums";
 
 export default class DisputeValidationService {
     private readonly disputeFraudProofService: DisputeFraudProofService;
@@ -164,9 +168,14 @@ export default class DisputeValidationService {
     ): Promise<boolean> {
         try {
             // TODO - make it work with localdiamond
-            return await this.stateChannelManagerContract.verifyStateProof.staticCall(
-                dispute,
-                disputeAuditingData
+            const result =
+                await this.stateChannelManagerContract.verifyStateProof.staticCall(
+                    dispute,
+                    disputeAuditingData
+                );
+            return (
+                Number(result) ===
+                toSolidityStateProofVerification(StateProofVerification.Valid)
             );
         } catch (error) {
             this.logger.debug("verifyStateProof reverted", {

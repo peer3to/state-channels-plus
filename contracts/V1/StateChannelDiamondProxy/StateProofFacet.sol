@@ -43,39 +43,40 @@ contract StateProofFacet is StateChannelCommon {
     function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
         virtual
-        returns (bool)
+        returns (StateProofVerification)
     {
-        require(
-            dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData)),
-            ErrorAuditingDataHashMismatch()
-        );
+        // reference check - is this the auditingData the dispute committed to?
+        if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(disputeAuditingData))) {
+            return StateProofVerification.AuditingDataMismatch;
+        }
+
         if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, disputeAuditingData.genesisStateSnapshotData)) {
-            return false;
+            return StateProofVerification.InvalidProof;
         }
         if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
-            return false;
+            return StateProofVerification.InvalidProof;
         }
 
         if (!_tryVerifyMilestones(dispute, disputeAuditingData)) {
-            return false;
+            return StateProofVerification.InvalidProof;
         }
 
         if (dispute.input.stateProof.signedBlocks.length != 0) {
             // HACK: Pass bytes32(0) to skip the first block's linkage to genesis.
             if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, bytes32(0))) {
-                return false;
+                return StateProofVerification.InvalidProof;
             }
         }
 
         if (!isCorrectLatestState(dispute, disputeAuditingData.genesisStateSnapshotData)) {
-            return false;
+            return StateProofVerification.InvalidProof;
         }
 
         //check commitment to latestStateSnapshot
         if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
-            return false;
+            return StateProofVerification.InvalidProof;
         }
-        return true;
+        return StateProofVerification.Valid;
     }
 
     function _tryVerifyMilestones(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)

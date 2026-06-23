@@ -40,7 +40,7 @@ abstract contract StateChannelManagerInterface {
     function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
         public
         virtual
-        returns (bool);
+        returns (StateProofVerification);
 
     function isCorrectLatestState(Dispute memory dispute, SnapshotData memory genesisStateSnapshotData)
         public

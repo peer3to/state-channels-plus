@@ -27,6 +27,16 @@ struct FraudProof {
     bytes encodedProof;
 }
 
+// result of verifying a dispute's state proof against a reference auditingData
+// Valid                -> state proof checks out
+// InvalidProof         -> state proof is invalid (given a correct reference)
+// AuditingDataMismatch -> the supplied auditingData isn't the dispute's committed reference
+enum StateProofVerification {
+    Valid,
+    InvalidProof,
+    AuditingDataMismatch
+}
+
 enum FraudProofType {
     // Block related fraud proofs
     BlockDoubleSign,

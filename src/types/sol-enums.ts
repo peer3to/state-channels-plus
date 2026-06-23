@@ -26,6 +26,14 @@ export enum DisputeFraudProofType {
     DisputeInboundHashNotInChain
 }
 
+export enum StateProofVerification {
+    Valid = 300,
+    InvalidProof,
+    AuditingDataMismatch
+}
+
 export const toSolidityFraudProofType = (value: FraudProofType) => value % 100;
 
 export const toSolidityDisputeFraudProofType = (value: DisputeFraudProofType) => value % 200;
+
+export const toSolidityStateProofVerification = (value: StateProofVerification) => value % 300;
