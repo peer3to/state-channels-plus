@@ -1,4 +1,4 @@
-import Rpc from "@/rpc/Rpc";
+import Rpc, { serializeRpc } from "@/rpc/Rpc";
 import ATransport from "@/transport/ATransport";
 import { AGuard } from "@/rpc/guards/AGuard";
 import ARpcService from "@/rpc/ARpcService";
@@ -8,12 +8,36 @@ export interface HandshakeCompletedGuardOptions {
     onFailure?: (rpc: Rpc, transport: ATransport) => void;
 }
 
-class RpcQueue {
+// Bound the per-transport queue of RPCs buffered while a handshake is still
+// negotiating, so an unauthenticated peer can't grow it without limit.
+export const MAX_PREAUTH_QUEUED_RPCS = 64;
+export const MAX_PREAUTH_QUEUED_BYTES = 1_000_000;
+
+export class RpcQueue {
     private readonly queue: Rpc[] = [];
     private waiting = false;
+    private totalBytes = 0;
 
-    enqueue(rpc: Rpc): void {
+    constructor(
+        private readonly maxCount: number = MAX_PREAUTH_QUEUED_RPCS,
+        private readonly maxBytes: number = MAX_PREAUTH_QUEUED_BYTES
+    ) {}
+
+    /**
+     * Returns false if enqueuing would exceed the count or byte budget; the
+     * caller treats a full queue as abuse and disconnects the peer.
+     */
+    enqueue(rpc: Rpc): boolean {
+        const size = serializeRpc(rpc).length;
+        if (
+            this.queue.length >= this.maxCount ||
+            this.totalBytes + size > this.maxBytes
+        ) {
+            return false;
+        }
         this.queue.push(rpc);
+        this.totalBytes += size;
+        return true;
     }
 
     isWaiting(): boolean {
@@ -30,10 +54,12 @@ class RpcQueue {
             if (!next) break;
             handler(next);
         }
+        this.totalBytes = 0;
     }
 
     clear(): void {
         this.queue.length = 0;
+        this.totalBytes = 0;
         this.waiting = false;
     }
 }
@@ -76,7 +102,28 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
         // agreementTime for it to complete and retry the RPC (return early via EventBarrier).
         if (initHandshakeService.isNegotiating(transport)) {
             const queue = this.getQueue(transport);
-            queue.enqueue(rpc);
+
+            // A full pre-handshake queue means the unauthenticated peer is
+            // flooding us; treat it as abuse and disconnect.
+            if (!queue.enqueue(rpc)) {
+                queue.clear();
+                this.service.logger.warn(
+                    "Pre-handshake RPC queue limit exceeded; disconnecting",
+                    {
+                        service: rpc.service,
+                        method: rpc.method,
+                        peerAddress: transport.peerAddress
+                    }
+                );
+                if (transport.peerAddress) {
+                    this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                        transport.peerAddress
+                    );
+                    return;
+                }
+                this.service.p2pManager.disconnectAndBlacklistPeer(transport);
+                return;
+            }
 
             // Only start one waiter per transport; additional RPCs enqueue behind it.
             if (queue.isWaiting()) {
