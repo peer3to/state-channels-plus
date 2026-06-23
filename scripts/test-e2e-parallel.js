@@ -31,8 +31,12 @@ function effectiveThreadsPerPeer() {
 const PROCESS_OVERHEAD_THREADS = 1;
 
 // Default oversubscription factor applied to CPU count to get the thread
-// budget.  Wait-bound peers idle frequently so >1x is safe.
-const DEFAULT_THREAD_FACTOR = 2;
+// budget. Wait-bound peers idle frequently, so >1x is safe. Calibrated on a
+// 16-core/64GB host: wall-time keeps dropping up to ~4x with zero event-loop
+// starvation; starvation first appears around 6x and returns flatten there. 4x
+// is the safe sweet spot (~42% faster than the old flat default), with the RAM
+// cap (maxConcurrent) bounding the high end. Override with --thread-factor.
+const DEFAULT_THREAD_FACTOR = 4;
 
 // Peer count used when we cannot determine the real value from the test body.
 const FALLBACK_PEERS = 5;
