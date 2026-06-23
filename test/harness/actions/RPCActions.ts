@@ -3,6 +3,7 @@ import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/
 import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
 import { ForkId, Address } from "@/types/types";
+import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
 import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
 
@@ -392,9 +393,13 @@ export class RPCActions<
         challengeHash: string,
         responseTime: number
     ): Promise<void> {
+        // Mirror production: the responder signs the domain-separated challenge
+        // message, not the bare hash, so the response verifies.
+        const challengeMessage =
+            InitHandshakeService.buildHandshakeChallengeMessage(challengeHash);
         const signature = await this.harness
             .control(responder)
-            .handshake.signMessage(challengeHash)
+            .handshake.signMessage(challengeMessage)
             .request();
         const preferredTransport = await this.harness
             .control(responder)

@@ -27,6 +27,24 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                 messageTime: time
             }
         );
+        // Reject malformed inputs before signing. A non-32-byte challenge or a
+        // non-numeric time (NaN slips past the skew check below) would let a
+        // peer steer what gets signed.
+        if (!ethers.isHexString(challengeHash, 32) || !Number.isFinite(time)) {
+            LoggerUtils.logInitHandshakeMessage(
+                this.service.logger,
+                this.senderTransport,
+                {
+                    direction: "local",
+                    message: "rejected",
+                    challengeHash,
+                    messageTime: time,
+                    reason: "malformed handshake request (challenge/time)"
+                }
+            );
+            this.p2pManager.disconnectConnection(this.senderTransport);
+            return;
+        }
         const timeDifference = time - localTime;
         if (Math.abs(timeDifference) > agreementTime) {
             LoggerUtils.logInitHandshakeMessage(
@@ -46,9 +64,10 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             this.p2pManager.disconnectConnection(this.senderTransport);
             return;
         }
-        const challengeHashBytes = ethers.getBytes(challengeHash);
+        const challengeMessage =
+            InitHandshakeService.buildHandshakeChallengeMessage(challengeHash);
         const signature =
-            await this.p2pManager.p2pSigner.signMessage(challengeHashBytes);
+            await this.p2pManager.p2pSigner.signMessage(challengeMessage);
         LoggerUtils.logInitHandshakeMessage(
             this.service.logger,
             this.senderTransport,
@@ -142,13 +161,11 @@ class InitHandshakeRpcMethods extends ARpcMethods {
             return;
         }
         //verify signature
-        const challengeHashBytes = ethers.getBytes(
-            challenge.randomChallengeHash
-        );
-        const signerAddress = ethers.verifyMessage(
-            challengeHashBytes,
-            signature
-        );
+        const challengeMessage =
+            InitHandshakeService.buildHandshakeChallengeMessage(
+                challenge.randomChallengeHash
+            );
+        const signerAddress = ethers.verifyMessage(challengeMessage, signature);
         LoggerUtils.logInitHandshakeMessage(
             this.service.logger,
             this.senderTransport,
