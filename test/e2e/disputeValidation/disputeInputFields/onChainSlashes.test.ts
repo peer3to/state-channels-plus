@@ -117,7 +117,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
 
         await h.dispute.resolveDisputeWait();
 
-        await h.assert.slashedOnChainExactly([
+        await h.assert.dispute.slashedOnChainExactly([
             h.getPeer(1).address,
             h.getPeer(2).address
         ]);

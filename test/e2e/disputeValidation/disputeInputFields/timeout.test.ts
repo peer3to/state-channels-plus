@@ -87,7 +87,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 timeoutMs: 10000
             });
 
-            await h.assert.slashedOnChain(h.getPeer(0).address);
+            await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
         });
 
         it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
@@ -145,7 +145,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 })
             );
 
-            await h.assert.slashedOnChain(h.getPeer(0).address);
+            await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
 
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });

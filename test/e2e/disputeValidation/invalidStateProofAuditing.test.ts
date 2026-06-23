@@ -56,7 +56,7 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
             .applyDisputeFraudProofs([proof]);
         await tx.wait();
 
-        await h.assert.slashedOnChain(
+        await h.assert.dispute.slashedOnChain(
             h.getPeer(byzantineProofAuthorIndex).address,
             "byzantine DisputeInvalidStateProof author must be on-chain slashed"
         );

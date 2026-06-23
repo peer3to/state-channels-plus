@@ -88,7 +88,7 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
             slashed.some((a) => a.toLowerCase() === disputerAddr),
             "honest disputer must NOT be slashed"
         ).to.equal(false);
-        await h.assert.slashedOnChain(
+        await h.assert.dispute.slashedOnChain(
             h.getPeer(byzantineIndex).address,
             "byzantine bad-proof submitter must be on-chain slashed"
         );
