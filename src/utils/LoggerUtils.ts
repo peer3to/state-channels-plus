@@ -1,7 +1,6 @@
 import {
     DisputeStruct,
     TimeoutStruct,
-    StateProofStruct,
     DisputeInputStruct,
     DisputeAuditingDataStruct,
     ReduceOutputStruct,
@@ -25,7 +24,7 @@ import {
 import type { Logger, LogLevel } from "./logging/Logger";
 import { TransportType } from "@/transport/TransportType";
 import type ATransport from "@/transport/ATransport";
-import { Block, StateSnapshot } from "@/models";
+import { Block, StateSnapshot, StateProof } from "@/models";
 import Storage from "@/storage";
 import {
     MessageStruct,
@@ -528,37 +527,18 @@ export class LoggerUtils {
         };
     }
 
-    // logging must tolerate attacker-supplied undecodable blocks (a malicious dispute can carry junk
-    // `encodedBlock`s). decode per-block defensively so a poison dispute can't crash a peer's logging.
-    private static safeBlockMetadata(decode: () => Block) {
-        try {
-            return this.getBlockMetadata(decode());
-        } catch (error) {
-            return {
-                undecodable: true,
-                decodeError:
-                    error instanceof Error ? error.message : String(error),
-                blockHeight: undefined
-            };
-        }
-    }
-
-    static getStateProofMetadata(stateProof: StateProofStruct) {
+    static getStateProofMetadata(stateProof: StateProof) {
         const milestones = stateProof.milestones.map(
             (milestone, milestoneIndex) => ({
                 milestoneIndex,
-                confirmationsCount: milestone.blockConfirmations.length,
-                confirmations: milestone.blockConfirmations.map(
-                    (confirmation) =>
-                        this.safeBlockMetadata(() =>
-                            Block.fromBlockConfirmation(confirmation)
-                        )
+                confirmationsCount: milestone.blocks.length,
+                confirmations: milestone.blocks.map((block) =>
+                    this.getBlockMetadata(block)
                 )
             })
         );
-
-        const signedBlocks = stateProof.signedBlocks.map((signedBlock) =>
-            this.safeBlockMetadata(() => Block.fromSignedBlock(signedBlock))
+        const signedBlocks = stateProof.signedBlocks.map((block) =>
+            this.getBlockMetadata(block)
         );
         const milestonesCount = milestones.length;
         const signedBlocksCount = signedBlocks.length;
@@ -608,7 +588,16 @@ export class LoggerUtils {
             disputer: String(disputeInput.disputer),
             selfRemoval: disputeInput.selfRemoval,
             timeout: this.getTimeoutStructMetadata(disputeInput.timeout),
-            stateProof: this.getStateProofMetadata(disputeInput.stateProof)
+            stateProof: (() => {
+                const sp = StateProof.tryFrom(disputeInput.stateProof);
+                if (sp) return this.getStateProofMetadata(sp);
+                return {
+                    undecodable: true,
+                    milestonesCount: disputeInput.stateProof.milestones.length,
+                    signedBlocksCount:
+                        disputeInput.stateProof.signedBlocks.length
+                };
+            })()
         };
     }
 

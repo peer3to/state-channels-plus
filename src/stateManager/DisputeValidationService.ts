@@ -19,7 +19,7 @@ import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
 import type StateManager from "./StateManager";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
-import { Block, StateSnapshot } from "@/models";
+import { Block, StateSnapshot, StateProof } from "@/models";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class DisputeValidationService {
@@ -60,21 +60,12 @@ export default class DisputeValidationService {
             return false;
         }
 
-        let hasHeaderMismatch: boolean;
-        try {
-            hasHeaderMismatch =
-                await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
-                    dispute
-                );
-        } catch (error) {
-            this.logger.warn(
-                "hasStateProofHeaderMismatch reverted — undecodable state proof block",
-                {
-                    dispute: LoggerUtils.getDisputeMetadata(dispute),
-                    custom: tryDecodeCustomError(error)
-                }
-            );
-            if (!this.hasPostedAuditingData(dispute)) {
+        const stateProof = StateProof.tryFrom(dispute.input.stateProof);
+        if (!stateProof) {
+            this.logger.warn("Dispute contains undecodable state proof block", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute)
+            });
+            if (!dispute.postedAuditingData) {
                 this.logger.error(
                     "Skipping dispute audit: undecodable state proof block with no posted auditing data, no fireable fraud proof",
                     { dispute: LoggerUtils.getDisputeMetadata(dispute) }
@@ -92,6 +83,11 @@ export default class DisputeValidationService {
             );
             return false;
         }
+
+        const hasHeaderMismatch =
+            await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
+                dispute
+            );
         if (hasHeaderMismatch) {
             this.logger.warn(
                 "DisputeStateProofHeaderMismatch: stateProof header channelId or forkId does not match dispute.input",
@@ -105,9 +101,7 @@ export default class DisputeValidationService {
             return false;
         }
 
-        const postedAuditingData = this.hasPostedAuditingData(dispute);
-
-        if (postedAuditingData) {
+        if (dispute.postedAuditingData) {
             if (!onChainDisputeAuditingData) {
                 throw new Error(
                     "Dispute posted with auditing data, but auditing data missing"
@@ -132,7 +126,8 @@ export default class DisputeValidationService {
 
             this.persistDisputeAuditingDataForPipeline(
                 dispute,
-                onChainDisputeAuditingData
+                onChainDisputeAuditingData,
+                stateProof
             );
         } else {
             const milestoneFinalityResult =
@@ -146,8 +141,10 @@ export default class DisputeValidationService {
                 return false;
             }
 
-            const isLastMilestoneInStorage =
-                this.isLastMilestoneStoredLocally(dispute);
+            const isLastMilestoneInStorage = this.isLastMilestoneStoredLocally(
+                dispute,
+                stateProof
+            );
             if (!isLastMilestoneInStorage) {
                 this.logger.error(
                     "Skipping dispute audit for non-posted auditing data because the lastFinalized state is not in storage",
@@ -226,7 +223,6 @@ export default class DisputeValidationService {
         dispute: DisputeStruct
     ): Promise<boolean> {
         const isValid = true;
-        const postedAuditingData = this.hasPostedAuditingData(dispute);
 
         //TODO - quick hack, but the stuff we need SHOULD actually be available
         const { auditingData: disputeAuditingData } =
@@ -239,7 +235,7 @@ export default class DisputeValidationService {
                 }
             );
         // TODO move this check above and into its own fraud proof
-        if (!postedAuditingData) {
+        if (!dispute.postedAuditingData) {
             const isCorrectLatestState =
                 await this.stateChannelManagerContract.isCorrectLatestState.staticCall(
                     dispute,
@@ -670,13 +666,6 @@ export default class DisputeValidationService {
         return expectedPreviousHash === latestInboundMessageBlockHash;
     }
 
-    private hasPostedAuditingData(dispute: DisputeStruct): boolean {
-        return Boolean(
-            (dispute as unknown as { postedAuditingData?: boolean })
-                .postedAuditingData
-        );
-    }
-
     private getStateMachineStateForSnapshot(
         snapshot: StateSnapshotStruct
     ): Bytes {
@@ -692,35 +681,34 @@ export default class DisputeValidationService {
         throw new Error("State machine state missing for snapshot");
     }
 
-    private isLastMilestoneStoredLocally(dispute: DisputeStruct): boolean {
-        const lastMilestone = dispute.input.stateProof.milestones.at(-1);
+    private isLastMilestoneStoredLocally(
+        dispute: DisputeStruct,
+        stateProof: StateProof
+    ): boolean {
+        const lastMilestone = stateProof.milestones.at(-1);
         if (lastMilestone) {
-            const firstBlockConfirmation =
-                lastMilestone.blockConfirmations.at(0);
-            if (!firstBlockConfirmation) {
+            const firstBlock = lastMilestone.blocks.at(0);
+            if (!firstBlock) {
                 this.logger.debug(
                     "State proof anchor missing: last milestone has no block confirmations",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        )
+                        stateProof:
+                            LoggerUtils.getStateProofMetadata(stateProof)
                     }
                 );
                 return false;
             }
 
-            const block = Block.fromBlockConfirmation(firstBlockConfirmation);
-            const storedBlock = this.storage.blocks.getBlock(block.hash);
+            const storedBlock = this.storage.blocks.getBlock(firstBlock.hash);
             if (!storedBlock) {
                 this.logger.debug(
                     "State proof anchor missing: first block of last milestone not found in local block storage",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        ),
-                        block: LoggerUtils.getBlockMetadata(block)
+                        stateProof:
+                            LoggerUtils.getStateProofMetadata(stateProof),
+                        block: LoggerUtils.getBlockMetadata(firstBlock)
                     }
                 );
                 return false;
@@ -736,7 +724,7 @@ export default class DisputeValidationService {
             return true;
         }
 
-        const firstSignedBlock = dispute.input.stateProof.signedBlocks.at(0);
+        const firstSignedBlock = stateProof.signedBlocks.at(0);
         if (!firstSignedBlock) {
             const genesisSnapshot =
                 this.storage.stateSnapshots.getGenesisSnapshotByForkId(
@@ -748,9 +736,8 @@ export default class DisputeValidationService {
                     "State proof anchor missing: empty state proof but genesis snapshot is not stored locally",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        )
+                        stateProof:
+                            LoggerUtils.getStateProofMetadata(stateProof)
                     }
                 );
                 return false;
@@ -765,9 +752,8 @@ export default class DisputeValidationService {
                     "State proof anchor missing: empty state proof but genesis state machine state is not stored locally",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        ),
+                        stateProof:
+                            LoggerUtils.getStateProofMetadata(stateProof),
                         genesisSnapshot:
                             LoggerUtils.getSnapshotMetadata(genesisSnapshot)
                     }
@@ -786,11 +772,11 @@ export default class DisputeValidationService {
             return true;
         }
 
-        const block = Block.fromSignedBlock(firstSignedBlock);
-
         try {
             const previousBlockOrSnapshot =
-                this.storage.getPreviousBlockOrSnapshot(block.coordinates);
+                this.storage.getPreviousBlockOrSnapshot(
+                    firstSignedBlock.coordinates
+                );
             const isAnchored = !!(
                 previousBlockOrSnapshot.block ||
                 previousBlockOrSnapshot.stateSnapshot
@@ -800,10 +786,9 @@ export default class DisputeValidationService {
                     "State proof anchor missing: previous block or snapshot for first signed block not found locally",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        ),
-                        block: LoggerUtils.getBlockMetadata(block)
+                        stateProof:
+                            LoggerUtils.getStateProofMetadata(stateProof),
+                        block: LoggerUtils.getBlockMetadata(firstSignedBlock)
                     }
                 );
                 return false;
@@ -813,7 +798,7 @@ export default class DisputeValidationService {
                 "State proof anchor found: previous block or snapshot for first signed block exists locally",
                 {
                     dispute: LoggerUtils.getDisputeMetadata(dispute),
-                    block: LoggerUtils.getBlockMetadata(block),
+                    block: LoggerUtils.getBlockMetadata(firstSignedBlock),
                     hasPreviousBlock: !!previousBlockOrSnapshot.block,
                     hasPreviousSnapshot: !!previousBlockOrSnapshot.stateSnapshot
                 }
@@ -824,10 +809,8 @@ export default class DisputeValidationService {
                 "State proof anchor lookup failed while resolving previous block or snapshot for first signed block",
                 {
                     dispute: LoggerUtils.getDisputeMetadata(dispute),
-                    stateProof: LoggerUtils.getStateProofMetadata(
-                        dispute.input.stateProof
-                    ),
-                    block: LoggerUtils.getBlockMetadata(block)
+                    stateProof: LoggerUtils.getStateProofMetadata(stateProof),
+                    block: LoggerUtils.getBlockMetadata(firstSignedBlock)
                 }
             );
             return false;
@@ -836,7 +819,8 @@ export default class DisputeValidationService {
 
     private persistDisputeAuditingDataForPipeline(
         dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct
+        disputeAuditingData: DisputeAuditingDataStruct,
+        stateProof: StateProof
     ): void {
         for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
             this.storage.stateSnapshots.storeStateSnapshot(
@@ -871,13 +855,9 @@ export default class DisputeValidationService {
             });
         }
 
-        for (const milestone of dispute.input.stateProof.milestones) {
-            const finalizedConfirmation = milestone.blockConfirmations.at(0);
-            if (!finalizedConfirmation) {
-                continue;
-            }
-
-            const block = Block.fromBlockConfirmation(finalizedConfirmation);
+        for (const milestone of stateProof.milestones) {
+            const block = milestone.blocks.at(0);
+            if (!block) continue;
             this.storage.blocks.storeBlock(block, {
                 hash: block.hash,
                 coordinates: block.coordinates,

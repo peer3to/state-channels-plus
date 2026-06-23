@@ -16,7 +16,7 @@ import {
     ForkId,
     Signature
 } from "@/types/types";
-import { Block, StateSnapshot } from "@/models";
+import { Block, StateSnapshot, StateProof } from "@/models";
 import { difference, Logger } from "@/utils";
 import { ZeroHash } from "ethers";
 import { StateChannelManagerProxy } from "@typechain-types/index";
@@ -199,7 +199,9 @@ class AgreementManager {
                 previousThresholdSnapshot
             ),
             participantChangeHeights,
-            stateProof: LoggerUtils.getStateProofMetadata(stateProof)
+            stateProof: LoggerUtils.getStateProofMetadata(
+                StateProof.tryFrom(stateProof)!
+            )
         });
 
         return stateProof;
