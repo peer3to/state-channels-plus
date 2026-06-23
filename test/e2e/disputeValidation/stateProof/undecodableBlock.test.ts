@@ -1,6 +1,7 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
 import { hexString } from "../../../factory";
+import { Bytes } from "@/types";
 
 // A truncated encodedBlock cannot be decoded by abi.decode on-chain.
 // hasStateProofHeaderMismatch.staticCall reverts; DisputeValidationService must
@@ -13,14 +14,14 @@ describe("E2E: dispute validation / stateProof / undecodableBlock", function () 
 
         h.tamper.stubConstructDispute(
             3,
-            (dispute) => {
+            (dispute, _sm, args) => {
                 const sb = dispute.input.stateProof.milestones
                     .at(-1)!
                     .blockConfirmations.at(-1)!.signedBlock;
                 // Replace encodedBlock with junk data, will cause abi.decode to revert
-                sb.encodedBlock = hexString(128);
+                sb.encodedBlock = args.junkBlock as Bytes;
             },
-            { autoRestore: true }
+            { autoRestore: true, args: { junkBlock: hexString(128) } }
         );
 
         await h.byzantine.submitDoubleSignBlock(1);
