@@ -72,14 +72,23 @@ function writeSchedulerMetadata(data) {
 // ---------------------------------------------------------------------------
 
 // Resolve thread-mode booleans with precedence: CLI flag > inherited env > default.
-// Defaults: vmThread=true, sdkThread=false (matches today's effective config).
-function resolveThreadModes(cli) {
-    const sdkThread =
-        cli.sdkThread !== undefined
-            ? cli.sdkThread
-            : process.env.RUN_SDK_IN_THREAD !== undefined
-              ? process.env.RUN_SDK_IN_THREAD !== "false"
-              : false;
+// Defaults: vmThread=true, sdkThread=usePerSlotNode (sdk-in-thread requires
+// a PROVIDER_URL which is only injected under --per-slot-node).
+function resolveThreadModes(cli, usePerSlotNode) {
+    let sdkThread, sdkThreadSource;
+    if (cli.sdkThread !== undefined) {
+        sdkThread = cli.sdkThread;
+        sdkThreadSource = "explicit";
+    } else if (process.env.RUN_SDK_IN_THREAD !== undefined) {
+        sdkThread = process.env.RUN_SDK_IN_THREAD !== "false";
+        sdkThreadSource = "explicit";
+    } else if (usePerSlotNode) {
+        sdkThread = true;
+        sdkThreadSource = "per-slot-node default";
+    } else {
+        sdkThread = false;
+        sdkThreadSource = "default off";
+    }
 
     const vmThread =
         cli.vmThread !== undefined
@@ -88,11 +97,11 @@ function resolveThreadModes(cli) {
               ? process.env.VM_DEDICATED_THREAD !== "false"
               : true;
 
-    return { sdkThread, vmThread };
+    return { sdkThread, sdkThreadSource, vmThread };
 }
 
 // Number of OS threads a single peer contributes: 1 per enabled thread mode,
-// clamped to at least 1. VM_DEDICATED_THREAD defaults true / RUN_SDK_IN_THREAD defaults false.
+// clamped to at least 1. VM_DEDICATED_THREAD defaults true / RUN_SDK_IN_THREAD defaults to usePerSlotNode.
 function threadsPerPeerFromModes({ sdkThread, vmThread }) {
     return Math.max(1, (vmThread ? 1 : 0) + (sdkThread ? 1 : 0));
 }
@@ -919,8 +928,22 @@ async function main() {
     // -----------------------------------------------------------------------
     // Thread-budget computation
     // -----------------------------------------------------------------------
-    const threadModes = resolveThreadModes(cli);
+    const usePerSlotNode =
+        cli.perSlotNode !== undefined
+            ? cli.perSlotNode
+            : process.env.E2E_PER_SLOT_NODE === "1";
+
+    const threadModes = resolveThreadModes(cli, usePerSlotNode);
     const threadsPerPeer = threadsPerPeerFromModes(threadModes);
+
+    // Warn when sdk-in-thread is explicitly on but per-slot-node is off — the
+    // SDK worker has no PROVIDER_URL injected, so it will fail unless the caller
+    // exported one externally.
+    if (threadModes.sdkThread && !usePerSlotNode) {
+        console.warn(
+            "WARNING: RUN_SDK_IN_THREAD is on but --per-slot-node is off — the SDK worker has no PROVIDER_URL and will fail unless you exported one yourself."
+        );
+    }
 
     // Assign a thread cost to every task.
     for (const task of tasks) {
@@ -1033,7 +1056,9 @@ async function main() {
         }
         console.log(`\nBudget footer:`);
         console.log(`  vmThread         : ${threadModes.vmThread}`);
-        console.log(`  sdkThread        : ${threadModes.sdkThread}`);
+        console.log(
+            `  sdkThread        : ${threadModes.sdkThread} (${threadModes.sdkThreadSource})`
+        );
         console.log(`  threadsPerPeer   : ${threadsPerPeer}`);
         const factorLabel = didAdapt
             ? "adapted"
@@ -1060,15 +1085,8 @@ async function main() {
             : `Running ${tasks.length} E2E task(s)`
     );
     console.log(
-        `  threadsPerPeer=${threadsPerPeer}  vmThread=${threadModes.vmThread}  sdkThread=${threadModes.sdkThread}  threadBudget=${threadBudget}  threadFactor=${threadFactor}  maxConcurrent=${maxConcurrent}`
+        `  threadsPerPeer=${threadsPerPeer}  vmThread=${threadModes.vmThread}  sdkThread=${threadModes.sdkThread} (${threadModes.sdkThreadSource})  threadBudget=${threadBudget}  threadFactor=${threadFactor}  maxConcurrent=${maxConcurrent}`
     );
-
-    // Resolve per-slot-node early so the startup log can reflect it.
-    // (Must be before safeEmptyDir so the flag is visible even if purge fails.)
-    const usePerSlotNode =
-        cli.perSlotNode !== undefined
-            ? cli.perSlotNode
-            : process.env.E2E_PER_SLOT_NODE === "1";
 
     console.log(`  perSlotNode=${usePerSlotNode}`);
 
@@ -1193,7 +1211,9 @@ async function main() {
         const rerunEnv = {
             ...env,
             CRASH_LOG_UPLOAD_ENDPOINT: undefined,
-            CRASH_LOG_API_TOKEN: undefined
+            CRASH_LOG_API_TOKEN: undefined,
+            // Reruns bypass slots → no PROVIDER_URL → must not run sdk-in-thread.
+            RUN_SDK_IN_THREAD: "false"
         };
 
         console.log(`Failure log upload=off (empty upload endpoint)`);
@@ -1409,7 +1429,9 @@ async function main() {
         // Parallel rerun for non-starved failures (existing behaviour).
         const parallelRerunResults = await Promise.all(
             otherTasks.map(async (task) => {
-                console.log(`Rerunning failed task (parallel): ${task.label}`);
+                console.log(
+                    `Rerunning failed task (parallel): ${task.label}${threadModes.sdkThread ? " (initial ran sdk-in-thread; rerun is in-process sdk-off)" : ""}`
+                );
                 const rerunLogName = `${task.logName}__rerun1`;
                 const { code, label, durationMs } = await runTask(
                     process.execPath,
@@ -1434,7 +1456,9 @@ async function main() {
         // Serial rerun for starvation-classified failures.
         const serialRerunResults = [];
         for (const task of starvedTasks) {
-            console.log(`Rerunning starved task (serial): ${task.label}`);
+            console.log(
+                `Rerunning starved task (serial): ${task.label}${threadModes.sdkThread ? " (initial ran sdk-in-thread; rerun is in-process sdk-off)" : ""}`
+            );
             const rerunLogName = `${task.logName}__rerun1`;
             const { code, label, durationMs } = await runTask(
                 process.execPath,
