@@ -28,6 +28,8 @@ import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
 import path from "node:path";
+import fs from "node:fs";
+import { createHash } from "node:crypto";
 import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 import type { CustomRpcManifest } from "@/rpc/registry";
 import type StateManager from "@/stateManager/StateManager";
@@ -330,23 +332,83 @@ export class PeerTestHarness<
         this.sharedStateMachineDeployer =
             this.createLocalStateMachineDeployer(deployment);
 
-        const reuseAddress = process.env.E2E_REUSE_MANAGER_ADDRESS;
-        if (reuseAddress && !ethers.isAddress(reuseAddress)) {
+        // Stable deploy-key from the on-chain config values that distinguish
+        // deployments. Intentionally omits the state-machine artifact hash:
+        // the runner resets the per-node cache dir on every node (re)boot so
+        // markers are never stale, and the e2e suite uses a single artifact.
+        // If a second state-machine variant is ever added, fold its hash in.
+        const { timeConfig, stateMachineGasLimit, disputeExecutionGasLimit } =
+            this.options;
+        const sortedTc = JSON.stringify(
+            timeConfig,
+            Object.keys(timeConfig as object).sort()
+        );
+        const deployKey = createHash("sha256")
+            .update(
+                JSON.stringify({
+                    tc: sortedTc,
+                    sm: String(stateMachineGasLimit),
+                    de: String(disputeExecutionGasLimit)
+                })
+            )
+            .digest("hex")
+            .slice(0, 16);
+
+        // Candidate A: explicit env var — validate strictly.
+        const explicitAddress = process.env.E2E_REUSE_MANAGER_ADDRESS;
+        if (explicitAddress && !ethers.isAddress(explicitAddress)) {
             throw new Error(
-                `E2E_REUSE_MANAGER_ADDRESS is not a valid EVM address: ${reuseAddress}`
+                `E2E_REUSE_MANAGER_ADDRESS is not a valid EVM address: ${explicitAddress}`
             );
         }
-        const reuseCode = reuseAddress
-            ? await hre.ethers.provider.getCode(reuseAddress)
+
+        // Candidate B: per-slot cache dir marker file.
+        const cacheDir = process.env.E2E_MANAGER_CACHE_DIR;
+        const markerPath = cacheDir
+            ? path.join(cacheDir, `${deployKey}.addr`)
             : undefined;
-        const canReuse = reuseCode && reuseCode !== "0x";
+        let cachedAddress: string | undefined;
+        if (markerPath) {
+            try {
+                const raw = fs.readFileSync(markerPath, "utf8").trim();
+                if (ethers.isAddress(raw)) {
+                    cachedAddress = raw;
+                }
+                // Malformed marker → ignore, deploy fresh (no throw).
+            } catch {
+                // File not present or unreadable → no candidate.
+            }
+        }
+
+        // A takes precedence over B.
+        const candidateAddress = explicitAddress || cachedAddress;
+        const candidateSource = explicitAddress ? "explicit env" : "cache";
 
         let channelManagerAddress: string;
-        if (canReuse) {
-            channelManagerAddress = reuseAddress!;
-            this.logger.debug(
-                `Reusing deployed StateChannelManager at ${channelManagerAddress}`
-            );
+        if (candidateAddress) {
+            const code = await hre.ethers.provider.getCode(candidateAddress);
+            if (code && code !== "0x") {
+                channelManagerAddress = candidateAddress;
+                this.logger.debug(
+                    `Reusing deployed StateChannelManager at ${channelManagerAddress} (${candidateSource})`
+                );
+            } else {
+                // Node is fresh — candidate address is stale, deploy anew.
+                channelManagerAddress = await deployment.deployOnChainContracts(
+                    {
+                        signer: deployerSigner,
+                        stateMachineGasLimit:
+                            this.options.stateMachineGasLimit!,
+                        disputeExecutionGasLimit:
+                            this.options.disputeExecutionGasLimit!,
+                        timeConfig: this.options.timeConfig as TimeConfig,
+                        harnessConfig: this.harnessConfig
+                    }
+                );
+                this.logger.debug(
+                    `Deployed StateChannelManager at ${channelManagerAddress}`
+                );
+            }
         } else {
             channelManagerAddress = await deployment.deployOnChainContracts({
                 signer: deployerSigner,
@@ -359,6 +421,18 @@ export class PeerTestHarness<
             this.logger.debug(
                 `Deployed StateChannelManager at ${channelManagerAddress}`
             );
+        }
+
+        // Write marker so subsequent tests on the same slot node can reuse.
+        if (cacheDir && markerPath) {
+            try {
+                fs.mkdirSync(cacheDir, { recursive: true });
+                fs.writeFileSync(markerPath, channelManagerAddress);
+            } catch (err) {
+                this.logger.debug(
+                    `Failed to write manager cache marker (non-fatal): ${err}`
+                );
+            }
         }
 
         // Wrap like the SDK wraps its own contracts: converts ethers `Result`s

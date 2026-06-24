@@ -785,6 +785,18 @@ async function waitForHardhatNode(url, timeoutMs = 30000) {
 }
 
 /**
+ * Empty a slot's manager-cache dir. INVARIANT: every slot-node (re)boot MUST
+ * call this before any test child reads the dir — a fresh node carries none of
+ * the prior markers' bytecode, so a surviving marker would point at nothing.
+ * This is the sole defense against stale markers; a future node-recycle path
+ * must call it too.
+ */
+function resetSlotCacheDir(dir) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+}
+
+/**
  * Spawn an external hardhat node for `slotId` on `port` and wait until its
  * RPC endpoint is ready. Returns `{ proc, url, logStream }`.
  */
@@ -1254,6 +1266,12 @@ async function main() {
                         let slotNodeEnv = {};
                         let slotTaskArgs = task.args;
                         if (usePerSlotNode) {
+                            // Deterministic per-slot manager cache dir.
+                            const slotCacheDir = path.join(
+                                path.resolve(logDir),
+                                "infra",
+                                `manager-cache-slot${slotId}`
+                            );
                             try {
                                 if (!slotNodes.has(slotId)) {
                                     const nodePort = await getFreePort();
@@ -1271,6 +1289,7 @@ async function main() {
                                         nodeLogPath
                                     );
                                     slotNodes.set(slotId, node);
+                                    resetSlotCacheDir(slotCacheDir);
                                     console.log(
                                         `Slot ${slotId} hardhat node ready at ${node.url}`
                                     );
@@ -1294,6 +1313,7 @@ async function main() {
                                         retryLogPath
                                     );
                                     slotNodes.set(slotId, node);
+                                    resetSlotCacheDir(slotCacheDir);
                                     console.log(
                                         `Slot ${slotId} hardhat node ready (retry) at ${node.url}`
                                     );
@@ -1309,7 +1329,8 @@ async function main() {
                             const { url } = slotNodes.get(slotId);
                             slotNodeEnv = {
                                 HARDHAT_NODE_URL: url,
-                                PROVIDER_URL: url
+                                PROVIDER_URL: url,
+                                E2E_MANAGER_CACHE_DIR: slotCacheDir
                             };
                             // Add --network localhost so hre.ethers uses the external node.
                             slotTaskArgs = [
