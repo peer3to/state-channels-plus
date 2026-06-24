@@ -10,6 +10,8 @@ const { Project, SyntaxKind } = require("ts-morph");
 
 const DEFAULT_LOG_DIR = "./logs";
 
+const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
+
 // Rough budget per concurrent hardhat task — used for the RAM cap on concurrency.
 const PER_WORKER_MEM_GB = 2;
 const DEFAULT_WORKER_START_STAGGER_MS = 1000;
@@ -758,7 +760,7 @@ async function main() {
             );
             tasks.push({
                 label: `test:${path.basename(f)}:${test}`,
-                args: ["hardhat", "test", "--no-compile", f, "--grep", grep],
+                args: ["test", "--no-compile", f, "--grep", grep],
                 logName,
                 fullTitle,
                 peers
@@ -1111,8 +1113,8 @@ async function main() {
 
                     setTimeout(() => {
                         runTask(
-                            "yarn",
-                            ["--silent", ...task.args],
+                            process.execPath,
+                            [HARDHAT_CLI, ...task.args],
                             {
                                 ...env,
                                 E2E_SLOT_INDEX: String(slotId)
@@ -1181,8 +1183,8 @@ async function main() {
                 console.log(`Rerunning failed task (parallel): ${task.label}`);
                 const rerunLogName = `${task.logName}__rerun1`;
                 const { code, label, durationMs } = await runTask(
-                    "yarn",
-                    ["--silent", ...task.args],
+                    process.execPath,
+                    [HARDHAT_CLI, ...task.args],
                     {
                         ...rerunEnv
                     },
@@ -1206,8 +1208,8 @@ async function main() {
             console.log(`Rerunning starved task (serial): ${task.label}`);
             const rerunLogName = `${task.logName}__rerun1`;
             const { code, label, durationMs } = await runTask(
-                "yarn",
-                ["--silent", ...task.args],
+                process.execPath,
+                [HARDHAT_CLI, ...task.args],
                 {
                     ...rerunEnv
                 },
