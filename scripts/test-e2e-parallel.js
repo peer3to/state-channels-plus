@@ -3,6 +3,7 @@ const { spawn } = require("child_process");
 const { createHash } = require("crypto");
 const fs = require("fs");
 const { globSync } = require("glob");
+const http = require("http");
 const net = require("net");
 const os = require("os");
 const path = require("path");
@@ -227,7 +228,9 @@ function parseCliArgs(argv) {
         sdkThread: undefined,
         vmThread: undefined,
         // Shared discovery: undefined = fall back to env/default (on by default).
-        sharedDiscovery: undefined
+        sharedDiscovery: undefined,
+        // Per-slot external hardhat node: undefined = fall back to env/default (off by default).
+        perSlotNode: undefined
     };
 
     for (let i = 2; i < argv.length; i++) {
@@ -365,6 +368,16 @@ function parseCliArgs(argv) {
 
         if (arg === "--no-shared-discovery") {
             options.sharedDiscovery = false;
+            continue;
+        }
+
+        if (arg === "--per-slot-node") {
+            options.perSlotNode = true;
+            continue;
+        }
+
+        if (arg === "--no-per-slot-node") {
+            options.perSlotNode = false;
             continue;
         }
 
@@ -741,6 +754,107 @@ function startDiscoveryRegistry(port, logPath) {
     });
 }
 
+/**
+ * Poll a hardhat node's JSON-RPC endpoint until it responds or timeout expires.
+ */
+async function waitForHardhatNode(url, timeoutMs = 30000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        const ready = await new Promise((resolve) => {
+            const req = http.request(
+                url,
+                {
+                    method: "POST",
+                    headers: { "content-type": "application/json" }
+                },
+                (res) => {
+                    res.resume();
+                    resolve(true);
+                }
+            );
+            req.on("error", () => resolve(false));
+            req.write(
+                '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'
+            );
+            req.end();
+        });
+        if (ready) return;
+        await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error(`Hardhat node not ready at ${url} within ${timeoutMs}ms`);
+}
+
+/**
+ * Spawn an external hardhat node for `slotId` on `port` and wait until its
+ * RPC endpoint is ready. Returns `{ proc, url, logStream }`.
+ */
+function startSlotNode(slotId, port, logPath) {
+    return new Promise((resolve, reject) => {
+        fs.mkdirSync(path.dirname(logPath), { recursive: true });
+        const logStream = fs.createWriteStream(logPath, { flags: "w" });
+
+        const proc = spawn(
+            process.execPath,
+            [
+                HARDHAT_CLI,
+                "node",
+                "--hostname",
+                "127.0.0.1",
+                "--port",
+                String(port)
+            ],
+            {
+                cwd: path.join(__dirname, ".."),
+                env: { ...process.env },
+                stdio: ["ignore", "pipe", "pipe"]
+            }
+        );
+
+        proc.stdout.pipe(logStream, { end: false });
+        proc.stderr.pipe(logStream, { end: false });
+
+        const url = `http://127.0.0.1:${port}`;
+
+        let settled = false;
+
+        proc.on("exit", (code) => {
+            logStream.end();
+            if (!settled) {
+                settled = true;
+                reject(
+                    new Error(
+                        `Slot ${slotId} hardhat node exited with code ${code} before becoming ready`
+                    )
+                );
+            }
+        });
+
+        proc.on("error", (err) => {
+            if (!settled) {
+                settled = true;
+                reject(err);
+            }
+        });
+
+        // Wait for the node RPC to respond, then resolve.
+        waitForHardhatNode(url).then(
+            () => {
+                if (!settled) {
+                    settled = true;
+                    resolve({ proc, url, logStream });
+                }
+            },
+            (err) => {
+                if (!settled) {
+                    settled = true;
+                    proc.kill("SIGTERM");
+                    reject(err);
+                }
+            }
+        );
+    });
+}
+
 async function main() {
     const cli = parseCliArgs(process.argv);
     const e2eDir = path.resolve("test/e2e");
@@ -937,6 +1051,15 @@ async function main() {
         `  threadsPerPeer=${threadsPerPeer}  vmThread=${threadModes.vmThread}  sdkThread=${threadModes.sdkThread}  threadBudget=${threadBudget}  threadFactor=${threadFactor}  maxConcurrent=${maxConcurrent}`
     );
 
+    // Resolve per-slot-node early so the startup log can reflect it.
+    // (Must be before safeEmptyDir so the flag is visible even if purge fails.)
+    const usePerSlotNode =
+        cli.perSlotNode !== undefined
+            ? cli.perSlotNode
+            : process.env.E2E_PER_SLOT_NODE === "1";
+
+    console.log(`  perSlotNode=${usePerSlotNode}`);
+
     const logDir = cli.logDir;
 
     // Clean logs from previous runs before starting any infra that writes there.
@@ -956,22 +1079,37 @@ async function main() {
     let discoveryChild = null;
     let discoveryRegistryUrl = undefined;
 
+    // Map<slotId, { proc, url, logStream }> — populated lazily on first task per slot.
+    const slotNodes = new Map();
+
     const teardownDiscovery = () => {
         if (discoveryChild && !discoveryChild.killed) {
             discoveryChild.kill("SIGTERM");
         }
     };
-    // Expose to module-level catch handler so no throw path orphans the registry.
-    _teardownDiscovery = teardownDiscovery;
 
-    // Belt-and-suspenders: signal handlers wait for the registry child to exit
-    // before forwarding the signal exit code. Idempotent via `shuttingDown`.
+    const teardownSlotNodes = () => {
+        for (const [slotId, node] of slotNodes) {
+            if (!node.proc.killed) {
+                console.log(`Tearing down slot ${slotId} hardhat node`);
+                node.proc.kill("SIGTERM");
+            }
+        }
+    };
+
+    // Expose to module-level catch handler so no throw path orphans infra.
+    _teardownDiscovery = teardownDiscovery;
+    _teardownSlotNodes = teardownSlotNodes;
+
+    // Belt-and-suspenders: signal handlers tear down all infra before exiting.
+    // Idempotent via `shuttingDown`.
     let shuttingDown = false;
     for (const signal of ["SIGINT", "SIGTERM"]) {
         process.on(signal, () => {
             if (shuttingDown) return;
             shuttingDown = true;
             const sigCode = signal === "SIGINT" ? 130 : 143;
+            teardownSlotNodes();
             if (discoveryChild && !discoveryChild.killed) {
                 discoveryChild.kill("SIGTERM");
                 const fallback = setTimeout(() => process.exit(sigCode), 2000);
@@ -1086,7 +1224,7 @@ async function main() {
             loadSamples.push(os.loadavg()[0]);
         }, LOAD_SAMPLE_INTERVAL_MS);
 
-        await new Promise((resolve) => {
+        await new Promise((resolve, reject) => {
             const maybeStartNext = () => {
                 if (idx >= tasks.length && active === 0) {
                     resolve(undefined);
@@ -1111,12 +1249,82 @@ async function main() {
                     nextLaunchAt =
                         Math.max(nextLaunchAt, now) + workerStartStaggerMs;
 
-                    setTimeout(() => {
+                    setTimeout(async () => {
+                        // Lazy-boot a per-slot hardhat node on first use of this slot.
+                        let slotNodeEnv = {};
+                        let slotTaskArgs = task.args;
+                        if (usePerSlotNode) {
+                            try {
+                                if (!slotNodes.has(slotId)) {
+                                    const nodePort = await getFreePort();
+                                    const nodeLogPath = path.join(
+                                        path.resolve(logDir),
+                                        "infra",
+                                        `hardhat-node-slot${slotId}.log`
+                                    );
+                                    console.log(
+                                        `Starting slot ${slotId} hardhat node on port ${nodePort}...`
+                                    );
+                                    const node = await startSlotNode(
+                                        slotId,
+                                        nodePort,
+                                        nodeLogPath
+                                    );
+                                    slotNodes.set(slotId, node);
+                                    console.log(
+                                        `Slot ${slotId} hardhat node ready at ${node.url}`
+                                    );
+                                }
+                            } catch (bootErr) {
+                                // Boot failure is an infra fault. Retry once with a fresh port
+                                // to guard the TOCTOU free-port race before giving up.
+                                console.warn(
+                                    `Slot ${slotId} hardhat node failed to start (will retry once): ${bootErr.message}`
+                                );
+                                try {
+                                    const retryPort = await getFreePort();
+                                    const retryLogPath = path.join(
+                                        path.resolve(logDir),
+                                        "infra",
+                                        `hardhat-node-slot${slotId}-retry.log`
+                                    );
+                                    const node = await startSlotNode(
+                                        slotId,
+                                        retryPort,
+                                        retryLogPath
+                                    );
+                                    slotNodes.set(slotId, node);
+                                    console.log(
+                                        `Slot ${slotId} hardhat node ready (retry) at ${node.url}`
+                                    );
+                                } catch (retryErr) {
+                                    reject(
+                                        new Error(
+                                            `Slot ${slotId} hardhat node failed to start after retry — aborting run (infra failure, not a test failure): ${retryErr.message}`
+                                        )
+                                    );
+                                    return;
+                                }
+                            }
+                            const { url } = slotNodes.get(slotId);
+                            slotNodeEnv = {
+                                HARDHAT_NODE_URL: url,
+                                PROVIDER_URL: url
+                            };
+                            // Add --network localhost so hre.ethers uses the external node.
+                            slotTaskArgs = [
+                                task.args[0],
+                                "--network",
+                                "localhost",
+                                ...task.args.slice(1)
+                            ];
+                        }
                         runTask(
                             process.execPath,
-                            [HARDHAT_CLI, ...task.args],
+                            [HARDHAT_CLI, ...slotTaskArgs],
                             {
                                 ...env,
+                                ...slotNodeEnv,
                                 E2E_SLOT_INDEX: String(slotId)
                             },
                             task.label,
@@ -1316,15 +1524,18 @@ async function main() {
         // Keep workspace tidy: keep only error_* logs
         cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
     } finally {
+        teardownSlotNodes();
         teardownDiscovery();
     }
 }
 
-// Module-level reference so main().catch can tear down the registry on any
+// Module-level references so main().catch can tear down all infra on any
 // unhandled throw that escapes main() (belt-and-suspenders alongside finally).
 let _teardownDiscovery = () => {};
+let _teardownSlotNodes = () => {};
 
 main().catch((err) => {
+    _teardownSlotNodes();
     _teardownDiscovery();
     console.error(err);
     process.exit(1);
