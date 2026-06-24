@@ -330,13 +330,36 @@ export class PeerTestHarness<
         this.sharedStateMachineDeployer =
             this.createLocalStateMachineDeployer(deployment);
 
-        const channelManagerAddress = await deployment.deployOnChainContracts({
-            signer: deployerSigner,
-            stateMachineGasLimit: this.options.stateMachineGasLimit!,
-            disputeExecutionGasLimit: this.options.disputeExecutionGasLimit!,
-            timeConfig: this.options.timeConfig as TimeConfig,
-            harnessConfig: this.harnessConfig
-        });
+        const reuseAddress = process.env.E2E_REUSE_MANAGER_ADDRESS;
+        if (reuseAddress && !ethers.isAddress(reuseAddress)) {
+            throw new Error(
+                `E2E_REUSE_MANAGER_ADDRESS is not a valid EVM address: ${reuseAddress}`
+            );
+        }
+        const reuseCode = reuseAddress
+            ? await hre.ethers.provider.getCode(reuseAddress)
+            : undefined;
+        const canReuse = reuseCode && reuseCode !== "0x";
+
+        let channelManagerAddress: string;
+        if (canReuse) {
+            channelManagerAddress = reuseAddress!;
+            this.logger.debug(
+                `Reusing deployed StateChannelManager at ${channelManagerAddress}`
+            );
+        } else {
+            channelManagerAddress = await deployment.deployOnChainContracts({
+                signer: deployerSigner,
+                stateMachineGasLimit: this.options.stateMachineGasLimit!,
+                disputeExecutionGasLimit:
+                    this.options.disputeExecutionGasLimit!,
+                timeConfig: this.options.timeConfig as TimeConfig,
+                harnessConfig: this.harnessConfig
+            });
+            this.logger.debug(
+                `Deployed StateChannelManager at ${channelManagerAddress}`
+            );
+        }
 
         // Wrap like the SDK wraps its own contracts: converts ethers `Result`s
         // to plain objects on return AND makes call args mutable. Without it,
