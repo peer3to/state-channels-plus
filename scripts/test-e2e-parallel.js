@@ -589,6 +589,16 @@ function markLogAsError(logDir, logName) {
     }
 }
 
+// Tracks all spawned test-child processes so teardown can kill any still running.
+const liveTaskChildren = new Set();
+
+/** Kill all in-flight test children so they don't thrash a dying node. */
+function teardownTaskChildren() {
+    for (const c of liveTaskChildren) {
+        if (!c.killed) c.kill("SIGTERM");
+    }
+}
+
 async function runTask(cmd, args, env, label, logPath) {
     return new Promise((resolve) => {
         const startedAt = Date.now();
@@ -612,6 +622,7 @@ async function runTask(cmd, args, env, label, logPath) {
             stdio: ["inherit", "pipe", "pipe"],
             env: childEnv
         });
+        liveTaskChildren.add(child);
 
         child.stdout.on("data", (data) => {
             // Optionally mirror to console
@@ -634,12 +645,14 @@ async function runTask(cmd, args, env, label, logPath) {
         });
 
         child.on("exit", (code) => {
+            liveTaskChildren.delete(child);
             logStream.end();
             const durationMs = Date.now() - startedAt;
             resolve({ code, label, stdout, stderr, durationMs });
         });
 
         child.on("error", (err) => {
+            liveTaskChildren.delete(child);
             logStream.end();
             stderr += String(err);
             const durationMs = Date.now() - startedAt;
@@ -977,14 +990,14 @@ async function main() {
     let didAdapt = false;
 
     if (shouldAdapt) {
-        const meta = readSchedulerMetadata();
-        // Regime check: ignore metadata when threadsPerPeer changed — old
-        // tuning was calibrated for a different per-peer cost.
+        const all = readSchedulerMetadata();
+        // Key metadata by threadsPerPeer so different regimes don't clobber each other.
+        const meta =
+            all && typeof all === "object" ? all[threadsPerPeer] : null;
         if (
-            meta !== null &&
+            meta != null &&
             Number.isFinite(meta.scalingFactor) &&
-            Number.isFinite(meta.avgLoadPerCore) &&
-            meta.threadsPerPeer === threadsPerPeer
+            Number.isFinite(meta.avgLoadPerCore)
         ) {
             const prevFactor = meta.scalingFactor;
             const prevLoad = meta.avgLoadPerCore;
@@ -1139,6 +1152,7 @@ async function main() {
             if (shuttingDown) return;
             shuttingDown = true;
             const sigCode = signal === "SIGINT" ? 130 : 143;
+            teardownTaskChildren();
             teardownSlotNodes();
             if (discoveryChild && !discoveryChild.killed) {
                 discoveryChild.kill("SIGTERM");
@@ -1181,6 +1195,10 @@ async function main() {
 
         const env = {
             ...process.env,
+            // Slot vars only reach children via per-task slotNodeEnv; strip ambient values here.
+            PROVIDER_URL: undefined,
+            HARDHAT_NODE_URL: undefined,
+            E2E_MANAGER_CACHE_DIR: undefined,
             LOG_LEVEL: process.env.LOG_LEVEL || "error",
             NODE_OPTIONS: [
                 process.env.NODE_OPTIONS,
@@ -1216,12 +1234,14 @@ async function main() {
             RUN_SDK_IN_THREAD: "false"
         };
 
-        console.log(`Failure log upload=off (empty upload endpoint)`);
+        console.log(
+            `Initial-run failure log upload=deferred to child env/dotenv resolution`
+        );
         console.log(
             `Streaming child output=${env.STREAM_PARALLEL_CHILD_OUTPUT === "1" ? "on" : "off"}`
         );
         console.log(
-            "Rerun failure log upload=deferred to child env/dotenv resolution"
+            `Rerun failure log upload=off (parent CRASH_LOG_* cleared)`
         );
         const startTime = Date.now();
         const configuredStagger = Number.parseInt(
@@ -1523,14 +1543,23 @@ async function main() {
                 : os.loadavg()[0] / cpuCount;
 
         // Persist tuning metadata after starvationCount is final.
+        // Read-merge-write so other regimes are preserved; migrate old flat format.
         if (shouldAdapt) {
-            writeSchedulerMetadata({
+            const existing = readSchedulerMetadata();
+            const all =
+                existing &&
+                typeof existing === "object" &&
+                !Array.isArray(existing) &&
+                !("avgLoadPerCore" in existing)
+                    ? existing
+                    : {}; // ignore/migrate the old flat single-regime format
+            all[threadsPerPeer] = {
                 avgLoadPerCore,
                 scalingFactor: threadFactor,
                 starvationTrips: starvationCount,
-                threadsPerPeer,
                 timestamp: new Date().toISOString()
-            });
+            };
+            writeSchedulerMetadata(all);
         }
 
         // Print final summary
@@ -1569,6 +1598,7 @@ async function main() {
         // Keep workspace tidy: keep only error_* logs
         cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
     } finally {
+        teardownTaskChildren();
         teardownSlotNodes();
         teardownDiscovery();
     }
@@ -1580,6 +1610,7 @@ let _teardownDiscovery = () => {};
 let _teardownSlotNodes = () => {};
 
 main().catch((err) => {
+    teardownTaskChildren();
     _teardownSlotNodes();
     _teardownDiscovery();
     console.error(err);
