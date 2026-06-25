@@ -10,6 +10,92 @@ import { MathTestSession as TestSession } from "@test/harness";
 // disputeInputFields/latestStateSnapshotHash.test.ts.
 
 describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", function () {
+    describe("stateProof.signedBlocks[0].previousBlockHash = random (wrong genesis anchor)", function () {
+        it("height 0 first block with wrong genesis link → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+
+            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const d = sm.p2pManager.localRpc.dispute;
+                const stateProof = dispute.input.stateProof;
+                d.expectSignedBlocksOnlyStateProof(stateProof);
+
+                await d.rewriteSignedBlockAtIndex(dispute, 0, (bs) => ({
+                    ...bs,
+                    previousBlockHash: d.randomHash() as Hash
+                }));
+
+                let previousBlockHash = d.hash(
+                    stateProof.signedBlocks[0].encodedBlock
+                ) as Hash;
+                for (let i = 1; i < stateProof.signedBlocks.length; i++) {
+                    await d.rewriteSignedBlockAtIndex(dispute, i, (bs) => ({
+                        ...bs,
+                        previousBlockHash
+                    }));
+                    previousBlockHash = d.hash(
+                        stateProof.signedBlocks[i].encodedBlock
+                    ) as Hash;
+                }
+
+                dispute.postedAuditingData = true;
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: true
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+                timeoutMs: 15000
+            });
+        });
+    });
+
+    describe("stateProof.signedBlocks[0].transaction.header.transactionCnt != 0", function () {
+        it("first signedBlock height is not 0 → DisputeInvalidStateProof", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+
+            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const d = sm.p2pManager.localRpc.dispute;
+                const stateProof = dispute.input.stateProof;
+                d.expectSignedBlocksOnlyStateProof(stateProof);
+
+                await d.rewriteSignedBlockAtIndex(dispute, 0, (bs) =>
+                    d.blockStructWithTransactionHeader(bs, {
+                        transactionCnt:
+                            BigInt(bs.transaction.header.transactionCnt) + 1n
+                    })
+                );
+
+                dispute.postedAuditingData = true;
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: true
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidStateProof,
+                timeoutMs: 15000
+            });
+            await h.dispute.resolveDisputeWait();
+        });
+    });
+
     describe("stateProof.signedBlocks[-1].encodedBlock.stateSnapshotHash = ZeroHash (stateSnapshotHash mismatch)", function () {
         it("stateSnapshotHash = ZeroHash → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
             const h = TestSession.getHarness();
