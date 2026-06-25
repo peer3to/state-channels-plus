@@ -92,6 +92,11 @@ async function listChannelDirs() {
 }
 
 async function resolveChannelDir(channelId, options = {}) {
+    // channelId is attacker-controlled and used to build on-disk paths; sanitize
+    // it (same as peer segments) so it can't escape LOG_DIR via traversal.
+    // Both the write (POST) and read (GET) paths go through here, so the
+    // sanitized value stays consistent across them.
+    channelId = sanitizeSegment(channelId);
     const { rotateIfOld = false } = options;
     const nowMs = Date.now();
     const maxAgeMs = CHANNEL_DIR_MAX_AGE_MS;
@@ -177,7 +182,10 @@ async function resolveChannelDir(channelId, options = {}) {
 }
 
 function sanitizeSegment(value) {
-    return String(value).replace(/[\/]/g, "_");
+    // Strict allowlist: anything outside [0-9a-zA-Z_-] (path separators, dots,
+    // etc.) becomes "_", so a value used as a path segment can't traverse out
+    // of LOG_DIR. Legitimate channel ids / EVM addresses are hex and unchanged.
+    return String(value).replace(/[^0-9a-zA-Z_-]/g, "_");
 }
 
 function getRequestMeta(req) {
@@ -363,14 +371,20 @@ app.get("/logs/:channelId/:peerAddress", async (req, res) => {
 
 async function start() {
     await ensureLogDir();
-    app.listen(PORT, () => {
+    // Bind to loopback only — this is a local dev helper, not a public service.
+    app.listen(PORT, "127.0.0.1", () => {
         console.log(
             `[CrashLogServer] Server running on http://localhost:${PORT}`
         );
     });
 }
 
-start().catch((err) => {
-    console.error("[CrashLogServer] Failed to start:", err);
-    process.exit(1);
-});
+// Only auto-start when run directly; allows importing helpers (e.g. for tests).
+if (require.main === module) {
+    start().catch((err) => {
+        console.error("[CrashLogServer] Failed to start:", err);
+        process.exit(1);
+    });
+}
+
+module.exports = { sanitizeSegment };
