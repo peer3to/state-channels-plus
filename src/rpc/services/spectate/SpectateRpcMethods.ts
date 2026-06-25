@@ -3,6 +3,7 @@ import { ATransport } from "@/transport";
 import SpectateService, { SyncRequest } from "./SpectateService";
 import { Bytes, ChannelId } from "@/types";
 import Clock from "@/Clock";
+import { ethers } from "ethers";
 import { Codec, hash, Type } from "@/utils";
 import { Block, StateSnapshot } from "@/models";
 import type { DisputeWindowVerification } from "@/types";
@@ -76,6 +77,25 @@ class SpectateServiceRpcMethods extends ARpcMethods {
                 this.service.logger.debug(
                     "onSpectateResponse - no pending request for peer; aborting",
                     { peerAddress }
+                );
+                return this.service.abort(peerAddress);
+            }
+
+            // Bind the response to the channel we actually requested. Every
+            // fetch/verify/persist below trusts `channelId`; without this a peer
+            // could answer a request for one channel with a (valid) payload for
+            // another and corrupt our local state.
+            if (
+                ethers.hexlify(channelId) !==
+                ethers.hexlify(syncRequest.channelId)
+            ) {
+                this.service.logger.warn(
+                    "onSpectateResponse - response channelId does not match the pending request; aborting",
+                    {
+                        peerAddress,
+                        requestedChannelId: syncRequest.channelId,
+                        responseChannelId: channelId
+                    }
                 );
                 return this.service.abort(peerAddress);
             }

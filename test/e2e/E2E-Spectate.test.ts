@@ -97,6 +97,127 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
+    describe("Channel Binding", function () {
+        it("aborts before any chain read when a peer answers with a mismatched channelId", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0);
+            await h.transition.advanceState({ count: 1 });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+
+            const realChannelId = h.channelId!;
+            const forkId = h.activeForkId!;
+            const wrongChannelId = ethers.keccak256(
+                ethers.toUtf8Bytes("spectate-wrong-channel")
+            );
+            expect(wrongChannelId).to.not.equal(String(realChannelId));
+
+            const peer1Address = h.getPeer(1).address;
+
+            // A valid, decodable payload for the REAL channel, so the decode at
+            // the top of onSpectateResponse succeeds and the channel-binding
+            // guard — not a decode error — is what aborts.
+            const blockInfo = await h
+                .control(h.getPeer(1))
+                .query.getLatestBlockInfo(forkId)
+                .request();
+            expect(blockInfo).to.not.be.null;
+            const blockHeight = Number(
+                Codec.decode(blockInfo!.encodedBlock, Type.Block).transaction
+                    .header.transactionCnt
+            );
+            const encodedSyncPayload = await h
+                .control(h.getPeer(1))
+                .spectate.generateSyncPayload(
+                    realChannelId,
+                    forkId,
+                    blockHeight
+                )
+                .request();
+            expect(encodedSyncPayload).to.not.be.null;
+
+            // Drive onSpectateResponse host-side: a pending request for the REAL
+            // channel, but the response claims a DIFFERENT channel.
+            const result = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) => {
+                    const spectateService =
+                        sm.p2pManager.localRpc.spectateService;
+                    const profile =
+                        sm.p2pManager.profileManager.getProfileByEvmAddress(
+                            args.peer1Address
+                        );
+                    const transport = profile?.transport;
+                    if (!transport?.peerAddress) {
+                        throw new Error("no handshaked transport to peer 1");
+                    }
+                    const internal = spectateService as unknown as {
+                        requestMapByPeerAddress: Map<
+                            string,
+                            { channelId: unknown; initTime: number }
+                        >;
+                        fetchAndPersistOnChainSnapshot: (
+                            channelId: unknown
+                        ) => Promise<unknown>;
+                    };
+
+                    internal.requestMapByPeerAddress.set(
+                        transport.peerAddress,
+                        {
+                            channelId: args.realChannelId,
+                            initTime: Math.floor(Date.now() / 1000)
+                        }
+                    );
+
+                    // Trip a flag if execution ever reaches the first on-chain read.
+                    let fetchCalled = false;
+                    const originalFetch =
+                        internal.fetchAndPersistOnChainSnapshot.bind(
+                            spectateService
+                        );
+                    internal.fetchAndPersistOnChainSnapshot = async (
+                        cid: unknown
+                    ) => {
+                        fetchCalled = true;
+                        return originalFetch(cid);
+                    };
+
+                    try {
+                        await spectateService
+                            .createRPCMethods(transport)
+                            .onSpectateResponse(
+                                args.wrongChannelId,
+                                args.encodedSyncPayload
+                            );
+                    } finally {
+                        internal.fetchAndPersistOnChainSnapshot = originalFetch;
+                    }
+
+                    return {
+                        fetchCalled,
+                        stillPending: internal.requestMapByPeerAddress.has(
+                            transport.peerAddress
+                        )
+                    };
+                },
+                {
+                    peer1Address,
+                    realChannelId,
+                    wrongChannelId,
+                    encodedSyncPayload: encodedSyncPayload!
+                }
+            );
+
+            expect(
+                result.fetchCalled,
+                "mismatched channelId must abort before any on-chain read"
+            ).to.equal(false);
+            expect(
+                result.stillPending,
+                "pending request should be consumed by the rejected response"
+            ).to.equal(false);
+        });
+    });
+
     describe("Same Fork Spectating", function () {
         it("should spectate successfully when on-chain snapshot is already on the same fork", async function () {
             const h = TestSession.getHarness();
