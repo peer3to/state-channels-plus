@@ -39,6 +39,11 @@ class StateChannelEventListener {
         handler: (logObj: any) => Promise<void>
     ) {
         return async (logObj: any) => {
+            // Once disposing, drop in-flight on-chain events — the peer is
+            // tearing down and must not process late events (e.g. a block
+            // mined during cleanup).
+            if (this.disposed) return;
+
             const logKey = this.getLogKey(key, logObj);
             if (logKey && this.seenLogs.has(logKey)) {
                 this.logger.debug(`Duplicate on-chain event skipped - ${key}`, {

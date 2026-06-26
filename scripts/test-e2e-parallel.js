@@ -891,6 +891,11 @@ function startSlotNode(slotId, port, logPath) {
 
 async function main() {
     const cli = parseCliArgs(process.argv);
+    // This runner only ever runs e2e tests, which need automine-off + 2s
+    // interval mining so block-time tracks wall-clock (dispute timing). Set it
+    // here so both in-process child tests and the spawned per-slot nodes (both
+    // inherit process.env) pick it up via hardhat.config's E2E_INTERVAL_MINING gate.
+    process.env.E2E_INTERVAL_MINING = "1";
     const e2eDir = path.resolve("test/e2e");
     const files = globSync(path.join(e2eDir, "**/*.test.ts"));
     if (files.length === 0) {

@@ -15,7 +15,17 @@ const config: HardhatUserConfig = {
         hardhat: {
             allowUnlimitedContractSize: true,
             gas: "auto",
-            initialDate: new Date().toISOString()
+            initialDate: new Date().toISOString(),
+            // E2E runs set E2E_INTERVAL_MINING=1 → automine OFF + a 2s interval,
+            // so block-time tracks wall-clock and the SDK's real-time dispute
+            // timers stay in sync with on-chain deadlines (replaces the removed
+            // harness startAutoTimeAdvance). Everything else (unit tests, normal
+            // hardhat use) keeps default automine for instant, awaited-free tx
+            // inclusion.
+            mining:
+                process.env.E2E_INTERVAL_MINING === "1"
+                    ? { auto: false, interval: 2000 }
+                    : { auto: true, interval: 2000 }
         },
         localhost: {
             // Env-driven so the worker-mode e2e run can point hardhat's deploy

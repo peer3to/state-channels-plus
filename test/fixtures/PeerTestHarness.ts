@@ -17,7 +17,6 @@ import {
     createLogger,
     LocalDiscoveryServer,
     Logger,
-    retry,
     EventBarrier,
     createEthersResultProxy
 } from "@/utils";
@@ -79,9 +78,7 @@ export class PeerTestHarness<
     private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator<TCustomRpc>;
-    private autoTimeAdvanceInterval?: NodeJS.Timeout;
-    private autoTimeAdvanceTickInProgress = false;
-    private restoreAutomineOnCleanup = false;
+    private onBlockHeartbeat?: () => void;
 
     /**
      * Test context for cross-block state sharing
@@ -286,6 +283,12 @@ export class PeerTestHarness<
         for (let i = 0; i < numPeers; i++) {
             await this.createPeer(i, signers[i]);
         }
+
+        // Pulse the event-counts barrier on every mined block so barriers
+        // don't stall waiting for chain-time to advance between transactions.
+        const onBlock = () => this.eventCountsBarrier.signal();
+        this.onBlockHeartbeat = onBlock;
+        hre.ethers.provider.on("block", onBlock);
 
         this.logger.info("Test harness setup completed");
     }
@@ -727,100 +730,12 @@ export class PeerTestHarness<
 
     // ===== PRIVATE HELPERS =====
 
-    /**
-     * Starts automatic blockchain time advancement to simulate natural time passing.
-     * Mines blocks on a fixed cadence so time progresses even without transactions.
-     */
-    async startAutoTimeAdvance(options?: {
-        intervalSeconds?: number;
-        disableAutomine?: boolean;
-    }): Promise<void> {
-        if (this.autoTimeAdvanceInterval) {
-            this.logger.debug("Auto time advance already running");
-            return;
-        }
-
-        const intervalSeconds = options?.intervalSeconds ?? 2;
-        const disableAutomine = options?.disableAutomine ?? true;
-
-        this.logger.debug(
-            `Starting auto blockchain mine (every ${intervalSeconds}s)`
-        );
-
-        if (disableAutomine) {
-            await hre.ethers.provider.send("evm_setAutomine", [false]);
-            this.restoreAutomineOnCleanup = true;
-        }
-
-        this.autoTimeAdvanceInterval = setInterval(() => {
-            if (this.autoTimeAdvanceTickInProgress) return;
-            this.autoTimeAdvanceTickInProgress = true;
-            void retry(
-                async () => {
-                    const currentTimestampSeconds = Math.floor(
-                        Date.now() / 1000
-                    );
-
-                    await hre.ethers.provider.send(
-                        "evm_setNextBlockTimestamp",
-                        [currentTimestampSeconds]
-                    );
-                    await hre.ethers.provider.send("evm_mine", []);
-
-                    const latestBlock =
-                        await hre.ethers.provider.getBlock("latest");
-
-                    if (!latestBlock) {
-                        this.logger.verbose(
-                            "Auto time advance mined block, but latest block was unavailable"
-                        );
-                        return;
-                    }
-
-                    const transactionHashes = (
-                        latestBlock.transactions || []
-                    ).map((tx) => String(tx));
-
-                    this.logger.debug(
-                        `Auto-mined block ${latestBlock.number} txCount: ${transactionHashes.length}`,
-                        {
-                            blockNumber: latestBlock.number,
-                            currentTimestampSeconds,
-                            timestamp: latestBlock.timestamp,
-                            transactionCount: transactionHashes.length,
-                            transactionHashes
-                        }
-                    );
-
-                    void this.eventCountsBarrier.signal();
-                },
-                {
-                    maxRetries: 30,
-                    delayMs: 5,
-                    useExponentialBackoff: false
-                }
-            ).finally(() => {
-                this.autoTimeAdvanceTickInProgress = false;
-            });
-        }, intervalSeconds * 1000);
-    }
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
 
-        // Stop auto time advancement
-        if (this.autoTimeAdvanceInterval) {
-            clearInterval(this.autoTimeAdvanceInterval);
-            this.autoTimeAdvanceInterval = undefined;
-        }
-        this.autoTimeAdvanceTickInProgress = false;
-
-        if (this.restoreAutomineOnCleanup) {
-            try {
-                await hre.ethers.provider.send("evm_setAutomine", [true]);
-            } catch {
-                // ignore
-            }
-            this.restoreAutomineOnCleanup = false;
+        if (this.onBlockHeartbeat) {
+            hre.ethers.provider.off("block", this.onBlockHeartbeat);
+            this.onBlockHeartbeat = undefined;
         }
 
         if (this.channelManager) {
