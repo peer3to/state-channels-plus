@@ -1,912 +1,67 @@
 /* eslint-disable no-console */
-const { spawn } = require("child_process");
-const { createHash } = require("crypto");
-const fs = require("fs");
 const { globSync } = require("glob");
-const http = require("http");
-const net = require("net");
 const os = require("os");
 const path = require("path");
-const { Project, SyntaxKind } = require("ts-morph");
 
-const DEFAULT_LOG_DIR = "./logs";
-
-const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
-
-// Rough budget per concurrent hardhat task — used for the RAM cap on concurrency.
-const PER_WORKER_MEM_GB = 2;
-
-// Account pool size and stride — must stay in sync with:
-//   hardhat.config.ts  →  accounts.count (hardhat + localhost networks)
-//   test/harness/core/slotAccounts.ts  →  SLOT_STRIDE
-const ACCOUNT_POOL_SIZE = 400;
-const ACCOUNT_SLOT_STRIDE = 10;
-const MAX_SLOTS_FROM_POOL = Math.floor(ACCOUNT_POOL_SIZE / ACCOUNT_SLOT_STRIDE);
-const DEFAULT_WORKER_START_STAGGER_MS = 1000;
-const DEFAULT_STREAM_CHILD_OUTPUT = false;
-
-// ---------------------------------------------------------------------------
-// Adaptive load controller
-// ---------------------------------------------------------------------------
-
-// Target OS load per core. Runs that overload the machine produce load > cores,
-// so staying near 0.9x cores keeps headroom for OS scheduling overhead.
-const TARGET_LOAD_PER_CORE = 0.9;
-
-const MIN_THREAD_FACTOR = 1;
-const MAX_THREAD_FACTOR = 12;
-
-// How often we sample os.loadavg()[0] during the admission window.
-const LOAD_SAMPLE_INTERVAL_MS = 3000;
-
-// When starvation trips occurred, knock down the factor by this multiplier.
-const STARVATION_KNOCKDOWN = 0.8;
-
-// Guard against division by zero in the adaptation formula.
-const EPSILON = 1e-6;
-
-// Persisted tuning state shared across runs.
-const SCHEDULER_METADATA_PATH = path.join(
-    os.tmpdir(),
-    "scp-e2e-scheduler-metadata.json"
-);
-
-/** Read and parse the metadata file. Returns null on any error. */
-function readSchedulerMetadata() {
-    try {
-        const raw = fs.readFileSync(SCHEDULER_METADATA_PATH, "utf8");
-        return JSON.parse(raw);
-    } catch {
-        return null;
-    }
-}
-
-/** Persist metadata. Swallows errors — a write failure must never abort a run. */
-function writeSchedulerMetadata(data) {
-    try {
-        fs.writeFileSync(
-            SCHEDULER_METADATA_PATH,
-            JSON.stringify(data, null, 2),
-            "utf8"
-        );
-    } catch {
-        // Non-fatal: metadata is best-effort.
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Thread-budget cost model
-// ---------------------------------------------------------------------------
-
-// Resolve thread-mode booleans with precedence: CLI flag > inherited env > default.
-// Defaults: vmThread=true, sdkThread=useExternalNode (sdk-in-thread requires
-// a PROVIDER_URL which is only injected under --per-slot-node or --shared-node).
-function resolveThreadModes(cli, useExternalNode) {
-    let sdkThread, sdkThreadSource;
-    if (cli.sdkThread !== undefined) {
-        sdkThread = cli.sdkThread;
-        sdkThreadSource = "explicit";
-    } else if (process.env.RUN_SDK_IN_THREAD !== undefined) {
-        sdkThread = process.env.RUN_SDK_IN_THREAD !== "false";
-        sdkThreadSource = "explicit";
-    } else if (useExternalNode) {
-        sdkThread = true;
-        sdkThreadSource = "external-node default";
-    } else {
-        sdkThread = false;
-        sdkThreadSource = "default off";
-    }
-
-    const vmThread =
-        cli.vmThread !== undefined
-            ? cli.vmThread
-            : process.env.VM_DEDICATED_THREAD !== undefined
-              ? process.env.VM_DEDICATED_THREAD !== "false"
-              : true;
-
-    return { sdkThread, sdkThreadSource, vmThread };
-}
-
-// Number of OS threads a single peer contributes: 1 per enabled thread mode,
-// clamped to at least 1. VM_DEDICATED_THREAD defaults true / RUN_SDK_IN_THREAD defaults to usePerSlotNode.
-function threadsPerPeerFromModes({ sdkThread, vmThread }) {
-    return Math.max(1, (vmThread ? 1 : 0) + (sdkThread ? 1 : 0));
-}
-
-// One extra thread per hardhat process (the main node process itself).
-const PROCESS_OVERHEAD_THREADS = 1;
-
-// Default oversubscription factor applied to CPU count to get the thread
-// budget. Wait-bound peers idle frequently, so >1x is safe. Calibrated on a
-// 16-core/64GB host: wall-time keeps dropping up to ~4x with zero event-loop
-// starvation; starvation first appears around 6x and returns flatten there. 4x
-// is the safe sweet spot (~42% faster than the old flat default), with the RAM
-// cap (maxConcurrent) bounding the high end. Override with --thread-factor.
-const DEFAULT_THREAD_FACTOR = 4;
-
-// Peer count used when we cannot determine the real value from the test body.
-const FALLBACK_PEERS = 5;
-
-// Known scenario helper → peer count (including any spectator the helper adds).
-const SCENARIO_PEER_COUNTS = {
-    fourPeersDisputeResolution: 4,
-    fourPeersDisputeResolutionAndSnapshotUpdateDetached: 4,
-    fourPeersDisputeResolutionAndSnapshotUpdateWait: 4,
-    preDisputeSetup: 3,
-    preDisputeSetupCalldataPath: 4,
-    preDisputeSetupDisconnectedPeer: 4,
-    setupTwoLeaversAcrossMilestones: 5,
-    setupTwoLeaversWithPendingJoinerAcrossMilestones: 5,
-    syncSpectatorAndPrepareJoin: 4,
-    spectatorJoinedAndSynced: 4,
-    spectatorPromotedViaJoinChannelWait: 3,
-    spectatorPromotedViaForceInboundWait: 4,
-    readyForRedispute: 4,
-    activeChannelWithDispute: 3
-};
-
-/**
- * Heuristically derive the peer count for a single `it()` block.
- *
- * Strategy (in priority order):
- *  1. If the test body calls a known scenario helper, use the mapped peer count
- *     (optionally overridden by an inline peerCount/numPeers/initialPeers
- *     property found within the next 200 characters).
- *  2. Otherwise fall back to the maximum first-integer-argument seen in direct
- *     lifecycle.start / timeoutSetup / harness.setup calls, plus any
- *     addSpectatorWait() calls.
- *  3. If nothing is found, use FALLBACK_PEERS.
- */
-function computePeerCount(itText) {
-    // --- Pass 1: literal calls (lifecycle.start, timeoutSetup, harness.setup, .start) ---
-    let literalPeers = 0;
-    const literalRe =
-        /\b(?:lifecycle\.start|timeoutSetup|harness\.setup)\(\s*(\d+)/g;
-    let m;
-    while ((m = literalRe.exec(itText)) !== null) {
-        const v = Number.parseInt(m[1], 10);
-        if (v > literalPeers) literalPeers = v;
-    }
-
-    // --- Pass 2: scenario helper calls ---
-    let helperMatched = false;
-    let helperPeers = 0;
-    const scenarioRe = /scenario\.(\w+)\s*\(/g;
-    while ((m = scenarioRe.exec(itText)) !== null) {
-        const name = m[1];
-        helperMatched = true;
-        let base;
-        if (Object.prototype.hasOwnProperty.call(SCENARIO_PEER_COUNTS, name)) {
-            base = SCENARIO_PEER_COUNTS[name];
-            // Allow inline override: look for peerCount/numPeers/initialPeers
-            // within the 200 chars following the opening parenthesis.
-            const window = itText.slice(m.index, m.index + m[0].length + 200);
-            const overrideRe =
-                /(?:peerCount|numPeers|initialPeers)\s*:\s*(\d+)/;
-            const om = overrideRe.exec(window);
-            if (om) {
-                const overrideVal = Number.parseInt(om[1], 10);
-                // The override sets the base participant count; spectator-adding
-                // helpers still add their one spectator on top of it.
-                const isSpectator = name.toLowerCase().includes("spectator");
-                base = overrideVal + (isSpectator ? 1 : 0);
-            }
-        } else {
-            // Unknown helper — be conservative
-            base = FALLBACK_PEERS;
-        }
-        if (base > helperPeers) helperPeers = base;
-    }
-
-    // --- Resolve ---
-    let peers;
-    if (helperMatched) {
-        peers = helperPeers;
-    } else if (literalPeers > 0) {
-        // Count addSpectatorWait( occurrences to account for spectators added
-        // separately from the main channel setup.
-        const spectatorMatches = (itText.match(/addSpectatorWait\s*\(/g) || [])
-            .length;
-        peers = literalPeers + spectatorMatches;
-    } else {
-        peers = FALLBACK_PEERS;
-    }
-
-    return Math.max(1, peers);
-}
-
-// ---------------------------------------------------------------------------
-// Event-loop starvation detection
-// ---------------------------------------------------------------------------
-const STARVATION_RE = /Event loop delay [\d.]+ms exceeded configured threshold/;
-
-// Module-level counter incremented whenever a task is classified as starved.
-let starvationCount = 0;
-
-// ---------------------------------------------------------------------------
-// CLI parsing
-// ---------------------------------------------------------------------------
-
-function parseCliArgs(argv) {
-    const options = {
-        logDir: DEFAULT_LOG_DIR,
-        allowLogdirPurge: false,
-        // workers is intentionally left undefined so we can distinguish
-        // "user explicitly set it" from "default".
-        workers: undefined,
-        grep: undefined,
-        threadFactor: undefined,
-        threadBudget: undefined,
-        // targetLoad undefined → use env or built-in constant.
-        targetLoad: undefined,
-        dryRun: false,
-        // Thread-mode toggles: undefined = fall back to env/default in resolveThreadModes.
-        sdkThread: undefined,
-        vmThread: undefined,
-        // Shared discovery: undefined = fall back to env/default (on by default).
-        sharedDiscovery: undefined,
-        // Per-slot external hardhat node: undefined = fall back to env/default (off by default).
-        perSlotNode: undefined,
-        // Single shared hardhat node: undefined = fall back to env/default (off by default).
-        sharedNode: undefined
-    };
-
-    for (let i = 2; i < argv.length; i++) {
-        const arg = argv[i];
-
-        if (arg === "--grep" || arg === "-g") {
-            const next = argv[i + 1];
-            if (next && !next.startsWith("-")) {
-                options.grep = next;
-                i++;
-            }
-            continue;
-        }
-
-        if (arg.startsWith("--grep=")) {
-            options.grep = arg.slice("--grep=".length);
-            continue;
-        }
-
-        if (
-            arg === "--logDir" ||
-            arg === "--log-dir" ||
-            arg === "--dir" ||
-            arg === "-d"
-        ) {
-            const next = argv[i + 1];
-            if (next) {
-                options.logDir = next;
-                i++;
-            }
-            continue;
-        }
-
-        if (
-            arg.startsWith("--logDir=") ||
-            arg.startsWith("--log-dir=") ||
-            arg.startsWith("--dir=") ||
-            arg.startsWith("-d=")
-        ) {
-            options.logDir = arg.split("=").slice(1).join("=");
-            continue;
-        }
-
-        if (
-            arg === "--allowLogdirPurge" ||
-            arg === "--allow-logdir-purge" ||
-            arg === "--purge" ||
-            arg === "-p"
-        ) {
-            options.allowLogdirPurge = true;
-            continue;
-        }
-
-        if (arg === "--workers" || arg === "-w") {
-            const next = argv[i + 1];
-            const parsed = next ? Number.parseInt(next, 10) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.workers = parsed;
-                i++;
-            }
-            continue;
-        }
-
-        if (arg.startsWith("--workers=") || arg.startsWith("-w=")) {
-            const value = arg.split("=").slice(1).join("=");
-            const parsed = Number.parseInt(value, 10);
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.workers = parsed;
-            }
-            continue;
-        }
-
-        if (arg === "--thread-factor" || arg === "-F") {
-            const next = argv[i + 1];
-            const parsed = next ? Number.parseFloat(next) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.threadFactor = parsed;
-                i++;
-            }
-            continue;
-        }
-
-        if (arg.startsWith("--thread-factor=") || arg.startsWith("-F=")) {
-            const value = arg.split("=").slice(1).join("=");
-            const parsed = Number.parseFloat(value);
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.threadFactor = parsed;
-            }
-            continue;
-        }
-
-        if (arg.startsWith("--thread-budget=")) {
-            const value = arg.split("=").slice(1).join("=");
-            const parsed = Number.parseInt(value, 10);
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.threadBudget = parsed;
-            }
-            continue;
-        }
-
-        if (arg === "--thread-budget") {
-            const next = argv[i + 1];
-            const parsed = next ? Number.parseInt(next, 10) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.threadBudget = parsed;
-                i++;
-            }
-            continue;
-        }
-
-        if (arg === "--sdk-thread") {
-            options.sdkThread = true;
-            continue;
-        }
-
-        if (arg === "--no-sdk-thread") {
-            options.sdkThread = false;
-            continue;
-        }
-
-        if (arg === "--vm-thread") {
-            options.vmThread = true;
-            continue;
-        }
-
-        if (arg === "--no-vm-thread") {
-            options.vmThread = false;
-            continue;
-        }
-
-        if (arg === "--shared-discovery") {
-            options.sharedDiscovery = true;
-            continue;
-        }
-
-        if (arg === "--no-shared-discovery") {
-            options.sharedDiscovery = false;
-            continue;
-        }
-
-        if (arg === "--per-slot-node") {
-            options.perSlotNode = true;
-            continue;
-        }
-
-        if (arg === "--no-per-slot-node") {
-            options.perSlotNode = false;
-            continue;
-        }
-
-        if (arg === "--shared-node") {
-            options.sharedNode = true;
-            continue;
-        }
-
-        if (arg === "--no-shared-node") {
-            options.sharedNode = false;
-            continue;
-        }
-
-        if (arg === "--dry-run") {
-            options.dryRun = true;
-            continue;
-        }
-
-        if (arg === "--target-load") {
-            const next = argv[i + 1];
-            const parsed = next ? Number.parseFloat(next) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.targetLoad = parsed;
-                i++;
-            }
-            continue;
-        }
-
-        if (arg.startsWith("--target-load=")) {
-            const value = arg.split("=").slice(1).join("=");
-            const parsed = Number.parseFloat(value);
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.targetLoad = parsed;
-            }
-            continue;
-        }
-    }
-
-    return options;
-}
-
-function getStringLiteralValue(node) {
-    if (node.getKind() === SyntaxKind.StringLiteral) {
-        return node.getText().slice(1, -1); // Remove quotes
-    }
-    if (node.getKind() === SyntaxKind.NoSubstitutionTemplateLiteral) {
-        return node.getText().slice(1, -1); // Remove backticks
-    }
-    return null;
-}
-
-function isDescribeCallee(expression) {
-    const text = expression.getText();
-    return text === "describe" || text.startsWith("describe.");
-}
-
-/** Mocha full title: outer describe … inner describe … it (space-separated). */
-function collectDescribeTitlesFromIt(itCall) {
-    const titles = [];
-    let current = itCall.getParent();
-    while (current) {
-        if (current.getKind() === SyntaxKind.SourceFile) {
-            break;
-        }
-        if (current.getKind() === SyntaxKind.CallExpression) {
-            const expr = current.getExpression();
-            if (isDescribeCallee(expr)) {
-                const args = current.getArguments();
-                const name = getStringLiteralValue(args[0]);
-                if (name) {
-                    titles.unshift(name);
-                }
-            }
-        }
-        current = current.getParent();
-    }
-    return titles;
-}
-
-function extractE2ETests(filePath) {
-    const project = new Project();
-    const sourceFile = project.addSourceFileAtPath(filePath);
-    const tests = [];
-
-    // Find all describe() calls
-    sourceFile
-        .getDescendantsOfKind(SyntaxKind.CallExpression)
-        .forEach((callExpr) => {
-            const expr = callExpr.getExpression();
-            if (expr.getText() !== "describe") return;
-
-            const args = callExpr.getArguments();
-            if (args.length === 0) return;
-
-            const suiteName = getStringLiteralValue(args[0]);
-            if (!suiteName || !suiteName.startsWith("E2E:")) return;
-
-            // Find all it() calls within this describe block
-            // The describe's callback function is the second argument
-            if (args.length < 2) return;
-            const describeCallback = args[1];
-
-            // Search for it() calls within the describe callback
-            describeCallback
-                .getDescendantsOfKind(SyntaxKind.CallExpression)
-                .forEach((itCall) => {
-                    const itExpr = itCall.getExpression();
-                    if (itExpr.getText() !== "it") return;
-
-                    const itArgs = itCall.getArguments();
-                    if (itArgs.length < 2) return;
-
-                    // Check if second argument is a function (implemented test)
-                    const secondArg = itArgs[1];
-                    const isFunction =
-                        secondArg.getKind() === SyntaxKind.ArrowFunction ||
-                        secondArg.getKind() === SyntaxKind.FunctionExpression;
-
-                    if (isFunction) {
-                        const testName = getStringLiteralValue(itArgs[0]);
-                        if (testName) {
-                            const describeTitles =
-                                collectDescribeTitlesFromIt(itCall);
-                            const fullTitle = [
-                                ...describeTitles,
-                                testName.trim()
-                            ].join(" ");
-                            const peers = computePeerCount(itCall.getText());
-                            tests.push({
-                                suite: suiteName.trim(),
-                                test: testName.trim(),
-                                fullTitle,
-                                peers
-                            });
-                        }
-                    }
-                });
-        });
-
-    return tests;
-}
-
-function escapeRegex(text) {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// Failure logs are renamed to error_<name>.ansi (255-byte filename limit on Linux).
-const MAX_LOG_NAME_LEN = 255 - "error_".length - ".ansi".length;
-
-function sanitizeFileName(name) {
-    const sanitized = name.replace(/[^a-zA-Z0-9._-]+/g, "_");
-    if (sanitized.length <= MAX_LOG_NAME_LEN) return sanitized;
-    const suffix = createHash("sha256").update(name).digest("hex").slice(0, 8);
-    return `${sanitized.slice(0, MAX_LOG_NAME_LEN - suffix.length - 1)}_${suffix}`;
-}
-
-function safeEmptyDir(dirPath, allowLogdirPurge) {
-    const resolved = path.resolve(dirPath);
-    const expected = path.resolve(DEFAULT_LOG_DIR);
-
-    // Safety: only auto-purge the default ./logs directory unless explicitly allowed.
-    const canAutoPurge = resolved === expected;
-    const allowUnsafe = allowLogdirPurge === true;
-
-    if (!canAutoPurge && !allowUnsafe) {
-        console.warn(
-            `Skipping purge of ${resolved}. Set ALLOW_LOGDIR_PURGE=1 to allow.`
-        );
-        return;
-    }
-
-    fs.mkdirSync(resolved, { recursive: true });
-    for (const entry of fs.readdirSync(resolved)) {
-        fs.rmSync(path.join(resolved, entry), { recursive: true, force: true });
-    }
-}
-
-function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
-    const resolved = path.resolve(logDir);
-    const expected = path.resolve(DEFAULT_LOG_DIR);
-    const canAutoPurge = resolved === expected;
-    const allowUnsafe = allowLogdirPurge === true;
-
-    if (!canAutoPurge && !allowUnsafe) {
-        console.warn(
-            `Skipping end-of-run cleanup in ${resolved}. Set ALLOW_LOGDIR_PURGE=1 to allow.`
-        );
-        return;
-    }
-
-    if (!fs.existsSync(resolved)) return;
-    for (const entry of fs.readdirSync(resolved)) {
-        if (entry.startsWith("error_")) continue;
-        fs.rmSync(path.join(resolved, entry), { recursive: true, force: true });
-    }
-}
-
-function getLogPath(logDir, logName) {
-    return path.resolve(path.join(logDir, `${logName}.ansi`));
-}
-
-function markLogAsError(logDir, logName) {
-    const src = getLogPath(logDir, logName);
-    const dst = path.resolve(path.join(logDir, `error_${logName}.ansi`));
-    if (!fs.existsSync(src)) return;
-    try {
-        fs.renameSync(src, dst);
-    } catch (err) {
-        console.error(`Failed to rename log file ${src} -> ${dst}:`, err);
-    }
-}
-
-// Tracks all spawned test-child processes so teardown can kill any still running.
-const liveTaskChildren = new Set();
-
-/** Kill all in-flight test children so they don't thrash a dying node. */
-function teardownTaskChildren() {
-    for (const c of liveTaskChildren) {
-        if (!c.killed) c.kill("SIGTERM");
-    }
-}
-
-async function runTask(cmd, args, env, label, logPath) {
-    return new Promise((resolve) => {
-        const startedAt = Date.now();
-        let stdout = "";
-        let stderr = "";
-        const streamChildOutput =
-            env.STREAM_PARALLEL_CHILD_OUTPUT === "1" ||
-            env.STREAM_PARALLEL_CHILD_OUTPUT === "true";
-
-        fs.mkdirSync(path.dirname(logPath), { recursive: true });
-        const logStream = fs.createWriteStream(logPath, { flags: "w" });
-
-        const childEnv = { ...process.env, ...env };
-        for (const [key, value] of Object.entries(childEnv)) {
-            if (value === undefined || value === null) {
-                delete childEnv[key];
-            }
-        }
-
-        const child = spawn(cmd, args, {
-            stdio: ["inherit", "pipe", "pipe"],
-            env: childEnv
-        });
-        liveTaskChildren.add(child);
-
-        child.stdout.on("data", (data) => {
-            // Optionally mirror to console
-            if (streamChildOutput) {
-                process.stdout.write(data);
-            }
-            logStream.write(data);
-            // Also capture as string for parsing
-            stdout += data.toString();
-        });
-
-        child.stderr.on("data", (data) => {
-            // Optionally mirror to console
-            if (streamChildOutput) {
-                process.stderr.write(data);
-            }
-            logStream.write(data);
-            // Also capture as string for parsing
-            stderr += data.toString();
-        });
-
-        child.on("exit", (code) => {
-            liveTaskChildren.delete(child);
-            logStream.end();
-            const durationMs = Date.now() - startedAt;
-            resolve({ code, label, stdout, stderr, durationMs });
-        });
-
-        child.on("error", (err) => {
-            liveTaskChildren.delete(child);
-            logStream.end();
-            stderr += String(err);
-            const durationMs = Date.now() - startedAt;
-            resolve({ code: 1, label, stdout, stderr, durationMs });
-        });
-    });
-}
-
-function formatDurationMs(durationMs) {
-    return `${(durationMs / 1000).toFixed(2)}s`;
-}
-
-function formatResultLine({
-    phase,
-    code,
-    label,
-    durationMs,
-    completed,
-    total,
-    rerunAttempt,
-    slotId
-}) {
-    const status = code === 0 ? "PASS" : "FAIL";
-    // e.g. "run#s3" for initial runs, "rerun#1#s-" for reruns with placeholder slot
-    const slotSuffix = slotId !== undefined ? `#s${slotId}` : "";
-    const phaseTag = rerunAttempt
-        ? `${phase}#${rerunAttempt}${slotSuffix}`
-        : `${phase}${slotSuffix}`;
-    const duration = formatDurationMs(durationMs);
-    if (code === 0) {
-        return `[${completed}/${total}] ${phaseTag} ${status} (${duration})`;
-    }
-    return `[${completed}/${total}] ${phaseTag} ${status} ${label} (${duration})`;
-}
-
-/** Probe the OS for an available TCP port by binding to :0 and reading back. */
-function getFreePort() {
-    return new Promise((resolve, reject) => {
-        const srv = net.createServer();
-        srv.listen(0, "127.0.0.1", () => {
-            const { port } = srv.address();
-            srv.close((err) => (err ? reject(err) : resolve(port)));
-        });
-        srv.on("error", reject);
-    });
-}
-
-/**
- * Spawn the shared LocalDiscovery registry on `port` and wait for its ready
- * line. Rejects if the process exits non-zero before emitting the ready line,
- * or if the ready line doesn't arrive within 15 seconds.
- */
-function startDiscoveryRegistry(port, logPath) {
-    return new Promise((resolve, reject) => {
-        fs.mkdirSync(path.dirname(logPath), { recursive: true });
-        const logStream = fs.createWriteStream(logPath, { flags: "w" });
-        const child = spawn(
-            process.execPath,
-            [path.join(__dirname, "infra", "local-discovery-registry.js")],
-            {
-                cwd: path.join(__dirname, ".."),
-                env: {
-                    ...process.env,
-                    LOCAL_DISCOVERY_HOST: "127.0.0.1",
-                    LOCAL_DISCOVERY_PORT: String(port)
-                },
-                // stdout piped so we can parse the ready line; stderr to log stream.
-                stdio: ["ignore", "pipe", "pipe"]
-            }
-        );
-
-        child.stderr.pipe(logStream, { end: false });
-
-        const READY_RE = /LocalDiscovery registry listening on (ws:\/\/\S+)/;
-        let settled = false;
-        let buffer = "";
-
-        const readyTimeout = setTimeout(() => {
-            if (!settled) {
-                settled = true;
-                child.kill("SIGTERM");
-                reject(
-                    new Error(
-                        "LocalDiscovery registry did not become ready within 15s"
-                    )
-                );
-            }
-        }, 15000);
-
-        child.stdout.on("data", (chunk) => {
-            logStream.write(chunk);
-            buffer += chunk.toString();
-            const m = READY_RE.exec(buffer);
-            if (m && !settled) {
-                settled = true;
-                clearTimeout(readyTimeout);
-                resolve({ child, url: m[1] });
-            }
-        });
-
-        child.on("exit", (code) => {
-            clearTimeout(readyTimeout);
-            logStream.end();
-            if (!settled) {
-                settled = true;
-                reject(
-                    new Error(
-                        `LocalDiscovery registry exited with code ${code} before becoming ready`
-                    )
-                );
-            }
-        });
-
-        child.on("error", (err) => {
-            clearTimeout(readyTimeout);
-            if (!settled) {
-                settled = true;
-                reject(err);
-            }
-        });
-    });
-}
-
-/**
- * Poll a hardhat node's JSON-RPC endpoint until it responds or timeout expires.
- */
-async function waitForHardhatNode(url, timeoutMs = 30000) {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-        const ready = await new Promise((resolve) => {
-            const req = http.request(
-                url,
-                {
-                    method: "POST",
-                    headers: { "content-type": "application/json" }
-                },
-                (res) => {
-                    res.resume();
-                    resolve(true);
-                }
-            );
-            req.on("error", () => resolve(false));
-            req.write(
-                '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'
-            );
-            req.end();
-        });
-        if (ready) return;
-        await new Promise((r) => setTimeout(r, 500));
-    }
-    throw new Error(`Hardhat node not ready at ${url} within ${timeoutMs}ms`);
-}
-
-/**
- * Empty a slot's manager-cache dir. INVARIANT: every slot-node (re)boot MUST
- * call this before any test child reads the dir — a fresh node carries none of
- * the prior markers' bytecode, so a surviving marker would point at nothing.
- * This is the sole defense against stale markers; a future node-recycle path
- * must call it too.
- */
-function resetSlotCacheDir(dir) {
-    fs.rmSync(dir, { recursive: true, force: true });
-    fs.mkdirSync(dir, { recursive: true });
-}
-
-/**
- * Spawn an external hardhat node for `slotId` on `port` and wait until its
- * RPC endpoint is ready. Returns `{ proc, url, logStream }`.
- */
-function startSlotNode(slotId, port, logPath) {
-    return new Promise((resolve, reject) => {
-        fs.mkdirSync(path.dirname(logPath), { recursive: true });
-        const logStream = fs.createWriteStream(logPath, { flags: "w" });
-
-        const proc = spawn(
-            process.execPath,
-            [
-                HARDHAT_CLI,
-                "node",
-                "--hostname",
-                "127.0.0.1",
-                "--port",
-                String(port)
-            ],
-            {
-                cwd: path.join(__dirname, ".."),
-                env: { ...process.env },
-                stdio: ["ignore", "pipe", "pipe"]
-            }
-        );
-
-        proc.stdout.pipe(logStream, { end: false });
-        proc.stderr.pipe(logStream, { end: false });
-
-        const url = `http://127.0.0.1:${port}`;
-
-        let settled = false;
-
-        proc.on("exit", (code) => {
-            logStream.end();
-            if (!settled) {
-                settled = true;
-                reject(
-                    new Error(
-                        `Slot ${slotId} hardhat node exited with code ${code} before becoming ready`
-                    )
-                );
-            }
-        });
-
-        proc.on("error", (err) => {
-            if (!settled) {
-                settled = true;
-                reject(err);
-            }
-        });
-
-        // Wait for the node RPC to respond, then resolve.
-        waitForHardhatNode(url).then(
-            () => {
-                if (!settled) {
-                    settled = true;
-                    resolve({ proc, url, logStream });
-                }
-            },
-            (err) => {
-                if (!settled) {
-                    settled = true;
-                    proc.kill("SIGTERM");
-                    reject(err);
-                }
-            }
-        );
-    });
-}
+const {
+    DEFAULT_LOG_DIR,
+    HARDHAT_CLI,
+    PER_WORKER_MEM_GB,
+    ACCOUNT_POOL_SIZE,
+    ACCOUNT_SLOT_STRIDE,
+    MAX_SLOTS_FROM_POOL,
+    DEFAULT_WORKER_START_STAGGER_MS,
+    DEFAULT_STREAM_CHILD_OUTPUT,
+    TARGET_LOAD_PER_CORE,
+    LOAD_SAMPLE_INTERVAL_MS,
+    PROCESS_OVERHEAD_THREADS,
+    DEFAULT_THREAD_FACTOR,
+    STARVATION_RE
+} = require("./e2e-parallel/constants");
+
+const { parseCliArgs } = require("./e2e-parallel/argParser");
+
+const {
+    resolveThreadModes,
+    threadsPerPeerFromModes,
+    computeAdaptiveFactor,
+    readSchedulerMetadata,
+    writeSchedulerMetadata
+} = require("./e2e-parallel/scheduler");
+
+const {
+    extractE2ETests,
+    escapeRegex,
+    sanitizeFileName
+} = require("./e2e-parallel/taskDiscovery");
+
+const {
+    formatResultLine,
+    formatDurationMs,
+    safeEmptyDir,
+    cleanupNonErrorLogs,
+    markLogAsError,
+    getLogPath
+} = require("./e2e-parallel/logging");
+
+const {
+    getFreePort,
+    startDiscoveryRegistry,
+    startSlotNode,
+    resetSlotCacheDir
+} = require("./e2e-parallel/nodeInfra");
+
+const {
+    liveTaskChildren,
+    teardownTaskChildren,
+    runTask
+} = require("./e2e-parallel/runTask");
+
+// Module-level references so main().catch can tear down all infra on any
+// unhandled throw that escapes main() (belt-and-suspenders alongside finally).
+let _teardownDiscovery = () => {};
+let _teardownSlotNodes = () => {};
+let _teardownGlobalNode = () => {};
 
 async function main() {
     const cli = parseCliArgs(process.argv);
@@ -1024,48 +179,12 @@ async function main() {
     const shouldAdapt =
         cli.threadFactor === undefined && cli.threadBudget === undefined;
 
-    let threadFactor = seedFactor;
-    let didAdapt = false;
-
-    if (shouldAdapt) {
-        const all = readSchedulerMetadata();
-        // Key metadata by threadsPerPeer so different regimes don't clobber each other.
-        const meta =
-            all && typeof all === "object" ? all[threadsPerPeer] : null;
-        if (
-            meta != null &&
-            Number.isFinite(meta.scalingFactor) &&
-            Number.isFinite(meta.avgLoadPerCore)
-        ) {
-            const prevFactor = meta.scalingFactor;
-            const prevLoad = meta.avgLoadPerCore;
-            const prevStarvation = meta.starvationTrips ?? 0;
-
-            let nextFactor =
-                prevFactor * (targetLoad / Math.max(prevLoad, EPSILON));
-            nextFactor = Math.max(
-                MIN_THREAD_FACTOR,
-                Math.min(MAX_THREAD_FACTOR, nextFactor)
-            );
-
-            if (prevStarvation > 0) {
-                const knocked = prevFactor * STARVATION_KNOCKDOWN;
-                nextFactor = Math.min(
-                    nextFactor,
-                    Math.max(
-                        MIN_THREAD_FACTOR,
-                        Math.min(MAX_THREAD_FACTOR, knocked)
-                    )
-                );
-            }
-
-            console.log(
-                `adapting factor ${prevFactor.toFixed(3)} → ${nextFactor.toFixed(3)} from prior load/core ${prevLoad.toFixed(3)} toward ${targetLoad}`
-            );
-            threadFactor = nextFactor;
-            didAdapt = true;
-        }
-    }
+    const { threadFactor, didAdapt } = computeAdaptiveFactor({
+        seedFactor,
+        targetLoad,
+        threadsPerPeer,
+        shouldAdapt
+    });
 
     let threadBudget =
         cli.threadBudget ?? Math.max(1, Math.round(cpuCount * threadFactor));
@@ -1224,6 +343,9 @@ async function main() {
         });
     }
 
+    // Module-level starvation counter; reset per-run inside main.
+    let starvationCount = 0;
+
     try {
         if (useSharedDiscovery) {
             const discoveryLogPath = path.join(
@@ -1263,7 +385,11 @@ async function main() {
                 `Starting shared global hardhat node on port ${nodePort}...`
             );
             try {
-                globalNode = await startSlotNode("global", nodePort, nodeLogPath);
+                globalNode = await startSlotNode(
+                    "global",
+                    nodePort,
+                    nodeLogPath
+                );
             } catch (bootErr) {
                 // Retry once on a fresh port to absorb the getFreePort TOCTOU race
                 // (a global-node boot failure would otherwise abort the whole run).
@@ -1271,7 +397,11 @@ async function main() {
                     `Shared global hardhat node failed to start (will retry once): ${bootErr.message}`
                 );
                 const retryPort = await getFreePort();
-                globalNode = await startSlotNode("global", retryPort, nodeLogPath);
+                globalNode = await startSlotNode(
+                    "global",
+                    retryPort,
+                    nodeLogPath
+                );
             }
             globalNodeCacheDir = path.join(
                 path.resolve(logDir),
@@ -1297,7 +427,9 @@ async function main() {
             // injects them per-task; default in-process needs none).
             PROVIDER_URL: useSharedNode ? globalNode.url : undefined,
             HARDHAT_NODE_URL: useSharedNode ? globalNode.url : undefined,
-            E2E_MANAGER_CACHE_DIR: useSharedNode ? globalNodeCacheDir : undefined,
+            E2E_MANAGER_CACHE_DIR: useSharedNode
+                ? globalNodeCacheDir
+                : undefined,
             LOG_LEVEL: process.env.LOG_LEVEL || "error",
             NODE_OPTIONS: [
                 process.env.NODE_OPTIONS,
@@ -1712,12 +844,6 @@ async function main() {
         teardownDiscovery();
     }
 }
-
-// Module-level references so main().catch can tear down all infra on any
-// unhandled throw that escapes main() (belt-and-suspenders alongside finally).
-let _teardownDiscovery = () => {};
-let _teardownSlotNodes = () => {};
-let _teardownGlobalNode = () => {};
 
 main().catch((err) => {
     teardownTaskChildren();
