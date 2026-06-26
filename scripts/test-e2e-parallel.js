@@ -79,9 +79,9 @@ function writeSchedulerMetadata(data) {
 // ---------------------------------------------------------------------------
 
 // Resolve thread-mode booleans with precedence: CLI flag > inherited env > default.
-// Defaults: vmThread=true, sdkThread=usePerSlotNode (sdk-in-thread requires
-// a PROVIDER_URL which is only injected under --per-slot-node).
-function resolveThreadModes(cli, usePerSlotNode) {
+// Defaults: vmThread=true, sdkThread=useExternalNode (sdk-in-thread requires
+// a PROVIDER_URL which is only injected under --per-slot-node or --shared-node).
+function resolveThreadModes(cli, useExternalNode) {
     let sdkThread, sdkThreadSource;
     if (cli.sdkThread !== undefined) {
         sdkThread = cli.sdkThread;
@@ -89,9 +89,9 @@ function resolveThreadModes(cli, usePerSlotNode) {
     } else if (process.env.RUN_SDK_IN_THREAD !== undefined) {
         sdkThread = process.env.RUN_SDK_IN_THREAD !== "false";
         sdkThreadSource = "explicit";
-    } else if (usePerSlotNode) {
+    } else if (useExternalNode) {
         sdkThread = true;
-        sdkThreadSource = "per-slot-node default";
+        sdkThreadSource = "external-node default";
     } else {
         sdkThread = false;
         sdkThreadSource = "default off";
@@ -246,7 +246,9 @@ function parseCliArgs(argv) {
         // Shared discovery: undefined = fall back to env/default (on by default).
         sharedDiscovery: undefined,
         // Per-slot external hardhat node: undefined = fall back to env/default (off by default).
-        perSlotNode: undefined
+        perSlotNode: undefined,
+        // Single shared hardhat node: undefined = fall back to env/default (off by default).
+        sharedNode: undefined
     };
 
     for (let i = 2; i < argv.length; i++) {
@@ -394,6 +396,16 @@ function parseCliArgs(argv) {
 
         if (arg === "--no-per-slot-node") {
             options.perSlotNode = false;
+            continue;
+        }
+
+        if (arg === "--shared-node") {
+            options.sharedNode = true;
+            continue;
+        }
+
+        if (arg === "--no-shared-node") {
+            options.sharedNode = false;
             continue;
         }
 
@@ -958,15 +970,29 @@ async function main() {
             ? cli.perSlotNode
             : process.env.E2E_PER_SLOT_NODE === "1";
 
-    const threadModes = resolveThreadModes(cli, usePerSlotNode);
+    const useSharedNode =
+        cli.sharedNode !== undefined
+            ? cli.sharedNode
+            : process.env.E2E_SHARED_NODE === "1";
+
+    if (useSharedNode && usePerSlotNode) {
+        console.error(
+            "ERROR: --shared-node and --per-slot-node are mutually exclusive — they describe different node topologies. Pick one."
+        );
+        process.exit(1);
+    }
+
+    const useExternalNode = usePerSlotNode || useSharedNode;
+
+    const threadModes = resolveThreadModes(cli, useExternalNode);
     const threadsPerPeer = threadsPerPeerFromModes(threadModes);
 
-    // Warn when sdk-in-thread is explicitly on but per-slot-node is off — the
-    // SDK worker has no PROVIDER_URL injected, so it will fail unless the caller
-    // exported one externally.
-    if (threadModes.sdkThread && !usePerSlotNode) {
+    // Warn when sdk-in-thread is explicitly on but no external node is active —
+    // the SDK worker has no PROVIDER_URL injected, so it will fail unless the
+    // caller exported one externally.
+    if (threadModes.sdkThread && !useExternalNode) {
         console.warn(
-            "WARNING: RUN_SDK_IN_THREAD is on but --per-slot-node is off — the SDK worker has no PROVIDER_URL and will fail unless you exported one yourself."
+            "WARNING: RUN_SDK_IN_THREAD is on but neither --per-slot-node nor --shared-node is active — the SDK worker has no PROVIDER_URL and will fail unless you exported one yourself."
         );
     }
 
@@ -1120,7 +1146,7 @@ async function main() {
         `  threadsPerPeer=${threadsPerPeer}  vmThread=${threadModes.vmThread}  sdkThread=${threadModes.sdkThread} (${threadModes.sdkThreadSource})  threadBudget=${threadBudget}  threadFactor=${threadFactor}  maxConcurrent=${maxConcurrent}`
     );
 
-    console.log(`  perSlotNode=${usePerSlotNode}`);
+    console.log(`  perSlotNode=${usePerSlotNode}  sharedNode=${useSharedNode}`);
 
     const logDir = cli.logDir;
 
@@ -1144,6 +1170,11 @@ async function main() {
     // Map<slotId, { proc, url, logStream }> — populated lazily on first task per slot.
     const slotNodes = new Map();
 
+    // Single global hardhat node for --shared-node mode; null until booted.
+    let globalNode = null;
+    // Shared cache dir for the global node (set when globalNode is booted).
+    let globalNodeCacheDir = null;
+
     const teardownDiscovery = () => {
         if (discoveryChild && !discoveryChild.killed) {
             discoveryChild.kill("SIGTERM");
@@ -1159,9 +1190,17 @@ async function main() {
         }
     };
 
+    const teardownGlobalNode = () => {
+        if (globalNode && !globalNode.proc.killed) {
+            console.log("Tearing down shared global hardhat node");
+            globalNode.proc.kill("SIGTERM");
+        }
+    };
+
     // Expose to module-level catch handler so no throw path orphans infra.
     _teardownDiscovery = teardownDiscovery;
     _teardownSlotNodes = teardownSlotNodes;
+    _teardownGlobalNode = teardownGlobalNode;
 
     // Belt-and-suspenders: signal handlers tear down all infra before exiting.
     // Idempotent via `shuttingDown`.
@@ -1173,6 +1212,7 @@ async function main() {
             const sigCode = signal === "SIGINT" ? 130 : 143;
             teardownTaskChildren();
             teardownSlotNodes();
+            teardownGlobalNode();
             if (discoveryChild && !discoveryChild.killed) {
                 discoveryChild.kill("SIGTERM");
                 const fallback = setTimeout(() => process.exit(sigCode), 2000);
@@ -1212,12 +1252,52 @@ async function main() {
             });
         }
 
+        if (useSharedNode) {
+            const nodePort = await getFreePort();
+            const nodeLogPath = path.join(
+                path.resolve(logDir),
+                "infra",
+                "hardhat-node-global.log"
+            );
+            console.log(
+                `Starting shared global hardhat node on port ${nodePort}...`
+            );
+            try {
+                globalNode = await startSlotNode("global", nodePort, nodeLogPath);
+            } catch (bootErr) {
+                // Retry once on a fresh port to absorb the getFreePort TOCTOU race
+                // (a global-node boot failure would otherwise abort the whole run).
+                console.warn(
+                    `Shared global hardhat node failed to start (will retry once): ${bootErr.message}`
+                );
+                const retryPort = await getFreePort();
+                globalNode = await startSlotNode("global", retryPort, nodeLogPath);
+            }
+            globalNodeCacheDir = path.join(
+                path.resolve(logDir),
+                "infra",
+                "manager-cache-global"
+            );
+            resetSlotCacheDir(globalNodeCacheDir);
+            console.log(`Shared hardhat node ready at ${globalNode.url}`);
+
+            globalNode.proc.on("exit", (code) => {
+                if (code !== 0 && code !== null) {
+                    console.error(
+                        `Shared global hardhat node exited unexpectedly with code ${code}`
+                    );
+                }
+            });
+        }
+
         const env = {
             ...process.env,
-            // Slot vars only reach children via per-task slotNodeEnv; strip ambient values here.
-            PROVIDER_URL: undefined,
-            HARDHAT_NODE_URL: undefined,
-            E2E_MANAGER_CACHE_DIR: undefined,
+            // Slot vars: in shared-node mode the global url/cache are set here so all
+            // children inherit them; in other modes strip ambient values (per-slot-node
+            // injects them per-task; default in-process needs none).
+            PROVIDER_URL: useSharedNode ? globalNode.url : undefined,
+            HARDHAT_NODE_URL: useSharedNode ? globalNode.url : undefined,
+            E2E_MANAGER_CACHE_DIR: useSharedNode ? globalNodeCacheDir : undefined,
             LOG_LEVEL: process.env.LOG_LEVEL || "error",
             NODE_OPTIONS: [
                 process.env.NODE_OPTIONS,
@@ -1324,7 +1404,16 @@ async function main() {
                         // Lazy-boot a per-slot hardhat node on first use of this slot.
                         let slotNodeEnv = {};
                         let slotTaskArgs = task.args;
-                        if (usePerSlotNode) {
+                        if (useSharedNode) {
+                            // Global node url/cache are already in base env; just add
+                            // --network localhost so hre.ethers uses the external node.
+                            slotTaskArgs = [
+                                task.args[0],
+                                "--network",
+                                "localhost",
+                                ...task.args.slice(1)
+                            ];
+                        } else if (usePerSlotNode) {
                             // Deterministic per-slot manager cache dir.
                             const slotCacheDir = path.join(
                                 path.resolve(logDir),
@@ -1619,6 +1708,7 @@ async function main() {
     } finally {
         teardownTaskChildren();
         teardownSlotNodes();
+        teardownGlobalNode();
         teardownDiscovery();
     }
 }
@@ -1627,10 +1717,12 @@ async function main() {
 // unhandled throw that escapes main() (belt-and-suspenders alongside finally).
 let _teardownDiscovery = () => {};
 let _teardownSlotNodes = () => {};
+let _teardownGlobalNode = () => {};
 
 main().catch((err) => {
     teardownTaskChildren();
     _teardownSlotNodes();
+    _teardownGlobalNode();
     _teardownDiscovery();
     console.error(err);
     process.exit(1);
