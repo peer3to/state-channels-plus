@@ -13,6 +13,10 @@ import type P2pInstance from "@/evm/P2pInstance";
 import { Codec, LocalDiscoveryServer, SignatureUtils, Type } from "@/utils";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { deployFullStack } from "../../scripts/V1/deploy";
@@ -97,9 +101,11 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         this.timeout(120_000);
 
         const provider = new ethers.JsonRpcProvider(HARDHAT_NODE_URL);
-        const deployerSigner = new NonceManager(walletAt(0, provider));
-        const peer0Wallet = walletAt(1, provider);
-        const peer1Wallet = walletAt(2, provider);
+        const deployerSigner = new NonceManager(
+            walletAt(slotDeployerIndex(), provider)
+        );
+        const peer0Wallet = walletAt(slotAccountIndex(0), provider);
+        const peer1Wallet = walletAt(slotAccountIndex(1), provider);
         const peer0Address = peer0Wallet.address;
         const peer1Address = peer1Wallet.address;
 

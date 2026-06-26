@@ -57,6 +57,10 @@ import {
     EventSpies,
     HarnessOptions
 } from "@test/harness/core/types";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
 import { HarnessDebug } from "./HarnessDebug";
 import { LogLevel } from "@/utils/logging/Logger";
 
@@ -281,7 +285,7 @@ export class PeerTestHarness<
         await this.deployContracts();
         const signers = await hre.ethers.getSigners();
         for (let i = 0; i < numPeers; i++) {
-            await this.createPeer(i, signers[i]);
+            await this.createPeer(i, signers[slotAccountIndex(i)]);
         }
 
         // Pulse the event-counts barrier on every mined block so barriers
@@ -326,10 +330,10 @@ export class PeerTestHarness<
 
     private async deployContracts(): Promise<void> {
         const signers = await hre.ethers.getSigners();
-        // Dedicated deployer account (not a peer) wrapped in NonceManager, so
-        // deploy txs don't collide with peer account 0's nonces on a strict
-        // external node.
-        const deployerSigner = new NonceManager(signers[signers.length - 1]);
+        // Dedicated deployer account: top of this slot's stride, disjoint from
+        // all peer accounts (0..STRIDE-2). Wrapped in NonceManager so deploy txs
+        // don't collide with each other on a strict external node.
+        const deployerSigner = new NonceManager(signers[slotDeployerIndex()]);
         const deployment = this.deployment;
 
         this.sharedStateMachineDeployer =
@@ -466,7 +470,7 @@ export class PeerTestHarness<
         const wallet = ethers.HDNodeWallet.fromPhrase(
             mnemonic,
             undefined,
-            `m/44'/60'/0'/0/${index}`
+            `m/44'/60'/0'/0/${slotAccountIndex(index)}`
         );
         if (wallet.address.toLowerCase() !== address.toLowerCase()) {
             return undefined;

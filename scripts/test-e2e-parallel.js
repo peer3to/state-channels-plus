@@ -15,6 +15,13 @@ const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
 
 // Rough budget per concurrent hardhat task — used for the RAM cap on concurrency.
 const PER_WORKER_MEM_GB = 2;
+
+// Account pool size and stride — must stay in sync with:
+//   hardhat.config.ts  →  accounts.count (hardhat + localhost networks)
+//   test/harness/core/slotAccounts.ts  →  SLOT_STRIDE
+const ACCOUNT_POOL_SIZE = 400;
+const ACCOUNT_SLOT_STRIDE = 10;
+const MAX_SLOTS_FROM_POOL = Math.floor(ACCOUNT_POOL_SIZE / ACCOUNT_SLOT_STRIDE);
 const DEFAULT_WORKER_START_STAGGER_MS = 1000;
 const DEFAULT_STREAM_CHILD_OUTPUT = false;
 
@@ -1047,7 +1054,14 @@ async function main() {
         Math.floor(os.totalmem() / 1024 ** 3 / PER_WORKER_MEM_GB)
     );
     // --workers is an optional hard cap on concurrent task count.
-    const maxConcurrent = cli.workers ?? memCapCount;
+    // Also clamp to the account pool so each slot gets a disjoint account slice.
+    const rawConcurrent = cli.workers ?? memCapCount;
+    const maxConcurrent = Math.min(rawConcurrent, MAX_SLOTS_FROM_POOL);
+    if (maxConcurrent < rawConcurrent) {
+        console.log(
+            `maxConcurrent clamped from ${rawConcurrent} to ${maxConcurrent} by account pool (ACCOUNT_POOL_SIZE=${ACCOUNT_POOL_SIZE} / ACCOUNT_SLOT_STRIDE=${ACCOUNT_SLOT_STRIDE})`
+        );
+    }
 
     // LPT ordering: largest cost first improves makespan by avoiding late
     // large stragglers.

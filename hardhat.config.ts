@@ -16,6 +16,14 @@ const config: HardhatUserConfig = {
             allowUnlimitedContractSize: true,
             gas: "auto",
             initialDate: new Date().toISOString(),
+            // 400 accounts = 40 concurrent slots × SLOT_STRIDE(10).
+            // Keep in sync with SLOT_STRIDE in test/harness/core/slotAccounts.ts
+            // and the pool cap in scripts/test-e2e-parallel.js.
+            accounts: {
+                mnemonic:
+                    "test test test test test test test test test test test junk",
+                count: 400
+            },
             // E2E runs set E2E_INTERVAL_MINING=1 → automine OFF + a 2s interval,
             // so block-time tracks wall-clock and the SDK's real-time dispute
             // timers stay in sync with on-chain deadlines (replaces the removed
@@ -31,9 +39,12 @@ const config: HardhatUserConfig = {
             // Env-driven so the worker-mode e2e run can point hardhat's deploy
             // network, the worker's PROVIDER_URL, and the external node at one URL.
             url: process.env.HARDHAT_NODE_URL ?? "http://127.0.0.1:8545",
+            // count: 400 matches the hardhat network above so account N derives
+            // the same address whether running in-process or against an external node.
             accounts: {
                 mnemonic:
-                    "test test test test test test test test test test test junk"
+                    "test test test test test test test test test test test junk",
+                count: 400
             }
         },
         node: {

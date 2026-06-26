@@ -7,6 +7,10 @@ import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/Mat
 import { deployFullStack } from "../../scripts/V1/deploy";
 import { waitFor } from "@test/utils/waitFor";
 import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
+import {
     MathStateMachine__factory,
     StateChannelManagerProxy__factory
 } from "@typechain-types";
@@ -39,12 +43,12 @@ async function setupP2pInstance(options: {
     const deployerWallet = ethers.HDNodeWallet.fromPhrase(
         DEFAULT_HARDHAT_MNEMONIC,
         undefined,
-        "m/44'/60'/0'/0/0"
+        `m/44'/60'/0'/0/${slotDeployerIndex()}`
     );
     const runtimeWallet = ethers.HDNodeWallet.fromPhrase(
         DEFAULT_HARDHAT_MNEMONIC,
         undefined,
-        "m/44'/60'/0'/0/1"
+        `m/44'/60'/0'/0/${slotAccountIndex(0)}`
     );
     const deployerSigner = new NonceManager(deployerWallet.connect(provider));
     const runtimeSigner = runtimeWallet.connect(provider);
