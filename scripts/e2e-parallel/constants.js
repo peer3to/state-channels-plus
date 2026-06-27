@@ -6,6 +6,18 @@ const DEFAULT_LOG_DIR = "./logs";
 
 const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
 
+// Reruns append this to the task's log name (e.g. <name>__rerun1.ansi).
+const RERUN_LOG_SUFFIX = "__rerun1";
+
+// 255-byte filename limit (Linux/APFS). A failure log of the worst-case shape is
+// error_<name><rerun-suffix>.ansi (markLogAsError is also called on rerun logs),
+// so the name budget must reserve room for BOTH decorations — otherwise a
+// max-length name + __rerun1 overflows and ENAMETOOLONGs the WriteStream.
+const MAX_LOG_NAME_LEN =
+    255 - "error_".length - RERUN_LOG_SUFFIX.length - ".ansi".length;
+
+const rerunLogName = (logName) => `${logName}${RERUN_LOG_SUFFIX}`;
+
 // Rough budget per concurrent hardhat task — used for the RAM cap on concurrency.
 const PER_WORKER_MEM_GB = 2;
 
@@ -66,6 +78,9 @@ const SCHEDULER_METADATA_PATH = path.join(
 module.exports = {
     DEFAULT_LOG_DIR,
     HARDHAT_CLI,
+    RERUN_LOG_SUFFIX,
+    MAX_LOG_NAME_LEN,
+    rerunLogName,
     PER_WORKER_MEM_GB,
     ACCOUNT_POOL_SIZE,
     ACCOUNT_SLOT_STRIDE,

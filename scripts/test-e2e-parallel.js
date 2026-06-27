@@ -16,7 +16,8 @@ const {
     LOAD_SAMPLE_INTERVAL_MS,
     PROCESS_OVERHEAD_THREADS,
     DEFAULT_THREAD_FACTOR,
-    STARVATION_RE
+    STARVATION_RE,
+    rerunLogName
 } = require("./e2e-parallel/constants");
 
 const { parseCliArgs } = require("./e2e-parallel/argParser");
@@ -721,7 +722,7 @@ async function main() {
                 console.log(
                     `Rerunning failed task (parallel): ${task.label}${threadModes.sdkThread ? " (initial ran sdk-in-thread; rerun is in-process sdk-off)" : ""}`
                 );
-                const rerunLogName = `${task.logName}__rerun1`;
+                const rerunName = rerunLogName(task.logName);
                 const { code, label, durationMs } = await runTask(
                     process.execPath,
                     [HARDHAT_CLI, ...task.args],
@@ -729,7 +730,7 @@ async function main() {
                         ...rerunEnv
                     },
                     task.label,
-                    getLogPath(logDir, rerunLogName)
+                    getLogPath(logDir, rerunName)
                 );
 
                 return {
@@ -737,7 +738,7 @@ async function main() {
                     code,
                     label,
                     durationMs,
-                    rerunLogName
+                    rerunLogName: rerunName
                 };
             })
         );
@@ -748,7 +749,7 @@ async function main() {
             console.log(
                 `Rerunning starved task (serial): ${task.label}${threadModes.sdkThread ? " (initial ran sdk-in-thread; rerun is in-process sdk-off)" : ""}`
             );
-            const rerunLogName = `${task.logName}__rerun1`;
+            const rerunName = rerunLogName(task.logName);
             const { code, label, durationMs } = await runTask(
                 process.execPath,
                 [HARDHAT_CLI, ...task.args],
@@ -756,7 +757,7 @@ async function main() {
                     ...rerunEnv
                 },
                 task.label,
-                getLogPath(logDir, rerunLogName)
+                getLogPath(logDir, rerunName)
             );
 
             serialRerunResults.push({
@@ -764,7 +765,7 @@ async function main() {
                 code,
                 label,
                 durationMs,
-                rerunLogName
+                rerunLogName: rerunName
             });
         }
 

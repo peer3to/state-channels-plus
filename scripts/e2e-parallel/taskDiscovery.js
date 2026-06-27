@@ -2,9 +2,7 @@
 const { createHash } = require("crypto");
 const { Project, SyntaxKind } = require("ts-morph");
 const { computePeerCount } = require("./scheduler");
-
-// Failure logs are renamed to error_<name>.ansi (255-byte filename limit on Linux).
-const MAX_LOG_NAME_LEN = 255 - "error_".length - ".ansi".length;
+const { MAX_LOG_NAME_LEN } = require("./constants");
 
 function getStringLiteralValue(node) {
     if (node.getKind() === SyntaxKind.StringLiteral) {
@@ -119,7 +117,6 @@ function sanitizeFileName(name) {
 }
 
 module.exports = {
-    MAX_LOG_NAME_LEN,
     getStringLiteralValue,
     isDescribeCallee,
     collectDescribeTitlesFromIt,

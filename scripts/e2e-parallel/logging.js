@@ -3,9 +3,6 @@ const fs = require("fs");
 const path = require("path");
 const { DEFAULT_LOG_DIR } = require("./constants");
 
-// Failure logs are renamed to error_<name>.ansi (255-byte filename limit on Linux).
-const MAX_LOG_NAME_LEN = 255 - "error_".length - ".ansi".length;
-
 function formatDurationMs(durationMs) {
     return `${(durationMs / 1000).toFixed(2)}s`;
 }
@@ -90,7 +87,6 @@ function markLogAsError(logDir, logName) {
 }
 
 module.exports = {
-    MAX_LOG_NAME_LEN,
     formatDurationMs,
     formatResultLine,
     safeEmptyDir,
