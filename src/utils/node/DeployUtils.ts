@@ -25,7 +25,9 @@ export class DeployUtils {
         const contractsJSON = this.contractsJSON;
 
         const instance = await contractFactory.deploy(...args, {
-            gasLimit: 20000000
+            // Right-sized from 20M: largest facet/manager deploy measures ~6.9M;
+            // 10M keeps headroom (deploy is one-time, off the hot concurrency path).
+            gasLimit: 10_000_000
         });
         contractsJSON[contractName] = {};
         contractsJSON[contractName].address = await instance.getAddress();

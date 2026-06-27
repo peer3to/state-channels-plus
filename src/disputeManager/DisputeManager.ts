@@ -42,7 +42,9 @@ export type ConstructDisputeResult = {
     fraudProofsToApply: FraudProofStruct[];
 };
 
-const DEFAULT_GAS_LIMIT = 5000000;
+// Right-sized from 5M: the dispute upload measures ~0.5M in e2e; 2.5M keeps
+// generous headroom for larger disputes while freeing block gas under concurrency.
+const DEFAULT_GAS_LIMIT = 2_500_000;
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;

@@ -265,7 +265,9 @@ export default class OpenChannelNegotiationService extends ARpcService<
                         encodedOpenChannel,
                         signatures: [lowerSignature, signature.toString()]
                     },
-                    { gasLimit: 5_000_000 }
+                    // Right-sized from 5M: open measures ~1.84M in e2e; 3M keeps
+                    // headroom while freeing block gas under concurrency.
+                    { gasLimit: 3_000_000 }
                 )
                 .then((tx) => {
                     txResponse = tx;
