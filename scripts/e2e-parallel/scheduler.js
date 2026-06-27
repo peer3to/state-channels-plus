@@ -27,37 +27,32 @@ const SCENARIO_PEER_COUNTS = {
     activeChannelWithDispute: 3
 };
 
-// Resolve thread-mode booleans with precedence: CLI flag > inherited env > default.
-// Defaults: vmThread=true, sdkThread=useExternalNode (sdk-in-thread requires
-// a PROVIDER_URL which is only injected under --per-slot-node or --shared-node).
+// Resolve a thread-mode boolean with precedence: CLI flag > inherited env > default.
+// (Env value "false" disables; any other set value enables; unset → fallback.)
+function resolveMode(flag, envVar, fallback) {
+    if (flag !== undefined) return flag;
+    if (process.env[envVar] !== undefined)
+        return process.env[envVar] !== "false";
+    return fallback;
+}
+
+// vmThread defaults on. sdkThread defaults to useExternalNode: sdk-in-thread runs
+// the SDK in a worker that builds its provider from PROVIDER_URL and needs a signer
+// secret, both of which only exist when an external node is up (--per-slot-node or
+// --shared-node) — so defaulting it on without a node would break the in-process run.
 function resolveThreadModes(cli, useExternalNode) {
-    let sdkThread, sdkThreadSource;
-    if (cli.sdkThread !== undefined) {
-        sdkThread = cli.sdkThread;
-        sdkThreadSource = "explicit";
-    } else if (process.env.RUN_SDK_IN_THREAD !== undefined) {
-        sdkThread = process.env.RUN_SDK_IN_THREAD !== "false";
-        sdkThreadSource = "explicit";
-    } else if (useExternalNode) {
-        sdkThread = true;
-        sdkThreadSource = "external-node default";
-    } else {
-        sdkThread = false;
-        sdkThreadSource = "default off";
-    }
-
-    const vmThread =
-        cli.vmThread !== undefined
-            ? cli.vmThread
-            : process.env.VM_DEDICATED_THREAD !== undefined
-              ? process.env.VM_DEDICATED_THREAD !== "false"
-              : true;
-
-    return { sdkThread, sdkThreadSource, vmThread };
+    return {
+        sdkThread: resolveMode(
+            cli.sdkThread,
+            "RUN_SDK_IN_THREAD",
+            useExternalNode
+        ),
+        vmThread: resolveMode(cli.vmThread, "VM_DEDICATED_THREAD", true)
+    };
 }
 
 // Number of OS threads a single peer contributes: 1 per enabled thread mode,
-// clamped to at least 1. VM_DEDICATED_THREAD defaults true / RUN_SDK_IN_THREAD defaults to usePerSlotNode.
+// clamped to at least 1. VM_DEDICATED_THREAD defaults true / RUN_SDK_IN_THREAD defaults to useExternalNode.
 function threadsPerPeerFromModes({ sdkThread, vmThread }) {
     return Math.max(1, (vmThread ? 1 : 0) + (sdkThread ? 1 : 0));
 }

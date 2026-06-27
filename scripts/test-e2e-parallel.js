@@ -233,9 +233,7 @@ async function main() {
         }
         console.log(`\nBudget footer:`);
         console.log(`  vmThread         : ${threadModes.vmThread}`);
-        console.log(
-            `  sdkThread        : ${threadModes.sdkThread} (${threadModes.sdkThreadSource})`
-        );
+        console.log(`  sdkThread        : ${threadModes.sdkThread}`);
         console.log(`  threadsPerPeer   : ${threadsPerPeer}`);
         const factorLabel = didAdapt
             ? "adapted"
@@ -262,7 +260,7 @@ async function main() {
             : `Running ${tasks.length} E2E task(s)`
     );
     console.log(
-        `  threadsPerPeer=${threadsPerPeer}  vmThread=${threadModes.vmThread}  sdkThread=${threadModes.sdkThread} (${threadModes.sdkThreadSource})  threadBudget=${threadBudget}  threadFactor=${threadFactor}  maxConcurrent=${maxConcurrent}`
+        `  threadsPerPeer=${threadsPerPeer}  vmThread=${threadModes.vmThread}  sdkThread=${threadModes.sdkThread}  threadBudget=${threadBudget}  threadFactor=${threadFactor}  maxConcurrent=${maxConcurrent}`
     );
 
     console.log(`  perSlotNode=${usePerSlotNode}  sharedNode=${useSharedNode}`);
