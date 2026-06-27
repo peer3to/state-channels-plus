@@ -15,6 +15,14 @@ const config: HardhatUserConfig = {
         hardhat: {
             allowUnlimitedContractSize: true,
             gas: "auto",
+            // E2E parallel runs cram many concurrent games' txs into one node's
+            // 2s-interval blocks (not production's load profile, which spreads over
+            // time), so a realistic 30M block starves them. Raise it only for e2e
+            // (gated on E2E_INTERVAL_MINING) — non-e2e keeps the realistic default.
+            blockGasLimit:
+                process.env.E2E_INTERVAL_MINING === "1"
+                    ? 1_000_000_000
+                    : 30_000_000,
             initialDate: new Date().toISOString(),
             // 400 accounts = 40 concurrent slots × SLOT_STRIDE(10).
             // Keep in sync with SLOT_STRIDE in test/harness/core/slotAccounts.ts
