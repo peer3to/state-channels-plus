@@ -71,6 +71,18 @@ contract UtilityFacet {
         return (recovered, true);
     }
 
+    function decodeBlock(bytes memory encodedBlock) external pure returns (Block memory) {
+        return abi.decode(encodedBlock, (Block));
+    }
+
+    function tryDecodeBlock(bytes memory encodedBlock) public view returns (bool decoded, Block memory blockData) {
+        try this.decodeBlock(encodedBlock) returns (Block memory decodedBlock) {
+            return (true, decodedBlock);
+        } catch {
+            return (false, blockData);
+        }
+    }
+
     function isAddressInArray(address[] memory array, address adr) public pure returns (bool) {
         return _isAddressInArray(array, adr);
     }

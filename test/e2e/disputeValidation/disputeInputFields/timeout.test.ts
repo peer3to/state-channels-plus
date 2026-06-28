@@ -1,7 +1,5 @@
-import { expect } from "chai";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
-import { tryDecodeCustomError, addressesEqual } from "@/utils";
 import { TimeoutTooEarlyStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 describe("E2E: dispute validation / disputeInputFields / timeout", function () {
@@ -78,11 +76,6 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             // peer 2 is the silent non-writer → exclude from fork-change barrier.
             h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
 
-            const slashedBefore =
-                await h.channelManager.getOnChainSlashedParticipants(
-                    h.channelId
-                );
-
             await h.tamper.plantFreshTimeoutForNextWriter(0);
             await h.tamper.postTamperedDispute(0, () => {});
 
@@ -94,18 +87,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 timeoutMs: 10000
             });
 
-            const disputerAddress = h.getPeer(0).address;
-
-            const slashedAfter =
-                await h.channelManager.getOnChainSlashedParticipants(
-                    h.channelId
-                );
-            expect(slashedAfter.length).to.be.greaterThan(slashedBefore.length);
-            expect(
-                slashedAfter.some((a: string) =>
-                    addressesEqual(a, disputerAddress)
-                )
-            ).to.equal(true);
+            await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
         });
 
         it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
@@ -143,7 +125,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
 
-        it("forged TimeoutTooEarly against a legitimate timeout dispute → applyDisputeFraudProofs reverts ErrorInvalidFraudProof", async function () {
+        it("forged TimeoutTooEarly against a legitimate timeout dispute → proof author slashed", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             // peer 2 does not write, so it will timeout naturally.
@@ -154,23 +136,16 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 timeoutMs: 15000
             });
 
-            try {
-                await h.tamper.submitForgedFraudProof(
-                    0,
-                    DisputeFraudProofType.TimeoutTooEarly,
-                    ({ genesisSnapshot }): TimeoutTooEarlyStruct => ({
-                        genesisStateSnapshotData: genesisSnapshot.snapshotData,
-                        previousBlockOnChainTimestamp: 0
-                    })
-                );
-                expect.fail("expected revert");
-            } catch (error: unknown) {
-                const custom = tryDecodeCustomError(error);
-                expect(
-                    custom!.errorDescription.name,
-                    "expected ErrorInvalidFraudProof"
-                ).to.equal("ErrorInvalidFraudProof");
-            }
+            await h.tamper.submitForgedFraudProof(
+                0,
+                DisputeFraudProofType.TimeoutTooEarly,
+                ({ genesisSnapshot }): TimeoutTooEarlyStruct => ({
+                    genesisStateSnapshotData: genesisSnapshot.snapshotData,
+                    previousBlockOnChainTimestamp: 0
+                })
+            );
+
+            await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
 
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });

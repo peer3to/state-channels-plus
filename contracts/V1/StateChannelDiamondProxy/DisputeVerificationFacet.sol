@@ -151,7 +151,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
                         break;
                     }
                 }
-                if (!isAlreadySlashed) {
+                if (!isAlreadySlashed && slashCount < maxSlashCount) {
                     slashParticipants[slashCount++] = dispute.input.onChainSlashes[j];
                 }
             }
@@ -274,12 +274,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
     }
 
-    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
-        bytes memory result = StateChannelManagerProxy(address(this)).verifyDisputeFraudProofs(proofs);
-        Dispute[] memory maliciousDisputes = abi.decode(result, (Dispute[]));
-        for (uint256 i = 0; i < maliciousDisputes.length; i++) {
-            _killDispute(maliciousDisputes[i]);
-        }
+    function killDispute(Dispute memory dispute) public {
+        _killDispute(dispute);
     }
 
     function reduceOutputToSnapshotData(

@@ -19,7 +19,7 @@ import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
 import type StateManager from "./StateManager";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
-import { Block, StateSnapshot } from "@/models";
+import { Block, StateSnapshot, StateProof } from "@/models";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class DisputeValidationService {
@@ -60,6 +60,30 @@ export default class DisputeValidationService {
             return false;
         }
 
+        const stateProof = StateProof.tryFrom(dispute.input.stateProof);
+        if (!stateProof) {
+            this.logger.warn("Dispute contains undecodable state proof block", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute)
+            });
+            if (!dispute.postedAuditingData) {
+                this.logger.error(
+                    "Skipping dispute audit: undecodable state proof block with no posted auditing data, no fireable fraud proof",
+                    { dispute: LoggerUtils.getDisputeMetadata(dispute) }
+                );
+                return true;
+            }
+            if (!onChainDisputeAuditingData) {
+                throw new Error(
+                    "Dispute posted with auditing data, but auditing data missing"
+                );
+            }
+            this.disputeFraudProofService.createDisputeInvalidStateProof(
+                dispute,
+                onChainDisputeAuditingData
+            );
+            return false;
+        }
+
         const hasHeaderMismatch =
             await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
                 dispute
@@ -77,9 +101,7 @@ export default class DisputeValidationService {
             return false;
         }
 
-        const postedAuditingData = this.hasPostedAuditingData(dispute);
-
-        if (postedAuditingData) {
+        if (dispute.postedAuditingData) {
             if (!onChainDisputeAuditingData) {
                 throw new Error(
                     "Dispute posted with auditing data, but auditing data missing"
@@ -139,10 +161,12 @@ export default class DisputeValidationService {
     ): Promise<boolean> {
         try {
             // TODO - make it work with localdiamond
-            return await this.stateChannelManagerContract.verifyStateProof.staticCall(
-                dispute,
-                disputeAuditingData
-            );
+            const result =
+                await this.stateChannelManagerContract.verifyStateProof.staticCall(
+                    dispute,
+                    disputeAuditingData
+                );
+            return result;
         } catch (error) {
             this.logger.debug("verifyStateProof reverted", {
                 dispute: LoggerUtils.getDisputeMetadata(dispute),
@@ -198,7 +222,6 @@ export default class DisputeValidationService {
         dispute: DisputeStruct
     ): Promise<boolean> {
         const isValid = true;
-        const postedAuditingData = this.hasPostedAuditingData(dispute);
 
         //TODO - quick hack, but the stuff we need SHOULD actually be available
         const { auditingData: disputeAuditingData } =
@@ -211,7 +234,7 @@ export default class DisputeValidationService {
                 }
             );
         // TODO move this check above and into its own fraud proof
-        if (!postedAuditingData) {
+        if (!dispute.postedAuditingData) {
             const isCorrectLatestState =
                 await this.stateChannelManagerContract.isCorrectLatestState.staticCall(
                     dispute,
@@ -642,13 +665,6 @@ export default class DisputeValidationService {
         return expectedPreviousHash === latestInboundMessageBlockHash;
     }
 
-    private hasPostedAuditingData(dispute: DisputeStruct): boolean {
-        return Boolean(
-            (dispute as unknown as { postedAuditingData?: boolean })
-                .postedAuditingData
-        );
-    }
-
     private getStateMachineStateForSnapshot(
         snapshot: StateSnapshotStruct
     ): Bytes {
@@ -665,7 +681,8 @@ export default class DisputeValidationService {
     }
 
     private isLastMilestoneStoredLocally(dispute: DisputeStruct): boolean {
-        const lastMilestone = dispute.input.stateProof.milestones.at(-1);
+        const stateProof = dispute.input.stateProof;
+        const lastMilestone = stateProof.milestones.at(-1);
         if (lastMilestone) {
             const firstBlockConfirmation =
                 lastMilestone.blockConfirmations.at(0);
@@ -673,26 +690,22 @@ export default class DisputeValidationService {
                 this.logger.debug(
                     "State proof anchor missing: last milestone has no block confirmations",
                     {
-                        dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        )
+                        dispute: LoggerUtils.getDisputeMetadata(dispute)
                     }
                 );
                 return false;
             }
 
-            const block = Block.fromBlockConfirmation(firstBlockConfirmation);
-            const storedBlock = this.storage.blocks.getBlock(block.hash);
+            const firstBlock = Block.fromBlockConfirmation(
+                firstBlockConfirmation
+            );
+            const storedBlock = this.storage.blocks.getBlock(firstBlock.hash);
             if (!storedBlock) {
                 this.logger.debug(
                     "State proof anchor missing: first block of last milestone not found in local block storage",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        ),
-                        block: LoggerUtils.getBlockMetadata(block)
+                        block: LoggerUtils.getBlockMetadata(firstBlock)
                     }
                 );
                 return false;
@@ -708,8 +721,8 @@ export default class DisputeValidationService {
             return true;
         }
 
-        const firstSignedBlock = dispute.input.stateProof.signedBlocks.at(0);
-        if (!firstSignedBlock) {
+        const firstSignedBlockStruct = stateProof.signedBlocks.at(0);
+        if (!firstSignedBlockStruct) {
             const genesisSnapshot =
                 this.storage.stateSnapshots.getGenesisSnapshotByForkId(
                     dispute.input.forkId
@@ -719,10 +732,7 @@ export default class DisputeValidationService {
                 this.logger.debug(
                     "State proof anchor missing: empty state proof but genesis snapshot is not stored locally",
                     {
-                        dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        )
+                        dispute: LoggerUtils.getDisputeMetadata(dispute)
                     }
                 );
                 return false;
@@ -737,9 +747,6 @@ export default class DisputeValidationService {
                     "State proof anchor missing: empty state proof but genesis state machine state is not stored locally",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        ),
                         genesisSnapshot:
                             LoggerUtils.getSnapshotMetadata(genesisSnapshot)
                     }
@@ -758,11 +765,12 @@ export default class DisputeValidationService {
             return true;
         }
 
-        const block = Block.fromSignedBlock(firstSignedBlock);
-
+        const firstSignedBlock = Block.fromSignedBlock(firstSignedBlockStruct);
         try {
             const previousBlockOrSnapshot =
-                this.storage.getPreviousBlockOrSnapshot(block.coordinates);
+                this.storage.getPreviousBlockOrSnapshot(
+                    firstSignedBlock.coordinates
+                );
             const isAnchored = !!(
                 previousBlockOrSnapshot.block ||
                 previousBlockOrSnapshot.stateSnapshot
@@ -772,10 +780,7 @@ export default class DisputeValidationService {
                     "State proof anchor missing: previous block or snapshot for first signed block not found locally",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        stateProof: LoggerUtils.getStateProofMetadata(
-                            dispute.input.stateProof
-                        ),
-                        block: LoggerUtils.getBlockMetadata(block)
+                        block: LoggerUtils.getBlockMetadata(firstSignedBlock)
                     }
                 );
                 return false;
@@ -785,7 +790,7 @@ export default class DisputeValidationService {
                 "State proof anchor found: previous block or snapshot for first signed block exists locally",
                 {
                     dispute: LoggerUtils.getDisputeMetadata(dispute),
-                    block: LoggerUtils.getBlockMetadata(block),
+                    block: LoggerUtils.getBlockMetadata(firstSignedBlock),
                     hasPreviousBlock: !!previousBlockOrSnapshot.block,
                     hasPreviousSnapshot: !!previousBlockOrSnapshot.stateSnapshot
                 }
@@ -796,10 +801,7 @@ export default class DisputeValidationService {
                 "State proof anchor lookup failed while resolving previous block or snapshot for first signed block",
                 {
                     dispute: LoggerUtils.getDisputeMetadata(dispute),
-                    stateProof: LoggerUtils.getStateProofMetadata(
-                        dispute.input.stateProof
-                    ),
-                    block: LoggerUtils.getBlockMetadata(block)
+                    block: LoggerUtils.getBlockMetadata(firstSignedBlock)
                 }
             );
             return false;
@@ -844,12 +846,9 @@ export default class DisputeValidationService {
         }
 
         for (const milestone of dispute.input.stateProof.milestones) {
-            const finalizedConfirmation = milestone.blockConfirmations.at(0);
-            if (!finalizedConfirmation) {
-                continue;
-            }
-
-            const block = Block.fromBlockConfirmation(finalizedConfirmation);
+            const blockConfirmation = milestone.blockConfirmations.at(0);
+            if (!blockConfirmation) continue;
+            const block = Block.fromBlockConfirmation(blockConfirmation);
             this.storage.blocks.storeBlock(block, {
                 hash: block.hash,
                 coordinates: block.coordinates,

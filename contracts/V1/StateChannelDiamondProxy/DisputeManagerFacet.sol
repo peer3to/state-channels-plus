@@ -153,14 +153,13 @@ contract DisputeManagerFacet is StateChannelCommon {
         returns (bool isFinal)
     {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        DisputeData storage disputeData = disputeData[dispute.input.channelId];
-        SnapshotData storage snapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
-        uint256 pendingCount = getPendingParticipants(dispute.input.channelId).length;
-        uint256 thresholdCount = snapshotData.participants.length + pendingCount - disputeData.onChainSlashes.length;
-        if (disputeConfirmation.signatures.length + 1 < thresholdCount) {
+        address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
+        if (thresholdSet.length == 0) {
             return false;
         }
-        address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
+        if (disputeConfirmation.signatures.length + 1 < thresholdSet.length) {
+            return false;
+        }
         bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
             disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
         );
