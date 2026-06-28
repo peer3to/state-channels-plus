@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { addressesEqual } from "@/utils";
 
 export class AssertDisputeActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
@@ -153,5 +154,39 @@ export class AssertDisputeActions<
                 `Expected no disputes to be committed, but ${totalCommitted} were committed`
             );
         }
+    }
+
+    async slashedOnChain(
+        address: string,
+        msg = `${address} must be on-chain slashed`
+    ): Promise<void> {
+        const slashed =
+            await this.harness.channelManager.getOnChainSlashedParticipants(
+                this.harness.channelId
+            );
+        expect(
+            slashed.some((a) => addressesEqual(a, address)),
+            msg
+        ).to.equal(true);
+    }
+
+    async slashedOnChainExactly(addresses: string[]): Promise<void> {
+        const slashed =
+            await this.harness.channelManager.getOnChainSlashedParticipants(
+                this.harness.channelId
+            );
+        for (const address of addresses) {
+            expect(
+                slashed.some((a) => addressesEqual(a, address)),
+                `${address} must be on-chain slashed`
+            ).to.equal(true);
+        }
+        const unexpected = slashed.filter(
+            (a) => !addresses.some((addr) => addressesEqual(a, addr))
+        );
+        expect(
+            unexpected,
+            `unexpected on-chain slashes: ${unexpected.join(", ")}`
+        ).to.have.length(0);
     }
 }

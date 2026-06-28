@@ -102,6 +102,27 @@ export class EventHandler {
                 status === Status.PENDING_PARTICIPANT ||
                 status === Status.PARTICIPATING
             ) {
+                const snapshotParticipants = stateSnapshot.snapshotData
+                    .participants as Address[];
+                const signerRemoved = !snapshotParticipants.some((p) =>
+                    addressesEqual(p, this.stateManager.signerAddress)
+                );
+                if (signerRemoved) {
+                    // We were removed from the channel (e.g. slashed by dispute
+                    // resolution): a new snapshot we never produced no longer
+                    // lists us. This is a legitimate exit, not a desync — abort
+                    // participation instead of treating it as fatal.
+                    this.logger.warn(
+                        "onStateSnapshotUpdated - unknown snapshot excludes signer (slashed/removed), aborting",
+                        {
+                            channelId,
+                            status,
+                            hash: updatedSnapshot.hash
+                        }
+                    );
+                    this.stateManager.abort();
+                    return;
+                }
                 this.logger.error(
                     "onStateSnapshotUpdated - unknown snapshot while participant/pending, fatal",
                     {
