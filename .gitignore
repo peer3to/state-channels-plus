@@ -38,3 +38,8 @@ src/utils/GeneratedArtifacts.ts
 *.tsbuildinfo
 
 /profiles
+
+# coverage-grid: vendored lib + heavy generated dashboard (regenerate via yarn coverage:grid)
+test/V1/echarts.min.js
+test/V1/COVERAGE_GRID.generated.html
+test/V1/COVERAGE_GRID.matrix.csv

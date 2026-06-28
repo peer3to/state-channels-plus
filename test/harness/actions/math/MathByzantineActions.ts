@@ -96,6 +96,60 @@ export class MathByzantineActions extends ByzantineActions {
         return result;
     }
 
+    async submitBrokenChainBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+        }
+    ): Promise<SubmittedBlock> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        const forkId = options?.forkId || this.harness.activeForkId!;
+
+        const ctx = await this.harness
+            .control(peer)
+            .query.getBlockBuildingContext(forkId)
+            .request();
+        if (ctx.latestBlockTimestamp === null) {
+            throw new Error(`No block found for fork ${forkId}`);
+        }
+        if (ctx.nextBlockHeight === 0) {
+            throw new Error(
+                "submitBrokenChainBlock needs a non-genesis height; advance the channel first"
+            );
+        }
+
+        const transactionData = this.encodeMathAdd(peer);
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: this.harness.channelId!,
+                participant: peer.address,
+                forkId,
+                transactionCnt: BigInt(ctx.nextBlockHeight),
+                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+            },
+            body: { encodedData: transactionData, data: transactionData }
+        };
+
+        const blockStruct: BlockStruct = {
+            transaction,
+            stateSnapshotHash: ZeroHash as Hash,
+            // broken link: does NOT chain to the stored predecessor at nextHeight-1
+            previousBlockHash: hash(
+                ethers.toUtf8Bytes("broken_chain_link")
+            ) as Hash,
+            messageBlocks: []
+        };
+
+        const result = await this.submit(peer, blockStruct);
+        this.logger.info(
+            `Broken-chain block broadcasted by peer ${peerIndex} (height=${result.height})`
+        );
+        return result;
+    }
+
     async submitForgedInboundMessageBlock(
         peerIndex: number,
         options?: {
@@ -370,6 +424,63 @@ export class MathByzantineActions extends ByzantineActions {
         this.logger.info(
             `Peer ${peerIndex} broadcasting wrong genesis block: height=${result.height}`,
             { forkId }
+        );
+        return result;
+    }
+
+    /**
+     * Genesis block (transactionCnt 0) whose header.forkId is a bogus fork the
+     * channel never opened, while previousBlockHash links to the real active
+     * fork's genesis snapshot. Honest peers look up the genesis snapshot by the
+     * forged forkId, find none -> isLinked false at height 0 -> WrongGenesis.
+     */
+    async submitWrongGenesisForkIdBlock(
+        peerIndex: number,
+        options?: {
+            forkId?: ForkId;
+            forgedForkId?: ForkId;
+        }
+    ): Promise<SubmittedBlock> {
+        const peer = this.harness.getPeer(peerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: peerIndex
+        });
+        const forkId = options?.forkId || this.harness.activeForkId!;
+
+        const ctx = await this.harness
+            .control(peer)
+            .query.getBlockBuildingContext(forkId)
+            .request();
+
+        // bogus fork the channel never opened -> no genesis snapshot for it
+        const forgedForkId =
+            options?.forgedForkId ??
+            (hash(ethers.toUtf8Bytes("wrong_genesis_fork_id")) as ForkId);
+        const transactionData = this.encodeMathAdd(peer);
+
+        const transaction: TransactionStruct = {
+            header: {
+                channelId: this.harness.channelId!,
+                participant: peer.address,
+                forkId: forgedForkId,
+                transactionCnt: 0n,
+                timestamp: BigInt(ctx.currentTimestamp)
+            },
+            body: { encodedData: transactionData, data: transactionData }
+        };
+
+        const blockStruct: BlockStruct = {
+            transaction,
+            stateSnapshotHash: ZeroHash as Hash,
+            // links to the REAL active fork's genesis -> only fault is forkId
+            previousBlockHash: ctx.previousBlockHash,
+            messageBlocks: []
+        };
+
+        const result = await this.submit(peer, blockStruct);
+        this.logger.info(
+            `Peer ${peerIndex} broadcasting wrong-genesis-forkId block: height=${result.height}`,
+            { forkId, forgedForkId }
         );
         return result;
     }

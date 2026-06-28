@@ -85,6 +85,7 @@
     "infra:local-discovery": "node scripts/infra/local-discovery-registry.js",
     "dev:tsc": "tsc -w -p tsconfig.json",
     "generate-enums": "ts-node scripts/generate-enums.ts",
+    "coverage:grid": "ts-node scripts/coverage-grid/index.ts",
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "get-logs": "ts-node scripts/logging/fetch-logs.ts",
     "test": "yarn hardhat test --no-compile $(find test -name '*.test.ts' -not -path 'test/e2e/*')",
