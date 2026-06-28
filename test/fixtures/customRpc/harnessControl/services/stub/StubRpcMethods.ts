@@ -7,6 +7,8 @@ import type { Address } from "@/types/types";
 import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
+import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
+import type { Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type { StubService } from "./StubService";
 
@@ -252,17 +254,23 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                 syncRequest: SyncRequest
             ) {
                 const peerAddress = this.senderTransport.peerAddress;
-                if (!peerAddress) return;
+                if (!peerAddress) {
+                    throw new Error("stubSpectateStaleProof - missing peer");
+                }
                 const syncPayload = await this.service.generateSyncPayload(
                     syncRequest.channelId,
                     syncRequest.forkId,
                     staleBlockHeight
                 );
-                if (!syncPayload) return;
-                const encoded = Codec.encode(syncPayload, Type.SyncPayload);
-                this.remoteRpc.spectateService
-                    .onSpectateResponse(syncRequest.channelId, encoded)
-                    .sendOne(peerAddress);
+                if (!syncPayload) {
+                    throw new Error("stubSpectateStaleProof - no payload");
+                }
+                return {
+                    encodedSyncPayload: Codec.encode(
+                        syncPayload,
+                        Type.SyncPayload
+                    )
+                };
             };
             return methods;
         };
@@ -278,6 +286,38 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         service.createRPCMethods = original as typeof service.createRPCMethods;
         this.service.stubOriginals.delete("spectateCreateRpcMethods");
         return true;
+    }
+
+    /**
+     * Make `spectateService.onSpectateRequest` answer with bytes that are NOT a
+     * valid `Codec.encode(SyncPayload)`, so the spectator's decode throws and it
+     * must abort/disconnect (junk-payload handling).
+     */
+    public stubSpectateJunkPayload(): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "spectateCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "spectateCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.onSpectateRequest = async function (
+                this: SpectateServiceRpcMethods
+            ) {
+                return { encodedSyncPayload: "0xdeadbeef" };
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public restoreSpectateJunkPayload(): boolean {
+        return this.restoreSpectateStaleProof();
     }
 
     /**
@@ -301,8 +341,9 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             const methods = original(transport);
             methods.onDisputeAcknowledgmentRequest = async function (
                 this: IsForkDisputedRpcMethods
-            ) {
+            ): Promise<boolean> {
                 stubService.disputeAckRequestCalled = true;
+                return false;
             };
             return methods;
         };
@@ -408,6 +449,76 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             stubService.capturedInitHandshakeTransport = transport;
             return original.call(service, transport);
         };
+        return true;
+    }
+
+    /**
+     * Make this peer answer handshake challenges (`onInitHandshakeRequest`) with
+     * a faulty response so the *initiator* rejects it:
+     * - `responseTimeOffsetSeconds` skews the returned `responseTime` so the
+     *   initiator's response-timestamp check fails.
+     * - `delayMs` delays the reply so the initiator's request times out (no
+     *   response within the agreement window).
+     * - `corruptSignature` replaces the signature with junk so the initiator's
+     *   `ethers.verifyMessage` throws.
+     * The real handler still runs first (validates + signs), so only the reply
+     * is corrupted.
+     */
+    public stubHandshakeResponse(
+        delayMs: number,
+        responseTimeOffsetSeconds: number,
+        corruptSignature: boolean
+    ): boolean {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        if (!this.service.stubOriginals.has("initHandshakeCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "initHandshakeCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "initHandshakeCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        const realRequest =
+            InitHandshakeRpcMethods.prototype.onInitHandshakeRequest;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.onInitHandshakeRequest = async function (
+                this: InitHandshakeRpcMethods,
+                challengeHash: Hash,
+                time: Timestamp
+            ) {
+                const response = await realRequest.call(
+                    this,
+                    challengeHash,
+                    time
+                );
+                if (responseTimeOffsetSeconds) {
+                    response.responseTime += responseTimeOffsetSeconds;
+                }
+                if (corruptSignature) {
+                    response.signature = "0xdeadbeef";
+                }
+                if (delayMs > 0) {
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, delayMs)
+                    );
+                }
+                return response;
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public restoreHandshakeResponse(): boolean {
+        const original = this.service.stubOriginals.get(
+            "initHandshakeCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("initHandshakeCreateRpcMethods");
         return true;
     }
 }

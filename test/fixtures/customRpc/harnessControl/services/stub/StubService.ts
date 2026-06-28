@@ -18,6 +18,7 @@ export type StubKey =
     | "unsafeSetLatestState"
     | "blockedInitHandshake"
     | "captureInitHandshake"
+    | "initHandshakeCreateRpcMethods"
     | "maybePostBlockOnChain"
     | "spectateAbort";
 

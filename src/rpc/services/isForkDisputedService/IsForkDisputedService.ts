@@ -4,14 +4,12 @@ import { ChannelId, ForkId } from "@/types/types";
 import ATransport from "@/transport/ATransport";
 import type P2PManager from "@/P2PManager";
 import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
-import { TimeoutManager } from "@/utils/TimeoutManager";
 
 class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
     // Track acknowledged disputed forks
     peerAcknowledgementsByAddress: Map<string, Set<ForkId>> = new Map();
     myAcknowledgementsByAddress: Map<string, Set<ForkId>> = new Map();
     disputedForks: Set<ForkId> = new Set();
-    timeoutManager: TimeoutManager;
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -20,7 +18,6 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
                 component: "IsForkDisputedService"
             })
         );
-        this.timeoutManager = p2pManager.stateManager.timeoutManager;
 
         this.guards = [new HandshakeCompletedGuard(this)];
     }
@@ -31,7 +28,12 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
 
     /**
      * Request all peers to acknowledge a disputed fork
-     * This should be called when a dispute window is created on-chain
+     * This should be called when a dispute window is created on-chain.
+     *
+     * Each peer is asked directly via request/response: the reply resolves to
+     * `true` once the peer confirms the fork is disputed (recorded for later
+     * Byzantine-build detection). A peer that rejects (fork not disputed),
+     * errors, or doesn't answer within the window is disconnected.
      */
     public requestDisputeAcknowledgment(
         channelId: ChannelId,
@@ -51,81 +53,52 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
         // Snapshot peer identities (EVM addresses) at request time.
         // Transport instances can change (e.g. WebRTC upgrade), and we also
         // don't want to disconnect peers that connect after we sent the request.
-        const snapshotAddresses = this.p2pManager.getConnectedPeers();
+        const snapshotAddresses = [...this.p2pManager.getConnectedPeers()];
+        const timeoutMs =
+            2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000;
 
-        // Broadcast the request
-        this.remoteRpc.isForkDisputedService
-            .onDisputeAcknowledgmentRequest(channelId, forkId)
-            .broadcast();
-
-        this.timeoutManager.scheduleTask(
-            () => {
-                this.logger.debug(
-                    `Checking dispute acknowledgment for fork ${forkId}`
-                );
-
-                // Disconnect snapshot peers that haven't acknowledged.
-                for (const peerAddress of snapshotAddresses) {
-                    if (
-                        this.didPeerAddressAcknowledgeDisputedFork(
-                            peerAddress.toString(),
-                            forkId
-                        )
-                    ) {
-                        continue;
+        void Promise.all(
+            snapshotAddresses.map(async (peerAddress) => {
+                try {
+                    const acknowledged =
+                        await this.remoteRpc.isForkDisputedService
+                            .onDisputeAcknowledgmentRequest(channelId, forkId)
+                            .request(peerAddress, { timeoutMs });
+                    if (!acknowledged) {
+                        this.logger.debug(
+                            `Peer did not acknowledge disputed fork ${forkId}, disconnecting`,
+                            { peerAddress }
+                        );
+                        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                            peerAddress
+                        );
+                        return;
                     }
-
+                    this.peerAcknowledgesDisputedFork(
+                        peerAddress.toString(),
+                        forkId
+                    );
+                    this.p2pManager.stateManager.p2pEventHooks?.onDisputeAcknowledgment?.(
+                        peerAddress
+                    );
+                } catch (error) {
                     this.logger.debug(
-                        `Peer did not acknowledge disputed fork ${forkId}, disconnecting`,
-                        { peerAddress }
+                        `Dispute acknowledgment request failed for fork ${forkId}, disconnecting`,
+                        {
+                            peerAddress,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        }
                     );
                     this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                         peerAddress
                     );
                 }
-            },
-            2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            "isForkDisputedService:awaitingDisputeAcknowledgments"
+            })
         );
         return true;
-    }
-
-    private didPeerAddressAcknowledgeDisputedFork(
-        peerAddress: string,
-        forkId: ForkId
-    ): boolean {
-        return this.hasAddressAcknowledged(
-            this.peerAcknowledgementsByAddress,
-            peerAddress,
-            forkId
-        );
-    }
-
-    public respondToDisputeAcknowledgment(
-        peerAddress: string,
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<void> | void {
-        if (this.didIAcknowledgeDisputedFork(peerAddress, forkId)) {
-            this.logger.debug(
-                `Already responded for fork ${forkId} to ${peerAddress}, disconnecting`
-            );
-            return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                peerAddress
-            );
-        }
-
-        this.IAcknowledgeDisputedFork(peerAddress, forkId);
-        this.logger.debug(
-            `I Acknowledge disputed fork ${forkId} to ${peerAddress}`
-        );
-
-        const handler =
-            this.remoteRpc.isForkDisputedService.onDisputeAcknowledgmentResponse(
-                channelId,
-                forkId
-            );
-        handler.sendOne(peerAddress);
     }
 
     /**

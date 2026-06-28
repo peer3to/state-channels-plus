@@ -12,21 +12,35 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
     }
 
     /**
-     * Peer receives dispute acknowledgment request
-     * Check if fork is disputed and respond accordingly
+     * Peer receives a dispute acknowledgment request. Request/response: resolves
+     * to `true` once we confirm the fork is disputed (recording that we
+     * acknowledged it to this peer). A fork that isn't disputed, a missing peer
+     * address, or a duplicate request is a protocol violation: we disconnect the
+     * requester and throw so its `.request(...)` rejects.
      */
     public async onDisputeAcknowledgmentRequest(
         channelId: ChannelId,
         forkId: ForkId
-    ) {
+    ): Promise<boolean> {
         const peerAddress = this.senderTransport.peerAddress;
         if (!peerAddress) {
             this.service.logger.error(
                 `onDisputeAcknowledgmentRequest - missing peer address`
             );
-            return this.p2pManager.disconnectAndBlacklistPeer(
-                this.senderTransport
+            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
+            throw new Error(
+                "onDisputeAcknowledgmentRequest - missing peer address"
             );
+        }
+
+        // A second request for a fork we already acknowledged to this peer is a
+        // protocol violation.
+        if (this.service.didIAcknowledgeDisputedFork(peerAddress, forkId)) {
+            this.service.logger.debug(
+                `Already acknowledged fork ${forkId} to ${peerAddress}, disconnecting`
+            );
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+            throw new Error("duplicate dispute acknowledgment request");
         }
 
         // Check if fork is disputed locally
@@ -38,7 +52,7 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
 
         if (!isDisputed) {
             this.service.logger.verbose(
-                `Fork ${forkId} is NOT disputed on local diamond, responding`
+                `Fork ${forkId} is NOT disputed on local diamond, checking on-chain`
             );
             // check on-chain
             isDisputed =
@@ -47,52 +61,21 @@ class IsForkDisputedRpcMethods extends ARpcMethods {
                     forkId
                 );
         }
-        if (isDisputed) {
-            this.service.logger.verbose(
-                `Fork ${forkId} is disputed on-chain, responding`
+
+        if (!isDisputed) {
+            // Fork is not disputed - disconnect
+            this.service.logger.debug(
+                `Fork ${forkId} is not disputed, disconnecting`
             );
-            return this.service.respondToDisputeAcknowledgment(
-                peerAddress,
-                channelId,
-                forkId
-            );
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+            throw new Error("fork not disputed");
         }
 
-        // Fork is not disputed - disconnect
-        this.service.logger.debug(
-            `Fork ${forkId} is not disputed, disconnecting`
-        );
-        return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-            peerAddress
-        );
-    }
-
-    /**
-     * Receive acknowledgment response from a peer
-     */
-    public async onDisputeAcknowledgmentResponse(
-        channelId: ChannelId,
-        forkId: ForkId
-    ) {
         this.service.logger.verbose(
-            `Received dispute acknowledgment response for fork ${forkId}`
+            `Fork ${forkId} is disputed, acknowledging to ${peerAddress}`
         );
-
-        const peerAddress = this.senderTransport.peerAddress;
-        if (!peerAddress) {
-            this.service.logger.error(
-                `onDisputeAcknowledgmentResponse - missing peer address`
-            );
-            return;
-        }
-
-        // Mark that this peer has acknowledged (from our perspective)
-        this.service.peerAcknowledgesDisputedFork(peerAddress, forkId);
-
-        // Fire event hook for dispute acknowledgment
-        this.p2pManager.stateManager.p2pEventHooks?.onDisputeAcknowledgment?.(
-            peerAddress
-        );
+        this.service.IAcknowledgeDisputedFork(peerAddress, forkId);
+        return true;
     }
 }
 

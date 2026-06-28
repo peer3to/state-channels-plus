@@ -2,13 +2,7 @@ import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import type { TransportType } from "@/transport/TransportType";
 import Block from "@/models/Block";
-import type {
-    Address,
-    ChannelId,
-    ForkId,
-    Hash,
-    Signature
-} from "@/types/types";
+import type { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { HandshakeService } from "./HandshakeService";
 
@@ -40,26 +34,6 @@ export class HandshakeRpcMethods extends ARpcMethods {
         return true;
     }
 
-    public getChallenge(
-        otherAddress: Address
-    ): { randomChallengeHash: string; initTime: number } | null {
-        const challenge = this.service.initHandshake.getChallenge(
-            this.service.transportTo(otherAddress)
-        );
-        return challenge
-            ? {
-                  randomChallengeHash: challenge.randomChallengeHash,
-                  initTime: challenge.initTime
-              }
-            : null;
-    }
-
-    public clearChallenge(otherAddress: Address): boolean {
-        return this.service.initHandshake.mapTransportToChallenge.delete(
-            this.service.transportTo(otherAddress)
-        );
-    }
-
     public isHandshakeCompleted(otherAddress: Address): boolean {
         const profile =
             this.p2pManager.profileManager.getProfileByEvmAddress(otherAddress);
@@ -86,25 +60,17 @@ export class HandshakeRpcMethods extends ARpcMethods {
         challengeHash: Hash,
         time: number
     ): Promise<boolean> {
-        await this.service.initHandshake
-            .createRPCMethods(this.service.transportTo(fromAddress))
-            .onInitHandshakeRequest(challengeHash, time);
-        return true;
-    }
-
-    public async deliverHandshakeResponse(
-        fromAddress: Address,
-        signature: Signature,
-        responseTime: number,
-        preferredTransport: TransportType
-    ): Promise<boolean> {
-        await this.service.initHandshake
-            .createRPCMethods(this.service.transportTo(fromAddress))
-            .onInitHandshakeResponse(
-                signature,
-                responseTime,
-                preferredTransport
-            );
+        // `onInitHandshakeRequest` is now request/response and throws on
+        // malformed/out-of-window input (after disconnecting the requester).
+        // Swallow the rejection so the control call resolves; the side effect
+        // (disconnect) is what the test asserts.
+        try {
+            await this.service.initHandshake
+                .createRPCMethods(this.service.transportTo(fromAddress))
+                .onInitHandshakeRequest(challengeHash, time);
+        } catch {
+            // expected for invalid requests
+        }
         return true;
     }
 
@@ -120,27 +86,21 @@ export class HandshakeRpcMethods extends ARpcMethods {
         );
     }
 
-    public async respondToDisputeAcknowledgment(
-        requestingAddress: Address,
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<boolean> {
-        await this.service.isForkDisputed.respondToDisputeAcknowledgment(
-            String(requestingAddress),
-            channelId,
-            forkId
-        );
-        return true;
-    }
-
     public async deliverDisputeAckRequest(
         fromAddress: Address,
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<boolean> {
-        await this.service.isForkDisputed
-            .createRPCMethods(this.service.transportTo(fromAddress))
-            .onDisputeAcknowledgmentRequest(channelId, forkId);
+        // `onDisputeAcknowledgmentRequest` is now request/response and throws on
+        // protocol violations (not-disputed / duplicate) after disconnecting the
+        // requester. Swallow the rejection; the disconnect is what tests assert.
+        try {
+            await this.service.isForkDisputed
+                .createRPCMethods(this.service.transportTo(fromAddress))
+                .onDisputeAcknowledgmentRequest(channelId, forkId);
+        } catch {
+            // expected for not-disputed / duplicate requests
+        }
         return true;
     }
 

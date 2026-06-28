@@ -45,25 +45,23 @@ describe("E2E: Is Fork Disputed", function () {
             });
         });
 
-        it("should disconnect peer sending duplicate acknowledgment responses", async function () {
+        it("should disconnect peer sending duplicate acknowledgment requests", async function () {
             const h = TestSession.getHarness();
             await h.scenario.activeChannelWithDispute({
                 numPeers: 3,
                 numBlocks: 2,
                 byzantinePeer: 1
             });
-            await h.rpc.sendDuplicateAcknowledgmentResponse({
+            // Peer 0 receives a dispute-ack request from peer 2 for the
+            // genuinely disputed fork and acknowledges it.
+            await h.rpc.sendDisputeAckRequest({ fromPeer: 2, toPeer: 0 });
+            await h.assert.rpc.firstAcknowledgmentRecorded({
                 respondingPeer: 0,
                 requestingPeer: 2
             });
-            h.assert.rpc.firstAcknowledgmentRecorded({
-                respondingPeer: 0,
-                requestingPeer: 2
-            });
-            await h.rpc.sendDuplicateAcknowledgmentResponse({
-                respondingPeer: 0,
-                requestingPeer: 2
-            });
+            // A second request for the same already-acknowledged fork is a
+            // protocol violation -> peer 0 disconnects the requester.
+            await h.rpc.sendDisputeAckRequest({ fromPeer: 2, toPeer: 0 });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
                 expectedFinalCount: 0

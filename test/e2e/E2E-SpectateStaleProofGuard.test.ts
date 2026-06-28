@@ -45,4 +45,48 @@ describe("E2E: Spectate stale-proof guard", function () {
             await h.control(spectator).query.getOpenConnectionCount().request()
         ).to.equal(0, "Spectator should have 0 open connections after abort");
     });
+
+    it("aborts sync when a peer answers with undecodable junk bytes", async function () {
+        const h = TestSession.getHarness();
+
+        await h.lifecycle.start(2, 0, {
+            timeConfig: {
+                p2pTime: 5,
+                agreementTime: 2,
+                chainFallbackTime: 2,
+                evidenceTime: 10
+            }
+        });
+
+        await h.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await h.transition.postSnapshotWait();
+
+        // Both participants reply to spectate requests with bytes that are NOT a
+        // valid encoded SyncPayload, so the spectator's Codec.decode throws and
+        // it must abort every sync attempt instead of crashing/hanging.
+        await h.rpcStub.stubSpectateJunkPayload([0, 1]);
+
+        let threwTimeout = false;
+        try {
+            await h.join.addSpectatorWait({ statusTimeoutMs: 5000 });
+        } catch {
+            threwTimeout = true;
+        }
+
+        expect(threwTimeout).to.equal(
+            true,
+            "Spectator should not have reached SYNCED with junk payloads"
+        );
+
+        const spectator = h.getPeer(2);
+        expect(
+            await h.control(spectator).query.getOpenConnectionCount().request()
+        ).to.equal(
+            0,
+            "Spectator should have 0 open connections after aborting on junk"
+        );
+    });
 });
