@@ -15,6 +15,7 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import MainRpcService from "@/rpc/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
+import ManagedNonceSigner from "@/evm/signer/ManagedNonceSigner";
 import { createContractExecutorFactory } from "@/evm/contractExecutor";
 import {
     createForwardingHooks,
@@ -102,6 +103,12 @@ export async function startP2pRuntimeHost<
         { attachErrorListener: false }
     );
 
+    // Own this account's nonce so the peer's concurrent async flows can't collide
+    // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
+    // send + retry paths below; the local-VM signers (deploy/executor, p2p) and
+    // the read-only Clock stay on the raw signer.
+    const chainSigner = new ManagedNonceSigner(signer, logger);
+
     const scmContract = new ethers.Contract(
         payload.scm.address,
         JSON.parse(payload.scm.abiJson),
@@ -116,9 +123,10 @@ export async function startP2pRuntimeHost<
     // Sync clock to DLT.
     await Clock.init(signer.provider!);
 
-    // Connect signer to the state channel manager contract.
+    // Connect the managed signer to the state channel manager contract so every
+    // on-chain SCM send draws its nonce from the owned counter.
     let connectedScmContract = (await scmContract.connect(
-        signer
+        chainSigner
     )) as StateChannelManagerProxy;
     if (payload.config.DEBUG_CHANNEL_CONTRACT) {
         connectedScmContract = DebugProxy.createProxy(connectedScmContract);
@@ -184,7 +192,10 @@ export async function startP2pRuntimeHost<
         const storage = new Storage();
 
         const stateManager = new StateManager<TCustomRpc, TCustomRpcOptions>(
-            signer,
+            // Managed signer: becomes StateManager.signer → DisputeManager.signer,
+            // covering the raw evmErrorHandler retry send so it can't bypass the
+            // owned nonce counter and re-open the race.
+            chainSigner,
             signerAddress,
             connectedScmContract,
             evmDiamondStateMachine,
