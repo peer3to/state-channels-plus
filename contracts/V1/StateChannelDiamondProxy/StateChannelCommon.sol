@@ -301,18 +301,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (true, commitment);
     }
 
-    function decodeBlock(bytes memory encodedBlock) public pure returns (Block memory) {
-        return abi.decode(encodedBlock, (Block));
-    }
-
     function isBlockAuthentic(SignedBlock memory _block) public view virtual returns (bool) {
-        // try decode block
-        bytes memory data = abi.encodeCall(this.decodeBlock, (_block.encodedBlock));
-        (bool success, bytes memory encodedBlock) = address(this).staticcall(data);
-        if (!success) return false;
-        Block memory decodedBlock = abi.decode(encodedBlock, (Block));
+        (bool decoded, Block memory decodedBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);
+        if (!decoded) return false;
         (address signer, bool isValid) =
-            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(encodedBlock, _block.signature);
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(_block.encodedBlock, _block.signature);
         if (signer != decodedBlock.transaction.header.participant || !isValid) {
             return false;
         }
