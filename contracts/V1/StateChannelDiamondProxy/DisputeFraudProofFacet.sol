@@ -213,15 +213,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
+        if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(proof.auditingData))) return _invalid();
+
         bytes memory returnData = _delegatecall(
             stateProofFacetAddress, abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, proof.auditingData))
         );
-        StateProofVerification result = abi.decode(returnData, (StateProofVerification));
+        bool isValidStateProof = abi.decode(returnData, (bool));
 
-        // InvalidProof          -> fraud proof is correct, the state proof really is invalid -> slash disputer
-        // Valid                 -> fraud proof lied, the state proof is fine                -> slash prover
-        // AuditingDataMismatch  -> fraud prover referenced the wrong auditingData           -> slash prover
-        if (result == StateProofVerification.InvalidProof) return _valid(dispute.input.disputer);
+        // false -> the state proof really is invalid -> slash disputer
+        // true  -> fraud proof lied, the state proof is fine -> slash prover
+        if (!isValidStateProof) return _valid(dispute.input.disputer);
         return _invalid();
     }
 

@@ -435,12 +435,12 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         public
         virtual
         override(StateChannelManagerInterface)
-        returns (StateProofVerification)
+        returns (bool)
     {
         bytes memory result = _delegatecall(
             stateProofFacetAddress, abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, disputeAuditingData))
         );
-        return abi.decode(result, (StateProofVerification));
+        return abi.decode(result, (bool));
     }
 
     function isCorrectLatestState(Dispute memory dispute, SnapshotData memory genesisStateSnapshotData)

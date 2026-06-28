@@ -1,6 +1,6 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
-import { address as randomAddress } from "@test/factory";
+import { randomAddress } from "@test/factory";
 
 describe("E2E: dispute validation / disputeInputFields / onChainSlashes", function () {
     it("dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset", async function () {
