@@ -2260,6 +2260,11 @@ class StateManager<
             return;
         }
 
+        const participants = await this.diamondStateMachine.getParticipants();
+        if (!participants.includes(this.signerAddress)) {
+            return;
+        }
+
         // if a block exist in storage (regardless of own signature on it) -> it was accepted
         const block = this.storage.blocks.getBlock(forkId, blockHeight);
         if (block) {
