@@ -4,6 +4,11 @@
 - For post-edit validation, run the narrowest relevant test first when available.
 - Run `yarn tsc --noEmit -p tsconfig.json` for TypeScript typechecking.
 - Run `yarn compile` for compile-level validation when changes affect the build or exported package surface.
+- Don't disturb the user's working tree or index to inspect another revision.
+  Prefer a throwaway worktree (`git worktree add <tmp> <ref>`) over `git stash`.
+  If you must stash, preserve staging: restore with `git stash pop --index` so
+  files the user had staged come back staged — never leave them re-reviewing
+  files they'd already staged.
 
 ## Conventions
 
@@ -26,6 +31,12 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
 ### Comments
 
 - Keep comments simple and to the point. No long essays.
+- When refactoring or moving code (extracting a method, moving a body to another
+  file/service), carry over all original comments verbatim — do not drop or
+  condense them, including large explanatory/strategy blocks and numbered step
+  comments. If a comment genuinely needs to change, call it out rather than
+  dropping it silently; flag stale commented-out dead code instead of removing
+  it without mention.
 
 ### Type safety
 

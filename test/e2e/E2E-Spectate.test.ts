@@ -68,12 +68,16 @@ describe("E2E: Spectate Service", function () {
                     sm.p2pManager.localRpc.stub.capturedInitHandshakeTransport;
                 if (!transport)
                     throw new Error("no captured handshake transport");
-                sm.p2pManager.remoteRpc.spectateService
+                // Fire it as a request over the pre-handshake transport. The
+                // guard rejects it before dispatch (recording the block); the
+                // rejected promise is expected, so swallow it.
+                void sm.p2pManager.remoteRpc.spectateService
                     .onSpectateRequest({
                         channelId: sm.channelId,
                         initTime: Date.now()
                     })
-                    .sendOne(transport);
+                    .request(transport)
+                    .catch(() => {});
             });
 
             // Peer 1's guard should have blocked it (handshake never completed).
@@ -97,126 +101,11 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
-    describe("Channel Binding", function () {
-        it("aborts before any chain read when a peer answers with a mismatched channelId", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 0);
-            await h.transition.advanceState({ count: 1 });
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
-
-            const realChannelId = h.channelId!;
-            const forkId = h.activeForkId!;
-            const wrongChannelId = ethers.keccak256(
-                ethers.toUtf8Bytes("spectate-wrong-channel")
-            );
-            expect(wrongChannelId).to.not.equal(String(realChannelId));
-
-            const peer1Address = h.getPeer(1).address;
-
-            // A valid, decodable payload for the REAL channel, so the decode at
-            // the top of onSpectateResponse succeeds and the channel-binding
-            // guard — not a decode error — is what aborts.
-            const blockInfo = await h
-                .control(h.getPeer(1))
-                .query.getLatestBlockInfo(forkId)
-                .request();
-            expect(blockInfo).to.not.be.null;
-            const blockHeight = Number(
-                Codec.decode(blockInfo!.encodedBlock, Type.Block).transaction
-                    .header.transactionCnt
-            );
-            const encodedSyncPayload = await h
-                .control(h.getPeer(1))
-                .spectate.generateSyncPayload(
-                    realChannelId,
-                    forkId,
-                    blockHeight
-                )
-                .request();
-            expect(encodedSyncPayload).to.not.be.null;
-
-            // Drive onSpectateResponse host-side: a pending request for the REAL
-            // channel, but the response claims a DIFFERENT channel.
-            const result = await h.execOnHost(
-                h.getPeer(0),
-                async (sm, args) => {
-                    const spectateService =
-                        sm.p2pManager.localRpc.spectateService;
-                    const profile =
-                        sm.p2pManager.profileManager.getProfileByEvmAddress(
-                            args.peer1Address
-                        );
-                    const transport = profile?.transport;
-                    if (!transport?.peerAddress) {
-                        throw new Error("no handshaked transport to peer 1");
-                    }
-                    const internal = spectateService as unknown as {
-                        requestMapByPeerAddress: Map<
-                            string,
-                            { channelId: unknown; initTime: number }
-                        >;
-                        fetchAndPersistOnChainSnapshot: (
-                            channelId: unknown
-                        ) => Promise<unknown>;
-                    };
-
-                    internal.requestMapByPeerAddress.set(
-                        transport.peerAddress,
-                        {
-                            channelId: args.realChannelId,
-                            initTime: Math.floor(Date.now() / 1000)
-                        }
-                    );
-
-                    // Trip a flag if execution ever reaches the first on-chain read.
-                    let fetchCalled = false;
-                    const originalFetch =
-                        internal.fetchAndPersistOnChainSnapshot.bind(
-                            spectateService
-                        );
-                    internal.fetchAndPersistOnChainSnapshot = async (
-                        cid: unknown
-                    ) => {
-                        fetchCalled = true;
-                        return originalFetch(cid);
-                    };
-
-                    try {
-                        await spectateService
-                            .createRPCMethods(transport)
-                            .onSpectateResponse(
-                                args.wrongChannelId,
-                                args.encodedSyncPayload
-                            );
-                    } finally {
-                        internal.fetchAndPersistOnChainSnapshot = originalFetch;
-                    }
-
-                    return {
-                        fetchCalled,
-                        stillPending: internal.requestMapByPeerAddress.has(
-                            transport.peerAddress
-                        )
-                    };
-                },
-                {
-                    peer1Address,
-                    realChannelId,
-                    wrongChannelId,
-                    encodedSyncPayload: encodedSyncPayload!
-                }
-            );
-
-            expect(
-                result.fetchCalled,
-                "mismatched channelId must abort before any on-chain read"
-            ).to.equal(false);
-            expect(
-                result.stillPending,
-                "pending request should be consumed by the rejected response"
-            ).to.equal(false);
-        });
-    });
+    // NOTE: the former "Channel Binding" test is obsolete. With request/response
+    // the spectator uses its own `syncRequest.channelId` to verify the payload
+    // and never trusts a channelId echoed by the responder, so a mismatched-
+    // channel response is structurally impossible — there is no separate
+    // `onSpectateResponse` endpoint to feed a forged channelId into.
 
     describe("Same Fork Spectating", function () {
         it("should spectate successfully when on-chain snapshot is already on the same fork", async function () {
@@ -1085,6 +974,51 @@ describe("E2E: Spectate Service", function () {
                 expectedCount: 2,
                 peerIndex: 2
             });
+        });
+    });
+
+    describe("Concurrent sync dedup", function () {
+        it("collapses two concurrent sync() calls for the same peer into a single on-the-wire request", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 2);
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+
+            // Count spectate requests arriving at peer 1 (counter resets on
+            // install, so only the requests we trigger below are counted).
+            const restore = await h.rpcStub.stubCountSpectateRequests(1);
+
+            const peer1Address = h.getPeer(1).address;
+            // Fire two sync() calls for the same peer back-to-back on peer 0's
+            // host. `sync()` marks `inFlightByPeerAddress` synchronously before
+            // sending, so the second call must be dropped before it hits the wire.
+            await h.execOnHost(
+                h.getPeer(0),
+                (sm, args) => {
+                    const channelId = sm.channelId;
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        args.peer1Address,
+                        channelId
+                    );
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        args.peer1Address,
+                        channelId
+                    );
+                },
+                { peer1Address }
+            );
+
+            // Wait for the single request to land, then assert it stayed at one
+            // (the deduped second call never produced a second request).
+            await waitFor(
+                async () => (await h.rpcStub.getSpectateRequestCount(1)) >= 1,
+                5000
+            );
+            expect(await h.rpcStub.getSpectateRequestCount(1)).to.equal(
+                1,
+                "two concurrent sync() calls for the same peer must collapse to one on-the-wire request"
+            );
+
+            await restore();
         });
     });
 });

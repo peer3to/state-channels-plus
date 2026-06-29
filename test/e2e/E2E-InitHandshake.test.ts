@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { TransportType } from "@/transport/TransportType";
-import { MathTestSession as TestSession, sleep } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 
 /**
  * E2E Tests for Handshake Initialization
@@ -126,24 +126,6 @@ describe("E2E: Init Handshake", function () {
 
         it("should disconnect peer that doesn't respond within agreementTime", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0, {
-                autoConnect: false
-            });
-            await h.rpc.connectPeers([0, 1]);
-            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
-            await h.rpc.initiateHandshakeWithoutResponse({
-                fromPeer: 0,
-                toPeer: 1
-            });
-            await sleep(1500);
-            await h.assert.rpc.transportClosedOrGone({
-                fromPeer: 0,
-                toPeer: 1
-            });
-        });
-
-        it("should disconnect peer when handshake response RTT exceeds agreementTime", async function () {
-            const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
             await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
@@ -151,11 +133,13 @@ describe("E2E: Init Handshake", function () {
                 newPeerIndex: 2,
                 observingPeerIndex: 0
             });
-            await h.rpc.initiateHandshake({ fromPeer: 0, toPeer: 2 });
-            await h.rpc.sendSlowHandshakeResponse({
-                fromPeer: 2,
-                toPeer: 0,
-                delaySeconds: 100
+            // Peer 2 delays its reply well past the request window
+            // (agreementTime), so peer 0's `.request(...)` times out and it
+            // disconnects peer 2.
+            await h.rpc.initiateHandshakeWithFaultyResponse({
+                initiatorPeer: 0,
+                responderPeer: 2,
+                delayMs: 100_000
             });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
@@ -165,27 +149,27 @@ describe("E2E: Init Handshake", function () {
 
         it("should disconnect peer when handshake response time doesn't match init time", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 0, { autoConnect: true });
-            await h.event.waitUntilEventOccurs("onConnection", 5000);
-            await h.rpc.clearHandshakeChallenge({
-                peerIndex: 0,
-                targetPeer: 1
+            await h.lifecycle.start(3, 0, { autoConnect: false });
+            await h.rpc.connectPeers([0, 1]);
+            await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
+            await h.rpc.newPeerJoins({
+                newPeerIndex: 2,
+                observingPeerIndex: 0
             });
-            await h.rpc.initiateHandshake({ fromPeer: 0, toPeer: 1 });
-            await h.rpc.sendSlowHandshakeResponse({
-                fromPeer: 1,
-                toPeer: 0,
-                delaySeconds: 10
+            // Peer 2 answers promptly but with a response timestamp far outside
+            // the agreement window -> peer 0 rejects and disconnects peer 2.
+            await h.rpc.initiateHandshakeWithFaultyResponse({
+                initiatorPeer: 0,
+                responderPeer: 2,
+                responseTimeOffsetSeconds: 1000
             });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
-                expectedFinalCount: 0
+                expectedFinalCount: 1
             });
         });
-    });
 
-    describe("Unsolicited Messages", function () {
-        it("should disconnect peer sending unsolicited handshake response", async function () {
+        it("should disconnect peer answering with an undecodable (junk) signature", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
@@ -194,13 +178,35 @@ describe("E2E: Init Handshake", function () {
                 newPeerIndex: 2,
                 observingPeerIndex: 0
             });
-            await h.rpc.sendUnsolicitedHandshakeResponse({
-                fromPeer: 2,
-                toPeer: 0
+            // Peer 2 replies with junk bytes for the signature -> peer 0's
+            // signature verification throws and it disconnects peer 2 instead of
+            // crashing with an unhandled rejection.
+            await h.rpc.initiateHandshakeWithFaultyResponse({
+                initiatorPeer: 0,
+                responderPeer: 2,
+                corruptSignature: true
             });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
                 expectedFinalCount: 1
+            });
+        });
+    });
+
+    describe("Duplicate ack", function () {
+        it("should disconnect + blacklist a peer that sends a duplicate handshake ack", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0, { autoConnect: true });
+            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
+
+            // The handshake already exchanged acks; a second ack from peer 0
+            // over the already-acked transport is a protocol violation, so
+            // peer 1 must disconnect + blacklist peer 0.
+            await h.rpc.sendDuplicateHandshakeAck({ fromPeer: 0, toPeer: 1 });
+            await h.assert.rpc.peerDisconnectedFrom({
+                peerIndex: 1,
+                expectedFinalCount: 0
             });
         });
     });
