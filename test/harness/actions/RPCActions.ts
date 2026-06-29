@@ -205,6 +205,25 @@ export class RPCActions<
             .request();
     }
 
+    /**
+     * Deliver a second handshake ack from `fromPeer` to `toPeer` (whose
+     * handshake already completed and recorded the first ack). The duplicate
+     * is a protocol violation: `toPeer` must disconnect + blacklist `fromPeer`.
+     */
+    async sendDuplicateHandshakeAck(options: {
+        fromPeer: number;
+        toPeer: number;
+    }): Promise<void> {
+        const { fromPeer, toPeer } = options;
+        const fromAddress = this.harness.getPeer(fromPeer).address;
+        const toPeerObj = this.harness.getPeer(toPeer);
+
+        await this.harness
+            .control(toPeerObj)
+            .handshake.deliverHandshakeAck(fromAddress)
+            .request();
+    }
+
     async initiateHandshake(options: {
         fromPeer: number;
         toPeer: number;
@@ -221,27 +240,27 @@ export class RPCActions<
 
     /**
      * Make `responderPeer` reply to handshake challenges with a faulty response,
-     * then have `initiatorPeer` initiate a handshake to it. With `delaySeconds`
-     * the initiator's request times out; with `responseTimeOffsetSeconds` the
-     * response timestamp falls outside the agreement window. Either way the
-     * initiator is expected to disconnect the responder.
+     * then have `initiatorPeer` initiate a handshake to it. With `delayMs`
+     * beyond the request window the initiator's request times out; with
+     * `responseTimeOffsetSeconds` the response timestamp falls outside the
+     * agreement window; with `corruptSignature` verification throws. Either way
+     * the initiator is expected to disconnect the responder.
      */
     async initiateHandshakeWithFaultyResponse(options: {
         initiatorPeer: number;
         responderPeer: number;
-        delaySeconds?: number;
+        delayMs?: number;
         responseTimeOffsetSeconds?: number;
         corruptSignature?: boolean;
     }): Promise<void> {
         const {
             initiatorPeer,
             responderPeer,
-            delaySeconds,
+            delayMs,
             responseTimeOffsetSeconds,
             corruptSignature
         } = options;
 
-        const delayMs = delaySeconds === undefined ? 0 : delaySeconds * 1000;
         await this.harness.rpcStub.stubHandshakeResponse(responderPeer, {
             delayMs,
             responseTimeOffsetSeconds,

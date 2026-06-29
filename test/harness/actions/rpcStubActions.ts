@@ -109,6 +109,33 @@ export class RpcStubActions<
     }
 
     /**
+     * Count `onSpectateRequest` calls reaching the given peer (real handler still
+     * runs). Returns a teardown. Pair with `getSpectateRequestCount`.
+     */
+    async stubCountSpectateRequests(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubCountSpectateRequests()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreCountSpectateRequests()
+                .request();
+        };
+    }
+
+    async getSpectateRequestCount(peerIndex: number): Promise<number> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.getSpectateRequestCount()
+            .request();
+    }
+
+    /**
      * Make a peer reply to handshake challenges with a faulty response so the
      * initiator rejects it. `delayMs` forces a request timeout; `responseTime
      * OffsetSeconds` skews the response timestamp. Returns a teardown.

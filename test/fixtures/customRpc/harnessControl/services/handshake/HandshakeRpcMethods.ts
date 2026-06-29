@@ -74,6 +74,21 @@ export class HandshakeRpcMethods extends ARpcMethods {
         return true;
     }
 
+    /**
+     * Deliver an init-handshake ack as if from `fromAddress`. Used to drive the
+     * duplicate-ack protocol-violation path: a second ack over an already-acked
+     * transport must disconnect + blacklist the sender.
+     */
+    public async deliverHandshakeAck(
+        fromAddress: Address,
+        challengeHash?: Hash
+    ): Promise<boolean> {
+        await this.service.initHandshake
+            .createRPCMethods(this.service.transportTo(fromAddress))
+            .onInitHandshakeAck(challengeHash);
+        return true;
+    }
+
     // ===== Dispute acknowledgment =====
 
     public requestDisputeAcknowledgment(

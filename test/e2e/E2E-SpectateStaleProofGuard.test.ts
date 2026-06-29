@@ -49,7 +49,7 @@ describe("E2E: Spectate stale-proof guard", function () {
     it("aborts sync when a peer answers with undecodable junk bytes", async function () {
         const h = TestSession.getHarness();
 
-        await h.lifecycle.start(2, 0, {
+        await h.lifecycle.start(2, 2, {
             timeConfig: {
                 p2pTime: 5,
                 agreementTime: 2,
@@ -57,12 +57,6 @@ describe("E2E: Spectate stale-proof guard", function () {
                 evidenceTime: 10
             }
         });
-
-        await h.transition.advanceState({
-            count: 2,
-            waitForFinalization: true
-        });
-        await h.transition.postSnapshotWait();
 
         // Both participants reply to spectate requests with bytes that are NOT a
         // valid encoded SyncPayload, so the spectator's Codec.decode throws and

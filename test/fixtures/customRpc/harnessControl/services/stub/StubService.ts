@@ -47,6 +47,8 @@ export class StubService extends ARpcService<
     capturedInitHandshakeTransport?: ATransport;
     /** Set by the record-spectate-abort stub when `abort` fires. */
     spectateAbortCalled = false;
+    /** Incremented by the count-spectate-requests stub per onSpectateRequest. */
+    spectateRequestCount = 0;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(

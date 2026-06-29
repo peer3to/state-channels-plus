@@ -133,12 +133,13 @@ describe("E2E: Init Handshake", function () {
                 newPeerIndex: 2,
                 observingPeerIndex: 0
             });
-            // Peer 2 never answers the challenge in time -> peer 0's request
-            // times out and it disconnects peer 2.
+            // Peer 2 delays its reply well past the request window
+            // (agreementTime), so peer 0's `.request(...)` times out and it
+            // disconnects peer 2.
             await h.rpc.initiateHandshakeWithFaultyResponse({
                 initiatorPeer: 0,
                 responderPeer: 2,
-                delaySeconds: 100
+                delayMs: 100_000
             });
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
@@ -188,6 +189,24 @@ describe("E2E: Init Handshake", function () {
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
                 expectedFinalCount: 1
+            });
+        });
+    });
+
+    describe("Duplicate ack", function () {
+        it("should disconnect + blacklist a peer that sends a duplicate handshake ack", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0, { autoConnect: true });
+            await h.event.waitUntilEventOccurs("onConnection", 5000);
+            await h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
+
+            // The handshake already exchanged acks; a second ack from peer 0
+            // over the already-acked transport is a protocol violation, so
+            // peer 1 must disconnect + blacklist peer 0.
+            await h.rpc.sendDuplicateHandshakeAck({ fromPeer: 0, toPeer: 1 });
+            await h.assert.rpc.peerDisconnectedFrom({
+                peerIndex: 1,
+                expectedFinalCount: 0
             });
         });
     });

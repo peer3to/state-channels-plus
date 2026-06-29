@@ -1,7 +1,7 @@
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import { Codec, Type } from "@/utils";
+import { Codec, sleep, Type } from "@/utils";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import type { Address } from "@/types/types";
 import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
@@ -321,6 +321,45 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
+     * Count incoming `onSpectateRequest` calls (still running the real handler),
+     * resetting the counter on install. Lets a test assert that two concurrent
+     * `sync()` calls for the same peer collapse to a single on-the-wire request.
+     */
+    public stubCountSpectateRequests(): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "spectateCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        this.service.spectateRequestCount = 0;
+        const original = this.service.stubOriginals.get(
+            "spectateCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        const stubService = this.service;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            const realOnSpectateRequest =
+                methods.onSpectateRequest.bind(methods);
+            methods.onSpectateRequest = (syncRequest: SyncRequest) => {
+                stubService.spectateRequestCount++;
+                return realOnSpectateRequest(syncRequest);
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public getSpectateRequestCount(): number {
+        return this.service.spectateRequestCount;
+    }
+
+    public restoreCountSpectateRequests(): boolean {
+        return this.restoreSpectateStaleProof();
+    }
+
+    /**
      * Replace `isForkDisputedService.onDisputeAcknowledgmentRequest` with a
      * no-op that records it was called (queried via `wasDisputeAckRequestCalled`).
      */
@@ -457,10 +496,11 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      * a faulty response so the *initiator* rejects it:
      * - `responseTimeOffsetSeconds` skews the returned `responseTime` so the
      *   initiator's response-timestamp check fails.
-     * - `delayMs` delays the reply so the initiator's request times out (no
-     *   response within the agreement window).
-     * - `corruptSignature` replaces the signature with junk so the initiator's
-     *   `ethers.verifyMessage` throws.
+     * - `delayMs` delays the reply; only a delay that exceeds the initiator's
+     *   request window (agreementTime) makes its `.request(...)` time out — a
+     *   small delay just slows a still-successful response.
+     * - `corruptSignature` flips the signature's recovery byte so the
+     *   initiator's `ethers.verifyMessage` throws.
      * The real handler still runs first (validates + signs), so only the reply
      * is corrupted.
      */
@@ -497,12 +537,16 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                     response.responseTime += responseTimeOffsetSeconds;
                 }
                 if (corruptSignature) {
-                    response.signature = "0xdeadbeef";
+                    // Keep the real 65-byte signature shape but flip its
+                    // recovery (v) byte to an invalid value, so
+                    // ethers.verifyMessage throws — closer to a real corrupted
+                    // signature than an obviously-fake short value. (The handler
+                    // signs to a hex string, so String() is identity here.)
+                    const sigHex = String(response.signature);
+                    response.signature = `${sigHex.slice(0, -2)}ff`;
                 }
                 if (delayMs > 0) {
-                    await new Promise((resolve) =>
-                        setTimeout(resolve, delayMs)
-                    );
+                    await sleep(delayMs);
                 }
                 return response;
             };

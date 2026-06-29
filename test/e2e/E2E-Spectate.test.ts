@@ -976,4 +976,49 @@ describe("E2E: Spectate Service", function () {
             });
         });
     });
+
+    describe("Concurrent sync dedup", function () {
+        it("collapses two concurrent sync() calls for the same peer into a single on-the-wire request", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 2);
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+
+            // Count spectate requests arriving at peer 1 (counter resets on
+            // install, so only the requests we trigger below are counted).
+            const restore = await h.rpcStub.stubCountSpectateRequests(1);
+
+            const peer1Address = h.getPeer(1).address;
+            // Fire two sync() calls for the same peer back-to-back on peer 0's
+            // host. `sync()` marks `inFlightByPeerAddress` synchronously before
+            // sending, so the second call must be dropped before it hits the wire.
+            await h.execOnHost(
+                h.getPeer(0),
+                (sm, args) => {
+                    const channelId = sm.channelId;
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        args.peer1Address,
+                        channelId
+                    );
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        args.peer1Address,
+                        channelId
+                    );
+                },
+                { peer1Address }
+            );
+
+            // Wait for the single request to land, then assert it stayed at one
+            // (the deduped second call never produced a second request).
+            await waitFor(
+                async () => (await h.rpcStub.getSpectateRequestCount(1)) >= 1,
+                5000
+            );
+            expect(await h.rpcStub.getSpectateRequestCount(1)).to.equal(
+                1,
+                "two concurrent sync() calls for the same peer must collapse to one on-the-wire request"
+            );
+
+            await restore();
+        });
+    });
 });
