@@ -1,7 +1,6 @@
 import {
     serializeBridgeError,
     WEBRTC_BRIDGE_NAMESPACE,
-    type WebRTCBridgeInitMessage,
     type WebRTCBridgePortMessage,
     type WebRTCBridgeRequest
 } from "./WebRTCBridgeProtocol";
@@ -37,10 +36,6 @@ export type WebRTCMainThreadBridgeOptions = {
 
 export type WebRTCMainThreadBridgeHandle = {
     dispose(): void;
-};
-
-export type WebRTCBridgeWorkerTarget = {
-    postMessage(message: any, transfer?: Transferable[]): void;
 };
 
 type ConnectionRecord = {
@@ -396,38 +391,29 @@ class WebRTCMainThreadBridgeBroker {
     }
 }
 
-const brokersByWorker = new WeakMap<
-    WebRTCBridgeWorkerTarget,
-    WebRTCMainThreadBridgeBroker
->();
+const brokersByPort = new WeakMap<MessagePort, WebRTCMainThreadBridgeBroker>();
 
+/**
+ * Bind a WebRTC main-thread bridge to the `port` surfaced by `p2pSetup` on
+ * `P2pInstance.webRTCBridgePort`. Call this on the real main thread (where
+ * `RTCPeerConnection` lives) after forwarding the port up through any worker
+ * nesting; the broker then drives `RTCPeerConnection` for the worker — however
+ * deeply nested — that negotiates WebRTC over the channel.
+ */
 export function installWebRTCMainThreadBridge(
-    worker: WebRTCBridgeWorkerTarget,
+    port: MessagePort,
     options: WebRTCMainThreadBridgeOptions = {}
 ): WebRTCMainThreadBridgeHandle {
-    const existingBroker = brokersByWorker.get(worker);
-    if (existingBroker) {
-        return {
-            dispose: () => {
-                brokersByWorker.delete(worker);
-                existingBroker.dispose();
-            }
-        };
-    }
-
-    const channel = new MessageChannel();
-    const broker = new WebRTCMainThreadBridgeBroker(channel.port1, options);
-    brokersByWorker.set(worker, broker);
-
-    const initMessage: WebRTCBridgeInitMessage = {
-        namespace: WEBRTC_BRIDGE_NAMESPACE,
-        type: "init"
-    };
-    worker.postMessage(initMessage, [channel.port2]);
+    // Installing twice on the same port (e.g. an effect re-run) must reuse the
+    // first broker — a second one would clobber its `onmessage` and a single
+    // dispose would close the port out from under it.
+    const existing = brokersByPort.get(port);
+    const broker = existing ?? new WebRTCMainThreadBridgeBroker(port, options);
+    if (!existing) brokersByPort.set(port, broker);
 
     return {
         dispose: () => {
-            brokersByWorker.delete(worker);
+            brokersByPort.delete(port);
             broker.dispose();
         }
     };

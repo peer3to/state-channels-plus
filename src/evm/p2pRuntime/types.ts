@@ -121,6 +121,7 @@ export type {
     RuntimeReadyMessage,
     RuntimeRequestInput,
     RuntimeResponse,
+    RuntimeWebRTCBridgePortMessage,
     SendTransactionRequest,
     SetChannelIdRequest,
     SetIsLeaderRequest,

@@ -25,8 +25,21 @@ export function hasLocalRTCPeerConnection(): boolean {
     return !!getGlobalWebRTCProvider();
 }
 
-export function isRTCPeerConnectionUnavailableWorker(): boolean {
-    return isWorkerRuntime() && !hasLocalRTCPeerConnection();
+/**
+ * True when this runtime is a worker that cannot negotiate WebRTC itself and so
+ * must drive an `RTCPeerConnection` on the real main thread over a bridge port.
+ * Mirrors the decision {@link createWebRTCConnectionFactory} makes — it probes
+ * the lazy `get-webrtc` import too, so a worker that CAN load WebRTC locally
+ * (e.g. Node with `get-webrtc`) reports `false` and no bridge is surfaced.
+ */
+export async function workerNeedsMainThreadBridge(): Promise<boolean> {
+    if (!isWorkerRuntime()) return false;
+    try {
+        await loadWebRTCProvider();
+        return false;
+    } catch {
+        return true;
+    }
 }
 
 export async function loadWebRTCProvider(): Promise<WebRTCProvider> {

@@ -20,6 +20,16 @@ export default class P2pInstance<
     logger: Logger;
 
     /**
+     * Main-thread end of the WebRTC bridge `MessagePort`. Present only when the
+     * host runs in a worker that can't drive `RTCPeerConnection` itself; forward
+     * it up any worker nesting (in each `postMessage` transfer list) to the real
+     * main thread and pass it to `installWebRTCMainThreadBridge(port)`.
+     */
+    get webRTCBridgePort(): MessagePort | undefined {
+        return this.client.webRTCBridgePort;
+    }
+
+    /**
      * Typed mirror of the host's `remoteRpc`. Calls are forwarded over the
      * runtime port and applied by the host: with no target the method runs on
      * the host itself (loopback); with a peer address it is relayed to that

@@ -16,6 +16,8 @@ import MainRpcService from "@/rpc/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import { createContractExecutorFactory } from "@/evm/contractExecutor";
+import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
+import { workerNeedsMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 import {
     createForwardingHooks,
     forwardEventHandlerInvocations
@@ -84,6 +86,29 @@ export function serializeError(error: unknown): SerializedError {
 }
 
 /**
+ * In a worker that can't run WebRTC itself, mint the bridge channel, hand the
+ * main-thread end to the client (transferred) so it surfaces on
+ * `P2pInstance.webRTCBridgePort`, then register the worker end. Returns that
+ * worker-end port (for teardown) or `undefined` when no bridge was set up.
+ */
+async function bubbleWebRTCBridgePortIfNeeded(
+    port: RuntimePort
+): Promise<MessagePort | undefined> {
+    if (!(await workerNeedsMainThreadBridge())) return undefined;
+    // The bridge speaks the DOM MessagePort API; in a worker the global
+    // MessageChannel works on both web and Node (worker_threads-backed) and its
+    // ports transfer over the runtime port.
+    const bridge = new MessageChannel();
+    // Transfer the main-thread end first: if the post fails we never register a
+    // half-installed bridge whose worker end has no paired broker.
+    port.post({ type: "webRTCBridgePort", port: bridge.port2 }, [bridge.port2]);
+    WorkerBridgeWebRTCConnectionFactory.getInstance().registerPort(
+        bridge.port1
+    );
+    return bridge.port1;
+}
+
+/**
  * Construct the live p2p runtime graph and drive it from a {@link RuntimePort}.
  *
  * Requests arriving on the port are dispatched to the state manager / internal
@@ -149,11 +174,17 @@ export async function startP2pRuntimeHost<
 
     let runtimeHandle: RuntimeHostState | undefined;
     let disposed = false;
+    let bridgeWorkerPort: MessagePort | undefined;
 
     // Idempotent: the `dispose` request and the port-close handler both call it.
     const disposeRuntime = async (): Promise<void> => {
         if (disposed) return;
         disposed = true;
+        if (bridgeWorkerPort) {
+            WorkerBridgeWebRTCConnectionFactory.getInstance().disposeBridge(
+                bridgeWorkerPort
+            );
+        }
         if (runtimeHandle) {
             await runtimeHandle.stateManager.dispose();
         } else {
@@ -210,6 +241,14 @@ export async function startP2pRuntimeHost<
         forwardEventHandlerInvocations(stateManager.eventHandler, port);
 
         runtimeHandle = { stateManager, evmDiamondStateMachine };
+        // A bridge-setup failure must not deadlock `ready`; WebRTC is optional.
+        try {
+            bridgeWorkerPort = await bubbleWebRTCBridgePortIfNeeded(port);
+        } catch (error) {
+            logger.error("WebRTC bridge setup failed; continuing without it", {
+                error
+            });
+        }
         port.post({ type: "ready" });
     };
 
