@@ -118,6 +118,35 @@ export default class DisputeValidationService {
                 return false;
             }
 
+            if (dispute.input.stateProof.signedBlocks.length > 0) {
+                const isLinked =
+                    await this.diamondStateMachine.localDiamondContract.areSignedBlocksLinkedAndVerified.staticCall(
+                        dispute.input.stateProof.signedBlocks
+                    );
+                if (!isLinked) {
+                    const { auditingData } =
+                        this.disputeManager.getAuditingData(
+                            dispute.input.forkId,
+                            dispute.input.stateProof,
+                            {
+                                disputeLatestInboundMessageBlockHash:
+                                    dispute.input.latestInboundMessageBlockHash
+                            }
+                        );
+                    this.logger.warn(
+                        "Auditing: signedBlocks not linked/verified -> invalid state proof",
+                        {
+                            dispute: LoggerUtils.getDisputeMetadata(dispute)
+                        }
+                    );
+                    this.disputeFraudProofService.createDisputeInvalidStateProof(
+                        dispute,
+                        auditingData
+                    );
+                    return false;
+                }
+            }
+
             const isLastMilestoneInStorage =
                 this.isLastMilestoneStoredLocally(dispute);
             if (!isLastMilestoneInStorage) {
