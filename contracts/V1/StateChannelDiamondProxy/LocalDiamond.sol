@@ -348,13 +348,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         return _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
     }
 
-    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public returns (bool) {
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress, abi.encodeCall(StateProofFacet.areSignedBlocksLinkedAndVerified, (signedBlocks))
-        );
-        return abi.decode(result, (bool));
-    }
-
     // ========== Override for debugging - Browser compatible console logs ==========
 
     function isBlockAuthentic(SignedBlock memory _block) public view override returns (bool) {

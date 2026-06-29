@@ -120,7 +120,7 @@ export default class DisputeValidationService {
 
             if (dispute.input.stateProof.signedBlocks.length > 0) {
                 const isLinked =
-                    await this.diamondStateMachine.localDiamondContract.areSignedBlocksLinkedAndVerified.staticCall(
+                    await this.stateChannelManagerContract.areSignedBlocksLinkedAndVerified.staticCall(
                         dispute.input.stateProof.signedBlocks
                     );
                 if (!isLinked) {
