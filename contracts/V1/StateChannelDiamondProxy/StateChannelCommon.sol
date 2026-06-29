@@ -61,14 +61,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
-        return UtilityFacet(utilityFacetAddress)
-            .subtractAddressArrays(
-                UtilityFacet(utilityFacetAddress)
-                    .concatAddressArraysNoDuplicates(
-                        getSnapshotParticipants(channelId), getPendingParticipants(channelId)
-                    ),
-                getOnChainSlashedParticipants(channelId)
-            );
+        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(
+            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+                getSnapshotParticipants(channelId), getPendingParticipants(channelId)
+            ),
+            getOnChainSlashedParticipants(channelId)
+        );
     }
 
     function getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
@@ -82,8 +80,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             StateSnapshot memory currentOnChainSnapshot = stateSnapshots[channelId];
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && StateChannelManagerInterface(address(this))
-                        .isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+                    && StateChannelManagerInterface(address(this)).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
@@ -138,8 +135,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 i = 0; i < inboundBlock.messages.length; i++) {
                 if (inboundBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
                     JoinChannel memory joinChannel = abi.decode(inboundBlock.messages[i].data, (JoinChannel));
-                    pendingParticipants = UtilityFacet(utilityFacetAddress)
-                        .insertIntoAddressArrayNoDuplicates(pendingParticipants, joinChannel.participant);
+                    pendingParticipants = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                        pendingParticipants, joinChannel.participant
+                    );
                 }
             }
 
@@ -168,10 +166,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         address[] memory pendingParticipants =
             _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, bytes32(0));
 
-        address[] memory participants = UtilityFacet(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
-        eligibleParticipants = UtilityFacet(utilityFacetAddress)
-            .subtractAddressArrays(participants, getOnChainSlashedParticipants(channelId));
+        address[] memory participants =
+            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
+        eligibleParticipants = UtilityFacet(utilityFacetAddress).subtractAddressArrays(
+            participants, getOnChainSlashedParticipants(channelId)
+        );
         return eligibleParticipants;
     }
 
@@ -504,9 +503,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
                 require(success, ErrorDisputeStateMachineInboundProcessingFailed());
-                newTotalDeposits = stateMachineImplementation.addBalance(
-                    newTotalDeposits, inboundMessageBlocks[i].messages[j].balance
-                );
+                newTotalDeposits =
+                    stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
         }
         encodedModifiedState = stateMachineImplementation.getState();

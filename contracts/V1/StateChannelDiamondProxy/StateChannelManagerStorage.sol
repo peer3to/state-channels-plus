@@ -43,9 +43,9 @@ contract StateChannelManagerStorage {
     mapping(
         bytes32 channelId
             => mapping(
-            address signerAddress
-                => mapping(bytes32 forkId => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
-        )
+                address signerAddress
+                    => mapping(bytes32 forkId => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
+            )
     ) blockCalldataCommitments;
 
     // ================== Dispute on chain storage ==================
