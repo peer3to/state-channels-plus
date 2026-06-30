@@ -123,16 +123,17 @@ export class EventHandler {
                     this.stateManager.abort();
                     return;
                 }
-                this.logger.error(
-                    "onStateSnapshotUpdated - unknown snapshot while participant/pending, fatal",
+                // still a participant: StateSnapshotUpdated (from the reduction's
+                // updateStateSnapshotFork) can beat the local onStateSnapshotUpdated -> setGenesisState ->
+                // storeStateSnapshot of the same snapshot. ingest the
+                // authoritative on-chain state.
+                this.logger.warn(
+                    "onStateSnapshotUpdated - unknown snapshot while participant/pending (event raced local apply), ingesting",
                     {
                         channelId,
                         status,
                         hash: updatedSnapshot.hash
                     }
-                );
-                throw new Error(
-                    `onStateSnapshotUpdated: unknown snapshot ${updatedSnapshot.hash} while status=${status}`
                 );
             }
         }
