@@ -13,6 +13,7 @@ import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V
 import type { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
 import type { RuntimeRequester } from "../p2pRuntime/types";
+import NoopEventProvider from "./NoopEventProvider";
 
 const UNSUPPORTED =
     "Operation not supported by the p2p runtime client signer. " +
@@ -23,7 +24,12 @@ const UNSUPPORTED =
  * runtime message port to the host-owned signer.
  */
 class ClientP2pSigner implements Signer {
-    provider: Provider | null = null;
+    // The facade forwards calls/transactions to the host (see `call` /
+    // `sendTransaction`), so this provider never routes RPC. It exists only so
+    // the main-thread contract can register event subscriptions: ethers'
+    // `Contract.on(...)` requires `runner.provider` to be set, and contract
+    // events are then delivered via `P2pRuntimeClient.dispatchContractEvent`.
+    provider: Provider = new NoopEventProvider();
     signerAddress: Address;
     private isLeader = false;
 
