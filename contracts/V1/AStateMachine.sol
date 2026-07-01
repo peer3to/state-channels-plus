@@ -136,7 +136,11 @@ abstract contract AStateMachine {
         return _removeParticipant(adr);
     }
 
-    function stateTransition(Transaction calldata transaction) external _nonReentrant returns (bool, Message[] memory) {
+    function stateTransition(Transaction calldata transaction)
+        external
+        _nonReentrant
+        returns (bool, Message[] memory)
+    {
         _clearOutboundMessages();
         _tx.header = transaction.header;
         (bool success, bytes memory result) = address(this).call{gas: gasLimit}(transaction.body.data);

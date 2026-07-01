@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# merge commits skip pre-commit/lint-staged, so format the merge result here.
+# a merge has no unrelated WIP, so staging all reformatted sol is safe.
+forge fmt
+git add -u -- '*.sol'

@@ -1,5 +1,13 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# Run lint-staged which will handle formatting per file type
+# format staged files per type (ts/json/md/eslint + staged sol)
 yarn lint-staged
+
+# auto-fix repo-wide sol drift so untouched-but-unformatted files get healed.
+# only restage files that had no unstaged changes -> never sweep WIP into a commit.
+wip=$(git diff --name-only -- '*.sol')
+forge fmt
+for f in $(git diff --name-only -- '*.sol'); do
+    printf '%s\n' "$wip" | grep -qxF "$f" || git add -- "$f"
+done
