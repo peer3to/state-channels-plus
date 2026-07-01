@@ -456,6 +456,18 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool));
     }
 
+    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks)
+        public
+        virtual
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress, abi.encodeCall(StateProofFacet.areSignedBlocksLinkedAndVerified, (signedBlocks))
+        );
+        return abi.decode(result, (bool));
+    }
+
     function verifyMilestones(
         bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,

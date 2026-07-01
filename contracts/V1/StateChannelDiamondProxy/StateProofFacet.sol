@@ -65,8 +65,7 @@ contract StateProofFacet is StateChannelCommon {
         }
 
         if (dispute.input.stateProof.signedBlocks.length != 0) {
-            // HACK: Pass bytes32(0) to skip the first block's linkage to genesis.
-            if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, bytes32(0))) {
+            if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks)) {
                 return false;
             }
         }
@@ -124,12 +123,16 @@ contract StateProofFacet is StateChannelCommon {
         }
     }
 
-    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash)
+    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public view returns (bool) {
+        return _areSignedBlocksLinkedAndVerified(signedBlocks);
+    }
+
+    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks)
         internal
         view
         returns (bool isLinked)
     {
-        bytes32 previousBlockHash = optionalPreviousHash;
+        bytes32 previousBlockHash;
         for (uint256 i = 0; i < signedBlocks.length; i++) {
             bytes memory currentBlockEncoded = signedBlocks[i].encodedBlock;
             (bool decoded, Block memory currentBlock) =
@@ -138,7 +141,10 @@ contract StateProofFacet is StateChannelCommon {
                 return false;
             }
             //check is linked
-            if (previousBlockHash != bytes32(0) && previousBlockHash != currentBlock.previousBlockHash) {
+            if (i == 0 && currentBlock.transaction.header.transactionCnt != 0) {
+                return false;
+            }
+            if (i != 0 && previousBlockHash != currentBlock.previousBlockHash) {
                 return false;
             }
             previousBlockHash = keccak256(currentBlockEncoded);

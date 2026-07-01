@@ -201,6 +201,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             }
             if (!_isLastMilestoneFinalByEveryone(dispute)) return _invalid();
 
+            if (dispute.input.stateProof.signedBlocks.length != 0) {
+                bytes memory linkReturnData = _delegatecall(
+                    stateProofFacetAddress,
+                    abi.encodeCall(
+                        StateProofFacet.areSignedBlocksLinkedAndVerified, (dispute.input.stateProof.signedBlocks)
+                    )
+                );
+                if (!abi.decode(linkReturnData, (bool))) return _valid(dispute.input.disputer);
+            }
+
             bytes memory latestStateData = abi.encodeCall(
                 StateProofFacet.isCorrectLatestState, (dispute, proof.auditingData.genesisStateSnapshotData)
             );
