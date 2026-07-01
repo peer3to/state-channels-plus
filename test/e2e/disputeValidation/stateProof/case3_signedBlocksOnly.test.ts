@@ -37,14 +37,12 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                         stateProof.signedBlocks[i].encodedBlock
                     ) as Hash;
                 }
-
-                dispute.postedAuditingData = true;
             });
 
             await h.byzantine.submitDoubleSignBlock(1);
             await h.assert.dispute.initiatedWait({
                 peersIndices: [3],
-                initiatedWithAuditingData: true
+                initiatedWithAuditingData: false
             });
 
             await h.event.waitForPeers("onDisputeKilled", [0], 1, {
@@ -74,14 +72,12 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                             BigInt(bs.transaction.header.transactionCnt) + 1n
                     })
                 );
-
-                dispute.postedAuditingData = true;
             });
 
             await h.byzantine.submitDoubleSignBlock(1);
             await h.assert.dispute.initiatedWait({
                 peersIndices: [3],
-                initiatedWithAuditingData: true
+                initiatedWithAuditingData: false
             });
 
             await h.event.waitForPeers("onDisputeKilled", [0], 1, {

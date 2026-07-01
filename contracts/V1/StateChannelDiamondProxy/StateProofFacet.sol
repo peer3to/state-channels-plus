@@ -100,6 +100,10 @@ contract StateProofFacet is StateChannelCommon {
         }
     }
 
+    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public view returns (bool) {
+        return _areSignedBlocksLinkedAndVerified(signedBlocks);
+    }
+
     function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks)
         internal
         view

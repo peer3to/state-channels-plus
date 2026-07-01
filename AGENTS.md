@@ -27,6 +27,24 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
 
 - Keep comments simple and to the point. No long essays.
 
+### Solidity validators shared with the off-chain TS pipeline
+
+- A check that must agree on- and off-chain (dispute fraud-proof handlers) lives
+  **once in Solidity**; TS calls it via typechain — never re-implement it in TS
+  (it drifts → the off-chain pipeline builds a proof the on-chain apply handler
+  rejects). Must run on **both the calldata and non-calldata dispute paths**.
+- **Placement:** pure (no state) → free fn in `utils/DisputeUtils.sol` /
+  `BlockUtils.sol` + a `LocalDiamond` forwarder. State-reading domain logic →
+  `public` on the owning facet (e.g. `StateProofFacet`) + a
+  `StateChannelManagerProxy` forwarder + a `StateChannelManagerInterface` decl;
+  TS calls `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
+  `delegatecall` the facet address (see `isCorrectLatestState`,
+  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `public` on
+  `StateChannelCommon` (`isBlockAuthentic`).
+- **Never put domain logic `public` on `StateChannelCommon`:** a `public` base fn
+  is in every facet's ABI → compiled into all of them. `internal` is
+  dead-code-eliminated to its callers.
+
 ### Type safety
 
 - When mirroring another type's signatures (e.g. event listeners that mirror

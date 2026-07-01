@@ -47,6 +47,8 @@ abstract contract StateChannelManagerInterface {
         virtual
         returns (bool);
 
+    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public virtual returns (bool);
+
     function verifyMilestones(
         bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
