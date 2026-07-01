@@ -1,6 +1,5 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import hre from "hardhat";
 import { Signer, BytesLike } from "ethers";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { Status } from "@/types";
@@ -40,9 +39,8 @@ export class JoinActions<
         }
 
         const index = this.harness.peers.length;
-        const signers = await hre.ethers.getSigners();
         const resolvedSigner =
-            options?.signer ?? signers[slotAccountIndex(index)];
+            options?.signer ?? this.harness.signerFor(slotAccountIndex(index));
         if (!resolvedSigner) {
             throw new Error(
                 `No signer available to create peer at index ${index}`

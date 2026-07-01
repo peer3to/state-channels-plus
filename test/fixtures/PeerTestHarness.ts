@@ -1,7 +1,16 @@
 import { NonceManager, Signer, ethers } from "ethers";
 import * as sinon from "sinon";
 import * as dotenv from "dotenv";
-import hre from "hardhat";
+// Shared with the parallel runner: start a hardhat node / discovery registry
+// child process → URL. Same common infra the runner uses to provision slots
+// (typed via nodeInfra.d.ts).
+import { startHardhatNode, startDiscoveryRegistry } from "../utils/nodeInfra";
+
+// Matches hardhat.config.ts accounts.mnemonic so account N derives the same
+// address whether the chain is in-process, a slot node, or a harness-started one.
+const HARDHAT_MNEMONIC =
+    "test test test test test test test test test test test junk";
+
 import { setImmediate } from "node:timers";
 import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -83,6 +92,14 @@ export class PeerTestHarness<
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator<TCustomRpc>;
     private onBlockHeartbeat?: () => void;
+
+    // Chain access. The harness owns its provider built from a node URL — either
+    // one passed in (PROVIDER_URL, e.g. a parallel-runner slot) or one it starts
+    // itself when none is reachable. This keeps the harness indifferent to where
+    // the node came from and independent of hardhat's load-time network binding.
+    public provider!: ethers.WebSocketProvider;
+    private ownNode?: { stop: () => void };
+    private ownDiscovery?: { stop: () => void };
 
     /**
      * Test context for cross-block state sharing
@@ -231,6 +248,7 @@ export class PeerTestHarness<
     }
 
     async setup(numPeers: number, options?: HarnessOptions): Promise<void> {
+        const setupStart = Date.now();
         if (numPeers < 2 || numPeers > 10) {
             throw new Error("Number of peers must be between 2 and 10");
         }
@@ -282,17 +300,36 @@ export class PeerTestHarness<
             (peer) => this.control(peer)
         );
 
+        // Resolve node + discovery before any chain work: use what the runner
+        // passed in, else start our own via the same shared infra calls.
+        await this.resolveInfra();
+
+        const deployStart = Date.now();
         await this.deployContracts();
-        const signers = await hre.ethers.getSigners();
-        for (let i = 0; i < numPeers; i++) {
-            await this.createPeer(i, signers[slotAccountIndex(i)]);
-        }
+        const deployMs = Date.now() - deployStart;
+
+        // Peers are independent (disjoint accounts) so their SDK/worker boots and
+        // p2p connects overlap — parallelizing collapses N sequential per-peer
+        // startups into ~one, the dominant chunk of setup time.
+        await Promise.all(
+            Array.from({ length: numPeers }, (_, i) =>
+                this.createPeer(i, this.signerFor(slotAccountIndex(i)))
+            )
+        );
 
         // Pulse the event-counts barrier on every mined block so barriers
         // don't stall waiting for chain-time to advance between transactions.
         const onBlock = () => this.eventCountsBarrier.signal();
         this.onBlockHeartbeat = onBlock;
-        hre.ethers.provider.on("block", onBlock);
+        this.provider.on("block", onBlock);
+
+        // Startup = everything in setup() except the contract deploy (peer/SDK
+        // init + connection). Emitted for the parallel runner to parse/sum; one
+        // line per setup call so multi-setup tests accumulate correctly.
+        const startupMs = Date.now() - setupStart - deployMs;
+        process.stdout.write(
+            `##E2E_TIMING## ${JSON.stringify({ startupMs, deployMs })}\n`
+        );
 
         this.logger.info("Test harness setup completed");
     }
@@ -304,6 +341,55 @@ export class PeerTestHarness<
 
     public get canAddPeer(): boolean {
         return !!this.channelManager && !!this.sharedStateMachineDeployer;
+    }
+
+    /**
+     * Establish the node + discovery URLs. Use whatever the runner passed in
+     * (PROVIDER_URL / LOCAL_DISCOVERY_REGISTRY_URL, e.g. a slot); for anything
+     * not provided, start it ourselves via the same shared infra calls the
+     * runner uses, and own its teardown. The resolved URLs are written back to
+     * the config so the SDK (and any sdk-in-thread worker) uses the same infra.
+     */
+    private async resolveInfra(): Promise<void> {
+        let nodeUrl = process.env.PROVIDER_URL || process.env.HARDHAT_NODE_URL;
+        if (!nodeUrl) {
+            const node = await startHardhatNode({
+                label: "harness hardhat node"
+            });
+            this.ownNode = node;
+            nodeUrl = node.url;
+            this.logger.debug(`Started harness hardhat node at ${nodeUrl}`);
+        }
+
+        let discoveryUrl = process.env.LOCAL_DISCOVERY_REGISTRY_URL;
+        if (!discoveryUrl) {
+            const disc = await startDiscoveryRegistry({
+                label: "harness discovery"
+            });
+            this.ownDiscovery = disc;
+            discoveryUrl = disc.url;
+            this.logger.debug(`Started harness discovery at ${discoveryUrl}`);
+        }
+
+        this.harnessConfig.PROVIDER_URL = nodeUrl;
+        this.harnessConfig.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
+        config.PROVIDER_URL = nodeUrl;
+        config.LOCAL_DISCOVERY_REGISTRY_URL = discoveryUrl;
+
+        // WebSocket so block/event subscriptions are push-based (eth_subscribe)
+        // rather than HTTP polling — far less main-thread event-loop pressure.
+        // Hardhat's node serves WS on the same port.
+        const wsUrl = nodeUrl.replace(/^http/, "ws");
+        this.provider = new ethers.WebSocketProvider(wsUrl);
+    }
+
+    /** Wallet for an absolute account index, connected to the harness provider. */
+    public signerFor(absoluteIndex: number): ethers.HDNodeWallet {
+        return ethers.HDNodeWallet.fromPhrase(
+            HARDHAT_MNEMONIC,
+            undefined,
+            `m/44'/60'/0'/0/${absoluteIndex}`
+        ).connect(this.provider);
     }
 
     private createLocalStateMachineDeployer(
@@ -329,11 +415,12 @@ export class PeerTestHarness<
     }
 
     private async deployContracts(): Promise<void> {
-        const signers = await hre.ethers.getSigners();
         // Dedicated deployer account: top of this slot's stride, disjoint from
         // all peer accounts (0..STRIDE-2). Wrapped in NonceManager so deploy txs
         // don't collide with each other on a strict external node.
-        const deployerSigner = new NonceManager(signers[slotDeployerIndex()]);
+        const deployerSigner = new NonceManager(
+            this.signerFor(slotDeployerIndex())
+        );
         const deployment = this.deployment;
 
         this.sharedStateMachineDeployer =
@@ -393,7 +480,7 @@ export class PeerTestHarness<
 
         let channelManagerAddress: string;
         if (candidateAddress) {
-            const code = await hre.ethers.provider.getCode(candidateAddress);
+            const code = await this.provider.getCode(candidateAddress);
             if (code && code !== "0x") {
                 channelManagerAddress = candidateAddress;
                 this.logger.debug(
@@ -458,20 +545,7 @@ export class PeerTestHarness<
         index: number,
         address: string
     ): string | undefined {
-        const accountsConfig = (hre.network.config as any)?.accounts;
-        if (!accountsConfig || typeof accountsConfig !== "object") {
-            return undefined;
-        }
-        const mnemonic = accountsConfig.mnemonic;
-        if (typeof mnemonic !== "string" || !mnemonic.length) {
-            return undefined;
-        }
-
-        const wallet = ethers.HDNodeWallet.fromPhrase(
-            mnemonic,
-            undefined,
-            `m/44'/60'/0'/0/${slotAccountIndex(index)}`
-        );
+        const wallet = this.signerFor(slotAccountIndex(index));
         if (wallet.address.toLowerCase() !== address.toLowerCase()) {
             return undefined;
         }
@@ -686,7 +760,9 @@ export class PeerTestHarness<
         // port and dispatched on the main thread.
         this.registerPeerEventListeners(peer, hooks);
 
-        this.peers.push(peer);
+        // Index-addressed (not push) so parallel setup keeps peers in peer-index
+        // order regardless of which createPeer resolves first.
+        this.peers[index] = peer;
         this.logger.debug(`Peer ${index} created successfully`);
     }
 
@@ -738,7 +814,7 @@ export class PeerTestHarness<
         this.logger.debug("Starting cleanup...");
 
         if (this.onBlockHeartbeat) {
-            hre.ethers.provider.off("block", this.onBlockHeartbeat);
+            this.provider?.off("block", this.onBlockHeartbeat);
             this.onBlockHeartbeat = undefined;
         }
 
@@ -784,6 +860,13 @@ export class PeerTestHarness<
 
         // Cleanup discovery server and peer servers
         await LocalDiscoveryServer.cleanup();
+
+        // Drop the provider's pollers; stop the node/discovery we started (if any).
+        this.provider?.destroy();
+        this.ownNode?.stop();
+        this.ownDiscovery?.stop();
+        this.ownNode = undefined;
+        this.ownDiscovery = undefined;
 
         this.logger.dispose();
     }

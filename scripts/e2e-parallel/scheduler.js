@@ -1,31 +1,14 @@
 /* eslint-disable no-console */
-const fs = require("fs");
+const { execFileSync } = require("child_process");
+const os = require("os");
 const {
-    FALLBACK_PEERS,
-    MIN_THREAD_FACTOR,
-    MAX_THREAD_FACTOR,
-    STARVATION_KNOCKDOWN,
-    EPSILON,
-    SCHEDULER_METADATA_PATH
+    HARDHAT_CLI,
+    SCHEDULER_TICK_MS,
+    MAX_SLOTS_FROM_POOL,
+    PER_TEST_MEM_GB
 } = require("./constants");
-
-// Known scenario helper → peer count (including any spectator the helper adds).
-const SCENARIO_PEER_COUNTS = {
-    fourPeersDisputeResolution: 4,
-    fourPeersDisputeResolutionAndSnapshotUpdateDetached: 4,
-    fourPeersDisputeResolutionAndSnapshotUpdateWait: 4,
-    preDisputeSetup: 3,
-    preDisputeSetupCalldataPath: 4,
-    preDisputeSetupDisconnectedPeer: 4,
-    setupTwoLeaversAcrossMilestones: 5,
-    setupTwoLeaversWithPendingJoinerAcrossMilestones: 5,
-    syncSpectatorAndPrepareJoin: 4,
-    spectatorJoinedAndSynced: 4,
-    spectatorPromotedViaJoinChannelWait: 3,
-    spectatorPromotedViaForceInboundWait: 4,
-    readyForRedispute: 4,
-    activeChannelWithDispute: 3
-};
+const { liveTaskChildren, runTask } = require("./runTask");
+const logging = require("./logging");
 
 // Resolve a thread-mode boolean with precedence: CLI flag > inherited env > default.
 // (Env value "false" disables; any other set value enables; unset → fallback.)
@@ -36,178 +19,249 @@ function resolveMode(flag, envVar, fallback) {
     return fallback;
 }
 
-// vmThread defaults on. sdkThread defaults to useExternalNode: sdk-in-thread runs
-// the SDK in a worker that builds its provider from PROVIDER_URL and needs a signer
-// secret, both of which only exist when an external node is up (--per-slot-node or
-// --shared-node) — so defaulting it on without a node would break the in-process run.
-function resolveThreadModes(cli, useExternalNode) {
+// Thread modes are uniform across the whole run — set once at the CLI (or env)
+// and passed to every test. vmThread defaults on; sdkThread is opt-in.
+function resolveThreadModes(cli) {
     return {
-        sdkThread: resolveMode(
-            cli.sdkThread,
-            "RUN_SDK_IN_THREAD",
-            useExternalNode
-        ),
+        sdkThread: resolveMode(cli.sdkThread, "RUN_SDK_IN_THREAD", false),
         vmThread: resolveMode(cli.vmThread, "VM_DEDICATED_THREAD", true)
     };
 }
 
-// Number of OS threads a single peer contributes: 1 per enabled thread mode,
-// clamped to at least 1. VM_DEDICATED_THREAD defaults true / RUN_SDK_IN_THREAD defaults to useExternalNode.
-function threadsPerPeerFromModes({ sdkThread, vmThread }) {
-    return Math.max(1, (vmThread ? 1 : 0) + (sdkThread ? 1 : 0));
+// Cumulative CPU tick counters across all cores. Diffing two snapshots gives the
+// actual busy fraction over the interval — unlike os.loadavg(), which is a
+// lagging 1-minute run-queue average that under-reports a freshly-pegged CPU.
+function cpuTimes() {
+    let idle = 0;
+    let total = 0;
+    for (const c of os.cpus()) {
+        for (const v of Object.values(c.times)) total += v;
+        idle += c.times.idle;
+    }
+    return { idle, total };
+}
+
+// Sum the RSS (in GiB) of the given pids via `ps`. Best-effort: dead pids are
+// omitted by ps; any failure returns 0 so the memory gate fails open.
+function rssGbForPids(pids) {
+    if (!pids.length) return 0;
+    try {
+        const out = execFileSync("ps", ["-o", "rss=", "-p", pids.join(",")], {
+            encoding: "utf8"
+        });
+        const kb = out
+            .split("\n")
+            .map((s) => Number.parseInt(s.trim(), 10))
+            .filter(Number.isFinite)
+            .reduce((a, b) => a + b, 0);
+        return kb / 1024 / 1024;
+    } catch {
+        return 0;
+    }
 }
 
 /**
- * Heuristically derive the peer count for a single `it()` block.
+ * Run all tasks with one admission per tick, gated by latest CPU utilization,
+ * live memory, and a concurrency cap. Slots are assigned round-robin; account
+ * partitions (E2E_SLOT_INDEX) are acquired per running test so concurrent tests
+ * never collide even when they share a slot's node.
  *
- * Strategy (in priority order):
- *  1. If the test body calls a known scenario helper, use the mapped peer count
- *     (optionally overridden by an inline peerCount/numPeers/initialPeers
- *     property found within the next 200 characters).
- *  2. Otherwise fall back to the maximum first-integer-argument seen in direct
- *     lifecycle.start / timeoutSetup / harness.setup calls, plus any
- *     addSpectatorWait() calls.
- *  3. If nothing is found, use FALLBACK_PEERS.
+ * Mutates each task with its result fields (oomCount/starveCount/timing) and
+ * returns aggregate run stats for the summary.
  */
-function computePeerCount(itText) {
-    // --- Pass 1: literal calls (lifecycle.start, timeoutSetup, harness.setup, .start) ---
-    let literalPeers = 0;
-    const literalRe =
-        /\b(?:lifecycle\.start|timeoutSetup|harness\.setup)\(\s*(\d+)/g;
-    let m;
-    while ((m = literalRe.exec(itText)) !== null) {
-        const v = Number.parseInt(m[1], 10);
-        if (v > literalPeers) literalPeers = v;
-    }
-
-    // --- Pass 2: scenario helper calls ---
-    let helperMatched = false;
-    let helperPeers = 0;
-    const scenarioRe = /scenario\.(\w+)\s*\(/g;
-    while ((m = scenarioRe.exec(itText)) !== null) {
-        const name = m[1];
-        helperMatched = true;
-        let base;
-        if (Object.prototype.hasOwnProperty.call(SCENARIO_PEER_COUNTS, name)) {
-            base = SCENARIO_PEER_COUNTS[name];
-            // Allow inline override: look for peerCount/numPeers/initialPeers
-            // within the 200 chars following the opening parenthesis.
-            const window = itText.slice(m.index, m.index + m[0].length + 200);
-            const overrideRe =
-                /(?:peerCount|numPeers|initialPeers)\s*:\s*(\d+)/;
-            const om = overrideRe.exec(window);
-            if (om) {
-                const overrideVal = Number.parseInt(om[1], 10);
-                // The override sets the base participant count; spectator-adding
-                // helpers still add their one spectator on top of it.
-                const isSpectator = name.toLowerCase().includes("spectator");
-                base = overrideVal + (isSpectator ? 1 : 0);
-            }
-        } else {
-            // Unknown helper — be conservative
-            base = FALLBACK_PEERS;
-        }
-        if (base > helperPeers) helperPeers = base;
-    }
-
-    // --- Resolve ---
-    let peers;
-    if (helperMatched) {
-        peers = helperPeers;
-    } else if (literalPeers > 0) {
-        // Count addSpectatorWait( occurrences to account for spectators added
-        // separately from the main channel setup.
-        const spectatorMatches = (itText.match(/addSpectatorWait\s*\(/g) || [])
-            .length;
-        peers = literalPeers + spectatorMatches;
-    } else {
-        peers = FALLBACK_PEERS;
-    }
-
-    return Math.max(1, peers);
-}
-
-/** Read and parse the metadata file. Returns null on any error. */
-function readSchedulerMetadata() {
-    try {
-        const raw = fs.readFileSync(SCHEDULER_METADATA_PATH, "utf8");
-        return JSON.parse(raw);
-    } catch {
-        return null;
-    }
-}
-
-/** Persist metadata. Swallows errors — a write failure must never abort a run. */
-function writeSchedulerMetadata(data) {
-    try {
-        fs.writeFileSync(
-            SCHEDULER_METADATA_PATH,
-            JSON.stringify(data, null, 2),
-            "utf8"
-        );
-    } catch {
-        // Non-fatal: metadata is best-effort.
-    }
-}
-
-/**
- * Compute the adaptive thread factor from prior run metadata.
- * Returns { threadFactor, didAdapt }.
- * When adaptation is disabled or no prior metadata exists, returns
- * { threadFactor: seedFactor, didAdapt: false }.
- */
-function computeAdaptiveFactor({
-    seedFactor,
+async function runScheduler({
+    tasks,
+    slots,
+    slotCount,
+    concurrencyCap,
     targetLoad,
-    threadsPerPeer,
-    shouldAdapt
+    memBoundGb,
+    baseEnv,
+    logDir,
+    infraPids,
+    tickMs = SCHEDULER_TICK_MS
 }) {
-    if (!shouldAdapt) {
-        return { threadFactor: seedFactor, didAdapt: false };
-    }
+    let idx = 0;
+    let running = 0;
+    let completed = 0;
+    let sumDurationMs = 0;
+    const failed = [];
 
-    const all = readSchedulerMetadata();
-    // Key metadata by threadsPerPeer so different regimes don't clobber each other.
-    const meta = all && typeof all === "object" ? all[threadsPerPeer] : null;
-    if (
-        meta == null ||
-        !Number.isFinite(meta.scalingFactor) ||
-        !Number.isFinite(meta.avgLoadPerCore)
-    ) {
-        return { threadFactor: seedFactor, didAdapt: false };
-    }
+    // Latest CPU utilization (busy fraction over the last tick interval).
+    let lastCpu = cpuTimes();
+    let cpuUtil = 0;
+    let peakCpu = 0;
+    const cpuSamples = [];
+    const sampleCpu = () => {
+        const now = cpuTimes();
+        const idleD = now.idle - lastCpu.idle;
+        const totalD = now.total - lastCpu.total;
+        lastCpu = now;
+        if (totalD > 0) {
+            cpuUtil = Math.max(0, Math.min(1, 1 - idleD / totalD));
+        }
+        if (cpuUtil > peakCpu) peakCpu = cpuUtil;
+        cpuSamples.push(cpuUtil);
+    };
 
-    const prevFactor = meta.scalingFactor;
-    const prevLoad = meta.avgLoadPerCore;
-    const prevStarvation = meta.starvationTrips ?? 0;
-
-    let nextFactor = prevFactor * (targetLoad / Math.max(prevLoad, EPSILON));
-    nextFactor = Math.max(
-        MIN_THREAD_FACTOR,
-        Math.min(MAX_THREAD_FACTOR, nextFactor)
+    // Free-list of account partitions; size matches the concurrency cap.
+    const freeAccounts = Array.from(
+        { length: MAX_SLOTS_FROM_POOL },
+        (_, i) => i
     );
 
-    if (prevStarvation > 0) {
-        const knocked = prevFactor * STARVATION_KNOCKDOWN;
-        nextFactor = Math.min(
-            nextFactor,
-            Math.max(MIN_THREAD_FACTOR, Math.min(MAX_THREAD_FACTOR, knocked))
-        );
-    }
+    // Live memory: RSS of our own processes (infra + live test children), with a
+    // running per-test average used to project whether one more test fits.
+    let avgPerTestGb = PER_TEST_MEM_GB; // conservative seed until measured
+    let memSampleSum = 0;
+    let memSampleN = 0;
+    let occupiedGb = rssGbForPids(infraPids());
+    let peakOccupiedGb = occupiedGb;
+    const sampleMemory = () => {
+        const testPids = [...liveTaskChildren]
+            .filter((c) => !c.killed && c.pid)
+            .map((c) => c.pid);
+        const testGb = rssGbForPids(testPids);
+        occupiedGb = testGb + rssGbForPids(infraPids());
+        if (occupiedGb > peakOccupiedGb) peakOccupiedGb = occupiedGb;
+        if (testPids.length > 0) {
+            memSampleSum += testGb / testPids.length;
+            memSampleN++;
+            avgPerTestGb = Math.max(0.25, memSampleSum / memSampleN);
+        }
+    };
 
-    console.log(
-        `adapting factor ${prevFactor.toFixed(3)} → ${nextFactor.toFixed(3)} from prior load/core ${prevLoad.toFixed(3)} toward ${targetLoad}`
-    );
+    const launch = (task, seq) => {
+        running++;
+        const acct = freeAccounts.shift();
+        const slot = slotCount > 0 ? slots[(seq - 1) % slotCount] : null;
+        const where = slot ? `slot ${slot.id}/${slotCount}` : "in-process";
 
-    return { threadFactor: nextFactor, didAdapt: true };
+        let taskArgs = task.args;
+        let infraEnv;
+        if (slot) {
+            taskArgs = [
+                task.args[0],
+                "--network",
+                "localhost",
+                ...task.args.slice(1)
+            ];
+            infraEnv = {
+                PROVIDER_URL: slot.nodeUrl,
+                HARDHAT_NODE_URL: slot.nodeUrl,
+                LOCAL_DISCOVERY_REGISTRY_URL: slot.discoveryUrl,
+                E2E_MANAGER_CACHE_DIR: slot.cacheDir
+            };
+        } else {
+            // No pool: strip inherited infra env so the harness self-provisions.
+            infraEnv = {
+                PROVIDER_URL: undefined,
+                HARDHAT_NODE_URL: undefined,
+                LOCAL_DISCOVERY_REGISTRY_URL: undefined,
+                E2E_MANAGER_CACHE_DIR: undefined
+            };
+        }
+
+        logging.admission({
+            seq,
+            total: tasks.length,
+            where,
+            running,
+            concurrencyCap,
+            acct,
+            cpuUtil,
+            targetLoad,
+            occupiedGb,
+            memBoundGb
+        });
+
+        runTask(
+            process.execPath,
+            [HARDHAT_CLI, ...taskArgs],
+            { ...baseEnv, ...infraEnv, E2E_SLOT_INDEX: String(acct) },
+            task.label,
+            logging.getLogPath(logDir, task.logName)
+        ).then(({ code, label, stdout, stderr, durationMs }) => {
+            running--;
+            freeAccounts.push(acct);
+            sumDurationMs += durationMs;
+
+            const combined = stdout + stderr;
+            task.oomCount = logging.countOomEvents(combined);
+            task.starveCount = logging.countStarvation(combined);
+            const timing = logging.parseTimings(combined);
+            task.startupMs = timing.startupMs;
+            task.deployMs = timing.deployMs;
+            task.workerBootMs = timing.workerBootMs;
+            task.maxEventLoopDelayMs = timing.maxEventLoopDelayMs;
+            task.el = timing.el;
+            task.timingFound = timing.found;
+
+            completed++;
+            if (code !== 0) {
+                failed.push(task);
+                logging.markLogAsError(logDir, task.logName);
+            }
+            logging.result({
+                completed,
+                total: tasks.length,
+                code,
+                label,
+                durationMs,
+                oomCount: task.oomCount,
+                starveCount: task.starveCount,
+                timing
+            });
+        });
+    };
+
+    await new Promise((resolve) => {
+        const tick = () => {
+            sampleCpu();
+            sampleMemory();
+
+            if (idx >= tasks.length && running === 0) {
+                clearInterval(timer);
+                resolve();
+                return;
+            }
+            if (idx >= tasks.length) return; // draining
+
+            const countOk = running < concurrencyCap;
+            const cpuOk = cpuUtil < targetLoad;
+            const memOk = occupiedGb + avgPerTestGb < memBoundGb;
+
+            // Always keep one test in flight (avoids stalling when the gates start
+            // closed); otherwise admit one only when all gates are open.
+            if (running === 0 || (countOk && cpuOk && memOk)) {
+                idx++;
+                launch(tasks[idx - 1], idx);
+            } else {
+                const reason = !countOk
+                    ? `cap (running ${running}/${concurrencyCap})`
+                    : !memOk
+                      ? `memory (owned ${occupiedGb.toFixed(1)}+${avgPerTestGb.toFixed(1)}≥${memBoundGb.toFixed(1)}GB)`
+                      : `cpu ${(cpuUtil * 100).toFixed(0)}%>=${(targetLoad * 100).toFixed(0)}%`;
+                logging.hold({ seq: idx + 1, total: tasks.length, reason });
+            }
+        };
+        const timer = setInterval(tick, tickMs);
+        tick(); // immediate first admission
+    });
+
+    const avgCpu = cpuSamples.length
+        ? cpuSamples.reduce((s, v) => s + v, 0) / cpuSamples.length
+        : 0;
+
+    return {
+        failed,
+        completed,
+        sumDurationMs,
+        peakCpu,
+        avgCpu,
+        peakOccupiedGb,
+        avgPerTestGb
+    };
 }
 
-module.exports = {
-    SCENARIO_PEER_COUNTS,
-    resolveThreadModes,
-    threadsPerPeerFromModes,
-    computePeerCount,
-    readSchedulerMetadata,
-    writeSchedulerMetadata,
-    computeAdaptiveFactor
-};
+module.exports = { resolveThreadModes, cpuTimes, rssGbForPids, runScheduler };

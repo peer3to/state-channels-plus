@@ -1,7 +1,8 @@
 /* eslint-disable no-console */
 const { createHash } = require("crypto");
+const path = require("path");
+const { globSync } = require("glob");
 const { Project, SyntaxKind } = require("ts-morph");
-const { computePeerCount } = require("./scheduler");
 const { MAX_LOG_NAME_LEN } = require("./constants");
 
 function getStringLiteralValue(node) {
@@ -90,12 +91,10 @@ function extractE2ETests(filePath) {
                                 ...describeTitles,
                                 testName.trim()
                             ].join(" ");
-                            const peers = computePeerCount(itCall.getText());
                             tests.push({
                                 suite: suiteName.trim(),
                                 test: testName.trim(),
-                                fullTitle,
-                                peers
+                                fullTitle
                             });
                         }
                     }
@@ -116,11 +115,41 @@ function sanitizeFileName(name) {
     return `${sanitized.slice(0, MAX_LOG_NAME_LEN - suffix.length - 1)}_${suffix}`;
 }
 
+/**
+ * Glob the e2e dir, expand every `it` into a task, then apply an optional
+ * `--grep` RegExp against the full mocha title. Returns { files, tasks }; the
+ * caller decides how to handle an empty result. Throws on an invalid grep.
+ */
+function discoverTasks(e2eDir, grep) {
+    const files = globSync(path.join(e2eDir, "**/*.test.ts"));
+    let tasks = [];
+    for (const f of files) {
+        for (const { suite, test, fullTitle } of extractE2ETests(f)) {
+            const taskGrep = `^${escapeRegex(suite)}.*${escapeRegex(test)}$`;
+            const logName = sanitizeFileName(
+                `${path.basename(f, path.extname(f))}__${suite}__${test}`
+            );
+            tasks.push({
+                label: `test:${path.basename(f)}:${test}`,
+                args: ["test", "--no-compile", f, "--grep", taskGrep],
+                logName,
+                fullTitle
+            });
+        }
+    }
+    if (grep) {
+        const re = new RegExp(grep);
+        tasks = tasks.filter((t) => re.test(t.fullTitle));
+    }
+    return { files, tasks };
+}
+
 module.exports = {
     getStringLiteralValue,
     isDescribeCallee,
     collectDescribeTitlesFromIt,
     extractE2ETests,
     escapeRegex,
-    sanitizeFileName
+    sanitizeFileName,
+    discoverTasks
 };
