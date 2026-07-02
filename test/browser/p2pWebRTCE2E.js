@@ -2,6 +2,7 @@ import { ethers, NonceManager, ContractFactory } from "ethers";
 
 import { EvmStateMachine } from "@/evm";
 import Clock from "@/Clock";
+import { installWebRTCMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
 import {
     MathStateMachine__factory,
     StateChannelManagerProxy__factory
@@ -22,7 +23,8 @@ import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/Mat
  * peers can only reach through the auto-installed main-thread bridge.
  *
  * The direction under test is worker -> main thread (unlike the old smoke's
- * main -> worker), with all real components and real on-chain channel data.
+ * main -> worker), with all real components (real p2pSetup, EVM, handshake,
+ * WebRTC) rather than mocks.
  */
 
 const DEFAULT_HARDHAT_MNEMONIC =
@@ -301,5 +303,121 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
         };
     } finally {
         await Promise.allSettled([peerA.dispose(), peerB.dispose()]);
+    }
+};
+
+/**
+ * Path (2): each peer runs `p2pSetup` inside its OWN app worker. Because it's a
+ * worker, `p2pSetup` does not auto-install the bridge — the worker bubbles its
+ * `webRTCBridgePort` up here (transferred), and we install it on the main
+ * thread manually with `installWebRTCMainThreadBridge`. WebRTC is then driven on
+ * this main thread on behalf of the workers (the nested-worker bubble-up path).
+ */
+globalThis.runP2pWebRTCWorkerBubbleUpE2E = async () => {
+    const config = globalThis.__P2P_E2E__;
+    if (!config?.providerUrl || !config?.relayUrl) {
+        throw new Error(
+            "Missing __P2P_E2E__ config (providerUrl / relayUrl) on the page"
+        );
+    }
+    installWorkerErrorSpy();
+    installRTCPeerConnectionSpy();
+    rtcConnections.length = 0;
+
+    const { scmAddress, channelId, peerWallets } = await deployStack(
+        config.providerUrl
+    );
+
+    const connectedBy = [new Set(), new Set()];
+    const bridgeHandles = [];
+    const workers = [];
+
+    const spawnPeer = (index) =>
+        new Promise((resolve, reject) => {
+            const worker = new Worker(
+                new URL("./p2pWebRTCAppWorker.js", import.meta.url),
+                { type: "module" }
+            );
+            workers.push(worker);
+            worker.onmessage = (event) => {
+                const message = event.data;
+                if (message.type === "bridgePort") {
+                    // The bubble-up path: install the worker's surfaced port on
+                    // the main thread by hand (no auto-install inside a worker).
+                    bridgeHandles.push(
+                        installWebRTCMainThreadBridge(message.port)
+                    );
+                } else if (message.type === "connection") {
+                    connectedBy[index].add(
+                        String(message.address).toLowerCase()
+                    );
+                } else if (message.type === "ready") {
+                    resolve();
+                } else if (message.type === "error") {
+                    reject(
+                        new Error(`app worker ${index}: ${message.message}`)
+                    );
+                }
+            };
+            worker.onerror = (event) =>
+                reject(
+                    new Error(
+                        `app worker ${index} error: ${event.message || "unknown"}`
+                    )
+                );
+            worker.postMessage({
+                type: "start",
+                providerUrl: config.providerUrl,
+                scmAddress,
+                channelId,
+                signerSecret: peerWallets[index].privateKey,
+                relayUrl: config.relayUrl,
+                peerId: index
+            });
+        });
+
+    try {
+        await Promise.all([spawnPeer(0), spawnPeer(1)]);
+
+        const addrA = peerWallets[0].address.toLowerCase();
+        const addrB = peerWallets[1].address.toLowerCase();
+
+        await waitFor(
+            () =>
+                connectedBy[0].has(addrB) &&
+                connectedBy[1].has(addrA) &&
+                rtcConnections.some((record) => record.reachedConnected),
+            () =>
+                `two worker-bubble-up peers to connect over WebRTC (` +
+                `aSawB=${connectedBy[0].has(addrB)}, ` +
+                `bSawA=${connectedBy[1].has(addrA)}, ` +
+                `bridgesInstalled=${bridgeHandles.length}, ` +
+                `rtcCreated=${rtcConnections.length}, ` +
+                `rtcConnected=${rtcConnections.filter((r) => r.reachedConnected).length})`
+        );
+
+        return {
+            bridgesInstalled: bridgeHandles.length,
+            connectedAtoB: connectedBy[0].has(addrB),
+            connectedBtoA: connectedBy[1].has(addrA),
+            rtcCreated: rtcConnections.length,
+            rtcConnected: rtcConnections.filter((r) => r.reachedConnected)
+                .length
+        };
+    } finally {
+        for (const handle of bridgeHandles) {
+            try {
+                handle.dispose();
+            } catch {
+                // ignore
+            }
+        }
+        for (const worker of workers) {
+            try {
+                worker.terminate();
+            } catch {
+                // ignore
+            }
+        }
     }
 };
