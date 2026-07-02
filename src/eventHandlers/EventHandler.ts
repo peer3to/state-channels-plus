@@ -123,17 +123,22 @@ export class EventHandler {
                     this.stateManager.abort();
                     return;
                 }
-                // still a participant: StateSnapshotUpdated (from the reduction's
-                // updateStateSnapshotFork) can beat the local onStateSnapshotUpdated -> setGenesisState ->
-                // storeStateSnapshot of the same snapshot. ingest the
-                // authoritative on-chain state.
-                this.logger.warn(
-                    "onStateSnapshotUpdated - unknown snapshot while participant/pending (event raced local apply), ingesting",
-                    {
-                        channelId,
-                        status,
-                        hash: updatedSnapshot.hash
-                    }
+                const ingested =
+                    await this.stateManager.tryIngestReducedForkSnapshot(
+                        stateSnapshot
+                    );
+                if (!ingested) {
+                    this.logger.error(
+                        "onStateSnapshotUpdated - unknown snapshot could not be verified by re-reducing origin fork, fatal",
+                        { channelId, status, hash: updatedSnapshot.hash }
+                    );
+                    throw new Error(
+                        `onStateSnapshotUpdated: unverifiable unknown snapshot ${updatedSnapshot.hash} while status=${status}`
+                    );
+                }
+                this.logger.info(
+                    "onStateSnapshotUpdated - unknown snapshot verified by re-reducing origin fork, ingested",
+                    { channelId, status, hash: updatedSnapshot.hash }
                 );
             }
         }

@@ -514,14 +514,7 @@ class StateManager<
         }
     }
 
-    private async performReduction(
-        forkId: ForkId,
-        genesisTimestamp: Timestamp
-    ) {
-        const now = Clock.getTimeInSeconds();
-        this.logger.info(
-            `Performing reduction for fork ${forkId} with genesis timestamp ${genesisTimestamp}, in (${genesisTimestamp - now}s)`
-        );
+    private async deriveReducedSnapshot(forkId: ForkId) {
         const disputes = await this.agreementManager.getForkDisputes(
             this.channelId,
             forkId,
@@ -538,13 +531,10 @@ class StateManager<
             this.logger.warn(
                 `No disputes found while reducing disputed fork ${forkId}; initiating local dispute`
             );
-            await this.disputeManager.dispute(forkId);
-            return;
+            return undefined;
         }
-
         const reducedOutput =
             await this.stateChannelManagerContract.reduce.staticCall(disputes);
-
         const reduceData = await this.agreementManager.getReduceData(
             forkId,
             reducedOutput
@@ -561,9 +551,63 @@ class StateManager<
                 reduceData.encodedStateMachineState,
                 reduceData.inboundMessageBlocks
             );
-        const expectedReducedForkId = ethers.keccak256(
+        const reducedForkId = ethers.keccak256(
             Codec.encode(reducedSnapshotData, Type.SnapshotData)
         );
+        return {
+            disputes,
+            reduceData,
+            reducedSnapshotData,
+            reducedEncodedStateMachineState,
+            reducedOutboundMessageBlock,
+            reducedForkId
+        };
+    }
+
+    public async tryIngestReducedForkSnapshot(
+        stateSnapshot: StateSnapshotStruct
+    ): Promise<boolean> {
+        const originForkId = stateSnapshot.snapshotData.originForkId as ForkId;
+        const derived = await this.deriveReducedSnapshot(originForkId);
+        if (derived === undefined) return false;
+        if (derived.reducedForkId !== stateSnapshot.forkId) return false;
+        if (derived.reducedOutboundMessageBlock) {
+            this.storage.outboundMessages.store(
+                derived.reducedOutboundMessageBlock,
+                { justPersist: true }
+            );
+        }
+        await this.setGenesisState(
+            derived.reducedSnapshotData,
+            derived.reducedEncodedStateMachineState,
+            derived.reducedForkId,
+            Number(stateSnapshot.timestamp),
+            derived.reducedOutboundMessageBlock
+        );
+        return true;
+    }
+
+    private async performReduction(
+        forkId: ForkId,
+        genesisTimestamp: Timestamp
+    ) {
+        const now = Clock.getTimeInSeconds();
+        this.logger.info(
+            `Performing reduction for fork ${forkId} with genesis timestamp ${genesisTimestamp}, in (${genesisTimestamp - now}s)`
+        );
+        const derived = await this.deriveReducedSnapshot(forkId);
+        if (derived === undefined) {
+            await this.disputeManager.dispute(forkId);
+            return;
+        }
+        const {
+            disputes,
+            reduceData,
+            reducedSnapshotData,
+            reducedEncodedStateMachineState,
+            reducedOutboundMessageBlock,
+            reducedForkId
+        } = derived;
 
         // Pre-store the outbound message block so buildForkSnapshotCalldata can
         // find it via getMessageBlocksInRange.
@@ -579,7 +623,7 @@ class StateManager<
             )
         );
         const reducedGenesisSnapshot = StateSnapshot.from({
-            forkId: expectedReducedForkId,
+            forkId: reducedForkId,
             blockHeight: 0,
             timestamp: Number(genesisTimestamp),
             snapshotData: reducedSnapshotData
@@ -597,12 +641,12 @@ class StateManager<
                     reduceData.latestStateSnapshot,
                     reduceData.encodedStateMachineState,
                     reduceData.inboundMessageBlocks,
-                    expectedReducedForkId
+                    reducedForkId
                 ]
             );
 
         this.logger.info("Reduction transaction submit", {
-            reducedForkId: expectedReducedForkId,
+            reducedForkId: reducedForkId,
             channelId: this.channelId
         });
 
@@ -652,7 +696,7 @@ class StateManager<
                         },
                         RaceConditionReductionExpectationDoesntMatch: () => {
                             this.logger.error(
-                                `Reduction expectation mismatch for fork ${LoggerUtils.formatHash(forkId)} -> expected ${LoggerUtils.formatHash(expectedReducedForkId)}`
+                                `Reduction expectation mismatch for fork ${LoggerUtils.formatHash(forkId)} -> expected ${LoggerUtils.formatHash(reducedForkId)}`
                             );
                         },
                         RaceConditionBlockHeightTooOld: () => {
@@ -673,23 +717,19 @@ class StateManager<
 
         try {
             // Compute local state after reduction (optimistic - assume tx will succeed)
-            const snapshotData = reducedSnapshotData;
-            const encodedStateMachineState = reducedEncodedStateMachineState;
-            const outboundMessageBlock = reducedOutboundMessageBlock;
             this.logger.debug(
                 `Optimistic local reduction computed for fork ${LoggerUtils.formatHash(forkId)}`,
                 {
                     reducedSnapshotData:
-                        LoggerUtils.getSnapshotDataMetadata(snapshotData),
-                    outboundMessageBlock: outboundMessageBlock
+                        LoggerUtils.getSnapshotDataMetadata(
+                            reducedSnapshotData
+                        ),
+                    outboundMessageBlock: reducedOutboundMessageBlock
                         ? LoggerUtils.getMessageBlockMetadata(
-                              outboundMessageBlock
+                              reducedOutboundMessageBlock
                           )
                         : null
                 }
-            );
-            const reducedForkId = ethers.keccak256(
-                Codec.encode(snapshotData, Type.SnapshotData)
             );
 
             // Update local state to the reduced fork
@@ -697,11 +737,11 @@ class StateManager<
                 `Reduction complete (local): transitioning from fork ${LoggerUtils.formatHash(forkId)} to fork ${LoggerUtils.formatHash(reducedForkId)}`
             );
             await this.setGenesisState(
-                snapshotData,
-                encodedStateMachineState,
+                reducedSnapshotData,
+                reducedEncodedStateMachineState,
                 reducedForkId,
                 genesisTimestamp,
-                outboundMessageBlock
+                reducedOutboundMessageBlock
             );
         } catch (error) {
             const custom = tryDecodeCustomError(error);
