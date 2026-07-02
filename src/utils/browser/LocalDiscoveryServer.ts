@@ -40,6 +40,15 @@ export class LocalDiscoveryServer {
             );
         }
 
+        // Imported lazily (before the socket opens) so `@/utils` — which
+        // re-exports this module — doesn't pull ATransport into a load-time
+        // import cycle, and so there's no async gap between the socket opening
+        // and the announce listener attaching (the hub's peer announce fires
+        // the instant both peers are present and would be missed in a gap).
+        const { default: BrowserLocalTransport } = await import(
+            "@/transport/BrowserLocalTransport"
+        );
+
         const url =
             `${registryUrl}?channelId=${encodeURIComponent(String(channelId))}` +
             `&address=${encodeURIComponent(myPeerAddress)}`;
@@ -47,28 +56,49 @@ export class LocalDiscoveryServer {
         this.sockets.add(ws);
         ws.addEventListener("close", () => this.sockets.delete(ws));
 
+        // The hub relays a single transport between the two peers, so — unlike
+        // the node mesh's separate dial/accept sockets — both sides initiating
+        // would multiplex two handshake sessions onto one transport and
+        // double-ack. Instead the hub announces the remote address on pairing;
+        // we pick a dial/accept role by address ordering (lower dials) so a
+        // single handshake session runs. The transport is bound synchronously
+        // inside the announce handler so no relayed frame is dropped before its
+        // `onmessage` is attached.
         await new Promise<void>((resolve, reject) => {
-            ws.onopen = () => resolve();
-            ws.onerror = () =>
+            const onError = () =>
                 reject(
                     new Error(`Failed to open relay socket at ${registryUrl}`)
                 );
-        });
+            const onMessage = (event: MessageEvent) => {
+                let announce: { type?: string; address?: string };
+                try {
+                    announce = JSON.parse(String(event.data));
+                } catch {
+                    return;
+                }
+                if (announce?.type !== "peer" || !announce.address) return;
+                ws.removeEventListener("message", onMessage);
+                ws.removeEventListener("error", onError);
 
-        // Both peers form a transport and initiate the handshake symmetrically
-        // (mirrors the node accept/dial paths). The hub buffers frames until
-        // both peers are present, so no handshake frame is lost. Imported lazily
-        // so `@/utils` (which re-exports this module) doesn't pull ATransport
-        // into a load-time import cycle.
-        const { default: BrowserLocalTransport } = await import(
-            "@/transport/BrowserLocalTransport"
-        );
-        const transport = new BrowserLocalTransport(ws, p2pManager);
-        p2pManager.localRpc.initHandshakeService.initHandshake(transport);
+                const remoteAddress = announce.address;
+                const transport = new BrowserLocalTransport(ws, p2pManager);
+                transport.peerAddress = remoteAddress;
+                // Both ends initiate: the handshake is a mutual challenge, so a
+                // peer only finalizes once it has BOTH verified the remote (via
+                // its own challenge) and received the remote's ack.
+                p2pManager.localRpc.initHandshakeService.initHandshake(
+                    transport
+                );
 
-        this._logger?.debug("Connected to local discovery relay hub", {
-            channelId: String(channelId),
-            myPeerAddress
+                this._logger?.debug("Connected to local discovery relay hub", {
+                    channelId: String(channelId),
+                    myPeerAddress,
+                    remoteAddress
+                });
+                resolve();
+            };
+            ws.addEventListener("error", onError);
+            ws.addEventListener("message", onMessage);
         });
     }
 

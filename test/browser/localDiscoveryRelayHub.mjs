@@ -29,6 +29,7 @@ export async function startLocalDiscoveryRelayHub({
     wss.on("connection", (ws, req) => {
         const requestUrl = new URL(req.url ?? "/", "ws://localhost");
         const channelId = requestUrl.searchParams.get("channelId") ?? "";
+        ws.peerAddress = requestUrl.searchParams.get("address") ?? "";
 
         let channel = channels.get(channelId);
         if (!channel) {
@@ -36,6 +37,25 @@ export async function startLocalDiscoveryRelayHub({
             channels.set(channelId, channel);
         }
         channel.sockets.add(ws);
+
+        // On pairing, announce each peer's address to the other. This lets the
+        // two sides pick a dial/accept role by address ordering (only one
+        // initiates the handshake), so a single relayed transport carries one
+        // handshake session — not two, which would double-ack and disconnect.
+        if (channel.sockets.size >= 2) {
+            const peers = [...channel.sockets];
+            for (const peer of peers) {
+                const other = peers.find((candidate) => candidate !== peer);
+                if (peer.readyState === peer.OPEN && other) {
+                    peer.send(
+                        JSON.stringify({
+                            type: "peer",
+                            address: other.peerAddress
+                        })
+                    );
+                }
+            }
+        }
 
         // A peer just completed the pair — flush anything buffered before it
         // arrived to the newly-present peers.
