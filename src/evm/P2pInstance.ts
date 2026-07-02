@@ -10,6 +10,11 @@ import type {
     RuntimeEventName
 } from "./p2pRuntime/RuntimeEventEmitter";
 import { createHostRpc } from "./p2pRuntime/ClientHostRpc";
+import {
+    installWebRTCMainThreadBridge,
+    type WebRTCMainThreadBridgeHandle
+} from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
+import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 
 export default class P2pInstance<
     T extends AStateMachine,
@@ -19,6 +24,8 @@ export default class P2pInstance<
     p2pSigner: ClientP2pSigner;
     logger: Logger;
 
+    private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
+
     /**
      * Main-thread end of the WebRTC bridge `MessagePort`. Present only when the
      * host runs in a worker that can't drive `RTCPeerConnection` itself; forward
@@ -27,6 +34,22 @@ export default class P2pInstance<
      */
     get webRTCBridgePort(): MessagePort | undefined {
         return this.client.webRTCBridgePort;
+    }
+
+    /**
+     * When running on the real main thread, wire the host's WebRTC bridge port
+     * to the local `RTCPeerConnection` automatically — there is no further
+     * worker nesting to bubble it up to. Inside a worker this is a no-op: the
+     * port stays on {@link webRTCBridgePort} for the consumer app to bubble up
+     * and install on the main thread. A no-op when no bridge port was surfaced.
+     */
+    public installMainThreadBridgeIfOnMainThread(): void {
+        if (this.webRTCBridgeHandle) return;
+        const port = this.webRTCBridgePort;
+        if (!port || isWorkerRuntime()) return;
+        this.webRTCBridgeHandle = installWebRTCMainThreadBridge(port, {
+            logger: this.logger
+        });
     }
 
     /**
@@ -48,11 +71,16 @@ export default class P2pInstance<
         this.hostRpc = createHostRpc<TCustomRpc>(client);
     }
 
-    public dispose() {
-        return Promise.all([
-            this.p2pContractInstance.removeAllListeners(),
-            this.client.dispose()
-        ]);
+    public async dispose() {
+        try {
+            await Promise.all([
+                this.p2pContractInstance.removeAllListeners(),
+                this.client.dispose()
+            ]);
+        } finally {
+            this.webRTCBridgeHandle?.dispose();
+            this.webRTCBridgeHandle = undefined;
+        }
     }
 
     /**

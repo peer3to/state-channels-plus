@@ -17,7 +17,7 @@ import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import { createContractExecutorFactory } from "@/evm/contractExecutor";
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
-import { workerNeedsMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 import {
     createForwardingHooks,
     forwardEventHandlerInvocations
@@ -94,7 +94,7 @@ export function serializeError(error: unknown): SerializedError {
 async function bubbleWebRTCBridgePortIfNeeded(
     port: RuntimePort
 ): Promise<MessagePort | undefined> {
-    if (!(await workerNeedsMainThreadBridge())) return undefined;
+    if (!(await doesWorkerNeedMainThreadBridge())) return undefined;
     // The bridge speaks the DOM MessagePort API; in a worker the global
     // MessageChannel works on both web and Node (worker_threads-backed) and its
     // ports transfer over the runtime port.

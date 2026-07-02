@@ -391,7 +391,12 @@ class WebRTCMainThreadBridgeBroker {
     }
 }
 
-const brokersByPort = new WeakMap<MessagePort, WebRTCMainThreadBridgeBroker>();
+type BrokerRegistration = {
+    broker: WebRTCMainThreadBridgeBroker;
+    handleCount: number;
+};
+
+const brokersByPort = new WeakMap<MessagePort, BrokerRegistration>();
 
 /**
  * Bind a WebRTC main-thread bridge to the `port` surfaced by `p2pSetup` on
@@ -404,17 +409,27 @@ export function installWebRTCMainThreadBridge(
     port: MessagePort,
     options: WebRTCMainThreadBridgeOptions = {}
 ): WebRTCMainThreadBridgeHandle {
-    // Installing twice on the same port (e.g. an effect re-run) must reuse the
-    // first broker — a second one would clobber its `onmessage` and a single
-    // dispose would close the port out from under it.
-    const existing = brokersByPort.get(port);
-    const broker = existing ?? new WebRTCMainThreadBridgeBroker(port, options);
-    if (!existing) brokersByPort.set(port, broker);
+    // Installing on the same port more than once (nested setups, an effect
+    // re-run) shares one broker — a second would clobber its `onmessage`.
+    // Ref-count the handles so one handle's dispose (e.g. a stale cleanup)
+    // can't close the bridge out from under a still-active owner: only the last
+    // outstanding handle tears the broker down.
+    const registration = brokersByPort.get(port) ?? {
+        broker: new WebRTCMainThreadBridgeBroker(port, options),
+        handleCount: 0
+    };
+    registration.handleCount++;
+    brokersByPort.set(port, registration);
 
+    let disposed = false;
     return {
         dispose: () => {
+            if (disposed) return;
+            disposed = true;
+            registration.handleCount--;
+            if (registration.handleCount > 0) return;
             brokersByPort.delete(port);
-            broker.dispose();
+            registration.broker.dispose();
         }
     };
 }

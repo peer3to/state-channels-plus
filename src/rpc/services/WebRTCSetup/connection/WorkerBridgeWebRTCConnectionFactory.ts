@@ -257,6 +257,7 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
 
     private bridgePort?: MessagePort;
     private client?: WebRTCWorkerBridgeClient;
+    private readonly registeredPorts = new Set<MessagePort>();
     private readonly bridgePortWaiters: Array<() => void> = [];
 
     static getInstance(): WorkerBridgeWebRTCConnectionFactory {
@@ -270,11 +271,14 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
     private constructor() {}
 
     registerPort(port: MessagePort): void {
-        this.client?.dispose(
-            "WebRTC bridge port was replaced before the request completed"
-        );
-        this.bridgePort = port;
-        this.client = new WebRTCWorkerBridgeClient(port);
+        this.registeredPorts.add(port);
+        // Set once: there is a single main thread, so a worker realm needs only
+        // one bridge. The first host establishes it; later hosts share it
+        // instead of replacing (and tearing down) the active one.
+        if (!this.bridgePort) {
+            this.bridgePort = port;
+            this.client = new WebRTCWorkerBridgeClient(port);
+        }
 
         while (this.bridgePortWaiters.length > 0) {
             this.bridgePortWaiters.shift()?.();
@@ -282,13 +286,14 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
     }
 
     /**
-     * Tear down the bridge `port` and its client so the worker-side bridge
-     * doesn't outlive the runtime host that registered it. Scoped to that exact
-     * port: if a later host has already replaced it, this is a no-op so hosts
-     * sharing a worker realm never close each other's bridge.
+     * Release one host's hold on the shared worker-side bridge. Ref-counted by
+     * registered port: the bridge and its client are torn down only once the
+     * last host that registered is gone, so one host disposing never closes the
+     * bridge for others sharing the same worker realm.
      */
     disposeBridge(port: MessagePort): void {
-        if (this.bridgePort !== port) return;
+        if (!this.registeredPorts.delete(port)) return;
+        if (this.registeredPorts.size > 0) return;
         this.client?.dispose("WebRTC bridge disposed with the runtime host");
         this.client = undefined;
         this.bridgePort = undefined;

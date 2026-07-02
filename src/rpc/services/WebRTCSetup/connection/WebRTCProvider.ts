@@ -14,7 +14,7 @@ function getGlobalWebRTCProvider(): WebRTCProvider | undefined {
     };
 }
 
-function isWorkerRuntime(): boolean {
+export function isWorkerRuntime(): boolean {
     return (
         typeof (globalThis as any).WorkerGlobalScope !== "undefined" &&
         globalThis instanceof (globalThis as any).WorkerGlobalScope
@@ -32,7 +32,7 @@ export function hasLocalRTCPeerConnection(): boolean {
  * the lazy `get-webrtc` import too, so a worker that CAN load WebRTC locally
  * (e.g. Node with `get-webrtc`) reports `false` and no bridge is surfaced.
  */
-export async function workerNeedsMainThreadBridge(): Promise<boolean> {
+export async function doesWorkerNeedMainThreadBridge(): Promise<boolean> {
     if (!isWorkerRuntime()) return false;
     try {
         await loadWebRTCProvider();
