@@ -3,6 +3,7 @@ import type StateManager from "@/stateManager";
 import Rpc, {
     deserializeRpc,
     deserializeRpcResponse,
+    MAX_RPC_FRAME_BYTES,
     RpcResponse
 } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
@@ -202,6 +203,17 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
+            // Reject oversized frames before parsing so a peer can't force
+            // unbounded JSON.parse/dispatch work.
+            if (serializedRpc.length > MAX_RPC_FRAME_BYTES) {
+                this.logger.warn("Oversized RPC frame; disconnecting", {
+                    bytes: serializedRpc.length,
+                    transportType: TransportType[transport.transportType],
+                    peerAddress: transport.peerAddress
+                });
+                this.disconnectConnection(transport);
+                return;
+            }
             const response = deserializeRpcResponse(serializedRpc);
             if (response) {
                 this.handleRpcResponse(response, transport);
@@ -231,7 +243,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             }
         } catch (e) {
             this.disconnectConnection(transport);
-            console.error(e);
+            this.logger.error("onRpc - error handling RPC frame", {
+                error: e instanceof Error ? e.message : String(e),
+                stack: e instanceof Error ? e.stack : undefined,
+                transportType: TransportType[transport.transportType],
+                peerAddress: transport.peerAddress
+            });
         }
     }
     public async tryOpenConnectionToChannel(channelId: string) {

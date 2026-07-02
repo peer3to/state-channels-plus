@@ -1,15 +1,27 @@
 import ARpcService from "@/rpc/ARpcService";
-import { Address, ChannelId, Timestamp, Hash, ForkId } from "@/types/types";
+import {
+    Address,
+    Bytes,
+    ChannelId,
+    Timestamp,
+    Hash,
+    ForkId
+} from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
-import { Codec, getChecksumAddress, tryDecodeCustomError, Type } from "@/utils";
+import {
+    Codec,
+    getChecksumAddress,
+    hash,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
 import { ethers } from "ethers";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import type P2PManager from "@/P2PManager";
-import { TimeoutManager } from "@/utils/TimeoutManager";
 import { Status } from "@/types";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { DisputeWindowVerification, SyncPayload } from "@/types";
@@ -20,9 +32,11 @@ export interface SyncRequest {
     blockHeight?: number;
 }
 class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
-    private readonly requestMapByPeerAddress: Map<string, SyncRequest> =
-        new Map();
-    timeoutManager: TimeoutManager;
+    // Peers with a sync request currently in flight. Guards against launching a
+    // second concurrent sync to the same peer. The request payload itself now
+    // lives in `sync`'s closure (request/response), so no per-peer request map
+    // is needed.
+    private readonly inFlightByPeerAddress: Set<string> = new Set();
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -31,7 +45,6 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 component: "SpectateService"
             })
         );
-        this.timeoutManager = p2pManager.stateManager.timeoutManager;
         this.guards = [new HandshakeCompletedGuard(this)];
     }
 
@@ -39,7 +52,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         return new SpectateServiceRpcMethods(transport, this);
     }
 
-    // Called locally to initiate spectate sync
+    // Called locally to initiate spectate sync. Fire-and-forget entry point: the
+    // request/response exchange and payload verification run in the background.
     public sync(
         peerAddress: Address,
         channelId: ChannelId,
@@ -54,7 +68,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         });
         const normalizedPeerAddress = getChecksumAddress(peerAddress);
 
-        if (this.requestMapByPeerAddress.has(normalizedPeerAddress)) {
+        if (this.inFlightByPeerAddress.has(normalizedPeerAddress)) {
             this.logger.debug(
                 "spectateSync - sync already in-flight; ignoring",
                 { peerAddress: normalizedPeerAddress }
@@ -68,46 +82,360 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             forkId,
             blockHeight
         };
+        this.inFlightByPeerAddress.add(normalizedPeerAddress);
+        const timeoutMs =
+            this.p2pManager.stateManager.timeConfig.agreementTime * 1000;
 
-        this.timeoutManager.scheduleTask(
-            () => {
-                const pending = this.requestMapByPeerAddress.get(
-                    normalizedPeerAddress
+        void (async () => {
+            try {
+                // Transport can change (e.g. WebRTC upgrade). Always send by
+                // address. A rejection (timeout / peer couldn't prove / guard)
+                // means the peer didn't help us sync -> blacklist it.
+                // `applySyncResponse` handles payload-validation failures itself
+                // (via abort), so the catch here is the request path plus a
+                // defensive backstop.
+                const { encodedSyncPayload } =
+                    await this.remoteRpc.spectateService
+                        .onSpectateRequest(syncRequest)
+                        .request(normalizedPeerAddress, { timeoutMs });
+
+                await this.applySyncResponse(
+                    normalizedPeerAddress,
+                    syncRequest,
+                    encodedSyncPayload
                 );
-                if (!pending) return;
-                if (pending.initTime !== syncRequest.initTime) return;
-
-                this.requestMapByPeerAddress.delete(normalizedPeerAddress);
-
-                this.logger.debug(
-                    "SpectateService - spectateSync timeout; blacklisting peer",
-                    { peerAddress: normalizedPeerAddress }
-                );
-
+            } catch (error) {
+                this.logger.debug("spectateSync - failed; blacklisting peer", {
+                    peerAddress: normalizedPeerAddress,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
                 this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                     normalizedPeerAddress
                 );
-            },
-            this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            `SpectateService - spectateSync timeout - peer ${normalizedPeerAddress}`
-        );
-
-        this.requestMapByPeerAddress.set(normalizedPeerAddress, syncRequest);
-
-        // Transport can change (e.g. WebRTC upgrade). Always send by address.
-        this.remoteRpc.spectateService
-            .onSpectateRequest(syncRequest)
-            .sendOne(normalizedPeerAddress);
+            } finally {
+                this.inFlightByPeerAddress.delete(normalizedPeerAddress);
+            }
+        })();
     }
 
-    public takePendingRequestByPeerAddress(
-        peerAddress: string
-    ): SyncRequest | undefined {
-        const pending = this.requestMapByPeerAddress.get(peerAddress);
-        if (!pending) return undefined;
+    /**
+     * Validate and apply a sync payload returned by `onSpectateRequest`. Was the
+     * body of the old `onSpectateResponse` endpoint; the request now lives in
+     * `sync`'s closure, so the channel is taken from our own `syncRequest`
+     * (never the peer's echo) and the previous channel-binding check is moot.
+     * Any failure aborts the spectate sync.
+     */
+    public async applySyncResponse(
+        peerAddress: string,
+        syncRequest: SyncRequest,
+        encodedSyncPayload: Bytes
+    ): Promise<void> {
+        const channelId = syncRequest.channelId;
 
-        this.requestMapByPeerAddress.delete(peerAddress);
-        return pending;
+        try {
+            // Decode inside the try: a malicious/broken peer can return bytes
+            // that aren't a valid Codec.encode(SyncPayload). A decode throw must
+            // be treated as a failed sync (abort/disconnect), not propagate as an
+            // unhandled rejection from the background sync task.
+            const syncPayload = Codec.decode(
+                encodedSyncPayload,
+                Type.SyncPayload
+            );
+            this.logger.debug(`Sync payload received`, { syncPayload });
+
+            const localTime = Clock.getTimeInSeconds();
+            const rtt = localTime - syncRequest.initTime;
+
+            this.logger.debug(
+                `applySyncResponse - RTT: ${rtt}s, initTime: ${syncRequest.initTime}, responseTime: ${localTime}`
+            );
+
+            // If RTT is too high, abort.
+            if (rtt > this.p2pManager.stateManager.timeConfig.agreementTime) {
+                this.logger.debug(
+                    `applySyncResponse - RTT too high (${rtt}s), aborting`
+                );
+                return this.abort(peerAddress);
+            }
+
+            // What we ultimately want to do here is:
+            // 1) Sync/Fetch all the relevant EVM storage data from the chain and persist it in our localEVM
+            // 2) Run/reuse the 'updateStateSnapshotFork' & 'updateStateSnapshotSameFork' as a function of:
+            //      2.1) The fetched/synced EVM on-chain state which we know is true
+            //      2.2) The provided SyncPayload which will be verified against the fetched data
+            // 3) While reusing 'updateStateSnapshotFork' & 'updateStateSnapshotSameFork' perform the call as `eth_call` would work on an RPC node
+            // This essentially simulates a 'tx' (allows 'store' and other state mutating opcodes and creates logs), but does NOT persist the changes (so we keep our EVM state consistent to the one on-chain)
+            // This verifies/proves to us that the payload is correct and that the state can really be 'teleported' to what the other peer is claiming to be the latest state and that the data provided to us is correct
+            // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
+            // This allows us to manually update the snapshot later at will AT LEAST to the state that we were synced (that's why we're reusing the solidity function, so we know that the TX will succeed)
+            //
+            // Up to this point we've verified the last finalized state given to us
+            // What do we do next?
+            // queue all the un-finalized stateProof blocks
+            // (other blocks that we're incoming would also be queued while we sync)
+            // set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy`
+
+            // So what we'll actually do here until the above stuff is implemented:
+            // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
+            // 2) Fetch all disputeWindows that where provided in the SyncPayload:
+            //      2.1) persist/update the localEVM with them
+            //      2.2) verify that they're expired - if they're not expired abort
+            //      2.3) reduce them if they're not already reduced (do this locally + package calldata for a single multicall later to the RPC node) - this may be a divergence from the on-chain state, but the on-chain one will have to reduce to the same one if expired - think of it as a CRDT where this time we're leading/ahead locally and the chain will eventualy reflect the same state
+            //      Later this will be `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) a single atomic transaction that doesn't persist the state locally, so we don't have edge cases when we 'do' persit and when we 'do not'
+            //      2.4) ** If more than 1  has to be reduced -> abort **
+            //      2.5) verify that they reduce to the correct forks as given in the SyncPayload -> abort otherwise
+            //      2.6) verify final genesisSnapshot is correct -> abort otherwise
+            //      2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot | TODO - think do we need to verify joinChannelBlocks
+            //      2.8) verify that genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
+            //      2.9) verify stateProof proves latest state -> abort otherwise
+            //      2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
+            //      2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
+            // 3) Finally - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
+            // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
+            // This allows us to manually update the snapshot later at will AT LEAST to the state that we were synced (that's why we're reusing the solidity function, so we know that the TX will succeed)
+            //
+            // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from un-finalized blocks
+
+            // ******* TODO - updateStateSnapshotFork/updateStateSnapshotSameFork need dummy contracts to process withdrawals
+            const stateManager = this.p2pManager.stateManager;
+            const diamondStateMachine = stateManager.diamondStateMachine;
+
+            // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
+            const onChainSnapshot =
+                await this.fetchAndPersistOnChainSnapshot(channelId);
+            let finalForkId = onChainSnapshot.forkID;
+
+            // 2) & 2.1) Fetch all disputeWindows that where provided in the SyncPayload:
+            const forkIds = syncPayload.disputeWindows.map(
+                (disputeWindow) => disputeWindow.forkId
+            );
+            await this.fetchAndPersistOnChainDisputeWindows(channelId, forkIds);
+
+            let notReducedCount = 0;
+            const disputeWindowsThatNeedToBeReducedOnChain: DisputeWindowVerification[] =
+                [];
+            for (const dw of syncPayload.disputeWindows) {
+                // 2.2) verify that they're expired - if they're not expired abort
+                const { isExpired } =
+                    await diamondStateMachine.localDiamondContract.isKillPeriodExpired(
+                        channelId,
+                        dw.forkId
+                    );
+                if (!isExpired) return this.abort(peerAddress);
+
+                // 2.3) reduce them if they're not already reduced
+                const isReducedAndFinal =
+                    await diamondStateMachine.localDiamondContract.isReduceChallengePeriodExpired(
+                        channelId,
+                        dw.forkId
+                    );
+                if (!isReducedAndFinal) {
+                    disputeWindowsThatNeedToBeReducedOnChain.push(dw);
+                    await diamondStateMachine.localDiamondContract.reduceAndFinalize(
+                        dw.disputeConfirmations.map((disputeConfirmation) =>
+                            Codec.decode(
+                                disputeConfirmation.signedDispute
+                                    .encodedDispute,
+                                Type.Dispute
+                            )
+                        ),
+                        dw.latestStateSnapshot,
+                        dw.latestEncodedStateMachineState,
+                        dw.inboundMessageBlocksAppliedInReduce,
+                        dw.reducedForkId
+                    );
+                    // 2.4) ** If more than 1  has to be reduced -> abort **
+                    if (++notReducedCount > 1) return this.abort(peerAddress);
+                }
+
+                // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
+                const _dw = (
+                    await diamondStateMachine.localDiamondContract.getDisputeWindows(
+                        channelId,
+                        [dw.forkId]
+                    )
+                )[0];
+                if (_dw.reducedResult.forkId != dw.reducedForkId)
+                    return this.abort(peerAddress);
+                // if the above call fails -> local evm will throw -> catch and abort
+                finalForkId = dw.reducedForkId;
+            }
+
+            // 2.6) verify final genesisSnapshot is correct -> abort otherwise
+            // Three checks: forkId resolves to this snapshot, forkId == keccak256(snapshotData)
+            // and encoded state matches the declared hash.
+            const finalForkIdMatchesGenesisForkId =
+                finalForkId === syncPayload.latestForkGenesisSnapshot.forkId;
+            const isGenesisValid =
+                await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
+                    syncPayload.latestForkGenesisSnapshot
+                );
+            const stateHashMatch =
+                syncPayload.latestForkGenesisSnapshot.snapshotData
+                    .stateMachineStateHash ===
+                hash(syncPayload.latestForkGenesisEncodedState);
+            const isCorrectGenesis =
+                finalForkIdMatchesGenesisForkId &&
+                isGenesisValid &&
+                stateHashMatch;
+
+            if (!isCorrectGenesis) return this.abort(peerAddress);
+
+            // optimization: if the on-chain snapshot is on the same fork but more advanced than what
+            // peers proved, reject before running any contract verification.
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.length > 0
+                    ? syncPayload.milestoneSnapshots.at(-1)!
+                    : syncPayload.latestForkGenesisSnapshot;
+            if (
+                onChainSnapshot.forkID ===
+                    syncPayload.latestForkGenesisSnapshot.forkId &&
+                onChainSnapshot.blockHeight >
+                    Number(latestFinalizedSnapshot.blockHeight)
+            ) {
+                this.logger.debug(
+                    `applySyncResponse - on-chain block height (${onChainSnapshot.blockHeight}) exceeds proved height (${Number(latestFinalizedSnapshot.blockHeight)}); aborting`
+                );
+                return this.abort(peerAddress);
+            }
+
+            // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
+            const genesisSnapshot = StateSnapshot.from(
+                syncPayload.latestForkGenesisSnapshot
+            );
+            const { lowerOutboundSnapshot, upperOutboundSnapshot } =
+                SpectateService.orderOutboundSnapshots(
+                    onChainSnapshot,
+                    genesisSnapshot
+                );
+
+            let areValidExitBlocks =
+                await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
+                    syncPayload.outboundMessageBlocksUpToLatestGenesis,
+                    lowerOutboundSnapshot.toStruct().snapshotData,
+                    upperOutboundSnapshot.toStruct().snapshotData
+                );
+
+            if (!areValidExitBlocks) return this.abort(peerAddress);
+
+            // 2.8) Depending are we syncing to the 'latest state' (spectating) or some requested state (forkId,blockHeight), verify that:
+            // 2.8.1) (spectating) genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
+            // 2.8.2) (requested) genesisSnapshot.forkId == syncRequest.forkId -> abort otherwise
+            if (!syncRequest.forkId) {
+                // 2.8.1) (spectating)
+                const _timestamp =
+                    await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                        channelId,
+                        finalForkId
+                    );
+                if (Number(_timestamp) != 0) return this.abort(peerAddress);
+            } else {
+                // 2.8.2) (requested)
+                if (finalForkId != syncRequest.forkId)
+                    return this.abort(peerAddress);
+            }
+
+            // 2.9) verify stateProof proves latest state -> abort otherwise
+            const isValid =
+                await diamondStateMachine.localDiamondContract.verifyMilestones.staticCall(
+                    syncPayload.latestForkGenesisSnapshot.forkId,
+                    syncPayload.stateProof.milestones,
+                    syncPayload.milestoneSnapshots,
+                    syncPayload.latestForkGenesisSnapshot
+                );
+            if (!isValid) return this.abort(peerAddress);
+
+            if (
+                latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
+                hash(syncPayload.latestFinalizedEncodedState)
+            )
+                return this.abort(peerAddress);
+
+            // 2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
+            areValidExitBlocks =
+                await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
+                    syncPayload.outboundMessageBlocksOfTheLatestFork,
+                    syncPayload.latestForkGenesisSnapshot.snapshotData,
+                    latestFinalizedSnapshot.snapshotData
+                );
+            if (!areValidExitBlocks) return this.abort(peerAddress);
+
+            // 2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
+            const isValidBalance =
+                await stateManager.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+                    channelId,
+                    latestFinalizedSnapshot.snapshotData,
+                    syncPayload.latestFinalizedEncodedState
+                );
+            if (!isValidBalance) return this.abort(peerAddress);
+
+            // 3) Finally - staticcall multicall to deduct failure/success -> on failure abort
+            const isMulticallSuccess = await this.tryMulticallSnapshotUpdate(
+                channelId,
+                onChainSnapshot.toStruct(),
+                syncPayload,
+                disputeWindowsThatNeedToBeReducedOnChain
+            );
+            if (!isMulticallSuccess) return this.abort(peerAddress);
+
+            // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
+            const { shouldAbort } = await this.persistSyncPayload(syncPayload);
+            if (shouldAbort) return this.abort(peerAddress);
+
+            // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
+            const blockConfirmations =
+                await diamondStateMachine.localDiamondContract.getUnfinalizedBlockConfirmationsFromStateProof(
+                    syncPayload.stateProof
+                );
+            this.logger.debug(
+                `Spectate sync - next block height before pipeline ${stateManager.storage.blocks.getNextBlockHeight(finalForkId)}`
+            );
+            this.logger.debug(
+                `Spectate sync - BlockConfirmation pipeline for ${blockConfirmations.length} unfinalized block`,
+                blockConfirmations.map((bc) => {
+                    const _block = Block.fromBlockConfirmation(bc);
+                    return {
+                        blockHeight: _block.height,
+                        signerAddress: _block.author
+                    };
+                })
+            );
+            for (const bc of blockConfirmations) {
+                try {
+                    const isOk = await stateManager.onBlockConfirmation(bc);
+                    if (!isOk) return this.abort(peerAddress);
+                } catch (e) {
+                    this.logger.error(
+                        `Error processing block confirmation during spectate sync`,
+                        { error: e }
+                    );
+                    return this.abort(peerAddress);
+                }
+            }
+            this.logger.debug(
+                `Spectate sync - next block height after pipeline ${stateManager.storage.blocks.getNextBlockHeight(finalForkId)}`
+            );
+            // 6) If state requested (forkId,blockHeight) - check if blockHeight reached
+            if (syncRequest.blockHeight !== undefined) {
+                const [hasBlock, latestBlock] =
+                    await diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
+                        syncPayload.stateProof
+                    );
+                if (!hasBlock) return this.abort(peerAddress);
+                if (
+                    Number(latestBlock.transaction.header.transactionCnt) !=
+                    syncRequest.blockHeight
+                )
+                    return this.abort(peerAddress);
+            }
+            this.logger.debug(
+                "Spectator successfully synced to latest proven state"
+            );
+        } catch (e) {
+            this.logger.warn(e);
+            return this.abort(peerAddress);
+        }
     }
 
     /**
@@ -597,8 +925,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             status !== Status.PARTICIPATING &&
             status !== Status.PENDING_PARTICIPANT
         ) {
-            this.p2pManager.disconnectAll();
-            void this.p2pManager.stateManager.stateChannelEventListener.dispose();
+            this.p2pManager.stateManager.abort();
             return;
         }
 

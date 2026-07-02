@@ -33,6 +33,9 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 export const hash = (): `0x${string}` =>
     ethers.hexlify(ethers.randomBytes(32)) as `0x${string}`;
 
+export const randomAddress = (): Address =>
+    ethers.Wallet.createRandom().address as Address;
+
 export const hexString = (length: number = 32): Bytes => {
     return ethers.hexlify(ethers.randomBytes(length));
 };

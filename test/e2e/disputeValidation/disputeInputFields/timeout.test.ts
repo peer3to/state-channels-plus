@@ -1,7 +1,5 @@
-import { expect } from "chai";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
-import { tryDecodeCustomError, addressesEqual } from "@/utils";
 import { TimeoutTooEarlyStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 describe("E2E: dispute validation / disputeInputFields / timeout", function () {
@@ -78,11 +76,6 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             // peer 2 is the silent non-writer → exclude from fork-change barrier.
             h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
 
-            const slashedBefore =
-                await h.channelManager.getOnChainSlashedParticipants(
-                    h.channelId
-                );
-
             await h.tamper.plantFreshTimeoutForNextWriter(0);
             await h.tamper.postTamperedDispute(0, () => {});
 
@@ -94,18 +87,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 timeoutMs: 10000
             });
 
-            const disputerAddress = h.getPeer(0).address;
-
-            const slashedAfter =
-                await h.channelManager.getOnChainSlashedParticipants(
-                    h.channelId
-                );
-            expect(slashedAfter.length).to.be.greaterThan(slashedBefore.length);
-            expect(
-                slashedAfter.some((a: string) =>
-                    addressesEqual(a, disputerAddress)
-                )
-            ).to.equal(true);
+            await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
         });
 
         it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
@@ -143,7 +125,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
 
-        it("forged TimeoutTooEarly against a legitimate timeout dispute → applyDisputeFraudProofs reverts ErrorInvalidFraudProof", async function () {
+        it("forged TimeoutTooEarly against a legitimate timeout dispute → proof author slashed", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             // peer 2 does not write, so it will timeout naturally.
@@ -154,55 +136,34 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 timeoutMs: 15000
             });
 
-            try {
-                await h.tamper.submitForgedFraudProof(
-                    0,
-                    DisputeFraudProofType.TimeoutTooEarly,
-                    ({ genesisSnapshot }): TimeoutTooEarlyStruct => ({
-                        genesisStateSnapshotData: genesisSnapshot.snapshotData,
-                        previousBlockOnChainTimestamp: 0
-                    })
-                );
-                expect.fail("expected revert");
-            } catch (error: unknown) {
-                const custom = tryDecodeCustomError(error);
-                expect(
-                    custom!.errorDescription.name,
-                    "expected ErrorInvalidFraudProof"
-                ).to.equal("ErrorInvalidFraudProof");
-            }
+            await h.tamper.submitForgedFraudProof(
+                0,
+                DisputeFraudProofType.TimeoutTooEarly,
+                ({ genesisSnapshot }): TimeoutTooEarlyStruct => ({
+                    genesisStateSnapshotData: genesisSnapshot.snapshotData,
+                    previousBlockOnChainTimestamp: 0
+                })
+            );
+
+            await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
 
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
     });
 
-    it("dispute.input.timeout.blockHeight = fully-signed block height; disputer left off-chain → TimeoutThreshold", async function () {
+    it("leaver does not dispute a timeout after leaving the channel", async function () {
         const h = TestSession.getHarness();
-        // Leaver disputes without signing post-leave block 1 so validators reach TimeoutThreshold (not DisputeNotLatestState).
+        // peer 0 leaves the channel but stays on-chain (leave snapshot suppressed),
+        // then is isolated. with no p2p blocks it sees a phantom timeout for the
+        // next writer -> but it's no longer an off-chain participant, so it must
+        // NOT dispute.
         await h.lifecycle.timeoutSetup(4, 0, {
             timeConfig: { agreementTime: 2, evidenceTime: 8 }
         });
 
         // Skip leave snapshot so peer 0 stays dispute-eligible on-chain.
         await h.control(h.getPeer(0)).stub.stubPostStateSnapshot().request();
-
-        // Tamper peer 0's scheduled timeout dispute: proof to H-1=0, claim height 1 / block-1 author.
-        h.tamper.stubConstructDispute(
-            0,
-            async (dispute, sm) => {
-                const d = sm.p2pManager.localRpc.dispute;
-                // Read the block-1 author from the proof before truncation.
-                const author = d.blockAuthorAtHeightFromProof(
-                    dispute.input.stateProof,
-                    1
-                )!;
-                await d.truncateStateProofToHeight(dispute, 0);
-                dispute.input.timeout.blockHeight = 1n;
-                dispute.input.timeout.participant = author;
-            },
-            { markMalicious: false }
-        );
-
+        //  peer 0 is leaving (off chain)
         await h.transition.advanceState({
             txFn: (c) => c.leaveChannel(),
             waitForFinalization: true
@@ -210,32 +171,25 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         const remaining = [1, 2, 3];
         h.context.leftChannelPeerIndices = [0];
 
-        // Isolate peer 0 so they don't locally sign block 1 (would trip DisputeNotLatestState).
+        // isolate peer 0 so it stops receiving p2p blocks -> its timeout timer
+        // for the next block fires naturally.
         await h.byzantine.disconnect(0);
         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
 
+        // remaining peers advance past peer 0.
         await h.transition.advanceState({
             waitForPeers: remaining,
             waitForFinalization: true
         });
 
-        h.contextApi.captureOriginalFork();
-        h.event.resetEventSpies();
-
-        // Peer 0 stuck before block 1; background timeout fires → stub tamper → TimeoutThreshold on 1/2/3.
-        await h.event.waitForPeers("onDisputeKilled", [1, 2, 3], 1, {
-            mode: "atLeast",
-            timeoutMs: 15000
-        });
-        await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-            disputeFraudProofType: DisputeFraudProofType.TimeoutThreshold,
-            timeoutMs: 10000
-        });
-        // Dispute path kills tampered claim; slash/eligible-set update still settles fork.
-        await h.dispute.resolveDisputeWait({
-            forkSettleTimeoutMs: 20000,
-            assertMaliciousRemoved: false
-        });
+        await h.event.waitWhileEventCountsStayAtMost(
+            "onInitiatingDispute",
+            [0],
+            {
+                durationMs: 8000,
+                maxCount: 0
+            }
+        );
     });
 
     it("dispute.input.timeout.blockHeight = block whose calldata is on-chain; isForced=true → TimeoutCalldataPosted", async function () {

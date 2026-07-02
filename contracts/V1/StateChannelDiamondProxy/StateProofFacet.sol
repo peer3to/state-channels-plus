@@ -16,7 +16,10 @@ contract StateProofFacet is StateChannelCommon {
             return false;
         }
 
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+        (bool validLatestBlock, bool hasBlock, Block memory latestBlock) = _tryGetLatestBlock(dispute.input.stateProof);
+        if (!validLatestBlock) {
+            return false;
+        }
         if (hasBlock) {
             return (latestBlock.stateSnapshotHash == dispute.input.latestStateSnapshotHash);
         }
@@ -45,10 +48,11 @@ contract StateProofFacet is StateChannelCommon {
         virtual
         returns (bool)
     {
-        require(
-            dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData)),
-            ErrorAuditingDataHashMismatch()
-        );
+        // reference check - is this the auditingData the dispute committed to?
+        if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(disputeAuditingData))) {
+            return false;
+        }
+
         if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, disputeAuditingData.genesisStateSnapshotData)) {
             return false;
         }
@@ -61,8 +65,7 @@ contract StateProofFacet is StateChannelCommon {
         }
 
         if (dispute.input.stateProof.signedBlocks.length != 0) {
-            // HACK: Pass bytes32(0) to skip the first block's linkage to genesis.
-            if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks, bytes32(0))) {
+            if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks)) {
                 return false;
             }
         }
@@ -76,6 +79,25 @@ contract StateProofFacet is StateChannelCommon {
             return false;
         }
         return true;
+    }
+
+    function _tryGetLatestBlock(StateProof memory stateProof)
+        internal
+        view
+        returns (bool isValid, bool hasBlock, Block memory blockData)
+    {
+        SignedBlock memory latestSignedBlock;
+        (hasBlock, latestSignedBlock) = _getLatestSignedBlock(stateProof);
+        if (!hasBlock) {
+            return (true, false, blockData);
+        }
+
+        (bool decoded, Block memory latestBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(latestSignedBlock.encodedBlock);
+        if (!decoded) {
+            return (false, true, blockData);
+        }
+        return (true, true, latestBlock);
     }
 
     function _tryVerifyMilestones(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -101,17 +123,28 @@ contract StateProofFacet is StateChannelCommon {
         }
     }
 
-    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks, bytes32 optionalPreviousHash)
+    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public view returns (bool) {
+        return _areSignedBlocksLinkedAndVerified(signedBlocks);
+    }
+
+    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks)
         internal
         view
         returns (bool isLinked)
     {
-        bytes32 previousBlockHash = optionalPreviousHash;
+        bytes32 previousBlockHash;
         for (uint256 i = 0; i < signedBlocks.length; i++) {
             bytes memory currentBlockEncoded = signedBlocks[i].encodedBlock;
-            Block memory currentBlock = abi.decode(currentBlockEncoded, (Block));
+            (bool decoded, Block memory currentBlock) =
+                UtilityFacet(utilityFacetAddress).tryDecodeBlock(currentBlockEncoded);
+            if (!decoded) {
+                return false;
+            }
             //check is linked
-            if (previousBlockHash != bytes32(0) && previousBlockHash != currentBlock.previousBlockHash) {
+            if (i == 0 && currentBlock.transaction.header.transactionCnt != 0) {
+                return false;
+            }
+            if (i != 0 && previousBlockHash != currentBlock.previousBlockHash) {
                 return false;
             }
             previousBlockHash = keccak256(currentBlockEncoded);
@@ -174,7 +207,12 @@ contract StateProofFacet is StateChannelCommon {
         }
         for (uint256 i = 0; i < milestone.blockConfirmations.length; i++) {
             currentBlockConfirmation = milestone.blockConfirmations[i];
-            currentBlock = abi.decode(currentBlockConfirmation.signedBlock.encodedBlock, (Block));
+            (bool decoded, Block memory decodedBlock) =
+                UtilityFacet(utilityFacetAddress).tryDecodeBlock(currentBlockConfirmation.signedBlock.encodedBlock);
+            if (!decoded) {
+                return (false, bytes32(0));
+            }
+            currentBlock = decodedBlock;
             if (currentBlock.transaction.header.forkId != forkId) {
                 console.log("_isMilestoneFinal: fail forkId mismatch at i", i);
                 console.logBytes32(currentBlock.transaction.header.forkId);
@@ -287,8 +325,12 @@ contract StateProofFacet is StateChannelCommon {
                 return false;
             }
 
-            Block memory firstMilestoneBlock =
-                abi.decode(milestone.blockConfirmations[0].signedBlock.encodedBlock, (Block));
+            (bool decoded, Block memory firstMilestoneBlock) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
+                milestone.blockConfirmations[0].signedBlock.encodedBlock
+            );
+            if (!decoded) {
+                return false;
+            }
             if (
                 firstMilestoneBlock.transaction.header.forkId == thresholdStateSnapshot.forkId
                     && firstMilestoneBlock.transaction.header.transactionCnt < thresholdStateSnapshot.blockHeight
@@ -309,7 +351,13 @@ contract StateProofFacet is StateChannelCommon {
             bytes memory previousEncodedBlock;
             Block memory currentBlock;
             for (uint256 i = 0; i < lastSkippedMilestone.blockConfirmations.length; i++) {
-                currentBlock = abi.decode(lastSkippedMilestone.blockConfirmations[i].signedBlock.encodedBlock, (Block));
+                (bool decoded, Block memory decodedBlock) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
+                    lastSkippedMilestone.blockConfirmations[i].signedBlock.encodedBlock
+                );
+                if (!decoded) {
+                    return false;
+                }
+                currentBlock = decodedBlock;
                 if (i != 0 && currentBlock.previousBlockHash != keccak256(previousEncodedBlock)) {
                     return false;
                 }
@@ -328,8 +376,12 @@ contract StateProofFacet is StateChannelCommon {
             MilestoneProof memory milestone = milestoneProofs[i];
             bytes32 channelId = bytes32(0);
             if (milestone.blockConfirmations.length > 0) {
-                Block memory firstMilestoneBlock =
-                    abi.decode(milestone.blockConfirmations[0].signedBlock.encodedBlock, (Block));
+                (bool decoded, Block memory firstMilestoneBlock) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
+                    milestone.blockConfirmations[0].signedBlock.encodedBlock
+                );
+                if (!decoded) {
+                    return false;
+                }
                 channelId = firstMilestoneBlock.transaction.header.channelId;
             } else {
                 return false;

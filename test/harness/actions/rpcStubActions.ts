@@ -51,6 +51,37 @@ export class RpcStubActions<
     }
 
     /**
+     * Make the given peers answer every spectate request with undecodable junk
+     * bytes (a peer returning data that isn't a valid encoded SyncPayload).
+     * Returns a teardown.
+     */
+    async stubSpectateJunkPayload(
+        peerIndices: number[]
+    ): Promise<() => Promise<void>> {
+        await Promise.all(
+            peerIndices.map((i) =>
+                this.harness
+                    .control(this.harness.getPeer(i))
+                    .stub.stubSpectateJunkPayload()
+                    .request()
+            )
+        );
+        this.logger.debug(
+            `Stubbed spectate junk payload on peers [${peerIndices.join(", ")}]`
+        );
+        return async () => {
+            await Promise.all(
+                peerIndices.map((i) =>
+                    this.harness
+                        .control(this.harness.getPeer(i))
+                        .stub.restoreSpectateJunkPayload()
+                        .request()
+                )
+            );
+        };
+    }
+
+    /**
      * Replace a peer's `onDisputeAcknowledgmentRequest` with a no-op that records
      * the call. Returns a teardown.
      */
@@ -75,5 +106,67 @@ export class RpcStubActions<
             .control(this.harness.getPeer(peerIndex))
             .stub.wasDisputeAckRequestCalled()
             .request();
+    }
+
+    /**
+     * Count `onSpectateRequest` calls reaching the given peer (real handler still
+     * runs). Returns a teardown. Pair with `getSpectateRequestCount`.
+     */
+    async stubCountSpectateRequests(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubCountSpectateRequests()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreCountSpectateRequests()
+                .request();
+        };
+    }
+
+    async getSpectateRequestCount(peerIndex: number): Promise<number> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.getSpectateRequestCount()
+            .request();
+    }
+
+    /**
+     * Make a peer reply to handshake challenges with a faulty response so the
+     * initiator rejects it. `delayMs` forces a request timeout; `responseTime
+     * OffsetSeconds` skews the response timestamp. Returns a teardown.
+     */
+    async stubHandshakeResponse(
+        peerIndex: number,
+        options: {
+            delayMs?: number;
+            responseTimeOffsetSeconds?: number;
+            corruptSignature?: boolean;
+        } = {}
+    ): Promise<() => Promise<void>> {
+        const {
+            delayMs = 0,
+            responseTimeOffsetSeconds = 0,
+            corruptSignature = false
+        } = options;
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubHandshakeResponse(
+                delayMs,
+                responseTimeOffsetSeconds,
+                corruptSignature
+            )
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreHandshakeResponse()
+                .request();
+        };
     }
 }

@@ -2,37 +2,31 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "./StateChannelManagerProxy.sol";
+import "./DisputeVerificationFacet.sol";
 import "./StateProofFacet.sol";
 import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/GeneralUtils.sol";
 import "./UtilityFacet.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract DisputeFraudProofFacet is StateChannelCommon {
     //This is a bit inefficient, since public/external functions always do a deep copy unlike internal/private that pass by reference, but this shares the context
-    function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
-        public
-        returns (Dispute[] memory maliciousDisputes)
-    {
-        maliciousDisputes = new Dispute[](disputeFraudProofs.length);
-        uint256 slashCount = 0;
-        for (uint256 i = 0; i < disputeFraudProofs.length; i++) {
-            Dispute memory dispute = disputeFraudProofs[i].dispute;
+    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public {
+        for (uint256 i = 0; i < proofs.length; i++) {
+            Dispute memory dispute = proofs[i].dispute;
+            // not committed -> already killed (lost the kill-race) or never committed; no-op.
             if (!isDisputeCommitted(dispute)) continue;
-            address slashedParticipant =
-                _getHandle(disputeFraudProofs[i].proofType)(disputeFraudProofs[i].encodedProof, dispute);
-            if (slashedParticipant == address(0) || slashedParticipant != disputeFraudProofs[i].participant) {
-                revert ErrorInvalidFraudProof(slashedParticipant, disputeFraudProofs[i].participant);
+            address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
+            if (slashedParticipant == proofs[i].participant) {
+                _delegatecall(
+                    disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.killDispute, (dispute))
+                );
+            } else if (canParticipateInDisputes(dispute.input.channelId, msg.sender)) {
+                addOnChainSlashedParticipant(dispute.input.channelId, msg.sender);
             }
-            maliciousDisputes[slashCount] = dispute;
-            slashCount++;
         }
-        Dispute[] memory finalDisputes = new Dispute[](slashCount);
-        for (uint256 i = 0; i < slashCount; i++) {
-            finalDisputes[i] = maliciousDisputes[i];
-        }
-        return finalDisputes;
     }
 
     function _getHandle(DisputeFraudProofType proofType)
@@ -197,9 +191,25 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         DisputeInvalidStateProof memory proof = abi.decode(encodedFraudProof, (DisputeInvalidStateProof));
+
         // TODO extract this into its own fraud proof and test it
         if (!dispute.postedAuditingData) {
+            // fraud prover supplies the genesis reference -> it must be linked to the fork
+            if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, proof.auditingData.genesisStateSnapshotData))
+            {
+                return _invalid();
+            }
             if (!_isLastMilestoneFinalByEveryone(dispute)) return _invalid();
+
+            if (dispute.input.stateProof.signedBlocks.length != 0) {
+                bytes memory linkReturnData = _delegatecall(
+                    stateProofFacetAddress,
+                    abi.encodeCall(
+                        StateProofFacet.areSignedBlocksLinkedAndVerified, (dispute.input.stateProof.signedBlocks)
+                    )
+                );
+                if (!abi.decode(linkReturnData, (bool))) return _valid(dispute.input.disputer);
+            }
 
             bytes memory latestStateData = abi.encodeCall(
                 StateProofFacet.isCorrectLatestState, (dispute, proof.auditingData.genesisStateSnapshotData)
@@ -213,11 +223,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        bytes memory data = abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, proof.auditingData));
-        (bool success, bytes memory returnData) = stateProofFacetAddress.delegatecall(data);
-        if (!success) return _valid(dispute.input.disputer);
-        bool isValid = abi.decode(returnData, (bool));
-        if (!isValid) return _valid(dispute.input.disputer);
+        if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(proof.auditingData))) return _invalid();
+
+        bytes memory returnData = _delegatecall(
+            stateProofFacetAddress, abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, proof.auditingData))
+        );
+        bool isValidStateProof = abi.decode(returnData, (bool));
+
+        // false -> the state proof really is invalid -> slash disputer
+        // true  -> fraud proof lied, the state proof is fine -> slash prover
+        if (!isValidStateProof) return _valid(dispute.input.disputer);
         return _invalid();
     }
 
@@ -402,7 +417,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 }
             }
         }
-        if (timeoutTimestamp < previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()) {
+        (bool ok, uint256 minValidTimestamp) =
+            Math.tryAdd(previousTimestamp, getP2pTime() + getAgreementTime() + getChainFallbackTime());
+        if (!ok || timeoutTimestamp < minValidTimestamp) {
             return _valid(dispute.input.disputer);
         }
         return _invalid();
@@ -494,11 +511,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             }
         }
         //TODO think >= or >
-        if (
-            timeoutCalldataPostedProof.onChainTimestamp
-                > previousTimestamp + getP2pTime() + getAgreementTime() + getChainFallbackTime()
-        ) {
-            // invalid onChainTimestamp
+        (bool ok, uint256 maxValidTimestamp) =
+            Math.tryAdd(previousTimestamp, getP2pTime() + getAgreementTime() + getChainFallbackTime());
+        if (ok && timeoutCalldataPostedProof.onChainTimestamp > maxValidTimestamp) {
             return _invalid();
         }
         // make sure we can do the STF - it's a valid block
@@ -567,6 +582,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         BlockConfirmation[] memory blockConfirmations =
             _getUnfinalizedBlockConfirmationsFromStateProof(dispute.input.stateProof);
         uint256 blockIndexInUnfinalizedPartOfStateProof = proof.blockIndexInUnfinalizedPartOfStateProof;
+
+        if (blockIndexInUnfinalizedPartOfStateProof >= blockConfirmations.length) {
+            return _invalid();
+        }
 
         bytes32 invalidStateProofBlockHash =
             keccak256(abi.encode(blockConfirmations[blockIndexInUnfinalizedPartOfStateProof].signedBlock));

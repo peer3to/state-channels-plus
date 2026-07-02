@@ -4,6 +4,11 @@
 - For post-edit validation, run the narrowest relevant test first when available.
 - Run `yarn tsc --noEmit -p tsconfig.json` for TypeScript typechecking.
 - Run `yarn compile` for compile-level validation when changes affect the build or exported package surface.
+- Don't disturb the user's working tree or index to inspect another revision.
+  Prefer a throwaway worktree (`git worktree add <tmp> <ref>`) over `git stash`.
+  If you must stash, preserve staging: restore with `git stash pop --index` so
+  files the user had staged come back staged — never leave them re-reviewing
+  files they'd already staged.
 
 ## Conventions
 
@@ -26,6 +31,30 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
 ### Comments
 
 - Keep comments simple and to the point. No long essays.
+- When refactoring or moving code (extracting a method, moving a body to another
+  file/service), carry over all original comments verbatim — do not drop or
+  condense them, including large explanatory/strategy blocks and numbered step
+  comments. If a comment genuinely needs to change, call it out rather than
+  dropping it silently; flag stale commented-out dead code instead of removing
+  it without mention.
+
+### Solidity validators shared with the off-chain TS pipeline
+
+- A check that must agree on- and off-chain (dispute fraud-proof handlers) lives
+  **once in Solidity**; TS calls it via typechain — never re-implement it in TS
+  (it drifts → the off-chain pipeline builds a proof the on-chain apply handler
+  rejects). Must run on **both the calldata and non-calldata dispute paths**.
+- **Placement:** pure (no state) → free fn in `utils/DisputeUtils.sol` /
+  `BlockUtils.sol` + a `LocalDiamond` forwarder. State-reading domain logic →
+  `public` on the owning facet (e.g. `StateProofFacet`) + a
+  `StateChannelManagerProxy` forwarder + a `StateChannelManagerInterface` decl;
+  TS calls `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
+  `delegatecall` the facet address (see `isCorrectLatestState`,
+  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `public` on
+  `StateChannelCommon` (`isBlockAuthentic`).
+- **Never put domain logic `public` on `StateChannelCommon`:** a `public` base fn
+  is in every facet's ABI → compiled into all of them. `internal` is
+  dead-code-eliminated to its callers.
 
 ### Platform-specific code (node / browser)
 

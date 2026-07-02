@@ -108,6 +108,13 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         (bool isOpen,) = isChannelOpen(openChannelData.channelId);
         require(!isOpen, RaceConditionChannelAlreadyOpen());
 
+        // reject duplicate participants
+        for (uint256 i = 0; i < openChannelData.participants.length; i++) {
+            for (uint256 j = i + 1; j < openChannelData.participants.length; j++) {
+                require(openChannelData.participants[i] != openChannelData.participants[j], ErrorDuplicateParticipant());
+            }
+        }
+
         // set zero balance for on-chain deposits/withdrawals
         Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
         {
@@ -119,12 +126,9 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
-            .verifyThresholdSigned(
-                openChannelData.participants,
-                openChannelConfirmation.encodedOpenChannel,
-                openChannelConfirmation.signatures
-            );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
+        );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -164,7 +168,10 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
+            snapshotData: genesisSnapshotData,
+            forkId: forkId,
+            blockHeight: 0,
+            timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
@@ -205,7 +212,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public override {
         _delegatecall(
-            disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.applyDisputeFraudProofs, (proofs))
+            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.applyDisputeFraudProofs, (proofs))
         );
     }
 
@@ -306,6 +313,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
         override
+        onlySelf
         returns (bool, bytes memory encodedModifiedState, Message[] memory outboundMessages)
     {
         //channelId not used currently since all channels have the same SM - later they can be mapped to different ones
@@ -332,17 +340,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         bytes memory result =
             _delegatecall(fraudProofFacetAddress, abi.encodeCall(FraudProofFacet.hasInvalidTimestamp, (proof)));
         return abi.decode(result, (bool));
-    }
-
-    function verifyDisputeFraudProofs(DisputeFraudProof[] memory disputeFraudProofs)
-        public
-        returns (bytes memory maliciousDisputesEncoded)
-    {
-        bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress,
-            abi.encodeCall(DisputeFraudProofFacet.verifyDisputeFraudProofs, (disputeFraudProofs))
-        );
-        return result;
     }
 
     function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
@@ -455,6 +452,18 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         bytes memory result = _delegatecall(
             stateProofFacetAddress,
             abi.encodeCall(StateProofFacet.isCorrectLatestState, (dispute, genesisStateSnapshotData))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks)
+        public
+        virtual
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress, abi.encodeCall(StateProofFacet.areSignedBlocksLinkedAndVerified, (signedBlocks))
         );
         return abi.decode(result, (bool));
     }

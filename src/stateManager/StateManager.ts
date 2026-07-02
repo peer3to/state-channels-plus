@@ -232,6 +232,24 @@ class StateManager<
             this.logger
         );
     }
+    /**
+     * General abort: give up participation in the current channel and tear down
+     * P2P and chain resources. Used by any component/service that needs to stop
+     * participating (slashed/removed by dispute resolution, unrecoverable sync
+     * failure, race-condition join). We tear down the event listener so we no
+     * longer track state — drop to OPENED (channel exists on-chain, not synced)
+     * rather than SYNCED or NOT_OPENED.
+     */
+    public abort() {
+        this.logger.warn("Aborting channel participation", {
+            channelId: this.channelId,
+            status: Status[this.status]
+        });
+        this.setStatus(Status.OPENED);
+        this.p2pManager.disconnectAll();
+        void this.stateChannelEventListener.dispose();
+    }
+
     //Mark resources for garbage collection
     public async dispose() {
         this.isDisposed = true;
@@ -478,8 +496,7 @@ class StateManager<
         }
 
         //TODO - see to put all genesisTimestamp logic in one place
-        const genesisTimestamp =
-            Number(onChainKillTimestamp) + this.timeConfig.evidenceTime;
+        const genesisTimestamp = Number(onChainKillTimestamp);
         // Step 4: Perform reduction
         try {
             await this.performReduction(forkId, genesisTimestamp);
@@ -786,8 +803,6 @@ class StateManager<
                 case "RaceConditionJoinChannelExpired":
                 case "RaceConditionJoinChannelSnapshotMismatch":
                 case "RaceConditionJoinChannelForkDisputed":
-                    // TODO: call general abort() here once it exists outside spectate
-                    // (see SpectateService.abort + EventHandler.onStateSnapshotUpdated).
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
                         {
@@ -796,7 +811,8 @@ class StateManager<
                         }
                     );
                     // Rethrown as CustomEvmError
-                    throw custom;
+                    this.abort();
+                    throw custom; //TODO - comunncate abort to the outside
             }
             this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
                 error: error instanceof Error ? error.message : String(error)
@@ -2244,6 +2260,11 @@ class StateManager<
         participantAddress: Address
     ): Promise<void> {
         if (participantAddress === this.signerAddress) {
+            return;
+        }
+
+        const participants = await this.diamondStateMachine.getParticipants();
+        if (!participants.includes(this.signerAddress)) {
             return;
         }
 

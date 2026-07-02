@@ -20,7 +20,9 @@ import OpenChannelNegotiationRpcMethods, {
 import {
     DEFAULT_JOIN_AMOUNT,
     NEGOTIATION_TIMEOUT_MS,
+    OPEN_CHANNEL_DEADLINE_SECONDS,
     compareAddresses,
+    getOpenChannelProposalMismatch,
     type Address
 } from "./OpenChannelNegotiationHelpers";
 
@@ -181,7 +183,8 @@ export default class OpenChannelNegotiationService extends ARpcService<
         if (!isLower) return;
 
         if (haveAmounts && !this.state.proposalSent) {
-            const deadlineTimestamp = Clock.getTimeInSeconds() + 60;
+            const deadlineTimestamp =
+                Clock.getTimeInSeconds() + OPEN_CHANNEL_DEADLINE_SECONDS;
             const openChannel: OpenChannelStruct = {
                 channelId,
                 participants,
@@ -226,7 +229,8 @@ export default class OpenChannelNegotiationService extends ARpcService<
             return;
         }
 
-        const { lower } = this.getParticipantsAndBalances(peer);
+        const { participants, balances, lower } =
+            this.getParticipantsAndBalances(peer);
         const isLower = me === lower;
         if (isLower) {
             this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
@@ -249,6 +253,44 @@ export default class OpenChannelNegotiationService extends ARpcService<
         if (recovered !== lower) {
             this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
             this.resetNegotiation("invalid lower signature");
+            return;
+        }
+
+        // Only co-sign once amounts were actually negotiated; otherwise the
+        // reconstructed balances would fall back to defaults and we'd validate
+        // against terms we never agreed.
+        if (typeof this.state.theirAmount !== "number") {
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
+            this.resetNegotiation("openProposal - no negotiated amount");
+            return;
+        }
+
+        // The lower signature is valid, but it only proves the peer signed
+        // *these* bytes — not that they match what we negotiated. Reconstruct
+        // the expected terms and refuse to co-sign anything else, so a peer
+        // can't make our signer authorize attacker-chosen channel parameters.
+        const nowSeconds = Clock.getTimeInSeconds();
+        const mismatch = getOpenChannelProposalMismatch(
+            decoded,
+            {
+                channelId: this.p2pManager.stateManager.getChannelId(),
+                participants,
+                balances
+            },
+            {
+                nowSeconds,
+                // Generous upper bound (2x the proposer's deadline offset) so
+                // modest clock skew between peers can't reject a legitimate
+                // proposal; the deadline is a sanity bound, not fund-critical.
+                maxSeconds: nowSeconds + OPEN_CHANNEL_DEADLINE_SECONDS * 2
+            }
+        );
+        if (mismatch) {
+            this.logger.warn(
+                `openProposal - proposed terms do not match negotiation; rejecting (${mismatch})`
+            );
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
+            this.resetNegotiation(`openProposal terms mismatch: ${mismatch}`);
             return;
         }
 

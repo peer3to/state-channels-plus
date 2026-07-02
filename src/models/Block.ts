@@ -80,6 +80,31 @@ export default class Block {
         );
     }
 
+    static tryFromBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct,
+        onChainTimestamp?: Timestamp
+    ): Block | null {
+        try {
+            return Block.fromBlockConfirmation(
+                blockConfirmation,
+                onChainTimestamp
+            );
+        } catch {
+            return null;
+        }
+    }
+
+    static tryFromSignedBlock(
+        signedBlock: SignedBlockStruct,
+        onChainTimestamp?: Timestamp
+    ): Block | null {
+        try {
+            return Block.fromSignedBlock(signedBlock, onChainTimestamp);
+        } catch {
+            return null;
+        }
+    }
+
     static async fromBlockStruct(
         blockStruct: BlockStruct,
         signer: Signer,
