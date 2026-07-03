@@ -11,6 +11,7 @@ import Clock from "@/Clock";
 import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import { createLogger, DebugProxy, DetachedPromises } from "@/utils";
+import { config } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import MainRpcService from "@/rpc/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
@@ -37,6 +38,12 @@ import type {
  */
 export interface HostContext {
     signer: Signer;
+    /**
+     * When set, this host runs in its own worker thread; the label (e.g. "sdk")
+     * tags this thread's event-loop-delay diagnostic reports. Unset for the
+     * inline (main-thread) host — the harness's main logger covers that.
+     */
+    threadLabel?: string;
 }
 
 /** Live runtime graph while the host is running. */
@@ -95,13 +102,21 @@ export async function startP2pRuntimeHost<
     TCustomRpc extends MainRpcService = MainRpcService,
     TCustomRpcOptions = unknown
 >(port: RuntimePort, payload: SetupPayload, ctx: HostContext): Promise<void> {
-    const { signer } = ctx;
+    const { signer, threadLabel } = ctx;
     const signerAddress = await signer.getAddress();
     const logger = createLogger(
         { peerId: payload.peerId, peerAddress: signerAddress },
         { component: "P2pRuntimeHost" },
         { attachErrorListener: false }
     );
+
+    // When this host runs in its own worker thread (sdk-in-thread), monitor that
+    // thread's event loop with the standard logger monitor — same
+    // EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS guard (throws past it) as every
+    // other thread. threadLabel tags its ##E2E_TIMING## delay-peak reports.
+    if (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0 && threadLabel) {
+        logger.startPerformanceMonitoring({ threadLabel });
+    }
 
     // Own this account's nonce so the peer's concurrent async flows can't collide
     // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM

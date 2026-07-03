@@ -16,6 +16,9 @@ export type Config = {
     LOCAL_DISCOVERY_REGISTRY_URL: string;
     VM_DEDICATED_THREAD: boolean;
     RUN_SDK_IN_THREAD: boolean;
+    // >0 enables the logger event-loop monitor (throws past this many seconds)
+    // AND, as a side effect, the ##E2E_TIMING## diagnostics the parallel runner
+    // parses (per-thread delay peaks, worker boot times). Tests set 1.
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;

@@ -1,4 +1,4 @@
-import hre from "hardhat";
+import { ethers } from "ethers";
 
 import { JoinActions } from "@test/harness/actions/JoinActions";
 import { MathConsumerFacet__factory } from "@typechain-types";
@@ -50,7 +50,7 @@ export class MathJoinActions extends JoinActions {
         const deposit = options?.deposit ?? 250n;
         const submitter = await this.pickSubmitterWithLatestInbound();
         const participant =
-            options?.participant ?? hre.ethers.Wallet.createRandom().address;
+            options?.participant ?? ethers.Wallet.createRandom().address;
         const previousLatestHash =
             ((await this.harness
                 .control(submitter)

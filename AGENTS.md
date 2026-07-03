@@ -27,6 +27,24 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
 
 - Keep comments simple and to the point. No long essays.
 
+### Platform-specific code (node / browser)
+
+- **Any platform-specific file must live under the platform dir** — `.../node/…`
+  or `.../browser/…` — never at a shared path. `tsconfig.json` excludes the
+  `browser` dirs and `tsconfig.browser.json` excludes the `node` dirs, so a
+  node-only file (anything importing `node:fs`, `node:perf_hooks`,
+  `node:worker_threads`, `child_process`, etc.) never compiles into or bundles
+  for the browser build, and vice versa. Introducing a platform feature at a
+  shared path leaks that platform's APIs into the other build — don't.
+- **A shared (or browser-compiled) file must not import a platform-only module
+  directly.** Route it through a `@platform/*` alias with a node impl and a
+  browser impl (the browser one can be a no-op), wired in the `paths` of _both_
+  `tsconfig.json` and `tsconfig.browser.json`. Note `.../worker/` dirs are shared
+  (browser-compiled) unless explicitly excluded — treat them as shared.
+- **Validate both builds** after platform changes:
+  `yarn tsc --noEmit -p tsconfig.json` **and**
+  `yarn tsc --noEmit -p tsconfig.browser.json`.
+
 ### Type safety
 
 - When mirroring another type's signatures (e.g. event listeners that mirror

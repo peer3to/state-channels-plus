@@ -62,7 +62,8 @@ export function startP2pRuntimeWorker(): void {
         });
 
         await startP2pRuntimeHost(runtimePort, payload, {
-            signer
+            signer,
+            threadLabel: "sdk"
         });
     });
 }

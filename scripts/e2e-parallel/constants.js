@@ -1,25 +1,11 @@
 /* eslint-disable no-console */
-const os = require("os");
-const path = require("path");
-
 const DEFAULT_LOG_DIR = "./logs";
 
 const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
 
-// Reruns append this to the task's log name (e.g. <name>__rerun1.ansi).
-const RERUN_LOG_SUFFIX = "__rerun1";
-
-// 255-byte filename limit (Linux/APFS). A failure log of the worst-case shape is
-// error_<name><rerun-suffix>.ansi (markLogAsError is also called on rerun logs),
-// so the name budget must reserve room for BOTH decorations — otherwise a
-// max-length name + __rerun1 overflows and ENAMETOOLONGs the WriteStream.
-const MAX_LOG_NAME_LEN =
-    255 - "error_".length - RERUN_LOG_SUFFIX.length - ".ansi".length;
-
-const rerunLogName = (logName) => `${logName}${RERUN_LOG_SUFFIX}`;
-
-// Rough budget per concurrent hardhat task — used for the RAM cap on concurrency.
-const PER_WORKER_MEM_GB = 2;
+// 255-byte filename limit (Linux/APFS). markLogAsError prefixes "error_", so
+// reserve room for it plus the ".ansi" extension.
+const MAX_LOG_NAME_LEN = 255 - "error_".length - ".ansi".length;
 
 // Account pool size and stride — must stay in sync with:
 //   hardhat.config.ts  →  accounts.count (hardhat + localhost networks)
@@ -27,75 +13,46 @@ const PER_WORKER_MEM_GB = 2;
 const ACCOUNT_POOL_SIZE = 400;
 const ACCOUNT_SLOT_STRIDE = 10;
 const MAX_SLOTS_FROM_POOL = Math.floor(ACCOUNT_POOL_SIZE / ACCOUNT_SLOT_STRIDE);
-const DEFAULT_WORKER_START_STAGGER_MS = 1000;
+
 const DEFAULT_STREAM_CHILD_OUTPUT = false;
 
 // ---------------------------------------------------------------------------
-// Adaptive load controller
+// Slot pool
 // ---------------------------------------------------------------------------
-
-// Target OS load per core. Runs that overload the machine produce load > cores,
-// so staying near 0.9x cores keeps headroom for OS scheduling overhead.
-const TARGET_LOAD_PER_CORE = 0.9;
-
-const MIN_THREAD_FACTOR = 1;
-const MAX_THREAD_FACTOR = 12;
-
-// How often we sample os.loadavg()[0] during the admission window.
-const LOAD_SAMPLE_INTERVAL_MS = 3000;
-
-// When starvation trips occurred, knock down the factor by this multiplier.
-const STARVATION_KNOCKDOWN = 0.8;
-
-// Guard against division by zero in the adaptation formula.
-const EPSILON = 1e-6;
-
-// One extra thread per hardhat process (the main node process itself).
-const PROCESS_OVERHEAD_THREADS = 1;
-
-// Default oversubscription factor applied to CPU count to get the thread
-// budget. Wait-bound peers idle frequently, so >1x is safe. Calibrated on a
-// 16-core/64GB host: wall-time keeps dropping up to ~4x with zero event-loop
-// starvation; starvation first appears around 6x and returns flatten there. 4x
-// is the safe sweet spot (~42% faster than the old flat default), with the RAM
-// cap (maxConcurrent) bounding the high end. Override with --thread-factor.
-const DEFAULT_THREAD_FACTOR = 4;
-
-// Peer count used when we cannot determine the real value from the test body.
-const FALLBACK_PEERS = 5;
+// Warm slots (node + discovery + deploy-cache) pre-provisioned before
+// scheduling and assigned round-robin to tests. --slots overrides; --slots 0
+// means no pool (every test self-provisions its own in-process slot).
+const DEFAULT_SLOTS = 4;
 
 // ---------------------------------------------------------------------------
-// Event-loop starvation detection
+// Scheduler (load + memory gated, no cost model)
 // ---------------------------------------------------------------------------
-const STARVATION_RE = /Event loop delay [\d.]+ms exceeded configured threshold/;
+// One admission attempt per tick; CPU load is a ~1min average so it can only
+// react between launches — pacing one test per tick lets it settle.
+const SCHEDULER_TICK_MS = 1000;
 
-// Persisted tuning state shared across runs.
-const SCHEDULER_METADATA_PATH = path.join(
-    os.tmpdir(),
-    "scp-e2e-scheduler-metadata.json"
-);
+// Admit another test only while avg OS load per core is below this.
+const TARGET_LOAD_PER_CORE = 0.8;
+
+// Memory gate. We sample the RSS of our own processes (test children + slot
+// infra) rather than os.freemem() (which under-reports on macOS), keep a running
+// average per test process, and admit another test only if the projected total
+// (current owned + one more average process) stays under MEM_LIMIT_FRACTION of
+// system RAM. PER_TEST_MEM_GB seeds the average before any sample exists.
+const MEM_LIMIT_FRACTION = 0.8;
+const PER_TEST_MEM_GB = 2;
 
 module.exports = {
     DEFAULT_LOG_DIR,
     HARDHAT_CLI,
-    RERUN_LOG_SUFFIX,
     MAX_LOG_NAME_LEN,
-    rerunLogName,
-    PER_WORKER_MEM_GB,
     ACCOUNT_POOL_SIZE,
     ACCOUNT_SLOT_STRIDE,
     MAX_SLOTS_FROM_POOL,
-    DEFAULT_WORKER_START_STAGGER_MS,
     DEFAULT_STREAM_CHILD_OUTPUT,
+    DEFAULT_SLOTS,
+    SCHEDULER_TICK_MS,
     TARGET_LOAD_PER_CORE,
-    MIN_THREAD_FACTOR,
-    MAX_THREAD_FACTOR,
-    LOAD_SAMPLE_INTERVAL_MS,
-    STARVATION_KNOCKDOWN,
-    EPSILON,
-    PROCESS_OVERHEAD_THREADS,
-    DEFAULT_THREAD_FACTOR,
-    FALLBACK_PEERS,
-    STARVATION_RE,
-    SCHEDULER_METADATA_PATH
+    MEM_LIMIT_FRACTION,
+    PER_TEST_MEM_GB
 };

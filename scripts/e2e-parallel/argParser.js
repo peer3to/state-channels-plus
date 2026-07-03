@@ -5,24 +5,28 @@ function parseCliArgs(argv) {
     const options = {
         logDir: DEFAULT_LOG_DIR,
         allowLogdirPurge: false,
-        // workers is intentionally left undefined so we can distinguish
-        // "user explicitly set it" from "default".
-        workers: undefined,
         grep: undefined,
-        threadFactor: undefined,
-        threadBudget: undefined,
-        // targetLoad undefined → use env or built-in constant.
-        targetLoad: undefined,
         dryRun: false,
-        // Thread-mode toggles: undefined = fall back to env/default in resolveThreadModes.
+        // Warm slot pool size; undefined → DEFAULT_SLOTS.
+        slots: undefined,
+        // Optional hard cap on concurrent running tests (on top of the
+        // load/memory gate); undefined → gate-only.
+        workers: undefined,
+        // Avg-load-per-core gate; undefined → TARGET_LOAD_PER_CORE.
+        targetLoad: undefined,
+        // Memory budget in GiB; undefined → totalmem × MEM_LIMIT_FRACTION.
+        memLimitGb: undefined,
+        // Thread-mode toggles: undefined = fall back to env/default.
         sdkThread: undefined,
-        vmThread: undefined,
-        // Shared discovery: undefined = fall back to env/default (on by default).
-        sharedDiscovery: undefined,
-        // Per-slot external hardhat node: undefined = fall back to env/default (off by default).
-        perSlotNode: undefined,
-        // Single shared hardhat node: undefined = fall back to env/default (off by default).
-        sharedNode: undefined
+        vmThread: undefined
+    };
+
+    // Positive number, or 0 only when allowZero (used by --slots).
+    const takeNumber = (raw, parse, allowZero = false) => {
+        const parsed = raw != null ? parse(raw) : NaN;
+        if (!Number.isFinite(parsed)) return undefined;
+        if (parsed > 0 || (allowZero && parsed === 0)) return parsed;
+        return undefined;
     };
 
     for (let i = 2; i < argv.length; i++) {
@@ -36,7 +40,6 @@ function parseCliArgs(argv) {
             }
             continue;
         }
-
         if (arg.startsWith("--grep=")) {
             options.grep = arg.slice("--grep=".length);
             continue;
@@ -55,12 +58,10 @@ function parseCliArgs(argv) {
             }
             continue;
         }
-
         if (
             arg.startsWith("--logDir=") ||
             arg.startsWith("--log-dir=") ||
-            arg.startsWith("--dir=") ||
-            arg.startsWith("-d=")
+            arg.startsWith("--dir=")
         ) {
             options.logDir = arg.split("=").slice(1).join("=");
             continue;
@@ -76,60 +77,69 @@ function parseCliArgs(argv) {
             continue;
         }
 
+        if (arg === "--slots") {
+            const v = takeNumber(
+                argv[i + 1],
+                (s) => Number.parseInt(s, 10),
+                true
+            );
+            if (v !== undefined) {
+                options.slots = v;
+                i++;
+            }
+            continue;
+        }
+        if (arg.startsWith("--slots=")) {
+            const v = takeNumber(
+                arg.split("=")[1],
+                (s) => Number.parseInt(s, 10),
+                true
+            );
+            if (v !== undefined) options.slots = v;
+            continue;
+        }
+
         if (arg === "--workers" || arg === "-w") {
-            const next = argv[i + 1];
-            const parsed = next ? Number.parseInt(next, 10) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.workers = parsed;
+            const v = takeNumber(argv[i + 1], (s) => Number.parseInt(s, 10));
+            if (v !== undefined) {
+                options.workers = v;
                 i++;
             }
             continue;
         }
-
         if (arg.startsWith("--workers=") || arg.startsWith("-w=")) {
-            const value = arg.split("=").slice(1).join("=");
-            const parsed = Number.parseInt(value, 10);
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.workers = parsed;
-            }
+            const v = takeNumber(arg.split("=").slice(1).join("="), (s) =>
+                Number.parseInt(s, 10)
+            );
+            if (v !== undefined) options.workers = v;
             continue;
         }
 
-        if (arg === "--thread-factor" || arg === "-F") {
-            const next = argv[i + 1];
-            const parsed = next ? Number.parseFloat(next) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.threadFactor = parsed;
+        if (arg === "--target-load") {
+            const v = takeNumber(argv[i + 1], Number.parseFloat);
+            if (v !== undefined) {
+                options.targetLoad = v;
                 i++;
             }
             continue;
         }
-
-        if (arg.startsWith("--thread-factor=") || arg.startsWith("-F=")) {
-            const value = arg.split("=").slice(1).join("=");
-            const parsed = Number.parseFloat(value);
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.threadFactor = parsed;
-            }
+        if (arg.startsWith("--target-load=")) {
+            const v = takeNumber(arg.split("=")[1], Number.parseFloat);
+            if (v !== undefined) options.targetLoad = v;
             continue;
         }
 
-        if (arg.startsWith("--thread-budget=")) {
-            const value = arg.split("=").slice(1).join("=");
-            const parsed = Number.parseInt(value, 10);
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.threadBudget = parsed;
-            }
-            continue;
-        }
-
-        if (arg === "--thread-budget") {
-            const next = argv[i + 1];
-            const parsed = next ? Number.parseInt(next, 10) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.threadBudget = parsed;
+        if (arg === "--mem-limit-gb") {
+            const v = takeNumber(argv[i + 1], Number.parseFloat);
+            if (v !== undefined) {
+                options.memLimitGb = v;
                 i++;
             }
+            continue;
+        }
+        if (arg.startsWith("--mem-limit-gb=")) {
+            const v = takeNumber(arg.split("=")[1], Number.parseFloat);
+            if (v !== undefined) options.memLimitGb = v;
             continue;
         }
 
@@ -137,73 +147,21 @@ function parseCliArgs(argv) {
             options.sdkThread = true;
             continue;
         }
-
         if (arg === "--no-sdk-thread") {
             options.sdkThread = false;
             continue;
         }
-
         if (arg === "--vm-thread") {
             options.vmThread = true;
             continue;
         }
-
         if (arg === "--no-vm-thread") {
             options.vmThread = false;
             continue;
         }
 
-        if (arg === "--shared-discovery") {
-            options.sharedDiscovery = true;
-            continue;
-        }
-
-        if (arg === "--no-shared-discovery") {
-            options.sharedDiscovery = false;
-            continue;
-        }
-
-        if (arg === "--per-slot-node") {
-            options.perSlotNode = true;
-            continue;
-        }
-
-        if (arg === "--no-per-slot-node") {
-            options.perSlotNode = false;
-            continue;
-        }
-
-        if (arg === "--shared-node") {
-            options.sharedNode = true;
-            continue;
-        }
-
-        if (arg === "--no-shared-node") {
-            options.sharedNode = false;
-            continue;
-        }
-
         if (arg === "--dry-run") {
             options.dryRun = true;
-            continue;
-        }
-
-        if (arg === "--target-load") {
-            const next = argv[i + 1];
-            const parsed = next ? Number.parseFloat(next) : NaN;
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.targetLoad = parsed;
-                i++;
-            }
-            continue;
-        }
-
-        if (arg.startsWith("--target-load=")) {
-            const value = arg.split("=").slice(1).join("=");
-            const parsed = Number.parseFloat(value);
-            if (Number.isFinite(parsed) && parsed > 0) {
-                options.targetLoad = parsed;
-            }
             continue;
         }
     }

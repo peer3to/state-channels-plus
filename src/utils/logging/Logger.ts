@@ -41,6 +41,8 @@ export type LoggerPerformanceMonitorOptions = {
     delayWarnThresholdMs?: number;
     delayErrorThresholdMs?: number;
     utilizationWarnThreshold?: number;
+    /** Thread label for the event-loop-delay diagnostic reports (default "main"). */
+    threadLabel?: string;
 };
 
 export abstract class Logger {
