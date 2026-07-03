@@ -168,6 +168,17 @@ export class NodeLogger extends Logger {
                 h.enable();
                 let last = performance.eventLoopUtilization();
 
+                // Report the running event-loop-delay peak for this thread to the
+                // parallel test runner (a ##E2E_TIMING## marker on stdout, which
+                // it prints per test). Emit on each increase because SDK/VM worker
+                // threads are force-terminated. Enabled whenever the event-loop
+                // monitor threshold is configured (tests only), so production is
+                // unaffected.
+                const emitTiming =
+                    config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0;
+                const elThread = options.threadLabel ?? "main";
+                let peakMs = 0;
+
                 const toMs = (nanoseconds: number) => {
                     const ms = nanoseconds / 1e6;
                     return Number.isFinite(ms) ? ms : 0;
@@ -182,6 +193,18 @@ export class NodeLogger extends Logger {
                     const d90 = toMs(h.percentile(90));
                     const d99 = toMs(h.percentile(99));
                     const dMax = toMs(h.max);
+
+                    if (emitTiming && dMax > peakMs) {
+                        peakMs = dMax;
+                        // Worker process.stdout is forwarded to the parent's,
+                        // which the runner captures for this test.
+                        process.stdout.write(
+                            `##E2E_TIMING## ${JSON.stringify({
+                                maxEventLoopDelayMs: Math.round(peakMs),
+                                elThread
+                            })}\n`
+                        );
+                    }
                     const utilization = elu.utilization;
                     const shouldWarn =
                         utilization > utilizationWarnThreshold ||

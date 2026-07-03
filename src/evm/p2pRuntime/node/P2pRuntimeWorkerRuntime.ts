@@ -1,6 +1,8 @@
 import { parentPort, Worker, type MessagePort } from "node:worker_threads";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
+import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import type {
     P2pRuntimeWorker,
     RuntimePort,
@@ -36,7 +38,18 @@ export function createP2pRuntimeWorker(): P2pRuntimeWorker {
           ]
         : undefined;
 
-    return new Worker(workerPath, { execArgv }) as unknown as P2pRuntimeWorker;
+    const worker = new Worker(workerPath, {
+        execArgv,
+        resourceLimits: resolveWorkerResourceLimits("sdk")
+    });
+    instrumentWorkerStartup(
+        worker,
+        "sdk",
+        workerPath.endsWith(".ts")
+            ? "ts-node-swc-transpile-only"
+            : "compiled-js"
+    );
+    return worker as unknown as P2pRuntimeWorker;
 }
 
 /**

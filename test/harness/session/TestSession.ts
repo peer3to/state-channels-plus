@@ -18,7 +18,6 @@ export class TestSession {
         await this.clear();
 
         this.harness = this.createHarness();
-        await this.harness.startAutoTimeAdvance({ intervalSeconds: 1 });
     }
 
     static getHarness(): PeerTestHarness {

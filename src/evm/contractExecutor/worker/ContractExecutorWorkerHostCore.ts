@@ -1,7 +1,8 @@
 import { Buffer } from "buffer";
 import ContractExecutor from "../ContractExecutor";
 import { createEvm } from "../../EvmFactory";
-import noOpLogger from "../NoOpLogger";
+import { config, createConfig } from "@/utils/config";
+import { createLogger } from "@platform/createLogger";
 import type {
     ContractExecutorRequestPayload,
     WorkerHostMessage,
@@ -24,6 +25,19 @@ class ContractExecutorWorkerHost {
     private async init(
         request: Extract<ContractExecutorRequestPayload, { type: "init" }>
     ) {
+        // Re-establish config in this worker and build its logger, then monitor
+        // this thread's event loop with the same
+        // EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS guard as every thread.
+        createConfig(request.config);
+        const logger = createLogger(
+            {},
+            { component: "ContractExecutorWorker" },
+            { attachErrorListener: false }
+        );
+        if (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0) {
+            logger.startPerformanceMonitoring({ threadLabel: "vm" });
+        }
+
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
@@ -36,9 +50,9 @@ class ContractExecutorWorkerHost {
                     })
                 )
             },
-            noOpLogger
+            logger
         );
-        this.executor = new ContractExecutor(evm, noOpLogger);
+        this.executor = new ContractExecutor(evm, logger);
         return null;
     }
 

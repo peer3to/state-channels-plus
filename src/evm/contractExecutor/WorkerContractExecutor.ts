@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import type { Address, Bytes } from "@/types/types";
+import { config } from "@/utils/config";
 import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import AContractExecutor, {
     type ContractExecutionResult
@@ -54,7 +55,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
             type: "init",
             customPrecompiles: customPrecompiles.map(
                 serializePrecompileManifest
-            )
+            ),
+            config
         });
         return executor;
     }

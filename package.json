@@ -92,7 +92,7 @@
     "test:debug": "yarn hardhat test --no-compile $(find test -name '*.test.ts')",
     "test:all": "yarn hardhat test $(find test -name '*.test.ts')",
     "test:compile": "yarn compile && yarn test",
-    "test:e2e:base": "yarn hardhat test $(find test/e2e -name '*.test.ts')",
+    "test:e2e:base": "E2E_INTERVAL_MINING=1 yarn hardhat test $(find test/e2e -name '*.test.ts')",
     "test:e2e": "LOG_LEVEL=warn yarn test:e2e:base",
     "test:e2e:worker": "node scripts/infra/run-e2e-worker.js",
     "test:e2e:log-file": "rm -rf ./logs/wtf.ansi && yarn test:e2e:verbose >> ./logs/wtf.ansi",

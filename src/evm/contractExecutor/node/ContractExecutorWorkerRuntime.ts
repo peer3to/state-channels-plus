@@ -1,6 +1,8 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { Worker } from "node:worker_threads";
+import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
+import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import type {
     WorkerRequestMessage,
     WorkerResponseMessage
@@ -26,11 +28,29 @@ export function createContractExecutorWorker(
     const workerPath = fs.existsSync(jsWorkerPath)
         ? jsWorkerPath
         : tsWorkerPath;
+    // Transpile-only (swc via tsconfig's ts-node.swc): each worker re-loads the
+    // import graph, and full ts-node type-checks it (seconds + a retained TS
+    // program per worker). Types are already checked by `yarn tsc`.
     const execArgv = workerPath.endsWith(".ts")
-        ? ["-r", "ts-node/register", "-r", "tsconfig-paths/register"]
+        ? [
+              "-r",
+              "ts-node/register/transpile-only",
+              "-r",
+              "tsconfig-paths/register"
+          ]
         : undefined;
 
-    const worker = new Worker(workerPath, { execArgv });
+    const worker = new Worker(workerPath, {
+        execArgv,
+        resourceLimits: resolveWorkerResourceLimits("vm")
+    });
+    instrumentWorkerStartup(
+        worker,
+        "vm",
+        workerPath.endsWith(".ts")
+            ? "ts-node-swc-transpile-only"
+            : "compiled-js"
+    );
     worker.on("message", onMessage);
     worker.on("error", onError);
     worker.on("exit", (code: number) => {

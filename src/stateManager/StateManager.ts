@@ -627,7 +627,10 @@ class StateManager<
         );
 
         const txResponsePromise = this.stateChannelManagerContract
-            .multicall([reduceCalldata, forkCalldata], { gasLimit: 10_000_000 })
+            // Right-sized from 10M: measures ~0.5M avg / ~1.2M max in e2e, so 3M
+            // leaves ample headroom while freeing block gas under concurrency
+            // (was inflated to dodge ethers gas-estimation failures).
+            .multicall([reduceCalldata, forkCalldata], { gasLimit: 3_000_000 })
             .then((tx: TransactionResponse) => {
                 txResponse = tx;
                 const txReceiptPromise = tx.wait();

@@ -1,4 +1,5 @@
 import type { ContractExecutionResult } from "../AContractExecutor";
+import type { Config } from "@/utils/config";
 
 export type WorkerCustomPrecompile = {
     address: string;
@@ -13,6 +14,9 @@ export type ContractExecutorRequestPayload =
     | {
           type: "init";
           customPrecompiles: WorkerCustomPrecompile[];
+          // Config the worker re-establishes so its logger event-loop monitor
+          // uses the same EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS as everyone.
+          config: Partial<Config>;
       }
     | {
           type: "call";
