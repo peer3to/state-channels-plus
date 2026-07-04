@@ -48,6 +48,18 @@ const server = await createServer({
                 projectRoot,
                 "src/evm/browser/precompileModuleLoader.ts"
             ),
+            "@platform/moduleLoader": path.join(
+                projectRoot,
+                "src/utils/moduleLoader/browser/importModuleFromManifest.ts"
+            ),
+            "@platform/p2pRuntimeChannel": path.join(
+                projectRoot,
+                "src/evm/p2pRuntime/browser/P2pRuntimeChannel.ts"
+            ),
+            "@platform/p2pRuntimeWorkerRuntime": path.join(
+                projectRoot,
+                "src/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime.ts"
+            ),
             "@": path.join(projectRoot, "src"),
             "@test": path.join(projectRoot, "test"),
             "@typechain-types": path.join(projectRoot, "typechain-types")

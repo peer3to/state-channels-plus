@@ -7,10 +7,9 @@ export async function createWebRTCConnectionFactory(): Promise<WebRTCConnectionF
     try {
         const provider = await loadWebRTCProvider();
         return new LocalWebRTCConnectionFactory(provider);
-    } catch (error) {
+    } catch {
         const workerBridgeFactory =
             WorkerBridgeWebRTCConnectionFactory.getInstance();
-        workerBridgeFactory.ensureReceiverRegistered();
 
         if (
             workerBridgeFactory.hasPort() ||

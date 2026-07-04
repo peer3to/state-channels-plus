@@ -15,7 +15,7 @@ import { ethers } from "ethers";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
-import { config } from "@/utils/config";
+import { config, isNodeRuntime } from "@/utils/config";
 import { Address } from "./types/types";
 import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
@@ -253,13 +253,19 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
     public async tryOpenConnectionToChannel(channelId: string) {
         if (config.DEBUG_LOCAL_TRANSPORT) {
+            // In the browser there's no harness fixture to drive discovery, so
+            // form the local mesh here via the relay hub. In node the harness
+            // drives LocalDiscoveryServer.connectToPeers itself (and also sets a
+            // registry URL for its own peer-mesh), so stay a no-op there.
+            if (!isNodeRuntime() && config.LOCAL_DISCOVERY_REGISTRY_URL) {
+                await LocalDiscoveryServer.tryStart();
+                await LocalDiscoveryServer.connectToPeers(
+                    this.self,
+                    channelId,
+                    this.stateManager.signerAddress.toString()
+                );
+            }
             return;
-            await LocalDiscoveryServer.tryStart();
-            await LocalDiscoveryServer.connectToPeers(
-                this.self,
-                channelId,
-                this.stateManager.signerAddress.toString()
-            );
         }
         const topic = Buffer.alloc(32).fill(channelId);
         await this.holepunch.join(topic);
