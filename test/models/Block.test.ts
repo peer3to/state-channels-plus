@@ -289,6 +289,70 @@ describe("Block Model", () => {
 
             expect(block.confirmationSignatures.size).to.equal(countAfterFirst);
         });
+
+        it("should remove confirmation signatures", async () => {
+            const signer2 = signers[1];
+            const signer3 = signers[2];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            const signature3 = await signer3.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            block.expandSignatures([signature2, signature3]);
+
+            block.removeConfirmationSignatures(new Set([signature2]));
+
+            expect(block.confirmationSignatures.has(signature2)).to.be.false;
+            expect(block.confirmationSignatures.has(signature3)).to.be.true;
+        });
+
+        it("should shrink cached signer addresses when removing signatures", async () => {
+            const signer2 = signers[1];
+            const signature2 = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            block.expandSignatures([signature2]);
+            // Warm the address cache before removing.
+            expect(block.didSign(signer2.address)).to.equal(true);
+
+            block.removeConfirmationSignatures(new Set([signature2]));
+
+            expect(block.didSign(signer2.address)).to.equal(false);
+        });
+
+        it("should keep the author's original signature when removing", async () => {
+            const testBlock = blockFactory();
+            const signedBlockStruct = await testBlock.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlockStruct);
+
+            realSignedBlock.removeConfirmationSignatures(
+                new Set([realSignedBlock.originalSignature])
+            );
+
+            expect(
+                realSignedBlock.allSignatures.has(
+                    realSignedBlock.originalSignature
+                )
+            ).to.be.true;
+            expect(
+                realSignedBlock.allSignerAddresses.has(
+                    realSignedBlock.signerAddress
+                )
+            ).to.be.true;
+        });
+
+        it("should ignore removing unknown signatures", async () => {
+            const signer2 = signers[1];
+            const unknownSignature = await signer2.signMessage(
+                ethers.getBytes(block.hash)
+            );
+            const countBefore = block.confirmationSignatures.size;
+
+            block.removeConfirmationSignatures(new Set([unknownSignature]));
+
+            expect(block.confirmationSignatures.size).to.equal(countBefore);
+        });
     });
 
     describe("Block confirmation struct", () => {

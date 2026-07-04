@@ -1,10 +1,11 @@
 import { Block } from "@/models";
-import { BlockValidationResult } from "@/types";
+import { BlockValidationResult, Signature } from "@/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import AValidationStrategy from "./AValidationStrategy";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import DisputeManager from "@/disputeManager";
 import BlockValidationStrategy from "./BlockValidationStrategy";
 
@@ -36,14 +37,17 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async channelNotOpened(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        return this.blockValidationStrategy.channelNotOpened(block);
+        return this.blockValidationStrategy.channelNotOpened(entry);
     }
     public async notAllSingersAreParticipants(
-        _block: Block
+        _entry: QueuedBlockEntry,
+        _unexpectedSignatures: Set<Signature>
     ): Promise<BlockValidationResult> {
+        // Calldata confirmations carry only the author's signature, and the
+        // author was already authenticated against the chain event.
         throw new Error(
             "CalldataCommittedStrategy - notAllSingersAreParticipants should not be relevant/called"
         );
@@ -108,21 +112,15 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async blockForkIsDisputed(
-        block: Block,
-        senderAddress?: string
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        return this.blockValidationStrategy.blockForkIsDisputed(
-            block,
-            senderAddress
-        );
+        return this.blockValidationStrategy.blockForkIsDisputed(entry);
     }
     public async blockIsNotNextAndIsInTheFuture(
-        block: Block,
-        senderAddress?: string
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return this.blockValidationStrategy.blockIsNotNextAndIsInTheFuture(
-            block,
-            senderAddress
+            entry
         );
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(

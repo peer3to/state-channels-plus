@@ -123,17 +123,44 @@ export class EventHandler {
                     this.stateManager.abort();
                     return;
                 }
-                this.logger.error(
-                    "onStateSnapshotUpdated - unknown snapshot while participant/pending, fatal",
-                    {
-                        channelId,
-                        status,
-                        hash: updatedSnapshot.hash
-                    }
-                );
-                throw new Error(
-                    `onStateSnapshotUpdated: unknown snapshot ${updatedSnapshot.hash} while status=${status}`
-                );
+                // The snapshot may be the committed result of a fork
+                // reduction our local processing hasn't produced yet (chain
+                // events carry no cross-event ordering). Reduce on the spot -
+                // single-flight with the other reduction entry points - and
+                // re-check.
+                try {
+                    await this.stateManager.reduceLocally(
+                        this.stateManager.forkId
+                    );
+                } catch (error) {
+                    this.logger.warn(
+                        "onStateSnapshotUpdated - on-the-spot reduction failed",
+                        {
+                            channelId,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        }
+                    );
+                }
+                const converged =
+                    this.storage.stateSnapshots.getStateSnapshotByHash(
+                        updatedSnapshot.hash
+                    );
+                if (!converged) {
+                    this.logger.error(
+                        "onStateSnapshotUpdated - unknown snapshot while participant/pending, fatal",
+                        {
+                            channelId,
+                            status,
+                            hash: updatedSnapshot.hash
+                        }
+                    );
+                    throw new Error(
+                        `onStateSnapshotUpdated: unknown snapshot ${updatedSnapshot.hash} while status=${status}`
+                    );
+                }
             }
         }
 
@@ -824,36 +851,31 @@ export class EventHandler {
         reducedForkId: ForkId,
         _reductionTimestamp: Timestamp
     ): Promise<void> {
-        // enough for now - this will change later
-        if (this.stateManager.forkId == forkId) {
-            // Get the latest state snapshot - it should be reduced locally if not we'll reduce it on the spot
-            const latestStateSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                    reducedForkId
-                );
-            if (!latestStateSnapshot) {
-                // TODO reduce localy
-                return;
-            }
-            const genesisStateMachineState =
-                this.storage.stateMachineStates.getStateMachineState(
-                    latestStateSnapshot.stateMachineStateHash
-                );
+        // TODO - this function is currently unused - come back to its implemntation when used
+        if (this.stateManager.forkId != forkId) return;
 
-            if (!genesisStateMachineState) {
-                // we need to compute it - should have computed it above while reducing
-                // TODO - solidity code that returns the encodedState
-            }
-            // Set fork and start building on it
-            // TODO
-            throw new Error(
-                "Not implemented yet - set fork for reduceCommitment"
+        // Reduce on the spot - single-flight with the other reduction entry
+        // points; resolved means the reduced genesis is stored and the fork
+        // switched.
+        await this.stateManager.reduceLocally(forkId);
+
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                reducedForkId
             );
-            // await this.stateManager.setGenesisState(
-            //     genesisStateMachineState!,
-            //     reducedForkId,
-            //     reductionTimestamp
-            // );
+        if (!genesisSnapshot) {
+            // The finalized on-chain reduction won and we could not derive it
+            // locally - we have diverged; stop building instead of advancing
+            // a fork the channel didn't agree on.
+            this.logger.error(
+                "Reduced result committed on-chain but the local reduction did not produce it - aborting participation",
+                {
+                    forkId,
+                    reducedForkId,
+                    localForkId: this.stateManager.forkId
+                }
+            );
+            this.stateManager.abort();
         }
     }
 }

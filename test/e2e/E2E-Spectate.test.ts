@@ -208,11 +208,10 @@ describe("E2E: Spectate Service", function () {
                     let didValidateQueuedBlock = false;
                     let didValidateQueuedBlockAgainstCorruptedState = false;
                     validation.validateBlockConfirmation = async (
-                        block,
-                        strategy,
-                        senderAddress
+                        entry,
+                        strategy
                     ) => {
-                        if (String(block.hash) === args.blockHash) {
+                        if (String(entry.block.hash) === args.blockHash) {
                             didValidateQueuedBlock = true;
                             const nextBlockHeight =
                                 sm.storage.blocks.getNextBlockHeight(
@@ -225,11 +224,11 @@ describe("E2E: Spectate Service", function () {
                                 String(nextToWrite) !==
                                     String(args.blockAuthor);
                         }
-                        return original(block, strategy, senderAddress);
+                        return original(entry, strategy);
                     };
                     try {
                         await sm.mutex.lock();
-                        const queuedBlockPromise = sm.onBlockConfirmation(
+                        const queuedBlockPromise = sm.onBlockConfirmationStruct(
                             args.blockConfirmation
                         );
                         const decoded =
