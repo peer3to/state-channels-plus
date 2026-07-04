@@ -298,7 +298,14 @@ async function runWebRTCWorkerBridgeSmoke(bridgeOptions = {}) {
         new URL("./webrtc-service-worker.js", import.meta.url),
         { type: "module" }
     );
-    const bridge = installWebRTCMainThreadBridge(worker, bridgeOptions);
+    // Mirror the SDK contract: hand the worker the bridge port (the host would
+    // surface this on P2pInstance.webRTCBridgePort), then bind the other end.
+    const bridgeChannel = new MessageChannel();
+    worker.postMessage({ type: "bridgePort" }, [bridgeChannel.port2]);
+    const bridge = installWebRTCMainThreadBridge(
+        bridgeChannel.port1,
+        bridgeOptions
+    );
 
     const postToWorker = (message) => worker.postMessage(message);
 

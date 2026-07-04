@@ -553,7 +553,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         await client.ready;
 
-        return new P2pInstance<T, TCustomRpc>(client, logger);
+        const p2pInstance = new P2pInstance<T, TCustomRpc>(client, logger);
+        // On the main thread the surfaced WebRTC bridge port has no further
+        // worker nesting to bubble up to, so wire it to the local
+        // RTCPeerConnection here; inside a worker it stays on
+        // p2pInstance.webRTCBridgePort for the consumer app to bubble up.
+        p2pInstance.installMainThreadBridgeIfOnMainThread();
+        return p2pInstance;
     }
 }
 

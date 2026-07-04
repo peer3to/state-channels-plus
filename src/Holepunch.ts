@@ -30,15 +30,23 @@ class Holepunch {
             this.rejoinTopics();
         };
 
-        // @ts-ignore
-        if (typeof window != "undefined") {
+        // `window` is absent in a Web Worker, so RUN_SDK_IN_THREAD (Holepunch
+        // running inside the SDK's browser worker) must also detect the worker
+        // scope — otherwise it falls through to the node path and
+        // `@hyperswarm/dht` throws "not supported in browsers". Mirrors
+        // isWorkerRuntime() in WebRTCSetup/connection/WebRTCProvider.ts.
+        const browserGlobal = globalThis as any;
+        const isBrowserRuntime =
+            typeof window !== "undefined" ||
+            (typeof browserGlobal.WorkerGlobalScope !== "undefined" &&
+                browserGlobal instanceof browserGlobal.WorkerGlobalScope);
+        if (isBrowserRuntime) {
             this.p2pManager.logger.info("Using browser Hyperswarm relay");
             p2pManager.preferredTransport = TransportType.WEBRTC;
             const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
             const relayerUpdateCallback = () => {
                 const swarm = HolepunchRelay.getInstance().getSwarm();
-                // @ts-ignore
-                this.swarm = window.Hyperswarm || swarm;
+                this.swarm = browserGlobal.Hyperswarm || swarm;
                 setup();
             };
             HolepunchRelay.init(

@@ -62,6 +62,13 @@ class P2pRuntimeClient<T = ethers.Contract> {
     readonly contract: T;
     readonly ready: Promise<void>;
 
+    /**
+     * Main-thread end of the WebRTC bridge port, handed over by the host when it
+     * runs in a worker that can't negotiate WebRTC itself. Arrives before
+     * `ready` resolves; undefined when the host negotiates WebRTC locally.
+     */
+    webRTCBridgePort?: MessagePort;
+
     private readonly port: RuntimePort;
     private readonly pending = new Map<number, PendingRequest>();
     private nextRequestId = 1;
@@ -215,6 +222,9 @@ class P2pRuntimeClient<T = ethers.Contract> {
                 return;
             case "hostError":
                 this.dispatchHostError(message);
+                return;
+            case "webRTCBridgePort":
+                this.webRTCBridgePort = message.port;
                 return;
         }
     }
