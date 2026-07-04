@@ -254,6 +254,11 @@ class P2pRuntimeClient<T = ethers.Contract> {
     }
 
     private dispatchContractEvent(message: RuntimeContractEventMessage): void {
+        // Events are forwarded as { name, args } and re-emitted by event name,
+        // so name-based and unindexed `contract.filters.X()` subscriptions
+        // receive them. A subscription that filters on an indexed argument
+        // (`contract.filters.X(indexedValue)`) resolves to a different ethers
+        // tag and will NOT match — the original topics aren't forwarded.
         void (this.contract as unknown as ethers.Contract).emit(
             message.name,
             ...message.args
