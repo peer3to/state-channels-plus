@@ -1,5 +1,6 @@
-import { DetachedPromises } from "@/utils";
+import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
 
+import { PeerIdentityExecutionContext } from "../core/peerErrorAttribution";
 import { TestSession } from "./TestSession";
 
 type TestSessionClass = typeof TestSession;
@@ -30,10 +31,17 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
     ) {
         globalThis.__peer3UnhandledRejectionHookRegistered__ = true;
 
+        // Stamp detached rejections with the inline peer they originated on.
+        PeerIdentityExecutionContext.installDetachedPromiseRejectionStamping();
+
         process.prependListener("unhandledRejection", (reason) => {
-            testSession.setFirstDetachedError(
-                reason instanceof Error ? reason : new Error(String(reason))
+            const error =
+                reason instanceof Error ? reason : new Error(String(reason));
+            maybeStampErrorWithPeerAddress(
+                error,
+                PeerIdentityExecutionContext.getPeerAddressOfCurrentAsyncContext()
             );
+            testSession.setFirstDetachedError(error);
         });
     }
 
