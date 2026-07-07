@@ -2,6 +2,7 @@ import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import type { ForkId } from "@/types/types";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/BlockQueueManager";
+import { Block } from "@/models";
 import { Codec, Type } from "@/utils";
 import type { TransitionService } from "./TransitionService";
 
@@ -72,6 +73,21 @@ export class TransitionRpcMethods extends ARpcMethods {
             Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation),
             options
         );
+    }
+
+    /**
+     * Persist a block straight into storage — bypassing the confirmation
+     * pipeline — the way spectate/state-proof persistence does.
+     */
+    public async storeBlock(
+        encodedBlockConfirmation: string
+    ): Promise<boolean> {
+        this.service.sm.storage.blocks.storeBlock(
+            Block.fromBlockConfirmation(
+                Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+            )
+        );
+        return true;
     }
 }
 

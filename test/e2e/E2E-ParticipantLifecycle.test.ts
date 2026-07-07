@@ -1,6 +1,9 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
+import { Block } from "@/models";
+import { Codec, Type } from "@/utils";
+import type { Address } from "@/types/types";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)
@@ -36,6 +39,59 @@ describe("E2E: Participant Lifecycle", function () {
                     Status.PARTICIPATING,
                     `Peer ${p.index} should remain PARTICIPATING`
                 );
+            }
+        });
+
+        it("exiting participant does not sign blocks authored after its leave", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 1);
+
+            // Detached: the leaver's process stays alive and connected while
+            // its exit completes, which is exactly when it must not keep
+            // signing (its signature is no longer in the participant union).
+            const leaverIndex = await h.transition.participantLeaveDetached();
+            const remaining = h.peers
+                .map((p) => p.index)
+                .filter((i) => i !== leaverIndex);
+
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: remaining,
+                waitForFinalization: true
+            });
+
+            const forkId = h.activeForkId!;
+            const bundle = await h
+                .control(h.getPeer(remaining[0]))
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            expect(bundle).to.not.be.null;
+
+            const block = Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            });
+            const leaverAddress = h.getPeer(leaverIndex).address as Address;
+            expect(
+                block.allSignerAddresses.has(leaverAddress),
+                "leaver signed a post-leave block"
+            ).to.equal(false);
+
+            // And nobody got blacklisted over stray signatures in the process.
+            for (const i of remaining) {
+                for (const j of remaining) {
+                    if (i === j) continue;
+                    expect(
+                        await h
+                            .control(h.getPeer(i))
+                            .query.isBlacklisted(h.getPeer(j).address)
+                            .request(),
+                        `peer ${i} blacklisted honest peer ${j}`
+                    ).to.equal(false);
+                }
             }
         });
     });

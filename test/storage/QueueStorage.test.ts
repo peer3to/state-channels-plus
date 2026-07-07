@@ -303,6 +303,44 @@ describe("QueueStorage", () => {
             ).to.equal(true);
         });
 
+        it("should attribute only the signatures each sender's copy carried", () => {
+            const senderA = ethers.Wallet.createRandom().address;
+            const senderB = ethers.Wallet.createRandom().address;
+            const straySig = sig();
+            const honestSig = sig();
+
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [straySig]
+                }),
+                { senderAddress: senderA }
+            );
+            // B's copy pools into A's entry but carries only the honest sig —
+            // B must not inherit A's stray signature.
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [honestSig]
+                }),
+                { senderAddress: senderB }
+            );
+
+            const entry = storage.getQueuedEntry(mockBlock.hash)!;
+            expect(entry.block.confirmationSignatures).to.deep.equal(
+                new Set([straySig, honestSig])
+            );
+            expect(entry.sourcePeers).to.deep.equal(
+                new Set([senderA, senderB])
+            );
+            expect(entry.signatureSources.get(straySig)).to.deep.equal(
+                new Set([senderA])
+            );
+            expect(entry.signatureSources.get(honestSig)).to.deep.equal(
+                new Set([senderB])
+            );
+        });
+
         it("should return empty on subsequent dequeues", () => {
             storage.queueBlock(mockBlock);
             expect(
@@ -311,6 +349,77 @@ describe("QueueStorage", () => {
             expect(storage.tryDequeueAt(mockForkId, mockHeight)).to.deep.equal(
                 []
             );
+        });
+    });
+
+    describe("Restore Entry", () => {
+        it("should restore a dequeued entry with its attribution intact", () => {
+            const senderAddress = ethers.Wallet.createRandom().address;
+            const confirmationSignature = sig();
+            const block = Block.fromBlockConfirmation({
+                ...mockBlockConfirmation,
+                signatures: [confirmationSignature]
+            });
+
+            storage.queueBlock(block, { senderAddress });
+            const [entry] = storage.tryDequeueAt(mockForkId, mockHeight);
+            expect(storage.isBlockQueued(block)).to.be.false;
+
+            storage.restoreEntry(entry);
+
+            expect(storage.isBlockQueued(block)).to.be.true;
+            const restored = storage.getQueuedEntry(block.hash)!;
+            expect(restored.sourcePeers.has(senderAddress)).to.equal(true);
+            expect(
+                restored.signatureSources
+                    .get(confirmationSignature)
+                    ?.has(senderAddress)
+            ).to.equal(true);
+            // Back in the coordinate index too - dequeueable again
+            expect(
+                storage.tryDequeueAt(mockForkId, mockHeight)
+            ).to.have.lengthOf(1);
+        });
+
+        it("should merge a restored entry with a copy queued meanwhile", () => {
+            const senderA = ethers.Wallet.createRandom().address;
+            const senderB = ethers.Wallet.createRandom().address;
+            const sigA = sig();
+            const sigB = sig();
+
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [sigA]
+                }),
+                { senderAddress: senderA }
+            );
+            const [entry] = storage.tryDequeueAt(mockForkId, mockHeight);
+            entry.firstSeenAt -= 100;
+
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [sigB]
+                }),
+                { senderAddress: senderB }
+            );
+            storage.restoreEntry(entry);
+
+            const merged = storage.getQueuedEntry(mockBlock.hash)!;
+            expect(merged.block.confirmationSignatures).to.deep.equal(
+                new Set([sigA, sigB])
+            );
+            expect(merged.sourcePeers).to.deep.equal(
+                new Set([senderA, senderB])
+            );
+            expect(merged.signatureSources.get(sigA)).to.deep.equal(
+                new Set([senderA])
+            );
+            expect(merged.signatureSources.get(sigB)).to.deep.equal(
+                new Set([senderB])
+            );
+            expect(merged.firstSeenAt).to.equal(entry.firstSeenAt);
         });
     });
 

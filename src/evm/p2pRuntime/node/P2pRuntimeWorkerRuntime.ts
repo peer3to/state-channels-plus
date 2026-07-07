@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
+import { startCpuProfilerIfEnabled } from "../../node/workerCpuProfiler";
 import type {
     P2pRuntimeWorker,
     RuntimePort,
@@ -65,6 +66,7 @@ export function onWorkerBootstrap(
             "startP2pRuntimeWorker must be executed inside a worker thread"
         );
     }
+    startCpuProfilerIfEnabled("sdk");
     parentPort.on("message", (data) => handler(data as WorkerBootstrapMessage));
 }
 

@@ -14,6 +14,19 @@
 
 These are project rules to follow (and persist any future "remember this" instructions here).
 
+### Testing changes to `src/`
+
+Every `src/` change ships with tests in the same pass — both kinds:
+
+- **Unit tests** for the isolated logic (no mocks, no junk data — see
+  `test/AGENTS.md`: factory-built domain objects, or a teleported harness
+  session when the component has collaborators).
+- **E2E tests** when the change affects peer-observable behavior (new
+  guard/punishment/queue semantics, protocol deviations, sync flows).
+
+Verify with the narrowest targeted run (`--grep` the touched files) before
+handing off.
+
 ### RPC services (`*Service` + `*RpcMethods`)
 
 Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
@@ -27,6 +40,38 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
   `this.service.*`. The service is where services coordinate shared state.
 - Each service lives in its own directory: `<name>/<Name>Service.ts` +
   `<name>/<Name>RpcMethods.ts`.
+
+### Block-validation deviations go through the strategy
+
+Applies to `src/stateManager/validationStrategy/*` and their call sites
+(`StateManager.onBlockConfirmation`, `tryMergeStoredBlockConfirmation`,
+`ValidationService`).
+
+- **Every deviation from the happy path is a method on `AValidationStrategy`**
+  (e.g. `notAllSingersAreParticipants`, `invalidStateTransitionDetected`,
+  `wrongGenesisDetected`). Never handle a deviation inline at the call site —
+  no matter how obvious the handling seems. Two reasons: (1) the strategy
+  interface is the single place to see all deviations; (2) the correct side
+  effect differs per pipeline (live gossip disconnects/blacklists; dispute
+  replay produces fraud-proof evidence against the submitter; spectating
+  drops the feed).
+- **Side effects live inside the strategy implementations**, not at the call
+  site. The call site only computes the inputs (pass precomputed sets — e.g.
+  the unexpected signers/signatures — so strategies don't recompute), calls
+  the hook, logs, and interprets the returned `BlockValidationResult`
+  (`SUCCESS` = continue the pipeline).
+- When adding a deviation, implement it on **all** strategies — a deliberate
+  `throw` ("should not be relevant/called") is a valid implementation when the
+  deviation is impossible for that pipeline.
+- **The pipeline's unit of work is the `QueuedBlockEntry`, never a bare
+  block + ad-hoc sender parameter.** Entries are CRDTs: copies merge
+  (signatures + signature -> source attribution) in `QueueStorage` until
+  scheduled, then the dequeued entry executes atomically and converges
+  through storage. Strategies resolve offenders from `entry.signatureSources`
+  / `entry.sourcePeers` and re-queue via `restoreEntry` so attribution
+  survives the not-ready cycle. Struct-only callers (dispute replay, spectate
+  sync) enter via `onBlockConfirmationStruct`, which wraps into a sourceless
+  entry.
 
 ### Comments
 
@@ -91,6 +136,10 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
 - Casts are only acceptable for genuinely untyped/private internals (e.g.
   monkey-patching a private SDK member in a stub) — not for public, already-typed
   surfaces.
+- **No `Awaited<ReturnType<...>>` wrappers for types that have a name.** If a
+  method returns `Promise<ReduceData>`, write `ReduceData` — import/export the
+  named type instead of deriving it through utility-type gymnastics. Derived
+  types are only for signatures that must mirror another surface (first bullet).
 - **Name `Codec`/ethers-encoded values `encoded*`.** When a field or variable
   holds an ABI/`Codec.encode`d hex string (e.g. crossing the runtime port),
   name it `encodedDispute`/`encodedSyncPayload`/… — bare `string` isn't

@@ -90,7 +90,9 @@ describe("E2E: Block Fraud Proofs", function () {
             ).to.be.null;
 
             // Posts the block's calldata on-chain via the author's signer (the SCM
-            // contract + signer are client-side, so this needs no host round-trip).
+            // contract + signer are client-side, so this needs no host round-trip)
+            // and returns the mined block's timestamp — what an event (re)read
+            // would deliver as onChainTimestamp.
             const postBlockCalldata = async (block: BlockBundle) => {
                 const author = h.peers.find(
                     (peer) =>
@@ -108,11 +110,15 @@ describe("E2E: Block Fraud Proofs", function () {
                         ),
                         Clock.getTimeInSeconds() + 1000
                     );
-                await tx.wait();
+                const receipt = await tx.wait();
+                const minedBlock = await author!.signer.provider!.getBlock(
+                    receipt!.blockNumber
+                );
+                return Number(minedBlock!.timestamp);
             };
 
             h.event.resetEventSpies(observerIndex);
-            await postBlockCalldata(block2!);
+            const block2OnChainTimestamp = await postBlockCalldata(block2!);
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted", 5000, [
                 observerIndex
             ]);
@@ -125,6 +131,15 @@ describe("E2E: Block Fraud Proofs", function () {
 
             await sleep((timeConfig.agreementTime + 1) * 1000);
 
+            // The future calldata copy was evicted at the queue timeout — the
+            // chain still holds it, so nothing is lost.
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(block2!.hash)
+                    .request()
+            ).to.equal(false);
+
             // maybePostBlockOnChain is stubbed ()=>{} + after AgreementTime the subjective check each peer does would fail, so if the block is accepted -> calldata path
             await postBlockCalldata(block1!);
 
@@ -133,7 +148,24 @@ describe("E2E: Block Fraud Proofs", function () {
                     (await h
                         .control(observer)
                         .query.getBlockByHash(block1!.hash)
-                        .request()) !== null &&
+                        .request()) !== null,
+                5000
+            );
+
+            // Re-deliver block2 from the chain (as an event re-read would) — it
+            // is next now and applies through the calldata path.
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observerIndex,
+                blockConfirmation: Codec.decode(
+                    block2!.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                ),
+                ingestOptions: { onChainTimestamp: block2OnChainTimestamp },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+            await waitFor(
+                async () =>
                     (await h
                         .control(observer)
                         .query.getBlockByHash(block2!.hash)
@@ -274,7 +306,7 @@ describe("E2E: Block Fraud Proofs", function () {
     );
 
     scenario(
-        "stored duplicate rejects a new signature from a non-participant",
+        "stored duplicate drops a new signature from a non-participant without dropping the block",
         {
             invariant: "authority",
             target: "BlockConfirmation.signatures:non-participant"
@@ -308,15 +340,20 @@ describe("E2E: Block Fraud Proofs", function () {
                 },
                 ingestOptions: { senderAddress: h.getPeer(1).address },
                 keepConnection: true,
-                processedKeepConnection: false
+                // The merge is a scheduled task and setup echoes of this block
+                // fire matching processed events, so waiting on the event races —
+                // poll for the strategy's outcome (sender blacklisted) instead.
+                waitForProcessed: false
             });
 
-            expect(
-                await h
-                    .control(observer)
-                    .query.isBlacklisted(h.getPeer(1).address)
-                    .request()
-            ).to.equal(true);
+            await waitFor(
+                async () =>
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(h.getPeer(1).address)
+                        .request(),
+                5000
+            );
             const storedBlock = await h
                 .control(observer)
                 .query.getBlockByHash(block!.hash)
@@ -326,6 +363,74 @@ describe("E2E: Block Fraud Proofs", function () {
             ).to.equal(false);
         }
     );
+
+    it("fresh block with a non-participant signature applies after dropping it", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0);
+
+        const forkId = h.activeForkId;
+        expect(forkId).to.not.be.undefined;
+
+        // Keep the observer blind to the next block so it can be hand-fed a
+        // tainted copy of it.
+        const observerIndex = 3;
+        const observer = h.getPeer(observerIndex);
+        await h.network.disconnectPeer(observerIndex);
+        const observerInitialSum = await observer.contractInstance.getSum();
+
+        await h.transition.advanceState({
+            count: 1,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: false
+        });
+
+        const source = await h.peerWithHighestBlock(forkId!);
+        const block = await h
+            .control(source)
+            .query.getBlockByHeight(forkId!, 0)
+            .request();
+        expect(block).to.not.be.null;
+
+        const outsider = ethers.Wallet.createRandom();
+        const badSignature = await outsider.signMessage(
+            ethers.getBytes(block!.hash)
+        );
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observerIndex,
+            blockConfirmation: {
+                signedBlock: Codec.decode(
+                    block!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: [...block!.confirmationSignatures, badSignature]
+            },
+            ingestOptions: { senderAddress: h.getPeer(1).address },
+            keepConnection: true,
+            // The block applies; the byzantine signature suppliers are
+            // disconnected+blacklisted by the strategy directly.
+            processedKeepConnection: true
+        });
+
+        // The block applied normally — stray signature dropped, not the block.
+        const storedBlock = await h
+            .control(observer)
+            .query.getBlockByHash(block!.hash)
+            .request();
+        expect(storedBlock).to.not.be.null;
+        expect(
+            storedBlock!.confirmationSignatures.includes(badSignature)
+        ).to.equal(false);
+        expect(await observer.contractInstance.getSum()).to.equal(
+            observerInitialSum + 1n
+        );
+        // The peer that supplied the stray signature is cut.
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(h.getPeer(1).address)
+                .request()
+        ).to.equal(true);
+    });
 
     scenario(
         "double sign → BlockDoubleSign",
@@ -559,6 +664,12 @@ describe("E2E: Block Fraud Proofs", function () {
             // Peer 2 submits a block with a valid transaction but a wrong
             // stateSnapshotHash (ZeroHash).
             const maliciousPeerIndex = 2;
+            const honestPeers = h.peers.filter(
+                (p) => p.index !== maliciousPeerIndex
+            );
+            const honestSumsBefore = await Promise.all(
+                honestPeers.map((p) => p.contractInstance.getSum())
+            );
             await h.byzantine.submitInvalidStateTransitionBlock(
                 maliciousPeerIndex
             );
@@ -568,6 +679,15 @@ describe("E2E: Block Fraud Proofs", function () {
                 fraudProofType: FraudProofType.BlockInvalidStateTransition,
                 maliciousPeerIndex
             });
+
+            // The block's add() executed on honest VMs before the snapshot-hash
+            // check failed; the abort must have rolled the state back.
+            for (let i = 0; i < honestPeers.length; i++) {
+                expect(
+                    await honestPeers[i].contractInstance.getSum(),
+                    `Peer ${honestPeers[i].index} VM state not restored after rejected block`
+                ).to.equal(honestSumsBefore[i]);
+            }
 
             await h.assert.storage.storedDisputeConfirmationsWait();
 

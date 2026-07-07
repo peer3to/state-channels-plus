@@ -36,6 +36,7 @@ import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
 import Storage from "@/storage";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import {
     tryDecodeCustomError,
@@ -64,7 +65,7 @@ import {
 } from "@/utils";
 import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
 // Types
-import { BlockValidationResult, Status, TimeConfig } from "@/types";
+import { BlockValidationResult, ReduceData, Status, TimeConfig } from "@/types";
 import {
     Address,
     BlockHeight,
@@ -95,6 +96,13 @@ import BlockQueueManager, {
 } from "./BlockQueueManager";
 
 const NULL = ZeroHash;
+
+type LocalReductionResult = {
+    disputes: DisputeStruct[];
+    reduceData: ReduceData;
+    reducedGenesisSnapshot: StateSnapshot;
+    expectedReducedForkId: ForkId;
+};
 
 type ParticipantChanges = {
     left: Set<Address>;
@@ -128,6 +136,10 @@ class StateManager<
     spectatingValidationStrategy: SpectatingValidationStrategy;
     eventHandler: EventHandler;
     reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
+    private readonly localReductions: Map<
+        ForkId,
+        Promise<LocalReductionResult | undefined>
+    > = new Map();
     status: Status = Status.NOT_OPENED;
     timeoutManager: TimeoutManager;
     logger: Logger;
@@ -224,11 +236,13 @@ class StateManager<
             this.storage,
             this.p2pManager,
             this.disputeManager,
+            this.blockQueueManager,
             this.logger
         );
         this.spectatingValidationStrategy = new SpectatingValidationStrategy(
             this.storage,
             this.p2pManager,
+            this.blockQueueManager,
             this.logger
         );
     }
@@ -495,11 +509,9 @@ class StateManager<
             );
         }
 
-        //TODO - see to put all genesisTimestamp logic in one place
-        const genesisTimestamp = Number(onChainKillTimestamp);
         // Step 4: Perform reduction
         try {
-            await this.performReduction(forkId, genesisTimestamp);
+            await this.performReduction(forkId);
         } catch (error) {
             if (
                 error instanceof Error &&
@@ -514,14 +526,48 @@ class StateManager<
         }
     }
 
-    private async performReduction(
-        forkId: ForkId,
-        genesisTimestamp: Timestamp
-    ) {
-        const now = Clock.getTimeInSeconds();
-        this.logger.info(
-            `Performing reduction for fork ${forkId} with genesis timestamp ${genesisTimestamp}, in (${genesisTimestamp - now}s)`
-        );
+    /**
+     * Reduce `forkId` locally and set the reduced genesis — single-flight, no
+     * on-chain submission. Every reduction entry point (kill-period timeout,
+     * chain events observing a committed result) awaits the same run;
+     * resolved means the reduced genesis is stored and the fork switched.
+     * Resolves to undefined when there is nothing to reduce (fork already
+     * left, kill period not expired, or no local dispute data).
+     */
+    public reduceLocally(
+        forkId: ForkId
+    ): Promise<LocalReductionResult | undefined> {
+        if (this.forkId !== forkId) return Promise.resolve(undefined);
+        let inFlight = this.localReductions.get(forkId);
+        if (!inFlight) {
+            inFlight = this.performLocalReduction(forkId).finally(() => {
+                this.localReductions.delete(forkId);
+            });
+            this.localReductions.set(forkId, inFlight);
+        }
+        return inFlight;
+    }
+
+    private async performLocalReduction(
+        forkId: ForkId
+    ): Promise<LocalReductionResult | undefined> {
+        // The kill timestamp doubles as the reduced genesis timestamp, so it
+        // must be the on-chain value — identical for every peer, or the local
+        // reduced snapshot hash won't match the committed one.
+        const { isExpired, killPeriodEnd } =
+            await this.stateChannelManagerContract.isKillPeriodExpired(
+                this.channelId,
+                forkId
+            );
+        if (!isExpired) {
+            // Guards event-driven callers: nothing to reduce (yet).
+            this.logger.debug(
+                `reduceLocally - kill period not expired for fork ${LoggerUtils.formatHash(forkId)}`
+            );
+            return undefined;
+        }
+        const genesisTimestamp = Number(killPeriodEnd);
+
         const disputes = await this.agreementManager.getForkDisputes(
             this.channelId,
             forkId,
@@ -529,7 +575,7 @@ class StateManager<
         );
 
         this.logger.debug(
-            `Performing reduction on disputes for fork ${LoggerUtils.formatHash(forkId)}`,
+            `Performing local reduction on disputes for fork ${LoggerUtils.formatHash(forkId)}`,
             {
                 disputes: disputes.map((d) => LoggerUtils.getDisputeMetadata(d))
             }
@@ -539,51 +585,95 @@ class StateManager<
                 `No disputes found while reducing disputed fork ${forkId}; initiating local dispute`
             );
             await this.disputeManager.dispute(forkId);
-            return;
+            return undefined;
         }
 
-        const reducedOutput =
-            await this.stateChannelManagerContract.reduce.staticCall(disputes);
+        try {
+            const reducedOutput =
+                await this.stateChannelManagerContract.reduce.staticCall(
+                    disputes
+                );
 
-        const reduceData = await this.agreementManager.getReduceData(
-            forkId,
-            reducedOutput
-        );
-        const [
-            reducedSnapshotData,
-            reducedEncodedStateMachineState,
-            reducedOutboundMessageBlock
-        ] =
-            await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
+            const reduceData = await this.agreementManager.getReduceData(
                 forkId,
-                reducedOutput,
-                reduceData.latestStateSnapshot,
-                reduceData.encodedStateMachineState,
-                reduceData.inboundMessageBlocks
+                reducedOutput
             );
-        const expectedReducedForkId = ethers.keccak256(
-            Codec.encode(reducedSnapshotData, Type.SnapshotData)
-        );
+            const [
+                reducedSnapshotData,
+                reducedEncodedStateMachineState,
+                reducedOutboundMessageBlock
+            ] =
+                await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
+                    forkId,
+                    reducedOutput,
+                    reduceData.latestStateSnapshot,
+                    reduceData.encodedStateMachineState,
+                    reduceData.inboundMessageBlocks
+                );
+            const expectedReducedForkId = ethers.keccak256(
+                Codec.encode(reducedSnapshotData, Type.SnapshotData)
+            );
 
-        // Pre-store the outbound message block so buildForkSnapshotCalldata can
-        // find it via getMessageBlocksInRange.
-        if (reducedOutboundMessageBlock) {
-            this.storage.outboundMessages.store(reducedOutboundMessageBlock, {
-                justPersist: true
+            // Pre-store the outbound message block so buildForkSnapshotCalldata
+            // can find it via getMessageBlocksInRange.
+            if (reducedOutboundMessageBlock) {
+                this.storage.outboundMessages.store(
+                    reducedOutboundMessageBlock,
+                    { justPersist: true }
+                );
+            }
+
+            const reducedGenesisSnapshot = StateSnapshot.from({
+                forkId: expectedReducedForkId,
+                blockHeight: 0,
+                timestamp: genesisTimestamp,
+                snapshotData: reducedSnapshotData
             });
+
+            this.logger.info(
+                `Reduction complete (local): transitioning from fork ${LoggerUtils.formatHash(forkId)} to fork ${LoggerUtils.formatHash(expectedReducedForkId)}`
+            );
+            await this.setGenesisState(
+                reducedSnapshotData,
+                reducedEncodedStateMachineState,
+                expectedReducedForkId,
+                genesisTimestamp,
+                reducedOutboundMessageBlock
+            );
+
+            return {
+                disputes,
+                reduceData,
+                reducedGenesisSnapshot,
+                expectedReducedForkId
+            };
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            this.logger.error("Error computing reduced snapshot data", {
+                custom,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            throw error;
         }
+    }
+
+    private async performReduction(forkId: ForkId) {
+        // Local convergence first (shared with the event-driven entry
+        // points); the on-chain submission below is this path's extra step.
+        const reduction = await this.reduceLocally(forkId);
+        if (!reduction) return;
+        const {
+            disputes,
+            reduceData,
+            reducedGenesisSnapshot,
+            expectedReducedForkId
+        } = reduction;
 
         const currentOnChainSnapshot = StateSnapshot.from(
             await this.stateChannelManagerContract.getStateSnapshot(
                 this.channelId
             )
         );
-        const reducedGenesisSnapshot = StateSnapshot.from({
-            forkId: expectedReducedForkId,
-            blockHeight: 0,
-            timestamp: Number(genesisTimestamp),
-            snapshotData: reducedSnapshotData
-        });
         const { calldata: forkCalldata } = this.buildForkSnapshotCalldata(
             reducedGenesisSnapshot,
             currentOnChainSnapshot
@@ -673,47 +763,6 @@ class StateManager<
                 if (!success) throw error;
             });
         DetachedPromises.collect(txResponsePromise);
-
-        try {
-            // Compute local state after reduction (optimistic - assume tx will succeed)
-            const snapshotData = reducedSnapshotData;
-            const encodedStateMachineState = reducedEncodedStateMachineState;
-            const outboundMessageBlock = reducedOutboundMessageBlock;
-            this.logger.debug(
-                `Optimistic local reduction computed for fork ${LoggerUtils.formatHash(forkId)}`,
-                {
-                    reducedSnapshotData:
-                        LoggerUtils.getSnapshotDataMetadata(snapshotData),
-                    outboundMessageBlock: outboundMessageBlock
-                        ? LoggerUtils.getMessageBlockMetadata(
-                              outboundMessageBlock
-                          )
-                        : null
-                }
-            );
-            const reducedForkId = ethers.keccak256(
-                Codec.encode(snapshotData, Type.SnapshotData)
-            );
-
-            // Update local state to the reduced fork
-            this.logger.info(
-                `Reduction complete (local): transitioning from fork ${LoggerUtils.formatHash(forkId)} to fork ${LoggerUtils.formatHash(reducedForkId)}`
-            );
-            await this.setGenesisState(
-                snapshotData,
-                encodedStateMachineState,
-                reducedForkId,
-                genesisTimestamp,
-                outboundMessageBlock
-            );
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            this.logger.error("Error computing reduced snapshot data", {
-                custom,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
     }
 
     private buildForkSnapshotCalldata(
@@ -1000,10 +1049,10 @@ class StateManager<
     }
 
     public async tryMergeStoredBlockConfirmation(
-        block: Block,
-        strategy: AValidationStrategy,
-        senderAddress?: Address
+        entry: QueuedBlockEntry,
+        strategy: AValidationStrategy
     ): Promise<BlockValidationResult | undefined> {
+        const block = entry.block;
         const existingBlock = this.storage.blocks.getBlock(block.hash);
         if (!existingBlock) return undefined;
 
@@ -1041,17 +1090,44 @@ class StateManager<
         );
 
         if (!isSubset(newSignerAddresses, participants)) {
+            const unexpectedSigners = difference(
+                newSignerAddresses,
+                participants
+            );
+            const unexpectedSignatures = new Set(
+                Array.from(newSignatures).filter((signature) =>
+                    unexpectedSigners.has(
+                        getChecksumAddress(
+                            block.signatureToAddress(signature)
+                        ) as Address
+                    )
+                )
+            );
             this.logger.warn(
-                "maybeMergeStoredBlockConfirmation - not all new signers are participants",
+                "maybeMergeStoredBlockConfirmation - signers outside the participant union",
                 {
                     strategy: strategy.name,
-                    senderAddress,
                     block: LoggerUtils.getBlockMetadata(block, this.storage),
-                    newSignerAddresses: Array.from(newSignerAddresses),
+                    unexpectedSigners: Array.from(unexpectedSigners),
                     participants: Array.from(participants)
                 }
             );
-            return strategy.notAllSingersAreParticipants(block);
+            const validationResult =
+                await strategy.notAllSingersAreParticipants(
+                    entry,
+                    unexpectedSignatures
+                );
+            if (validationResult !== BlockValidationResult.SUCCESS) {
+                return validationResult;
+            }
+            // SUCCESS: the strategy stripped the stray signatures and cut
+            // their byzantine sender.
+            if (
+                difference(block.confirmationSignatures, existingSignatures)
+                    .size === 0
+            ) {
+                return strategy.noNewSignaturesOnExistingBlock(block);
+            }
         }
 
         this.storage.blocks.storeBlock(block);
@@ -1075,20 +1151,44 @@ class StateManager<
         return BlockValidationResult.DUPLICATE;
     }
 
-    // Passes the block confirmation through a verification pipeline
+    /**
+     * Struct adapter for callers that replay confirmations outside the queue
+     * (dispute stateProof replay, spectate sync): wraps into a sourceless
+     * entry — those pipelines don't punish by transport.
+     */
+    public async onBlockConfirmationStruct(
+        blockConfirmation: BlockConfirmationStruct,
+        options?: {
+            validationStrategy?: AValidationStrategy;
+        }
+    ): Promise<boolean> {
+        return this.onBlockConfirmation(
+            this.storage.queues.createEntry(
+                Block.fromBlockConfirmation(blockConfirmation)
+            ),
+            options
+        );
+    }
+
+    // Passes the block confirmation through a verification pipeline.
+    // The entry is the CRDT accumulation of the block up to scheduling; the
+    // run is atomic over it and its source attribution.
     // returns true if the block is valid and the state transition is successful
     // returns false -> the calling context should disconnect from the peer
     public async onBlockConfirmation(
-        blockConfirmation: BlockConfirmationStruct,
+        entry: QueuedBlockEntry,
         options?: {
-            onChainTimestamp?: Timestamp;
             validationStrategy?: AValidationStrategy;
-            senderAddress?: string;
         }
     ): Promise<boolean> {
         let strategy: AValidationStrategy | undefined;
         let block: Block | undefined;
         let keepConnection: boolean | undefined;
+        // The VM is advanced by applyTransaction below; every exit that doesn't
+        // reach success() must restore it, or later validations run against a
+        // state the channel never agreed on (e.g. a rotated-past turn index).
+        let stateBeforeTransitionValidation: Bytes | undefined;
+        let restoreReason = "aborted before success";
 
         try {
             await this.mutex.lock({ taskName: "onBlockConfirmation" });
@@ -1096,18 +1196,12 @@ class StateManager<
             strategy =
                 options?.validationStrategy ||
                 this.getStrategyByStatus(this.status);
-            block = Block.fromBlockConfirmation(
-                blockConfirmation,
-                options?.onChainTimestamp
-            );
+            block = entry.block;
 
             if (this.storage.blocks.getBlock(block.hash)) {
                 this.blockQueueManager.scheduleStoredBlockConfirmationMerge(
-                    block,
-                    strategy,
-                    options?.senderAddress
-                        ? [options.senderAddress as Address]
-                        : []
+                    entry,
+                    strategy
                 );
                 return true;
             }
@@ -1115,12 +1209,14 @@ class StateManager<
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
 
-            const isAuthentic =
-                await this.isBlockConfirmationAuthentic(blockConfirmation);
+            const isAuthentic = await this.isBlockConfirmationAuthentic(
+                block.blockConfirmationStruct
+            );
 
             if (!isAuthentic) {
-                validationResult =
-                    await strategy.authenticateBlockFailed(blockConfirmation);
+                validationResult = await strategy.authenticateBlockFailed(
+                    block.blockConfirmationStruct
+                );
 
                 this.logger.warn(
                     "onBlockConfirmation - authentication failed",
@@ -1141,9 +1237,8 @@ class StateManager<
 
             validationResult =
                 await this.validationService.validateBlockConfirmation(
-                    block,
-                    strategy,
-                    options?.senderAddress
+                    entry,
+                    strategy
                 );
 
             if (validationResult !== BlockValidationResult.SUCCESS) {
@@ -1222,7 +1317,7 @@ class StateManager<
                 return keepConnection;
             }
 
-            const stateBeforeTransitionValidation =
+            stateBeforeTransitionValidation =
                 await this.diamondStateMachine.getState();
 
             const {
@@ -1234,12 +1329,7 @@ class StateManager<
             } = await this.applyTransaction(block.tx);
 
             if (!success) {
-                await this.restoreStateAfterFailedValidation(
-                    stateBeforeTransitionValidation,
-                    "state transition failed",
-                    block
-                );
-
+                restoreReason = "state transition failed";
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
                 this.logger.warn(
@@ -1283,12 +1373,7 @@ class StateManager<
                 );
 
             if (stateSnapshot.hash !== block.stateSnapshotHash) {
-                await this.restoreStateAfterFailedValidation(
-                    stateBeforeTransitionValidation,
-                    "state snapshot hash mismatch",
-                    block
-                );
-
+                restoreReason = "state snapshot hash mismatch";
                 validationResult =
                     await strategy.invalidStateTransitionDetected(block);
                 this.logger.warn(
@@ -1328,14 +1413,13 @@ class StateManager<
                         )
                     )
                 );
-                this.blockQueueManager.disconnectPeersForSignatures(
-                    block.hash,
+                restoreReason = "signers not in participant union";
+                validationResult = await strategy.notAllSingersAreParticipants(
+                    entry,
                     unexpectedSignatures
                 );
-                validationResult =
-                    await strategy.notAllSingersAreParticipants(block);
                 this.logger.warn(
-                    "onBlockConfirmation - signer not in previous/resulting participant union",
+                    "onBlockConfirmation - signers outside the participant union",
                     {
                         strategy: strategy.name,
                         validationResult:
@@ -1344,15 +1428,20 @@ class StateManager<
                             block,
                             this.storage
                         ),
+                        author: block.signerAddress,
                         unexpectedSigners: Array.from(unexpectedSigners),
                         allowedSigners: Array.from(allowedSigners)
                     }
                 );
-                keepConnection =
-                    await strategy.interpretFinalValidationResult(
-                        validationResult
-                    );
-                return keepConnection;
+                if (validationResult !== BlockValidationResult.SUCCESS) {
+                    keepConnection =
+                        await strategy.interpretFinalValidationResult(
+                            validationResult
+                        );
+                    return keepConnection;
+                }
+                // SUCCESS: the strategy stripped the stray signatures and cut
+                // their byzantine senders — continue with the valid ones.
             }
 
             // TODO - apply strategy here too
@@ -1377,6 +1466,8 @@ class StateManager<
                 }
             );
             keepConnection = true;
+            // The VM keeps the advanced state from here on.
+            stateBeforeTransitionValidation = undefined;
             return keepConnection;
         } catch (error) {
             this.logger.error("onBlockConfirmation - error", {
@@ -1388,6 +1479,16 @@ class StateManager<
             });
             throw error;
         } finally {
+            // Any exit that advanced the VM without reaching success() —
+            // validation aborts and thrown errors alike — must revert it before
+            // the mutex frees the next task to run against the dirty state.
+            if (stateBeforeTransitionValidation !== undefined) {
+                await this.restoreStateAfterFailedValidation(
+                    stateBeforeTransitionValidation,
+                    restoreReason,
+                    block
+                );
+            }
             this.mutex.unlock({ scheduleNextAsMacroTask: true });
             // try signaling blocks in the queue (in case this block enabled them to be validated)
             this.timeoutManager.scheduleTask(
@@ -1687,7 +1788,10 @@ class StateManager<
         forkId: ForkId
     ): Promise<StateSnapshot | undefined> {
         const forkData = await this.prepareUpdateStateSnapshotFork();
-        const sameForkData = await this.prepareUpdateSnapshotSameFork(forkId);
+        const sameForkData = await this.prepareUpdateSnapshotSameFork(
+            forkId,
+            forkData?.expectedSnapshot
+        );
 
         const expectedSnapshot =
             sameForkData?.expectedSnapshot ??
@@ -1804,7 +1908,10 @@ class StateManager<
     /**
      * Prepares data for updating the state snapshot when the fork is the same
      */
-    public async prepareUpdateSnapshotSameFork(forkId: ForkId): Promise<
+    public async prepareUpdateSnapshotSameFork(
+        forkId: ForkId,
+        baseSnapshot?: StateSnapshot
+    ): Promise<
         | {
               callData: string[];
               expectedSnapshot: StateSnapshot;
@@ -1815,11 +1922,17 @@ class StateManager<
         | undefined
     > {
         try {
-            const currentOnChainSnapshot = StateSnapshot.from(
-                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                    this.channelId
-                )
-            );
+            // `baseSnapshot` is the snapshot that will be on-chain when this
+            // calldata executes - in a multicall the fork update lands first,
+            // so the same-fork update chains onto its expected result rather
+            // than the raw current on-chain snapshot.
+            const currentOnChainSnapshot =
+                baseSnapshot ??
+                StateSnapshot.from(
+                    await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                        this.channelId
+                    )
+                );
 
             if (!currentOnChainSnapshot) {
                 return undefined;
@@ -1877,11 +1990,19 @@ class StateManager<
                 return undefined;
             }
 
-            // Verify that both snapshots belong to the same fork
+            // A same-fork update only applies within one fork. Local state
+            // being on a newer fork than the chain is the normal design (the
+            // local reduction always lands before its on-chain commit) - not
+            // applicable now, retried once the chain catches up.
             if (currentOnChainSnapshot.forkID !== latestSnapshot.forkID) {
-                throw new Error(
-                    `Fork mismatch: current fork ${currentOnChainSnapshot.forkID}, new fork ${latestSnapshot.forkID}`
+                this.logger.debug(
+                    "prepareUpdateSnapshotSameFork - base and latest snapshot on different forks, skipping",
+                    {
+                        baseForkId: currentOnChainSnapshot.forkID,
+                        latestForkId: latestSnapshot.forkID
+                    }
                 );
+                return undefined;
             }
 
             const currentOnChainExitBlockHash =
@@ -2970,7 +3091,15 @@ class StateManager<
                 await this.maybeInitiateForceJoinDispute(block, participants);
             }
         }
-        // step 1 - add my signature if appropriate
+        // step 1 - persist the state snapshot + state machine state first:
+        // shouldSignBlock reads the resulting participants from storage
+        this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
+        this.storage.stateMachineStates.storeStateMachineState(
+            encodedStateMachineState,
+            { hash: stateSnapshot.stateMachineStateHash }
+        );
+
+        // step 2 - add my signature if appropriate
         if (
             (await this.shouldSignBlock(block)) &&
             !(options?.strategy instanceof DisputeValidationStrategy)
@@ -2983,7 +3112,7 @@ class StateManager<
             block.expandSignatures([signature]);
         }
 
-        // step 2 - persist the block // TODO - quick hack - cleaner code later
+        // step 3 - persist the block // TODO - quick hack - cleaner code later
         this.storage.blocks.storeBlock(block, {
             justPersist: options?.strategy instanceof DisputeValidationStrategy
         });
@@ -2993,15 +3122,6 @@ class StateManager<
             p2pEventHooks: this.p2pEventHooks,
             logger: this.logger
         });
-
-        // step 3 - persist the state snapshot
-        this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
-
-        // step 4 - persist state machine state
-        this.storage.stateMachineStates.storeStateMachineState(
-            encodedStateMachineState,
-            { hash: stateSnapshot.stateMachineStateHash }
-        );
 
         // step 5 - persist the outbound message blocks if any
         if (options?.outboundMessageBlock) {
@@ -3087,6 +3207,18 @@ class StateManager<
     public async shouldSignBlock(block: Block): Promise<boolean> {
         if (this.p2pManager.isBlacklisted(block.author)) return false;
         if (this.status !== Status.PARTICIPATING) return false;
+        // Sign only blocks whose previous/resulting participant union contains
+        // us (e.g. never after leaving the channel). The resulting snapshot is
+        // persisted before signing, so a missing union means "don't sign".
+        const signerUnion = new Set<Address>(
+            this.storage.getParticipantsUnion(
+                block.coordinates,
+                block.stateSnapshotHash
+            )
+        );
+        if (!signerUnion.has(this.signerAddress)) {
+            return false;
+        }
         // Check if the block is posted on-chain and I am the next to write
         if (block.onChainTimestamp !== undefined) {
             const nextToWrite = await this.diamondStateMachine.getNextToWrite();

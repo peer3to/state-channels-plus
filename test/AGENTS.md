@@ -120,6 +120,25 @@ Don't add `as unknown as` at call sites to reach control services — route thro
 - Inline vs worker is `RUN_SDK_IN_THREAD`. Worker mode derives each peer's
   `signerSecret` from the hardhat mnemonic so the host thread can sign.
 
+## Unit tests
+
+- **Unit tests use the same harness framework — no mocks, no junk data.** The
+  framework isn't e2e-only: teleport a real session to the scenario you need
+  (spin up peers, advance/sync to the target state), then exercise the one
+  component under test host-side (`execOnHost` / a control service) with all
+  of its real collaborators wired. Same machinery as e2e, unit-test scope.
+- Components with collaborators (e.g. `BlockQueueManager` needs a live
+  `StateManager`) are tested exactly this way — never by stubbing the
+  collaborators.
+- **Fixtures trigger src code, they never reimplement it.** A side effect a
+  test asserts (disconnect, blacklist, fraud proof, …) must be produced by
+  the real source path — e.g. send over the real RPC so the receiver's entry
+  point runs — not mirrored inside a harness endpoint.
+- Pure data structures (`QueueStorage`, `Block`, codecs) can skip the session
+  and be exercised directly — but still with real domain objects built via
+  `test/factory.ts` and real identities via ethers wallets, never placeholder
+  data that couldn't decode/verify in production.
+
 ## Running tests
 
 - Typecheck: `yarn tsc --noEmit -p tsconfig.json` (the `TestPeer`/control surface

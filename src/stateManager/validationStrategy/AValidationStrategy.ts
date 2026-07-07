@@ -1,9 +1,10 @@
 import { Block } from "@/models";
-import { BlockValidationResult } from "@/types";
+import { BlockValidationResult, Signature } from "@/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 
 export default abstract class AValidationStrategy {
     public get name(): string {
@@ -21,11 +22,21 @@ export default abstract class AValidationStrategy {
     public abstract wrongChannel(block: Block): Promise<BlockValidationResult>;
 
     public abstract channelNotOpened(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
+    /**
+     * Signatures on the block recover to addresses outside the block's
+     * previous/resulting participant union. The strategy owns the side effects
+     * (filtering, disconnecting the byzantine senders, fraud proofs); SUCCESS
+     * means the block should continue through the pipeline with the stray
+     * signatures removed. The suppliers of the stray signatures resolve from
+     * the entry's signature -> source map. Signers are derivable O(1) via
+     * `entry.block.signatureToAddress` (cached).
+     */
     public abstract notAllSingersAreParticipants(
-        block: Block
+        entry: QueuedBlockEntry,
+        unexpectedSignatures: Set<Signature>
     ): Promise<BlockValidationResult>;
 
     public abstract noNewSignaturesOnExistingBlock(
@@ -63,13 +74,11 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockForkIsDisputed(
-        block: Block,
-        senderAddress?: string
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotNextAndIsInTheFuture(
-        block: Block,
-        senderAddress?: string
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotLinkedAndIsNotFirstBlock(

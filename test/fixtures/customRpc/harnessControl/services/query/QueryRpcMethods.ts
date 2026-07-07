@@ -190,6 +190,13 @@ export class QueryRpcMethods extends ARpcMethods {
         return this.p2pManager.isBlacklisted(evmAddress);
     }
 
+    /** Whether the block confirmation queue holds an entry for `blockHash`. */
+    public isBlockQueued(blockHash: Hash): boolean {
+        return (
+            this.service.storage.queues.getQueuedEntry(blockHash) !== undefined
+        );
+    }
+
     /**
      * Decode the top block of a dispute state proof on-chain: whether it has a
      * block and that block's height (`transactionCnt`).

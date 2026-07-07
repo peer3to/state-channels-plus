@@ -220,7 +220,7 @@ export default class DisputeValidationService {
                 index,
                 this.logger
             );
-            const isOk = await this.stateManager.onBlockConfirmation(bc, {
+            const isOk = await this.stateManager.onBlockConfirmationStruct(bc, {
                 validationStrategy: disputeStrategy
             });
             if (!isOk) {

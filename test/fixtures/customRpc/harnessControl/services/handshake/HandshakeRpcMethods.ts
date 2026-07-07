@@ -146,8 +146,9 @@ export class HandshakeRpcMethods extends ARpcMethods {
 
     /**
      * Replay block-fork-dispute validation for a block built by `buildingAddress`
-     * (its latest block confirmation, fetched from the building peer). Mirrors
-     * the old `blockValidationStrategy.blockForkIsDisputed(block, address)`.
+     * (its latest block confirmation, fetched from the building peer). The
+     * strategy resolves suppliers from the entry's source attribution, so
+     * build the entry with the building peer as the sender of this copy.
      */
     public async simulateBlockForkIsDisputed(
         encodedBlockConfirmation: string,
@@ -156,9 +157,11 @@ export class HandshakeRpcMethods extends ARpcMethods {
         const block = Block.fromBlockConfirmation(
             Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
         );
+        const entry = this.service.sm.storage.queues.createEntry(block, {
+            senderAddress: String(buildingAddress)
+        });
         await this.service.sm.blockValidationStrategy.blockForkIsDisputed(
-            block,
-            String(buildingAddress)
+            entry
         );
         return true;
     }

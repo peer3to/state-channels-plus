@@ -4,6 +4,7 @@ import { ZeroHash } from "ethers";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { Block, StateSnapshot } from "@/models";
 import { Logger } from "@/utils";
 import { BlockValidationResult, OnChainBlockStatus, TimeConfig } from "@/types";
@@ -44,10 +45,10 @@ export default class ValidationService {
     }
 
     async validateBlockConfirmation(
-        block: Block,
-        strategy: AValidationStrategy,
-        senderAddress?: string
+        entry: QueuedBlockEntry,
+        strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
         // Check is correct channel
         if (
             !this.stateManager.channelId ||
@@ -69,7 +70,7 @@ export default class ValidationService {
                 stateManagerForkId: String(this.stateManager.forkId),
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
-            return await strategy.channelNotOpened(block);
+            return await strategy.channelNotOpened(entry);
         }
 
         //  Get participants
@@ -112,7 +113,7 @@ export default class ValidationService {
                 strategy: strategy.name,
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
-            return await strategy.blockForkIsDisputed(block, senderAddress);
+            return await strategy.blockForkIsDisputed(entry);
         }
 
         // isNext
@@ -132,10 +133,7 @@ export default class ValidationService {
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
-            return await strategy.blockIsNotNextAndIsInTheFuture(
-                block,
-                senderAddress
-            );
+            return await strategy.blockIsNotNextAndIsInTheFuture(entry);
         }
 
         // Is linked

@@ -21,7 +21,6 @@ export type IngestBlockConfirmationOptions = {
 export default class BlockQueueManager {
     private readonly timeoutHandles: Map<Hash, ReturnType<typeof setTimeout>> =
         new Map();
-    private readonly processingEntries: Map<Hash, QueuedBlockEntry> = new Map();
     private readonly logger: Logger;
 
     constructor(
@@ -73,9 +72,10 @@ export default class BlockQueueManager {
 
             if (this.isBlockStored(block)) {
                 this.scheduleStoredBlockConfirmationMerge(
-                    block,
-                    strategy,
-                    options?.senderAddress ? [options.senderAddress] : []
+                    this.stateManager.storage.queues.createEntry(block, {
+                        senderAddress: options?.senderAddress
+                    }),
+                    strategy
                 );
                 return true;
             }
@@ -165,8 +165,10 @@ export default class BlockQueueManager {
 
     private async queueTimeout(blockHash: Hash): Promise<void> {
         this.timeoutHandles.delete(blockHash);
-        const entry =
-            this.stateManager.storage.queues.getQueuedEntry(blockHash);
+        // Dequeue first: the timeout owns the entry it sees - no race with
+        // other tasks. Copies arriving from here on pool into a fresh entry
+        // that converges on its own.
+        const entry = this.stateManager.storage.queues.removeBlock(blockHash);
         if (!entry) return;
 
         if (
@@ -180,14 +182,10 @@ export default class BlockQueueManager {
         }
 
         if (this.isBlockStored(entry.block)) {
-            const strategy = this.stateManager.getActiveValidationStrategy();
             this.scheduleStoredBlockConfirmationMerge(
-                entry.block,
-                strategy,
-                Array.from(entry.sourcePeers)
+                entry,
+                this.stateManager.getActiveValidationStrategy()
             );
-            this.stateManager.storage.queues.removeBlock(blockHash);
-            this.cancelQueueTimeout(blockHash);
             return;
         }
 
@@ -195,12 +193,16 @@ export default class BlockQueueManager {
             entry.block.forkId
         );
 
-        if (entry.block.height > nextHeight) {
-            this.requestSync(entry);
+        if (entry.block.height <= nextHeight) {
+            this.scheduleQueuedEntryExecution(entry);
             return;
         }
 
-        this.scheduleQueueExecution(entry.block.forkId);
+        // Still in the future after the agreement window: discard (already
+        // dequeued) and ask the suppliers to sync us up - junk must not
+        // accumulate. A block posted as calldata can always be re-read from
+        // the chain if it turns out to be needed.
+        this.requestSync(entry);
     }
 
     public clearFork(forkId: ForkId): void {
@@ -216,18 +218,12 @@ export default class BlockQueueManager {
     }
 
     public disconnectPeersForSignatures(
-        blockHash: Hash,
+        entry: QueuedBlockEntry,
         signatures: Set<Signature>
     ): void {
         const disconnectedPeers = new Set<Address>();
-        const processingEntry = this.processingEntries.get(blockHash);
         for (const signature of signatures) {
-            const peers =
-                processingEntry?.signatureSources.get(signature) ??
-                this.stateManager.storage.queues.getSignatureSources(
-                    blockHash,
-                    signature
-                );
+            const peers = entry.signatureSources.get(signature);
             if (!peers) continue;
             for (const peer of peers) {
                 if (disconnectedPeers.has(peer)) continue;
@@ -239,26 +235,20 @@ export default class BlockQueueManager {
         }
         if (disconnectedPeers.size > 0) {
             this.logger.warn("Disconnected peers for invalid signatures", {
-                blockHash,
+                blockHash: entry.block.hash,
                 disconnectedPeers: Array.from(disconnectedPeers)
             });
         }
     }
 
     public scheduleStoredBlockConfirmationMerge(
-        block: Block,
-        strategy: AValidationStrategy,
-        sourcePeers: Address[] = []
+        entry: QueuedBlockEntry,
+        strategy: AValidationStrategy
     ): void {
         this.timeoutManager.scheduleTask(
-            () =>
-                this.handleStoredBlockConfirmationMerge(
-                    block,
-                    strategy,
-                    sourcePeers
-                ),
+            () => this.handleStoredBlockConfirmationMerge(entry, strategy),
             0,
-            `BlockQueueManager.handleStoredBlockConfirmationMerge - fork ${block.forkId} - block ${block.height}`
+            `BlockQueueManager.handleStoredBlockConfirmationMerge - fork ${entry.block.forkId} - block ${entry.block.height}`
         );
     }
 
@@ -302,15 +292,13 @@ export default class BlockQueueManager {
     }
 
     private async handleStoredBlockConfirmationMerge(
-        block: Block,
-        strategy: AValidationStrategy,
-        sourcePeers: Address[]
+        entry: QueuedBlockEntry,
+        strategy: AValidationStrategy
     ): Promise<void> {
         const validationResult =
             await this.stateManager.tryMergeStoredBlockConfirmation(
-                block,
-                strategy,
-                sourcePeers[0]
+                entry,
+                strategy
             );
         if (validationResult === undefined) return;
 
@@ -318,14 +306,14 @@ export default class BlockQueueManager {
             await strategy.interpretFinalValidationResult(validationResult);
 
         if (!shouldKeepConnection) {
-            for (const peer of sourcePeers) {
+            for (const peer of entry.sourcePeers) {
                 this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                     peer
                 );
             }
         }
         P2pEventHooksUtils.notifyBlockConfirmationProcessed({
-            blockHash: block.hash,
+            blockHash: entry.block.hash,
             keepConnection: shouldKeepConnection,
             p2pEventHooks: this.stateManager.p2pEventHooks
         });
@@ -334,37 +322,26 @@ export default class BlockQueueManager {
     private async executeQueuedEntry(entry: QueuedBlockEntry): Promise<void> {
         if (this.isBlockStored(entry.block)) {
             await this.handleStoredBlockConfirmationMerge(
-                entry.block,
-                this.stateManager.getActiveValidationStrategy(),
-                Array.from(entry.sourcePeers)
+                entry,
+                this.stateManager.getActiveValidationStrategy()
             );
             return;
         }
 
-        this.processingEntries.set(entry.block.hash, entry);
-        try {
-            const shouldKeepConnection =
-                await this.stateManager.onBlockConfirmation(
-                    entry.block.blockConfirmationStruct,
-                    {
-                        onChainTimestamp: entry.block.onChainTimestamp
-                    }
-                );
+        const shouldKeepConnection =
+            await this.stateManager.onBlockConfirmation(entry);
 
-            if (!shouldKeepConnection) {
-                this.logger.warn(
-                    "tryExecuteFromQueue - queued block failed canonical validation",
-                    {
-                        block: LoggerUtils.getBlockMetadata(
-                            entry.block,
-                            this.stateManager.storage
-                        ),
-                        sourcePeers: Array.from(entry.sourcePeers)
-                    }
-                );
-            }
-        } finally {
-            this.processingEntries.delete(entry.block.hash);
+        if (!shouldKeepConnection) {
+            this.logger.warn(
+                "tryExecuteFromQueue - queued block failed canonical validation",
+                {
+                    block: LoggerUtils.getBlockMetadata(
+                        entry.block,
+                        this.stateManager.storage
+                    ),
+                    sourcePeers: Array.from(entry.sourcePeers)
+                }
+            );
         }
     }
 

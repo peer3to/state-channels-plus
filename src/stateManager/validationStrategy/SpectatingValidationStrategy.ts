@@ -1,13 +1,15 @@
 import { Block } from "@/models";
-import { BlockValidationResult } from "@/types";
+import { BlockValidationResult, Signature } from "@/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import AValidationStrategy from "./AValidationStrategy";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
+import type BlockQueueManager from "../BlockQueueManager";
 import { Logger } from "@/utils";
 
 export default class SpectatingValidationStrategy extends AValidationStrategy {
@@ -16,6 +18,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     constructor(
         private readonly storage: Storage,
         private readonly p2pManager: P2PManager,
+        private readonly blockQueueManager: BlockQueueManager,
         logger: Logger
     ) {
         super();
@@ -63,17 +66,31 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.storage.queues.queueBlock(block);
+        this.storage.queues.restoreEntry(entry);
         return BlockValidationResult.NOT_READY;
     }
     public async notAllSingersAreParticipants(
-        _block: Block
+        entry: QueuedBlockEntry,
+        unexpectedSignatures: Set<Signature>
     ): Promise<BlockValidationResult> {
-        this.disconnect();
-        return BlockValidationResult.DISCONNECT;
+        const block = entry.block;
+        // The peers that supplied stray signatures are byzantine — cut them,
+        // resolved from the entry's signature -> source map.
+        this.blockQueueManager.disconnectPeersForSignatures(
+            entry,
+            unexpectedSignatures
+        );
+        if (unexpectedSignatures.has(block.originalSignature)) {
+            // Garbage author — stop spectating this feed.
+            this.disconnect();
+            return BlockValidationResult.DISCONNECT;
+        }
+        // Stray confirmation signatures don't invalidate an otherwise valid block.
+        block.removeConfirmationSignatures(unexpectedSignatures);
+        return BlockValidationResult.SUCCESS;
     }
     public async noNewSignaturesOnExistingBlock(
         _block: Block
@@ -129,25 +146,26 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.storage.queues.queueBlock(block);
+        this.storage.queues.restoreEntry(entry);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
-        block: Block,
-        senderAddress?: string
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        // not ready
-        if (senderAddress)
+        const block = entry.block;
+        // not ready - ask the peers that supplied this block to sync us up
+        for (const peer of entry.sourcePeers) {
             this.p2pManager.localRpc.spectateService.sync(
-                senderAddress,
+                peer as string,
                 block.channelId,
                 block.forkId,
                 block.height
             );
-        this.storage.queues.queueBlock(block);
+        }
+        this.storage.queues.restoreEntry(entry);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
