@@ -146,8 +146,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
         // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         const hash = this.fraudProofService.createWrongGenesisProof(block);
         this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);

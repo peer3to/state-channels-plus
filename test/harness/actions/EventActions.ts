@@ -279,12 +279,12 @@ export class EventActions<
     ): Promise<void> {
         const maxCount = options.maxCount ?? 0;
         const { durationMs } = options;
-        const endAt = Date.now() + durationMs;
+        let durationElapsed = false;
 
-        const deadlineTimer = setTimeout(
-            () => void this.harness.eventCountsBarrier.signal(),
-            durationMs
-        );
+        const deadlineTimer = setTimeout(() => {
+            durationElapsed = true;
+            void this.harness.eventCountsBarrier.signal();
+        }, durationMs);
 
         try {
             await this.harness.eventCountsBarrier.waitFor(
@@ -297,7 +297,7 @@ export class EventActions<
                             );
                         }
                     }
-                    return Date.now() >= endAt;
+                    return durationElapsed;
                 },
                 {
                     timeoutMs: durationMs + 500,

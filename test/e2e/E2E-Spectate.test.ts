@@ -173,7 +173,7 @@ describe("E2E: Spectate Service", function () {
                   )
                 : null;
 
-            const encodedSyncPayload = await h
+            const syncResult = await h
                 .control(sourcePeer)
                 .spectate.generateSyncPayload(
                     h.channelId!,
@@ -181,9 +181,9 @@ describe("E2E: Spectate Service", function () {
                     blockHeight - 1
                 )
                 .request();
-            expect(encodedSyncPayload).to.not.be.null;
+            expect(syncResult).to.not.be.null;
             const syncPayload = Codec.decode(
-                encodedSyncPayload!,
+                syncResult!.encodedSyncPayload,
                 Type.SyncPayload
             );
             const latestFinalizedSnapshot =
@@ -259,7 +259,7 @@ describe("E2E: Spectate Service", function () {
                     blockHeight,
                     blockAuthor: blockInfo!.author,
                     blockConfirmation: blockConfirmation!,
-                    encodedSyncPayload: encodedSyncPayload!
+                    encodedSyncPayload: syncResult!.encodedSyncPayload
                 }
             );
 
@@ -309,7 +309,7 @@ describe("E2E: Spectate Service", function () {
             expect(localLatestHeight).to.be.greaterThan(0);
 
             const sourcePeer = await h.peerWithHighestBlock(forkId!);
-            const encodedSyncPayload = await h
+            const syncResult = await h
                 .control(h.getPeer(sourcePeer.index))
                 .spectate.generateSyncPayload(
                     h.channelId!,
@@ -317,7 +317,7 @@ describe("E2E: Spectate Service", function () {
                     localLatestHeight - 1
                 )
                 .request();
-            expect(encodedSyncPayload).to.not.be.null;
+            expect(syncResult).to.not.be.null;
 
             await h
                 .control(h.getPeer(spectator.index))
@@ -327,7 +327,7 @@ describe("E2E: Spectate Service", function () {
             try {
                 const { shouldAbort } = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(encodedSyncPayload!)
+                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
                     .request();
 
                 const didPersistLatestState = await h
@@ -406,7 +406,7 @@ describe("E2E: Spectate Service", function () {
                     .transaction.header.transactionCnt
             );
 
-            const encodedSyncPayload = await h
+            const syncResult = await h
                 .control(h.getPeer(sourcePeer.index))
                 .spectate.generateSyncPayload(
                     h.channelId!,
@@ -414,9 +414,9 @@ describe("E2E: Spectate Service", function () {
                     sourceLatestHeight
                 )
                 .request();
-            expect(encodedSyncPayload).to.not.be.null;
+            expect(syncResult).to.not.be.null;
             const syncPayload = Codec.decode(
-                encodedSyncPayload!,
+                syncResult!.encodedSyncPayload,
                 Type.SyncPayload
             );
             expect(syncPayload.stateProof.milestones.length).to.be.greaterThan(
@@ -495,7 +495,7 @@ describe("E2E: Spectate Service", function () {
             try {
                 const { shouldAbort } = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(encodedSyncPayload!)
+                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
                     .request();
 
                 const didPersistLatestState = await h
@@ -987,24 +987,21 @@ describe("E2E: Spectate Service", function () {
             const restore = await h.rpcStub.stubCountSpectateRequests(1);
 
             const peer1Address = h.getPeer(1).address;
-            // Fire two sync() calls for the same peer back-to-back on peer 0's
-            // host. `sync()` marks `inFlightByPeerAddress` synchronously before
-            // sending, so the second call must be dropped before it hits the wire.
-            await h.execOnHost(
-                h.getPeer(0),
-                (sm, args) => {
-                    const channelId = sm.channelId;
-                    sm.p2pManager.localRpc.spectateService.sync(
-                        args.peer1Address,
-                        channelId
-                    );
-                    sm.p2pManager.localRpc.spectateService.sync(
-                        args.peer1Address,
-                        channelId
-                    );
-                },
-                { peer1Address }
-            );
+            // Fire two concurrent startSync calls for the same peer on peer 0.
+            // `sync()` marks `inFlightByPeerAddress` synchronously before its
+            // background request completes (a full spectate RTT), so the second
+            // must be dropped before it hits the wire. Both control round-trips
+            // land well inside that window.
+            await Promise.all([
+                h
+                    .control(h.getPeer(0))
+                    .spectate.startSync(peer1Address)
+                    .request(),
+                h
+                    .control(h.getPeer(0))
+                    .spectate.startSync(peer1Address)
+                    .request()
+            ]);
 
             // Wait for the single request to land, then assert it stayed at one
             // (the deduped second call never produced a second request).
@@ -1019,5 +1016,76 @@ describe("E2E: Spectate Service", function () {
 
             await restore();
         });
+    });
+
+    describe("Exact-target sync payload generation", function () {
+        // A targeted sync request pins the proof to the exact (fork, height):
+        // `generateSyncPayload(F, h)` must prove height `h`, even when the
+        // responder is locally ahead. Height 0 (A1) is the regression for the
+        // `_blockHeight ?? latestBlockHeight` fix: 0 is falsy, so pre-fix the
+        // `||` proved the responder's *latest* height instead of the pinned 0.
+        // Height 1 (A2) is the truthy-height control that already worked.
+        // Driven host-side against the real `generateSyncPayload` so the pin is
+        // asserted deterministically at its source (the full sync pipeline
+        // normalizes an over-proved height, so it can't distinguish the fix).
+        for (const requestedHeight of [0, 1]) {
+            it(`pins the sync payload to requested height ${requestedHeight} while ahead`, async function () {
+                this.timeout(90000);
+
+                const h = TestSession.getHarness();
+                await h.lifecycle.start(2, 0, {
+                    timeConfig: {
+                        p2pTime: 5,
+                        agreementTime: 10,
+                        chainFallbackTime: 2,
+                        evidenceTime: 10
+                    }
+                });
+
+                // Advance so the responder is finalized well beyond the target.
+                await h.transition.advanceState({
+                    count: 3,
+                    waitForFinalization: true
+                });
+
+                const responder = h.getPeer(0);
+                const forkId = h.activeForkId!;
+
+                // The responder is locally ahead of the requested target.
+                const responderLatest = await h
+                    .control(responder)
+                    .query.getLatestBlockBundle(forkId)
+                    .request();
+                expect(responderLatest).to.not.equal(null);
+                expect(responderLatest!.height).to.be.greaterThan(
+                    requestedHeight
+                );
+
+                const syncResult = await h
+                    .control(responder)
+                    .spectate.generateSyncPayload(
+                        h.channelId!,
+                        forkId,
+                        requestedHeight
+                    )
+                    .request();
+                expect(syncResult).to.not.equal(null);
+                const syncPayload = Codec.decode(
+                    syncResult!.encodedSyncPayload,
+                    Type.SyncPayload
+                );
+
+                // The proof is pinned to exactly the requested height, not the
+                // responder's latest. Pre-fix (height 0 -> `||` -> latest) this
+                // is the responder's tip and the assertion fails.
+                const latestFinalizedSnapshot =
+                    syncPayload.milestoneSnapshots.at(-1) ??
+                    syncPayload.latestForkGenesisSnapshot;
+                expect(Number(latestFinalizedSnapshot.blockHeight)).to.equal(
+                    requestedHeight,
+                    "sync payload must prove exactly the requested height"
+                );
+            });
+        }
     });
 });

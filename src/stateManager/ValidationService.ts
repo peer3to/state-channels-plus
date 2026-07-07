@@ -93,7 +93,7 @@ export default class ValidationService {
 
         // Check conflicting block
         const conflictResult = await this.checkConflictingBlock(
-            block,
+            entry,
             strategy
         );
         if (conflictResult !== BlockValidationResult.SUCCESS) {
@@ -144,7 +144,7 @@ export default class ValidationService {
                     strategy: strategy.name,
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 });
-                return await strategy.wrongGenesisDetected(block);
+                return await strategy.wrongGenesisDetected(entry);
             }
             this.logger.warn("validateBlockConfirmation - block not linked", {
                 strategy: strategy.name,
@@ -246,9 +246,10 @@ export default class ValidationService {
     }
 
     private async checkConflictingBlock(
-        block: Block,
+        entry: QueuedBlockEntry,
         strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
         // conflicting block ?
         const maybePreExistingBlock = this.storage.blocks.getBlock(
             block.forkId,
@@ -285,7 +286,7 @@ export default class ValidationService {
             this.logger.warn("checkConflictingBlock - wrong genesis detected", {
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
-            return await strategy.wrongGenesisDetected(block);
+            return await strategy.wrongGenesisDetected(entry);
         }
 
         return await strategy.conflictingButNotLinkedBlockDetected(block);

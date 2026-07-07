@@ -169,4 +169,112 @@ export class RpcStubActions<
                 .request();
         };
     }
+
+    /**
+     * Hold every reduction entry point on a peer — the `reduction-*` timers,
+     * the StateSnapshotUpdated handler, and the DisputeReducedResultCommitted
+     * handler (which reduces on the spot once the challenge period expires) —
+     * so a staged race can outrun the peer's own fork transition.
+     */
+    async holdReductionRace(peerIndex: number): Promise<{
+        /** Held StateSnapshotUpdated events so far (chain-event arrival). */
+        heldSnapshotEventCount: () => Promise<number>;
+        /**
+         * Restore all three entry points. Held events replay through the real
+         * handlers in chain order (reduced-commit first) unless
+         * `replayEvents: false`; held timer tasks are discarded unless
+         * `runHeldTasks`.
+         */
+        release: (options?: {
+            replayEvents?: boolean;
+            runHeldTasks?: boolean;
+        }) => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubHoldReductionTasks().request();
+        await ctl().stubHoldSnapshotUpdatedEvents().request();
+        await ctl().stubHoldReducedCommitEvents().request();
+        this.logger.debug(
+            `Holding reduction race entry points on peer ${peerIndex}`
+        );
+        return {
+            heldSnapshotEventCount: async () =>
+                await ctl().getHeldSnapshotUpdatedCount().request(),
+            release: async (options = {}) => {
+                const { replayEvents = true, runHeldTasks = false } = options;
+                await ctl().restoreReductionTasks(runHeldTasks).request();
+                await ctl().restoreReducedCommitEvents(replayEvents).request();
+                await ctl()
+                    .restoreSnapshotUpdatedEvents(replayEvents)
+                    .request();
+            }
+        };
+    }
+
+    /**
+     * Make `reduceLocally` a counted no-op on the peer (simulates "nothing to
+     * reduce yet", e.g. an unexpired kill period). Returns a teardown.
+     */
+    async reduceLocallyNoop(peerIndex: number): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness.control(peer).stub.stubReduceLocallyNoop().request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreReduceLocally()
+                .request();
+        };
+    }
+
+    /** Count `reduceLocally` calls while forwarding to the real one. */
+    async recordReduceLocally(peerIndex: number): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubRecordReduceLocally()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreReduceLocally()
+                .request();
+        };
+    }
+
+    async reduceLocallyCallCount(peerIndex: number): Promise<number> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.getReduceLocallyCallCount()
+            .request();
+    }
+
+    /**
+     * Count `spectateService.sync` requests on the peer; `forward: false`
+     * records without running the real sync (keeps the sync-failure
+     * punishment path quiet during staging). Returns a teardown.
+     */
+    async recordSpectateSync(
+        peerIndex: number,
+        options: { forward: boolean }
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubRecordSpectateSync(options.forward)
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreSpectateSync()
+                .request();
+        };
+    }
+
+    async spectateSyncCallCount(peerIndex: number): Promise<number> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.getSpectateSyncCallCount()
+            .request();
+    }
 }

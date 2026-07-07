@@ -1,6 +1,7 @@
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
+import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 
@@ -20,7 +21,28 @@ export type StubKey =
     | "captureInitHandshake"
     | "initHandshakeCreateRpcMethods"
     | "maybePostBlockOnChain"
-    | "spectateAbort";
+    | "spectateAbort"
+    | "reductionTasks"
+    | "snapshotUpdatedEvents"
+    | "reducedCommitEvents"
+    | "reduceLocally"
+    | "spectateSync"
+    | "pausedTryReduce"
+    | "pausedTryReduceKillPeriod";
+
+export type PausedTryReduceStatus = {
+    entered: boolean;
+    released: boolean;
+    settled: boolean;
+    error?: string;
+};
+
+export type PausedTryReduceState = PausedTryReduceStatus & {
+    targetForkId: ForkId;
+    inside: boolean;
+    release?: () => void;
+    promise?: Promise<unknown>;
+};
 
 /**
  * Method stub/restore for Byzantine and fault-injection scenarios. Each stub is
@@ -29,8 +51,9 @@ export type StubKey =
  * instance so they survive across RPC method invocations.
  *
  * `p2pManager` is typed as `P2PManager<HarnessControlRpc>`, so `localRpc` (the
- * SDK's own services included) is fully typed — stubs target real members
- * directly, no structural casts.
+ * SDK's own services included) is fully typed. Prefer targeting real members
+ * directly; private internals use explicit local structural host types at the
+ * stub site.
  */
 export class StubService extends ARpcService<
     StubRpcMethods,
@@ -49,6 +72,20 @@ export class StubService extends ARpcService<
     spectateAbortCalled = false;
     /** Incremented by the count-spectate-requests stub per onSpectateRequest. */
     spectateRequestCount = 0;
+    /** `reduction-*` timer tasks captured by the hold-reduction-tasks stub. */
+    readonly heldReductionTasks: {
+        taskName: string;
+        task: () => void | Promise<void>;
+    }[] = [];
+    /** Event arg-tuples captured by the hold-event stubs. */
+    readonly heldSnapshotUpdatedArgs: unknown[][] = [];
+    readonly heldReducedCommitArgs: unknown[][] = [];
+    /** Incremented per `reduceLocally` call by the noop/record stubs. */
+    reduceLocallyCallCount = 0;
+    /** Incremented per `spectateService.sync` by the record stub. */
+    spectateSyncCallCount = 0;
+    /** State for the already-entered old-fork reduction race stub. */
+    pausedTryReduce?: PausedTryReduceState;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(

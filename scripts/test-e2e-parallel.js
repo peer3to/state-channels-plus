@@ -121,8 +121,14 @@ async function main() {
         concurrencyCap
     });
 
-    const logDir = cli.logDir;
+    // Default: a fresh run-N dir per run (./logs/run-0, ./logs/run-1, ...)
+    // so earlier runs' error logs survive for cross-run comparison. An
+    // explicit --logDir is used (and cleared) as-is.
+    const logDir = cli.logDirProvided
+        ? cli.logDir
+        : logging.nextRunDir(cli.logDir);
     logging.safeEmptyDir(logDir, cli.allowLogdirPurge);
+    console.log(`Logs: ${path.resolve(logDir)}`);
 
     // ---- run ----
     let infra = { nodes: [], discoveries: [] };

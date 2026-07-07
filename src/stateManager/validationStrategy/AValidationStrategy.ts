@@ -65,8 +65,14 @@ export default abstract class AValidationStrategy {
         messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult>;
 
+    /**
+     * A height-0 block that doesn't link to the fork's genesis snapshot.
+     * Takes the entry (not just the block) so strategies can attribute the
+     * block to its source peers when the genesis snapshot is missing
+     * entirely — that case can't produce a fraud proof.
+     */
     public abstract wrongGenesisDetected(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract conflictingButNotLinkedBlockDetected(

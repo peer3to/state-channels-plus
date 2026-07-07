@@ -35,6 +35,7 @@ import testConfig from "../peer3.test.config";
 import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RpcRequestOptions } from "@/rpc/RpcHandler";
 import path from "node:path";
 import fs from "node:fs";
 import { createHash } from "node:crypto";
@@ -978,11 +979,12 @@ export class PeerTestHarness<
     >(
         peer: TestPeer<TCustomRpc, TStateMachine>,
         fn: (sm: StateManager<HarnessControlRpc>, args: A) => T | Promise<T>,
-        args: A = {} as A
+        args: A = {} as A,
+        options?: RpcRequestOptions
     ): Promise<T> {
         return (await this.control(peer)
             .scenario.exec(fn.toString(), args)
-            .request()) as T;
+            .request(options)) as T;
     }
 
     async quiesceHosts(): Promise<Error[]> {

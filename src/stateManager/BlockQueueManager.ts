@@ -112,6 +112,36 @@ export default class BlockQueueManager {
                 return true;
             }
 
+            if (
+                block.forkId !== this.stateManager.forkId &&
+                !(await this.tryRecoverForkMismatch(block))
+            ) {
+                // Unknown fork: queue it under its own fork with a timeout,
+                // but never schedule it - a fork transition that catches us
+                // up drains it (post-transition tryExecuteFromQueue), the
+                // timeout evicts it otherwise. Suppliers must prove the fork
+                // via sync or get disconnected there.
+                const hash = this.stateManager.storage.queues.queueBlock(
+                    block,
+                    { senderAddress: options?.senderAddress }
+                );
+                this.scheduleQueueTimeout(hash);
+                const entry =
+                    this.stateManager.storage.queues.getQueuedEntry(hash);
+                if (entry) this.requestSync(entry);
+                this.logger.warn(
+                    "ingestBlockConfirmation - block on unknown fork queued for sync",
+                    {
+                        expectedForkId: String(this.stateManager.forkId),
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.stateManager.storage
+                        )
+                    }
+                );
+                return true;
+            }
+
             const hash = this.stateManager.storage.queues.queueBlock(block, {
                 senderAddress: options?.senderAddress
             });
@@ -125,8 +155,42 @@ export default class BlockQueueManager {
         }
     }
 
+    /**
+     * A mismatched forkId may just mean we're late to reduce our disputed
+     * fork. Reduce locally and report whether the block's fork became ours.
+     * `reduceLocally` doesn't self-guard on "fork is disputed", so gate here
+     * - junk gossip must not trigger on-chain probes or dispute attempts.
+     */
+    private async tryRecoverForkMismatch(block: Block): Promise<boolean> {
+        const currentForkId = this.stateManager.forkId;
+        if (
+            !(await this.stateManager.isForkDisputed(
+                currentForkId,
+                block.channelId
+            ))
+        ) {
+            return false;
+        }
+        try {
+            await this.stateManager.reduceLocally(currentForkId);
+        } catch (error) {
+            this.logger.error(
+                "tryRecoverForkMismatch - local reduction failed",
+                {
+                    forkId: String(currentForkId),
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                }
+            );
+        }
+        return block.forkId === this.stateManager.forkId;
+    }
+
     public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
         const activeForkId = forkId ?? this.stateManager.forkId;
+        // A scheduled forkId is not authority - a fork transition may have
+        // landed since; the entries drain via the post-transition call.
+        if (activeForkId !== this.stateManager.forkId) return;
         const maxHeight =
             this.stateManager.storage.blocks.getNextBlockHeight(activeForkId);
 
@@ -185,6 +249,24 @@ export default class BlockQueueManager {
             this.scheduleStoredBlockConfirmationMerge(
                 entry,
                 this.stateManager.getActiveValidationStrategy()
+            );
+            return;
+        }
+
+        if (entry.block.forkId !== this.stateManager.forkId) {
+            // Wrong fork at eviction: either a fork we moved past (nothing
+            // to sync - we are ahead, and a sync request would blacklist
+            // honest stragglers) or an unknown fork whose suppliers were
+            // already asked to prove it at ingest. Discard.
+            this.logger.verbose(
+                "queueTimeout - dropping entry from a non-current fork",
+                {
+                    expectedForkId: String(this.stateManager.forkId),
+                    block: LoggerUtils.getBlockMetadata(
+                        entry.block,
+                        this.stateManager.storage
+                    )
+                }
             );
             return;
         }
@@ -252,30 +334,39 @@ export default class BlockQueueManager {
         );
     }
 
-    private scheduleQueueTimeout(blockHash: Hash): void {
+    /**
+     * (Re)schedule the queue timeout for the REMAINDER of the entry's fixed
+     * lifetime (`firstSeenAt + agreementTime`) - duplicate copies and
+     * restores must not extend it. Returns whether a timeout was scheduled;
+     * on false any pre-existing handle is left untouched, so a near-deadline
+     * duplicate can't strand the entry by cancelling its only timeout.
+     */
+    private scheduleQueueTimeout(blockHash: Hash): boolean {
         const entry =
             this.stateManager.storage.queues.getQueuedEntry(blockHash);
-        if (!entry) return;
+        if (!entry) return false;
 
         const now = Clock.getTimeInSeconds();
-        const alreadyScheduled = this.timeoutHandles.has(blockHash);
-        const canReschedule =
-            now - entry.firstSeenAt <= this.timeConfig.agreementTime;
+        const remainingSeconds =
+            this.timeConfig.agreementTime - (now - entry.firstSeenAt);
 
-        if (!canReschedule) return;
+        if (remainingSeconds <= 0) return false;
 
-        if (alreadyScheduled) this.cancelQueueTimeout(blockHash);
+        if (this.timeoutHandles.has(blockHash)) {
+            this.cancelQueueTimeout(blockHash);
+        }
 
-        const delayMs = this.timeConfig.agreementTime * 1000;
         const timeout = this.timeoutManager.scheduleTask(
             () => this.queueTimeout(blockHash),
-            delayMs,
+            remainingSeconds * 1000,
             `BlockQueueManager.queueTimeout - fork ${entry.block.forkId} - block ${entry.block.height}`
         );
         this.timeoutHandles.set(blockHash, timeout);
+        return true;
     }
 
     private scheduleQueueExecution(forkId: ForkId): void {
+        if (forkId !== this.stateManager.forkId) return;
         this.timeoutManager.scheduleTask(
             () => this.tryExecuteFromQueue(forkId),
             0,
@@ -320,6 +411,26 @@ export default class BlockQueueManager {
     }
 
     private async executeQueuedEntry(entry: QueuedBlockEntry): Promise<void> {
+        if (entry.block.forkId !== this.stateManager.forkId) {
+            // A fork transition landed between scheduling and execution.
+            // Only current-fork entries ever get scheduled and transitions
+            // are forward-only, so this fork is behind us - the block can
+            // never validate and there is nothing to sync (we are ahead;
+            // a sync request would fail against honest stragglers and
+            // blacklist them). Drop it.
+            this.logger.verbose(
+                "executeQueuedEntry - dropping entry from a fork we moved past",
+                {
+                    expectedForkId: String(this.stateManager.forkId),
+                    block: LoggerUtils.getBlockMetadata(
+                        entry.block,
+                        this.stateManager.storage
+                    )
+                }
+            );
+            return;
+        }
+
         if (this.isBlockStored(entry.block)) {
             await this.handleStoredBlockConfirmationMerge(
                 entry,

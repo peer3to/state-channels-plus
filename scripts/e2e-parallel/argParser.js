@@ -4,6 +4,9 @@ const { DEFAULT_LOG_DIR } = require("./constants");
 function parseCliArgs(argv) {
     const options = {
         logDir: DEFAULT_LOG_DIR,
+        // Explicit --logDir → that exact dir is used (and cleared);
+        // otherwise each run gets a fresh DEFAULT_LOG_DIR/run-N.
+        logDirProvided: false,
         allowLogdirPurge: false,
         grep: undefined,
         dryRun: false,
@@ -54,6 +57,7 @@ function parseCliArgs(argv) {
             const next = argv[i + 1];
             if (next) {
                 options.logDir = next;
+                options.logDirProvided = true;
                 i++;
             }
             continue;
@@ -64,6 +68,7 @@ function parseCliArgs(argv) {
             arg.startsWith("--dir=")
         ) {
             options.logDir = arg.split("=").slice(1).join("=");
+            options.logDirProvided = true;
             continue;
         }
 

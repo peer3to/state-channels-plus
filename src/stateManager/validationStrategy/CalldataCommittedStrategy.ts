@@ -91,9 +91,9 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async wrongGenesisDetected(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        return this.blockValidationStrategy.wrongGenesisDetected(block);
+        return this.blockValidationStrategy.wrongGenesisDetected(entry);
     }
     public async forgedInboundMessageBlockDetected(
         block: Block,

@@ -127,7 +127,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
-        block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         this.disconnect();
         return BlockValidationResult.DISPUTE;

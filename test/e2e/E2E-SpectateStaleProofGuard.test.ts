@@ -1,5 +1,7 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
+import { waitFor } from "@test/utils/waitFor";
+import { Status } from "@/types";
 
 describe("E2E: Spectate stale-proof guard", function () {
     it("aborts sync when on-chain snapshot is more advanced than what participant proved", async function () {
@@ -82,5 +84,66 @@ describe("E2E: Spectate stale-proof guard", function () {
             0,
             "Spectator should have 0 open connections after aborting on junk"
         );
+    });
+
+    // A4: an exact target BEHIND the on-chain snapshot on the same fork is
+    // rejected by the same-fork stale-proof bound — the height-0 pin does not
+    // weaken it. A participant requester (not a spectator) means the abort
+    // blacklists the responder rather than node-aborting.
+    it("blacklists the responder when a participant requests a target behind the on-chain snapshot", async function () {
+        this.timeout(90000);
+
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0, {
+            timeConfig: {
+                p2pTime: 5,
+                agreementTime: 3,
+                chainFallbackTime: 2,
+                evidenceTime: 10
+            }
+        });
+
+        // Advance and post an on-chain snapshot so the chain sits ahead of the
+        // old target we will request below.
+        await h.transition.advanceState({
+            count: 4,
+            waitForFinalization: true
+        });
+        await h.transition.postSnapshotWait();
+
+        const requesterIndex = 1;
+        const responderIndex = 0;
+        const requester = h.getPeer(requesterIndex);
+        const responder = h.getPeer(responderIndex);
+        const forkId = h.activeForkId!;
+        const staleHeight = 1; // behind the posted on-chain snapshot
+
+        // The requester is an active participant, so a verification abort
+        // blacklists the responder (rather than aborting the node).
+        expect(await h.control(requester).query.getStatus().request()).to.equal(
+            Status.PARTICIPATING
+        );
+
+        await h
+            .control(requester)
+            .spectate.startSync(responder.address, forkId, staleHeight)
+            .request();
+
+        // The stale-proof bound aborts the sync and the participant blacklists
+        // the responder.
+        await waitFor(
+            async () =>
+                await h
+                    .control(requester)
+                    .query.isBlacklisted(responder.address)
+                    .request(),
+            15000
+        );
+        expect(
+            await h
+                .control(requester)
+                .query.isBlacklisted(responder.address)
+                .request()
+        ).to.equal(true, "participant should blacklist the responder");
     });
 });

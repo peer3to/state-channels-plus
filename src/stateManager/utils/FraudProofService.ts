@@ -188,6 +188,16 @@ export default class FraudProofService {
         });
     }
     createWrongGenesisProof(block: Block): Hash {
+        const genesisSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                block.forkId
+            );
+        if (!genesisSnapshot) {
+            throw new Error(
+                `Missing genesis snapshot for fork ${block.forkId} - cannot build WrongGenesis proof`
+            );
+        }
+
         this.logFraudDetection({
             fraudType: FraudProofType.WrongGenesis,
             reason: "Block at height 0 doesn't link to correct genesis state",
@@ -196,9 +206,7 @@ export default class FraudProofService {
 
         const proof: WrongGenesisProofStruct = {
             invalidBlock: block.signedBlock,
-            genesisSnapshot: this.storage.stateSnapshots
-                .getGenesisSnapshotByForkId(block.forkId)!
-                .toStruct()
+            genesisSnapshot: genesisSnapshot.toStruct()
         };
 
         return this.storeFraudProof(block.signerAddress, {

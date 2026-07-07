@@ -1454,7 +1454,13 @@ class StateManager<
                 participantChanges,
                 {
                     outboundMessageBlock,
-                    strategy
+                    strategy,
+                    onBlockCommitted: () => {
+                        // The VM keeps the advanced state once the block is
+                        // stored - post-commit side-effect failures must not
+                        // rewind it behind storage.
+                        stateBeforeTransitionValidation = undefined;
+                    }
                 }
             );
             const blockMeta = LoggerUtils.getBlockMetadata(block, this.storage);
@@ -1466,8 +1472,6 @@ class StateManager<
                 }
             );
             keepConnection = true;
-            // The VM keeps the advanced state from here on.
-            stateBeforeTransitionValidation = undefined;
             return keepConnection;
         } catch (error) {
             this.logger.error("onBlockConfirmation - error", {
@@ -3074,6 +3078,7 @@ class StateManager<
         options?: {
             outboundMessageBlock?: MessageBlockStruct;
             strategy?: AValidationStrategy;
+            onBlockCommitted?: () => void;
         }
     ): Promise<void> {
         // step 9 - potentially change status: SYNCED | PENDING_PARTICIPANT → PARTICIPATING
@@ -3116,6 +3121,9 @@ class StateManager<
         this.storage.blocks.storeBlock(block, {
             justPersist: options?.strategy instanceof DisputeValidationStrategy
         });
+        // The block is canonical from here: a failure in the remaining side
+        // effects must not roll the VM back behind stored state.
+        options?.onBlockCommitted?.();
         P2pEventHooksUtils.maybeNotifyBlockFinalized({
             block,
             storage: this.storage,

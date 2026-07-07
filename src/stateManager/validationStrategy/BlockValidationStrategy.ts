@@ -144,8 +144,31 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
+        if (
+            !this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                block.forkId
+            )
+        ) {
+            // Defense in depth: the queue's fork gate should keep
+            // unknown-fork blocks out of validation entirely. No genesis
+            // snapshot means no fraud proof to build and no dispute to raise
+            // — cut the suppliers instead.
+            this.logger.warn(
+                "Missing genesis reached validation despite fork gate - blacklisting sources",
+                {
+                    blockAuthor: block.author,
+                    blockForkId: block.forkId,
+                    sourcePeers: Array.from(entry.sourcePeers)
+                }
+            );
+            for (const peer of entry.sourcePeers) {
+                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
+            }
+            return BlockValidationResult.DISCONNECT;
+        }
         this.logger.warn("Wrong genesis detected", {
             blockAuthor: block.author,
             blockHeight: block.height

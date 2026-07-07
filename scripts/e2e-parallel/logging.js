@@ -92,12 +92,45 @@ function parseTimings(text) {
     };
 }
 
+// The default ./logs dir and anything under it (run-N dirs) are safe to
+// purge/clean without the explicit allow flag.
+function isWithinDefaultLogDir(resolved) {
+    const expected = path.resolve(DEFAULT_LOG_DIR);
+    return resolved === expected || resolved.startsWith(expected + path.sep);
+}
+
+/**
+ * Allocate the next run-N directory under baseDir. Runs accumulate
+ * (./logs/run-0, ./logs/run-1, ...) so error logs from earlier runs
+ * survive for cross-run comparison.
+ */
+function nextRunDir(baseDir) {
+    const base = path.resolve(baseDir);
+    fs.mkdirSync(base, { recursive: true });
+
+    let next = 0;
+    for (const entry of fs.readdirSync(base)) {
+        const match = /^run-(\d+)$/.exec(entry);
+        if (match) next = Math.max(next, Number(match[1]) + 1);
+    }
+    // mkdir non-recursive so a concurrent run can't silently share a dir.
+    for (;;) {
+        const dir = path.join(base, `run-${next}`);
+        try {
+            fs.mkdirSync(dir);
+            return dir;
+        } catch (err) {
+            if (err.code !== "EEXIST") throw err;
+            next++;
+        }
+    }
+}
+
 function safeEmptyDir(dirPath, allowLogdirPurge) {
     const resolved = path.resolve(dirPath);
-    const expected = path.resolve(DEFAULT_LOG_DIR);
 
-    // Safety: only auto-purge the default ./logs directory unless explicitly allowed.
-    const canAutoPurge = resolved === expected;
+    // Safety: only auto-purge dirs under the default ./logs unless explicitly allowed.
+    const canAutoPurge = isWithinDefaultLogDir(resolved);
     const allowUnsafe = allowLogdirPurge === true;
 
     if (!canAutoPurge && !allowUnsafe) {
@@ -115,8 +148,7 @@ function safeEmptyDir(dirPath, allowLogdirPurge) {
 
 function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
     const resolved = path.resolve(logDir);
-    const expected = path.resolve(DEFAULT_LOG_DIR);
-    const canAutoPurge = resolved === expected;
+    const canAutoPurge = isWithinDefaultLogDir(resolved);
     const allowUnsafe = allowLogdirPurge === true;
 
     if (!canAutoPurge && !allowUnsafe) {
@@ -393,6 +425,7 @@ module.exports = {
     parseTimings,
     safeEmptyDir,
     cleanupNonErrorLogs,
+    nextRunDir,
     getLogPath,
     markLogAsError,
     runHeader,

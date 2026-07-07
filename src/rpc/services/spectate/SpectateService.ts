@@ -572,15 +572,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const latestBlockHeight =
             stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
 
-        // There are blocks, so we can do a same-fork update
+        // There are blocks, so we can do a same-fork update.
+        // `??` not `||`: a requested height of 0 is valid and must be pinned,
+        // not fall through to the latest block.
+        const targetBlockHeight = _blockHeight ?? latestBlockHeight;
         const latestStateProof = await agreementManager.tryGetStateProof(
             forkId,
-            _blockHeight || latestBlockHeight
+            targetBlockHeight
         );
 
         if (!latestStateProof) {
             this.logger.debug(
-                `No state proof found for fork ${forkId} blockHeight ${_blockHeight || latestBlockHeight}`
+                `No state proof found for fork ${forkId} blockHeight ${targetBlockHeight}`
             );
             return undefined;
         }

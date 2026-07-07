@@ -14,6 +14,24 @@
 
 These are project rules to follow (and persist any future "remember this" instructions here).
 
+### PR reviews (AI agents)
+
+When reviewing a PR, verifying adherence to **all** guidelines in this file
+_and_ `test/AGENTS.md` (for anything under `test/`) is part of the review —
+report violations as findings alongside correctness issues. This includes the
+testing-changes rule above (unit + e2e in the same pass), the strategy-pattern
+rules, the type-safety rules, and the test-harness rules (no mocks, fixtures
+trigger src code).
+
+### E2E parallel run logs
+
+`yarn test:e2e:parallel` writes each run to a fresh `./logs/run-N/` (N
+auto-increments) and never touches earlier `run-*` dirs — error logs persist
+across runs for comparison (`TEST_FAILURES.md` workflow). Only the current
+run's dir is cleared/cleaned. An explicit `--logDir <dir>` is used (and
+cleared) as-is; dirs outside `./logs` additionally need
+`--allow-logdir-purge`. Prune old `run-*` dirs manually when done comparing.
+
 ### Testing changes to `src/`
 
 Every `src/` change ships with tests in the same pass — both kinds:
@@ -168,4 +186,4 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
   Keep it simple; add a named type later only if it actually earns reuse. (And
   don't reach for `Awaited<ReturnType<…>>`-style gymnastics to avoid a name —
   that's worse than the type it replaces; it's for generics, not one-offs.)
-- Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`.
+- Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`. Exception: `scripts/` CLIs (test runners, infra tooling) write their user-facing output with `console.*` by design — the rule governs `src/` and harness code whose logs must ship through the pipeline.

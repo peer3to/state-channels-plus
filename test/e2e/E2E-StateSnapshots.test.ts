@@ -1,4 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { StateSnapshot } from "@/models";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { expect } from "chai";
@@ -105,6 +106,233 @@ describe("E2E: State Snapshots", function () {
         await h.assert.snapshot.onChainSnapshotOnFork();
         await h.assert.snapshot.snapshotMatchesLocal();
         await h.assert.sync.maliciousPeerExcluded();
+    });
+
+    it("should not re-emit setState when a held old-fork reduction timeout runs after snapshot-event reduction", async function () {
+        this.timeout(90000);
+
+        const h = TestSession.getHarness();
+        const targetPeerIndex = 0;
+        const maliciousPeerIndex = 2;
+        const honest = [0, 1, 3];
+
+        await h.lifecycle.start(4, maliciousPeerIndex, {
+            timeConfig: { ...forkTimeConfig, agreementTime: 4 }
+        });
+        await h.assert.sync.peersInSyncWait();
+
+        const targetPeer = h.getPeer(targetPeerIndex);
+        // Hold only the reduction timers - the snapshot event must flow and
+        // perform the reduction; the held timer replays after it.
+        await h.control(targetPeer).stub.stubHoldReductionTasks().request();
+
+        h.event.resetEventSpies();
+        const originalForkId = h.activeForkId!;
+        await h.scenario.disputeAndResolve({
+            maliciousPeerIndex,
+            forkId: originalForkId,
+            honestPeerIndices: honest,
+            resetEventSpies: false,
+            forkSettleTimeoutMs: 20000,
+            disputesCommittedTimeoutMs: 10000
+        });
+
+        const heldReductionCount = await h
+            .control(targetPeer)
+            .stub.getHeldReductionTaskCount()
+            .request();
+        expect(heldReductionCount).to.be.greaterThan(
+            0,
+            "target peer should have a pending old-fork reduction timeout held by the test"
+        );
+
+        await h.event.waitForPeers("onSetState", [targetPeerIndex], 1, {
+            timeoutMs: 20000,
+            mode: "atLeast"
+        });
+        expect(
+            h.event.getEventCallCount(targetPeerIndex, "onSetState")
+        ).to.equal(
+            1,
+            "target peer should set reduced-fork state once from the snapshot event"
+        );
+
+        await h.transition.fromHonestPeersOnly((c) => c.add(1));
+        await h.assert.sync.onlyHonestPeersInSync();
+
+        const expectedSum = await h
+            .getPeer(targetPeerIndex)
+            .contractInstance.getSum();
+
+        // Release: restore scheduling and run the held reduction timers -
+        // they must no-op against the already-reduced fork.
+        await h.control(targetPeer).stub.restoreReductionTasks(true).request();
+
+        await h.event.waitWhileEventCountsStayAtMost(
+            "onSetState",
+            [targetPeerIndex],
+            {
+                durationMs: 5000,
+                maxCount: 1
+            }
+        );
+        expect(
+            h.event.getEventCallCount(targetPeerIndex, "onSetState")
+        ).to.equal(
+            1,
+            "old-fork reduction timeout should skip after snapshot-event reduction"
+        );
+        expect(
+            await h.getPeer(targetPeerIndex).contractInstance.getSum()
+        ).to.equal(expectedSum, "target peer should retain the transition");
+    });
+
+    it("should not re-emit setState when an already-entered old-fork reduction completes after snapshot-event reduction", async function () {
+        this.timeout(90000);
+
+        const h = TestSession.getHarness();
+        const targetPeerIndex = 0;
+        const maliciousPeerIndex = 2;
+        const reducingHonestPeers = [1, 3];
+
+        await h.lifecycle.start(4, maliciousPeerIndex, {
+            timeConfig: {
+                ...forkTimeConfig,
+                agreementTime: 4
+            }
+        });
+        await h.assert.sync.peersInSyncWait();
+
+        const originalForkId = h.activeForkId!;
+        const targetPeer = h.getPeer(targetPeerIndex);
+
+        // Keep the scheduled old-fork reduction parked, then explicitly start
+        // a second old-fork reduction and pause it after it enters the contract
+        // kill-period check. The snapshot event should reduce the peer while
+        // this older reduction is already in flight.
+        await h.control(targetPeer).stub.stubHoldReductionTasks().request();
+        await h
+            .control(targetPeer)
+            .stub.stubPauseTryReduceAtKillPeriod(originalForkId)
+            .request();
+
+        h.event.resetEventSpies();
+        const resolvePromise = h.scenario.disputeAndResolve({
+            maliciousPeerIndex,
+            forkId: originalForkId,
+            honestPeerIndices: reducingHonestPeers,
+            resetEventSpies: false,
+            forkSettleTimeoutMs: 20000,
+            disputesCommittedTimeoutMs: 10000
+        });
+
+        try {
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(targetPeer)
+                        .stub.getHeldReductionTaskCount()
+                        .request()) > 0,
+                15000,
+                50
+            );
+            await h
+                .control(targetPeer)
+                .stub.startPausedTryReduce(originalForkId)
+                .request();
+
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getPausedTryReduceStatus()
+                            .request()
+                    ).entered,
+                15000,
+                50
+            );
+
+            await resolvePromise;
+
+            await h.event.waitForPeers("onSetState", [targetPeerIndex], 1, {
+                timeoutMs: 20000,
+                mode: "atLeast"
+            });
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(
+                1,
+                "target peer should set reduced-fork state once from the snapshot event"
+            );
+
+            await h.transition.fromHonestPeersOnly((c) => c.add(1));
+            await h.assert.sync.onlyHonestPeersInSync();
+
+            const expectedSum = await h
+                .getPeer(targetPeerIndex)
+                .contractInstance.getSum();
+
+            await h.control(targetPeer).stub.releasePausedTryReduce().request();
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getPausedTryReduceStatus()
+                            .request()
+                    ).settled,
+                30000,
+                50
+            );
+            const tryReduceStatus = await h
+                .control(targetPeer)
+                .stub.getPausedTryReduceStatus()
+                .request();
+            await h.control(targetPeer).stub.restorePausedTryReduce().request();
+            await h
+                .control(targetPeer)
+                .stub.restoreReductionTasks(false)
+                .request();
+            expect(tryReduceStatus.error).to.equal(undefined);
+
+            await h.event.waitWhileEventCountsStayAtMost(
+                "onSetState",
+                [targetPeerIndex],
+                {
+                    durationMs: 2000,
+                    maxCount: 1
+                }
+            );
+            expect(
+                h.event.getEventCallCount(targetPeerIndex, "onSetState")
+            ).to.equal(
+                1,
+                "old-fork reduction already in progress should not set state again"
+            );
+            expect(
+                await h.getPeer(targetPeerIndex).contractInstance.getSum()
+            ).to.equal(expectedSum, "target peer should retain the transition");
+        } finally {
+            // Guarantee the paused in-flight reduction is released on every
+            // exit path so it never leaks into teardown.
+            await h
+                .control(targetPeer)
+                .stub.releasePausedTryReduce()
+                .request()
+                .catch(() => {});
+            await h
+                .control(targetPeer)
+                .stub.restorePausedTryReduce()
+                .request()
+                .catch(() => {});
+            await h
+                .control(targetPeer)
+                .stub.restoreReductionTasks(false)
+                .request()
+                .catch(() => {});
+            await resolvePromise.catch(() => {});
+        }
     });
 
     it("should handle snapshot update at blockHeight = 0 (first snapshot) - edge case since genesis is also height 0", async function () {
