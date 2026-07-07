@@ -268,6 +268,16 @@ export default class Block {
         return this;
     }
 
+    /** Drop confirmation signatures (the author's original signature is kept). */
+    removeConfirmationSignatures(signatures: Set<Signature>): Block {
+        for (const signature of signatures) {
+            if (this._confirmationSignatures.delete(signature)) {
+                this._allSignerAddressesCache = undefined;
+            }
+        }
+        return this;
+    }
+
     getRelevantTimestamp(nextBlockAuthor: Address): Timestamp {
         const signature = this.findSignature(nextBlockAuthor);
 

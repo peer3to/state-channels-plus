@@ -1,8 +1,9 @@
 import { Block } from "@/models";
-import { BlockValidationResult, Hash } from "@/types";
+import { BlockValidationResult, Hash, Signature } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 import AValidationStrategy from "./AValidationStrategy";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import DisputeFraudProofService from "../utils/DisputeFraudProofService";
@@ -85,17 +86,24 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(
-        _block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;
     }
     public async notAllSingersAreParticipants(
-        _block: Block
+        entry: QueuedBlockEntry,
+        unexpectedSignatures: Set<Signature>
     ): Promise<BlockValidationResult> {
-        /**
-         * StateProof milestones check and require that signers are participants so this should never fail there.
-         * This can be called only if stateProof.signedBlocks are not from participants, in which case we'll let this pipeline continue and fail on the STF since only a participant can autor a block
-         */
+        const block = entry.block;
+        if (unexpectedSignatures.has(block.originalSignature)) {
+            // The outsider author can't be slashed, but the dispute submitter
+            // (a union member) packaged this block into the stateProof — kill
+            // the dispute with evidence against the submitter. No transport
+            // punishment: these blocks are replayed from a proof, not gossiped.
+            return this.invalidStateTransitionDetected(block);
+        }
+        // Stray confirmation signatures don't invalidate the replayed block.
+        block.removeConfirmationSignatures(unexpectedSignatures);
         return BlockValidationResult.SUCCESS;
     }
     public async noNewSignaturesOnExistingBlock(
@@ -164,15 +172,13 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return this.blockIsNotLinkedAndIsNotFirstBlock(block);
     }
     public async blockForkIsDisputed(
-        _block: Block,
-        _senderAddress?: string
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // continue syncing
         return BlockValidationResult.SUCCESS;
     }
     public async blockIsNotNextAndIsInTheFuture(
-        _block: Block,
-        _senderAddress?: string
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;
     }

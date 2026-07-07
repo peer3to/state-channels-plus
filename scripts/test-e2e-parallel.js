@@ -32,7 +32,7 @@ let _teardown = () => {};
 function buildBaseEnv(threadModes) {
     return {
         ...process.env,
-        LOG_LEVEL: process.env.LOG_LEVEL || "error",
+        LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
         NODE_OPTIONS: [
             process.env.NODE_OPTIONS,
             "--enable-source-maps",

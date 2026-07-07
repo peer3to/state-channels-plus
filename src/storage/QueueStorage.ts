@@ -19,28 +19,41 @@ export class QueueStorage {
     // Secondary index for efficient queries by coordinates
     private blocksByCoordinates: Map<string, Set<Hash>> = new Map();
 
+    /**
+     * Build a standalone entry for a block copy — the unit of work the
+     * pipeline consumes. Same construction the queue uses, without queueing.
+     */
+    createEntry(block: Block, options?: QueueBlockOptions): QueuedBlockEntry {
+        const entry: QueuedBlockEntry = {
+            block,
+            firstSeenAt: Clock.getTimeInSeconds(),
+            sourcePeers: new Set(),
+            signatureSources: new Map()
+        };
+        this.trackSource(entry, block.allSignatures, options?.senderAddress);
+        return entry;
+    }
+
     /** Queue a block for future processing */
     queueBlock(block: Block, options?: QueueBlockOptions): Hash {
-        const now = Clock.getTimeInSeconds();
-
         // Check if block already exists in queue
         const existingEntry = this.queuedBlocks.get(block.hash);
 
         if (existingEntry) {
+            // Attribute only the signatures this copy carried to its sender,
+            // never signatures pooled from earlier copies.
+            this.trackSource(
+                existingEntry,
+                block.allSignatures,
+                options?.senderAddress
+            );
             existingEntry.block.expandSignatures(block.confirmationSignatures);
             this.mergeOnChainTimestamp(existingEntry.block, block);
-            this.trackSource(existingEntry, block, options?.senderAddress);
             this.queuedBlocks.set(block.hash, existingEntry);
             return block.hash;
         }
 
-        const entry: QueuedBlockEntry = {
-            block,
-            firstSeenAt: now,
-            sourcePeers: new Set(),
-            signatureSources: new Map()
-        };
-        this.trackSource(entry, block, options?.senderAddress);
+        const entry = this.createEntry(block, options);
 
         // Store the new block confirmation
         this.queuedBlocks.set(block.hash, entry);
@@ -107,13 +120,35 @@ export class QueueStorage {
         return this.queuedBlocks.get(blockHash);
     }
 
-    getSignatureSources(
-        blockHash: Hash,
-        signature: Signature
-    ): Set<Address> | undefined {
-        return this.queuedBlocks
-            .get(blockHash)
-            ?.signatureSources.get(signature);
+    /**
+     * Re-insert a previously dequeued entry, merging its signatures and
+     * source attribution into any entry queued for the same block meanwhile.
+     */
+    restoreEntry(entry: QueuedBlockEntry): void {
+        const existing = this.queuedBlocks.get(entry.block.hash);
+        if (!existing) {
+            this.queuedBlocks.set(entry.block.hash, entry);
+            this.addHashToCoordinateIndex(
+                entry.block.hash,
+                entry.block.forkId,
+                entry.block.height
+            );
+            return;
+        }
+
+        existing.block.expandSignatures(entry.block.confirmationSignatures);
+        this.mergeOnChainTimestamp(existing.block, entry.block);
+        existing.firstSeenAt = Math.min(
+            existing.firstSeenAt,
+            entry.firstSeenAt
+        );
+        for (const peer of entry.sourcePeers) existing.sourcePeers.add(peer);
+        for (const [signature, peers] of entry.signatureSources) {
+            const merged =
+                existing.signatureSources.get(signature) ?? new Set();
+            for (const peer of peers) merged.add(peer);
+            existing.signatureSources.set(signature, merged);
+        }
     }
 
     removeBlock(blockHash: Hash): QueuedBlockEntry | undefined {
@@ -185,13 +220,13 @@ export class QueueStorage {
 
     private trackSource(
         entry: QueuedBlockEntry,
-        block: Block,
+        signatures: Iterable<Signature>,
         senderAddress?: Address
     ): void {
         if (!senderAddress) return;
 
         entry.sourcePeers.add(senderAddress);
-        for (const signature of block.allSignatures) {
+        for (const signature of signatures) {
             const peers = entry.signatureSources.get(signature) ?? new Set();
             peers.add(senderAddress);
             entry.signatureSources.set(signature, peers);

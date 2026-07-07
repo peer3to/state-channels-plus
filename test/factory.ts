@@ -1,4 +1,8 @@
-import { ethers } from "hardhat";
+// Plain ethers, not hardhat's: the SDK worker thread imports helpers from this
+// file (via HarnessControlRpc → DisputeService), and requiring "hardhat" there
+// boots the whole Hardhat runtime — incl. hardhat-foundry's sync `forge config`
+// exec — blocking the worker's event loop for ~800ms.
+import { ethers } from "ethers";
 import {
     BlockStruct,
     TransactionStruct,
@@ -28,7 +32,7 @@ import {
     Hash,
     Timestamp
 } from "@/types/types";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 export const hash = (): `0x${string}` =>
     ethers.hexlify(ethers.randomBytes(32)) as `0x${string}`;

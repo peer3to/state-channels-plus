@@ -403,7 +403,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
             for (const bc of blockConfirmations) {
                 try {
-                    const isOk = await stateManager.onBlockConfirmation(bc);
+                    const isOk =
+                        await stateManager.onBlockConfirmationStruct(bc);
                     if (!isOk) return this.abort(peerAddress);
                 } catch (e) {
                     this.logger.error(

@@ -45,6 +45,23 @@ export class ByzantineRpcMethods extends ARpcMethods {
     }
 
     /**
+     * Send a harness-crafted block confirmation as-is over the real
+     * state-transition RPC. The receiver runs the actual src path, including
+     * its transport-level side effects (disconnect/blacklist on rejection).
+     */
+    public async sendBlockConfirmation(
+        encodedBlockConfirmation: string,
+        targetEvmAddress: string
+    ): Promise<boolean> {
+        this.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation(
+                Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+            )
+            .sendOne(targetEvmAddress);
+        return true;
+    }
+
+    /**
      * Apply a transaction against the live state machine and return the
      * resulting state-snapshot hash, for building a block whose body is invalid
      * but whose declared snapshot hash is a real (valid) state.
