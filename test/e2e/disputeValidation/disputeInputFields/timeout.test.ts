@@ -209,7 +209,10 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         },
         async function () {
             const h = TestSession.getHarness();
-            // Leaver disputes without signing post-leave block 1 so validators reach TimeoutThreshold (not DisputeNotLatestState).
+            // peer 0 leaves the channel but stays on-chain (leave snapshot suppressed),
+            // then is isolated. with no p2p blocks it sees a phantom timeout for the
+            // next writer -> but it's no longer an off-chain participant, so it must
+            // NOT dispute.
             await h.lifecycle.timeoutSetup(4, 0, {
                 timeConfig: { agreementTime: 2, evidenceTime: 8 }
             });
@@ -272,6 +275,47 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             });
         }
     );
+
+    it("leaver does not dispute a timeout after leaving the channel", async function () {
+        const h = TestSession.getHarness();
+        // peer 0 leaves the channel but stays on-chain (leave snapshot suppressed),
+        // then is isolated. with no p2p blocks it sees a phantom timeout for the
+        // next writer -> but it's no longer an off-chain participant, so it must
+        // NOT dispute.
+        await h.lifecycle.timeoutSetup(4, 0, {
+            timeConfig: { agreementTime: 2, evidenceTime: 8 }
+        });
+
+        // Skip leave snapshot so peer 0 stays dispute-eligible on-chain.
+        await h.control(h.getPeer(0)).stub.stubPostStateSnapshot().request();
+        //  peer 0 is leaving (off chain)
+        await h.transition.advanceState({
+            txFn: (c) => c.leaveChannel(),
+            waitForFinalization: true
+        });
+        const remaining = [1, 2, 3];
+        h.context.leftChannelPeerIndices = [0];
+
+        // isolate peer 0 so it stops receiving p2p blocks -> its timeout timer
+        // for the next block fires naturally.
+        await h.byzantine.disconnect(0);
+        h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
+
+        // remaining peers advance past peer 0.
+        await h.transition.advanceState({
+            waitForPeers: remaining,
+            waitForFinalization: true
+        });
+
+        await h.event.waitWhileEventCountsStayAtMost(
+            "onInitiatingDispute",
+            [0],
+            {
+                durationMs: 8000,
+                maxCount: 0
+            }
+        );
+    });
 
     // what: a timeout dispute at height 3 names the wrong participant (previous-block fields populated).
     scenario(

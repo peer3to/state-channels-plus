@@ -3,6 +3,7 @@ import type StateManager from "@/stateManager";
 import Rpc, {
     deserializeRpc,
     deserializeRpcResponse,
+    MAX_RPC_FRAME_BYTES,
     RpcResponse
 } from "@/rpc/Rpc";
 import MainRpcService from "@/rpc/MainRpcService";
@@ -14,7 +15,7 @@ import { ethers } from "ethers";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
-import { config } from "@/utils/config";
+import { config, isNodeRuntime } from "@/utils/config";
 import { Address } from "./types/types";
 import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
@@ -25,8 +26,6 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     implements IOnMessage
 {
-    private static readonly DEFAULT_RPC_REQUEST_TIMEOUT_MS = 30_000;
-
     stateManager: StateManager<TCustomRpc>;
     logger: Logger;
     p2pSigner: P2pSigner<TCustomRpc>;
@@ -125,14 +124,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     ): Promise<T> {
         const requestId = `${++this.rpcRequestCounter}`;
         // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
-        const agreementTimeoutMs =
-            this.stateManager.timeConfig.agreementTime != null
-                ? this.stateManager.timeConfig.agreementTime * 1000
-                : undefined;
         const timeoutMs =
             options?.timeoutMs ??
-            agreementTimeoutMs ??
-            P2PManager.DEFAULT_RPC_REQUEST_TIMEOUT_MS;
+            this.stateManager.timeConfig.agreementTime * 1000;
 
         return new Promise<T>((resolve, reject) => {
             const timeout = this.stateManager.timeoutManager.scheduleTask(
@@ -209,6 +203,17 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
+            // Reject oversized frames before parsing so a peer can't force
+            // unbounded JSON.parse/dispatch work.
+            if (serializedRpc.length > MAX_RPC_FRAME_BYTES) {
+                this.logger.warn("Oversized RPC frame; disconnecting", {
+                    bytes: serializedRpc.length,
+                    transportType: TransportType[transport.transportType],
+                    peerAddress: transport.peerAddress
+                });
+                this.disconnectConnection(transport);
+                return;
+            }
             const response = deserializeRpcResponse(serializedRpc);
             if (response) {
                 this.handleRpcResponse(response, transport);
@@ -238,18 +243,29 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             }
         } catch (e) {
             this.disconnectConnection(transport);
-            console.error(e);
+            this.logger.error("onRpc - error handling RPC frame", {
+                error: e instanceof Error ? e.message : String(e),
+                stack: e instanceof Error ? e.stack : undefined,
+                transportType: TransportType[transport.transportType],
+                peerAddress: transport.peerAddress
+            });
         }
     }
     public async tryOpenConnectionToChannel(channelId: string) {
         if (config.DEBUG_LOCAL_TRANSPORT) {
+            // In the browser there's no harness fixture to drive discovery, so
+            // form the local mesh here via the relay hub. In node the harness
+            // drives LocalDiscoveryServer.connectToPeers itself (and also sets a
+            // registry URL for its own peer-mesh), so stay a no-op there.
+            if (!isNodeRuntime() && config.LOCAL_DISCOVERY_REGISTRY_URL) {
+                await LocalDiscoveryServer.tryStart();
+                await LocalDiscoveryServer.connectToPeers(
+                    this.self,
+                    channelId,
+                    this.stateManager.signerAddress.toString()
+                );
+            }
             return;
-            await LocalDiscoveryServer.tryStart();
-            await LocalDiscoveryServer.connectToPeers(
-                this.self,
-                channelId,
-                this.stateManager.signerAddress.toString()
-            );
         }
         const topic = Buffer.alloc(32).fill(channelId);
         await this.holepunch.join(topic);

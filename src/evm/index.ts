@@ -13,10 +13,7 @@ import type {
     ContractExecutionLog,
     ContractExecutionResult
 } from "./contractExecutor";
-import type {
-    ContractExecutorFactory,
-    ContractExecutorFactoryOptions
-} from "./contractExecutor";
+import type { ContractExecutorFactoryOptions } from "./contractExecutor";
 import type {
     EvmCustomPrecompile,
     EvmCustomPrecompileFactory,
@@ -42,7 +39,6 @@ export {
 export type {
     ContractExecutionLog,
     ContractExecutionResult,
-    ContractExecutorFactory,
     ContractExecutorFactoryOptions,
     EvmCustomPrecompile,
     EvmCustomPrecompileFactory,

@@ -1,7 +1,8 @@
 import { Buffer } from "buffer";
 import ContractExecutor from "../ContractExecutor";
 import { createEvm } from "../../EvmFactory";
-import noOpLogger from "../NoOpLogger";
+import { config, createConfig } from "@/utils/config";
+import { createLogger } from "@platform/createLogger";
 import type {
     ContractExecutorRequestPayload,
     WorkerHostMessage,
@@ -18,43 +19,57 @@ workerGlobal.Buffer ||= Buffer;
 workerGlobal.global ||= globalThis;
 workerGlobal.window ||= globalThis;
 
-let evm: Awaited<ReturnType<typeof createEvm>> | undefined;
-let executor: ContractExecutor | undefined;
+class ContractExecutorWorkerHost {
+    private executor: ContractExecutor | undefined;
 
-async function init(
-    request: Extract<ContractExecutorRequestPayload, { type: "init" }>
-) {
-    evm = await createEvm(
-        {
-            allowUnlimitedContractSize: true,
-            customPrecompiles: request.customPrecompiles.map(
-                ({ address, module, exportName, options }) => ({
-                    address,
-                    module,
-                    exportName,
-                    options
-                })
-            )
-        },
-        noOpLogger
-    );
-    executor = new ContractExecutor(evm, noOpLogger);
-    return null;
-}
+    private async init(
+        request: Extract<ContractExecutorRequestPayload, { type: "init" }>
+    ) {
+        // Re-establish config in this worker and build its logger, then monitor
+        // this thread's event loop with the same
+        // EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS guard as every thread.
+        createConfig(request.config);
+        const logger = createLogger(
+            {},
+            { component: "ContractExecutorWorker" },
+            { attachErrorListener: false }
+        );
+        if (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0) {
+            logger.startPerformanceMonitoring({ threadLabel: "vm" });
+        }
 
-function getExecutor(): ContractExecutor {
-    if (!executor) {
-        throw new Error("Contract executor worker has not been initialized");
+        const evm = await createEvm(
+            {
+                allowUnlimitedContractSize: true,
+                customPrecompiles: request.customPrecompiles.map(
+                    ({ address, module, exportName, options }) => ({
+                        address,
+                        module,
+                        exportName,
+                        options
+                    })
+                )
+            },
+            logger
+        );
+        this.executor = new ContractExecutor(evm, logger);
+        return null;
     }
-    return executor;
-}
 
-async function call(
-    request: Extract<ContractExecutorRequestPayload, { type: "call" }>
-) {
-    const executor = getExecutor();
-    const result =
-        request.method === "deploy"
+    private getExecutor(): ContractExecutor {
+        if (!this.executor) {
+            throw new Error(
+                "Contract executor worker has not been initialized"
+            );
+        }
+        return this.executor;
+    }
+
+    private async call(
+        request: Extract<ContractExecutorRequestPayload, { type: "call" }>
+    ) {
+        const executor = this.getExecutor();
+        return request.method === "deploy"
             ? await executor.deploy(request.data)
             : request.method === "executeCall"
               ? await executor.executeCall(
@@ -65,37 +80,46 @@ async function call(
                     request.data,
                     request.contractAddress
                 );
+    }
 
-    return result;
-}
+    private async handleRequest(
+        message: WorkerRequestMessage
+    ): Promise<WorkerHostMessage> {
+        const { requestId, payload } = message;
+        try {
+            const result =
+                payload.type === "init"
+                    ? await this.init(payload)
+                    : await this.call(payload);
 
-async function handleRequest(
-    message: WorkerRequestMessage
-): Promise<WorkerHostMessage> {
-    const { requestId, payload } = message;
-    try {
-        const result =
-            payload.type === "init" ? await init(payload) : await call(payload);
+            return { type: "response", requestId, ok: true, result };
+        } catch (error) {
+            const err =
+                error instanceof Error ? error : new Error(String(error));
+            return {
+                type: "response",
+                requestId,
+                ok: false,
+                error: {
+                    message: err.message,
+                    data: (err as any).data,
+                    name: err.name,
+                    stack: err.stack
+                }
+            };
+        }
+    }
 
-        return {
-            type: "response",
-            requestId,
-            ok: true,
-            result
-        };
-    } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        return {
-            type: "response",
-            requestId,
-            ok: false,
-            error: {
-                message: err.message,
-                data: (err as any).data,
-                name: err.name,
-                stack: err.stack
-            }
-        };
+    start(
+        post: (response: WorkerHostMessage) => void,
+        onMessage: (handler: (message: WorkerRequestMessage) => void) => void
+    ): void {
+        onMessage((message) => {
+            if (message.type !== "request") return;
+            void this.handleRequest(message).then(post);
+        });
+
+        post({ type: "ready" });
     }
 }
 
@@ -103,10 +127,5 @@ export function startContractExecutorWorkerHost(
     post: (response: WorkerHostMessage) => void,
     onMessage: (handler: (message: WorkerRequestMessage) => void) => void
 ): void {
-    onMessage((message) => {
-        if (message.type !== "request") return;
-        void handleRequest(message).then(post);
-    });
-
-    post({ type: "ready" });
+    new ContractExecutorWorkerHost().start(post, onMessage);
 }

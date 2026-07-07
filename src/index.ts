@@ -38,7 +38,6 @@ export type {
 export type {
     ContractExecutionLog,
     ContractExecutionResult,
-    ContractExecutorFactory,
     ContractExecutorFactoryOptions,
     EvmCustomPrecompile,
     EvmCustomPrecompileFactory,

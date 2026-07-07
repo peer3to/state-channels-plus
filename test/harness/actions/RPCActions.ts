@@ -1,6 +1,5 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { TestPeer } from "@test/harness/core/types";
 import { Logger } from "@/utils";
 import { ForkId, Address } from "@/types/types";
 import { hash as fakeHash } from "@test/factory";
@@ -206,6 +205,25 @@ export class RPCActions<
             .request();
     }
 
+    /**
+     * Deliver a second handshake ack from `fromPeer` to `toPeer` (whose
+     * handshake already completed and recorded the first ack). The duplicate
+     * is a protocol violation: `toPeer` must disconnect + blacklist `fromPeer`.
+     */
+    async sendDuplicateHandshakeAck(options: {
+        fromPeer: number;
+        toPeer: number;
+    }): Promise<void> {
+        const { fromPeer, toPeer } = options;
+        const fromAddress = this.harness.getPeer(fromPeer).address;
+        const toPeerObj = this.harness.getPeer(toPeer);
+
+        await this.harness
+            .control(toPeerObj)
+            .handshake.deliverHandshakeAck(fromAddress)
+            .request();
+    }
+
     async initiateHandshake(options: {
         fromPeer: number;
         toPeer: number;
@@ -220,134 +238,65 @@ export class RPCActions<
             .request();
     }
 
-    async sendSlowHandshakeResponse(options: {
+    /**
+     * Make `responderPeer` reply to handshake challenges with a faulty response,
+     * then have `initiatorPeer` initiate a handshake to it. With `delayMs`
+     * beyond the request window the initiator's request times out; with
+     * `responseTimeOffsetSeconds` the response timestamp falls outside the
+     * agreement window; with `corruptSignature` verification throws. Either way
+     * the initiator is expected to disconnect the responder.
+     */
+    async initiateHandshakeWithFaultyResponse(options: {
+        initiatorPeer: number;
+        responderPeer: number;
+        delayMs?: number;
+        responseTimeOffsetSeconds?: number;
+        corruptSignature?: boolean;
+    }): Promise<void> {
+        const {
+            initiatorPeer,
+            responderPeer,
+            delayMs,
+            responseTimeOffsetSeconds,
+            corruptSignature
+        } = options;
+
+        await this.harness.rpcStub.stubHandshakeResponse(responderPeer, {
+            delayMs,
+            responseTimeOffsetSeconds,
+            corruptSignature
+        });
+
+        await this.initiateHandshake({
+            fromPeer: initiatorPeer,
+            toPeer: responderPeer
+        });
+    }
+
+    /**
+     * Deliver a dispute-ack request for the active (genuinely disputed) fork to
+     * `toPeer`, as if sent by `fromPeer`. Used to drive the duplicate-request
+     * protocol-violation path (a second request for an already-acknowledged fork
+     * must disconnect the requester).
+     */
+    async sendDisputeAckRequest(options: {
         fromPeer: number;
         toPeer: number;
-        delaySeconds: number;
-    }): Promise<void> {
-        const { fromPeer, toPeer, delaySeconds } = options;
-        const fromPeerObj = this.harness.getPeer(fromPeer);
-        const toPeerObj = this.harness.getPeer(toPeer);
-
-        const challenge = await this.harness
-            .control(toPeerObj)
-            .handshake.getChallenge(fromPeerObj.address)
-            .request();
-        if (!challenge) {
-            throw new Error("No challenge found - initiate handshake first");
-        }
-
-        const agreementTime = await this.harness
-            .control(toPeerObj)
-            .handshake.getAgreementTime()
-            .request();
-        const slowResponseTime =
-            challenge.initTime + agreementTime + delaySeconds;
-
-        await this.deliverResponse(
-            fromPeerObj,
-            toPeerObj,
-            challenge.randomChallengeHash,
-            slowResponseTime
-        );
-    }
-
-    async sendUnsolicitedHandshakeResponse(options: {
-        fromPeer: number;
-        toPeer: number;
-    }): Promise<void> {
-        const { fromPeer, toPeer } = options;
-        const fromPeerObj = this.harness.getPeer(fromPeer);
-        const toPeerObj = this.harness.getPeer(toPeer);
-
-        const challenge = await this.harness
-            .control(toPeerObj)
-            .handshake.getChallenge(fromPeerObj.address)
-            .request();
-        if (challenge) {
-            throw new Error(
-                "Challenge already exists - this wouldn't be unsolicited"
-            );
-        }
-
-        await this.deliverResponse(
-            fromPeerObj,
-            toPeerObj,
-            fakeHash(),
-            Clock.getTimeInSeconds()
-        );
-    }
-
-    async clearHandshakeChallenge(options: {
-        peerIndex: number;
-        targetPeer: number;
-    }): Promise<void> {
-        const { peerIndex, targetPeer } = options;
-        const peer = this.harness.getPeer(peerIndex);
-        const targetAddress = this.harness.getPeer(targetPeer).address;
-
-        await this.harness
-            .control(peer)
-            .handshake.clearChallenge(targetAddress)
-            .request();
-    }
-
-    async sendValidHandshakeResponse(options: {
-        fromPeer: number;
-        toPeer: number;
-    }): Promise<void> {
-        const { fromPeer, toPeer } = options;
-        const fromPeerObj = this.harness.getPeer(fromPeer);
-        const toPeerObj = this.harness.getPeer(toPeer);
-
-        const challenge = await this.harness
-            .control(toPeerObj)
-            .handshake.getChallenge(fromPeerObj.address)
-            .request();
-        if (!challenge) {
-            throw new Error("No challenge found - initiate handshake first");
-        }
-
-        await this.deliverResponse(
-            fromPeerObj,
-            toPeerObj,
-            challenge.randomChallengeHash,
-            Clock.getTimeInSeconds()
-        );
-    }
-
-    async initiateHandshakeWithoutResponse(options: {
-        fromPeer: number;
-        toPeer: number;
-    }): Promise<void> {
-        const { fromPeer, toPeer } = options;
-        const fromPeerObj = this.harness.getPeer(fromPeer);
-        const toAddress = this.harness.getPeer(toPeer).address;
-
-        await this.harness
-            .control(fromPeerObj)
-            .handshake.initiateHandshake(toAddress)
-            .request();
-    }
-
-    async sendDuplicateAcknowledgmentResponse(options: {
-        respondingPeer: number;
-        requestingPeer: number;
         forkId?: ForkId;
     }): Promise<void> {
-        const { respondingPeer, requestingPeer, forkId } = options;
+        const { fromPeer, toPeer, forkId } = options;
         const activeForkId = forkId ?? this.harness.activeForkId;
         if (!activeForkId) {
             throw new Error("No active fork ID");
         }
 
-        const requestingAddress = this.harness.getPeer(requestingPeer).address;
-        const respondingPeerObj = this.harness.getPeer(respondingPeer);
+        const fromAddress = this.harness.getPeer(fromPeer).address;
+        const toPeerObj = this.harness.getPeer(toPeer);
 
         await this.harness
-            .control(respondingPeerObj)
-            .handshake.respondToDisputeAcknowledgment(
-                requestingAddress,
+            .control(toPeerObj)
+            .handshake.deliverDisputeAckRequest(
+                fromAddress,
                 this.harness.channelId!,
                 activeForkId
             )
@@ -377,37 +326,6 @@ export class RPCActions<
             .handshake.requestDisputeAcknowledgment(
                 this.harness.channelId!,
                 fakeForkId
-            )
-            .request();
-    }
-
-    /**
-     * Sign `challengeHash` as the responder and deliver an init-handshake
-     * response to the initiator (a two-peer flow: the initiator holds the
-     * challenge; the responder owns the signer).
-     */
-    private async deliverResponse(
-        responder: TestPeer<TCustomRpc>,
-        initiator: TestPeer<TCustomRpc>,
-        challengeHash: string,
-        responseTime: number
-    ): Promise<void> {
-        const signature = await this.harness
-            .control(responder)
-            .handshake.signMessage(challengeHash)
-            .request();
-        const preferredTransport = await this.harness
-            .control(responder)
-            .handshake.getPreferredTransport()
-            .request();
-
-        await this.harness
-            .control(initiator)
-            .handshake.deliverHandshakeResponse(
-                responder.address,
-                signature,
-                responseTime,
-                preferredTransport
             )
             .request();
     }

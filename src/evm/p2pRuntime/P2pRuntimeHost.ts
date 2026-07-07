@@ -11,11 +11,15 @@ import Clock from "@/Clock";
 import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import { createLogger, DebugProxy, DetachedPromises } from "@/utils";
+import { config } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import MainRpcService from "@/rpc/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
+import ManagedNonceSigner from "@/evm/signer/ManagedNonceSigner";
 import { createContractExecutorFactory } from "@/evm/contractExecutor";
+import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
+import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 import {
     createForwardingHooks,
     forwardEventHandlerInvocations
@@ -36,6 +40,12 @@ import type {
  */
 export interface HostContext {
     signer: Signer;
+    /**
+     * When set, this host runs in its own worker thread; the label (e.g. "sdk")
+     * tags this thread's event-loop-delay diagnostic reports. Unset for the
+     * inline (main-thread) host — the harness's main logger covers that.
+     */
+    threadLabel?: string;
 }
 
 /** Live runtime graph while the host is running. */
@@ -84,6 +94,29 @@ export function serializeError(error: unknown): SerializedError {
 }
 
 /**
+ * In a worker that can't run WebRTC itself, mint the bridge channel, hand the
+ * main-thread end to the client (transferred) so it surfaces on
+ * `P2pInstance.webRTCBridgePort`, then register the worker end. Returns that
+ * worker-end port (for teardown) or `undefined` when no bridge was set up.
+ */
+async function bubbleWebRTCBridgePortIfNeeded(
+    port: RuntimePort
+): Promise<MessagePort | undefined> {
+    if (!(await doesWorkerNeedMainThreadBridge())) return undefined;
+    // The bridge speaks the DOM MessagePort API; in a worker the global
+    // MessageChannel works on both web and Node (worker_threads-backed) and its
+    // ports transfer over the runtime port.
+    const bridge = new MessageChannel();
+    // Transfer the main-thread end first: if the post fails we never register a
+    // half-installed bridge whose worker end has no paired broker.
+    port.post({ type: "webRTCBridgePort", port: bridge.port2 }, [bridge.port2]);
+    WorkerBridgeWebRTCConnectionFactory.getInstance().registerPort(
+        bridge.port1
+    );
+    return bridge.port1;
+}
+
+/**
  * Construct the live p2p runtime graph and drive it from a {@link RuntimePort}.
  *
  * Requests arriving on the port are dispatched to the state manager / internal
@@ -94,13 +127,27 @@ export async function startP2pRuntimeHost<
     TCustomRpc extends MainRpcService = MainRpcService,
     TCustomRpcOptions = unknown
 >(port: RuntimePort, payload: SetupPayload, ctx: HostContext): Promise<void> {
-    const { signer } = ctx;
+    const { signer, threadLabel } = ctx;
     const signerAddress = await signer.getAddress();
     const logger = createLogger(
         { peerId: payload.peerId, peerAddress: signerAddress },
         { component: "P2pRuntimeHost" },
         { attachErrorListener: false }
     );
+
+    // When this host runs in its own worker thread (sdk-in-thread), monitor that
+    // thread's event loop with the standard logger monitor — same
+    // EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS guard (throws past it) as every
+    // other thread. threadLabel tags its ##E2E_TIMING## delay-peak reports.
+    if (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0 && threadLabel) {
+        logger.startPerformanceMonitoring({ threadLabel });
+    }
+
+    // Own this account's nonce so the peer's concurrent async flows can't collide
+    // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
+    // send + retry paths below; the local-VM signers (deploy/executor, p2p) and
+    // the read-only Clock stay on the raw signer.
+    const chainSigner = new ManagedNonceSigner(signer, logger);
 
     const scmContract = new ethers.Contract(
         payload.scm.address,
@@ -116,9 +163,10 @@ export async function startP2pRuntimeHost<
     // Sync clock to DLT.
     await Clock.init(signer.provider!);
 
-    // Connect signer to the state channel manager contract.
+    // Connect the managed signer to the state channel manager contract so every
+    // on-chain SCM send draws its nonce from the owned counter.
     let connectedScmContract = (await scmContract.connect(
-        signer
+        chainSigner
     )) as StateChannelManagerProxy;
     if (payload.config.DEBUG_CHANNEL_CONTRACT) {
         connectedScmContract = DebugProxy.createProxy(connectedScmContract);
@@ -148,6 +196,24 @@ export async function startP2pRuntimeHost<
     );
 
     let runtimeHandle: RuntimeHostState | undefined;
+    let disposed = false;
+    let bridgeWorkerPort: MessagePort | undefined;
+
+    // Idempotent: the `dispose` request and the port-close handler both call it.
+    const disposeRuntime = async (): Promise<void> => {
+        if (disposed) return;
+        disposed = true;
+        if (bridgeWorkerPort) {
+            WorkerBridgeWebRTCConnectionFactory.getInstance().disposeBridge(
+                bridgeWorkerPort
+            );
+        }
+        if (runtimeHandle) {
+            await runtimeHandle.stateManager.dispose();
+        } else {
+            await contractExecutor.dispose();
+        }
+    };
 
     const buildRuntime = async (
         localStateMachineAddress: string,
@@ -172,7 +238,10 @@ export async function startP2pRuntimeHost<
         const storage = new Storage();
 
         const stateManager = new StateManager<TCustomRpc, TCustomRpcOptions>(
-            signer,
+            // Managed signer: becomes StateManager.signer → DisputeManager.signer,
+            // covering the raw evmErrorHandler retry send so it can't bypass the
+            // owned nonce counter and re-open the race.
+            chainSigner,
             signerAddress,
             connectedScmContract,
             evmDiamondStateMachine,
@@ -195,9 +264,17 @@ export async function startP2pRuntimeHost<
             port.post({ type: "contractEvent", name, args })
         );
 
-        forwardEventHandlerInvocations(stateManager, port);
+        forwardEventHandlerInvocations(stateManager.eventHandler, port);
 
         runtimeHandle = { stateManager, evmDiamondStateMachine };
+        // A bridge-setup failure must not deadlock `ready`; WebRTC is optional.
+        try {
+            bridgeWorkerPort = await bubbleWebRTCBridgePortIfNeeded(port);
+        } catch (error) {
+            logger.error("WebRTC bridge setup failed; continuing without it", {
+                error
+            });
+        }
         port.post({ type: "ready" });
     };
 
@@ -317,11 +394,7 @@ export async function startP2pRuntimeHost<
                     break;
                 }
                 case "dispose":
-                    if (runtimeHandle) {
-                        await runtimeHandle.stateManager.dispose();
-                    } else {
-                        await contractExecutor.dispose();
-                    }
+                    await disposeRuntime();
                     break;
             }
             port.post({
@@ -342,6 +415,12 @@ export async function startP2pRuntimeHost<
 
     port.onMessage((raw) => {
         void handleRequest(raw as RuntimeClientRequest);
+    });
+    // Client went away without a clean `dispose` (thread died / port closed).
+    port.onClose(() => {
+        void disposeRuntime().catch((error) => {
+            logger.error("Runtime dispose on client close failed", { error });
+        });
     });
     port.start();
 }

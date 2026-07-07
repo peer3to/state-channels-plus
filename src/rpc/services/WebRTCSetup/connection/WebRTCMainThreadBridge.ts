@@ -1,7 +1,6 @@
 import {
     serializeBridgeError,
     WEBRTC_BRIDGE_NAMESPACE,
-    type WebRTCBridgeInitMessage,
     type WebRTCBridgePortMessage,
     type WebRTCBridgeRequest
 } from "./WebRTCBridgeProtocol";
@@ -12,17 +11,31 @@ import type {
     WebRTCPeerConnectionLike
 } from "./WebRTCConnectionTypes";
 import { loadWebRTCProvider, type WebRTCProvider } from "./WebRTCProvider";
+import type { Logger } from "@/utils/logging/Logger";
+
+export type WebRTCChannelMode = "auto" | "transfer" | "proxy";
 
 export type WebRTCMainThreadBridgeOptions = {
-    allowProxyFallback?: boolean;
+    /**
+     * How a freshly-created RTCDataChannel is handed to the worker:
+     *  - "auto" (default): attempt to transfer the channel to the worker and,
+     *    if the runtime can't transfer it, fall back to proxying its messages
+     *    over the bridge.
+     *  - "transfer": only transfer; throw if the runtime can't (strict).
+     *  - "proxy": always proxy — use when transfer is known-unsupported
+     *    (e.g. Firefox/Safari) or in tests.
+     */
+    channelMode?: WebRTCChannelMode;
+    /**
+     * Logger for bridge diagnostics on the main thread. Pass the logger
+     * returned by `p2pSetup` so notices reach the SDK log pipeline instead of
+     * the console.
+     */
+    logger?: Logger;
 };
 
 export type WebRTCMainThreadBridgeHandle = {
     dispose(): void;
-};
-
-export type WebRTCBridgeWorkerTarget = {
-    postMessage(message: any, transfer?: Transferable[]): void;
 };
 
 type ConnectionRecord = {
@@ -32,6 +45,9 @@ type ConnectionRecord = {
 
 class WebRTCMainThreadBridgeBroker {
     private provider?: WebRTCProvider;
+    // Cached the first time "auto" mode attempts a transfer: once we learn the
+    // runtime can't transfer channels we go straight to proxy for the rest.
+    private channelTransferSupported?: boolean;
     private readonly connectionsByPeerAddress = new Map<
         WebRTCPeerAddress,
         ConnectionRecord
@@ -134,9 +150,11 @@ class WebRTCMainThreadBridgeBroker {
         if (request.method === "close") {
             return this.close(request.peerAddress);
         }
-        if (request.method === "getState") {
-            return this.getState(request.peerAddress);
-        }
+        throw new Error(
+            `Unknown WebRTC bridge request method: ${
+                (request as { method?: string }).method
+            }`
+        );
     }
 
     private async createConnectionRecord(
@@ -255,22 +273,16 @@ class WebRTCMainThreadBridgeBroker {
         record.connection.close();
     }
 
-    private getState(
-        peerAddress: WebRTCPeerAddress
-    ): WebRTCConnectionStateSnapshot {
-        const connection =
-            this.connectionsByPeerAddress.get(peerAddress)?.connection;
-        if (!connection) {
-            return { connectionState: "unknown", iceState: "unknown" };
-        }
-        return this.getSnapshot(connection);
-    }
-
     private postChannel(
         peerAddress: WebRTCPeerAddress,
         record: ConnectionRecord,
         channel: WebRTCDataChannelLike
     ): void {
+        if (this.shouldProxyChannel()) {
+            this.postProxyChannel(peerAddress, record, channel);
+            return;
+        }
+
         const transferredMessage: WebRTCBridgePortMessage = {
             namespace: WEBRTC_BRIDGE_NAMESPACE,
             type: "channel",
@@ -281,13 +293,39 @@ class WebRTCMainThreadBridgeBroker {
 
         try {
             this.post(transferredMessage, [channel as unknown as Transferable]);
+            this.channelTransferSupported = true;
             return;
         } catch (error) {
-            if (!this.options.allowProxyFallback) {
+            this.channelTransferSupported = false;
+            if ((this.options.channelMode ?? "auto") === "transfer") {
                 throw error;
             }
+            // Surface the reason once (subsequent channels skip the attempt via
+            // shouldProxyChannel) so a transfer-unsupported runtime is visible
+            // rather than silently degrading.
+            this.options.logger?.warn(
+                "[peer3:webrtc-bridge] RTCDataChannel transfer is unsupported in this runtime; " +
+                    "falling back to proxying channel messages over the bridge.",
+                error
+            );
         }
 
+        this.postProxyChannel(peerAddress, record, channel);
+    }
+
+    private shouldProxyChannel(): boolean {
+        const channelMode = this.options.channelMode ?? "auto";
+        if (channelMode === "proxy") return true;
+        if (channelMode === "transfer") return false;
+        // "auto": once a transfer attempt has failed, never attempt again.
+        return this.channelTransferSupported === false;
+    }
+
+    private postProxyChannel(
+        peerAddress: WebRTCPeerAddress,
+        record: ConnectionRecord,
+        channel: WebRTCDataChannelLike
+    ): void {
         record.proxiedChannel = channel;
         this.wireProxyChannel(peerAddress, record, channel);
         this.post({
@@ -353,39 +391,45 @@ class WebRTCMainThreadBridgeBroker {
     }
 }
 
-const brokersByWorker = new WeakMap<
-    WebRTCBridgeWorkerTarget,
-    WebRTCMainThreadBridgeBroker
->();
+type BrokerRegistration = {
+    broker: WebRTCMainThreadBridgeBroker;
+    handleCount: number;
+};
 
+const brokersByPort = new WeakMap<MessagePort, BrokerRegistration>();
+
+/**
+ * Bind a WebRTC main-thread bridge to the `port` surfaced by `p2pSetup` on
+ * `P2pInstance.webRTCBridgePort`. Call this on the real main thread (where
+ * `RTCPeerConnection` lives) after forwarding the port up through any worker
+ * nesting; the broker then drives `RTCPeerConnection` for the worker — however
+ * deeply nested — that negotiates WebRTC over the channel.
+ */
 export function installWebRTCMainThreadBridge(
-    worker: WebRTCBridgeWorkerTarget,
+    port: MessagePort,
     options: WebRTCMainThreadBridgeOptions = {}
 ): WebRTCMainThreadBridgeHandle {
-    const existingBroker = brokersByWorker.get(worker);
-    if (existingBroker) {
-        return {
-            dispose: () => {
-                brokersByWorker.delete(worker);
-                existingBroker.dispose();
-            }
-        };
-    }
-
-    const channel = new MessageChannel();
-    const broker = new WebRTCMainThreadBridgeBroker(channel.port1, options);
-    brokersByWorker.set(worker, broker);
-
-    const initMessage: WebRTCBridgeInitMessage = {
-        namespace: WEBRTC_BRIDGE_NAMESPACE,
-        type: "init"
+    // Installing on the same port more than once (nested setups, an effect
+    // re-run) shares one broker — a second would clobber its `onmessage`.
+    // Ref-count the handles so one handle's dispose (e.g. a stale cleanup)
+    // can't close the bridge out from under a still-active owner: only the last
+    // outstanding handle tears the broker down.
+    const registration = brokersByPort.get(port) ?? {
+        broker: new WebRTCMainThreadBridgeBroker(port, options),
+        handleCount: 0
     };
-    worker.postMessage(initMessage, [channel.port2]);
+    registration.handleCount++;
+    brokersByPort.set(port, registration);
 
+    let disposed = false;
     return {
         dispose: () => {
-            brokersByWorker.delete(worker);
-            broker.dispose();
+            if (disposed) return;
+            disposed = true;
+            registration.handleCount--;
+            if (registration.handleCount > 0) return;
+            brokersByPort.delete(port);
+            registration.broker.dispose();
         }
     };
 }

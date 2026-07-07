@@ -17,6 +17,10 @@ export function adaptPort(port: MessagePort): RuntimePort {
         start() {
             port.start?.();
         },
+        onClose(handler: () => void) {
+            // Node fires 'close' on a port once either side disconnects.
+            port.on("close", handler);
+        },
         close() {
             port.close();
         }

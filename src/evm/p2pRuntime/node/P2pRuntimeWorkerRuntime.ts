@@ -1,4 +1,8 @@
-import { parentPort, type MessagePort } from "node:worker_threads";
+import { parentPort, Worker, type MessagePort } from "node:worker_threads";
+import * as path from "node:path";
+import * as fs from "node:fs";
+import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
+import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import type {
     P2pRuntimeWorker,
     RuntimePort,
@@ -7,17 +11,6 @@ import type {
 import { adaptPort } from "./P2pRuntimeChannel";
 
 export function createP2pRuntimeWorker(): P2pRuntimeWorker {
-    const nodeRequire = typeof require === "function" ? require : undefined;
-    if (!nodeRequire) {
-        throw new Error("Node worker_threads require() is unavailable");
-    }
-
-    const path = nodeRequire("node:path") as typeof import("node:path");
-    const fs = nodeRequire("node:fs") as typeof import("node:fs");
-    const { Worker } = nodeRequire(
-        "node:worker_threads"
-    ) as typeof import("node:worker_threads");
-
     const jsWorkerPath = path.join(
         __dirname,
         "..",
@@ -45,7 +38,18 @@ export function createP2pRuntimeWorker(): P2pRuntimeWorker {
           ]
         : undefined;
 
-    return new Worker(workerPath, { execArgv }) as unknown as P2pRuntimeWorker;
+    const worker = new Worker(workerPath, {
+        execArgv,
+        resourceLimits: resolveWorkerResourceLimits("sdk")
+    });
+    instrumentWorkerStartup(
+        worker,
+        "sdk",
+        workerPath.endsWith(".ts")
+            ? "ts-node-swc-transpile-only"
+            : "compiled-js"
+    );
+    return worker as unknown as P2pRuntimeWorker;
 }
 
 /**

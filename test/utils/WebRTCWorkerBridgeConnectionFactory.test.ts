@@ -139,4 +139,32 @@ describe("WorkerBridgeWebRTCConnectionFactory", function () {
         });
         expect(iceCandidate).to.deep.equal({ candidate: "candidate:1" });
     });
+
+    it("rejects in-flight requests when the bridge port is replaced", async function () {
+        const first = new MessageChannel();
+        const factory = WorkerBridgeWebRTCConnectionFactory.getInstance();
+        factory.registerPort(first.port1);
+
+        const offerPromise = factory.createOffer("0xpeer", {
+            onIceCandidate: () => undefined,
+            onDataChannel: () => undefined,
+            onConnectionStateChange: () => undefined,
+            onError: () => undefined
+        });
+
+        // Replacing the port must reject the abandoned request rather than
+        // leaving its awaiting WebRTC setup call pending forever.
+        const second = new MessageChannel();
+        factory.registerPort(second.port1);
+
+        let rejection: Error | undefined;
+        try {
+            await offerPromise;
+        } catch (error) {
+            rejection = error as Error;
+        }
+
+        expect(rejection).to.be.instanceOf(Error);
+        expect(rejection?.message).to.contain("replaced");
+    });
 });

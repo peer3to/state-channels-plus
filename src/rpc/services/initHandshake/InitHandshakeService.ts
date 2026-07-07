@@ -10,19 +10,50 @@ import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import EventBarrier from "@/utils/EventBarrier";
 import { Status } from "@/types";
+import { Hash, Signature, Timestamp } from "@/types/types";
 import { DetachedPromises, getChecksumAddress } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { EventBarrierCapturedError } from "@/utils/EventBarrier";
 
-type ConnectionChallenge = {
-    randomChallengeHash: string;
-    initTime: number;
+/**
+ * Value returned by the responder from `onInitHandshakeRequest` and resolved to
+ * the challenger's `.request(...)` call. Replaces the old standalone
+ * `onInitHandshakeResponse` endpoint.
+ */
+export type HandshakeResponse = {
+    signature: Signature;
+    responseTime: Timestamp;
+    preferredTransport: TransportType;
 };
 
 class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
-    mapTransportToChallenge: WeakMap<ATransport, ConnectionChallenge> =
-        new WeakMap<ATransport, ConnectionChallenge>();
+    /**
+     * Domain tag scoping a handshake signature to the handshake protocol.
+     * The responder signs this string, never the bare 32-byte challenge hash.
+     * Blocks/protocol messages are EIP-191 signatures over a raw 32-byte keccak
+     * hash, so signing a domain-tagged string makes a handshake signature
+     * structurally incapable of colliding with a block signature — closing the
+     * pre-auth signing-oracle (challengeHash = keccak256(encodedBlock)).
+     */
+    public static readonly HANDSHAKE_DOMAIN = "peer3:init-handshake:v1";
+
+    /**
+     * Canonical message both peers sign/verify for a given challenge. Uses
+     * `hexlify` so requester (locally generated) and responder (wire) derive an
+     * identical string regardless of input casing/representation.
+     */
+    public static buildHandshakeChallengeMessage(challengeHash: Hash): string {
+        return `${InitHandshakeService.HANDSHAKE_DOMAIN}:${ethers.hexlify(challengeHash)}`;
+    }
+
     timeoutManager: TimeoutManager;
+
+    // Transports with an in-flight handshake negotiation (challenge sent and
+    // awaiting response, or response sent and awaiting ack). Lets `isNegotiating`
+    // gate guarded RPCs while the handshake is still completing. The challenge
+    // itself now lives in the initiator's `runHandshake` closure, so no shared
+    // challenge map is needed.
+    private inFlightHandshakeTransports: WeakSet<ATransport> = new WeakSet();
 
     // Internal ack map: tracks whether we received the handshake ack on a transport.
     // Needed because ack can arrive before we have verified/created a PeerProfile.
@@ -51,61 +82,184 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         return new InitHandshakeRpcMethods(transport, this);
     }
 
-    //Called locally to initiate the handshake
+    // Called locally to initiate the handshake. Fire-and-forget entry point; the
+    // request/response exchange runs in `runHandshake`.
     public initHandshake(transport: ATransport) {
+        void this.runHandshake(transport);
+    }
+
+    private async runHandshake(transport: ATransport): Promise<void> {
         const randomChallengeHash = ethers.keccak256(ethers.randomBytes(32));
-        const time = Clock.getTimeInSeconds();
-        this.setChallenge(transport, { randomChallengeHash, initTime: time });
+        const initTime = Clock.getTimeInSeconds();
+        const agreementTime =
+            this.p2pManager.stateManager.timeConfig.agreementTime;
         LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
             direction: "send",
             message: "request",
             challengeHash: randomChallengeHash,
-            messageTime: time
+            messageTime: initTime
+        });
+        this.markHandshakeInFlight(transport);
+
+        // Request/response: send the challenge and await the signed response.
+        // A timeout/rejection means no valid response arrived -> disconnect.
+        let response: HandshakeResponse;
+        try {
+            response = await this.remoteRpc.initHandshakeService
+                .onInitHandshakeRequest(randomChallengeHash, initTime)
+                .request(transport, { timeoutMs: agreementTime * 1000 });
+        } catch (error) {
+            LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                direction: "local",
+                message: "response-timeout",
+                challengeHash: randomChallengeHash,
+                challengeInitTime: initTime,
+                reason:
+                    error instanceof Error
+                        ? `handshake response not received in time: ${error.message}`
+                        : "handshake response not received in time"
+            });
+            this.p2pManager.disconnectConnection(transport);
+            return;
+        }
+
+        // Processing verifies a peer-supplied signature; junk (e.g. a malformed
+        // signature) makes `ethers.verifyMessage` throw. Guard it so a bad
+        // response disconnects the peer instead of escaping as an unhandled
+        // rejection from this background task.
+        try {
+            await this.handleHandshakeResponse(
+                transport,
+                randomChallengeHash,
+                initTime,
+                response
+            );
+        } catch (error) {
+            LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                direction: "local",
+                message: "rejected",
+                challengeHash: randomChallengeHash,
+                challengeInitTime: initTime,
+                reason:
+                    error instanceof Error
+                        ? `invalid handshake response: ${error.message}`
+                        : "invalid handshake response"
+            });
+            this.p2pManager.disconnectConnection(transport);
+        }
+    }
+
+    /**
+     * Validates and applies a handshake response received via `.request(...)`.
+     * Was the body of the old `onInitHandshakeResponse` endpoint; the challenge
+     * now comes from the initiator's closure instead of a shared map.
+     */
+    private async handleHandshakeResponse(
+        transport: ATransport,
+        challengeHash: string,
+        initTime: number,
+        response: HandshakeResponse
+    ): Promise<void> {
+        const { signature, responseTime, preferredTransport } = response;
+        const localTime = Clock.getTimeInSeconds();
+        const rtt = localTime - initTime;
+        const agreementTime =
+            this.p2pManager.stateManager.timeConfig.agreementTime;
+        if (rtt > agreementTime) {
+            LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                direction: "receive",
+                message: "rejected",
+                challengeHash,
+                challengeInitTime: initTime,
+                responseTime,
+                preferredTransport,
+                rttSeconds: rtt,
+                timeDifferenceSeconds: rtt,
+                absoluteTimeDifferenceSeconds: Math.abs(rtt),
+                agreementTimeSeconds: agreementTime,
+                reason: "response RTT outside agreement window"
+            });
+            this.p2pManager.disconnectConnection(transport);
+            return;
+        }
+        const responseTimeDifference = responseTime - initTime;
+        if (Math.abs(responseTimeDifference) > agreementTime) {
+            LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                direction: "receive",
+                message: "rejected",
+                challengeHash,
+                challengeInitTime: initTime,
+                responseTime,
+                preferredTransport,
+                rttSeconds: rtt,
+                timeDifferenceSeconds: responseTimeDifference,
+                absoluteTimeDifferenceSeconds: Math.abs(responseTimeDifference),
+                agreementTimeSeconds: agreementTime,
+                reason: "response timestamp outside agreement window"
+            });
+            this.p2pManager.disconnectConnection(transport);
+            return;
+        }
+        //verify signature
+        const challengeMessage =
+            InitHandshakeService.buildHandshakeChallengeMessage(challengeHash);
+        const signerAddress = ethers.verifyMessage(challengeMessage, signature);
+        LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+            direction: "receive",
+            message: "response",
+            challengeHash,
+            challengeInitTime: initTime,
+            responseTime,
+            preferredTransport,
+            rttSeconds: rtt,
+            signerAddress
+        });
+        // Check if this peer is blacklisted
+        // TODO - we destory the profile, so we wouldn't have this information
+        if (this.p2pManager.isBlacklisted(signerAddress)) {
+            LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                direction: "local",
+                message: "rejected",
+                challengeHash,
+                challengeInitTime: initTime,
+                responseTime,
+                preferredTransport,
+                rttSeconds: rtt,
+                signerAddress,
+                reason: "response signer is blacklisted"
+            });
+            this.p2pManager.disconnectConnection(transport);
+            return;
+        }
+
+        this.recordVerifiedPeerAddress(transport, signerAddress);
+
+        this.setRemotePreferredTransport(transport, preferredTransport);
+
+        void this.maybeFinalizeHandshakeOnceFromTransport(transport);
+
+        // Inform the remote that we've authenticated them.
+        LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+            direction: "send",
+            message: "ack",
+            challengeHash,
+            signerAddress
         });
         this.remoteRpc.initHandshakeService
-            .onInitHandshakeRequest(randomChallengeHash, time)
+            .onInitHandshakeAck(challengeHash)
             .sendOne(transport);
-        // expect a response or disconnect
-        this.timeoutManager.scheduleTask(
-            () => {
-                if (!this.didRespond(transport)) {
-                    const challenge = this.getChallenge(transport);
-                    LoggerUtils.logInitHandshakeMessage(
-                        this.logger,
-                        transport,
-                        {
-                            direction: "local",
-                            message: "response-timeout",
-                            challengeHash: challenge?.randomChallengeHash,
-                            challengeInitTime: challenge?.initTime,
-                            reason: "handshake response not received in time"
-                        }
-                    );
-                    this.p2pManager.disconnectConnection(transport);
-                }
-            },
-            this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            "InitHandshakeService - initHandshake timeout"
-        );
+
+        // Ensure we have a timeout path in case ack gets lost.
+        this.ensureHandshakeAckTimeoutScheduled(transport);
     }
 
-    public setChallenge(transport: ATransport, challenge: ConnectionChallenge) {
-        this.mapTransportToChallenge.set(transport, challenge);
-    }
-
-    public getChallenge(
-        transport: ATransport
-    ): ConnectionChallenge | undefined {
-        return this.mapTransportToChallenge.get(transport);
-    }
-
-    public didRespond(transport: ATransport): boolean {
-        return !this.getChallenge(transport);
+    public markHandshakeInFlight(transport: ATransport) {
+        this.inFlightHandshakeTransports.add(transport);
     }
 
     public isNegotiating(transport: ATransport): boolean {
         return (
-            this.mapTransportToChallenge.has(transport) ||
+            this.inFlightHandshakeTransports.has(transport) ||
             this.remotePreferredTransportMap.has(transport) ||
             this.verifiedPeerAddressByTransport.has(transport) ||
             this.didReceiveAck(transport)
@@ -257,6 +411,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         transport.peerAddress = verifiedPeerAddress;
 
         profile.setIsHandshakeCompleted(true);
+        this.inFlightHandshakeTransports.delete(transport);
 
         const completedPeerAddress = profile.getEvmAddress().toString();
         LoggerUtils.logInitHandshakeMessage(this.logger, transport, {

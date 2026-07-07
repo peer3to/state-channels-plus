@@ -4,6 +4,11 @@
 - For post-edit validation, run the narrowest relevant test first when available.
 - Run `yarn tsc --noEmit -p tsconfig.json` for TypeScript typechecking.
 - Run `yarn compile` for compile-level validation when changes affect the build or exported package surface.
+- Don't disturb the user's working tree or index to inspect another revision.
+  Prefer a throwaway worktree (`git worktree add <tmp> <ref>`) over `git stash`.
+  If you must stash, preserve staging: restore with `git stash pop --index` so
+  files the user had staged come back staged — never leave them re-reviewing
+  files they'd already staged.
 
 ## Conventions
 
@@ -26,6 +31,48 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
 ### Comments
 
 - Keep comments simple and to the point. No long essays.
+- When refactoring or moving code (extracting a method, moving a body to another
+  file/service), carry over all original comments verbatim — do not drop or
+  condense them, including large explanatory/strategy blocks and numbered step
+  comments. If a comment genuinely needs to change, call it out rather than
+  dropping it silently; flag stale commented-out dead code instead of removing
+  it without mention.
+
+### Solidity validators shared with the off-chain TS pipeline
+
+- A check that must agree on- and off-chain (dispute fraud-proof handlers) lives
+  **once in Solidity**; TS calls it via typechain — never re-implement it in TS
+  (it drifts → the off-chain pipeline builds a proof the on-chain apply handler
+  rejects). Must run on **both the calldata and non-calldata dispute paths**.
+- **Placement:** pure (no state) → free fn in `utils/DisputeUtils.sol` /
+  `BlockUtils.sol` + a `LocalDiamond` forwarder. State-reading domain logic →
+  `public` on the owning facet (e.g. `StateProofFacet`) + a
+  `StateChannelManagerProxy` forwarder + a `StateChannelManagerInterface` decl;
+  TS calls `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
+  `delegatecall` the facet address (see `isCorrectLatestState`,
+  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `public` on
+  `StateChannelCommon` (`isBlockAuthentic`).
+- **Never put domain logic `public` on `StateChannelCommon`:** a `public` base fn
+  is in every facet's ABI → compiled into all of them. `internal` is
+  dead-code-eliminated to its callers.
+
+### Platform-specific code (node / browser)
+
+- **Any platform-specific file must live under the platform dir** — `.../node/…`
+  or `.../browser/…` — never at a shared path. `tsconfig.json` excludes the
+  `browser` dirs and `tsconfig.browser.json` excludes the `node` dirs, so a
+  node-only file (anything importing `node:fs`, `node:perf_hooks`,
+  `node:worker_threads`, `child_process`, etc.) never compiles into or bundles
+  for the browser build, and vice versa. Introducing a platform feature at a
+  shared path leaks that platform's APIs into the other build — don't.
+- **A shared (or browser-compiled) file must not import a platform-only module
+  directly.** Route it through a `@platform/*` alias with a node impl and a
+  browser impl (the browser one can be a no-op), wired in the `paths` of _both_
+  `tsconfig.json` and `tsconfig.browser.json`. Note `.../worker/` dirs are shared
+  (browser-compiled) unless explicitly excluded — treat them as shared.
+- **Validate both builds** after platform changes:
+  `yarn tsc --noEmit -p tsconfig.json` **and**
+  `yarn tsc --noEmit -p tsconfig.browser.json`.
 
 ### Type safety
 
@@ -72,3 +119,4 @@ Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
   Keep it simple; add a named type later only if it actually earns reuse. (And
   don't reach for `Awaited<ReturnType<…>>`-style gymnastics to avoid a name —
   that's worse than the type it replaces; it's for generics, not one-offs.)
+- Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`.

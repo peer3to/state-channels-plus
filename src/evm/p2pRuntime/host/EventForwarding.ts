@@ -1,4 +1,4 @@
-import type StateManager from "@/stateManager/StateManager";
+import type { EventHandler } from "@/eventHandlers/EventHandler";
 import type P2pEventHooks from "@/P2pEventHooks";
 import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
 import type { RuntimePort } from "../types";
@@ -8,7 +8,7 @@ function safeEventArgs(args: unknown[]): unknown[] {
     try {
         return structuredClone(args);
     } catch {
-        return [];
+        throw new Error("Event handler arguments are not cloneable");
     }
 }
 
@@ -32,23 +32,20 @@ export function createForwardingHooks(port: RuntimePort): P2pEventHooks {
  *
  * In-place replacement (not a get-trap proxy) keeps one concrete function per
  * method, so the harness-control RPC can stub/restore them without double
- * wrapping. `stateManager.eventHandler` and
- * `stateManager.stateChannelEventListener.eventHandler` are the same instance.
+ * wrapping. The caller passes the single shared `EventHandler` instance (the
+ * same one reachable via `stateManager.stateChannelEventListener.eventHandler`).
  */
 export function forwardEventHandlerInvocations(
-    stateManager: StateManager,
+    eventHandler: EventHandler,
     port: RuntimePort
 ): void {
-    const eventHandler = stateManager.eventHandler as unknown as Record<
-        string,
-        unknown
-    >;
+    const handler = eventHandler as unknown as Record<string, unknown>;
     for (const name of EVENT_HANDLER_HOOK_NAMES) {
-        const original = eventHandler[name];
+        const original = handler[name];
         if (typeof original !== "function") continue;
         const originalFn = original as (...args: unknown[]) => unknown;
-        eventHandler[name] = async function (...args: unknown[]) {
-            const result = await originalFn.apply(eventHandler, args);
+        handler[name] = async function (...args: unknown[]) {
+            const result = await originalFn.apply(handler, args);
             port.post({
                 type: "eventHandlerInvoked",
                 name,

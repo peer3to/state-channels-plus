@@ -1,7 +1,6 @@
 import {
     deserializeBridgeError,
     WEBRTC_BRIDGE_NAMESPACE,
-    type WebRTCBridgeInitMessage,
     type WebRTCBridgePortMessage,
     type WebRTCBridgeRequest
 } from "./WebRTCBridgeProtocol";
@@ -18,13 +17,10 @@ const UNKNOWN_STATE: WebRTCConnectionStateSnapshot = {
     iceState: "unknown"
 };
 
-function isWorkerRuntime(): boolean {
-    const runtime = globalThis as any;
-    return (
-        typeof runtime.WorkerGlobalScope !== "undefined" &&
-        globalThis instanceof runtime.WorkerGlobalScope
-    );
-}
+// Worker→main bridge requests are local postMessage round-trips that normally
+// settle in milliseconds. This bound only exists so a dropped/closed bridge can
+// never leave an awaiting WebRTC setup call hanging forever.
+const BRIDGE_REQUEST_TIMEOUT_MS = 30_000;
 
 class ProxyRTCDataChannel implements WebRTCDataChannelLike {
     onmessage: ((event: { data: any }) => void) | null = null;
@@ -87,6 +83,7 @@ class WebRTCWorkerBridgeClient {
         {
             resolve: (value: any) => void;
             reject: (error: Error) => void;
+            timeoutId: ReturnType<typeof setTimeout>;
         }
     >();
     private readonly callbacksByPeerAddress = new Map<
@@ -122,7 +119,10 @@ class WebRTCWorkerBridgeClient {
         return this.stateByPeerAddress.get(peerAddress) || UNKNOWN_STATE;
     }
 
-    request(request: WebRTCBridgeRequest): Promise<any> {
+    request(
+        request: WebRTCBridgeRequest,
+        timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS
+    ): Promise<any> {
         const requestId = this.nextRequestId++;
         const message: WebRTCBridgePortMessage = {
             namespace: WEBRTC_BRIDGE_NAMESPACE,
@@ -132,9 +132,38 @@ class WebRTCWorkerBridgeClient {
         };
 
         return new Promise((resolve, reject) => {
-            this.pendingRequests.set(requestId, { resolve, reject });
+            const timeoutId = setTimeout(() => {
+                if (!this.pendingRequests.delete(requestId)) return;
+                reject(
+                    new Error(
+                        `WebRTC bridge request "${request.method}" timed out after ${timeoutMs}ms`
+                    )
+                );
+            }, timeoutMs);
+            this.pendingRequests.set(requestId, {
+                resolve,
+                reject,
+                timeoutId
+            });
             this.port.postMessage(message);
         });
+    }
+
+    /**
+     * Rejects every in-flight request and detaches the port. Called when the
+     * bridge port is replaced or torn down so awaiting WebRTC setup calls fail
+     * fast instead of hanging on a port that will never respond.
+     */
+    dispose(
+        reason = "WebRTC bridge port closed before the request completed"
+    ): void {
+        for (const pending of this.pendingRequests.values()) {
+            clearTimeout(pending.timeoutId);
+            pending.reject(new Error(reason));
+        }
+        this.pendingRequests.clear();
+        this.port.onmessage = null;
+        this.port.close?.();
     }
 
     private handleMessage(message: WebRTCBridgePortMessage): void {
@@ -144,6 +173,7 @@ class WebRTCWorkerBridgeClient {
             const pending = this.pendingRequests.get(message.requestId);
             if (!pending) return;
             this.pendingRequests.delete(message.requestId);
+            clearTimeout(pending.timeoutId);
             if (message.ok) {
                 pending.resolve(message.result);
             } else {
@@ -227,7 +257,7 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
 
     private bridgePort?: MessagePort;
     private client?: WebRTCWorkerBridgeClient;
-    private receiverRegistered = false;
+    private readonly registeredPorts = new Set<MessagePort>();
     private readonly bridgePortWaiters: Array<() => void> = [];
 
     static getInstance(): WorkerBridgeWebRTCConnectionFactory {
@@ -238,27 +268,42 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
         return WorkerBridgeWebRTCConnectionFactory.instance;
     }
 
-    private constructor() {
-        this.ensureReceiverRegistered();
-    }
+    private constructor() {}
 
     registerPort(port: MessagePort): void {
-        this.bridgePort?.close?.();
-        this.bridgePort = port;
-        this.client = new WebRTCWorkerBridgeClient(port);
+        this.registeredPorts.add(port);
+        // Set once: there is a single main thread, so a worker realm needs only
+        // one bridge. The first host establishes it; later hosts share it
+        // instead of replacing (and tearing down) the active one.
+        if (!this.bridgePort) {
+            this.bridgePort = port;
+            this.client = new WebRTCWorkerBridgeClient(port);
+        }
 
         while (this.bridgePortWaiters.length > 0) {
             this.bridgePortWaiters.shift()?.();
         }
     }
 
+    /**
+     * Release one host's hold on the shared worker-side bridge. Ref-counted by
+     * registered port: the bridge and its client are torn down only once the
+     * last host that registered is gone, so one host disposing never closes the
+     * bridge for others sharing the same worker realm.
+     */
+    disposeBridge(port: MessagePort): void {
+        if (!this.registeredPorts.delete(port)) return;
+        if (this.registeredPorts.size > 0) return;
+        this.client?.dispose("WebRTC bridge disposed with the runtime host");
+        this.client = undefined;
+        this.bridgePort = undefined;
+    }
+
     hasPort(): boolean {
-        this.ensureReceiverRegistered();
         return !!this.bridgePort;
     }
 
     async waitForPort(timeoutMs = 5000): Promise<boolean> {
-        this.ensureReceiverRegistered();
         if (this.bridgePort) return true;
 
         return new Promise((resolve) => {
@@ -276,42 +321,15 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
         });
     }
 
-    ensureReceiverRegistered(): void {
-        if (this.receiverRegistered) return;
-        this.receiverRegistered = true;
-
-        if (!isWorkerRuntime()) return;
-
-        const runtime = globalThis as any;
-        if (typeof runtime.addEventListener !== "function") return;
-        if (typeof runtime.removeEventListener !== "function") return;
-
-        const listener = ((event: MessageEvent) => {
-            if (!this.isBridgeInitMessage(event.data)) return;
-            const [port] = event.ports || [];
-            if (!port) return;
-            this.registerPort(port);
-            runtime.removeEventListener("message", listener);
-        }) as EventListener;
-
-        runtime.addEventListener("message", listener);
-    }
-
     private getClient(): WebRTCWorkerBridgeClient {
         if (!this.client) {
             throw new Error(
-                "WebRTC worker bridge port is not registered. Call installWebRTCMainThreadBridge(worker) on the main thread before starting WebRTC setup."
+                "WebRTC worker bridge port is not registered. The runtime host " +
+                    "registers it during p2pSetup; ensure the main thread bound " +
+                    "P2pInstance.webRTCBridgePort via installWebRTCMainThreadBridge()."
             );
         }
         return this.client;
-    }
-
-    private isBridgeInitMessage(data: any): data is WebRTCBridgeInitMessage {
-        return (
-            data &&
-            data.namespace === WEBRTC_BRIDGE_NAMESPACE &&
-            data.type === "init"
-        );
     }
 
     createOffer(
@@ -369,10 +387,6 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
     getState(peerAddress: WebRTCPeerAddress): WebRTCConnectionStateSnapshot {
         return this.client?.getState(peerAddress) || UNKNOWN_STATE;
     }
-}
-
-if (isWorkerRuntime()) {
-    WorkerBridgeWebRTCConnectionFactory.getInstance();
 }
 
 export default WorkerBridgeWebRTCConnectionFactory;

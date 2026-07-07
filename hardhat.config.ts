@@ -15,15 +15,44 @@ const config: HardhatUserConfig = {
         hardhat: {
             allowUnlimitedContractSize: true,
             gas: "auto",
-            initialDate: new Date().toISOString()
+            // E2E parallel runs cram many concurrent games' txs into one node's
+            // 2s-interval blocks (not production's load profile, which spreads over
+            // time), so a realistic 30M block starves them. Raise it only for e2e
+            // (gated on E2E_INTERVAL_MINING) — non-e2e keeps the realistic default.
+            blockGasLimit:
+                process.env.E2E_INTERVAL_MINING === "1"
+                    ? 1_000_000_000
+                    : 30_000_000,
+            initialDate: new Date().toISOString(),
+            // 400 accounts = 40 concurrent slots × SLOT_STRIDE(10).
+            // Keep in sync with SLOT_STRIDE in test/harness/core/slotAccounts.ts
+            // and the pool cap in scripts/test-e2e-parallel.js.
+            accounts: {
+                mnemonic:
+                    "test test test test test test test test test test test junk",
+                count: 400
+            },
+            // E2E runs set E2E_INTERVAL_MINING=1 → automine OFF + a 2s interval,
+            // so block-time tracks wall-clock and the SDK's real-time dispute
+            // timers stay in sync with on-chain deadlines (replaces the removed
+            // harness startAutoTimeAdvance). Everything else (unit tests, normal
+            // hardhat use) keeps default automine for instant, awaited-free tx
+            // inclusion.
+            mining:
+                process.env.E2E_INTERVAL_MINING === "1"
+                    ? { auto: false, interval: 2000 }
+                    : { auto: true, interval: 2000 }
         },
         localhost: {
             // Env-driven so the worker-mode e2e run can point hardhat's deploy
             // network, the worker's PROVIDER_URL, and the external node at one URL.
             url: process.env.HARDHAT_NODE_URL ?? "http://127.0.0.1:8545",
+            // count: 400 matches the hardhat network above so account N derives
+            // the same address whether running in-process or against an external node.
             accounts: {
                 mnemonic:
-                    "test test test test test test test test test test test junk"
+                    "test test test test test test test test test test test junk",
+                count: 400
             }
         },
         node: {
