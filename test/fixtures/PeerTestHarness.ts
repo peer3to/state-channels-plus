@@ -1027,7 +1027,6 @@ export class PeerTestHarness<
         return new Set(
             [
                 ...this.context.maliciousPeerIndices,
-                ...this.context.leftChannelPeerIndices
             ].map((i) => this.getPeer(i).address)
         );
     }
