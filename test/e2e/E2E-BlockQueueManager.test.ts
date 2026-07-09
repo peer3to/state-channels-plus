@@ -595,13 +595,19 @@ describe("E2E: BlockQueueManager", function () {
                 waitForProcessed: false
             });
 
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(targetPeer)
-                        .query.getForkId()
-                        .request()) === newForkId,
+            // Gate on onSetState, not getForkId: unsafeSetLatestState sets
+            // this.forkId ~2 awaits before it fires onSetState, so waiting on
+            // the fork id lets the count assertion race in and read 0.
+            await h.event.waitForEventCounts(
+                "onSetState",
+                [{ peerId: targetPeerIndex, expectedCount: 1 }],
                 10000
+            );
+            expect(
+                await h.control(targetPeer).query.getForkId().request()
+            ).to.equal(
+                newForkId,
+                "the local reduction should land the target on the reduced fork"
             );
             expect(
                 h.event.getEventCallCount(targetPeerIndex, "onSetState")
