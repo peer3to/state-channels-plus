@@ -140,6 +140,14 @@ class StateManager<
         ForkId,
         Promise<LocalReductionResult | undefined>
     > = new Map();
+    // Memoized `isKillPeriodExpired` per (channel, fork). A junk-fork flood then
+    // costs O(1) chain reads per window instead of one per block: a "not expired
+    // until killPeriodEnd" answer is reused until that time; an "expired" answer
+    // is terminal. Cleared on fork transition (see the `forkId` setter).
+    private readonly killPeriodExpiryCache: Map<
+        string,
+        { isExpired: boolean; killPeriodEnd: number }
+    > = new Map();
     status: Status = Status.NOT_OPENED;
     timeoutManager: TimeoutManager;
     logger: Logger;
@@ -555,10 +563,7 @@ class StateManager<
         // must be the on-chain value — identical for every peer, or the local
         // reduced snapshot hash won't match the committed one.
         const { isExpired, killPeriodEnd } =
-            await this.stateChannelManagerContract.isKillPeriodExpired(
-                this.channelId,
-                forkId
-            );
+            await this.isKillPeriodExpiredCached(forkId);
         if (!isExpired) {
             // Guards event-driven callers: nothing to reduce (yet).
             this.logger.debug(
@@ -799,7 +804,33 @@ class StateManager<
         return this.latestForkId;
     }
     public set forkId(forkId: ForkId) {
+        if (this.latestForkId !== forkId) {
+            // A transition invalidates per-fork caches keyed on the old fork:
+            // the memoized kill-period-expired results and the fork-recovery
+            // scheduling/suppression gate.
+            this.killPeriodExpiryCache.clear();
+            this.blockQueueManager.onForkTransition();
+        }
         this.latestForkId = forkId;
+    }
+
+    public async isKillPeriodExpiredCached(
+        forkId: ForkId
+    ): Promise<{ isExpired: boolean; killPeriodEnd: number }> {
+        const key = `${this.channelId}:${forkId}`;
+        const cached = this.killPeriodExpiryCache.get(key);
+        const now = Clock.getTimeInSeconds();
+        if (cached && (cached.isExpired || now < cached.killPeriodEnd)) {
+            return cached;
+        }
+        const { isExpired, killPeriodEnd } =
+            await this.stateChannelManagerContract.isKillPeriodExpired(
+                this.channelId,
+                forkId
+            );
+        const fresh = { isExpired, killPeriodEnd: Number(killPeriodEnd) };
+        this.killPeriodExpiryCache.set(key, fresh);
+        return fresh;
     }
 
     //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
@@ -1044,6 +1075,26 @@ class StateManager<
         return this.validationService.isDisputedFork(forkId, channelId);
     }
 
+    /**
+     * Is `forkId` a fork in our canonical past - one we've moved past and can
+     * safely drop a late block on - rather than an unknown/malicious fork we
+     * should sync-probe? Callers only ask about a NON-current fork.
+     *
+     * O(1), no chain walk: a non-current fork is "known past" if it is disputed
+     * (we are leaving it) OR we already hold its genesis snapshot or any of its
+     * blocks locally (we've seen it in our history). Anything we don't recognize
+     * is treated as unknown → sync (never a silent drop on ambiguity).
+     */
+    public async isKnownStaleFork(forkId: ForkId): Promise<boolean> {
+        if (forkId === this.forkId || forkId === NULL) return false;
+        if (await this.isForkDisputed(forkId, this.channelId)) return true;
+        return (
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId) !==
+                undefined ||
+            this.storage.blocks.getLatestBlock(forkId) !== undefined
+        );
+    }
+
     public getActiveValidationStrategy(): AValidationStrategy {
         return this.getStrategyByStatus(this.status);
     }
@@ -1197,6 +1248,28 @@ class StateManager<
                 options?.validationStrategy ||
                 this.getStrategyByStatus(this.status);
             block = entry.block;
+
+            // A fork transition can land while we wait for the mutex, so the
+            // block's fork may no longer be current. Don't validate against the
+            // wrong fork: restore the entry for a timeout sync if we don't
+            // recognize its fork as known-past, or drop it if we've moved past
+            // it. The dispute strategy runs disputed/other-fork state-proof
+            // blocks by design, so it is exempt.
+            if (
+                !(strategy instanceof DisputeValidationStrategy) &&
+                block.forkId !== this.forkId
+            ) {
+                if (await this.isKnownStaleFork(block.forkId)) {
+                    this.logger.verbose(
+                        "onBlockConfirmation - dropping entry from a known stale fork (fork changed under mutex)",
+                        { blockHash: block.hash, blockForkId: block.forkId }
+                    );
+                } else {
+                    this.blockQueueManager.restoreQueuedEntry(entry, strategy);
+                }
+                keepConnection = true; // not a peer fault
+                return keepConnection;
+            }
 
             if (this.storage.blocks.getBlock(block.hash)) {
                 this.blockQueueManager.scheduleStoredBlockConfirmationMerge(

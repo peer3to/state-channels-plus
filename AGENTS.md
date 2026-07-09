@@ -91,6 +91,13 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
   sync) enter via `onBlockConfirmationStruct`, which wraps into a sourceless
   entry.
 
+### Class layout
+
+- **All fields at the top, then all methods** — a class is always `{ fields,
+methods }`. Never interleave a field declaration between methods. When adding a
+  new field, put it with the other fields at the top of the class (keep any
+  explanatory comment with it), not next to the method that happens to use it.
+
 ### Comments
 
 - Keep comments simple and to the point. No long essays.

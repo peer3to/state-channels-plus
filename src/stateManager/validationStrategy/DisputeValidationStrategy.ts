@@ -149,6 +149,18 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         const block = entry.block;
+        // Invariant: by the time a state-proof block reaches this dispute path,
+        // the upstream Solidity header-mismatch check has already killed any
+        // wrong-fork dispute, so block[0] is on the disputed fork and its
+        // genesis snapshot MUST be present. A missing one is a bug, not a peer
+        // fault - fail loudly rather than silently mis-proving.
+        if (
+            !this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                block.forkId
+            )
+        ) {
+            throw new Error("Unexpected genesisSnapshot missing");
+        }
         // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         const hash = this.fraudProofService.createWrongGenesisProof(block);
         this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);

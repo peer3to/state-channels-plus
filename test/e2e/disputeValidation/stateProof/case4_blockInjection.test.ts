@@ -70,6 +70,42 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             });
             await h.dispute.resolveDisputeWait();
         });
+
+        it("stateProof.signedBlocks[0].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
+            // The FIRST signed block (height 0) on a wrong fork must be caught by
+            // the Solidity header-mismatch check and kill the dispute BEFORE the
+            // pipeline runs - so the dispute-strategy wrong-genesis path is only
+            // ever reached for a block[0] that is genuinely on the disputed fork.
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+
+            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const d = sm.p2pManager.localRpc.dispute;
+                d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
+                await d.rewriteSignedBlockAtIndex(dispute, 0, (bs) =>
+                    d.blockStructWithTransactionHeader(bs, {
+                        forkId: d.randomHash()
+                    })
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: false
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait();
+        });
     });
 
     describe("milestone blockConfirmations", function () {

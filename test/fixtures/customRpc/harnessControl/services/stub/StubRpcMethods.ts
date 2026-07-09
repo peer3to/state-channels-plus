@@ -645,6 +645,14 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             );
         }
 
+        // Don't strand a prior parked reduction: if a previous install is still
+        // waiting on its `release` resolver, unpark it before replacing the
+        // state, or `releasePausedTryReduce` would only resolve the new state.
+        const prior = this.service.pausedTryReduce;
+        if (prior && prior.entered && !prior.settled) {
+            prior.release?.();
+        }
+
         this.service.pausedTryReduce = {
             targetForkId: forkId,
             entered: false,
@@ -686,9 +694,16 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             return promise;
         }) as PrivateTryReduceHost["tryReduce"];
 
-        localDiamond.isKillPeriodExpired = (async (...args: unknown[]) => {
+        // Type the wrapper params off the REAL method so a param reorder/removal
+        // breaks compilation instead of silently reading the wrong positional
+        // (the pause would then never engage and the test would hang).
+        type KillPeriodArgs = Parameters<
+            typeof sm.diamondStateMachine.localDiamondContract.isKillPeriodExpired
+        >;
+        localDiamond.isKillPeriodExpired = (async (...args: KillPeriodArgs) => {
             const state = this.service.pausedTryReduce;
-            const requestedForkId = String(args[1]);
+            const [, forkIdArg] = args;
+            const requestedForkId = String(forkIdArg);
             // One-shot: pause only the FIRST matching kill-period call
             // (`!state.entered`). A second call while `inside` would otherwise
             // overwrite `state.release`, so `releasePausedTryReduce` would
@@ -712,7 +727,11 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     public startPausedTryReduce(forkId: ForkId): boolean {
-        if (!this.service.pausedTryReduce) return false;
+        const state = this.service.pausedTryReduce;
+        // Only start the staged fork: a mismatch would fire an UNWRAPPED
+        // tryReduce (its rejection surfaces as an unhandled host rejection
+        // blamed elsewhere) yet still report success. Report the mismatch.
+        if (!state || forkId !== state.targetForkId) return false;
         const host = this.service.sm as unknown as PrivateTryReduceHost;
         void host.tryReduce(forkId);
         return true;
@@ -852,6 +871,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                 sm.reduceLocally.bind(sm)
             );
         }
+        this.service.reduceLocallyCallCount = 0;
         sm.reduceLocally = (async () => {
             this.service.reduceLocallyCallCount += 1;
             return undefined;
@@ -868,6 +888,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                 sm.reduceLocally.bind(sm)
             );
         }
+        this.service.reduceLocallyCallCount = 0;
         const original = this.service.stubOriginals.get(
             "reduceLocally"
         ) as typeof sm.reduceLocally;
@@ -903,6 +924,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                 spectate.sync.bind(spectate)
             );
         }
+        this.service.spectateSyncCallCount = 0;
         const original = this.service.stubOriginals.get(
             "spectateSync"
         ) as typeof spectate.sync;

@@ -69,7 +69,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.storage.queues.restoreEntry(entry);
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async notAllSingersAreParticipants(
@@ -149,23 +149,15 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.storage.queues.restoreEntry(entry);
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        const block = entry.block;
-        // not ready - ask the peers that supplied this block to sync us up
-        for (const peer of entry.sourcePeers) {
-            this.p2pManager.localRpc.spectateService.sync(
-                peer as string,
-                block.channelId,
-                block.forkId,
-                block.height
-            );
-        }
-        this.storage.queues.restoreEntry(entry);
+        // Not ready: put it back and let the queue timeout be the sole sync
+        // probe (no arrival-time sync from strategy hooks).
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(

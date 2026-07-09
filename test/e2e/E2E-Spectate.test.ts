@@ -1018,13 +1018,52 @@ describe("E2E: Spectate Service", function () {
         });
     });
 
+    describe("Unprovable sync target mutually blacklists both peers", function () {
+        it("an above-latest target can't be proven, so requester and responder blacklist each other", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 2);
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+
+            const requester = h.getPeer(0);
+            const responder = h.getPeer(1);
+            const forkId = h.activeForkId!;
+
+            // Ask for a height far above anything the responder can prove. p2p
+            // sync is mutual-cooperation: an unprovable request is a cooperation
+            // failure, so the responder cuts the requester (and never serves a
+            // downgraded latest-height proof), and the failed request cuts the
+            // responder in turn.
+            await h
+                .control(requester)
+                .spectate.startSync(responder.address, forkId, 9999)
+                .request();
+
+            await waitFor(
+                async () =>
+                    await h
+                        .control(responder)
+                        .query.isBlacklisted(requester.address)
+                        .request(),
+                10000
+            );
+            await waitFor(
+                async () =>
+                    await h
+                        .control(requester)
+                        .query.isBlacklisted(responder.address)
+                        .request(),
+                10000
+            );
+        });
+    });
+
     describe("Exact-target sync payload generation", function () {
         // A targeted sync request pins the proof to the exact (fork, height):
         // `generateSyncPayload(F, h)` must prove height `h`, even when the
-        // responder is locally ahead. Height 0 (A1) is the regression for the
+        // responder is locally ahead. Height 0 is the regression for the
         // `_blockHeight ?? latestBlockHeight` fix: 0 is falsy, so pre-fix the
         // `||` proved the responder's *latest* height instead of the pinned 0.
-        // Height 1 (A2) is the truthy-height control that already worked.
+        // Height 1 is the truthy-height control that already worked.
         // Driven host-side against the real `generateSyncPayload` so the pin is
         // asserted deterministically at its source (the full sync pipeline
         // normalizes an over-proved height, so it can't distinguish the fix).

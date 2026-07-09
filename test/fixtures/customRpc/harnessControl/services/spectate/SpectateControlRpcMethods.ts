@@ -25,7 +25,7 @@ export class SpectateControlRpcMethods extends ARpcMethods<
         super(transport, service.p2pManager);
     }
 
-    /** Generate a sync payload, returned encoded (or null). */
+    /** Generate a sync payload, returned encoded (or null if not provable). */
     public async generateSyncPayload(
         channelId: ChannelId,
         forkId: ForkId,

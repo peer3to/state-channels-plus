@@ -92,11 +92,41 @@ function parseTimings(text) {
     };
 }
 
+// Resolve, following symlinks where the path (or its nearest ancestor) exists,
+// so a symlinked ./logs is compared by its real target on both sides.
+function realpathOrResolve(p) {
+    const resolved = path.resolve(p);
+    try {
+        return fs.realpathSync(resolved);
+    } catch {
+        return resolved;
+    }
+}
+
+// Never auto-purge (nor purge with the flag) the CWD/repo root or the fs root -
+// a mis-resolved log dir must not wipe the working tree. Checks BOTH the lexical
+// resolved path AND its real (symlink-followed) target, since fs.rmSync operates
+// through symlinks: `--logDir ./logs` where `./logs` links to the repo root
+// resolves lexically to `<repo>/logs` but really targets `<repo>`.
+function isDangerousPurgeTarget(resolved) {
+    const cwd = process.cwd();
+    const cwdReal = realpathOrResolve(cwd);
+    for (const p of [resolved, realpathOrResolve(resolved)]) {
+        if (p === cwd || p === cwdReal || p === path.parse(p).root) return true;
+    }
+    return false;
+}
+
 // The default ./logs dir and anything under it (run-N dirs) are safe to
-// purge/clean without the explicit allow flag.
+// purge/clean without the explicit allow flag. Compare real paths so a
+// symlinked ./logs can't smuggle a purge of its target past the gate; and if
+// the default log dir itself resolves somewhere dangerous (e.g. a symlink to the
+// repo root), nothing is "safely within" it.
 function isWithinDefaultLogDir(resolved) {
-    const expected = path.resolve(DEFAULT_LOG_DIR);
-    return resolved === expected || resolved.startsWith(expected + path.sep);
+    const expected = realpathOrResolve(DEFAULT_LOG_DIR);
+    if (isDangerousPurgeTarget(expected)) return false;
+    const real = realpathOrResolve(resolved);
+    return real === expected || real.startsWith(expected + path.sep);
 }
 
 /**
@@ -106,6 +136,15 @@ function isWithinDefaultLogDir(resolved) {
  */
 function nextRunDir(baseDir) {
     const base = path.resolve(baseDir);
+    // Refuse BEFORE any mkdir/readdir: run allocation must not write through a
+    // symlinked base whose real target is the repo root / fs root (e.g. a
+    // `./logs -> .` symlink would otherwise scatter run-N dirs at the repo root
+    // before the later purge guard even runs).
+    if (isDangerousPurgeTarget(base)) {
+        throw new Error(
+            `Refusing to allocate run dirs under ${base}: it resolves to the repo root / fs root.`
+        );
+    }
     fs.mkdirSync(base, { recursive: true });
 
     let next = 0;
@@ -129,13 +168,19 @@ function nextRunDir(baseDir) {
 function safeEmptyDir(dirPath, allowLogdirPurge) {
     const resolved = path.resolve(dirPath);
 
+    // Never purge the repo root / fs root, even with the flag.
+    if (isDangerousPurgeTarget(resolved)) {
+        console.warn(`Refusing to purge ${resolved} (repo root / fs root).`);
+        return;
+    }
+
     // Safety: only auto-purge dirs under the default ./logs unless explicitly allowed.
     const canAutoPurge = isWithinDefaultLogDir(resolved);
     const allowUnsafe = allowLogdirPurge === true;
 
     if (!canAutoPurge && !allowUnsafe) {
         console.warn(
-            `Skipping purge of ${resolved}. Set ALLOW_LOGDIR_PURGE=1 to allow.`
+            `Skipping purge of ${resolved}. Pass --allow-logdir-purge to allow.`
         );
         return;
     }
@@ -148,12 +193,18 @@ function safeEmptyDir(dirPath, allowLogdirPurge) {
 
 function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
     const resolved = path.resolve(logDir);
+
+    if (isDangerousPurgeTarget(resolved)) {
+        console.warn(`Refusing to clean ${resolved} (repo root / fs root).`);
+        return;
+    }
+
     const canAutoPurge = isWithinDefaultLogDir(resolved);
     const allowUnsafe = allowLogdirPurge === true;
 
     if (!canAutoPurge && !allowUnsafe) {
         console.warn(
-            `Skipping end-of-run cleanup in ${resolved}. Set ALLOW_LOGDIR_PURGE=1 to allow.`
+            `Skipping end-of-run cleanup in ${resolved}. Pass --allow-logdir-purge to allow.`
         );
         return;
     }
@@ -423,6 +474,9 @@ module.exports = {
     countOomEvents,
     countStarvation,
     parseTimings,
+    // Exported for unit tests of the destructive-tooling guards.
+    isDangerousPurgeTarget,
+    isWithinDefaultLogDir,
     safeEmptyDir,
     cleanupNonErrorLogs,
     nextRunDir,

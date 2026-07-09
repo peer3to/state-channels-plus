@@ -1,5 +1,14 @@
 /* eslint-disable no-console */
+const path = require("path");
 const { DEFAULT_LOG_DIR } = require("./constants");
+
+// A log dir is only usable if it's a non-empty, non-flag path that resolves
+// somewhere below the CWD. Empty (`--logDir=`), `.`, or a swallowed flag would
+// otherwise resolve to the repo root and get purged.
+function isAcceptableLogDir(value) {
+    if (!value || value.startsWith("-")) return false;
+    return path.resolve(value) !== process.cwd();
+}
 
 function parseCliArgs(argv) {
     const options = {
@@ -55,10 +64,14 @@ function parseCliArgs(argv) {
             arg === "-d"
         ) {
             const next = argv[i + 1];
-            if (next) {
+            if (next && !next.startsWith("-")) i++;
+            if (isAcceptableLogDir(next)) {
                 options.logDir = next;
                 options.logDirProvided = true;
-                i++;
+            } else {
+                console.warn(
+                    `Ignoring invalid ${arg} value: ${JSON.stringify(next)}`
+                );
             }
             continue;
         }
@@ -67,8 +80,15 @@ function parseCliArgs(argv) {
             arg.startsWith("--log-dir=") ||
             arg.startsWith("--dir=")
         ) {
-            options.logDir = arg.split("=").slice(1).join("=");
-            options.logDirProvided = true;
+            const value = arg.split("=").slice(1).join("=");
+            if (isAcceptableLogDir(value)) {
+                options.logDir = value;
+                options.logDirProvided = true;
+            } else {
+                console.warn(
+                    `Ignoring invalid ${arg.split("=")[0]} value: ${JSON.stringify(value)}`
+                );
+            }
             continue;
         }
 

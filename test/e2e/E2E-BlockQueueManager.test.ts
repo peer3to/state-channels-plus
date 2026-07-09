@@ -321,7 +321,8 @@ describe("E2E: BlockQueueManager", function () {
             const maliciousPeerIndex = 2;
             const reducingHonestPeers = [0, 3];
 
-            await h.lifecycle.start(4, maliciousPeerIndex, {
+            // 2 = warm-up transitions the dispute staging needs, not the peer index.
+            await h.lifecycle.start(4, 2, {
                 timeConfig: forkTimeConfig
             });
             await h.assert.sync.peersInSyncWait();
@@ -458,7 +459,9 @@ describe("E2E: BlockQueueManager", function () {
             const h = TestSession.getHarness();
             const timeConfig = {
                 p2pTime: 3,
-                agreementTime: 2,
+                // 4, not 2: the immediate isBlockQueued check below must not
+                // race the entry's own eviction timer under parallel-load stall.
+                agreementTime: 4,
                 chainFallbackTime: 30,
                 evidenceTime: 8
             };
@@ -488,16 +491,15 @@ describe("E2E: BlockQueueManager", function () {
                 waitForProcessed: false
             });
 
-            // Queued unscheduled: the pipeline never ran, sync was requested.
+            // Queued unscheduled: the pipeline never ran, and there is NO
+            // arrival-time sync - the queue timeout is the sole sync probe now.
             expect(
                 await h
                     .control(observer)
                     .query.isBlockQueued(bogusBlock.hash)
                     .request()
             ).to.equal(true);
-            expect(await h.rpcStub.spectateSyncCallCount(0)).to.be.greaterThan(
-                0
-            );
+            expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(0);
             // Current fork is not disputed - no reduction probe fired.
             expect(await h.rpcStub.reduceLocallyCallCount(0)).to.equal(0);
             expect(
@@ -552,7 +554,8 @@ describe("E2E: BlockQueueManager", function () {
             const maliciousPeerIndex = 2;
             const reducingHonestPeers = [0, 3];
 
-            await h.lifecycle.start(4, maliciousPeerIndex, {
+            // 2 = warm-up transitions the dispute staging needs, not the peer index.
+            await h.lifecycle.start(4, 2, {
                 timeConfig: forkTimeConfig
             });
             await h.assert.sync.peersInSyncWait();
@@ -659,7 +662,8 @@ describe("E2E: BlockQueueManager", function () {
             const maliciousPeerIndex = 2;
             const reducingHonestPeers = [0, 3];
 
-            await h.lifecycle.start(4, maliciousPeerIndex, {
+            // 2 = warm-up transitions the dispute staging needs, not the peer index.
+            await h.lifecycle.start(4, 2, {
                 // Long queue window: the early block must survive queued
                 // until the release below drains it.
                 timeConfig: { ...forkTimeConfig, agreementTime: 10 }
@@ -780,12 +784,13 @@ describe("E2E: BlockQueueManager", function () {
             expect(
                 h.event.getEventCallCount(targetPeerIndex, "onSetState")
             ).to.equal(1);
-            // The queued block was drained by the transition, not synced;
-            // the (held) sync path was asked at ingest and never punished
-            // the honest supplier.
+            // The queued block was drained by the transition BEFORE its timeout,
+            // so it was never synced at all (arrival-time sync is gone; the
+            // timeout is the sole sync probe and the transition beat it). The
+            // honest supplier is never punished.
             expect(
                 await h.rpcStub.spectateSyncCallCount(targetPeerIndex)
-            ).to.be.greaterThan(0);
+            ).to.equal(0);
             expect(
                 await h
                     .control(targetPeer)
@@ -1032,12 +1037,9 @@ describe("E2E: BlockQueueManager", function () {
                         const hash = args.hash as any;
 
                         let queueTimeoutsScheduled = 0;
-                        let validations = 0;
                         const syncBase = stub.spectateSyncCallCount;
                         const originalSchedule =
                             timeoutManager.scheduleTask.bind(timeoutManager);
-                        const originalOnBlockConfirmation =
-                            sm.onBlockConfirmation.bind(sm);
                         timeoutManager.scheduleTask = (
                             task: () => unknown,
                             delayMs: number,
@@ -1053,10 +1055,6 @@ describe("E2E: BlockQueueManager", function () {
                             }
                             return originalSchedule(task, delayMs, taskName);
                         };
-                        (sm as any).onBlockConfirmation = async () => {
-                            validations += 1;
-                            return true;
-                        };
                         try {
                             // (a) a stale forkId argument is not authority
                             await manager.tryExecuteFromQueue(args.forkId);
@@ -1064,41 +1062,46 @@ describe("E2E: BlockQueueManager", function () {
                                 !!sm.storage.queues.getQueuedEntry(hash);
 
                             // (b) a dequeued entry whose fork is no longer
-                            // current is dropped outright: never validated,
-                            // never restored, and never synced - the fork is
-                            // behind us, so a sync request could only fail
-                            // against honest peers and blacklist them.
+                            // current is NEVER validated: the real pipeline sees
+                            // the fork mismatch and, since this bogus fork is
+                            // unknown (not a fork we've moved past), restores it
+                            // for its timeout to sync rather than validating,
+                            // dropping, or syncing inline. "Not validated" is
+                            // observed as the block never reaching storage.
                             const entry = sm.storage.queues.removeBlock(hash)!;
                             // The dequeue owns the entry - drop the real
                             // eviction timer the ingest scheduled.
                             manager.cancelQueueTimeout(hash);
                             await manager.executeQueuedEntry(entry);
-                            const dropped =
-                                !sm.storage.queues.getQueuedEntry(hash);
+                            const restored =
+                                !!sm.storage.queues.getQueuedEntry(hash);
+                            const stored =
+                                sm.storage.blocks.getBlock(hash) !== undefined;
                             const syncDelta =
                                 stub.spectateSyncCallCount - syncBase;
 
                             return {
                                 staleArgIgnored,
-                                dropped,
+                                restored,
+                                stored,
                                 queueTimeoutsScheduled,
-                                syncDelta,
-                                validations
+                                syncDelta
                             };
                         } finally {
                             timeoutManager.scheduleTask = originalSchedule;
-                            (sm as any).onBlockConfirmation =
-                                originalOnBlockConfirmation;
                         }
                     },
                     { hash: bogusBlock.hash, forkId: bogusBlock.forkId }
                 );
 
                 expect(r.staleArgIgnored).to.equal(true);
-                expect(r.dropped).to.equal(true);
-                expect(r.queueTimeoutsScheduled).to.equal(0);
+                // Unknown fork: restored for a timeout sync, re-arming exactly
+                // one queue timeout; never validated (never stored), never
+                // synced inline.
+                expect(r.restored).to.equal(true);
+                expect(r.stored).to.equal(false);
+                expect(r.queueTimeoutsScheduled).to.equal(1);
                 expect(r.syncDelta).to.equal(0);
-                expect(r.validations).to.equal(0);
 
                 await restoreSync();
             });

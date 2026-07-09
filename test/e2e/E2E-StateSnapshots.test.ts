@@ -116,7 +116,8 @@ describe("E2E: State Snapshots", function () {
         const maliciousPeerIndex = 2;
         const honest = [0, 1, 3];
 
-        await h.lifecycle.start(4, maliciousPeerIndex, {
+        // 2 = warm-up transitions the dispute staging needs, not the peer index.
+        await h.lifecycle.start(4, 2, {
             timeConfig: { ...forkTimeConfig, agreementTime: 4 }
         });
         await h.assert.sync.peersInSyncWait();
@@ -195,7 +196,8 @@ describe("E2E: State Snapshots", function () {
         const maliciousPeerIndex = 2;
         const reducingHonestPeers = [1, 3];
 
-        await h.lifecycle.start(4, maliciousPeerIndex, {
+        // 2 = warm-up transitions the dispute staging needs, not the peer index.
+        await h.lifecycle.start(4, 2, {
             timeConfig: {
                 ...forkTimeConfig,
                 agreementTime: 4

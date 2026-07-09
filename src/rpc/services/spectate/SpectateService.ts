@@ -89,11 +89,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         void (async () => {
             try {
                 // Transport can change (e.g. WebRTC upgrade). Always send by
-                // address. A rejection (timeout / peer couldn't prove / guard)
-                // means the peer didn't help us sync -> blacklist it.
-                // `applySyncResponse` handles payload-validation failures itself
-                // (via abort), so the catch here is the request path plus a
-                // defensive backstop.
+                // address. p2p sync is mutual-cooperation: a request must be
+                // answered with a valid proof. Any rejection - timeout,
+                // transport error, or the responder cutting us because it can't
+                // prove the target - means the peer didn't help us sync, so we
+                // blacklist it. `applySyncResponse` handles payload-validation
+                // failures itself (via abort), so the catch here is the request
+                // path plus a defensive backstop.
                 const { encodedSyncPayload } =
                     await this.remoteRpc.spectateService
                         .onSpectateRequest(syncRequest)
@@ -451,8 +453,23 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const stateManager = this.p2pManager.stateManager;
         const agreementManager = stateManager.agreementManager;
         const diamondStateMachine = stateManager.diamondStateMachine;
+
+        // Reject malformed heights up front, before any chain reads: a
+        // non-finite / unsafe / negative target would otherwise walk dispute
+        // windows and hang the responder's event loop. Returning undefined lets
+        // the caller cut the requester (a spammer of invalid requests).
+        if (
+            _blockHeight !== undefined &&
+            (!Number.isSafeInteger(_blockHeight) || _blockHeight < 0)
+        ) {
+            this.logger.warn("generateSyncPayload - invalid requested height", {
+                blockHeight: _blockHeight
+            });
+            return undefined;
+        }
+
         // Get the current fork ID
-        const forkId = _forkId || stateManager.forkId;
+        const forkId = _forkId ?? stateManager.forkId;
 
         // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
         // We'll do all the computation on our local state.
@@ -532,8 +549,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 );
         }
 
-        if (currentForkId != forkId)
-            throw new Error("Reduce and iterate didn't derive the latest fork");
+        if (currentForkId != forkId) {
+            // The requested fork isn't the tip we derive from our own reductions,
+            // so we can't prove it. Return undefined → the caller cuts the
+            // requester and the requester cuts us (mutual). A sync requester only
+            // ever asks peers expected to prove the target - the block's own
+            // suppliers/author for the block's fork, or a participant for the
+            // latest - so a peer that can't prove it failed to cooperate.
+            this.logger.debug(
+                `generateSyncPayload - requested fork ${forkId} is not the derived latest fork ${currentForkId}`
+            );
+            return undefined;
+        }
 
         // -------- Collect what is needed to prove the latest possible state in the latest fork ---------
 
@@ -571,6 +598,14 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         const latestBlockHeight =
             stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
+
+        // An above-latest target is unprovable - and must NOT be silently
+        // downgraded to a proof for `latestBlockHeight` (that would forge a
+        // valid-looking proof for a different height). Return undefined so the
+        // caller cuts the requester; we don't serve a different height.
+        if (_blockHeight !== undefined && _blockHeight > latestBlockHeight) {
+            return undefined;
+        }
 
         // There are blocks, so we can do a same-fork update.
         // `??` not `||`: a requested height of 0 is valid and must be pinned,

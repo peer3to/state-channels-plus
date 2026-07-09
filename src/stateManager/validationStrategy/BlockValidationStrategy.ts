@@ -69,7 +69,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.storage.queues.restoreEntry(entry);
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async notAllSingersAreParticipants(
@@ -157,14 +157,22 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             // snapshot means no fraud proof to build and no dispute to raise
             // — cut the suppliers instead.
             this.logger.warn(
-                "Missing genesis reached validation despite fork gate - blacklisting sources",
+                "Missing genesis reached validation despite fork gate - blacklisting sources and author",
                 {
                     blockAuthor: block.author,
                     blockForkId: block.forkId,
                     sourcePeers: Array.from(entry.sourcePeers)
                 }
             );
-            for (const peer of entry.sourcePeers) {
+            // Cut the transport suppliers AND the signer: the author put its
+            // name on a height-0 block for a fork we have no genesis for. This
+            // branch is defense-in-depth only (the fork gate should keep
+            // unknown-fork blocks out of validation); an honest first block on
+            // a not-yet-known fork is queued + timeout-synced, never reaching
+            // here - covered by the no-false-positive e2e.
+            const culprits = new Set(entry.sourcePeers);
+            culprits.add(block.author);
+            for (const peer of culprits) {
                 this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
             }
             return BlockValidationResult.DISCONNECT;
@@ -224,23 +232,16 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         }
 
         // Queue the block - will process normally
-        this.storage.queues.restoreEntry(entry);
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        const block = entry.block;
-        // not ready - ask the peers that supplied this block to sync us up
-        for (const peer of entry.sourcePeers) {
-            this.p2pManager.localRpc.spectateService.sync(
-                peer as string,
-                block.channelId,
-                block.forkId,
-                block.height
-            );
-        }
-        this.storage.queues.restoreEntry(entry);
+        // Not ready: put it back and let the queue timeout be the sole sync
+        // probe (no arrival-time sync from strategy hooks - that punished honest
+        // peers before the convergence window).
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(

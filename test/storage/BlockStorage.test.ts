@@ -256,6 +256,24 @@ describe("BlockStorage", () => {
         });
     });
 
+    describe("READ - getIterator() DESC clamp", () => {
+        it("clamps an absurd startHeight to maxHeight instead of looping the empty range", () => {
+            storage.storeBlock(mockBlock);
+
+            // Without the clamp this would loop from ~9e15 down to 0 and hang
+            // the event loop (the remote-sync-height DoS). It must return
+            // promptly, yielding only the stored block.
+            const collected = [
+                ...storage.getIterator(
+                    mockForkId,
+                    SortOrder.DESC,
+                    Number.MAX_SAFE_INTEGER
+                )
+            ];
+            expect(collected.map((b) => b.hash)).to.deep.equal([mockBlockHash]);
+        });
+    });
+
     describe("DELETE - deleteBlock()", () => {
         beforeEach(() => {
             storage.storeBlock(mockBlock);
