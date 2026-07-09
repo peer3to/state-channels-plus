@@ -5,11 +5,26 @@ import DHT from "@hyperswarm/dht-relay";
 //@ts-ignore
 import Stream from "@hyperswarm/dht-relay/ws";
 import { Logger } from "@/utils";
+// Base/cap for exponential backoff applied when a full round of relayers
+// has just been exhausted (all configured relayers failed since the last
+// success), so a fully-down network doesn't tight-loop hammering reconnects.
+const BACKOFF_BASE_MS = 1000;
+const BACKOFF_CAP_MS = 30000;
+
 class HolepunchRelay {
     relayerUrls: string[];
     updateCallback: Function;
     swarm: any;
     logger: Logger;
+
+    // Relayers that failed since the last successful connection. Never
+    // mutates relayerUrls - this is purely an exclusion filter that gets
+    // reset once every configured relayer has failed (retry the pool) or
+    // once a connection succeeds.
+    private excludedRelayers: Set<string> = new Set();
+    // Number of consecutive full-round exhaustions (every relayer excluded)
+    // since the last successful connection. Drives the backoff delay.
+    private backoffAttempt = 0;
 
     private static instance: HolepunchRelay;
 
@@ -35,6 +50,16 @@ class HolepunchRelay {
     }
 
     private connectToRelayer(): void {
+        if (this.relayerUrls.length === 0) {
+            this.logger.warn("No holepunch relayers configured");
+            return;
+        }
+
+        if (this.isRelayerPoolExhausted()) {
+            this.scheduleRetryAfterExhaustion();
+            return;
+        }
+
         const relayerUrl = this.pickRandomRelayer();
         this.logger.info("Connecting to holepunch relayer", {
             relayerUrl
@@ -50,19 +75,21 @@ class HolepunchRelay {
                 this.logger.info("Holepunch relayer connected", {
                     relayerUrl
                 });
+                this.excludedRelayers.clear();
+                this.backoffAttempt = 0;
             };
             ws.onclose = () => {
                 this.logger.warn("Holepunch relayer disconnected", {
                     relayerUrl
                 });
-                this.removeAndConnectToRelayer(relayerUrl);
+                this.excludeAndConnectToRelayer(relayerUrl);
             };
             ws.onerror = (error) => {
                 this.logger.warn("Holepunch relayer error", {
                     relayerUrl,
                     error
                 });
-                this.removeAndConnectToRelayer(relayerUrl);
+                this.excludeAndConnectToRelayer(relayerUrl);
             };
 
             this.updateCallback();
@@ -71,7 +98,7 @@ class HolepunchRelay {
                 relayerUrl,
                 error: e
             });
-            this.removeAndConnectToRelayer(relayerUrl);
+            this.excludeAndConnectToRelayer(relayerUrl);
         }
     }
 
@@ -86,25 +113,45 @@ class HolepunchRelay {
     }
 
     private pickRandomRelayer(): string | undefined {
-        if (this.relayerUrls.length === 0) return undefined;
-        const index = Math.floor(Math.random() * this.relayerUrls.length);
-        return this.relayerUrls[index];
+        const available = this.relayerUrls.filter(
+            (url) => !this.excludedRelayers.has(url)
+        );
+        if (available.length === 0) return undefined;
+        const index = Math.floor(Math.random() * available.length);
+        return available[index];
     }
 
-    private removeRelayer(relayerUrl: string): boolean {
-        const index = this.relayerUrls.indexOf(relayerUrl);
-        if (index === -1) return false;
-        const deletedRelayer = this.relayerUrls.splice(index, 1);
-        this.logger.debug("Removed holepunch relayer", {
-            removed: deletedRelayer,
-            remaining: this.relayerUrls
+    // True once every configured relayer has failed since the last success
+    // (or since the last reset). Never true when relayerUrls is empty.
+    private isRelayerPoolExhausted(): boolean {
+        return (
+            this.relayerUrls.length > 0 &&
+            this.relayerUrls.every((url) => this.excludedRelayers.has(url))
+        );
+    }
+
+    private scheduleRetryAfterExhaustion(): void {
+        const delayMs = Math.min(
+            BACKOFF_BASE_MS * 2 ** this.backoffAttempt,
+            BACKOFF_CAP_MS
+        );
+        this.backoffAttempt++;
+        this.logger.warn(
+            "All holepunch relayers failed, retrying pool after backoff",
+            { delayMs, relayerUrls: this.relayerUrls }
+        );
+        this.excludedRelayers.clear();
+        setTimeout(() => this.connectToRelayer(), delayMs);
+    }
+
+    private excludeAndConnectToRelayer(relayerUrl: string): void {
+        this.excludedRelayers.add(relayerUrl);
+        this.logger.debug("Excluded holepunch relayer after failure", {
+            excluded: relayerUrl,
+            excludedCount: this.excludedRelayers.size,
+            total: this.relayerUrls.length
         });
-        return true;
-    }
-
-    private removeAndConnectToRelayer(relayerUrl: string): void {
-        const success = this.removeRelayer(relayerUrl);
-        success && this.connectToRelayer();
+        this.connectToRelayer();
     }
 }
 
