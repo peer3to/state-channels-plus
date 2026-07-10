@@ -95,6 +95,23 @@ export class QueryRpcMethods extends ARpcMethods {
         return this.service.storage.blocks.getNextBlockHeight(forkId);
     }
 
+    public async buildStateProof(
+        forkId: ForkId
+    ): Promise<{ encodedStateProof: string }> {
+        const latest = this.service.storage.blocks.getLatestBlock(forkId);
+        if (!latest) throw new Error(`no blocks stored for fork ${forkId}`);
+        const stateProof = await this.service.sm.agreementManager.getStateProof(
+            forkId,
+            latest.height
+        );
+        return {
+            encodedStateProof: Codec.encode(
+                stateProof,
+                Type.StateProof
+            ) as string
+        };
+    }
+
     /** Latest block's confirmation for `forkId`, encoded (`Type.BlockConfirmation`), or null. */
     public getLatestBlockConfirmation(
         forkId: ForkId

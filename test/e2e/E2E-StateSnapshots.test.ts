@@ -13,9 +13,6 @@ import { expect } from "chai";
  * after fork resolution, and single multicall (fork + same-fork) update.
  */
 describe("E2E: State Snapshots", function () {
-    // @scenario channel-close-na
-    //   phase: close
-    //   unreachable: closing funds handling is a TODO (StateSnapshotFacet send-to-treasury) and there's no value layer yet, so there's nothing security-relevant to assert.
     it.skip("channel close (participants==0)", async function () {});
 
     const forkTimeConfig = {
@@ -25,10 +22,6 @@ describe("E2E: State Snapshots", function () {
         evidenceTime: 3
     };
 
-    // @scenario post-snapshot-after-3-transitions
-    //   phase:   upload
-    //   target:  SnapshotData.stateMachineStateHash:match
-    //   invariant:  no-honest-loss, conservation
     it("should post updated state snapshot on-chain after 3 transitions", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, { timeConfig: { agreementTime: 4 } });
@@ -53,10 +46,6 @@ describe("E2E: State Snapshots", function () {
         await h.assert.snapshot.snapshotMatchesLocal();
     });
 
-    // @scenario reduced-fork-snapshot-update-two-independent
-    //   phase:   fork-settle
-    //   target:  SnapshotData.stateMachineStateHash:match
-    //   invariant:  no-honest-loss, conservation
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates", async function () {
         const h = TestSession.getHarness();
         await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached({
@@ -88,10 +77,6 @@ describe("E2E: State Snapshots", function () {
         await h.assert.sync.maliciousPeerExcluded();
     });
 
-    // @scenario reduced-fork-snapshot-update-multicall
-    //   phase:   fork-settle
-    //   target:  SnapshotData.stateMachineStateHash:match
-    //   invariant:  no-honest-loss, conservation
     it("should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall", async function () {
         const h = TestSession.getHarness();
 
@@ -124,10 +109,6 @@ describe("E2E: State Snapshots", function () {
         await h.assert.sync.maliciousPeerExcluded();
     });
 
-    // @scenario snapshot-update-at-block-height-zero
-    //   phase:   upload
-    //   target:  SnapshotData.stateMachineStateHash:match
-    //   invariant:  no-honest-loss, conservation
     it("should handle snapshot update at blockHeight = 0 (first snapshot) - edge case since genesis is also height 0", async function () {
         const h = TestSession.getHarness();
 
@@ -155,13 +136,6 @@ describe("E2E: State Snapshots", function () {
         await h.assert.sync.blockHeight({ expectedHeight: 0 });
     });
 
-    // @scenario snapshot-to-new-fork-genesis-after-dispute
-    //   proof:   BlockDoubleSign
-    //   phase:   fork-settle
-    //   target:  SnapshotData.originForkId:correct
-    //   outcome: InvalidProof
-    //   by:      participant
-    //   invariant:  no-honest-loss
     it("should update on-chain snapshot to a new fork genesis after dispute resolution", async function () {
         const h = TestSession.getHarness();
 
@@ -197,12 +171,6 @@ describe("E2E: State Snapshots", function () {
     });
 
     describe("updateStateSnapshotSameFork during active dispute", function () {
-        // @scenario same-fork-snapshot-update-during-active-dispute
-        //   phase:   kill
-        //   target:  DisputeInput.stateProof:fully-empty
-        //   target:  SnapshotData.stateMachineStateHash:match
-        //   outcome: InvalidProof
-        //   by:      participant
         it("disputeWindow.evidence.creationTimestamp != 0 → on-chain snapshot updates but disputeWindowMap NOT cleared (dispute kill still resolves)", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();

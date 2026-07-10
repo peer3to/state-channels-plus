@@ -1,17 +1,17 @@
-name: Coverage Grid → GH Pages
+# Verifies the subsystem coverage reports: every scenario tag must be valid
+# against its domain, and the committed *.generated.md files must be fresh.
+# (The HTML dashboard / gh-pages deploy returns once it is rebuilt over the
+# per-subsystem data model.)
+
+name: Coverage Grid
 
 on:
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  check:
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
 
     steps:
       - uses: actions/checkout@v4
@@ -25,17 +25,5 @@ jobs:
 
       - run: yarn coverage:grid
 
-      - name: Collect output
-        run: |
-          mkdir -p dist
-          cp test/V1/COVERAGE_GRID.generated.html dist/index.html
-          [ -f test/V1/echarts.min.js ] && cp test/V1/echarts.min.js dist/ || true
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: dist
-
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4
+      - name: Generated reports are committed and fresh
+        run: git diff --exit-code test/unit
