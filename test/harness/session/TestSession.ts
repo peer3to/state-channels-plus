@@ -42,6 +42,9 @@ export class TestSession {
     }
 
     static setFirstDetachedError(error: Error): void {
+        if (this.harness?.isExpectedByzantineError(error)) {
+            return;
+        }
         // drop errors a test has already claimed (multi-peer same-throw case)
         if (
             this.detachedErrorAllowlist.some((s) => error.message.includes(s))
@@ -90,12 +93,10 @@ export class TestSession {
         timeoutMs?: number;
         required?: boolean;
     }): Promise<void> {
-        // Allowlist pattern so duplicate peer throws are ignored.
-        this.detachedErrorAllowlist.push(options.includes);
-
         const err = await this.consumeFirstDetachedError(
             options.timeoutMs ?? 0
         );
+        this.detachedErrorAllowlist.push(options.includes);
         if (!err) {
             if (options.required ?? true) {
                 throw new Error(

@@ -6,11 +6,6 @@ import type {
 
 export const WEBRTC_BRIDGE_NAMESPACE = "peer3:webrtc-bridge";
 
-export type WebRTCBridgeInitMessage = {
-    namespace: typeof WEBRTC_BRIDGE_NAMESPACE;
-    type: "init";
-};
-
 export type WebRTCBridgeRequest =
     | {
           method: "createOffer";

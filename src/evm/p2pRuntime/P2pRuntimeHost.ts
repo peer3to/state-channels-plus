@@ -10,7 +10,12 @@ import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { TimeConfig } from "@/types";
-import { createLogger, DebugProxy, DetachedPromises } from "@/utils";
+import {
+    createLogger,
+    DebugProxy,
+    DetachedPromises,
+    getErrorPeerAddress
+} from "@/utils";
 import { config } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import MainRpcService from "@/rpc/MainRpcService";
@@ -18,11 +23,14 @@ import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import ManagedNonceSigner from "@/evm/signer/ManagedNonceSigner";
 import { createContractExecutorFactory } from "@/evm/contractExecutor";
+import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
+import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 import {
     createForwardingHooks,
     forwardEventHandlerInvocations
 } from "./host/EventForwarding";
 
+import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
 import type {
     HostRpcRequest,
     RuntimeClientRequest,
@@ -44,6 +52,12 @@ export interface HostContext {
      * inline (main-thread) host — the harness's main logger covers that.
      */
     threadLabel?: string;
+    /**
+     * Optional context this host's handlers run inside (see
+     * {@link HostHandlerExecutionContext}). Unused in threaded mode — a worker
+     * thread runs exactly one peer's host, so no disambiguation is needed.
+     */
+    handlerExecutionContext?: HostHandlerExecutionContext;
 }
 
 /** Live runtime graph while the host is running. */
@@ -85,10 +99,38 @@ export function serializeError(error: unknown): SerializedError {
             message: error.message,
             name: error.name,
             stack: error.stack,
-            data: extractRevertData(error)
+            data: extractRevertData(error),
+            peerAddress: getErrorPeerAddress(error)
         };
     }
-    return { message: String(error), data: extractRevertData(error) };
+    return {
+        message: String(error),
+        data: extractRevertData(error),
+        peerAddress: getErrorPeerAddress(error)
+    };
+}
+
+/**
+ * In a worker that can't run WebRTC itself, mint the bridge channel, hand the
+ * main-thread end to the client (transferred) so it surfaces on
+ * `P2pInstance.webRTCBridgePort`, then register the worker end. Returns that
+ * worker-end port (for teardown) or `undefined` when no bridge was set up.
+ */
+async function bubbleWebRTCBridgePortIfNeeded(
+    port: RuntimePort
+): Promise<MessagePort | undefined> {
+    if (!(await doesWorkerNeedMainThreadBridge())) return undefined;
+    // The bridge speaks the DOM MessagePort API; in a worker the global
+    // MessageChannel works on both web and Node (worker_threads-backed) and its
+    // ports transfer over the runtime port.
+    const bridge = new MessageChannel();
+    // Transfer the main-thread end first: if the post fails we never register a
+    // half-installed bridge whose worker end has no paired broker.
+    port.post({ type: "webRTCBridgePort", port: bridge.port2 }, [bridge.port2]);
+    WorkerBridgeWebRTCConnectionFactory.getInstance().registerPort(
+        bridge.port1
+    );
+    return bridge.port1;
 }
 
 /**
@@ -102,7 +144,7 @@ export async function startP2pRuntimeHost<
     TCustomRpc extends MainRpcService = MainRpcService,
     TCustomRpcOptions = unknown
 >(port: RuntimePort, payload: SetupPayload, ctx: HostContext): Promise<void> {
-    const { signer, threadLabel } = ctx;
+    const { signer, threadLabel, handlerExecutionContext } = ctx;
     const signerAddress = await signer.getAddress();
     const logger = createLogger(
         { peerId: payload.peerId, peerAddress: signerAddress },
@@ -172,11 +214,17 @@ export async function startP2pRuntimeHost<
 
     let runtimeHandle: RuntimeHostState | undefined;
     let disposed = false;
+    let bridgeWorkerPort: MessagePort | undefined;
 
     // Idempotent: the `dispose` request and the port-close handler both call it.
     const disposeRuntime = async (): Promise<void> => {
         if (disposed) return;
         disposed = true;
+        if (bridgeWorkerPort) {
+            WorkerBridgeWebRTCConnectionFactory.getInstance().disposeBridge(
+                bridgeWorkerPort
+            );
+        }
         if (runtimeHandle) {
             await runtimeHandle.stateManager.dispose();
         } else {
@@ -233,9 +281,30 @@ export async function startP2pRuntimeHost<
             port.post({ type: "contractEvent", name, args })
         );
 
-        forwardEventHandlerInvocations(stateManager.eventHandler, port);
+        forwardEventHandlerInvocations(
+            stateManager.eventHandler,
+            port,
+            handlerExecutionContext
+        );
+
+        if (handlerExecutionContext) {
+            const p2pManager = stateManager.p2pManager;
+            const onRpc = p2pManager.onRpc.bind(p2pManager);
+            p2pManager.onRpc = (serializedRpc, transport) =>
+                handlerExecutionContext.runHandler(() =>
+                    onRpc(serializedRpc, transport)
+                );
+        }
 
         runtimeHandle = { stateManager, evmDiamondStateMachine };
+        // A bridge-setup failure must not deadlock `ready`; WebRTC is optional.
+        try {
+            bridgeWorkerPort = await bubbleWebRTCBridgePortIfNeeded(port);
+        } catch (error) {
+            logger.error("WebRTC bridge setup failed; continuing without it", {
+                error
+            });
+        }
         port.post({ type: "ready" });
     };
 
@@ -374,9 +443,15 @@ export async function startP2pRuntimeHost<
         }
     };
 
-    port.onMessage((raw) => {
+    const onPortMessage = (raw: unknown): void => {
         void handleRequest(raw as RuntimeClientRequest);
-    });
+    };
+    port.onMessage(
+        handlerExecutionContext
+            ? (raw) =>
+                  handlerExecutionContext.runHandler(() => onPortMessage(raw))
+            : onPortMessage
+    );
     // Client went away without a clean `dispose` (thread died / port closed).
     port.onClose(() => {
         void disposeRuntime().catch((error) => {

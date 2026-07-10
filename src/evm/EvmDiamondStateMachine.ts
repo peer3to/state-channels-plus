@@ -38,6 +38,7 @@ import {
 } from "@platform/p2pRuntimeChannel";
 import { createP2pRuntimeWorker } from "@platform/p2pRuntimeWorkerRuntime";
 import { startP2pRuntimeHost } from "./p2pRuntime/P2pRuntimeHost";
+import type { HostHandlerExecutionContext } from "./p2pRuntime/HostHandlerExecutionContext";
 import P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
 import DeploymentBridgeSigner from "./signer/DeploymentBridgeSigner";
 import type {
@@ -456,6 +457,12 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
              * signer inside the worker. Required when `RUN_SDK_IN_THREAD`.
              */
             signerSecret?: string;
+            /**
+             * Context every inline-host handler runs inside (see
+             * {@link HostHandlerExecutionContext}). Ignored in threaded mode —
+             * a worker thread runs exactly one peer's host.
+             */
+            handlerExecutionContext?: HostHandlerExecutionContext;
         }
     ): Promise<P2pInstance<T, TCustomRpc>> {
         // Initialize SDK config for this runtime (intended to be called once).
@@ -521,7 +528,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             const channel = createRuntimeChannel();
             clientPort = channel.port1;
             void startP2pRuntimeHost(channel.port2, payload, {
-                signer
+                signer,
+                handlerExecutionContext: options?.handlerExecutionContext
             }).catch((error) => {
                 logger.error("Inline runtime host failed", { error });
             });
@@ -553,7 +561,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
         await client.ready;
 
-        return new P2pInstance<T, TCustomRpc>(client, logger);
+        const p2pInstance = new P2pInstance<T, TCustomRpc>(client, logger);
+        // On the main thread the surfaced WebRTC bridge port has no further
+        // worker nesting to bubble up to, so wire it to the local
+        // RTCPeerConnection here; inside a worker it stays on
+        // p2pInstance.webRTCBridgePort for the consumer app to bubble up.
+        p2pInstance.installMainThreadBridgeIfOnMainThread();
+        return p2pInstance;
     }
 }
 

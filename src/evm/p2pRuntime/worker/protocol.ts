@@ -198,6 +198,17 @@ export interface RuntimeHostErrorMessage {
     error: SerializedError;
 }
 
+/**
+ * Host→client hand-off of the main-thread end of the WebRTC bridge
+ * `MessageChannel`. Emitted (with `port` in the transfer list) only when the
+ * host runs in a worker that cannot negotiate WebRTC itself, so the caller can
+ * forward the port up to the real main thread and bind it to the bridge.
+ */
+export interface RuntimeWebRTCBridgePortMessage {
+    type: "webRTCBridgePort";
+    port: MessagePort;
+}
+
 /** Union of all host→client messages. */
 export type RuntimeHostMessage =
     | RuntimeReadyMessage
@@ -205,7 +216,8 @@ export type RuntimeHostMessage =
     | RuntimeP2pEventHookMessage
     | RuntimeContractEventMessage
     | RuntimeEventHandlerMessage
-    | RuntimeHostErrorMessage;
+    | RuntimeHostErrorMessage
+    | RuntimeWebRTCBridgePortMessage;
 
 export type P2pRuntimeRequestMessage = RuntimeClientRequest;
 export type P2pRuntimeHostMessage = RuntimeHostMessage;
