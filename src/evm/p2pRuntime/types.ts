@@ -88,6 +88,12 @@ export interface SerializedError {
     name?: string;
     stack?: string;
     data?: string;
+    /**
+     * EVM address of the peer host the error originated on, when stamped (see
+     * `errorPeerAddress`). Carried explicitly because the in-process stamp
+     * doesn't survive the structured-clone hop across the port.
+     */
+    peerAddress?: string;
 }
 
 /** Minimal surface needed to issue requests to the host. */

@@ -10,7 +10,12 @@ import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { TimeConfig } from "@/types";
-import { createLogger, DebugProxy, DetachedPromises } from "@/utils";
+import {
+    createLogger,
+    DebugProxy,
+    DetachedPromises,
+    getErrorPeerAddress
+} from "@/utils";
 import { config } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import MainRpcService from "@/rpc/MainRpcService";
@@ -25,6 +30,7 @@ import {
     forwardEventHandlerInvocations
 } from "./host/EventForwarding";
 
+import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
 import type {
     HostRpcRequest,
     RuntimeClientRequest,
@@ -46,6 +52,12 @@ export interface HostContext {
      * inline (main-thread) host — the harness's main logger covers that.
      */
     threadLabel?: string;
+    /**
+     * Optional context this host's handlers run inside (see
+     * {@link HostHandlerExecutionContext}). Unused in threaded mode — a worker
+     * thread runs exactly one peer's host, so no disambiguation is needed.
+     */
+    handlerExecutionContext?: HostHandlerExecutionContext;
 }
 
 /** Live runtime graph while the host is running. */
@@ -87,10 +99,15 @@ export function serializeError(error: unknown): SerializedError {
             message: error.message,
             name: error.name,
             stack: error.stack,
-            data: extractRevertData(error)
+            data: extractRevertData(error),
+            peerAddress: getErrorPeerAddress(error)
         };
     }
-    return { message: String(error), data: extractRevertData(error) };
+    return {
+        message: String(error),
+        data: extractRevertData(error),
+        peerAddress: getErrorPeerAddress(error)
+    };
 }
 
 /**
@@ -127,7 +144,7 @@ export async function startP2pRuntimeHost<
     TCustomRpc extends MainRpcService = MainRpcService,
     TCustomRpcOptions = unknown
 >(port: RuntimePort, payload: SetupPayload, ctx: HostContext): Promise<void> {
-    const { signer, threadLabel } = ctx;
+    const { signer, threadLabel, handlerExecutionContext } = ctx;
     const signerAddress = await signer.getAddress();
     const logger = createLogger(
         { peerId: payload.peerId, peerAddress: signerAddress },
@@ -264,7 +281,20 @@ export async function startP2pRuntimeHost<
             port.post({ type: "contractEvent", name, args })
         );
 
-        forwardEventHandlerInvocations(stateManager.eventHandler, port);
+        forwardEventHandlerInvocations(
+            stateManager.eventHandler,
+            port,
+            handlerExecutionContext
+        );
+
+        if (handlerExecutionContext) {
+            const p2pManager = stateManager.p2pManager;
+            const onRpc = p2pManager.onRpc.bind(p2pManager);
+            p2pManager.onRpc = (serializedRpc, transport) =>
+                handlerExecutionContext.runHandler(() =>
+                    onRpc(serializedRpc, transport)
+                );
+        }
 
         runtimeHandle = { stateManager, evmDiamondStateMachine };
         // A bridge-setup failure must not deadlock `ready`; WebRTC is optional.
@@ -413,9 +443,15 @@ export async function startP2pRuntimeHost<
         }
     };
 
-    port.onMessage((raw) => {
+    const onPortMessage = (raw: unknown): void => {
         void handleRequest(raw as RuntimeClientRequest);
-    });
+    };
+    port.onMessage(
+        handlerExecutionContext
+            ? (raw) =>
+                  handlerExecutionContext.runHandler(() => onPortMessage(raw))
+            : onPortMessage
+    );
     // Client went away without a clean `dispose` (thread died / port closed).
     port.onClose(() => {
         void disposeRuntime().catch((error) => {

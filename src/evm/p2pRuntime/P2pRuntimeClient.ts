@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 
+import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
 import type { Address } from "@/types/types";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
 import RuntimeEventEmitter, {
@@ -29,6 +30,9 @@ function deserializeError(serialized: SerializedError): Error {
     if (serialized.data !== undefined) {
         (error as Error & { data?: string }).data = serialized.data;
     }
+    // Restore the originating-peer stamp (the non-enumerable in-process
+    // property doesn't survive the structured-clone hop across the port).
+    maybeStampErrorWithPeerAddress(error, serialized.peerAddress);
     return error;
 }
 
@@ -70,6 +74,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
     webRTCBridgePort?: MessagePort;
 
     private readonly port: RuntimePort;
+    private readonly signerAddress: Address;
     private readonly pending = new Map<number, PendingRequest>();
     private nextRequestId = 1;
     private readonly events = new RuntimeEventEmitter();
@@ -80,6 +85,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
 
     constructor(port: RuntimePort, options: P2pRuntimeClientOptions) {
         this.port = port;
+        this.signerAddress = options.signerAddress;
         this.onClose = options.onClose;
         this.ready = new Promise<void>((resolve) => {
             this.resolveReady = resolve;
@@ -231,6 +237,10 @@ class P2pRuntimeClient<T = ethers.Contract> {
 
     private dispatchHostError(message: RuntimeHostErrorMessage): void {
         const error = deserializeError(message.error);
+        // deserializeError only restores a stamp the wire carried - hostError
+        // comes from a worker, which never stamps -> attribute it here (the
+        // whole worker is this one peer)
+        maybeStampErrorWithPeerAddress(error, String(this.signerAddress));
 
         if (this.hostErrorListeners.size === 0) {
             // No orchestrator hook: surface as a main-thread unhandled rejection
