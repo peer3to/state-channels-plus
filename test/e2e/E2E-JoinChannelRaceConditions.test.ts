@@ -6,6 +6,7 @@ import {
     encodeMathState,
     type MathStateDecoded
 } from "@test/utils/mathHarnessAbi";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 describe("E2E: Join channel race conditions", function () {
@@ -278,10 +279,12 @@ describe("E2E: Join channel race conditions", function () {
                 assertMaliciousRemoved: false
             });
 
-            await h.assert.snapshot.onChainSnapshotChangedWait({
-                previousForkId: originalForkId,
-                timeoutMs: 15000
-            });
+            await waitFor(async () => {
+                const snapshot = await h.channelManager.getStateSnapshot(
+                    h.channelId
+                );
+                return snapshot.forkId !== originalForkId;
+            }, 15000);
 
             const onChainParticipants = await h.channelManager.getParticipants(
                 h.channelId

@@ -747,33 +747,13 @@ export class EventHandler {
                 reduceOutput
             );
         const latestSnapshot = reduceData.latestStateSnapshot;
-        const state = this.storage.stateMachineStates.getStateMachineState(
-            latestSnapshot.snapshotData.stateMachineStateHash
-        );
-        if (!state)
-            throw new Error(
-                `StateMachineState not available for hash: ${latestSnapshot.snapshotData.stateMachineStateHash}`
-            );
-        const genesisSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
-        if (!genesisSnapshot)
-            throw new Error(
-                `GenesisSnapshot not available for forkId: ${forkId}`
-            );
-        const inboundMessageBlocks =
-            this.storage.inboundMessages.getMessageBlocksInRange({
-                upperBlockHash:
-                    latestSnapshot.snapshotData.latestInboundMessageBlockHash,
-                lowerBlockHash:
-                    genesisSnapshot.snapshotData.latestInboundMessageBlockHash
-            });
         const [snapshotData] =
             await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(
                 forkId,
                 reduceOutput,
                 latestSnapshot,
-                state,
-                inboundMessageBlocks
+                reduceData.encodedStateMachineState,
+                reduceData.inboundMessageBlocks
             );
 
         const isValid =
@@ -786,8 +766,8 @@ export class EventHandler {
                 .challengeDisputeReduction(
                     disputes,
                     latestSnapshot,
-                    state,
-                    inboundMessageBlocks
+                    reduceData.encodedStateMachineState,
+                    reduceData.inboundMessageBlocks
                 )
                 .then(async (tx: TransactionResponse) => {
                     txResponse = tx;
