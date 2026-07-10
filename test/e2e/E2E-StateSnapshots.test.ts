@@ -13,8 +13,6 @@ import { expect } from "chai";
  * after fork resolution, and single multicall (fork + same-fork) update.
  */
 describe("E2E: State Snapshots", function () {
-    it.skip("channel close (participants==0)", async function () {});
-
     const forkTimeConfig = {
         p2pTime: 3,
         agreementTime: 2,
