@@ -16,6 +16,7 @@ export * from "./config";
 export * from "./hash";
 export * from "./evmErrorHandler";
 export * from "./DetachedPromises";
+export * from "./errorPeerAddress";
 export * from "./logging";
 export * from "./EthersResultProxy";
 export * from "./address";

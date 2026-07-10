@@ -593,15 +593,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (SnapshotData, bytes, MessageBlock));
     }
 
-    // not used
-
-    // function commitToReducedResult(bytes32 channelId, bytes32 disputedForkId, bytes32 reducedForkId) public {
-    //     _delegatecall(
-    //         disputeManagerFacetAddress,
-    //         abi.encodeCall(DisputeManagerFacet.commitToReducedResult, (channelId, disputedForkId, reducedForkId))
-    //     );
-    // }
-
     function reduceAndFinalize(
         Dispute[] memory disputes,
         StateSnapshot memory stateSnapshot,

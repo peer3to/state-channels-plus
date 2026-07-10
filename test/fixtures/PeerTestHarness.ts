@@ -27,8 +27,11 @@ import {
     LocalDiscoveryServer,
     Logger,
     EventBarrier,
-    createEthersResultProxy
+    createEthersResultProxy,
+    getErrorPeerAddress,
+    maybeStampErrorWithPeerAddress
 } from "@/utils";
+import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
@@ -740,7 +743,10 @@ export class PeerTestHarness<
                 customPrecompiles: this.options.customPrecompiles!,
                 customRpcManifest: this.resolveHarnessRpcManifest(),
                 signerSecret,
-                config: this.harnessConfig
+                config: this.harnessConfig,
+                handlerExecutionContext: useWorker
+                    ? undefined
+                    : new PeerIdentityExecutionContext(address)
             }
         );
 
@@ -986,18 +992,49 @@ export class PeerTestHarness<
     }
 
     async quiesceHosts(): Promise<Error[]> {
+        // In worker mode each drained worker thread runs exactly one peer, so
+        // an unstamped rejection is attributable to the peer whose host
+        // returned it. Inline hosts share one process (any peer's quiesce can
+        // drain another's work) - there only collect-time stamps are
+        // trustworthy.
+        const stampPerHostThread = !!this.harnessConfig.RUN_SDK_IN_THREAD;
         const perPeer = await Promise.all(
-            this.peers.map((peer) =>
-                peer.p2pInstance
+            this.peers.map(async (peer) => {
+                const errors = await peer.p2pInstance
                     .quiesce()
                     .catch((error: unknown) => [
                         error instanceof Error
                             ? error
                             : new Error(String(error))
-                    ])
-            )
+                    ]);
+                if (stampPerHostThread) {
+                    for (const error of errors) {
+                        maybeStampErrorWithPeerAddress(error, peer.address);
+                    }
+                }
+                return errors;
+            })
         );
         return perPeer.flat();
+    }
+
+    /**
+     * EVM addresses of peers a scenario marked byzantine/malicious or
+     * left-channel. Errors originating on these peers are expected and
+     * suppressed.
+     */
+    private byzantinePeerAddresses(): Set<string> {
+        return new Set(
+            [...this.context.maliciousPeerIndices].map(
+                (i) => this.getPeer(i).address
+            )
+        );
+    }
+
+    isExpectedByzantineError(error: unknown): boolean {
+        const address = getErrorPeerAddress(error);
+        if (!address) return false;
+        return this.byzantinePeerAddresses().has(address);
     }
 
     async ensurePeerSignersRegistered(
