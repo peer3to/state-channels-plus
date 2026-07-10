@@ -9,6 +9,9 @@ dist
 
 #Hardhat files
 cache
+# ...but keep source/test dirs literally named "cache"
+!/src/cache/
+!/test/cache/
 artifacts
 typechain-types
 

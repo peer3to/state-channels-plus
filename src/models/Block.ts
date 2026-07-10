@@ -20,6 +20,7 @@ import {
 import { getChecksumAddress } from "@/utils/address";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import { isSubset, union } from "@/utils/set";
+import { recoverSigner } from "@/cache";
 
 export type BlockCoordinates = {
     forkId: ForkId;
@@ -34,8 +35,6 @@ export default class Block {
     private _blockHashBytes?: Uint8Array;
     private _originalSignature: Signature;
     private _confirmationSignatures: Set<Signature>;
-    private readonly _signatureAddressCache: Map<Signature, Address>;
-    private _allSignerAddressesCache?: Set<Address>;
     private constructor(
         block: BlockStruct,
         originalSignature: Signature,
@@ -48,7 +47,6 @@ export default class Block {
         this._encodedBlock = encodedBlock;
         this._originalSignature = originalSignature;
         this._confirmationSignatures = confirmationSignatures;
-        this._signatureAddressCache = new Map();
     }
 
     static fromBlockConfirmation(
@@ -231,39 +229,16 @@ export default class Block {
     }
 
     get allSignerAddresses(): Set<Address> {
-        return new Set(this.getAllSignerAddressesCached());
+        return this.deriveAllSignerAddresses();
     }
 
     async signAsAuthor(signer: Signer): Promise<Block> {
-        const signature = await this.sign(signer);
-        const previousSignerAddress = this._allSignerAddressesCache
-            ? this.signerAddress
-            : undefined;
-        this._originalSignature = signature;
-        if (this._allSignerAddressesCache) {
-            const nextSignerAddress = this.signerAddress;
-            if (nextSignerAddress === previousSignerAddress) {
-                this._allSignerAddressesCache.add(nextSignerAddress);
-            } else {
-                this._allSignerAddressesCache = undefined;
-            }
-        }
+        this._originalSignature = await this.sign(signer);
         return this;
     }
     expandSignatures(newSignatures: Signature[] | Set<Signature>): Block {
         for (const signature of newSignatures) {
-            const alreadyPresent = this._confirmationSignatures.has(signature);
             this._confirmationSignatures.add(signature);
-
-            if (!alreadyPresent && this._allSignerAddressesCache) {
-                try {
-                    this._allSignerAddressesCache.add(
-                        this.signatureToAddress(signature)
-                    );
-                } catch {
-                    this._allSignerAddressesCache = undefined;
-                }
-            }
         }
         return this;
     }
@@ -271,9 +246,7 @@ export default class Block {
     /** Drop confirmation signatures (the author's original signature is kept). */
     removeConfirmationSignatures(signatures: Set<Signature>): Block {
         for (const signature of signatures) {
-            if (this._confirmationSignatures.delete(signature)) {
-                this._allSignerAddressesCache = undefined;
-            }
+            this._confirmationSignatures.delete(signature);
         }
         return this;
     }
@@ -296,15 +269,9 @@ export default class Block {
     }
 
     signatureToAddress(signature: Signature): Address {
-        let signerAddress = this._signatureAddressCache.get(signature);
-        if (!signerAddress) {
-            signerAddress = ethers.verifyMessage(
-                this.getHashBytes(),
-                signature
-            ) as Address;
-            this._signatureAddressCache.set(signature, signerAddress);
-        }
-        return signerAddress;
+        // Recovery is memoized per-thread by (blockHash, signature) in the
+        // global cache, so no per-instance cache is needed.
+        return recoverSigner(this.getHashBytes(), signature);
     }
 
     findSignature(participant: Address): Signature | undefined {
@@ -326,11 +293,11 @@ export default class Block {
             participantsSet.add(getChecksumAddress(participant) as Address);
         }
         if (participantsSet.size === 0) return false;
-        return isSubset(participantsSet, this.getAllSignerAddressesCached());
+        return isSubset(participantsSet, this.deriveAllSignerAddresses());
     }
 
     didSign(participant: Address): boolean {
-        return this.getAllSignerAddressesCached().has(
+        return this.deriveAllSignerAddresses().has(
             getChecksumAddress(participant) as Address
         );
     }
@@ -351,14 +318,12 @@ export default class Block {
         return this._blockHashBytes;
     }
 
-    private getAllSignerAddressesCached(): Set<Address> {
-        if (!this._allSignerAddressesCache) {
-            const addresses = new Set<Address>([this.signerAddress]);
-            for (const sig of this._confirmationSignatures) {
-                addresses.add(this.signatureToAddress(sig));
-            }
-            this._allSignerAddressesCache = addresses;
+    // Derived on demand — each signatureToAddress hits the global recovery cache.
+    private deriveAllSignerAddresses(): Set<Address> {
+        const addresses = new Set<Address>([this.signerAddress]);
+        for (const sig of this._confirmationSignatures) {
+            addresses.add(this.signatureToAddress(sig));
         }
-        return this._allSignerAddressesCache;
+        return addresses;
     }
 }

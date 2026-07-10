@@ -20,6 +20,9 @@ export type Config = {
     // AND, as a side effect, the ##E2E_TIMING## diagnostics the parallel runner
     // parses (per-thread delay peaks, worker boot times). Tests set 1.
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: number;
+    // Max entries in the per-thread signer-recovery cache (message+signature ->
+    // address). Bounds memory; evicts oldest past this.
+    SIGNER_RECOVERY_CACHE_MAX: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
@@ -43,6 +46,7 @@ const DEFAULT_CONFIG: Config = {
     VM_DEDICATED_THREAD: false,
     RUN_SDK_IN_THREAD: false,
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
+    SIGNER_RECOVERY_CACHE_MAX: 100_000,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
