@@ -1,5 +1,9 @@
+import { ethers } from "ethers";
 import { Hash, ForkId, BlockHeight, Signature, Timestamp } from "@/types/types";
 import { Block, BlockCoordinates } from "@/models";
+import { Codec, Type } from "@/utils/Codec";
+import { IStoragePersistence } from "./persistence/IStoragePersistence";
+import { InMemoryPersistence } from "./persistence/InMemoryPersistence";
 
 type CoordinateKey = string;
 type StoreOptions = {
@@ -23,10 +27,95 @@ export class BlockStorage {
     // NEW: Track highest height for each forkId
     private forkIdToMaxHeightMap: Map<ForkId, BlockHeight>;
 
-    constructor() {
+    private readonly persistence: IStoragePersistence;
+    private static readonly persistenceAbiCoder =
+        ethers.AbiCoder.defaultAbiCoder();
+
+    constructor(persistence: IStoragePersistence = new InMemoryPersistence()) {
         this.hashToBlockMap = new Map();
         this.coordinatesToBlockMap = new Map();
         this.forkIdToMaxHeightMap = new Map();
+        this.persistence = persistence;
+    }
+
+    // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /**
+     * Rebuild the in-memory maps from the persistence port. Order-independent
+     * and tolerant of corrupt/truncated entries (e.g. a crash mid-write) -
+     * those are skipped via the error hook rather than throwing. forkIdToMaxHeightMap
+     * is never persisted directly; it is rebuilt here from the loaded blocks.
+     */
+    async hydrate(): Promise<void> {
+        this.hashToBlockMap.clear();
+        this.coordinatesToBlockMap.clear();
+        this.forkIdToMaxHeightMap.clear();
+
+        for await (const { encodedBlock } of this.persistence.loadAll()) {
+            try {
+                const block = this.decodeForPersistence(encodedBlock);
+                // Already persisted - skip write-through, but do rebuild maxHeight.
+                this._storeBlockWithOptions(block, undefined, false);
+            } catch (err) {
+                this.persistence.onError?.(err);
+            }
+        }
+    }
+
+    /**
+     * Pack the block's full mutable state (signatures + onChainTimestamp) into a
+     * single encoded blob. The block's own struct is Codec-encoded; the outer
+     * wrapper (signature/confirmations/timestamp) uses the same ABI-encoding
+     * mechanism rather than structuredClone (BytesLike/bigint don't survive that).
+     */
+    private encodeForPersistence(block: Block): string {
+        const encodedConfirmation = Codec.encode(
+            block.blockConfirmationStruct,
+            Type.BlockConfirmation
+        );
+        return BlockStorage.persistenceAbiCoder.encode(
+            ["bytes", "uint256"],
+            [encodedConfirmation, block.onChainTimestamp ?? 0]
+        );
+    }
+
+    private decodeForPersistence(encodedBlock: string): Block {
+        const [encodedConfirmation, onChainTimestampRaw] =
+            BlockStorage.persistenceAbiCoder.decode(
+                ["bytes", "uint256"],
+                encodedBlock
+            );
+        const blockConfirmation = Codec.decode(
+            encodedConfirmation,
+            Type.BlockConfirmation
+        );
+        const onChainTimestamp =
+            onChainTimestampRaw === 0n
+                ? undefined
+                : Number(onChainTimestampRaw);
+        return Block.fromBlockConfirmation(blockConfirmation, onChainTimestamp);
+    }
+
+    private writeThroughPersistBlock(block: Block): void {
+        try {
+            this.persistence.persistBlock(this.encodeForPersistence(block), {
+                hash: block.hash,
+                forkId: block.forkId,
+                height: block.height
+            });
+        } catch (err) {
+            this.persistence.onError?.(err);
+        }
+    }
+
+    private writeThroughDeleteBlock(hash: Hash): void {
+        try {
+            this.persistence.deleteBlock({ hash });
+        } catch (err) {
+            this.persistence.onError?.(err);
+        }
     }
 
     // ====================================
@@ -106,7 +195,11 @@ export class BlockStorage {
                       })
                   );
 
-        return block?.expandSignatures([signature]);
+        if (!block) return undefined;
+
+        block.expandSignatures([signature]);
+        this.writeThroughPersistBlock(block);
+        return block;
     }
 
     // ====================================
@@ -142,6 +235,7 @@ export class BlockStorage {
             block = this.hashToBlockMap.get(hashOrForkId as Hash);
             if (block) {
                 block.onChainTimestamp = timestampOrHeight as Timestamp;
+                this.writeThroughPersistBlock(block);
                 return true;
             }
             return false;
@@ -154,6 +248,7 @@ export class BlockStorage {
         block = this.coordinatesToBlockMap.get(coordinateKey);
         if (block) {
             block.onChainTimestamp = timestamp;
+            this.writeThroughPersistBlock(block);
             return true;
         }
         return false;
@@ -196,6 +291,7 @@ export class BlockStorage {
                 );
             }
 
+            this.writeThroughDeleteBlock(block.hash);
             return true;
         }
 
@@ -218,6 +314,7 @@ export class BlockStorage {
             this.forkIdToMaxHeightMap.set(forkId, Math.max(0, height - 1));
         }
 
+        this.writeThroughDeleteBlock(blockHash);
         return true;
     }
 
@@ -285,7 +382,8 @@ export class BlockStorage {
 
     private _storeBlockWithOptions(
         block: Block,
-        options?: StoreOptions
+        options?: StoreOptions,
+        persist: boolean = true
     ): Hash | undefined {
         // Determine hash - use provided or compute
         const blockHash = options?.hash ?? block.hash;
@@ -307,6 +405,7 @@ export class BlockStorage {
                 this._updateMaxHeight(coordinates.forkId, coordinates.height);
             }
 
+            if (persist) this.writeThroughPersistBlock(block);
             return blockHash;
         }
 
@@ -321,6 +420,7 @@ export class BlockStorage {
             existingBlock.onChainTimestamp = block.onChainTimestamp;
         }
 
+        if (persist) this.writeThroughPersistBlock(existingBlock);
         // Return the hash (same object in both maps)
         return blockHash;
     }

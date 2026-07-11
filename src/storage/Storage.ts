@@ -17,6 +17,19 @@ import { ForceJoinStorage } from "./ForceJoinStorage";
 import { DisputeFraudProofStorage } from "./DisputeFraudProofStorage";
 import { BlockCalldataStorage } from "./BlockCalldataStorage";
 import { EventSyncStorage } from "./EventSyncStorage";
+import { IStoragePersistence } from "./persistence/IStoragePersistence";
+
+export type { IStoragePersistence } from "./persistence/IStoragePersistence";
+
+/**
+ * Persistence backing per sub-store, threaded into their constructors. Only
+ * `blocks` is wired for now (be-01, reference implementation) - siblings
+ * (stateSnapshots, stateMachineStates, messages, disputes, timeout, ...) are
+ * be-06.
+ */
+export type StoragePersistenceFactory = {
+    blocks?: IStoragePersistence;
+};
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -35,8 +48,14 @@ export class Storage {
     public readonly blockCalldata: BlockCalldataStorage;
     public readonly eventSync: EventSyncStorage;
 
-    constructor() {
-        this.blocks = deepCopyProxy(new BlockStorage());
+    // Unproxied reference to the blocks store, used only for hydrate(): deepCopyProxy
+    // clones every method's return value with lodash.cloneDeep, which corrupts Promises
+    // (they clone to plain `{}`) - so the async hydrate() path must bypass the proxy.
+    private readonly rawBlocks: BlockStorage;
+
+    constructor(persistence?: StoragePersistenceFactory) {
+        this.rawBlocks = new BlockStorage(persistence?.blocks);
+        this.blocks = deepCopyProxy(this.rawBlocks);
         this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());
@@ -54,6 +73,11 @@ export class Storage {
         this.blockCalldata = deepCopyProxy(new BlockCalldataStorage());
         this.eventSync = deepCopyProxy(new EventSyncStorage());
         return deepCopyProxy(this);
+    }
+
+    /** Repopulate the blocks store's in-memory maps from its persistence port. */
+    async hydrate(): Promise<void> {
+        await this.rawBlocks.hydrate();
     }
 
     /**
