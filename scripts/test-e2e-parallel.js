@@ -63,19 +63,22 @@ async function main() {
     let files;
     let tasks;
     try {
-        ({ files, tasks } = discoverTasks(path.resolve("test/e2e"), cli.grep));
+        ({ files, tasks } = discoverTasks(
+            path.resolve(cli.testsDir),
+            cli.grep
+        ));
     } catch (e) {
         console.error(`Invalid --grep RegExp: ${cli.grep}`, e);
         process.exit(1);
     }
     if (files.length === 0) {
-        console.error("No E2E test files found in test/e2e");
+        console.error(`No test files found in ${cli.testsDir}`);
         process.exit(1);
     }
     if (tasks.length === 0) {
         console.error(
             cli.grep
-                ? `No E2E tests matched --grep ${JSON.stringify(cli.grep)}`
+                ? `No tests matched --grep ${JSON.stringify(cli.grep)}`
                 : "No implemented tests found"
         );
         process.exit(1);

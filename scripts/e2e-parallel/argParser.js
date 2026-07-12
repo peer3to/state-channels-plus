@@ -17,6 +17,9 @@ function parseCliArgs(argv) {
         // otherwise each run gets a fresh DEFAULT_LOG_DIR/run-N.
         logDirProvided: false,
         allowLogdirPurge: false,
+        // Root dir to discover harness suites in; test/e2e (E2E:) or
+        // test/unit (Unit:). --dir is taken by --logDir, so this is --tests.
+        testsDir: "test/e2e",
         grep: undefined,
         dryRun: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
@@ -54,6 +57,19 @@ function parseCliArgs(argv) {
         }
         if (arg.startsWith("--grep=")) {
             options.grep = arg.slice("--grep=".length);
+            continue;
+        }
+
+        if (arg === "--tests" || arg === "-t") {
+            const next = argv[i + 1];
+            if (next && !next.startsWith("-")) {
+                options.testsDir = next;
+                i++;
+            }
+            continue;
+        }
+        if (arg.startsWith("--tests=")) {
+            options.testsDir = arg.slice("--tests=".length);
             continue;
         }
 

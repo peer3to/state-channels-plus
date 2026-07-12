@@ -5,6 +5,11 @@ const { globSync } = require("glob");
 const { Project, SyntaxKind } = require("ts-morph");
 const { MAX_LOG_NAME_LEN } = require("./constants");
 
+// top-level suite markers the runner schedules. both are harness-driven and
+// share the same infra (interval mining) - E2E: lives in test/e2e, Unit: in
+// test/unit.
+const SUITE_PREFIXES = ["E2E:", "Unit:"];
+
 function getStringLiteralValue(node) {
     if (node.getKind() === SyntaxKind.StringLiteral) {
         return node.getText().slice(1, -1); // Remove quotes
@@ -59,7 +64,11 @@ function extractE2ETests(filePath) {
             if (args.length === 0) return;
 
             const suiteName = getStringLiteralValue(args[0]);
-            if (!suiteName || !suiteName.startsWith("E2E:")) return;
+            if (
+                !suiteName ||
+                !SUITE_PREFIXES.some((p) => suiteName.startsWith(p))
+            )
+                return;
 
             // Find all it() calls within this describe block
             // The describe's callback function is the second argument
@@ -116,12 +125,13 @@ function sanitizeFileName(name) {
 }
 
 /**
- * Glob the e2e dir, expand every `it` into a task, then apply an optional
- * `--grep` RegExp against the full mocha title. Returns { files, tasks }; the
- * caller decides how to handle an empty result. Throws on an invalid grep.
+ * Glob the test dir (test/e2e or test/unit), expand every `it` into a task,
+ * then apply an optional `--grep` RegExp against the full mocha title. Returns
+ * { files, tasks }; the caller decides how to handle an empty result. Throws
+ * on an invalid grep.
  */
-function discoverTasks(e2eDir, grep) {
-    const files = globSync(path.join(e2eDir, "**/*.test.ts"));
+function discoverTasks(testDir, grep) {
+    const files = globSync(path.join(testDir, "**/*.test.ts"));
     let tasks = [];
     for (const f of files) {
         for (const { suite, test, fullTitle } of extractE2ETests(f)) {
