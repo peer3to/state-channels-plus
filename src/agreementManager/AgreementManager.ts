@@ -91,9 +91,13 @@ class AgreementManager {
             throw new Error("Fork not found");
         }
 
-        // Get all exit points for this fork
+        // Participant changes up to the requested height only
         const participantChangeHeights =
-            this.storage.participantSetChanges.getChangePointsInRange(forkId);
+            this.storage.participantSetChanges.getChangePointsInRange(
+                forkId,
+                undefined,
+                blockHeight
+            );
 
         const milestones: MilestoneProofStruct[] = [];
         let previousThresholdSnapshot = genesisSnapshot;
@@ -331,10 +335,117 @@ class AgreementManager {
         );
     }
 
+    public async getForkDisputeConfirmations(
+        channelId: ChannelId,
+        forkId: ForkId,
+        ethersContract: StateChannelManagerProxy
+    ): Promise<DisputeConfirmationStruct[]> {
+        const disputeCommitments = await ethersContract.getWindowCommitments(
+            channelId,
+            forkId
+        );
+        return disputeCommitments.map((commitment) => {
+            const disputeConfirmation =
+                this.storage.disputes.getDisputeConfirmation(commitment);
+            if (!disputeConfirmation) {
+                throw new Error(
+                    `Missing Dispute Confirmation in storage for dispute commitment ${commitment}`
+                );
+            }
+            return disputeConfirmation;
+        });
+    }
+
+    public async getForkDisputes(
+        channelId: ChannelId,
+        forkId: ForkId,
+        ethersContract: StateChannelManagerProxy
+    ): Promise<DisputeStruct[]> {
+        // Collect disputes for this dispute window
+        const disputeCommitments = await ethersContract.getWindowCommitments(
+            channelId,
+            forkId
+        );
+        // Collect all disputes for this dispute window
+        const currentWindowDisputes: DisputeStruct[] = [];
+        for (const commitment of disputeCommitments) {
+            const dispute = this.storage.disputes.getDispute(commitment);
+            if (!dispute) {
+                throw new Error(
+                    `Missing Dispute in storage for dispute commitment ${commitment}`
+                );
+            }
+
+            currentWindowDisputes.push(dispute);
+        }
+        return currentWindowDisputes;
+    }
+
+    public async getReduceData(
+        forkId: ForkId,
+        reducedOutput: ReduceOutputStruct
+    ): Promise<ReduceData> {
+        // reducedOutput latestStateSnapshot
+        this.logger.debug(
+            "ReduceOutput",
+            LoggerUtils.getReducedOutputMetadata(reducedOutput)
+        );
+        let reducedLatestStateSnapshot: StateSnapshot;
+        if (
+            !reducedOutput.latestBlock ||
+            reducedOutput.latestBlock.transaction.header.forkId === ZeroHash
+        ) {
+            // Genesis state case - use the genesis snapshot for this fork
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+            if (!genesisSnapshot) {
+                throw new Error(`No genesis snapshot found for fork ${forkId}`);
+            }
+            reducedLatestStateSnapshot = genesisSnapshot;
+        } else {
+            // Normal case - use the block's state snapshot
+            const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
+                reducedOutput.latestBlock.stateSnapshotHash
+            );
+            if (!snapshot) {
+                throw new Error(
+                    "Missing latestStateSnapshot for reducedOutput in storage for syncing"
+                );
+            }
+            reducedLatestStateSnapshot = snapshot;
+        }
+
+        // Get the corresponding stateMachineState
+        const reducedLatestEncodedStateMachineState =
+            this.storage.stateMachineStates.getStateMachineState(
+                reducedLatestStateSnapshot.stateMachineStateHash
+            );
+        if (!reducedLatestEncodedStateMachineState)
+            throw new Error(
+                "Missing latestEncodedState for reducedOutput in storage for syncing"
+            );
+
+        const inboundMessageBlocksAppliedInReduce =
+            this.storage.inboundMessages.getMessageBlocksInRange({
+                upperBlockHash: reducedOutput.latestInboundMessageBlockHash,
+                lowerBlockHash:
+                    reducedLatestStateSnapshot.latestInboundMessageBlockHash
+            });
+        return {
+            forkId: forkId,
+            reducedOutput: reducedOutput,
+            latestStateSnapshot: reducedLatestStateSnapshot.toStruct(),
+            encodedStateMachineState: reducedLatestEncodedStateMachineState,
+            inboundMessageBlocks: inboundMessageBlocksAppliedInReduce
+        };
+    }
+
+    // PRIVATE
+
     /**
      * Try to build a milestone from a block iterator and current snapshot
      */
-    public tryBuildMilestone(
+    private tryBuildMilestone(
         blockIterator: Generator<Block, void, unknown>,
         previousThresholdSnapshot: StateSnapshot
     ): MilestoneProofStruct | undefined {
@@ -446,154 +557,6 @@ class AgreementManager {
         }
 
         return filteredBlocks;
-    }
-
-    /**
-     * Check if a participant has posted a block on-chain
-     */
-    public didParticipantPostOnChainLocal(
-        forkId: ForkId,
-        blockHeight: BlockHeight,
-        participantAddress: Address
-    ): boolean {
-        const block = this.storage.blocks.getBlock(forkId, blockHeight);
-        if (!block) return false;
-
-        if (!block.onChainTimestamp) return false;
-
-        return block.author === participantAddress;
-    }
-
-    /**
-     * Get a double-signed block if it exists
-     * Checks if the incoming block conflicts with an already stored block at the same coordinates
-     */
-    public getDoubleSignedBlock(
-        signedBlock: SignedBlockStruct
-    ): Block | undefined {
-        const block = Block.fromSignedBlock(signedBlock);
-
-        // Check if there's already a block at these coordinates
-        const existingBlock = this.storage.blocks.getBlock(
-            block.forkId,
-            block.height
-        );
-        if (!existingBlock) return undefined;
-
-        // Check if it's by the same author but different block (double sign)
-        if (
-            existingBlock.author === block.author &&
-            !existingBlock.equals(block)
-        ) {
-            return existingBlock;
-        }
-
-        return undefined;
-    }
-
-    public async getForkDisputeConfirmations(
-        channelId: ChannelId,
-        forkId: ForkId,
-        ethersContract: StateChannelManagerProxy
-    ): Promise<DisputeConfirmationStruct[]> {
-        const disputeCommitments = await ethersContract.getWindowCommitments(
-            channelId,
-            forkId
-        );
-        return disputeCommitments.map((commitment) => {
-            const disputeConfirmation =
-                this.storage.disputes.getDisputeConfirmation(commitment);
-            if (!disputeConfirmation) {
-                throw new Error(
-                    `Missing Dispute Confirmation in storage for dispute commitment ${commitment}`
-                );
-            }
-            return disputeConfirmation;
-        });
-    }
-
-    public async getForkDisputes(
-        channelId: ChannelId,
-        forkId: ForkId,
-        ethersContract: StateChannelManagerProxy
-    ): Promise<DisputeStruct[]> {
-        // Collect disputes for this dispute window
-        const disputeCommitments = await ethersContract.getWindowCommitments(
-            channelId,
-            forkId
-        );
-        // Collect all disputes for this dispute window
-        const currentWindowDisputes: DisputeStruct[] = [];
-        for (const commitment of disputeCommitments) {
-            const dispute = this.storage.disputes.getDispute(commitment);
-            if (!dispute) {
-                throw new Error(
-                    `Missing Dispute in storage for dispute commitment ${commitment}`
-                );
-            }
-
-            currentWindowDisputes.push(dispute);
-        }
-        return currentWindowDisputes;
-    }
-
-    public async getReduceData(
-        forkId: ForkId,
-        reducedOutput: ReduceOutputStruct
-    ): Promise<ReduceData> {
-        // reducedOutput latestStateSnapshot
-        this.logger.debug(
-            "ReduceOutput",
-            LoggerUtils.getReducedOutputMetadata(reducedOutput)
-        );
-        let reducedLatestStateSnapshot: StateSnapshot;
-        if (
-            !reducedOutput.latestBlock ||
-            reducedOutput.latestBlock.transaction.header.forkId === ZeroHash
-        ) {
-            // Genesis state case - use the genesis snapshot for this fork
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
-            if (!genesisSnapshot) {
-                throw new Error(`No genesis snapshot found for fork ${forkId}`);
-            }
-            reducedLatestStateSnapshot = genesisSnapshot;
-        } else {
-            // Normal case - use the block's state snapshot
-            const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
-                reducedOutput.latestBlock.stateSnapshotHash
-            );
-            if (!snapshot) {
-                throw new Error(
-                    "Missing latestStateSnapshot for reducedOutput in storage for syncing"
-                );
-            }
-            reducedLatestStateSnapshot = snapshot;
-        }
-
-        // Get the corresponding stateMachineState
-        const reducedLatestEncodedStateMachineState =
-            this.storage.stateMachineStates.getStateMachineState(
-                reducedLatestStateSnapshot.stateMachineStateHash
-            );
-        if (!reducedLatestEncodedStateMachineState)
-            throw new Error(
-                "Missing latestEncodedState for reducedOutput in storage for syncing"
-            );
-
-        const inboundMessageBlocksAppliedInReduce =
-            this.storage.inboundMessages.getMessageBlocksInRange({
-                upperBlockHash: reducedOutput.latestInboundMessageBlockHash,
-                lowerBlockHash:
-                    reducedLatestStateSnapshot.latestInboundMessageBlockHash
-            });
-        return {
-            forkId: forkId,
-            reducedOutput: reducedOutput,
-            latestStateSnapshot: reducedLatestStateSnapshot.toStruct(),
-            encodedStateMachineState: reducedLatestEncodedStateMachineState,
-            inboundMessageBlocks: inboundMessageBlocksAppliedInReduce
-        };
     }
 }
 
