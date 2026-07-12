@@ -16,7 +16,7 @@ const RESOLVE = {
 const SETTLE_WAIT = 30000;
 
 const survivorCount = (h: MathPeerTestHarness) =>
-    h.getPeersExcludingMaliciousAndLeavers().length;
+    h.getActiveHonestPeers().length;
 const disputesSoFar = (h: MathPeerTestHarness) =>
     h.peers.length - survivorCount(h);
 
@@ -84,9 +84,7 @@ export const DISPUTE_SOUNDNESS_MENU: FuzzAction[] = [
                 previousForkId: forkBefore,
                 timeoutMs: SETTLE_WAIT
             });
-            const survivors = h
-                .getPeersExcludingMaliciousAndLeavers()
-                .map((p) => p.index);
+            const survivors = h.getActiveHonestPeers().map((p) => p.index);
             await h.assert.sync.peersInSyncWait({
                 peerIndices: survivors,
                 timeout: SETTLE_WAIT

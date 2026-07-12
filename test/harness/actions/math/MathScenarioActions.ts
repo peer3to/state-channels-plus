@@ -51,8 +51,7 @@ export class MathScenarioActions extends ScenarioActions {
                 .filter((i) => i !== options.maliciousPeerIndex);
 
         this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: options.maliciousPeerIndex,
-            honestPeerIndices
+            maliciousPeerIndex: options.maliciousPeerIndex
         });
 
         await this.harness.dispute.createInvalidStateTransitionDispute(

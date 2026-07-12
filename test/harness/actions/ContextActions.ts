@@ -13,19 +13,22 @@ export class ContextActions<
         private _logger: Logger
     ) {}
 
-    markMaliciousPeer(options: {
-        maliciousPeerIndex: number;
-        honestPeerIndices?: number[];
-    }): void {
-        const { maliciousPeerIndex, honestPeerIndices } = options;
-        const totalPeers = this.harness.peers.length;
-        const honest =
-            honestPeerIndices ||
-            Array.from({ length: totalPeers }, (_, i) => i).filter(
-                (i) => i !== maliciousPeerIndex
-            );
+    markMaliciousPeer(options: { maliciousPeerIndex: number }): void {
+        const { maliciousPeerIndex } = options;
+        if (
+            !this.harness.context.maliciousPeerIndices.includes(
+                maliciousPeerIndex
+            )
+        ) {
+            this.harness.context.maliciousPeerIndices.push(maliciousPeerIndex);
+        }
+    }
 
-        this.harness.context.maliciousPeerIndices.push(maliciousPeerIndex);
+    markAfkPeer(options: { afkPeerIndex: number }): void {
+        const { afkPeerIndex } = options;
+        if (!this.harness.context.afkPeerIndices.includes(afkPeerIndex)) {
+            this.harness.context.afkPeerIndices.push(afkPeerIndex);
+        }
     }
 
     async capturePrePostSnapshotContext(options?: {

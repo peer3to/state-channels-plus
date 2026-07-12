@@ -23,7 +23,10 @@ export class HarnessContext {
     /** Indices of malicious peers in Byzantine attack scenarios (set by Context.markMaliciousPeer, Byzantine blocks) */
     maliciousPeerIndices: number[] = [];
 
-    /** Excluded from `getPeersExcludingMaliciousAndLeavers` (see `participantLeave`). */
+    /** Honest peers intentionally unavailable to synchronization barriers. */
+    afkPeerIndices: number[] = [];
+
+    /** Excluded from `getActiveHonestPeers` (see `participantLeave`). */
     leftChannelPeerIndices: number[] = [];
 
     /** Last tampered dispute object (set by Byzantine blocks) */
@@ -181,6 +184,7 @@ export type CreateAndResolveDisputeResult<
     originalForkId: ForkId;
     newForkId: ForkId;
     maliciousPeerIndices: number[];
+    afkPeerIndices: number[];
     honestPeerIndices: number[];
     honestPeers: Array<TestPeer<TCustomRpc, TContract>>;
 };

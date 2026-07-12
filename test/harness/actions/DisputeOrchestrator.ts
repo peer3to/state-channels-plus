@@ -39,15 +39,18 @@ export class DisputeOrchestrator<
                 ...(this.harness.context.maliciousPeerIndices ?? [])
             ])
         );
-        const peersExcludingMaliciousAndLeavers = this.harness
-            .getPeersExcludingMaliciousAndLeavers()
+        const afkPeerIndices = Array.from(
+            new Set<number>(this.harness.context.afkPeerIndices ?? [])
+        );
+        const activeHonestPeerIndices = this.harness
+            .getActiveHonestPeers()
             .map((p) => p.index);
         const honestPeerIndices =
             options.honestPeerIndices !== undefined
-                ? peersExcludingMaliciousAndLeavers.filter((i) =>
+                ? activeHonestPeerIndices.filter((i) =>
                       options.honestPeerIndices!.includes(i)
                   )
-                : peersExcludingMaliciousAndLeavers;
+                : activeHonestPeerIndices;
         if (honestPeerIndices.length < 1) {
             throw new Error(
                 `Need at least 1 honest peer to resolve dispute (got ${honestPeerIndices.length})`
@@ -94,9 +97,15 @@ export class DisputeOrchestrator<
             const maliciousAddresses = maliciousPeerIndices.map(
                 (i) => this.harness.getPeer(i).address
             );
+            const afkAddresses = afkPeerIndices.map(
+                (i) => this.harness.getPeer(i).address
+            );
+            const retainedAfkCount =
+                maliciousPeerIndices.length > 0 ? afkPeerIndices.length : 0;
 
             const cap =
                 honestPeers.length +
+                retainedAfkCount +
                 (options.syntheticOnChainParticipants ?? 0);
 
             const candidatePeers = syncPeerIndices.map((i) =>
@@ -125,17 +134,26 @@ export class DisputeOrchestrator<
                         );
                     }
                 }
+                for (const addr of afkAddresses) {
+                    const shouldRemain = maliciousPeerIndices.length > 0;
+                    if (participants.includes(addr) !== shouldRemain) {
+                        throw new Error(
+                            `Peer ${peer.index}: AFK address ${addr} ${shouldRemain ? "missing from" : "still in"} getParticipants() on new fork ${newForkId}`
+                        );
+                    }
+                }
             }
         }
 
         this.logger.debug(
-            `Resolved dispute: maliciousPeers=${maliciousPeerIndices.join(",")}, originalFork=${originalForkId}, newFork=${newForkId}`
+            `Resolved dispute: maliciousPeers=${maliciousPeerIndices.join(",")}, afkPeers=${afkPeerIndices.join(",")}, originalFork=${originalForkId}, newFork=${newForkId}`
         );
 
         return {
             originalForkId,
             newForkId,
             maliciousPeerIndices,
+            afkPeerIndices,
             honestPeerIndices,
             honestPeers
         };

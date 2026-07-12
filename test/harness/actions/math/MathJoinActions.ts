@@ -15,7 +15,7 @@ export type ForceInboundJoinOptions = {
 
 export class MathJoinActions extends JoinActions {
     private async pickSubmitterWithLatestInbound(): Promise<TestPeer> {
-        const candidates = this.harness.getPeersExcludingMaliciousAndLeavers();
+        const candidates = this.harness.getActiveHonestPeers();
         if (candidates.length === 0) {
             throw new Error(
                 "forceInboundJoin: no honest non-leaver peers to submit from (all peers are malicious or have left)"

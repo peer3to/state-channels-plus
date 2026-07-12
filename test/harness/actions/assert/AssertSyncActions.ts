@@ -235,9 +235,7 @@ export class AssertSyncActions<
     }
 
     async onlyHonestPeersInSync(): Promise<void> {
-        const indices = this.harness
-            .getPeersExcludingMaliciousAndLeavers()
-            .map((p) => p.index);
+        const indices = this.harness.getActiveHonestPeers().map((p) => p.index);
         if (!indices || indices.length === 0) {
             throw new Error("No peers for transition sync barrier");
         }

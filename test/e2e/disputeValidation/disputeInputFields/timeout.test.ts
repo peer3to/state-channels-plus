@@ -74,10 +74,19 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             // peer 2 is the silent non-writer → exclude from fork-change barrier.
-            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
+            h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
             await h.tamper.plantFreshTimeoutForNextWriter(0);
             await h.tamper.postTamperedDispute(0, () => {});
+            const maliciousAfterAction = [...h.context.maliciousPeerIndices];
+            if (
+                maliciousAfterAction.length !== 1 ||
+                maliciousAfterAction[0] !== 0
+            ) {
+                throw new Error(
+                    "Tampered dispute author was not classified malicious"
+                );
+            }
 
             await h.event.waitForPeers("onDisputeKilled", [1], 1, {
                 mode: "atLeast"
@@ -88,6 +97,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             });
 
             await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
+            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });
 
         it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
@@ -95,7 +105,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             await h.scenario.preDisputeSetup();
             // Mark the non-writer up front so honest-peer barriers (committedWait,
             // resolveDisputeWait) exclude peer 2.
-            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
+            h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
             // Natural timeout: peer 2 never authors.
             await h.assert.dispute.initiatedAndCommitedWait({
@@ -129,7 +139,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             // peer 2 does not write, so it will timeout naturally.
-            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
+            h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
             await h.assert.dispute.initiatedAndCommitedWait({
                 peersIndices: [0, 1],
@@ -174,7 +184,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // isolate peer 0 so it stops receiving p2p blocks -> its timeout timer
         // for the next block fires naturally.
         await h.byzantine.disconnect(0);
-        h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
+        h.contextApi.markAfkPeer({ afkPeerIndex: 0 });
 
         // remaining peers advance past peer 0.
         await h.transition.advanceState({

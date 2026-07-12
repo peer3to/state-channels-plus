@@ -907,7 +907,8 @@ export class PeerTestHarness<
     ): TestPeer<TCustomRpc, TStateMachine>[] {
         const excludeSet = new Set<number>([
             ...(excludePeerIndices ?? []),
-            ...(this.context.maliciousPeerIndices ?? [])
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? [])
         ]);
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
@@ -915,10 +916,13 @@ export class PeerTestHarness<
     async peerWithHighestBlock(
         forkId: ForkId
     ): Promise<TestPeer<TCustomRpc, TStateMachine>> {
-        const malicious = new Set(this.context.maliciousPeerIndices ?? []);
+        const unavailable = new Set([
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? [])
+        ]);
         const heights = await Promise.all(
             this.peers.map((peer) =>
-                malicious.has(peer.index)
+                unavailable.has(peer.index)
                     ? Promise.resolve(null)
                     : this.control(peer)
                           .query.getLatestBlockHeight(forkId)
@@ -939,14 +943,12 @@ export class PeerTestHarness<
         return best ?? this.peers[0];
     }
 
-    /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
-    getPeersExcludingMaliciousAndLeavers(): TestPeer<
-        TCustomRpc,
-        TStateMachine
-    >[] {
+    /** Every responsive honest harness peer except leavers. */
+    getActiveHonestPeers(): TestPeer<TCustomRpc, TStateMachine>[] {
         const exclude = new Set([
             ...(this.context.leftChannelPeerIndices ?? []),
-            ...(this.context.maliciousPeerIndices ?? [])
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? [])
         ]);
         return this.peers.filter((p) => !exclude.has(p.index));
     }

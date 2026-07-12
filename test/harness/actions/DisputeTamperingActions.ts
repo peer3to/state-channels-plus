@@ -212,6 +212,9 @@ export class DisputeTamperingActions<
         }) => DisputeFraudStruct
     ): Promise<void> {
         const peer = this.harness.getPeer(disputerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: disputerIndex
+        });
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
         const genesisResult = await this.harness

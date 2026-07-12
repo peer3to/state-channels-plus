@@ -33,7 +33,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         });
 
         const remainingPeerIndices = h
-            .getPeersExcludingMaliciousAndLeavers()
+            .getActiveHonestPeers()
             .map((p) => p.index);
 
         // One dispute commits on-chain.
@@ -56,7 +56,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
 
         await h.assert.sync.participantCount({ expectedCount: 2 });
 
-        for (const peer of h.getPeersExcludingMaliciousAndLeavers()) {
+        for (const peer of h.getActiveHonestPeers()) {
             const participants = await h
                 .control(peer)
                 .query.getParticipants()

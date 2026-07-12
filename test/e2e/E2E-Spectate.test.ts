@@ -907,7 +907,7 @@ describe("E2E: Spectate Service", function () {
             });
 
             const remainingPeerIndices = h
-                .getPeersExcludingMaliciousAndLeavers()
+                .getActiveHonestPeers()
                 .map((p) => p.index);
             await h.assert.dispute.committedWait({
                 peersIndices: remainingPeerIndices,

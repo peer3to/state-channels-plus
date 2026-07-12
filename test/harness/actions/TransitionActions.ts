@@ -109,7 +109,7 @@ export class TransitionActions<
         options?: { waitForSync?: boolean }
     ): Promise<void> {
         const syncIndices = this.harness
-            .getPeersExcludingMaliciousAndLeavers()
+            .getActiveHonestPeers()
             .map((p) => p.index);
 
         // waitForPeers limits who we barrier on, but we still want union finalization on those peers.
@@ -125,7 +125,7 @@ export class TransitionActions<
         txFns: Array<(contract: TContract) => Promise<any>>
     ): Promise<void> {
         const syncIndices = this.harness
-            .getPeersExcludingMaliciousAndLeavers()
+            .getActiveHonestPeers()
             .map((p) => p.index);
         if (!syncIndices) {
             throw new Error(
@@ -286,7 +286,7 @@ export class TransitionActions<
             const peers =
                 options.waitForPeers !== undefined
                     ? this.harness.getFilteredPeers(options.waitForPeers)
-                    : this.harness.getPeersExcludingMaliciousAndLeavers();
+                    : this.harness.getActiveHonestPeers();
             const waitForFinalization = effectiveWaitForFinalization(options);
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
