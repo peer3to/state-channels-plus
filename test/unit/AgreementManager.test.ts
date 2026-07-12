@@ -5,7 +5,7 @@ import { hash as randomHash, randomAddress } from "../factory";
 import { waitFor } from "@test/utils/waitFor";
 import { ZeroHash } from "ethers";
 
-describe("E2E: AgreementManager", function () {
+describe("Unit: AgreementManager", function () {
     describe("getLatestSignedBlockByParticipant", function () {
         // no test: a malformed address can't reach this class. disputes are
         // ABI-decoded on arrival, and a bad address makes the decode itself
