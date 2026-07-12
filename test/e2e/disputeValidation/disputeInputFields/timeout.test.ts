@@ -1,4 +1,5 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import { sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { TimeoutTooEarlyStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
@@ -205,73 +206,55 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
     it("dispute.input.timeout.blockHeight = block whose calldata is on-chain; isForced=true → TimeoutCalldataPosted", async function () {
         const h = TestSession.getHarness();
-        // Peer 0 leaves with snapshot suppressed (stays dispute-eligible).
-        //  Peer 3 withholds confirms → incomplete block-1 union → author posts calldata; peers 1/2 set onChainTimestamp.
-        // Peer 2 never writes H=2 so a real timeout fires; tamper reframes peer 0's dispute (truncate proof, blame peer 1 @ H=1, isForced past calldata upload guard).
-        await h.lifecycle.timeoutSetup(4, 0, {
-            timeConfig: { agreementTime: 2, evidenceTime: 12 }
+        await h.lifecycle.timeoutSetup(4, 0);
+
+        // Establish height 1 so the calldata block does not receive first-block grace.
+        await h.transition.advanceState({ count: 2 });
+        const calldataAuthor = await h.query.getNextPeerToWrite();
+
+        // Peer 3 cannot confirm height 2, so the author must post it as calldata.
+        await h.execOnHost(h.getPeer(3), (sm) => {
+            sm.ingestBlockConfirmation = async () => false;
         });
-
-        await h.control(h.getPeer(0)).stub.stubPostStateSnapshot().request();
-
-        // Falsely blame peer 1 @ H=1 (that block exists + calldata on-chain), truncate proof, isForced clears upload guard.
-        h.tamper.stubConstructDispute(
-            0,
-            async (dispute, sm) => {
-                const d = sm.p2pManager.localRpc.dispute;
-                // Read the block-1 author from the proof before truncation.
-                const author = d.blockAuthorAtHeightFromProof(
-                    dispute.input.stateProof,
-                    1
-                )!;
-                await d.truncateStateProofToHeight(dispute, 0);
-                dispute.input.timeout.blockHeight = 1n;
-                dispute.input.timeout.participant = author;
-                dispute.input.timeout.isForced = true;
-            },
-            { markMalicious: false }
+        await Promise.all(
+            [0, 1, 2, 3].map((peerIndex) =>
+                h.execOnHost(h.getPeer(peerIndex), (sm) => {
+                    Object.defineProperty(sm, "tryTimeoutParticipant", {
+                        value: async () => undefined
+                    });
+                })
+            )
         );
-
-        await h.transition.advanceState({
-            txFn: (c) => c.leaveChannel(),
-            waitForFinalization: true
-        });
-        h.context.leftChannelPeerIndices = [0];
-        h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 0 });
-
-        // Peer 3 withholds confirms → incomplete union → author posts calldata.
-        h.byzantine.stubBroadcast(3);
-
-        // peer1 write the next block
+        await h.network.disconnectPeer(3);
         await h.transition.advanceState({
             count: 1,
-            waitForPeers: [1, 2, 3],
+            waitForPeers: [0, 1, 2],
             waitForFinalization: false
         });
-
-        // peer1 posts calldata
-        await h.event.waitForPeers("onBlockCalldataPosted", [1, 2], 1, {
+        await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2, 3], 1, {
             mode: "atLeast",
             timeoutMs: 15000
         });
+
+        await h.tamper.plantFreshTimeoutForNextWriter(3);
+        await sleep(6000);
 
         h.contextApi.captureOriginalFork();
         h.event.resetEventSpies();
-        //  peer 2 never writes, so the timeout fires naturally.
+        await h.tamper.postTamperedDispute(3, (dispute) => {
+            dispute.input.timeout.blockHeight = 2n;
+            dispute.input.timeout.participant = calldataAuthor.address;
+            dispute.input.timeout.isForced = true;
+        });
 
-        // peer 1 and 2 kill the tampered dispute by peer 0
-        await h.event.waitForPeers("onDisputeKilled", [1, 2], 1, {
+        await h.event.waitForPeers("onDisputeKilled", [0, 1, 2], 1, {
             mode: "atLeast",
             timeoutMs: 25000
         });
-        await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+        await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
             disputeFraudProofType: DisputeFraudProofType.TimeoutCalldataPosted,
-            peerIndices: [1, 2],
+            peerIndices: [0, 1, 2],
             timeoutMs: 15000
-        });
-        await h.dispute.resolveDisputeWait({
-            forkSettleTimeoutMs: 25000,
-            assertMaliciousRemoved: false
         });
     });
 });
