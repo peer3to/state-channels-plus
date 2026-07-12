@@ -28,6 +28,7 @@ type P2pEventHooks = {
         blockHash: Hash,
         keepConnection: boolean
     ) => void;
+    onResumePhase?: (phase: "reconnecting" | "resyncing") => void;
 };
 
 export default P2pEventHooks;
