@@ -84,8 +84,7 @@ describe("E2E: Block Fraud Proofs", function () {
                 .request()
         ).to.be.null;
 
-        // Posts the block's calldata on-chain via the author's signer (the SCM
-        // contract + signer are client-side, so this needs no host round-trip)
+        // Posts the block's calldata on-chain via the author's host-backed SCM
         // and returns the mined block's timestamp — what an event (re)read
         // would deliver as onChainTimestamp.
         const postBlockCalldata = async (block: BlockBundle) => {
@@ -95,16 +94,13 @@ describe("E2E: Block Fraud Proofs", function () {
             );
             expect(author).to.not.be.undefined;
 
-            const tx = await h.channelManager
-                .connect(author!.signer)
-                .postBlockCalldata(
+            const tx =
+                await author!.p2pInstance.stateChannelManagerContract.postBlockCalldata(
                     Codec.decode(block.encodedSignedBlock, Type.SignedBlock),
                     Clock.getTimeInSeconds() + 1000
                 );
             const receipt = await tx.wait();
-            const minedBlock = await author!.signer.provider!.getBlock(
-                receipt!.blockNumber
-            );
+            const minedBlock = await h.provider.getBlock(receipt!.blockNumber);
             return Number(minedBlock!.timestamp);
         };
 

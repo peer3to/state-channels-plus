@@ -5,6 +5,7 @@ import type {
     SerializedError,
     SetupPayload
 } from "../types";
+import type { SerializedTransactionRequest } from "../chainSignerSerialization";
 
 /**
  * Worker-level bootstrap message (NOT a runtime-port message). Sent via
@@ -56,6 +57,30 @@ export interface SignMessageRequest extends RuntimeRequest<"signMessage"> {
 }
 
 export interface SignTypedDataRequest extends RuntimeRequest<"signTypedData"> {
+    domain: unknown;
+    types: unknown;
+    value: unknown;
+}
+
+export interface ChainSignerSignTransactionRequest
+    extends RuntimeRequest<"chainSignerSignTransaction"> {
+    serializedTransaction: SerializedTransactionRequest;
+}
+
+export interface ChainSignerSendTransactionRequest
+    extends RuntimeRequest<"chainSignerSendTransaction"> {
+    serializedTransaction: SerializedTransactionRequest;
+}
+
+export interface ChainSignerSignMessageRequest
+    extends RuntimeRequest<"chainSignerSignMessage"> {
+    message:
+        | { kind: "string"; value: string }
+        | { kind: "bytes"; encodedBytes: string };
+}
+
+export interface ChainSignerSignTypedDataRequest
+    extends RuntimeRequest<"chainSignerSignTypedData"> {
     domain: unknown;
     types: unknown;
     value: unknown;
@@ -133,6 +158,10 @@ export type RuntimeClientRequest =
     | DisconnectFromPeersRequest
     | SignMessageRequest
     | SignTypedDataRequest
+    | ChainSignerSignTransactionRequest
+    | ChainSignerSendTransactionRequest
+    | ChainSignerSignMessageRequest
+    | ChainSignerSignTypedDataRequest
     | DeploySignerGetAddressRequest
     | DeploySignerGetNonceRequest
     | DeploySignerResolveNameRequest

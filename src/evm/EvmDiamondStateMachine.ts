@@ -430,7 +430,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
     /**
      * Sets up a P2P interaction environment with the state machine
-     * @param signer The signer to use for transactions
      * @param deployedStateChannelContractInstance The deployed state channel manager proxy
      * @param stateMachineContractInstance The state machine contract instance
      * @param deployStateMachine A deployer that creates local state machine instances
@@ -442,7 +441,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         T extends AStateMachineContract,
         TCustomRpc extends MainRpcService = MainRpcService
     >(
-        signer: Signer,
         deployedStateChannelContractInstance: StateChannelManagerProxy,
         stateMachineContractInstance: T,
         deployStateMachine: LocalStateMachineDeployer,
@@ -450,11 +448,16 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             peerId?: number;
             peerLogger?: Logger;
             customRpcManifest?: CustomRpcManifest;
+            /**
+             * Runtime configuration. PROVIDER_URL must expose WebSocket RPC on
+             * the same authority; http(s) URLs are converted to ws(s).
+             */
             config?: Partial<Config>;
             customPrecompiles?: EvmCustomPrecompileManifest[];
             /**
-             * Signer secret (private key or mnemonic) used to reconstruct the
-             * signer inside the worker. Required when `RUN_SDK_IN_THREAD`.
+             * Signer secret (private key or mnemonic) owned by the runtime host.
+             * Injected signers are intentionally unsupported; a random private
+             * key is generated when omitted.
              */
             signerSecret?: string;
             /**
@@ -468,13 +471,19 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         // Initialize SDK config for this runtime (intended to be called once).
         const activeConfig = createConfig(options?.config);
 
-        // Resolve signer address early for logger context.
-        const signerAddress = await signer.getAddress();
+        const runtimeSignerSecret =
+            options?.signerSecret ?? ethers.Wallet.createRandom().privateKey;
+        const trimmedSignerSecret = runtimeSignerSecret.trim();
+        const resolvedSignerAddress = /^0x[0-9a-fA-F]{64}$/.test(
+            trimmedSignerSecret
+        )
+            ? new ethers.Wallet(trimmedSignerSecret).address
+            : ethers.Wallet.fromPhrase(trimmedSignerSecret).address;
 
         const logger =
             options?.peerLogger ||
             createLogger(
-                { peerId: options?.peerId, peerAddress: signerAddress },
+                { peerId: options?.peerId, peerAddress: resolvedSignerAddress },
                 { component: "ClientApp" },
                 { attachErrorListener: true }
             );
@@ -493,12 +502,19 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             ).toString(),
             abiJson: deployedStateChannelContractInstance.interface.formatJson()
         };
+        const clientProvider =
+            deployedStateChannelContractInstance.runner?.provider;
+        if (!clientProvider) {
+            throw new Error(
+                "p2pSetup requires the state channel manager to have a provider"
+            );
+        }
 
         const payload: SetupPayload = {
             config: activeConfig,
             scm,
             stateMachine,
-            signerSecret: options?.signerSecret,
+            signerSecret: runtimeSignerSecret,
             peerId: options?.peerId,
             customRpcManifest: options?.customRpcManifest,
             customPrecompiles: options?.customPrecompiles
@@ -508,12 +524,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         let onClose: (() => void) | undefined;
 
         if (activeConfig.RUN_SDK_IN_THREAD) {
-            if (!options?.signerSecret) {
-                throw new Error(
-                    "signerSecret is required when RUN_SDK_IN_THREAD is enabled"
-                );
-            }
-
             const { localPort, transferablePort } = createTransferableChannel();
             const worker = createP2pRuntimeWorker();
             const bootstrap: WorkerBootstrapMessage = {
@@ -528,7 +538,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             const channel = createRuntimeChannel();
             clientPort = channel.port1;
             void startP2pRuntimeHost(channel.port2, payload, {
-                signer,
                 handlerExecutionContext: options?.handlerExecutionContext
             }).catch((error) => {
                 logger.error("Inline runtime host failed", { error });
@@ -536,14 +545,16 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
 
         const client = new P2pRuntimeClient<T>(clientPort, {
-            signerAddress,
+            signerAddress: resolvedSignerAddress,
             stateMachine,
+            scm,
+            provider: clientProvider,
             onClose
         });
 
         const deployBridgeSigner = new DeploymentBridgeSigner(
             client,
-            signerAddress
+            resolvedSignerAddress
         );
         // Deploy two independent local state machine instances:
         //  - one drives the replicated channel state (EvmDiamondStateMachine)

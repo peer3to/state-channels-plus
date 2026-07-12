@@ -189,7 +189,7 @@ export class DisputeTamperingActions<
             `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
         );
 
-        const channelManager = this.harness.channelManager.connect(peer.signer);
+        const channelManager = peer.p2pInstance.stateChannelManagerContract;
         const txResp = dispute.postedAuditingData
             ? await channelManager.uploadDisputeWithCalldata(
                   disputeConfirmation,
@@ -233,9 +233,10 @@ export class DisputeTamperingActions<
             dispute,
             encodedProof: Codec.encode(proofStruct, proofType)
         };
-        const tx = await this.harness.channelManager
-            .connect(peer.signer)
-            .applyDisputeFraudProofs([forged]);
+        const tx =
+            await peer.p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs(
+                [forged]
+            );
         await tx.wait();
     }
 

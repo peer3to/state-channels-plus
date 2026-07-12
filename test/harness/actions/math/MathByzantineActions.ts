@@ -486,9 +486,8 @@ export class MathByzantineActions extends ByzantineActions {
             : [];
 
         const submitter = this.harness.getPeer(poster);
-        const channelManager = this.harness.channelManager.connect(
-            submitter.signer
-        );
+        const channelManager =
+            submitter.p2pInstance.stateChannelManagerContract;
         const callData = channelManager.interface.encodeFunctionData(
             "updateStateSnapshotSameFork",
             [

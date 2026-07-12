@@ -60,7 +60,6 @@ self.onmessage = async (event) => {
         );
 
         const p2pInstance = await EvmStateMachine.p2pSetup(
-            runtimeSigner,
             StateChannelManagerProxy__factory.connect(
                 scmAddress,
                 runtimeSigner
@@ -69,6 +68,7 @@ self.onmessage = async (event) => {
             deployLocalStateMachine,
             {
                 peerId,
+                signerSecret,
                 config: {
                     PROVIDER_URL: providerUrl,
                     // Inline host in this worker realm — no nested SDK worker.

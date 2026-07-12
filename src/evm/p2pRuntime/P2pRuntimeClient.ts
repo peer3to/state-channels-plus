@@ -1,8 +1,13 @@
 import { ethers } from "ethers";
+import {
+    StateChannelManagerProxy,
+    StateChannelManagerProxy__factory
+} from "@typechain-types";
 
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
 import type { Address } from "@/types/types";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
+import ClientChainSigner from "../signer/ClientChainSigner";
 import RuntimeEventEmitter, {
     type RuntimeEventMap,
     type RuntimeEventName
@@ -21,6 +26,24 @@ import type {
     SerializedError
 } from "./types";
 
+function restoreEthersErrorMetadata(
+    error: Error,
+    serialized: SerializedError
+): void {
+    // Error's standard fields cross the port, but ethers' enumerable metadata
+    // does not. Restore the plain fields callers use for error classification;
+    // transaction, receipt, and info remain serializable projections.
+    Object.assign(error, {
+        code: serialized.code,
+        shortMessage: serialized.shortMessage,
+        info: serialized.info,
+        action: serialized.action,
+        reason: serialized.reason,
+        transaction: serialized.transaction,
+        receipt: serialized.receipt
+    });
+}
+
 function deserializeError(serialized: SerializedError): Error {
     const error = new Error(serialized.message);
     error.name = serialized.name ?? error.name;
@@ -30,6 +53,7 @@ function deserializeError(serialized: SerializedError): Error {
     if (serialized.data !== undefined) {
         (error as Error & { data?: string }).data = serialized.data;
     }
+    restoreEthersErrorMetadata(error, serialized);
     // Restore the originating-peer stamp (the non-enumerable in-process
     // property doesn't survive the structured-clone hop across the port).
     maybeStampErrorWithPeerAddress(error, serialized.peerAddress);
@@ -41,6 +65,10 @@ export interface P2pRuntimeClientOptions {
     signerAddress: Address;
     /** Serialized state machine contract rebuilt main-thread for app usage. */
     stateMachine: SerializedContract;
+    /** Serialized real-chain SCM rebuilt with the host-backed chain signer. */
+    scm: SerializedContract;
+    /** Main-thread provider used for reads and native transaction responses. */
+    provider: ethers.Provider;
     /** Invoked after the port is closed (e.g. to terminate a worker). */
     onClose?: () => void | Promise<void>;
 }
@@ -48,7 +76,7 @@ export interface P2pRuntimeClientOptions {
 interface PendingRequest {
     resolve: (value: unknown) => void;
     reject: (reason: Error) => void;
-    timeout: ReturnType<typeof setTimeout>;
+    timeout?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -64,6 +92,8 @@ class P2pRuntimeClient<T = ethers.Contract> {
 
     readonly signer: ClientP2pSigner;
     readonly contract: T;
+    readonly chainSigner: ClientChainSigner;
+    readonly stateChannelManagerContract: StateChannelManagerProxy;
     readonly ready: Promise<void>;
 
     /**
@@ -81,17 +111,30 @@ class P2pRuntimeClient<T = ethers.Contract> {
     private readonly hostErrorListeners = new Set<(error: Error) => void>();
     private readonly onClose?: () => void | Promise<void>;
     private resolveReady!: () => void;
+    private rejectReady!: (error: Error) => void;
+    private readySettled = false;
     private disposed = false;
 
     constructor(port: RuntimePort, options: P2pRuntimeClientOptions) {
         this.port = port;
         this.signerAddress = options.signerAddress;
         this.onClose = options.onClose;
-        this.ready = new Promise<void>((resolve) => {
+        this.ready = new Promise<void>((resolve, reject) => {
             this.resolveReady = resolve;
+            this.rejectReady = reject;
         });
 
         this.signer = new ClientP2pSigner(this, options.signerAddress);
+        this.chainSigner = new ClientChainSigner(
+            this,
+            options.provider,
+            options.signerAddress.toString()
+        );
+        this.stateChannelManagerContract =
+            StateChannelManagerProxy__factory.connect(
+                options.scm.address,
+                this.chainSigner
+            );
         this.contract = new ethers.Contract(
             options.stateMachine.address,
             JSON.parse(options.stateMachine.abiJson),
@@ -115,7 +158,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
     /** Send a request to the host; rejects on host error or after `timeoutMs`. */
     request<TResult>(
         request: RuntimeRequestInput,
-        options?: { timeoutMs?: number }
+        options?: { timeoutMs?: number | null }
     ): Promise<TResult> {
         if (this.disposed) {
             return Promise.reject(
@@ -125,17 +168,23 @@ class P2pRuntimeClient<T = ethers.Contract> {
         const requestId = this.nextRequestId++;
         const message = { ...request, requestId } as RuntimeClientRequest;
         const timeoutMs =
-            options?.timeoutMs ?? P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS;
+            options?.timeoutMs === null
+                ? null
+                : (options?.timeoutMs ??
+                  P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS);
         return new Promise<TResult>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                if (this.pending.delete(requestId)) {
-                    reject(
-                        new Error(
-                            `P2P runtime request '${request.type}' timed out after ${timeoutMs}ms`
-                        )
-                    );
-                }
-            }, timeoutMs);
+            const timeout =
+                timeoutMs === null
+                    ? undefined
+                    : setTimeout(() => {
+                          if (this.pending.delete(requestId)) {
+                              reject(
+                                  new Error(
+                                      `P2P runtime request '${request.type}' timed out after ${timeoutMs}ms`
+                                  )
+                              );
+                          }
+                      }, timeoutMs);
 
             this.pending.set(requestId, {
                 resolve: resolve as (value: unknown) => void,
@@ -146,7 +195,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
                 this.port.post(message);
             } catch (error) {
                 if (this.pending.delete(requestId)) {
-                    clearTimeout(timeout);
+                    if (timeout) clearTimeout(timeout);
                     reject(error as Error);
                 }
             }
@@ -212,6 +261,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
     private handleMessage(message: RuntimeHostMessage): void {
         switch (message.type) {
             case "ready":
+                this.readySettled = true;
                 this.resolveReady();
                 return;
             case "response":
@@ -242,6 +292,13 @@ class P2pRuntimeClient<T = ethers.Contract> {
         // whole worker is this one peer)
         maybeStampErrorWithPeerAddress(error, String(this.signerAddress));
 
+        if (!this.readySettled) {
+            this.readySettled = true;
+            this.rejectReady(error);
+            this.rejectAllPending(error);
+            return;
+        }
+
         if (this.hostErrorListeners.size === 0) {
             // No orchestrator hook: surface as a main-thread unhandled rejection
             // (matches an inline host throwing in its own event loop).
@@ -261,7 +318,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
         const pending = this.pending.get(message.requestId);
         if (!pending) return;
         this.pending.delete(message.requestId);
-        clearTimeout(pending.timeout);
+        if (pending.timeout) clearTimeout(pending.timeout);
         if (message.ok) {
             pending.resolve(message.result);
         } else {
@@ -287,7 +344,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
 
     private rejectAllPending(reason: Error): void {
         for (const pending of this.pending.values()) {
-            clearTimeout(pending.timeout);
+            if (pending.timeout) clearTimeout(pending.timeout);
             pending.reject(reason);
         }
         this.pending.clear();

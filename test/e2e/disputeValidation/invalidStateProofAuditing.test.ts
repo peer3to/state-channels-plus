@@ -24,7 +24,7 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
             (d, _c, auditingData) => {
                 expect(d.postedAuditingData).to.equal(true);
                 expect(auditingData).to.not.be.undefined;
-                realAuditing = structuredClone(auditingData!);
+                realAuditing = globalThis.structuredClone(auditingData!);
             },
             { markMalicious: false }
         );
@@ -36,7 +36,7 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
 
         // corrupt some element of the auditing data so that the hash will not match the dispute.input.disputeAuditingDataHash
         // this should cause the proof author to be slashed
-        const junkAuditing = structuredClone(realAuditing);
+        const junkAuditing = globalThis.structuredClone(realAuditing);
         junkAuditing.latestFinalizedStateStateMachineState = hexString(128);
 
         const proof = {
@@ -51,9 +51,11 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
             )
         };
 
-        const tx = await h.channelManager
-            .connect(h.getPeer(byzantineProofAuthorIndex).signer)
-            .applyDisputeFraudProofs([proof]);
+        const tx = await h
+            .getPeer(byzantineProofAuthorIndex)
+            .p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs([
+                proof
+            ]);
         await tx.wait();
 
         await h.assert.dispute.slashedOnChain(

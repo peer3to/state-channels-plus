@@ -206,7 +206,6 @@ async function setupPeer(
     );
 
     return EvmStateMachine.p2pSetup(
-        runtimeSigner,
         StateChannelManagerProxy__factory.connect(scmAddress, runtimeSigner),
         stateMachineContractInstance,
         deployLocalStateMachine,

@@ -59,7 +59,7 @@ export class MathJoinActions extends JoinActions {
 
         const consumerFacet = MathConsumerFacet__factory.connect(
             await this.harness.channelManager.getAddress(),
-            submitter.signer
+            submitter.p2pInstance.chainSigner
         );
         const tx = await consumerFacet.forceInboundJoin(
             this.harness.channelId,

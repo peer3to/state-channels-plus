@@ -411,12 +411,16 @@ describe("E2E: State Snapshots", function () {
             // _updateStateSnapshot(shouldClearStorage=true) guards on creationTimestamp==0.
             // If the guard failed, _clearStorage → _clearDisputeData would delete
             // disputeWindowMap, and the kill TX below would revert (no dispute on-chain).
-            const expectedSnapshot =
+            const snapshotSubmission =
                 await h.transition.postSameForkSnapshotOnlyWait({
                     peerIndex: 0
                 });
+            expect(
+                snapshotSubmission,
+                "same-fork snapshot transaction was not prepared"
+            ).to.not.be.undefined;
             await h.assert.snapshot.onChainSnapshotChangedWait({
-                expectedSnapshot
+                expectedSnapshot: snapshotSubmission?.snapshot
             });
 
             await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
@@ -427,6 +431,18 @@ describe("E2E: State Snapshots", function () {
                     DisputeFraudProofType.DisputeInvalidStateProof,
                 timeoutMs: 10000
             });
+
+            const hostErrors = await h.quiesceHosts();
+            expect(hostErrors.map((error) => error.message)).to.deep.equal([]);
+            expect(
+                (await snapshotSubmission!.transaction.wait())?.status
+            ).to.equal(1);
+            expect(snapshotSubmission!.transaction.nonce).to.be.lessThan(
+                await h.provider.getTransactionCount(
+                    h.getPeer(0).address,
+                    "latest"
+                )
+            );
 
             await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
         });

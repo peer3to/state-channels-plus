@@ -726,15 +726,17 @@ export class PeerTestHarness<
         );
 
         const useWorker = this.harnessConfig.RUN_SDK_IN_THREAD;
-        const signerSecret = useWorker
-            ? this.resolveSignerSecret(index, address)
-            : undefined;
+        const signerSecret = this.resolveSignerSecret(index, address);
+        if (!signerSecret) {
+            throw new Error(
+                `Peer ${index} signer cannot be reconstructed by the runtime host`
+            );
+        }
 
         const p2pInstance = await EvmStateMachine.p2pSetup<
             TStateMachine,
             TCustomRpc
         >(
-            signer,
             this.channelManager,
             contractInstanceMock,
             this.sharedStateMachineDeployer,
@@ -994,6 +996,7 @@ export class PeerTestHarness<
     }
 
     async quiesceHosts(): Promise<Error[]> {
+        if (this.peers.length === 0) return [];
         // In worker mode each drained worker thread runs exactly one peer, so
         // an unstamped rejection is attributable to the peer whose host
         // returned it. Inline hosts share one process (any peer's quiesce can

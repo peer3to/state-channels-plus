@@ -202,7 +202,7 @@ export class TransitionActions<
     async postSameForkSnapshotOnlyWait(options?: {
         peerIndex?: number;
         forkId?: string;
-    }): Promise<StateSnapshot | undefined> {
+    }) {
         const { peerIndex = 0 } = options || {};
         const forkId = options?.forkId || this.harness.activeForkId;
         if (!forkId) {
@@ -221,15 +221,20 @@ export class TransitionActions<
         if (!sameForkData || sameForkData.callData.length === 0)
             return undefined;
 
-        const channelManager = this.harness.channelManager.connect(peer.signer);
-        const tx = await channelManager.multicall(sameForkData.callData);
-        await tx.wait();
-        return StateSnapshot.from(
-            Codec.decode(
-                sameForkData.encodedExpectedSnapshot,
-                Type.StateSnapshot
-            )
-        );
+        const transaction =
+            await peer.p2pInstance.stateChannelManagerContract.multicall(
+                sameForkData.callData
+            );
+        await transaction.wait();
+        return {
+            snapshot: StateSnapshot.from(
+                Codec.decode(
+                    sameForkData.encodedExpectedSnapshot,
+                    Type.StateSnapshot
+                )
+            ),
+            transaction
+        };
     }
 
     async validWithoutPeer(

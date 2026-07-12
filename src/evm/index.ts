@@ -6,6 +6,7 @@ import {
 import P2pInstance from "./P2pInstance";
 import LocalP2pSigner from "./signer/LocalP2pSigner";
 import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
+import ClientChainSigner from "./signer/ClientChainSigner";
 import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
 import createEvm from "./EvmFactory";
 import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
@@ -30,6 +31,7 @@ export {
     P2pInstance,
     LocalP2pSigner as P2pSigner,
     LocalContractExecutorSigner as LocalDiamondSigner,
+    ClientChainSigner,
     EvmDiamondStateMachine as EvmStateMachine,
     createEvm,
     CONSOLE_ADDRESS,

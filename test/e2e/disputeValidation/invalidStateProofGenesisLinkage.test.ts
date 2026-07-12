@@ -71,9 +71,11 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
             )
         };
 
-        const tx = await h.channelManager
-            .connect(h.getPeer(byzantineIndex).signer)
-            .applyDisputeFraudProofs([proof]);
+        const tx = await h
+            .getPeer(byzantineIndex)
+            .p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs([
+                proof
+            ]);
         await tx.wait();
 
         // The honest disputer must NOT be slashed by the bogus proof,
