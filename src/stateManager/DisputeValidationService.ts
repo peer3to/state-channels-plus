@@ -462,7 +462,9 @@ export default class DisputeValidationService {
             if (
                 timeoutTimestamp <
                 previousTimestamp +
-                    this.stateManager.getTimeoutWaitTimeSeconds()
+                    this.stateManager.getTimeoutWaitTimeSeconds(
+                        Number(dispute.input.timeout.blockHeight)
+                    )
             ) {
                 this.disputeFraudProofService.createTimeoutTooEarly(
                     dispute,

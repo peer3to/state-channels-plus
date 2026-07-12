@@ -7,6 +7,7 @@ type P2pEventHooks = {
     onDisconnection?: (address: Address) => void;
     onTurn?: (
         address: Address,
+        // nominal p2p turn window; height-0 evidenceTime grace is not included
         turnTime: number,
         agreementTime: number,
         chainFallbackTime: number,

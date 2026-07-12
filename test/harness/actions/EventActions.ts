@@ -1,7 +1,8 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { EventSpies } from "../core/types";
-import { Logger } from "@/utils";
+import Clock from "@/Clock";
+import { Logger, sleep } from "@/utils";
 import { Status } from "@/types";
 import { Hash } from "@/types/types";
 
@@ -108,6 +109,13 @@ export class EventActions<
                 peer.eventSpies[eventName]?.resetHistory();
             });
         });
+    }
+
+    async waitUntilTimestamp(timestamp: number): Promise<void> {
+        const remainingSeconds = timestamp - Clock.getTimeInSeconds();
+        if (remainingSeconds > 0) {
+            await sleep(remainingSeconds * 1000);
+        }
     }
 
     async waitUntilEventOccurs(

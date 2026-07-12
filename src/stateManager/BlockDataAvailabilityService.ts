@@ -2,7 +2,7 @@ import { StateChannelManagerProxy } from "@typechain-types";
 
 import Clock from "@/Clock";
 import { EventHandler } from "@/eventHandlers/EventHandler";
-import { OnChainBlockStatus, TimeConfig } from "@/types";
+import { OnChainBlockStatus, TimeConfig, firstBlockGrace } from "@/types";
 import {
     Address,
     BlockCalldata,
@@ -77,7 +77,8 @@ export default class BlockDataAvailabilityService {
             }
 
             const fetchedCalldata = await this.fetchBlockCommitmentCalldata(
-                commitmentResult.blockCalldataCommitment
+                commitmentResult.blockCalldataCommitment,
+                blockHeight
             );
 
             if (!fetchedCalldata) {
@@ -133,7 +134,8 @@ export default class BlockDataAvailabilityService {
     }
 
     private async fetchBlockCommitmentCalldata(
-        blockCommitment: Hash
+        blockCommitment: Hash,
+        blockHeight: BlockHeight
     ): Promise<BlockCalldata | undefined> {
         try {
             const filter =
@@ -154,7 +156,8 @@ export default class BlockDataAvailabilityService {
             const maxTime =
                 this.timeConfig.p2pTime +
                 this.timeConfig.agreementTime +
-                this.timeConfig.chainFallbackTime;
+                this.timeConfig.chainFallbackTime +
+                firstBlockGrace(this.timeConfig, blockHeight);
             const blocksToLookBack = Math.ceil(maxTime / avgBlockTime) * 2;
             const fromBlock = Math.max(0, latestBlock - blocksToLookBack);
 

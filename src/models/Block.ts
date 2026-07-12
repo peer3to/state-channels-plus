@@ -173,7 +173,7 @@ export default class Block {
         return this._onChainTimestamp ?? this.timestamp;
     }
 
-    set onChainTimestamp(onChainTimestamp: Timestamp) {
+    set onChainTimestamp(onChainTimestamp: Timestamp | undefined) {
         this._onChainTimestamp = onChainTimestamp;
     }
     get author() {

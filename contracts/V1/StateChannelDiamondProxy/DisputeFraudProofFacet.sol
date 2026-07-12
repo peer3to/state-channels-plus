@@ -417,8 +417,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 }
             }
         }
+        uint256 firstBlockGrace = hasBlock ? 0 : getEvidenceTime();
         (bool ok, uint256 minValidTimestamp) =
-            Math.tryAdd(previousTimestamp, getP2pTime() + getAgreementTime() + getChainFallbackTime());
+            Math.tryAdd(previousTimestamp, firstBlockGrace + getP2pTime() + getAgreementTime() + getChainFallbackTime());
         if (!ok || timeoutTimestamp < minValidTimestamp) {
             return _valid(dispute.input.disputer);
         }

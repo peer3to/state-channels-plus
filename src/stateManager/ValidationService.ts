@@ -7,7 +7,12 @@ import Storage from "@/storage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { Block, StateSnapshot } from "@/models";
 import { Logger } from "@/utils";
-import { BlockValidationResult, OnChainBlockStatus, TimeConfig } from "@/types";
+import {
+    BlockValidationResult,
+    OnChainBlockStatus,
+    TimeConfig,
+    firstBlockGrace
+} from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
@@ -18,7 +23,7 @@ import BlockValidationStrategy from "./validationStrategy/BlockValidationStrateg
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
 
-enum OnChainPostTiming {
+export enum OnChainPostTiming {
     NOT_READY,
     NOT_POSTED,
     ON_TIME,
@@ -391,8 +396,11 @@ export default class ValidationService {
             ));
 
         if (!isValidTimestamp) {
+            const graceSeconds = firstBlockGrace(this.timeConfig, block.height);
             const violatedRule =
-                "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
+                block.height === 0
+                    ? "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + evidenceTime + p2pTime"
+                    : "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
 
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
             if (
@@ -405,7 +413,7 @@ export default class ValidationService {
                 logTimeFailure({
                     validationResult: BlockValidationResult.DISPUTE,
                     checkType: "objective",
-                    allowedSkewSeconds: this.timeConfig.p2pTime,
+                    allowedSkewSeconds: graceSeconds + this.timeConfig.p2pTime,
                     violatedRule,
                     previousTimestamp,
                     previousOriginalTimestamp
@@ -461,7 +469,7 @@ export default class ValidationService {
                 logTimeFailure({
                     validationResult: BlockValidationResult.DISPUTE,
                     checkType: "objective",
-                    allowedSkewSeconds: this.timeConfig.p2pTime,
+                    allowedSkewSeconds: graceSeconds + this.timeConfig.p2pTime,
                     violatedRule,
                     previousTimestamp,
                     previousOriginalTimestamp
@@ -494,9 +502,15 @@ export default class ValidationService {
             logTimeFailure({
                 validationResult: BlockValidationResult.DISPUTE,
                 checkType: "objective",
-                allowedSkewSeconds: this.timeConfig.p2pTime,
+                allowedSkewSeconds:
+                    firstBlockGrace(this.timeConfig, block.height) +
+                    this.timeConfig.p2pTime +
+                    this.timeConfig.agreementTime +
+                    this.timeConfig.chainFallbackTime,
                 violatedRule:
-                    "onChainTimestamp <= previousTimestamp + p2pTime + agreementTime + chainFallbackTime",
+                    block.height === 0
+                        ? "onChainTimestamp <= previousTimestamp + evidenceTime + p2pTime + agreementTime + chainFallbackTime"
+                        : "onChainTimestamp <= previousTimestamp + p2pTime + agreementTime + chainFallbackTime",
                 previousTimestamp,
                 previousOriginalTimestamp
             });
@@ -632,7 +646,8 @@ export default class ValidationService {
             previousTimestamp +
             this.timeConfig.p2pTime +
             this.timeConfig.agreementTime +
-            this.timeConfig.chainFallbackTime;
+            this.timeConfig.chainFallbackTime +
+            firstBlockGrace(this.timeConfig, block.height);
 
         if (block.onChainTimestamp > maxAllowedTimestamp) {
             return OnChainPostTiming.TOO_LATE;

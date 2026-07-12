@@ -65,7 +65,13 @@ import {
 } from "@/utils";
 import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
 // Types
-import { BlockValidationResult, ReduceData, Status, TimeConfig } from "@/types";
+import {
+    BlockValidationResult,
+    ReduceData,
+    Status,
+    TimeConfig,
+    firstBlockGrace
+} from "@/types";
 import {
     Address,
     BlockHeight,
@@ -980,7 +986,7 @@ class StateManager<
             normalizedGenesisTimestamp - Clock.getTimeInSeconds();
         const turnTime = this.timeConfig.p2pTime;
         const timeoutWaitTime =
-            this.getTimeoutWaitTimeSeconds() + timeAdjustment;
+            this.getTimeoutWaitTimeSeconds(nextTransactionCnt) + timeAdjustment;
         this.logger.info(
             `setLatestState - schedule timeoutNext in (${timeoutWaitTime}s)`,
             {
@@ -1796,9 +1802,7 @@ class StateManager<
 
             const maxTimestamp =
                 previousRelevantTimestamp +
-                this.timeConfig.p2pTime +
-                this.timeConfig.agreementTime +
-                this.timeConfig.chainFallbackTime;
+                this.getTimeoutWaitTimeSeconds(block.height);
 
             const blockMetadata = LoggerUtils.getBlockMetadata(
                 block,
@@ -2484,7 +2488,7 @@ class StateManager<
                   participantAddress
               )
             : previousBlockOrSnapshot.stateSnapshot!.timestamp;
-        const timeoutWaitTime = this.getTimeoutWaitTimeSeconds();
+        const timeoutWaitTime = this.getTimeoutWaitTimeSeconds(blockHeight);
         let difference =
             previousRelevantTimestamp +
             timeoutWaitTime -
@@ -2562,7 +2566,7 @@ class StateManager<
             if (updatedPreviousBlock?.onChainTimestamp) {
                 difference =
                     updatedPreviousBlock.onChainTimestamp +
-                    this.getTimeoutWaitTimeSeconds() -
+                    this.getTimeoutWaitTimeSeconds(blockHeight) -
                     Clock.getTimeInSeconds();
                 if (difference > 0) {
                     // There's a chance that the on-chain timestamp will not persist if the BlockConfirmation pipeline didn't decide to persist the block since most likely the calldata is junk
@@ -2751,11 +2755,12 @@ class StateManager<
         await this.disputeManager.dispute(forkId);
     }
 
-    public getTimeoutWaitTimeSeconds() {
+    public getTimeoutWaitTimeSeconds(blockHeight: BlockHeight) {
         return (
             this.timeConfig.p2pTime +
             this.timeConfig.agreementTime +
-            this.timeConfig.chainFallbackTime
+            this.timeConfig.chainFallbackTime +
+            firstBlockGrace(this.timeConfig, blockHeight)
         );
     }
 
@@ -2813,24 +2818,24 @@ class StateManager<
             tx.header.timestamp = BigInt(previousTimestamp);
         }
 
-        if (
-            Number(tx.header.timestamp) >
-            previousRelativeTimestamp + this.timeConfig.p2pTime
-        ) {
+        const graceSeconds = firstBlockGrace(
+            this.timeConfig,
+            Number(tx.header.transactionCnt)
+        );
+        const maxTimestamp =
+            previousRelativeTimestamp + graceSeconds + this.timeConfig.p2pTime;
+
+        if (Number(tx.header.timestamp) > maxTimestamp) {
             this.logger.verbose("Adjusting timestamp - was in the future", {
                 forkId,
                 txTimestamp: Number(tx.header.timestamp),
                 previousRelativeTimestamp,
+                firstBlockGrace: graceSeconds,
                 p2pTime: this.timeConfig.p2pTime,
-                diff:
-                    Number(tx.header.timestamp) -
-                    (previousRelativeTimestamp + this.timeConfig.p2pTime),
-                newTimestamp:
-                    previousRelativeTimestamp + this.timeConfig.p2pTime
+                diff: Number(tx.header.timestamp) - maxTimestamp,
+                newTimestamp: maxTimestamp
             });
-            tx.header.timestamp = BigInt(
-                previousRelativeTimestamp + this.timeConfig.p2pTime
-            );
+            tx.header.timestamp = BigInt(maxTimestamp);
         }
     }
 
@@ -3278,7 +3283,7 @@ class StateManager<
                     block.height + 1, // Check for the next block that the participant should create
                     nextToWrite
                 ),
-            this.getTimeoutWaitTimeSeconds() * 1000,
+            this.getTimeoutWaitTimeSeconds(block.height + 1) * 1000,
             `participantTimeout(onSuccess) - fork ${block.forkId} - block ${block.height + 1} - participant ${nextToWrite}`
         );
         // step 13 - try execute from queue
