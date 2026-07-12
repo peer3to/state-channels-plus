@@ -28,7 +28,8 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // Peer 1 will upload a valid timeout dispute; peer 2's dispute is tampered
         // and should be killed by peer 1 detecting TimeoutNotLinkedToLatestState.
         await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
-            mode: "atLeast"
+            mode: "atLeast",
+            timeoutMs: h.event.protocolEventTimeoutMs(0)
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:

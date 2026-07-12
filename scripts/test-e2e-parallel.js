@@ -55,7 +55,7 @@ function buildBaseEnv(threadModes) {
 
 async function main() {
     const cli = parseCliArgs(process.argv);
-    // e2e needs automine-off + interval mining so block-time tracks wall-clock
+    // E2E uses 1s interval mining so block-time tracks wall-clock dispute timing.
     // (dispute timing). Inherited by slot nodes and in-process children alike.
     process.env.E2E_INTERVAL_MINING = "1";
 

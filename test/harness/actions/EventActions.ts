@@ -5,6 +5,10 @@ import Clock from "@/Clock";
 import { Logger, sleep } from "@/utils";
 import { Status } from "@/types";
 import { Hash } from "@/types/types";
+import {
+    protocolEventTimeoutMs,
+    resolveTestTimeConfig
+} from "../core/testTimeConfig";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -116,6 +120,17 @@ export class EventActions<
         if (remainingSeconds > 0) {
             await sleep(remainingSeconds * 1000);
         }
+    }
+
+    protocolEventTimeoutMs(
+        blockHeight: number,
+        settlementMarginSeconds?: number
+    ): number {
+        return protocolEventTimeoutMs(
+            resolveTestTimeConfig(this.harness.options.timeConfig),
+            blockHeight,
+            settlementMarginSeconds
+        );
     }
 
     async waitUntilEventOccurs(

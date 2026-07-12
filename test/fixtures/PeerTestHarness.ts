@@ -21,6 +21,7 @@ import {
 } from "@typechain-types";
 import { ForkId, ChannelId, Address, Hash } from "@/types/types";
 import { TimeConfig } from "@/types";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 
 import {
     createLogger,
@@ -266,13 +267,9 @@ export class PeerTestHarness<
             testConfig
         );
 
-        const resolvedTimeConfig: TimeConfig = {
-            p2pTime: 1,
-            agreementTime: 2,
-            chainFallbackTime: 2,
-            evidenceTime: 3,
-            ...(options?.timeConfig || {})
-        };
+        const resolvedTimeConfig: TimeConfig = resolveTestTimeConfig(
+            options?.timeConfig
+        );
 
         this.options = {
             logLevel:
