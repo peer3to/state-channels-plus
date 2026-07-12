@@ -34,6 +34,9 @@ stubModule("@hyperswarm/dht-relay/ws", FakeDhtStream);
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const HolepunchRelay = require("@/HolepunchRelay").default;
 
+// Mirrors HolepunchRelay.ts's FAILOVER_JITTER_MAX_MS (not exported).
+const FAILOVER_JITTER_MAX_MS = 250;
+
 // Minimal fake WebSocket the test drives manually via emitOpen/emitClose/emitError.
 class FakeWebSocket {
     static instances: FakeWebSocket[] = [];
@@ -180,23 +183,99 @@ describe("HolepunchRelay", function () {
         );
 
         // Fail both relayers once (exhausts the round, schedules backoff).
+        // The first failure only schedules the (jittered) failover retry -
+        // advance past it so the second relayer actually connects before
+        // failing it too.
         FakeWebSocket.instances[0].emitClose();
-        FakeWebSocket.instances[1].emitClose();
+        clock.tick(FAILOVER_JITTER_MAX_MS);
+        FakeWebSocket.instances[FakeWebSocket.instances.length - 1].emitClose();
 
-        // The first exhaustion backoff is base * 2^0 = 1s; advance past it
-        // so the pool retries and produces a fresh connection to succeed on.
+        // The first exhaustion backoff is at most base * 2^0 = 1s; advance
+        // past it so the pool retries and produces a fresh connection to
+        // succeed on.
         clock.tick(1000);
         const successWs =
             FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
         successWs.emitOpen();
 
         // After success, a subsequent single failure must not be treated as
-        // a full-round exhaustion (no backoff delay) - a new connection
-        // attempt should happen synchronously via connectToRelayer(), not
-        // require a timer tick.
+        // a full-round exhaustion (no backoff delay) - the retry only needs
+        // the small failover jitter (well under the 1s exhaustion backoff
+        // floor) to elapse, not a full backoff tick.
         const countBeforeFailure = updateCallbackCount;
         successWs.emitClose();
+        clock.tick(FAILOVER_JITTER_MAX_MS);
 
         expect(updateCallbackCount).to.equal(countBeforeFailure + 1);
+    });
+
+    it("adds a randomized, non-synchronized delay before retrying a single relayer failure", () => {
+        const relayerUrls = [
+            "wss://relay-a.example",
+            "wss://relay-b.example",
+            "wss://relay-c.example"
+        ];
+        const setTimeoutSpy = sinon.spy(global, "setTimeout");
+        const delays: number[] = [];
+
+        // Simulate several independent clients failing over off one relayer
+        // at essentially the same instant (a reconnect storm), and capture
+        // the randomized retry delay each one schedules.
+        for (let i = 0; i < 8; i++) {
+            HolepunchRelay.init(relayerUrls, () => undefined, createLogger());
+            const ws =
+                FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
+            setTimeoutSpy.resetHistory();
+            ws.emitClose();
+
+            expect(setTimeoutSpy.calledOnce).to.equal(true);
+            const delayMs = setTimeoutSpy.firstCall.args[1] as number;
+            expect(delayMs).to.be.at.least(0);
+            expect(delayMs).to.be.lessThan(FAILOVER_JITTER_MAX_MS);
+            delays.push(delayMs);
+        }
+
+        // Not a thundering herd: delays aren't all identical, and not all
+        // zero (the pre-fix, always-synchronous-retry behavior).
+        expect(new Set(delays).size).to.be.greaterThan(1);
+        expect(delays.some((delayMs) => delayMs > 0)).to.equal(true);
+    });
+
+    it("applies full jitter (not a deterministic mark) to the exhaustion backoff", () => {
+        const relayerUrls = ["wss://relay-a.example", "wss://relay-b.example"];
+        const setTimeoutSpy = sinon.spy(global, "setTimeout");
+        const delays: number[] = [];
+
+        // Simulate several independent clients that all exhaust the full
+        // relayer pool at the same moment (e.g. a shared relayer outage).
+        for (let i = 0; i < 8; i++) {
+            HolepunchRelay.init(relayerUrls, () => undefined, createLogger());
+            // Fail the first relayer, then advance past its (jittered)
+            // failover retry so the client actually reconnects to the
+            // second relayer before failing that one too.
+            FakeWebSocket.instances[
+                FakeWebSocket.instances.length - 1
+            ].emitClose();
+            clock.tick(FAILOVER_JITTER_MAX_MS);
+            setTimeoutSpy.resetHistory();
+            FakeWebSocket.instances[
+                FakeWebSocket.instances.length - 1
+            ].emitClose();
+
+            // The second failure exhausts the 2-relayer pool and schedules
+            // the backoff retry - capture that delay.
+            expect(setTimeoutSpy.calledOnce).to.equal(true);
+            const delayMs = setTimeoutSpy.firstCall.args[1] as number;
+            // First exhaustion: cappedBackoffMs = BACKOFF_BASE_MS * 2^0 = 1000.
+            expect(delayMs).to.be.at.least(0);
+            expect(delayMs).to.be.lessThan(1000);
+            delays.push(delayMs);
+        }
+
+        // Full jitter, not the deterministic 1000ms mark every client would
+        // hit pre-fix - delays are spread across the range, not lockstepped.
+        expect(new Set(delays).size).to.be.greaterThan(1);
+        expect(delays.some((delayMs) => delayMs > 0)).to.equal(true);
+        expect(delays.every((delayMs) => delayMs !== 1000)).to.equal(true);
     });
 });
