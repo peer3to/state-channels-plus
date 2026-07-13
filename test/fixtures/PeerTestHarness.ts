@@ -96,7 +96,6 @@ export class PeerTestHarness<
     private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator<TCustomRpc>;
-    private onBlockHeartbeat?: () => void;
 
     // Chain access. The harness owns its provider built from a node URL — either
     // one passed in (PROVIDER_URL, e.g. a parallel-runner slot) or one it starts
@@ -320,9 +319,6 @@ export class PeerTestHarness<
 
         // Pulse the event-counts barrier on every mined block so barriers
         // don't stall waiting for chain-time to advance between transactions.
-        const onBlock = () => this.eventCountsBarrier.signal();
-        this.onBlockHeartbeat = onBlock;
-        this.provider.on("block", onBlock);
 
         // Startup = everything in setup() except the contract deploy (peer/SDK
         // init + connection). Emitted for the parallel runner to parse/sum; one
@@ -601,15 +597,15 @@ export class PeerTestHarness<
                     component: "P2pEventHooks"
                 });
                 eventSpies.onConnection?.(addr, isChannelOpened);
-                this.connectionBarrier.signal();
-                this.eventCountsBarrier.signal();
+                void this.connectionBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onDisconnection: (addr: Address) => {
                 peerLogger.verbose(`Disconnection from ${addr}`, {
                     component: "P2pEventHooks"
                 });
-                this.disconnectionBarrier.signal();
-                this.eventCountsBarrier.signal();
+                void this.disconnectionBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onTurn: (
                 addr: Address,
@@ -621,8 +617,8 @@ export class PeerTestHarness<
                     component: "P2pEventHooks"
                 });
                 eventSpies.onTurn?.(addr);
-                peerTurnBarrier.signal();
-                this.eventCountsBarrier.signal();
+                void peerTurnBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onSetState: (forkId: ForkId) => {
                 peerLogger.debug("State set", { component: "P2pEventHooks" });
@@ -632,7 +628,7 @@ export class PeerTestHarness<
                     this.forkIdCache.set(index, forkId);
                 }
                 eventSpies.onSetState?.();
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onStatusChanged: (oldStatus, newStatus) => {
                 peerLogger.debug("Status changed (hook)", {
@@ -641,21 +637,21 @@ export class PeerTestHarness<
                     newStatus
                 });
                 eventSpies.onStatusChanged?.(oldStatus, newStatus);
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onPostingCalldata: () => {
                 peerLogger.debug("Posting calldata to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostingCalldata?.();
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onPostedCalldata: () => {
                 peerLogger.debug("Calldata posted to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostedCalldata?.();
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onDisputeStarted: (maxDuration: number) => {
                 peerLogger.debug("Dispute started", {
@@ -663,7 +659,7 @@ export class PeerTestHarness<
                     maxDuration
                 });
                 eventSpies.disputeStarted?.(maxDuration);
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onInitiatingDispute: (
                 disputeHash: Hash,
@@ -676,7 +672,7 @@ export class PeerTestHarness<
                     }
                 );
                 eventSpies.onInitiatingDispute?.(disputeHash, dispute);
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onDisputeUpdate: (slashes: Address[], timeout?: Address) => {
                 peerLogger.info("Dispute updated", {
@@ -685,7 +681,7 @@ export class PeerTestHarness<
                     timeout
                 });
                 eventSpies.onDisputeUpdate?.(slashes, timeout);
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onDisputeAcknowledgment: (addr: Address) => {
                 peerLogger.verbose(
@@ -694,11 +690,11 @@ export class PeerTestHarness<
                         component: "P2pEventHooks"
                     }
                 );
-                this.rpcBarrier.signal();
-                this.eventCountsBarrier.signal();
+                void this.rpcBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onBlockFinalized: () => {
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onBlockConfirmationProcessed: (
                 blockHash: Hash,
@@ -713,7 +709,7 @@ export class PeerTestHarness<
                     blockHash,
                     keepConnection
                 );
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             }
         };
 
@@ -813,7 +809,7 @@ export class PeerTestHarness<
             peer.p2pInstance.on(name, (...args: unknown[]) => {
                 const spy = spies[name as keyof EventSpies];
                 spy?.(...(args as Parameters<sinon.SinonSpy>));
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             });
         }
     }
@@ -823,13 +819,8 @@ export class PeerTestHarness<
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
 
-        if (this.onBlockHeartbeat) {
-            this.provider?.off("block", this.onBlockHeartbeat);
-            this.onBlockHeartbeat = undefined;
-        }
-
         if (this.channelManager) {
-            this.channelManager.removeAllListeners();
+            await this.channelManager.removeAllListeners();
         }
 
         this.connectionBarrier.clear();
@@ -872,7 +863,7 @@ export class PeerTestHarness<
         await LocalDiscoveryServer.cleanup();
 
         // Drop the provider's pollers; stop the node/discovery we started (if any).
-        this.provider?.destroy();
+        await this.provider?.destroy();
         this.ownNode?.stop();
         this.ownDiscovery?.stop();
         this.ownNode = undefined;
