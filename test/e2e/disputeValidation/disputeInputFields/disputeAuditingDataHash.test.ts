@@ -18,7 +18,7 @@ describe("E2E: dispute validation / disputeInputFields / disputeAuditingDataHash
             timeConfig: { evidenceTime: 6 }
         });
 
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             0,
             DisputeTampering.tamperAuditingDataHash,
             {
@@ -31,7 +31,7 @@ describe("E2E: dispute validation / disputeInputFields / disputeAuditingDataHash
 
         await h.assert.dispute.initiatedAndCommitedWait();
 
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockDoubleSign,
             maliciousPeerIndex: 1
         });

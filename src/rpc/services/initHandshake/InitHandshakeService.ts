@@ -434,7 +434,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             localAddress < completedPeerAddress;
 
         if (shouldInitiateWebRTC) {
-            this.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
+            void this.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
                 transport
             );
         }

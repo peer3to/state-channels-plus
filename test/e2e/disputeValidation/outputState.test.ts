@@ -11,7 +11,7 @@ describe("E2E: dispute validation / outputState", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
 
-        h.tamper.stubConstructDispute(2, async (dispute, sm) => {
+        await h.tamper.stubConstructDispute(2, async (dispute, sm) => {
             dispute.outputSnapshotDataHash =
                 sm.p2pManager.localRpc.dispute.hash("0x42");
         });

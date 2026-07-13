@@ -135,7 +135,7 @@ describe("E2E: Dispute Manager", function () {
             await h.lifecycle.start(3, 1);
             await h.assert.sync.peersInSyncWait();
             h.event.resetEventSpies();
-            h.byzantine.stubBroadcast(1);
+            await h.byzantine.stubBroadcast(1);
             await h.transition.advanceState({ waitForSync: false });
 
             await h.assert.sync.peerBlockHeightGreaterThan(1, 2);
@@ -172,8 +172,8 @@ describe("E2E: Dispute Manager", function () {
             // This is NOT a good test, since peer 2 will try and timeout peer 0 and while doing so will fetch on-chain block (and run it through the pipeline) while checking race condition (calldata posted)
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            h.byzantine.stubCalldataHandler(2);
-            h.contextApi.storeSnapshotCount(2, "before_isolation");
+            await h.byzantine.stubCalldataHandler(2);
+            await h.contextApi.storeSnapshotCount(2, "before_isolation");
             await h.byzantine.disconnect(2);
             h.event.resetEventSpies();
 
@@ -186,7 +186,7 @@ describe("E2E: Dispute Manager", function () {
             await h.assert.storage.honestPeersStoredBlockAndStateWait({
                 height: 1
             });
-            h.byzantine.restoreCalldataHandler(2);
+            await h.byzantine.restoreCalldataHandler(2);
         });
     });
 });

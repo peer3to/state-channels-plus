@@ -15,7 +15,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 const stateProof = dispute.input.stateProof;
                 d.expectSignedBlocksOnlyStateProof(stateProof);
@@ -61,7 +61,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 const stateProof = dispute.input.stateProof;
                 d.expectSignedBlocksOnlyStateProof(stateProof);
@@ -97,7 +97,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const svc = sm.p2pManager.localRpc.dispute;
                 const stateProof = dispute.input.stateProof;
                 if (
@@ -137,7 +137,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.stubConstructDispute(
+            await h.tamper.stubConstructDispute(
                 3,
                 async (dispute, sm, args) => {
                     const svc = sm.p2pManager.localRpc.dispute;
@@ -206,7 +206,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 const stateProof = dispute.input.stateProof;
                 if (stateProof.milestones.length !== 0) {

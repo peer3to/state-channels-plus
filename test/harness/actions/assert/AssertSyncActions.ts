@@ -209,7 +209,7 @@ export class AssertSyncActions<
             timeoutMessageFn: () => {
                 let errorMsg = "";
                 try {
-                    this.onChainSnapshotAndPeersSameFork();
+                    void this.onChainSnapshotAndPeersSameFork();
                 } catch (error) {
                     errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
                 }

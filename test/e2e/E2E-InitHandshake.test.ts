@@ -32,7 +32,7 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0, { autoConnect: true });
             await h.event.waitUntilEventOccurs("onConnection", 5000);
-            h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
+            await h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
 
             const peer0 = h.getPeer(0);
             const peer1Address = h.getPeer(1).address;

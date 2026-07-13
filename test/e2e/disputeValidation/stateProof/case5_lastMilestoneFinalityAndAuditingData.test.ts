@@ -14,7 +14,7 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
 
             h.event.resetEventSpies();
 
-            h.tamper.stubConstructDispute(2, (dispute) => {
+            await h.tamper.stubConstructDispute(2, (dispute) => {
                 dispute.postedAuditingData = false;
             });
 

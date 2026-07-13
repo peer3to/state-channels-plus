@@ -11,7 +11,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
                 await d.rewriteLastSignedBlockInDispute(dispute, (bs) =>
@@ -43,7 +43,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
                 await d.rewriteLastSignedBlockInDispute(dispute, (bs) =>
@@ -79,7 +79,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
                 await d.rewriteSignedBlockAtIndex(dispute, 0, (bs) =>
@@ -113,7 +113,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 await d.rewriteLastMilestoneSignedBlockInDispute(
                     dispute,
@@ -148,7 +148,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 await d.rewriteLastMilestoneSignedBlockInDispute(
                     dispute,
@@ -197,7 +197,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 await h.scenario.preDisputeSetupDisconnectedPeer();
                 const originalForkId = h.context.originalForkId!;
 
-                h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                     const d = sm.p2pManager.localRpc.dispute;
                     d.expectSignedBlocksOnlyStateProof(
                         dispute.input.stateProof
@@ -243,7 +243,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 await h.scenario.preDisputeSetupCalldataPath();
                 const originalForkId = h.context.originalForkId!;
 
-                h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                     const d = sm.p2pManager.localRpc.dispute;
                     await d.rewriteUniformForkIdInDispute(
                         dispute,

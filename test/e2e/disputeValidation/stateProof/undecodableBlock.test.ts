@@ -12,7 +12,7 @@ describe("E2E: dispute validation / stateProof / undecodableBlock", function () 
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetupCalldataPath();
 
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             3,
             (dispute, _sm, args) => {
                 const sb = dispute.input.stateProof.milestones

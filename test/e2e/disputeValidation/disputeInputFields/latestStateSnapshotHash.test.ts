@@ -14,7 +14,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetup();
                     await h.assert.sync.peersInSyncWait();
 
-                    h.tamper.stubConstructDispute(1, (dispute, sm) => {
+                    await h.tamper.stubConstructDispute(1, (dispute, sm) => {
                         dispute.input.stateProof.milestones = [];
                         dispute.input.stateProof.signedBlocks = [];
                         dispute.input.latestStateSnapshotHash =
@@ -50,7 +50,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetup();
                     await h.assert.sync.peersInSyncWait();
 
-                    h.tamper.stubConstructDispute(1, (d, sm) => {
+                    await h.tamper.stubConstructDispute(1, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
                         svc.expectMilestonesOnlyStateProof(d.input.stateProof);
                         d.input.latestStateSnapshotHash = svc.randomHash();
@@ -85,7 +85,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const disconnectedAuditorIndex = 3;
                     await h.network.disconnectPeer(disconnectedAuditorIndex);
 
-                    h.tamper.stubConstructDispute(1, (d, sm) => {
+                    await h.tamper.stubConstructDispute(1, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
                         svc.expectMilestonesOnlyStateProof(d.input.stateProof);
                         d.input.latestStateSnapshotHash = svc.randomHash();
@@ -124,7 +124,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupDisconnectedPeer();
 
-                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                    await h.tamper.stubConstructDispute(3, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
                         svc.expectSignedBlocksOnlyStateProof(
                             d.input.stateProof
@@ -159,7 +159,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         timeConfig: { p2pTime: 3 }
                     });
 
-                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                    await h.tamper.stubConstructDispute(3, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
                         svc.expectSignedBlocksOnlyStateProof(
                             d.input.stateProof
@@ -198,7 +198,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetupCalldataPath();
                     await h.assert.sync.peersInSyncWait();
 
-                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                    await h.tamper.stubConstructDispute(3, (d, sm) => {
                         d.input.stateProof.milestones = [];
                         d.input.stateProof.signedBlocks = [];
                         d.input.latestStateSnapshotHash =
@@ -236,7 +236,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetupCalldataPath();
                     await h.assert.sync.peersInSyncWait();
 
-                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                    await h.tamper.stubConstructDispute(3, (d, sm) => {
                         d.input.latestStateSnapshotHash =
                             sm.p2pManager.localRpc.dispute.randomHash();
                     });
@@ -293,7 +293,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     h.contextApi.captureOriginalFork();
                     h.event.resetEventSpies();
 
-                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                    await h.tamper.stubConstructDispute(3, (d, sm) => {
                         if (d.input.stateProof.milestones.length === 0) {
                             throw new Error(
                                 `expected milestones in stateProof (leaver was peer ${leaverIndex})`
@@ -338,7 +338,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     });
 
                     // signedBlocks-only disputes do not auto-post calldata (no milestones).
-                    h.tamper.stubConstructDispute(3, (d, sm) => {
+                    await h.tamper.stubConstructDispute(3, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
                         svc.expectSignedBlocksOnlyStateProof(
                             d.input.stateProof

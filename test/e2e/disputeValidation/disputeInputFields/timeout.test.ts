@@ -13,7 +13,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         h.event.resetEventSpies();
 
         // Peer 2 submits a timeout dispute with the wrong blockHeight.
-        h.tamper.stubConstructDispute(2, async (dispute, sm) => {
+        await h.tamper.stubConstructDispute(2, async (dispute, sm) => {
             const svc = sm.p2pManager.localRpc.dispute;
             const [hasBlock, latestBlock] =
                 await svc.getLatestBlockFromStateProof(
@@ -46,7 +46,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         await h.scenario.preDisputeSetup();
 
         // Peer 0 submits a timeout dispute with the wrong participant.
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             0,
             (dispute, _sm, args) => {
                 //  blame peer 1

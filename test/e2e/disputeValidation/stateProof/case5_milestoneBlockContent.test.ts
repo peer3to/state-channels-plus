@@ -13,7 +13,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
             h.event.resetEventSpies();
 
-            h.tamper.stubConstructDispute(0, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(0, async (dispute, sm) => {
                 const svc = sm.p2pManager.localRpc.dispute;
                 const stateProof = dispute.input.stateProof;
 

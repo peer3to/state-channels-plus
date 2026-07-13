@@ -7,7 +7,7 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         await h.scenario.preDisputeSetup();
 
         // Corrupt snapshot store
-        h.tamper.corruptValidatorSnapshotForBalanceInvariant(2);
+        await h.tamper.corruptValidatorSnapshotForBalanceInvariant(2);
 
         await h.byzantine.submitDoubleSignBlock(1);
 

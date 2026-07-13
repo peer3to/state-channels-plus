@@ -8,7 +8,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         await h.scenario.preDisputeSetup();
 
         const fakeSlashedAddress = h.getPeer(0).address;
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             1,
             async (dispute, _sm, args) => {
                 dispute.input.onChainSlashes = [
@@ -65,7 +65,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();
 
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             3,
             async (dispute, sm, args) => {
                 dispute.input.timeout.participant =
@@ -100,7 +100,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         await h.scenario.preDisputeSetup({ peerCount: 4 });
 
         const junkSlashes = Array.from({ length: 8 }, randomAddress);
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             1,
             (dispute, _sm, args) => {
                 dispute.input.onChainSlashes = args.junkSlashes as string[];

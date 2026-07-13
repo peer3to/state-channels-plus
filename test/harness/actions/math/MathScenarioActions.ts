@@ -292,7 +292,7 @@ export class MathScenarioActions extends ScenarioActions {
     async peerWithUnbroadcastedBlock(peerIndex: number = 1) {
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
-        this.harness.byzantine.stubBroadcast(peerIndex);
+        await this.harness.byzantine.stubBroadcast(peerIndex);
         await this.harness.transition.advanceState({ waitForSync: false });
     }
 

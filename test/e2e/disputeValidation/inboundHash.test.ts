@@ -12,7 +12,7 @@ describe("E2E: dispute validation / inboundHash", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
 
-        h.tamper.stubConstructDispute(0, (dispute, sm) => {
+        await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash =
                 sm.p2pManager.localRpc.dispute.randomHash() as Hash;
         });
@@ -39,7 +39,7 @@ describe("E2E: dispute validation / inboundHash", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
 
-        h.tamper.stubConstructDispute(0, (dispute, sm) => {
+        await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash = sm.p2pManager.localRpc
                 .dispute.zeroHash as Hash;
             dispute.input.lastInboundMessageBlockHeight = 999999n;

@@ -425,7 +425,7 @@ class StateManager<
         const handle = this.timeoutManager.scheduleTask(
             () => {
                 // Don't call reductionTriggerMap.delete(forkId) - race condition problem
-                this.tryReduce(forkId);
+                void this.tryReduce(forkId);
             },
             Math.max(0, (localTriggerTimestamp - now) * 1000),
             `reduction-${forkId}`

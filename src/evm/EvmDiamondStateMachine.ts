@@ -134,7 +134,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                         Object.values(event.args)
                     );
                 } else if (this.p2pContractInstance) {
-                    this.p2pContractInstance.emit(
+                    void this.p2pContractInstance.emit(
                         event.name,
                         ...Object.values(event.args)
                     );

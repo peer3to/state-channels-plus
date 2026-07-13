@@ -29,13 +29,13 @@ describe("SignerRecoveryCache", () => {
 
     it("memoizes by (message, signature) — repeats add no entries", async () => {
         const { message, signature } = await signed();
-        recoverSigner(message, signature);
-        recoverSigner(message, signature);
-        recoverSigner(message, signature);
+        await recoverSigner(message, signature);
+        await recoverSigner(message, signature);
+        await recoverSigner(message, signature);
         expect(__signerRecoveryCacheSize()).to.equal(1);
 
         const other = await signed();
-        recoverSigner(other.message, other.signature);
+        await recoverSigner(other.message, other.signature);
         expect(__signerRecoveryCacheSize()).to.equal(2);
     });
 
@@ -56,7 +56,8 @@ describe("SignerRecoveryCache", () => {
         try {
             const entries = [];
             for (let i = 0; i < 5; i++) entries.push(await signed());
-            for (const e of entries) recoverSigner(e.message, e.signature);
+            for (const e of entries)
+                await recoverSigner(e.message, e.signature);
             expect(__signerRecoveryCacheSize()).to.equal(3);
             // oldest two evicted; newest three still resolve from cache correctly
             for (const e of entries.slice(2))

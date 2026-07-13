@@ -60,7 +60,7 @@ class WebRTCMainThreadBridgeBroker {
         this.port.onmessage = (
             event: MessageEvent<WebRTCBridgePortMessage>
         ) => {
-            this.handleMessage(event.data);
+            void this.handleMessage(event.data);
         };
         this.port.start?.();
     }

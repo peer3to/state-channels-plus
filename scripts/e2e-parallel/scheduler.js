@@ -20,10 +20,10 @@ function resolveMode(flag, envVar, fallback) {
 }
 
 // Thread modes are uniform across the whole run — set once at the CLI (or env)
-// and passed to every test. vmThread defaults on; sdkThread is opt-in.
+// and passed to every test. Both worker-thread modes default on.
 function resolveThreadModes(cli) {
     return {
-        sdkThread: resolveMode(cli.sdkThread, "RUN_SDK_IN_THREAD", false),
+        sdkThread: resolveMode(cli.sdkThread, "RUN_SDK_IN_THREAD", true),
         vmThread: resolveMode(cli.vmThread, "VM_DEDICATED_THREAD", true)
     };
 }
