@@ -37,8 +37,10 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signer
 export const hash = (): `0x${string}` =>
     ethers.hexlify(ethers.randomBytes(32)) as `0x${string}`;
 
-export const randomAddress = (): Address =>
-    ethers.Wallet.createRandom().address as Address;
+export const randomWallet = (): ethers.HDNodeWallet =>
+    ethers.Wallet.createRandom();
+
+export const randomAddress = (): Address => randomWallet().address as Address;
 
 export const hexString = (length: number = 32): Bytes => {
     return ethers.hexlify(ethers.randomBytes(length));
@@ -114,8 +116,14 @@ export function transaction(
     }
 
     // Apply other top-level overrides
-    return { ...transaction, ...overrides };
+    const { header: _header, body: _body, ...topLevelOverrides } = overrides;
+    return { ...transaction, ...topLevelOverrides };
 }
+
+export type BlockFactoryOverrides = Partial<BlockStruct> & {
+    /** Shorthand for `transaction.header` — merged with any nested `transaction.header`. */
+    header?: Partial<TransactionHeaderStruct>;
+};
 
 /**
  * Creates a mock block for testing
@@ -123,28 +131,38 @@ export function transaction(
  * @returns A mock Block instance
  */
 export function block(
-    overrides: Partial<BlockStruct> = {},
+    overrides: BlockFactoryOverrides = {},
     signer?: HardhatEthersSigner
 ): Block {
-    const blockStruct: BlockStruct = {
-        transaction: transaction(undefined, signer),
-        previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
-        stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
-        messageBlocks: []
+    const { header, transaction: transactionOverride, ...rest } = overrides;
+
+    const transactionOverrides: Partial<TransactionStruct> = {
+        ...transactionOverride,
+        ...(header
+            ? {
+                  header: {
+                      ...transactionOverride?.header,
+                      ...header
+                  } as TransactionHeaderStruct
+              }
+            : {})
     };
 
-    if (overrides.transaction) {
-        blockStruct.transaction = transaction({
-            ...blockStruct.transaction,
-            ...overrides.transaction
-        });
-    }
+    const blockStruct: BlockStruct = {
+        transaction: transaction(
+            Object.keys(transactionOverrides).length > 0
+                ? transactionOverrides
+                : undefined,
+            signer
+        ),
+        previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
+        stateSnapshotHash: ethers.hexlify(ethers.randomBytes(32)),
+        messageBlocks: [],
+        ...rest
+    };
 
-    const finalBlockStruct = { ...blockStruct, ...overrides };
-
-    // Create a SignedBlockStruct to use with Block.fromSignedBlock
     const signedBlockStruct: SignedBlockStruct = {
-        encodedBlock: Codec.encode(finalBlockStruct, Type.Block),
+        encodedBlock: Codec.encode(blockStruct, Type.Block),
         signature: signature()
     };
 
@@ -273,6 +291,30 @@ export function blockConfirmation(
     };
 
     return { ...defaultBlockConfirmation, ...overrides };
+}
+
+export async function encodeAuthoredConfirmation(
+    block: Block,
+    signer: ethers.Signer,
+    signatures: string[] = []
+): Promise<string> {
+    const signature = await signer.signMessage(ethers.getBytes(block.hash));
+    return Codec.encode(
+        {
+            signedBlock: { encodedBlock: block.encode(), signature },
+            signatures
+        },
+        Type.BlockConfirmation
+    ) as string;
+}
+
+/** Craft a block and return its author-signed confirmation encoding. */
+export async function buildAndEncodeBlock(
+    signer: ethers.Signer,
+    overrides: BlockFactoryOverrides = {},
+    signatures: string[] = []
+): Promise<string> {
+    return encodeAuthoredConfirmation(block(overrides), signer, signatures);
 }
 
 export function exitChannelBlock(
