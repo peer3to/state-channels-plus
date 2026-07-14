@@ -3,6 +3,10 @@ import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import { Codec, sleep, Type } from "@/utils";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
+import { Block } from "@/models";
+import { BlockValidationResult } from "@/types";
+import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
+import * as factory from "@test/factory";
 import type { Address } from "@/types/types";
 import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
@@ -946,6 +950,108 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public getSpectateSyncCallCount(): number {
         return this.service.spectateSyncCallCount;
+    }
+
+    public async runBlockValidation(
+        encodedBlockConfirmation: string,
+        options?: { strategy?: "active" | "dispute"; encodedDispute?: string }
+    ): Promise<{
+        result: number;
+        resultName: string;
+        disputedForkIds: string[];
+        disconnectedAddresses: string[];
+        restoreQueuedEntryCalled: boolean;
+        signerAddress: string;
+        fraudProofType: string | null;
+    }> {
+        const sm = this.p2pManager.stateManager;
+        const blockConfirmation = Codec.decode(
+            encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        const block = Block.fromBlockConfirmation(blockConfirmation);
+        const entry = sm.storage.queues.createEntry(block);
+        // default: the live block strategy (PARTICIPATING). "dispute" builds a
+        // real DisputeValidationStrategy - as dispute auditing does - so the
+        // dispute-only branches (skip future/disputed gates, setState, the
+        // isLinked !prevBlock edge) are drivable here. the dispute struct is
+        // only referenced when a deviation stores fraud-proof evidence; the
+        // paths driven here don't, so a placeholder dispute is faithful.
+        const strategy =
+            options?.strategy === "dispute"
+                ? new DisputeValidationStrategy(
+                      sm.storage,
+                      options.encodedDispute
+                          ? Codec.decode(options.encodedDispute, Type.Dispute)
+                          : factory.dispute(),
+                      0,
+                      sm.logger
+                  )
+                : sm.getActiveValidationStrategy();
+
+        const disputedForkIds: string[] = [];
+        const disconnectedAddresses: string[] = [];
+        let restoreQueuedEntryCalled = false;
+
+        // record-only: a real dispute posts on-chain against the crafted block,
+        // a real disconnect cuts a live transport, a real restore re-arms a
+        // queue timeout -> all would derail the session. Fraud-proof creation
+        // stays real so the hook is identifiable by the persisted proof type.
+        const disputeManager = (
+            strategy as unknown as {
+                disputeManager?: {
+                    dispute: (forkId: ForkId) => Promise<void>;
+                };
+            }
+        ).disputeManager;
+        const originalDispute = disputeManager?.dispute.bind(disputeManager);
+        if (disputeManager) {
+            disputeManager.dispute = async (forkId: ForkId) => {
+                disputedForkIds.push(String(forkId));
+            };
+        }
+        const p2pManager = sm.p2pManager;
+        const originalDisconnect =
+            p2pManager.disconnectAndBlacklistPeerByEvmAddress.bind(p2pManager);
+        p2pManager.disconnectAndBlacklistPeerByEvmAddress = ((
+            address: Address
+        ) => {
+            disconnectedAddresses.push(String(address));
+        }) as typeof p2pManager.disconnectAndBlacklistPeerByEvmAddress;
+        const originalRestore = sm.blockQueueManager.restoreQueuedEntry.bind(
+            sm.blockQueueManager
+        );
+        sm.blockQueueManager.restoreQueuedEntry = (() => {
+            restoreQueuedEntryCalled = true;
+        }) as typeof sm.blockQueueManager.restoreQueuedEntry;
+
+        try {
+            const result = await sm.validationService.validateBlockConfirmation(
+                entry,
+                strategy
+            );
+            const fraudProof =
+                sm.storage.fraudProofs.getFraudProofForParticipant(
+                    block.signerAddress
+                );
+            return {
+                result,
+                resultName:
+                    BlockValidationResult[result] ?? `UNKNOWN(${result})`,
+                disputedForkIds,
+                disconnectedAddresses,
+                restoreQueuedEntryCalled,
+                signerAddress: String(block.signerAddress),
+                fraudProofType: fraudProof ? String(fraudProof.proofType) : null
+            };
+        } finally {
+            if (disputeManager && originalDispute) {
+                disputeManager.dispute = originalDispute;
+            }
+            p2pManager.disconnectAndBlacklistPeerByEvmAddress =
+                originalDisconnect;
+            sm.blockQueueManager.restoreQueuedEntry = originalRestore;
+        }
     }
 }
 
