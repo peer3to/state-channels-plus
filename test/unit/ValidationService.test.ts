@@ -59,6 +59,7 @@ describe("Unit: ValidationService", function () {
 
             expect(r.resultName).to.equal("DISCONNECT");
             expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.include("wrongChannel");
         });
 
         it("author outside the participant set → blockAuthorIsNotParticipant → DISCONNECT", async function () {
@@ -84,6 +85,7 @@ describe("Unit: ValidationService", function () {
 
             expect(r.resultName).to.equal("DISCONNECT");
             expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.include("blockAuthorIsNotParticipant");
         });
 
         it("height above nextHeight → blockIsNotNextAndIsInTheFuture → NOT_READY, requeued", async function () {
@@ -113,6 +115,7 @@ describe("Unit: ValidationService", function () {
             expect(r.resultName).to.equal("NOT_READY");
             expect(r.restoreQueuedEntryCalled).to.equal(true);
             expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.include("blockIsNotNextAndIsInTheFuture");
         });
 
         it("next block, wrong previousBlockHash → blockIsNotLinkedAndIsNotFirstBlock → DISCONNECT", async function () {
@@ -141,6 +144,7 @@ describe("Unit: ValidationService", function () {
 
             expect(r.resultName).to.equal("DISCONNECT");
             expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.include("blockIsNotLinkedAndIsNotFirstBlock");
         });
 
         it("height-0 block not linked to genesis → wrongGenesisDetected → DISPUTE + WrongGenesis proof", async function () {
@@ -385,6 +389,9 @@ describe("Unit: ValidationService", function () {
 
             expect(r.resultName).to.equal("DISCONNECT");
             expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.include(
+                "conflictingButNotLinkedBlockDetected"
+            );
         });
     });
 
@@ -596,6 +603,7 @@ describe("Unit: ValidationService", function () {
             expect(r.resultName).to.equal("SUCCESS");
             expect(r.disputedForkIds).to.deep.equal([]);
             expect(r.fraudProofType).to.be.null;
+            expect(r.firedHooks).to.deep.equal([]);
             expect(r.signerAddress.toLowerCase()).to.equal(
                 leader.address.toLowerCase()
             );
@@ -676,6 +684,7 @@ describe("Unit: ValidationService", function () {
             expect(r.resultName).to.equal("NOT_READY");
             expect(r.restoreQueuedEntryCalled).to.equal(true);
             expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.include("blockForkIsDisputed");
 
             await race.release({ replayEvents: false, runHeldTasks: false });
         });
@@ -738,6 +747,7 @@ describe("Unit: ValidationService", function () {
 
             expect(r.resultName).to.equal("SUCCESS");
             expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.deep.equal([]);
         });
     });
 

@@ -1123,11 +1123,12 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         resultName: string;
         disputedForkIds: string[];
         disconnectedAddresses: string[];
+        firedHooks: string[];
         restoreQueuedEntryCalled: boolean;
         signerAddress: string;
         fraudProofType: string | null;
     }> {
-        const sm = this.p2pManager.stateManager;
+        const sm = this.service.sm;
         const blockConfirmation = Codec.decode(
             encodedBlockConfirmation,
             Type.BlockConfirmation
@@ -1174,7 +1175,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                 disputedForkIds.push(String(forkId));
             };
         }
-        const p2pManager = sm.p2pManager;
+        const p2pManager = this.p2pManager;
         const originalDisconnect =
             p2pManager.disconnectAndBlacklistPeerByEvmAddress.bind(p2pManager);
         p2pManager.disconnectAndBlacklistPeerByEvmAddress = ((
@@ -1189,10 +1190,36 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             restoreQueuedEntryCalled = true;
         }) as typeof sm.blockQueueManager.restoreQueuedEntry;
 
+        // record which deviation hook the strategy fired, so a test can pin its
+        // named guard
+        const firedHooks: string[] = [];
+        const instrumentedStrategy = new Proxy(strategy, {
+            get(target, prop) {
+                const value = Reflect.get(target, prop);
+                if (typeof value !== "function") return value;
+                return (...args: unknown[]) =>
+                    Promise.resolve(
+                        (value as (...a: unknown[]) => unknown).apply(
+                            target,
+                            args
+                        )
+                    ).then((resolved) => {
+                        if (
+                            typeof prop === "string" &&
+                            typeof resolved === "number" &&
+                            BlockValidationResult[resolved] !== undefined
+                        ) {
+                            firedHooks.push(prop);
+                        }
+                        return resolved;
+                    });
+            }
+        });
+
         try {
             const result = await sm.validationService.validateBlockConfirmation(
                 entry,
-                strategy
+                instrumentedStrategy
             );
             const fraudProof =
                 sm.storage.fraudProofs.getFraudProofForParticipant(
@@ -1204,6 +1231,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                     BlockValidationResult[result] ?? `UNKNOWN(${result})`,
                 disputedForkIds,
                 disconnectedAddresses,
+                firedHooks,
                 restoreQueuedEntryCalled,
                 signerAddress: String(block.signerAddress),
                 fraudProofType: fraudProof ? String(fraudProof.proofType) : null
