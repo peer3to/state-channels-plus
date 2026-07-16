@@ -632,14 +632,14 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      */
     public stubPauseTryReduceAtKillPeriod(forkId: ForkId): boolean {
         const sm = this.service.sm;
-        const host = sm as unknown as PrivateTryReduceHost;
+        const host = sm.forkReductionService as unknown as PrivateTryReduceHost;
         const localDiamond = sm.diamondStateMachine
             .localDiamondContract as unknown as KillPeriodHost;
 
         if (!this.service.stubOriginals.has("pausedTryReduce")) {
             this.service.stubOriginals.set(
                 "pausedTryReduce",
-                host.tryReduce.bind(sm)
+                host.tryReduce.bind(sm.forkReductionService)
             );
         }
         if (!this.service.stubOriginals.has("pausedTryReduceKillPeriod")) {
@@ -736,7 +736,8 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         // tryReduce (its rejection surfaces as an unhandled host rejection
         // blamed elsewhere) yet still report success. Report the mismatch.
         if (!state || forkId !== state.targetForkId) return false;
-        const host = this.service.sm as unknown as PrivateTryReduceHost;
+        const host = this.service.sm
+            .forkReductionService as unknown as PrivateTryReduceHost;
         void host.tryReduce(forkId);
         return true;
     }
@@ -764,7 +765,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.releasePausedTryReduce();
 
         const sm = this.service.sm;
-        const host = sm as unknown as PrivateTryReduceHost;
+        const host = sm.forkReductionService as unknown as PrivateTryReduceHost;
         const localDiamond = sm.diamondStateMachine
             .localDiamondContract as unknown as KillPeriodHost;
         let restored = false;
@@ -872,14 +873,16 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         if (!this.service.stubOriginals.has("reduceLocally")) {
             this.service.stubOriginals.set(
                 "reduceLocally",
-                sm.reduceLocally.bind(sm)
+                sm.forkReductionService.reduceLocally.bind(
+                    sm.forkReductionService
+                )
             );
         }
         this.service.reduceLocallyCallCount = 0;
-        sm.reduceLocally = (async () => {
+        sm.forkReductionService.reduceLocally = (async () => {
             this.service.reduceLocallyCallCount += 1;
             return undefined;
-        }) as typeof sm.reduceLocally;
+        }) as typeof sm.forkReductionService.reduceLocally;
         return true;
     }
 
@@ -889,17 +892,19 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         if (!this.service.stubOriginals.has("reduceLocally")) {
             this.service.stubOriginals.set(
                 "reduceLocally",
-                sm.reduceLocally.bind(sm)
+                sm.forkReductionService.reduceLocally.bind(
+                    sm.forkReductionService
+                )
             );
         }
         this.service.reduceLocallyCallCount = 0;
         const original = this.service.stubOriginals.get(
             "reduceLocally"
-        ) as typeof sm.reduceLocally;
-        sm.reduceLocally = ((forkId) => {
+        ) as typeof sm.forkReductionService.reduceLocally;
+        sm.forkReductionService.reduceLocally = ((forkId) => {
             this.service.reduceLocallyCallCount += 1;
             return original(forkId);
-        }) as typeof sm.reduceLocally;
+        }) as typeof sm.forkReductionService.reduceLocally;
         return true;
     }
 
@@ -907,7 +912,8 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         const sm = this.service.sm;
         const original = this.service.stubOriginals.get("reduceLocally");
         if (original === undefined) return false;
-        sm.reduceLocally = original as typeof sm.reduceLocally;
+        sm.forkReductionService.reduceLocally =
+            original as typeof sm.forkReductionService.reduceLocally;
         this.service.stubOriginals.delete("reduceLocally");
         return true;
     }
