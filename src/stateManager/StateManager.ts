@@ -2176,17 +2176,29 @@ class StateManager<
                     break;
                 }
 
-                // Build disputes from local storage confirmations
-                const disputes: DisputeStruct[] = disputeCommitments.map(
-                    (commitment) => {
-                        const dispute =
-                            this.storage.disputes.getDispute(commitment);
-                        if (!dispute) {
-                            throw new MissingDisputeInStorageError(commitment);
-                        }
-                        return dispute;
+                // Build disputes from local storage confirmations. A commitment
+                // can be on-chain before our onDisputeCommitted handler stored
+                // its struct; treat a missing struct like the no-commitments
+                // case above — stop traversal and wait for more data. A later
+                // attempt converges once the struct arrives.
+                const disputes: DisputeStruct[] = [];
+                let disputeStructNotYetStored = false;
+                for (const commitment of disputeCommitments) {
+                    const dispute =
+                        this.storage.disputes.getDispute(commitment);
+                    if (!dispute) {
+                        this.logger.warn(
+                            "prepareUpdateStateSnapshotFork - dispute struct not yet stored; stopping traversal (wait for more data)",
+                            { forkId: currentForkId, commitment }
+                        );
+                        disputeStructNotYetStored = true;
+                        break;
                     }
-                );
+                    disputes.push(dispute);
+                }
+                if (disputeStructNotYetStored) {
+                    break;
+                }
 
                 this.logger.verbose(
                     "prepareUpdateStateSnapshotFork - disputes built from storage",
