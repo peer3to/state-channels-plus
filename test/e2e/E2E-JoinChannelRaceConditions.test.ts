@@ -83,12 +83,9 @@ describe("E2E: Join channel race conditions", function () {
                 onChainParticipants.map((a) => String(a).toLowerCase())
             ).to.not.include(joiner.address.toLowerCase());
 
-            // existing PARTICIPATING peers observe the byzantine snapshot and
-            // throw via EventHandler's unknown-snapshot fraud detection.
-            await TestSession.expectFirstDetachedError({
-                includes: "unknown snapshot",
-                timeoutMs: 3000
-            });
+            // postFraudulentSnapshot marks every signer of the forged balance
+            // invariant as malicious, so their resulting host errors are
+            // intentionally excluded from detached-error attribution.
         });
 
         it("pending inbound unconsumed → postStateSnapshot throws RaceConditionPendingInboundNotConsumed (fatal); on-chain snapshot unchanged", async function () {
@@ -178,7 +175,7 @@ describe("E2E: Join channel race conditions", function () {
                     .control(h.getPeer(joiner.index))
                     .query.getStatus()
                     .request()
-            ).to.equal(Status.SYNCED);
+            ).to.equal(Status.OPENED);
 
             const onChainParticipants = await h
                 .control(h.getPeer(joiner.index))

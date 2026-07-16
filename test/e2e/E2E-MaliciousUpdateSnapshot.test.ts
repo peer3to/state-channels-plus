@@ -156,12 +156,6 @@ describe("E2E: Malicious updateSnapshot", function () {
         );
     });
 
-    // TODO(separate-PR): the test BODY passes, but the afterEach hook hits the
-    // known product teardown bug `onStateSnapshotUpdated: unknown snapshot while
-    // status=4` (EventHandler.apply) — a slashed/disputed peer (status=4)
-    // receiving an unknown snapshot after resolution, same class as the deferred
-    // E2E-Spectate case4 teardown. Not a harness-conversion issue; fix product
-    // side (status=4 unknown-snapshot handling).
     it("colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant", async function () {
         const h = TestSession.getHarness();
 

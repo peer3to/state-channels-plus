@@ -4,8 +4,11 @@ import type ATransport from "@/transport/ATransport";
 import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
+import { id, Log } from "ethers";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
+
+type DisputeCommittedEventKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
@@ -24,24 +27,42 @@ export type StubKey =
     | "spectateAbort"
     | "reductionTasks"
     | "snapshotUpdatedEvents"
+    | "disputeCommittedEvents"
+    | "disputeInitiation"
     | "reducedCommitEvents"
-    | "reduceLocally"
+    | "reduce"
+    | "reductionSimulation"
+    | "finalDisputePreparation"
     | "spectateSync"
-    | "pausedTryReduce"
-    | "pausedTryReduceKillPeriod";
+    | "pausedReduction"
+    | "pausedReductionKillPeriod";
 
-export type PausedTryReduceStatus = {
+export type ReductionSimulationErrorName =
+    | "RaceConditionDisputeAlreadyReduced"
+    | "RaceConditionBlockHeightTooOld"
+    | "RaceConditionReductionExpectationDoesntMatch";
+
+export type PausedReductionStatus = {
     entered: boolean;
     released: boolean;
     settled: boolean;
     error?: string;
 };
 
-export type PausedTryReduceState = PausedTryReduceStatus & {
+export type PausedReductionState = PausedReductionStatus & {
     targetForkId: ForkId;
     inside: boolean;
     release?: () => void;
     promise?: Promise<unknown>;
+};
+
+export type EventSyncFailureProbe = {
+    samePromise: boolean;
+    handlerCallCount: number;
+    firstError: string | null;
+    secondError: string | null;
+    cursorBefore: number | null;
+    cursorAfter: number | null;
 };
 
 /**
@@ -79,13 +100,18 @@ export class StubService extends ARpcService<
     }[] = [];
     /** Event arg-tuples captured by the hold-event stubs. */
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
+    readonly heldDisputeCommittedArgs: unknown[][] = [];
+    readonly passedDisputeCommittedEventKeys =
+        new Set<DisputeCommittedEventKey>();
+    /** Whether the dispute-event hold stub should pass its first new log. */
+    passFirstDisputeCommittedEvent = true;
     readonly heldReducedCommitArgs: unknown[][] = [];
-    /** Incremented per `reduceLocally` call by the noop/record stubs. */
-    reduceLocallyCallCount = 0;
+    /** Incremented per `ReductionManager.tryReduce` call by the noop/record stubs. */
+    reduceCallCount = 0;
     /** Incremented per `spectateService.sync` by the record stub. */
     spectateSyncCallCount = 0;
     /** State for the already-entered old-fork reduction race stub. */
-    pausedTryReduce?: PausedTryReduceState;
+    pausedReduction?: PausedReductionState;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
@@ -98,6 +124,74 @@ export class StubService extends ARpcService<
 
     get sm() {
         return this.p2pManager.stateManager;
+    }
+
+    /** Exercise rejected-log retention through the real EventSyncService. */
+    public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
+        const sm = this.sm;
+        const contract = sm.stateChannelManagerContract;
+        const provider = contract.runner?.provider;
+        if (!provider) throw new Error("Expected a provider for event sync");
+        const latestBlock = await provider.getBlock("latest");
+        if (!latestBlock?.hash) throw new Error("Expected a latest block");
+        const stateSnapshot = await contract.getStateSnapshot(sm.channelId);
+        const event = contract.interface.getEvent("StateSnapshotUpdated");
+        const encodedEvent = contract.interface.encodeEventLog(event, [
+            sm.channelId,
+            stateSnapshot
+        ]);
+        const log = new Log(
+            {
+                address: String(contract.target),
+                blockHash: latestBlock.hash,
+                blockNumber: latestBlock.number + 1,
+                data: encodedEvent.data,
+                index: 0,
+                removed: false,
+                topics: encodedEvent.topics,
+                transactionHash: id(`event-sync-failure-${Date.now()}`),
+                transactionIndex: 0
+            },
+            provider
+        );
+        const eventHandler = sm.eventHandler;
+        const original = eventHandler.onStateSnapshotUpdated.bind(eventHandler);
+        let handlerCallCount = 0;
+        eventHandler.onStateSnapshotUpdated = async () => {
+            handlerCallCount += 1;
+            throw new Error("Expected event-sync rejection");
+        };
+        const cursorBefore =
+            sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ?? null;
+        try {
+            const first = sm.eventSyncService.scheduleLog(log, sm.channelId);
+            const second = sm.eventSyncService.scheduleLog(log, sm.channelId);
+            const [firstError, secondError] = await Promise.all([
+                first.then(
+                    () => null,
+                    (error: unknown) =>
+                        error instanceof Error ? error.message : String(error)
+                ),
+                second.then(
+                    () => null,
+                    (error: unknown) =>
+                        error instanceof Error ? error.message : String(error)
+                )
+            ]);
+            return {
+                samePromise: first === second,
+                handlerCallCount,
+                firstError,
+                secondError,
+                cursorBefore,
+                cursorAfter:
+                    sm.storage.eventSync.getLatestProcessedBlock(
+                        sm.channelId
+                    ) ?? null
+            };
+        } finally {
+            eventHandler.onStateSnapshotUpdated = original;
+        }
     }
 
     public createRPCMethods(transport: ATransport): StubRpcMethods {

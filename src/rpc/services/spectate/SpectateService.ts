@@ -508,29 +508,14 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 );
 
             // After collecting disputes for this window, reduce to get the next fork
-            const reducedOutput =
-                await diamondStateMachine.localDiamondContract.reduce.staticCall(
+            const computation =
+                await stateManager.reductionManager.computeReductionLocally(
+                    currentForkId,
                     currentWindowDisputesHashes
                 );
-
-            const reduceData =
-                await this.p2pManager.stateManager.agreementManager.getReduceData(
-                    currentForkId,
-                    reducedOutput
-                );
+            const { reduceData, reducedForkId } = computation;
 
             // Move to the next fork using local EVM
-            const [snapshotData] =
-                await diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
-                    currentForkId,
-                    reducedOutput,
-                    reduceData.latestStateSnapshot,
-                    reduceData.encodedStateMachineState,
-                    reduceData.inboundMessageBlocks
-                );
-            const reducedForkId = ethers.keccak256(
-                Codec.encode(snapshotData, Type.SnapshotData)
-            );
             disputeWindows.push({
                 disputeConfirmations: currentWindowDisputeConfirmations,
                 forkId: currentForkId as Hash,
@@ -690,7 +675,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // sync our local EVM to it
         await this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
             channelId,
-            currentOnChainSnapshot.toStruct()
+            currentOnChainSnapshot.toStruct(),
+            { blockNumber: 0, logIndex: 0 }
         );
         return currentOnChainSnapshot;
     }
@@ -730,20 +716,21 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // Encode data for multicall
         const calldata: string[] = [];
         for (const dw of disputeWindowsThatNeedToBeReducedOnChain) {
-            const reduceCalldata = contractInterface.encodeFunctionData(
-                "reduceAndFinalize",
-                [
-                    dw.disputeConfirmations.map((disputeConfirmation) =>
-                        Codec.decode(
-                            disputeConfirmation.signedDispute.encodedDispute,
-                            Type.Dispute
-                        )
-                    ),
+            const disputes = dw.disputeConfirmations.map(
+                (disputeConfirmation) =>
+                    Codec.decode(
+                        disputeConfirmation.signedDispute.encodedDispute,
+                        Type.Dispute
+                    )
+            );
+            const reduceCalldata =
+                stateManager.reductionManager.buildReduceAndFinalizeCalldata(
+                    disputes,
                     dw.latestStateSnapshot,
                     dw.latestEncodedStateMachineState,
-                    dw.inboundMessageBlocksAppliedInReduce
-                ]
-            );
+                    dw.inboundMessageBlocksAppliedInReduce,
+                    dw.reducedForkId
+                );
             calldata.push(reduceCalldata);
         }
         // check if we need to update the genesis snapshot first

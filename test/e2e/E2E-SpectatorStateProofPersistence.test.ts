@@ -81,6 +81,7 @@ describe("E2E: Join/Leave Sequence", function () {
         });
 
         const { newForkId } = await h.dispute.resolveDisputeWait({
+            forkId: preDisputeForkId,
             honestPeerIndices
         });
 
@@ -88,6 +89,16 @@ describe("E2E: Join/Leave Sequence", function () {
             newForkId,
             "Fork should have changed after dispute resolution"
         );
+
+        // Dispute resolution waits for the participating peers. The spectator
+        // event pipelines are independent, so wait for their authoritative
+        // final-dispute transitions before inspecting them.
+        await h.assert.sync.forkChangedWait({
+            originalForkId: preDisputeForkId,
+            expectedForkId: newForkId,
+            honestPeerIndices: spectatorIndices,
+            timeoutMs: 10000
+        });
 
         for (const i of spectatorIndices) {
             // spectators disconnected from the channel when the dispute started
@@ -100,12 +111,13 @@ describe("E2E: Join/Leave Sequence", function () {
                 0,
                 `spectator peer ${i} should have 0 open P2P connections after dispute`
             );
-            // spectator should have stayes on the pre-dispute fork
+            // The final dispute is authoritative for every peer that observes
+            // it, including disconnected spectators.
             expect(
                 await h.control(h.getPeer(i)).query.getForkId().request()
             ).to.equal(
-                preDisputeForkId,
-                `spectator peer ${i} should be on pre-dispute fork`
+                newForkId,
+                `spectator peer ${i} should transition to the final dispute fork`
             );
             // TODO - don't forget to rethink this
         }

@@ -34,7 +34,9 @@ export class TransitionRpcMethods extends ARpcMethods {
         forkId: ForkId
     ): Promise<{ encodedSnapshot: string } | null> {
         const struct = (
-            await this.service.sm.postStateSnapshot(forkId)
+            await this.service.sm.snapshotUpdateService.postStateSnapshot(
+                forkId
+            )
         )?.toStruct();
         return struct
             ? {
@@ -51,7 +53,9 @@ export class TransitionRpcMethods extends ARpcMethods {
         forkId: ForkId
     ): Promise<SameForkSnapshotUpdate | null> {
         const data =
-            await this.service.sm.prepareUpdateSnapshotSameFork(forkId);
+            await this.service.sm.snapshotUpdateService.prepareUpdateSnapshotSameFork(
+                forkId
+            );
         if (!data) return null;
         return {
             callData: data.callData,

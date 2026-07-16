@@ -100,4 +100,4 @@ purely for attribution/punishment. Deferred alongside the future rate-limiter.
 The three e2e scenarios above are peer-observable `src/` behavior; AGENTS asks for same-pass e2e. They
 are **deferred by explicit user (Luka) acceptance** because they need real dispute + on-chain reduction
 staging that trips the sandbox event-loop watchdog, producing environmental (not logic) failures. Run
-condition: a machine that can sustain `test:e2e:parallel` without watchdog throttling (Luka's box).
+condition: a machine that can sustain `test:parallel` without watchdog throttling (Luka's box).

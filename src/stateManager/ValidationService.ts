@@ -21,7 +21,7 @@ import type StateManager from "@/stateManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
-import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
+import EventSyncService from "./EventSyncService";
 
 export enum OnChainPostTiming {
     NOT_READY,
@@ -38,7 +38,7 @@ export default class ValidationService {
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
-        private readonly blockDataAvailabilityService: BlockDataAvailabilityService,
+        private readonly eventSyncService: EventSyncService,
         private readonly stateManager: StateManager,
         logger: Logger
     ) {
@@ -423,14 +423,14 @@ export default class ValidationService {
 
             // Try on-chain query to schedule validation for the previous block.
             const scheduleStatus =
-                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
+                await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                     previousBlock.forkId,
                     previousBlock.height,
                     previousBlock.author
                 );
 
             if (
-                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                this.eventSyncService.shouldDeferCurrentValidation(
                     scheduleStatus
                 )
             ) {
@@ -600,14 +600,14 @@ export default class ValidationService {
         // if doesn't have on-chain timestamp try and fetch it
         if (block.onChainTimestamp === undefined) {
             const scheduleStatus =
-                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
+                await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                     block.forkId,
                     block.height,
                     block.author
                 );
 
             if (
-                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                this.eventSyncService.shouldDeferCurrentValidation(
                     scheduleStatus
                 )
             ) {

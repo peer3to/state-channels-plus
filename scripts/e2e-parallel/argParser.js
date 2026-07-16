@@ -2,6 +2,37 @@
 const path = require("path");
 const { DEFAULT_LOG_DIR } = require("./constants");
 
+const HELP_TEXT = `Usage: yarn test:parallel [options]
+
+Run each discovered Mocha test in an independently scheduled process.
+
+Options:
+  -h, --help                     Show this help and exit
+  -g, --grep <regexp>            Run tests whose full Mocha title matches
+      --e2e-only                 Discover only tests under test/e2e
+  -d, --log-dir, --logDir, --dir <path>
+                                  Use and clear this exact log directory
+  -p, --allow-logdir-purge, --allowLogdirPurge, --purge
+                                  Allow clearing an explicit dir outside logs/
+      --slots <count>            Warm E2E infrastructure slots (0 disables)
+  -w, --workers <count>          Maximum concurrent test processes
+      --target-load <number>     Maximum average system load per CPU core
+      --scheduler-tick-ms <ms>   Scheduler admission interval
+      --mem-limit-gb <gb>        Memory budget for owned test processes
+      --sdk-thread               Run the SDK host in a worker thread
+      --no-sdk-thread            Run the SDK host on the main thread
+      --vm-thread                Run the VM executor in a worker thread
+      --no-vm-thread             Run the VM executor on the main thread
+      --dry-run                  Print resolved scheduling configuration only
+
+By default all tests under test/ are discovered and logs are written to a new
+logs/run-N directory. Use --e2e-only only when the ordinary Mocha tier is not
+needed.`;
+
+function getHelpText() {
+    return HELP_TEXT;
+}
+
 // A log dir is only usable if it's a non-empty, non-flag path that resolves
 // somewhere below the CWD. Empty (`--logDir=`), `.`, or a swallowed flag would
 // otherwise resolve to the repo root and get purged.
@@ -18,6 +49,8 @@ function parseCliArgs(argv) {
         logDirProvided: false,
         allowLogdirPurge: false,
         grep: undefined,
+        help: false,
+        e2eOnly: false,
         dryRun: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
         slots: undefined,
@@ -26,6 +59,8 @@ function parseCliArgs(argv) {
         workers: undefined,
         // Avg-load-per-core gate; undefined → TARGET_LOAD_PER_CORE.
         targetLoad: undefined,
+        // Scheduler admission interval; undefined → SCHEDULER_TICK_MS.
+        schedulerTickMs: undefined,
         // Memory budget in GiB; undefined → totalmem × MEM_LIMIT_FRACTION.
         memLimitGb: undefined,
         // Thread-mode toggles: undefined = fall back to env/default.
@@ -44,6 +79,11 @@ function parseCliArgs(argv) {
     for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];
 
+        if (arg === "--help" || arg === "-h") {
+            options.help = true;
+            continue;
+        }
+
         if (arg === "--grep" || arg === "-g") {
             const next = argv[i + 1];
             if (next && !next.startsWith("-")) {
@@ -54,6 +94,10 @@ function parseCliArgs(argv) {
         }
         if (arg.startsWith("--grep=")) {
             options.grep = arg.slice("--grep=".length);
+            continue;
+        }
+        if (arg === "--e2e-only") {
+            options.e2eOnly = true;
             continue;
         }
 
@@ -154,6 +198,22 @@ function parseCliArgs(argv) {
             continue;
         }
 
+        if (arg === "--scheduler-tick-ms") {
+            const v = takeNumber(argv[i + 1], (s) => Number.parseInt(s, 10));
+            if (v !== undefined) {
+                options.schedulerTickMs = v;
+                i++;
+            }
+            continue;
+        }
+        if (arg.startsWith("--scheduler-tick-ms=")) {
+            const v = takeNumber(arg.split("=")[1], (s) =>
+                Number.parseInt(s, 10)
+            );
+            if (v !== undefined) options.schedulerTickMs = v;
+            continue;
+        }
+
         if (arg === "--mem-limit-gb") {
             const v = takeNumber(argv[i + 1], Number.parseFloat);
             if (v !== undefined) {
@@ -194,4 +254,4 @@ function parseCliArgs(argv) {
     return options;
 }
 
-module.exports = { parseCliArgs };
+module.exports = { getHelpText, parseCliArgs };

@@ -36,11 +36,18 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { isEqual } from "lodash";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
+import type { ReductionGenesis } from "@/stateManager/reduction";
 import { Status } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 
+export type EventCoordinate = {
+    blockNumber: number;
+    logIndex: number;
+};
+
 export class EventHandler {
     private logger: Logger;
+    private disputeHandlingPromises = new Map<Hash, Promise<void>>();
 
     constructor(
         private storage: Storage,
@@ -55,7 +62,8 @@ export class EventHandler {
     async onChannelOpened(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct,
-        encodedState: Bytes
+        encodedState: Bytes,
+        coordinate: EventCoordinate
     ): Promise<void> {
         this.logger.debug("Channel opened", {
             channelId,
@@ -65,18 +73,39 @@ export class EventHandler {
         await this.diamondStateMachine.localDiamondContract.onChannelOpened(
             channelId,
             stateSnapshot,
-            encodedState
+            encodedState,
+            coordinate.blockNumber,
+            coordinate.logIndex
         );
 
-        await this.stateManager.setGenesisState(
-            stateSnapshot.snapshotData,
-            encodedState,
-            stateSnapshot.forkId,
-            Number(stateSnapshot.timestamp)
+        await this.stateManager.withMutex(
+            () =>
+                this.stateManager.unsafeSetGenesisState(
+                    stateSnapshot.snapshotData,
+                    encodedState,
+                    stateSnapshot.forkId,
+                    Number(stateSnapshot.timestamp)
+                ),
+            { taskName: "onChannelOpened.setGenesisState" }
         );
     }
 
     async onStateSnapshotUpdated(
+        channelId: ChannelId,
+        stateSnapshot: StateSnapshotStruct,
+        coordinate: EventCoordinate
+    ): Promise<void> {
+        await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
+            channelId,
+            stateSnapshot,
+            coordinate.blockNumber,
+            coordinate.logIndex
+        );
+
+        await this.processStateSnapshotUpdated(channelId, stateSnapshot);
+    }
+
+    private async processStateSnapshotUpdated(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct
     ): Promise<void> {
@@ -123,25 +152,13 @@ export class EventHandler {
                     this.stateManager.abort();
                     return;
                 }
-                // The snapshot may be the committed result of a fork
-                // reduction our local processing hasn't produced yet (chain
-                // events carry no cross-event ordering). Reduce on the spot -
-                // single-flight with the other reduction entry points - and
-                // re-check.
-                try {
-                    await this.stateManager.reduceLocally(
-                        this.stateManager.forkId
-                    );
-                } catch (error) {
-                    this.logger.warn(
-                        "onStateSnapshotUpdated - on-the-spot reduction failed",
-                        {
-                            channelId,
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
-                        }
+                const currentForkId = this.stateManager.forkId;
+                if (updatedSnapshot.forkID !== currentForkId) {
+                    // Chain events carry no cross-event ordering. Join the
+                    // fork's one reduction operation before deciding the
+                    // announced snapshot is unknown.
+                    await this.stateManager.reductionManager.tryReduce(
+                        currentForkId
                     );
                 }
                 const converged =
@@ -163,11 +180,6 @@ export class EventHandler {
                 }
             }
         }
-
-        await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
-            channelId,
-            stateSnapshot
-        );
 
         const signerAddress = this.stateManager.signerAddress;
         const snapshotParticipants = stateSnapshot.snapshotData
@@ -276,6 +288,36 @@ export class EventHandler {
         windowCreationTimestamp: Timestamp,
         disputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<void> {
+        const disputeHash = hash(
+            disputeConfirmation.signedDispute.encodedDispute
+        );
+        const inFlight = this.disputeHandlingPromises.get(disputeHash);
+        if (inFlight) return inFlight;
+
+        const handling = this.handleDisputeCommitted(
+            channelId,
+            disputeConfirmation,
+            disputeCreationTimestamp,
+            isFinal,
+            windowCreationTimestamp,
+            disputeAuditingData
+        ).finally(() => {
+            if (this.disputeHandlingPromises.get(disputeHash) === handling) {
+                this.disputeHandlingPromises.delete(disputeHash);
+            }
+        });
+        this.disputeHandlingPromises.set(disputeHash, handling);
+        return handling;
+    }
+
+    private async handleDisputeCommitted(
+        channelId: ChannelId,
+        disputeConfirmation: DisputeConfirmationStruct,
+        disputeCreationTimestamp: Timestamp,
+        isFinal: boolean,
+        windowCreationTimestamp: Timestamp,
+        disputeAuditingData?: DisputeAuditingDataStruct
+    ): Promise<void> {
         const dispute = Codec.decode(
             disputeConfirmation.signedDispute.encodedDispute,
             Type.Dispute
@@ -301,8 +343,15 @@ export class EventHandler {
             windowCreationTimestamp
         );
 
+        const isCurrentFork = this.stateManager.forkId === forkId;
         // isDisputeWindowRelevant?
-        const isRelevant = this.stateManager.forkId === forkId;
+        // A final dispute can complete an operation after its locally computed
+        // candidate changed the current fork. Late non-final events must not
+        // restart validation or evidence construction for the resolved fork.
+        const isRelevant =
+            isCurrentFork ||
+            (isFinal &&
+                this.stateManager.reductionManager.hasOperation(forkId));
         if (!isRelevant) {
             return;
         }
@@ -322,71 +371,93 @@ export class EventHandler {
         }
 
         if (isFinal) {
-            if (!disputeAuditingData) {
-                const { isPartial, auditingData } =
-                    this.stateManager.disputeManager.getAuditingData(
-                        forkId,
+            this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+            let genesis: ReductionGenesis;
+            try {
+                if (!disputeAuditingData) {
+                    const { isPartial, auditingData } =
+                        this.stateManager.disputeManager.getAuditingData(
+                            forkId,
+                            dispute.input.stateProof,
+                            {
+                                disputeLatestInboundMessageBlockHash:
+                                    dispute.input.latestInboundMessageBlockHash
+                            }
+                        );
+                    if (isPartial) {
+                        throw new Error(
+                            "DisputeAuditingData not available on a final dispute"
+                        );
+                    }
+                    disputeAuditingData = auditingData;
+                }
+
+                const latestSnapshot =
+                    this.stateManager.agreementManager.getLatestSnapshotFromStateProof(
                         dispute.input.stateProof,
-                        {
-                            disputeLatestInboundMessageBlockHash:
-                                dispute.input.latestInboundMessageBlockHash
-                        }
+                        forkId
                     );
-                if (isPartial)
+                const latestStateMachineState =
+                    this.storage.stateMachineStates.getStateMachineState(
+                        latestSnapshot.stateMachineStateHash as Hash
+                    );
+                if (!latestStateMachineState) {
                     throw new Error(
-                        "DisputeAuditingData not available on a final dispute"
+                        `StateMachineState not available for latest snapshot hash: ${latestSnapshot.stateMachineStateHash}`
                     );
-                disputeAuditingData = auditingData;
+                }
+
+                const outputSnapshotData =
+                    await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
+                        dispute.input,
+                        latestSnapshot.toStruct(),
+                        latestStateMachineState,
+                        disputeAuditingData.inboundMessageBlocks
+                    );
+                const disputeOutputState =
+                    await this.diamondStateMachine.localDiamondContract.computeDisputeOutputState.staticCall(
+                        dispute.input,
+                        latestSnapshot.toStruct(),
+                        latestStateMachineState,
+                        disputeAuditingData.inboundMessageBlocks
+                    );
+                genesis = {
+                    snapshotData: outputSnapshotData,
+                    encodedState:
+                        disputeOutputState.encodedModifiedState as Bytes,
+                    genesisTimestamp: Number(disputeCreationTimestamp),
+                    outboundMessageBlock:
+                        disputeOutputState.outboundMessageBlock.messages
+                            .length > 0
+                            ? disputeOutputState.outboundMessageBlock
+                            : undefined
+                };
+            } catch (error) {
+                const status = this.stateManager.getStatus();
+                if (
+                    status !== Status.PARTICIPATING &&
+                    status !== Status.PENDING_PARTICIPANT
+                ) {
+                    this.logger.warn(
+                        "Unable to prepare final dispute genesis as a non-participant; aborting",
+                        { channelId, forkId, status, error }
+                    );
+                    this.stateManager.abort();
+                    return;
+                }
+                this.logger.error("Final dispute genesis preparation failed", {
+                    forkId,
+                    status,
+                    error
+                });
+                throw error;
             }
-
-            const latestSnapshot =
-                this.stateManager.agreementManager.getLatestSnapshotFromStateProof(
-                    dispute.input.stateProof,
-                    forkId
-                );
-            const latestStateMachineState =
-                this.storage.stateMachineStates.getStateMachineState(
-                    latestSnapshot.stateMachineStateHash as Hash
-                );
-
-            if (!latestStateMachineState) {
-                throw new Error(
-                    `StateMachineState not available for latest snapshot hash: ${latestSnapshot.stateMachineStateHash}`
-                );
-            }
-
-            const outputSnapshotData =
-                await this.diamondStateMachine.localDiamondContract.computeDisputeOutputSnapshotData.staticCall(
-                    dispute.input,
-                    latestSnapshot.toStruct(),
-                    latestStateMachineState,
-                    disputeAuditingData.inboundMessageBlocks
-                );
-
-            const disputeOutputState =
-                await this.diamondStateMachine.localDiamondContract.computeDisputeOutputState.staticCall(
-                    dispute.input,
-                    latestSnapshot.toStruct(),
-                    latestStateMachineState,
-                    disputeAuditingData.inboundMessageBlocks
-                );
-
-            const evidenceTime = this.stateManager.timeConfig.evidenceTime;
-
-            // TODO - unified single place for genesis timestamp
-            // TODO - currently not use, but not sure if genesis timestamp is calculated like this in this case - come back later
-            const genesisTimestamp =
-                Number(disputeCreationTimestamp) + evidenceTime;
-
-            return this.stateManager.setGenesisState(
-                outputSnapshotData,
-                disputeOutputState.encodedModifiedState as Bytes,
+            await this.stateManager.reductionManager.completeWithGenesis(
+                forkId,
                 dispute.outputSnapshotDataHash as ForkId,
-                genesisTimestamp,
-                disputeOutputState.outboundMessageBlock.messages.length > 0
-                    ? disputeOutputState.outboundMessageBlock
-                    : undefined
+                genesis
             );
+            return;
         }
 
         // not final - validate dispute and challenge if invalid
@@ -424,8 +495,8 @@ export class EventHandler {
         }
 
         this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
-
         this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+
         await P2pEventHooksUtils.notifyDisputeUpdate({
             channelId,
             forkId,
@@ -451,7 +522,10 @@ export class EventHandler {
                 forkId
             );
 
-        this.stateManager.setReductionTimeout(forkId, Number(killPeriodEnd));
+        this.stateManager.reductionManager.schedule(
+            forkId,
+            Number(killPeriodEnd)
+        );
     }
 
     private async canConstructMoreEvidence(
@@ -531,7 +605,8 @@ export class EventHandler {
         forkId: ForkId,
         reducedForkId: ForkId,
         reductionTimestamp: Timestamp,
-        reducer: Address
+        reducer: Address,
+        coordinate: EventCoordinate
     ): Promise<void> {
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
@@ -539,28 +614,44 @@ export class EventHandler {
             forkId,
             reducedForkId,
             reductionTimestamp,
-            reducer
+            reducer,
+            coordinate.blockNumber,
+            coordinate.logIndex
         );
 
+        // Event synchronization remains pending while reduction validation and
+        // any companion dispute-event recovery settle.
+        await this.processDisputeReducedResultCommitted(
+            channelId,
+            forkId,
+            reducedForkId,
+            reducer
+        );
+    }
+
+    private async processDisputeReducedResultCommitted(
+        channelId: ChannelId,
+        forkId: ForkId,
+        reducedForkId: ForkId,
+        reducer: Address
+    ): Promise<void> {
         // if it's not part of the fork choice rule, ignore it - it's spam
-        const isRelevant = this.stateManager.forkId === forkId;
+        const isRelevant =
+            this.stateManager.forkId === forkId ||
+            this.stateManager.reductionManager.hasOperation(forkId);
         if (!isRelevant) {
             return;
         }
 
         // isFinal?
         if (
-            await this.diamondStateMachine.localDiamondContract.isReduceChallengePeriodExpired(
+            await this.stateManager.stateChannelManagerContract.isReduceChallengePeriodExpired(
                 channelId,
                 forkId
             )
         ) {
             // If final, set fork and start building on it
-            await this.setForkIfLatestAndCurrent(
-                forkId,
-                reducedForkId,
-                reductionTimestamp
-            );
+            await this.stateManager.reductionManager.tryReduce(forkId);
             return;
         }
 
@@ -568,47 +659,26 @@ export class EventHandler {
         let isValid: boolean;
         try {
             isValid = await this.validateDisputeReductionAndChallenge(
-                channelId,
                 forkId,
                 reducedForkId
             );
         } catch (error) {
+            const status = this.stateManager.getStatus();
             if (
-                error instanceof Error &&
-                error.message.startsWith("Dispute not available for commitment")
+                status !== Status.PARTICIPATING &&
+                status !== Status.PENDING_PARTICIPANT
             ) {
-                const status = this.stateManager.getStatus();
-                if (
-                    status !== Status.PARTICIPATING &&
-                    status !== Status.PENDING_PARTICIPANT
-                ) {
-                    this.logger.debug(
-                        "Skipping dispute reduction validation and disconnecting from peers because dispute data is unavailable for non-participant",
-                        {
-                            channelId,
-                            forkId,
-                            reducedForkId,
-                            status,
-                            error: error.message
-                        }
-                    );
-                    this.stateManager.blockQueueManager.clearFork(forkId);
-                    this.stateManager.p2pManager.disconnectAll();
-                    // TODO - find a universal way to signal "we've left"
-                    return;
-                }
-
-                this.logger.error(
-                    "Unable to validate dispute reduction because dispute data is unavailable",
-                    {
-                        channelId,
-                        forkId,
-                        reducedForkId,
-                        status,
-                        error: error.message
-                    }
+                this.logger.warn(
+                    "Unable to validate dispute reduction as a non-participant; aborting",
+                    { channelId, forkId, reducedForkId, status, error }
                 );
+                this.stateManager.abort();
+                return;
             }
+            this.logger.error(
+                "Fatal error while validating dispute reduction",
+                { channelId, forkId, reducedForkId, status, error }
+            );
             throw error;
         }
 
@@ -622,30 +692,32 @@ export class EventHandler {
         }
 
         // Reduction is valid and correct - set fork and start building on it
-        await this.setForkIfLatestAndCurrent(
-            forkId,
-            reducedForkId,
-            reductionTimestamp
-        );
+        await this.stateManager.reductionManager.tryReduce(forkId);
     }
 
     async onWithdrawalsUpdated(
         channelId: ChannelId,
-        totalWithdrawals: any
+        totalWithdrawals: any,
+        coordinate: EventCoordinate
     ): Promise<void> {
         await this.diamondStateMachine.localDiamondContract.onWithdrawalsUpdated(
             channelId,
-            totalWithdrawals
+            totalWithdrawals,
+            coordinate.blockNumber,
+            coordinate.logIndex
         );
     }
 
     async onChannelStorageCleared(
         channelId: ChannelId,
-        latestInboundMessageBlockHash: Hash
+        latestInboundMessageBlockHash: Hash,
+        coordinate: EventCoordinate
     ): Promise<void> {
         await this.diamondStateMachine.localDiamondContract.onChannelStorageCleared(
             channelId,
-            latestInboundMessageBlockHash
+            latestInboundMessageBlockHash,
+            coordinate.blockNumber,
+            coordinate.logIndex
         );
     }
 
@@ -653,8 +725,14 @@ export class EventHandler {
         channelId: ChannelId,
         forkId: ForkId,
         disputer: Address,
-        disputeHash: Hash
+        disputeHash: Hash,
+        blockTimestamp: Timestamp
     ): Promise<void> {
+        await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
+            channelId,
+            disputer,
+            blockTimestamp
+        );
         await this.diamondStateMachine.localDiamondContract.onDisputeKilled(
             channelId,
             forkId,
@@ -677,7 +755,7 @@ export class EventHandler {
         );
 
         const commitments =
-            await this.diamondStateMachine.localDiamondContract.getWindowCommitments(
+            await this.stateManager.stateChannelManagerContract.getWindowCommitments(
                 channelId,
                 forkId
             );
@@ -693,7 +771,8 @@ export class EventHandler {
 
     async onInboundMessagesProcessed(
         channelId: ChannelId,
-        messageBlock: MessageBlockStruct
+        messageBlock: MessageBlockStruct,
+        coordinate: EventCoordinate
     ): Promise<void> {
         const messageBlockHash = hash(
             Codec.encode(messageBlock, Type.MessageBlock)
@@ -704,61 +783,32 @@ export class EventHandler {
         );
         await this.diamondStateMachine.localDiamondContract.onInboundMessagesProcessed(
             channelId,
-            messageBlock
+            messageBlock,
+            coordinate.blockNumber,
+            coordinate.logIndex
         );
 
         // Additional join-channel-specific handling can be placed here if required
     }
 
     private async validateDisputeReductionAndChallenge(
-        channelId: ChannelId,
         forkId: ForkId,
         reducedForkId: ForkId
     ): Promise<boolean> {
         // TODO - extract this function since it's used in multiple places (e.g spectating RPC...)
-        const disputeWindow = (
-            await this.stateManager.stateChannelManagerContract.getDisputeWindows(
-                channelId,
-                [forkId]
-            )
-        )[0];
-        const disputes = disputeWindow.evidence.disputeCommitments.map(
-            (commitment) => {
-                const dispute = this.storage.disputes.getDispute(commitment);
-                if (!dispute) {
-                    //TODO - querry longs
-                    throw new Error(
-                        `Dispute not available for commitment: ${commitment}`
-                    );
-                }
-                return dispute;
-            }
-        );
+        const disputes =
+            await this.stateManager.reductionManager.getSyncedForkDisputes(
+                forkId
+            );
 
-        const reduceOutput =
-            await this.stateManager.stateChannelManagerContract.reduce.staticCall(
+        const computation =
+            await this.stateManager.reductionManager.computeReduction(
+                forkId,
                 disputes
             );
-
-        // Use getReduceData to properly handle genesis case (when latestBlock is undefined)
-        const reduceData =
-            await this.stateManager.agreementManager.getReduceData(
-                forkId,
-                reduceOutput
-            );
+        const { reduceData } = computation;
         const latestSnapshot = reduceData.latestStateSnapshot;
-        const [snapshotData] =
-            await this.stateManager.stateChannelManagerContract.reduceOutputToSnapshotData.staticCall(
-                forkId,
-                reduceOutput,
-                latestSnapshot,
-                reduceData.encodedStateMachineState,
-                reduceData.inboundMessageBlocks
-            );
-
-        const isValid =
-            hash(Codec.encode(snapshotData, Type.SnapshotData)) ==
-            reducedForkId;
+        const isValid = computation.reducedForkId == reducedForkId;
         if (!isValid) {
             // while we have the context, use it, instead of returning false and having to generate it again
             let txResponse: TransactionResponse | undefined;
@@ -824,38 +874,5 @@ export class EventHandler {
             return false;
         }
         return true;
-    }
-
-    private async setForkIfLatestAndCurrent(
-        forkId: ForkId,
-        reducedForkId: ForkId,
-        _reductionTimestamp: Timestamp
-    ): Promise<void> {
-        // TODO - this function is currently unused - come back to its implemntation when used
-        if (this.stateManager.forkId != forkId) return;
-
-        // Reduce on the spot - single-flight with the other reduction entry
-        // points; resolved means the reduced genesis is stored and the fork
-        // switched.
-        await this.stateManager.reduceLocally(forkId);
-
-        const genesisSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                reducedForkId
-            );
-        if (!genesisSnapshot) {
-            // The finalized on-chain reduction won and we could not derive it
-            // locally - we have diverged; stop building instead of advancing
-            // a fork the channel didn't agree on.
-            this.logger.error(
-                "Reduced result committed on-chain but the local reduction did not produce it - aborting participation",
-                {
-                    forkId,
-                    reducedForkId,
-                    localForkId: this.stateManager.forkId
-                }
-            );
-            this.stateManager.abort();
-        }
     }
 }

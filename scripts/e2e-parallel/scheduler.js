@@ -134,7 +134,8 @@ async function runScheduler({
     const launch = (task, seq) => {
         running++;
         const acct = freeAccounts.shift();
-        const slot = slotCount > 0 ? slots[(seq - 1) % slotCount] : null;
+        const slot =
+            task.isE2E && slotCount > 0 ? slots[(seq - 1) % slotCount] : null;
         const where = slot ? `slot ${slot.id}/${slotCount}` : "in-process";
 
         let taskArgs = task.args;
@@ -150,15 +151,19 @@ async function runScheduler({
                 PROVIDER_URL: slot.nodeUrl,
                 HARDHAT_NODE_URL: slot.nodeUrl,
                 LOCAL_DISCOVERY_REGISTRY_URL: slot.discoveryUrl,
-                E2E_MANAGER_CACHE_DIR: slot.cacheDir
+                E2E_MANAGER_CACHE_DIR: slot.cacheDir,
+                E2E_INTERVAL_MINING: "1"
             };
         } else {
-            // No pool: strip inherited infra env so the harness self-provisions.
+            // Plain in-process Hardhat tests rely on automining: their setup
+            // helpers return deployed contracts for immediate use. Harness
+            // tests self-provision an interval-mined node when they need one.
             infraEnv = {
                 PROVIDER_URL: undefined,
                 HARDHAT_NODE_URL: undefined,
                 LOCAL_DISCOVERY_REGISTRY_URL: undefined,
-                E2E_MANAGER_CACHE_DIR: undefined
+                E2E_MANAGER_CACHE_DIR: undefined,
+                E2E_INTERVAL_MINING: undefined
             };
         }
 

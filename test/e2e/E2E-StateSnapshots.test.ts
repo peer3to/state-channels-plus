@@ -188,7 +188,7 @@ describe("E2E: State Snapshots", function () {
         ).to.equal(expectedSum, "target peer should retain the transition");
     });
 
-    it("should not re-emit setState when an already-entered old-fork reduction completes after snapshot-event reduction", async function () {
+    it("should not re-emit setState when a snapshot event joins an already-entered old-fork reduction", async function () {
         this.timeout(90000);
 
         const h = TestSession.getHarness();
@@ -200,6 +200,11 @@ describe("E2E: State Snapshots", function () {
         await h.lifecycle.start(4, 2, {
             timeConfig: {
                 ...forkTimeConfig,
+                // The target is deliberately paused while the other peers
+                // resolve the first dispute. Keep the resulting fork from
+                // timing out and opening a second dispute before we release
+                // the one shared reduction operation.
+                p2pTime: 20,
                 agreementTime: 4
             }
         });
@@ -215,7 +220,7 @@ describe("E2E: State Snapshots", function () {
         await h.control(targetPeer).stub.stubHoldReductionTasks().request();
         await h
             .control(targetPeer)
-            .stub.stubPauseTryReduceAtKillPeriod(originalForkId)
+            .stub.stubPauseReductionAtKillPeriod(originalForkId)
             .request();
 
         h.event.resetEventSpies();
@@ -240,7 +245,7 @@ describe("E2E: State Snapshots", function () {
             );
             await h
                 .control(targetPeer)
-                .stub.startPausedTryReduce(originalForkId)
+                .dispute.startReduction(originalForkId)
                 .request();
 
             await waitFor(
@@ -248,7 +253,7 @@ describe("E2E: State Snapshots", function () {
                     (
                         await h
                             .control(targetPeer)
-                            .stub.getPausedTryReduceStatus()
+                            .stub.getPausedReductionStatus()
                             .request()
                     ).entered,
                 15000,
@@ -256,6 +261,32 @@ describe("E2E: State Snapshots", function () {
             );
 
             await resolvePromise;
+
+            // The snapshot event has joined the already-entered operation; it
+            // cannot create a second reduction attempt. Releasing that one
+            // operation lets both entry points settle through one install.
+            await h.control(targetPeer).stub.releasePausedReduction().request();
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getPausedReductionStatus()
+                            .request()
+                    ).settled,
+                30000,
+                50
+            );
+            const reductionStatus = await h
+                .control(targetPeer)
+                .stub.getPausedReductionStatus()
+                .request();
+            await h.control(targetPeer).stub.restorePausedReduction().request();
+            await h
+                .control(targetPeer)
+                .stub.restoreReductionTasks(false)
+                .request();
+            expect(reductionStatus.error).to.equal(undefined);
 
             await h.event.waitForPeers("onSetState", [targetPeerIndex], 1, {
                 timeoutMs: 20000,
@@ -274,29 +305,6 @@ describe("E2E: State Snapshots", function () {
             const expectedSum = await h
                 .getPeer(targetPeerIndex)
                 .contractInstance.getSum();
-
-            await h.control(targetPeer).stub.releasePausedTryReduce().request();
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(targetPeer)
-                            .stub.getPausedTryReduceStatus()
-                            .request()
-                    ).settled,
-                30000,
-                50
-            );
-            const tryReduceStatus = await h
-                .control(targetPeer)
-                .stub.getPausedTryReduceStatus()
-                .request();
-            await h.control(targetPeer).stub.restorePausedTryReduce().request();
-            await h
-                .control(targetPeer)
-                .stub.restoreReductionTasks(false)
-                .request();
-            expect(tryReduceStatus.error).to.equal(undefined);
 
             await h.event.waitWhileEventCountsStayAtMost(
                 "onSetState",
@@ -320,12 +328,12 @@ describe("E2E: State Snapshots", function () {
             // exit path so it never leaks into teardown.
             await h
                 .control(targetPeer)
-                .stub.releasePausedTryReduce()
+                .stub.releasePausedReduction()
                 .request()
                 .catch(() => {});
             await h
                 .control(targetPeer)
-                .stub.restorePausedTryReduce()
+                .stub.restorePausedReduction()
                 .request()
                 .catch(() => {});
             await h

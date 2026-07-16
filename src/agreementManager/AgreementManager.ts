@@ -14,6 +14,7 @@ import {
     BlockHeight,
     ChannelId,
     ForkId,
+    Hash,
     Signature
 } from "@/types/types";
 import { Block, StateSnapshot, StateProof } from "@/models";
@@ -513,15 +514,8 @@ class AgreementManager {
     }
 
     public async getForkDisputes(
-        channelId: ChannelId,
-        forkId: ForkId,
-        ethersContract: StateChannelManagerProxy
+        disputeCommitments: readonly Hash[]
     ): Promise<DisputeStruct[]> {
-        // Collect disputes for this dispute window
-        const disputeCommitments = await ethersContract.getWindowCommitments(
-            channelId,
-            forkId
-        );
         // Collect all disputes for this dispute window
         const currentWindowDisputes: DisputeStruct[] = [];
         for (const commitment of disputeCommitments) {

@@ -6,7 +6,7 @@ import Rpc, {
     serializeRpcResponse
 } from "@/rpc/Rpc";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import { getChecksumAddress } from "@/utils";
+import { getChecksumAddress } from "@/utils/address";
 import { Address } from "@/types";
 
 abstract class ATransport {

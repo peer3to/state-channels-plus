@@ -8,18 +8,15 @@ import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcM
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
+import { id } from "ethers";
 import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
-import type { PausedTryReduceStatus } from "./StubService";
+import type {
+    EventSyncFailureProbe,
+    PausedReductionStatus,
+    ReductionSimulationErrorName
+} from "./StubService";
 import type { StubService } from "./StubService";
-
-type PrivateTryReduceHost = {
-    tryReduce: (forkId: ForkId) => Promise<unknown>;
-};
-
-type KillPeriodHost = {
-    isKillPeriodExpired: (...args: unknown[]) => Promise<unknown>;
-};
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -182,22 +179,23 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     /** Suppress this peer's snapshot posting (stays dispute-eligible on-chain). */
     public stubPostStateSnapshot(): boolean {
-        const sm = this.service.sm;
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
         if (!this.service.stubOriginals.has("postStateSnapshot")) {
             this.service.stubOriginals.set(
                 "postStateSnapshot",
-                sm.postStateSnapshot
+                snapshotUpdateService.postStateSnapshot
             );
         }
-        sm.postStateSnapshot = async () => undefined;
+        snapshotUpdateService.postStateSnapshot = async () => undefined;
         return true;
     }
 
     public restorePostStateSnapshot(): boolean {
         const original = this.service.stubOriginals.get("postStateSnapshot");
         if (original === undefined) return false;
-        const sm = this.service.sm;
-        sm.postStateSnapshot = original as typeof sm.postStateSnapshot;
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        snapshotUpdateService.postStateSnapshot =
+            original as typeof snapshotUpdateService.postStateSnapshot;
         this.service.stubOriginals.delete("postStateSnapshot");
         return true;
     }
@@ -621,39 +619,32 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.heldReductionTasks.length;
     }
 
-    /**
-     * Pause a real `tryReduce(forkId)` once it has entered the kill-period call.
-     * Used to prove an already-entered old-fork reduction settles idempotently
-     * after another path has reduced the peer.
-     */
-    public stubPauseTryReduceAtKillPeriod(forkId: ForkId): boolean {
-        const sm = this.service.sm;
-        const host = sm as unknown as PrivateTryReduceHost;
-        const localDiamond = sm.diamondStateMachine
-            .localDiamondContract as unknown as KillPeriodHost;
+    public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
+        return this.service.probeRejectedEventSyncLog();
+    }
 
-        if (!this.service.stubOriginals.has("pausedTryReduce")) {
+    /** Pause a real reduction once it enters its kill-period lookup. */
+    public stubPauseReductionAtKillPeriod(forkId: ForkId): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        const contract = this.service.sm.stateChannelManagerContract;
+
+        if (!this.service.stubOriginals.has("pausedReduction")) {
             this.service.stubOriginals.set(
-                "pausedTryReduce",
-                host.tryReduce.bind(sm)
+                "pausedReduction",
+                reductionManager.tryReduce.bind(reductionManager)
             );
         }
-        if (!this.service.stubOriginals.has("pausedTryReduceKillPeriod")) {
+        if (!this.service.stubOriginals.has("pausedReductionKillPeriod")) {
             this.service.stubOriginals.set(
-                "pausedTryReduceKillPeriod",
-                localDiamond.isKillPeriodExpired.bind(localDiamond)
+                "pausedReductionKillPeriod",
+                contract.isKillPeriodExpired.bind(contract)
             );
         }
 
-        // Don't strand a prior parked reduction: if a previous install is still
-        // waiting on its `release` resolver, unpark it before replacing the
-        // state, or `releasePausedTryReduce` would only resolve the new state.
-        const prior = this.service.pausedTryReduce;
-        if (prior && prior.entered && !prior.settled) {
-            prior.release?.();
-        }
+        const prior = this.service.pausedReduction;
+        if (prior && prior.entered && !prior.settled) prior.release?.();
 
-        this.service.pausedTryReduce = {
+        this.service.pausedReduction = {
             targetForkId: forkId,
             entered: false,
             released: false,
@@ -661,23 +652,21 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             inside: false
         };
 
-        const originalTryReduce = this.service.stubOriginals.get(
-            "pausedTryReduce"
-        ) as PrivateTryReduceHost["tryReduce"];
+        const originalReduce = this.service.stubOriginals.get(
+            "pausedReduction"
+        ) as typeof reductionManager.tryReduce;
         const originalKillPeriod = this.service.stubOriginals.get(
-            "pausedTryReduceKillPeriod"
-        ) as KillPeriodHost["isKillPeriodExpired"];
+            "pausedReductionKillPeriod"
+        ) as typeof contract.isKillPeriodExpired;
 
-        host.tryReduce = ((requestedForkId: ForkId) => {
-            const state = this.service.pausedTryReduce;
+        reductionManager.tryReduce = ((requestedForkId: ForkId) => {
+            const state = this.service.pausedReduction;
             if (!state || requestedForkId !== state.targetForkId) {
-                return originalTryReduce(requestedForkId);
+                return originalReduce(requestedForkId);
             }
 
             state.inside = true;
-            const promise = Promise.resolve(
-                originalTryReduce(requestedForkId)
-            ).finally(() => {
+            const promise = originalReduce(requestedForkId).finally(() => {
                 state.inside = false;
             });
             state.promise = promise;
@@ -692,22 +681,10 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                 }
             );
             return promise;
-        }) as PrivateTryReduceHost["tryReduce"];
+        }) as typeof reductionManager.tryReduce;
 
-        // Type the wrapper params off the REAL method so a param reorder/removal
-        // breaks compilation instead of silently reading the wrong positional
-        // (the pause would then never engage and the test would hang).
-        type KillPeriodArgs = Parameters<
-            typeof sm.diamondStateMachine.localDiamondContract.isKillPeriodExpired
-        >;
-        localDiamond.isKillPeriodExpired = (async (...args: KillPeriodArgs) => {
-            const state = this.service.pausedTryReduce;
-            const [, forkIdArg] = args;
-            const requestedForkId = String(forkIdArg);
-            // One-shot: pause only the FIRST matching kill-period call
-            // (`!state.entered`). A second call while `inside` would otherwise
-            // overwrite `state.release`, so `releasePausedTryReduce` would
-            // resolve the wrong resolver and strand the first paused call.
+        contract.isKillPeriodExpired = (async (channelId, requestedForkId) => {
+            const state = this.service.pausedReduction;
             if (
                 state &&
                 state.inside &&
@@ -720,34 +697,22 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                     state.release = resolve;
                 });
             }
-            return originalKillPeriod(...args);
-        }) as KillPeriodHost["isKillPeriodExpired"];
-
+            return originalKillPeriod(channelId, requestedForkId);
+        }) as typeof contract.isKillPeriodExpired;
         return true;
     }
 
-    public startPausedTryReduce(forkId: ForkId): boolean {
-        const state = this.service.pausedTryReduce;
-        // Only start the staged fork: a mismatch would fire an UNWRAPPED
-        // tryReduce (its rejection surfaces as an unhandled host rejection
-        // blamed elsewhere) yet still report success. Report the mismatch.
-        if (!state || forkId !== state.targetForkId) return false;
-        const host = this.service.sm as unknown as PrivateTryReduceHost;
-        void host.tryReduce(forkId);
-        return true;
-    }
-
-    public releasePausedTryReduce(): boolean {
-        const state = this.service.pausedTryReduce;
+    public releasePausedReduction(): boolean {
+        const state = this.service.pausedReduction;
         if (!state) return false;
         state.released = true;
         state.release?.();
         return true;
     }
 
-    public getPausedTryReduceStatus(): PausedTryReduceStatus {
-        const state = this.service.pausedTryReduce;
-        const status: PausedTryReduceStatus = {
+    public getPausedReductionStatus(): PausedReductionStatus {
+        const state = this.service.pausedReduction;
+        const status: PausedReductionStatus = {
             entered: state?.entered ?? false,
             released: state?.released ?? false,
             settled: state?.settled ?? false
@@ -756,40 +721,34 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return status;
     }
 
-    public restorePausedTryReduce(): boolean {
-        this.releasePausedTryReduce();
-
-        const sm = this.service.sm;
-        const host = sm as unknown as PrivateTryReduceHost;
-        const localDiamond = sm.diamondStateMachine
-            .localDiamondContract as unknown as KillPeriodHost;
+    public restorePausedReduction(): boolean {
+        this.releasePausedReduction();
+        const reductionManager = this.service.sm.reductionManager;
+        const contract = this.service.sm.stateChannelManagerContract;
         let restored = false;
 
-        const originalTryReduce =
-            this.service.stubOriginals.get("pausedTryReduce");
-        if (originalTryReduce !== undefined) {
-            host.tryReduce =
-                originalTryReduce as PrivateTryReduceHost["tryReduce"];
-            this.service.stubOriginals.delete("pausedTryReduce");
+        const originalReduce =
+            this.service.stubOriginals.get("pausedReduction");
+        if (originalReduce !== undefined) {
+            reductionManager.tryReduce =
+                originalReduce as typeof reductionManager.tryReduce;
+            this.service.stubOriginals.delete("pausedReduction");
             restored = true;
         }
 
         const originalKillPeriod = this.service.stubOriginals.get(
-            "pausedTryReduceKillPeriod"
+            "pausedReductionKillPeriod"
         );
         if (originalKillPeriod !== undefined) {
-            localDiamond.isKillPeriodExpired =
-                originalKillPeriod as KillPeriodHost["isKillPeriodExpired"];
-            this.service.stubOriginals.delete("pausedTryReduceKillPeriod");
+            contract.isKillPeriodExpired =
+                originalKillPeriod as typeof contract.isKillPeriodExpired;
+            this.service.stubOriginals.delete("pausedReductionKillPeriod");
             restored = true;
         }
 
-        // Drop the pause state so a later reduction can't observe stale flags.
-        this.service.pausedTryReduce = undefined;
-
+        this.service.pausedReduction = undefined;
         return restored;
     }
-
     /** Hold StateSnapshotUpdated events instead of handling them. */
     public stubHoldSnapshotUpdatedEvents(): boolean {
         const eventHandler = this.service.sm.eventHandler;
@@ -828,6 +787,135 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.heldSnapshotUpdatedArgs.length;
     }
 
+    /** Drop subscribed dispute logs before the scheduler records their key. */
+    public stubHoldDisputeCommittedEvents(passFirst = true): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        this.service.passFirstDisputeCommittedEvent = passFirst;
+        if (!this.service.stubOriginals.has("disputeCommittedEvents")) {
+            this.service.stubOriginals.set(
+                "disputeCommittedEvents",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "disputeCommittedEvents"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.service.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (
+                parsed?.name === "DisputeCommitted" ||
+                parsed?.name === "DisputeCommittedWithAuditingData"
+            ) {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                if (
+                    this.service.passFirstDisputeCommittedEvent &&
+                    this.service.passedDisputeCommittedEventKeys.size === 0
+                ) {
+                    // Let the dispute under validation arrive, then model a
+                    // missed subscription delivery for replacement evidence.
+                    this.service.passedDisputeCommittedEventKeys.add(eventKey);
+                    return original(...args);
+                }
+                const wasAlreadyDropped =
+                    this.service.heldDisputeCommittedArgs.some(
+                        ([heldKey]) => heldKey === eventKey
+                    );
+                if (!wasAlreadyDropped) {
+                    // Lose the subscribed delivery once. A later explicit
+                    // query of the same log must reach the real scheduler so
+                    // this stub accurately models missed subscription data.
+                    this.service.heldDisputeCommittedArgs.push([eventKey]);
+                    return;
+                }
+            }
+            return original(...args);
+        };
+        return true;
+    }
+
+    /** Restore scheduling. Dropped subscription payloads are recovered by query. */
+    public restoreDisputeCommittedEvents(replay: boolean): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        const original = this.service.stubOriginals.get(
+            "disputeCommittedEvents"
+        );
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.service.stubOriginals.delete("disputeCommittedEvents");
+        this.service.heldDisputeCommittedArgs.splice(0);
+        this.service.passedDisputeCommittedEventKeys.clear();
+        this.service.passFirstDisputeCommittedEvent = true;
+        void replay;
+        return true;
+    }
+
+    public getHeldDisputeCommittedCount(): number {
+        return this.service.heldDisputeCommittedArgs.length;
+    }
+
+    /** Reserve this participant as a later evidence author. */
+    public stubSuppressDisputeInitiation(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        if (!this.service.stubOriginals.has("disputeInitiation")) {
+            this.service.stubOriginals.set(
+                "disputeInitiation",
+                disputeManager.dispute.bind(disputeManager)
+            );
+        }
+        disputeManager.dispute =
+            (async () => {}) as typeof disputeManager.dispute;
+        return true;
+    }
+
+    public restoreDisputeInitiation(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        const original = this.service.stubOriginals.get("disputeInitiation");
+        if (original === undefined) return false;
+        disputeManager.dispute = original as typeof disputeManager.dispute;
+        this.service.stubOriginals.delete("disputeInitiation");
+        return true;
+    }
+
+    /** Fail the next final-dispute output preparation, then restore immediately. */
+    public stubFailNextFinalDisputePreparation(): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        if (!this.service.stubOriginals.has("finalDisputePreparation")) {
+            this.service.stubOriginals.set(
+                "finalDisputePreparation",
+                agreementManager.getLatestSnapshotFromStateProof.bind(
+                    agreementManager
+                )
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "finalDisputePreparation"
+        ) as typeof agreementManager.getLatestSnapshotFromStateProof;
+        agreementManager.getLatestSnapshotFromStateProof = ((...args) => {
+            agreementManager.getLatestSnapshotFromStateProof = original;
+            this.service.stubOriginals.delete("finalDisputePreparation");
+            void args;
+            throw new Error("Forced final-dispute output preparation failure");
+        }) as typeof agreementManager.getLatestSnapshotFromStateProof;
+        return true;
+    }
+
+    public restoreFinalDisputePreparation(): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        const original = this.service.stubOriginals.get(
+            "finalDisputePreparation"
+        );
+        if (original === undefined) return false;
+        agreementManager.getLatestSnapshotFromStateProof =
+            original as typeof agreementManager.getLatestSnapshotFromStateProof;
+        this.service.stubOriginals.delete("finalDisputePreparation");
+        return true;
+    }
+
     /** Hold DisputeReducedResultCommitted events instead of handling them. */
     public stubHoldReducedCommitEvents(): boolean {
         const eventHandler = this.service.sm.eventHandler;
@@ -862,54 +950,99 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    /** `reduceLocally` counts calls and resolves undefined (nothing to reduce). */
-    public stubReduceLocallyNoop(): boolean {
-        const sm = this.service.sm;
-        if (!this.service.stubOriginals.has("reduceLocally")) {
+    /** `ReductionManager.tryReduce` counts calls and resolves as a no-op. */
+    public stubReduceNoop(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        if (!this.service.stubOriginals.has("reduce")) {
             this.service.stubOriginals.set(
-                "reduceLocally",
-                sm.reduceLocally.bind(sm)
+                "reduce",
+                reductionManager.tryReduce.bind(reductionManager)
             );
         }
-        this.service.reduceLocallyCallCount = 0;
-        sm.reduceLocally = (async () => {
-            this.service.reduceLocallyCallCount += 1;
+        this.service.reduceCallCount = 0;
+        reductionManager.tryReduce = (async () => {
+            this.service.reduceCallCount += 1;
             return undefined;
-        }) as typeof sm.reduceLocally;
+        }) as typeof reductionManager.tryReduce;
         return true;
     }
 
-    /** `reduceLocally` counts calls and forwards to the real implementation. */
-    public stubRecordReduceLocally(): boolean {
-        const sm = this.service.sm;
-        if (!this.service.stubOriginals.has("reduceLocally")) {
+    /** `ReductionManager.tryReduce` counts calls and forwards to the real method. */
+    public stubRecordReduce(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        if (!this.service.stubOriginals.has("reduce")) {
             this.service.stubOriginals.set(
-                "reduceLocally",
-                sm.reduceLocally.bind(sm)
+                "reduce",
+                reductionManager.tryReduce.bind(reductionManager)
             );
         }
-        this.service.reduceLocallyCallCount = 0;
+        this.service.reduceCallCount = 0;
         const original = this.service.stubOriginals.get(
-            "reduceLocally"
-        ) as typeof sm.reduceLocally;
-        sm.reduceLocally = ((forkId) => {
-            this.service.reduceLocallyCallCount += 1;
+            "reduce"
+        ) as typeof reductionManager.tryReduce;
+        reductionManager.tryReduce = ((forkId) => {
+            this.service.reduceCallCount += 1;
             return original(forkId);
-        }) as typeof sm.reduceLocally;
+        }) as typeof reductionManager.tryReduce;
         return true;
     }
 
-    public restoreReduceLocally(): boolean {
-        const sm = this.service.sm;
-        const original = this.service.stubOriginals.get("reduceLocally");
+    public restoreReduce(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        const original = this.service.stubOriginals.get("reduce");
         if (original === undefined) return false;
-        sm.reduceLocally = original as typeof sm.reduceLocally;
-        this.service.stubOriginals.delete("reduceLocally");
+        reductionManager.tryReduce =
+            original as typeof reductionManager.tryReduce;
+        this.service.stubOriginals.delete("reduce");
         return true;
     }
 
-    public getReduceLocallyCallCount(): number {
-        return this.service.reduceLocallyCallCount;
+    public getReduceCallCount(): number {
+        return this.service.reduceCallCount;
+    }
+
+    /** Make the next reduction simulation fail with a selected contract error. */
+    public stubNextReductionSimulationError(
+        errorName: ReductionSimulationErrorName
+    ): boolean {
+        const contract = this.service.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.call) {
+            throw new Error(
+                "Reduction simulation runner does not support call"
+            );
+        }
+        if (!this.service.stubOriginals.has("reductionSimulation")) {
+            this.service.stubOriginals.set(
+                "reductionSimulation",
+                runner.call.bind(runner)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "reductionSimulation"
+        ) as NonNullable<typeof runner.call>;
+        const multicallSelector =
+            contract.interface.getFunction("multicall")!.selector;
+        runner.call = async (transaction) => {
+            if (!String(transaction.data).startsWith(multicallSelector)) {
+                return await original(transaction);
+            }
+            runner.call = original;
+            this.service.stubOriginals.delete("reductionSimulation");
+            throw { data: id(`${errorName}()`).slice(0, 10) };
+        };
+        return true;
+    }
+
+    public restoreReductionSimulation(): boolean {
+        const contract = this.service.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.call) return false;
+        const original = this.service.stubOriginals.get("reductionSimulation");
+        if (original === undefined) return false;
+        runner.call = original as NonNullable<typeof runner.call>;
+        this.service.stubOriginals.delete("reductionSimulation");
+        return true;
     }
 
     /**

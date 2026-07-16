@@ -477,7 +477,7 @@ describe("E2E: BlockQueueManager", function () {
             const restoreSync = await h.rpcStub.recordSpectateSync(0, {
                 forward: true
             });
-            const restoreReduce = await h.rpcStub.recordReduceLocally(0);
+            const restoreReduce = await h.rpcStub.recordReduce(0);
 
             const author = h.getPeer(1);
             const { bogusBlock, blockConfirmation } =
@@ -501,7 +501,7 @@ describe("E2E: BlockQueueManager", function () {
             ).to.equal(true);
             expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(0);
             // Current fork is not disputed - no reduction probe fired.
-            expect(await h.rpcStub.reduceLocallyCallCount(0)).to.equal(0);
+            expect(await h.rpcStub.reduceCallCount(0)).to.equal(0);
             expect(
                 await h.control(observer).query.getForkId().request()
             ).to.equal(originalForkId);
@@ -684,8 +684,7 @@ describe("E2E: BlockQueueManager", function () {
             // recovery finds nothing to reduce and must queue for sync. The
             // sync flow itself stays quiet - this test isolates the
             // queue-drain-after-transition property.
-            const restoreReduce =
-                await h.rpcStub.reduceLocallyNoop(targetPeerIndex);
+            const restoreReduce = await h.rpcStub.reduceNoop(targetPeerIndex);
             const restoreSync = await h.rpcStub.recordSpectateSync(
                 targetPeerIndex,
                 { forward: false }

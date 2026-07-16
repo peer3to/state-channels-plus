@@ -305,7 +305,9 @@ class DisputeManager {
         });
 
         // onChainSlashes
-        // this can be a subset of on-chain slashes, so we don't need to run any race condition checks
+        // The local subset is sufficient. DisputeKilled eagerly records the
+        // directly implicated disputer; querying the full on-chain set remains
+        // optional hardening for a future redundant-RPC sync pass.
         let onChainSlashes = new Set<Address>(_onChainSlashes);
         const participants = new Set<Address>(_participants);
 

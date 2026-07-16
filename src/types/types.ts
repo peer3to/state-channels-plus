@@ -19,11 +19,6 @@ export type BlockOrSnapshot = {
     stateSnapshot?: StateSnapshot;
 };
 
-export type ReductionTimeoutHandle = {
-    handle: ReturnType<typeof setTimeout>;
-    triggerTimestamp: number;
-};
-
 export type BlockCalldata = {
     signedBlock: SignedBlockStruct;
     onChainTimestamp: Timestamp;

@@ -480,6 +480,15 @@ export class MathByzantineActions extends ByzantineActions {
             options.mutate
         );
 
+        // buildForgedSnapshot signs the forged block with every harness peer.
+        // They are colluding signers, so host errors from those peers are
+        // expected Byzantine errors rather than failures of the honest path.
+        for (const peer of this.harness.peers) {
+            this.harness.contextApi.markMaliciousPeer({
+                maliciousPeerIndex: peer.index
+            });
+        }
+
         const outboundBlocks: MessageBlockStruct[] = forgedSnapshot.mutated
             .outboundMessageBlock
             ? [forgedSnapshot.mutated.outboundMessageBlock]

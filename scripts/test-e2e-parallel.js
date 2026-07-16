@@ -11,7 +11,7 @@ const {
     DEFAULT_STREAM_CHILD_OUTPUT
 } = require("./e2e-parallel/constants");
 
-const { parseCliArgs } = require("./e2e-parallel/argParser");
+const { getHelpText, parseCliArgs } = require("./e2e-parallel/argParser");
 const { discoverTasks } = require("./e2e-parallel/taskDiscovery");
 const {
     resolveThreadModes,
@@ -55,41 +55,55 @@ function buildBaseEnv(threadModes) {
 
 async function main() {
     const cli = parseCliArgs(process.argv);
-    // E2E uses 1s interval mining so block-time tracks wall-clock dispute timing.
-    // (dispute timing). Inherited by slot nodes and in-process children alike.
-    process.env.E2E_INTERVAL_MINING = "1";
+    if (cli.help) {
+        console.log(getHelpText());
+        return;
+    }
 
     // ---- discover tasks ----
     let files;
     let tasks;
+    const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
     try {
-        ({ files, tasks } = discoverTasks(path.resolve("test/e2e"), cli.grep));
+        ({ files, tasks } = discoverTasks(testDir, cli.grep));
     } catch (e) {
         console.error(`Invalid --grep RegExp: ${cli.grep}`, e);
         process.exit(1);
     }
     if (files.length === 0) {
-        console.error("No E2E test files found in test/e2e");
+        console.error(
+            cli.e2eOnly
+                ? "No E2E test files found in test/e2e"
+                : "No Mocha test files found in test"
+        );
         process.exit(1);
     }
     if (tasks.length === 0) {
         console.error(
             cli.grep
-                ? `No E2E tests matched --grep ${JSON.stringify(cli.grep)}`
+                ? `No ${cli.e2eOnly ? "E2E" : "Mocha"} tests matched --grep ${JSON.stringify(cli.grep)}`
                 : "No implemented tests found"
         );
         process.exit(1);
     }
 
     // ---- resolve config ----
-    const slotCount = Math.min(cli.slots ?? DEFAULT_SLOTS, MAX_SLOTS_FROM_POOL);
-    if ((cli.slots ?? DEFAULT_SLOTS) > slotCount) {
+    // TODO: Classify tasks by infrastructure needs instead of directory. Some
+    // non-E2E tests use the shared harness and could reuse slots, while plain
+    // unit/contract tests still require an isolated in-process Hardhat node.
+    const hasE2ETasks = tasks.some((task) => task.isE2E);
+    const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
+    const slotCount = hasE2ETasks
+        ? Math.min(requestedSlotCount, MAX_SLOTS_FROM_POOL)
+        : 0;
+    if (hasE2ETasks && requestedSlotCount > slotCount) {
         console.log(
             `slots clamped to ${slotCount} (account pool allows ${MAX_SLOTS_FROM_POOL})`
         );
     }
     const threadModes = resolveThreadModes(cli);
     const targetLoad = cli.targetLoad ?? TARGET_LOAD_PER_CORE;
+    const schedulerTickMs = cli.schedulerTickMs ?? SCHEDULER_TICK_MS;
     const totalGb = os.totalmem() / 1024 ** 3;
     const memBoundGb = cli.memLimitGb ?? totalGb * MEM_LIMIT_FRACTION;
     const concurrencyCap = Math.min(
@@ -106,7 +120,7 @@ async function main() {
             memBoundGb,
             totalGb,
             concurrencyCap,
-            tickMs: SCHEDULER_TICK_MS
+            tickMs: schedulerTickMs
         });
         return;
     }
@@ -114,9 +128,11 @@ async function main() {
     logging.runHeader({
         taskCount: tasks.length,
         grep: cli.grep,
+        e2eOnly: cli.e2eOnly,
         slotCount,
         threadModes,
         targetLoad,
+        tickMs: schedulerTickMs,
         memBoundGb,
         concurrencyCap
     });
@@ -176,6 +192,7 @@ async function main() {
             slotCount,
             concurrencyCap,
             targetLoad,
+            tickMs: schedulerTickMs,
             memBoundGb,
             baseEnv: buildBaseEnv(threadModes),
             logDir,

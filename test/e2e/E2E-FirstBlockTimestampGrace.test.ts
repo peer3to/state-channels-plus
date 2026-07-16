@@ -2,44 +2,36 @@ import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
 import { OnChainPostTiming } from "@/stateManager/ValidationService";
 import { Codec, Type } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
 import { expect } from "chai";
 
-const TIME = {
-    p2pTime: 1,
-    agreementTime: 2,
-    chainFallbackTime: 1,
-    evidenceTime: 4
-};
+const TIME = MIN_TEST_TIME_CONFIG;
 
-const SAFE_TIME = {
-    ...TIME,
-    agreementTime: 10,
-    chainFallbackTime: 10,
-    evidenceTime: 30
-};
-
-// wide evidenceTime so the no-dispute check sits well past the normal deadline
-const TIMEOUT_TIME = {
-    ...TIME,
-    evidenceTime: 6
+// This test deliberately starts authoring after the ordinary deadline. Keep
+// enough grace for interval mining and three-peer signature collection under
+// parallel load; the default three-second evidence window is too narrow for
+// that boundary scenario.
+const FIRST_BLOCK_AUTHORING_TIME = {
+    ...MIN_TEST_TIME_CONFIG,
+    evidenceTime: 12
 };
 
 describe("E2E: First block timestamp grace", function () {
     it("adds evidenceTime only to the height 0 participant timeout", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0, { timeConfig: SAFE_TIME });
+        await h.lifecycle.start(2, 0);
 
         const timeoutWindows = await h.execOnHost(h.peers[0], (sm) => ({
             heightZero: sm.getTimeoutWaitTimeSeconds(0),
             heightOne: sm.getTimeoutWaitTimeSeconds(1)
         }));
         const normalWindow =
-            SAFE_TIME.p2pTime +
-            SAFE_TIME.agreementTime +
-            SAFE_TIME.chainFallbackTime;
+            TIME.p2pTime + TIME.agreementTime + TIME.chainFallbackTime;
         expect(timeoutWindows.heightZero).to.equal(
-            normalWindow + SAFE_TIME.evidenceTime
+            normalWindow + TIME.evidenceTime
         );
         expect(timeoutWindows.heightOne).to.equal(normalWindow);
     });
@@ -47,7 +39,9 @@ describe("E2E: First block timestamp grace", function () {
     it("authors height 0 after the old participant deadline and every peer finalizes it", async function () {
         this.timeout(90000);
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 0, { timeConfig: SAFE_TIME });
+        await h.lifecycle.start(3, 0, {
+            timeConfig: FIRST_BLOCK_AUTHORING_TIME
+        });
 
         const forkId = h.activeForkId!;
         const genesisResult = await h
@@ -56,19 +50,20 @@ describe("E2E: First block timestamp grace", function () {
             .request();
         expect(genesisResult).to.not.be.null;
         const genesis = StateSnapshot.decode(genesisResult!.encodedSnapshot);
-        const normalTimestampCap = genesis.timestamp + TIME.p2pTime;
+        const normalTimestampCap =
+            genesis.timestamp + FIRST_BLOCK_AUTHORING_TIME.p2pTime;
         const normalParticipantDeadline =
             genesis.timestamp +
-            TIME.p2pTime +
-            TIME.agreementTime +
-            TIME.chainFallbackTime;
+            FIRST_BLOCK_AUTHORING_TIME.p2pTime +
+            FIRST_BLOCK_AUTHORING_TIME.agreementTime +
+            FIRST_BLOCK_AUTHORING_TIME.chainFallbackTime;
         const targetTimestamp = normalParticipantDeadline + 1;
         const graceDeadline =
             genesis.timestamp +
-            TIME.p2pTime +
-            TIME.agreementTime +
-            TIME.chainFallbackTime +
-            TIME.evidenceTime;
+            FIRST_BLOCK_AUTHORING_TIME.p2pTime +
+            FIRST_BLOCK_AUTHORING_TIME.agreementTime +
+            FIRST_BLOCK_AUTHORING_TIME.chainFallbackTime +
+            FIRST_BLOCK_AUTHORING_TIME.evidenceTime;
 
         expect(
             Clock.getTimeInSeconds(),
@@ -105,7 +100,9 @@ describe("E2E: First block timestamp grace", function () {
         expect(blocks[0].height).to.equal(0);
         expect(blocks[0].timestamp).to.be.greaterThan(normalTimestampCap);
         expect(blocks[0].timestamp).to.be.at.most(
-            genesis.timestamp + TIME.evidenceTime + TIME.p2pTime
+            genesis.timestamp +
+                FIRST_BLOCK_AUTHORING_TIME.evidenceTime +
+                FIRST_BLOCK_AUTHORING_TIME.p2pTime
         );
         expect(
             blocks.every((block) => block.allSignerAddresses.size === 3)
@@ -116,7 +113,7 @@ describe("E2E: First block timestamp grace", function () {
     it("caps height 1 without evidenceTime grace and every peer finalizes it", async function () {
         this.timeout(90000);
         const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 0, { timeConfig: TIME });
+        await h.lifecycle.start(3, 0);
 
         await h.transition.advanceState({
             count: 1,
@@ -136,7 +133,7 @@ describe("E2E: First block timestamp grace", function () {
             signatures: heightZeroBundle!.confirmationSignatures
         });
 
-        const heightOneCap = heightZeroBlock.timestamp + SAFE_TIME.p2pTime;
+        const heightOneCap = heightZeroBlock.timestamp + TIME.p2pTime;
         await h.event.waitUntilTimestamp(heightOneCap + 1);
         await h.transition.advanceState({
             count: 1,
@@ -176,7 +173,7 @@ describe("E2E: First block timestamp grace", function () {
     it("applies first-block grace to the on-chain post timing boundary", async function () {
         this.timeout(90000);
         const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 2, { timeConfig: SAFE_TIME });
+        await h.lifecycle.start(2, 2);
 
         const forkId = h.activeForkId!;
         const timings = await h.execOnHost(
@@ -238,14 +235,12 @@ describe("E2E: First block timestamp grace", function () {
             {
                 forkId,
                 h0Window:
-                    SAFE_TIME.p2pTime +
-                    SAFE_TIME.agreementTime +
-                    SAFE_TIME.chainFallbackTime +
-                    SAFE_TIME.evidenceTime,
+                    TIME.p2pTime +
+                    TIME.agreementTime +
+                    TIME.chainFallbackTime +
+                    TIME.evidenceTime,
                 h1Window:
-                    SAFE_TIME.p2pTime +
-                    SAFE_TIME.agreementTime +
-                    SAFE_TIME.chainFallbackTime
+                    TIME.p2pTime + TIME.agreementTime + TIME.chainFallbackTime
             }
         );
 
@@ -258,7 +253,7 @@ describe("E2E: First block timestamp grace", function () {
     it("does not time out height 0 inside the grace window and times out after it", async function () {
         this.timeout(120000);
         const h = TestSession.getHarness();
-        await h.lifecycle.timeoutSetup(3, 0, { timeConfig: TIMEOUT_TIME });
+        await h.lifecycle.timeoutSetup(3, 0);
 
         const forkId = h.activeForkId!;
         const genesisResult = await h
@@ -269,10 +264,10 @@ describe("E2E: First block timestamp grace", function () {
         const genesis = StateSnapshot.decode(genesisResult!.encodedSnapshot);
         const graceParticipantDeadline =
             genesis.timestamp +
-            TIMEOUT_TIME.p2pTime +
-            TIMEOUT_TIME.agreementTime +
-            TIMEOUT_TIME.chainFallbackTime +
-            TIMEOUT_TIME.evidenceTime;
+            TIME.p2pTime +
+            TIME.agreementTime +
+            TIME.chainFallbackTime +
+            TIME.evidenceTime;
 
         expect(
             Clock.getTimeInSeconds(),

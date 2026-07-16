@@ -377,6 +377,21 @@ export class QueryRpcMethods extends ARpcMethods {
         );
     }
 
+    public getGenesisSnapshotTimestamp(forkId: ForkId): number | null {
+        return (
+            this.service.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
+            )?.timestamp ?? null
+        );
+    }
+
+    public getCompletedReductionForkId(forkId: ForkId): ForkId | null {
+        return (
+            this.service.sm.reductionManager.getCompletedReduction(forkId)
+                ?.reducedForkId ?? null
+        );
+    }
+
     /**
      * Hash of the previous block (or genesis snapshot) at the head of `forkId`,
      * or at `height` when provided.

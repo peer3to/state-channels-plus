@@ -43,62 +43,37 @@ function collectDescribeTitlesFromIt(itCall) {
     return titles;
 }
 
-function extractE2ETests(filePath) {
+function extractMochaTests(filePath) {
     const project = new Project();
     const sourceFile = project.addSourceFileAtPath(filePath);
     const tests = [];
 
-    // Find all describe() calls
+    // Expand each implemented it() independently. Walking from the test back
+    // through its describe() ancestors avoids duplicates from nested suites.
     sourceFile
         .getDescendantsOfKind(SyntaxKind.CallExpression)
         .forEach((callExpr) => {
             const expr = callExpr.getExpression();
-            if (expr.getText() !== "describe") return;
+            if (expr.getText() !== "it") return;
 
             const args = callExpr.getArguments();
-            if (args.length === 0) return;
-
-            const suiteName = getStringLiteralValue(args[0]);
-            if (!suiteName || !suiteName.startsWith("E2E:")) return;
-
-            // Find all it() calls within this describe block
-            // The describe's callback function is the second argument
             if (args.length < 2) return;
-            const describeCallback = args[1];
+            const secondArg = args[1];
+            const isFunction =
+                secondArg.getKind() === SyntaxKind.ArrowFunction ||
+                secondArg.getKind() === SyntaxKind.FunctionExpression;
+            if (!isFunction) return;
 
-            // Search for it() calls within the describe callback
-            describeCallback
-                .getDescendantsOfKind(SyntaxKind.CallExpression)
-                .forEach((itCall) => {
-                    const itExpr = itCall.getExpression();
-                    if (itExpr.getText() !== "it") return;
-
-                    const itArgs = itCall.getArguments();
-                    if (itArgs.length < 2) return;
-
-                    // Check if second argument is a function (implemented test)
-                    const secondArg = itArgs[1];
-                    const isFunction =
-                        secondArg.getKind() === SyntaxKind.ArrowFunction ||
-                        secondArg.getKind() === SyntaxKind.FunctionExpression;
-
-                    if (isFunction) {
-                        const testName = getStringLiteralValue(itArgs[0]);
-                        if (testName) {
-                            const describeTitles =
-                                collectDescribeTitlesFromIt(itCall);
-                            const fullTitle = [
-                                ...describeTitles,
-                                testName.trim()
-                            ].join(" ");
-                            tests.push({
-                                suite: suiteName.trim(),
-                                test: testName.trim(),
-                                fullTitle
-                            });
-                        }
-                    }
-                });
+            const testName = getStringLiteralValue(args[0]);
+            if (!testName) return;
+            const describeTitles = collectDescribeTitlesFromIt(callExpr);
+            const suiteName = describeTitles[0] ?? path.basename(filePath);
+            const fullTitle = [...describeTitles, testName.trim()].join(" ");
+            tests.push({
+                suite: suiteName.trim(),
+                test: testName.trim(),
+                fullTitle
+            });
         });
 
     return tests;
@@ -116,16 +91,21 @@ function sanitizeFileName(name) {
 }
 
 /**
- * Glob the e2e dir, expand every `it` into a task, then apply an optional
+ * Glob the test dir, expand every `it` into a task, then apply an optional
  * `--grep` RegExp against the full mocha title. Returns { files, tasks }; the
  * caller decides how to handle an empty result. Throws on an invalid grep.
  */
-function discoverTasks(e2eDir, grep) {
-    const files = globSync(path.join(e2eDir, "**/*.test.ts"));
+function discoverTasks(testDir, grep, e2eDir = path.resolve("test/e2e")) {
+    const files = globSync(path.join(testDir, "**/*.test.ts"));
+    const resolvedE2eDir = path.resolve(e2eDir);
     let tasks = [];
     for (const f of files) {
-        for (const { suite, test, fullTitle } of extractE2ETests(f)) {
-            const taskGrep = `^${escapeRegex(suite)}.*${escapeRegex(test)}$`;
+        const resolvedFile = path.resolve(f);
+        const isE2E =
+            resolvedFile.startsWith(`${resolvedE2eDir}${path.sep}`) ||
+            resolvedFile === resolvedE2eDir;
+        for (const { suite, test, fullTitle } of extractMochaTests(f)) {
+            const taskGrep = `^${escapeRegex(fullTitle)}$`;
             const logName = sanitizeFileName(
                 `${path.basename(f, path.extname(f))}__${suite}__${test}`
             );
@@ -133,7 +113,8 @@ function discoverTasks(e2eDir, grep) {
                 label: `test:${path.basename(f)}:${test}`,
                 args: ["test", "--no-compile", f, "--grep", taskGrep],
                 logName,
-                fullTitle
+                fullTitle,
+                isE2E
             });
         }
     }
@@ -148,7 +129,7 @@ module.exports = {
     getStringLiteralValue,
     isDescribeCallee,
     collectDescribeTitlesFromIt,
-    extractE2ETests,
+    extractMochaTests,
     escapeRegex,
     sanitizeFileName,
     discoverTasks

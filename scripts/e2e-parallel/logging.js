@@ -223,17 +223,19 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
 function runHeader({
     taskCount,
     grep,
+    e2eOnly,
     slotCount,
     threadModes,
     targetLoad,
+    tickMs,
     memBoundGb,
     concurrencyCap
 }) {
     console.log(
-        `Running ${taskCount} E2E task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
+        `Running ${taskCount} ${e2eOnly ? "E2E" : "Mocha"} task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
     console.log(
-        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
+        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
     );
 }
 

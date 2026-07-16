@@ -23,9 +23,12 @@ testing-changes rule above (unit + e2e in the same pass), the strategy-pattern
 rules, the type-safety rules, and the test-harness rules (no mocks, fixtures
 trigger src code).
 
-### E2E parallel run logs
+### Canonical test command and parallel run logs
 
-`yarn test:e2e:parallel` writes each run to a fresh `./logs/run-N/` (N
+`yarn test:parallel` is the canonical full test gate and runs all Mocha tests;
+pass `--e2e-only` to limit discovery to `test/e2e`. The legacy in-process
+`yarn test` command is only for rare focused compatibility checks. The parallel
+runner writes each run to a fresh `./logs/run-N/` (N
 auto-increments) and never touches earlier `run-*` dirs — error logs persist
 across runs for comparison (`TEST_FAILURES.md` workflow). Only the current
 run's dir is cleared/cleaned. An explicit `--logDir <dir>` is used (and
@@ -108,6 +111,14 @@ methods }`. Never interleave a field declaration between methods. When adding a
   dropping it silently; flag stale commented-out dead code instead of removing
   it without mention.
 
+### Reuse existing code
+
+- Search for an existing implementation before adding logic. When the same
+  operation already exists, reuse it or extract one shared implementation;
+  never copy-paste the behavior into another class or service.
+- Keep one owner for each operation. Callers should delegate to that owner
+  instead of maintaining parallel implementations that can drift.
+
 ### Solidity validators shared with the off-chain TS pipeline
 
 - A check that must agree on- and off-chain (dispute fraud-proof handlers) lives
@@ -146,6 +157,12 @@ methods }`. Never interleave a field declaration between methods. When adding a
 
 ### Type safety
 
+- **Primitive collection types need domain meaning.** Plain `string`, `number`,
+  `boolean`, and similar generic primitives are usually not descriptive enough
+  as `Map` keys/values or `Set` members. Prefer a descriptive alias such as
+  `EventKey`, `ChannelKey`, or `BlockNumber`. A primitive may be used directly
+  only when a concise comment immediately above the collection explains
+  exactly what its keys and values represent.
 - When mirroring another type's signatures (e.g. event listeners that mirror
   handler methods), derive them with mapped/`infer` types so they stay in sync,
   rather than hand-restating loosely-typed signatures.

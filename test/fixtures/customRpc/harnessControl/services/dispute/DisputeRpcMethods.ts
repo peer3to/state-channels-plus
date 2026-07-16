@@ -38,6 +38,29 @@ export class DisputeRpcMethods extends ARpcMethods {
         super(transport, service.p2pManager);
     }
 
+    /** Start the real fork-scoped reduction without awaiting its shared result. */
+    public startReduction(forkId: ForkId): boolean {
+        void this.service.sm.reductionManager.tryReduce(forkId);
+        return true;
+    }
+
+    /** Await the real fork-scoped reduction completion. */
+    public async awaitReduction(forkId: ForkId): Promise<ForkId | null> {
+        return (
+            (await this.service.sm.reductionManager.tryReduce(forkId))
+                ?.reducedForkId ?? null
+        );
+    }
+
+    public probeReductionScheduleIsolation(
+        forkId: ForkId,
+        triggerTimestamp: number
+    ): boolean {
+        this.service.sm.reductionManager.schedule(forkId, triggerTimestamp);
+        this.service.sm.reductionManager.schedule(forkId, triggerTimestamp);
+        return this.service.sm.reductionManager.hasOperation(forkId);
+    }
+
     /**
      * Construct a dispute for `forkId` and return its structs ABI-encoded.
      * These are ethers/typechain structs (addresses, nested tuples) — JSON

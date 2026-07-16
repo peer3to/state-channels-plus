@@ -16,6 +16,20 @@ import "hardhat/console.sol";
  *
  */
 contract LocalDiamond is StateChannelManagerProxy {
+    struct EventCoordinate {
+        uint256 blockNumber;
+        uint256 logIndex;
+    }
+
+    bytes32 private constant CHANNEL_OPENED_FAMILY = keccak256("ChannelOpened");
+    bytes32 private constant STATE_SNAPSHOT_FAMILY = keccak256("StateSnapshotUpdated");
+    bytes32 private constant INBOUND_MESSAGES_FAMILY = keccak256("InboundMessagesProcessed");
+    bytes32 private constant REDUCED_RESULT_FAMILY = keccak256("DisputeReducedResultCommitted");
+    bytes32 private constant WITHDRAWALS_FAMILY = keccak256("WithdrawalsUpdated");
+    bytes32 private constant STORAGE_CLEARED_FAMILY = keccak256("ChannelStorageCleared");
+
+    mapping(bytes32 => mapping(bytes32 => EventCoordinate)) private latestEventCoordinates;
+
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
@@ -56,8 +70,11 @@ contract LocalDiamond is StateChannelManagerProxy {
     function onChannelOpened(
         bytes32 channelId,
         StateSnapshot calldata stateSnapshot,
-        bytes calldata /* encodedState */
+        bytes calldata, /* encodedState */
+        uint256 blockNumber,
+        uint256 logIndex
     ) external {
+        if (!_acceptEvent(channelId, CHANNEL_OPENED_FAMILY, bytes32(0), blockNumber, logIndex)) return;
         console.log("onChannelOpened");
         // Store the genesis state snapshot
         stateSnapshots[channelId] = stateSnapshot;
@@ -83,12 +100,24 @@ contract LocalDiamond is StateChannelManagerProxy {
     }
 
     // Called by StateSnapshotUpdated event
-    function onStateSnapshotUpdated(bytes32 channelId, StateSnapshot calldata stateSnapshot) external {
+    function onStateSnapshotUpdated(
+        bytes32 channelId,
+        StateSnapshot calldata stateSnapshot,
+        uint256 blockNumber,
+        uint256 logIndex
+    ) external {
+        if (!_acceptEvent(channelId, STATE_SNAPSHOT_FAMILY, bytes32(0), blockNumber, logIndex)) return;
         stateSnapshots[channelId] = stateSnapshot;
     }
 
     // Called by InboundMessagesProcessed event
-    function onInboundMessagesProcessed(bytes32 channelId, MessageBlock calldata messageBlock) external {
+    function onInboundMessagesProcessed(
+        bytes32 channelId,
+        MessageBlock calldata messageBlock,
+        uint256 blockNumber,
+        uint256 logIndex
+    ) external {
+        if (!_acceptEvent(channelId, INBOUND_MESSAGES_FAMILY, bytes32(0), blockNumber, logIndex)) return;
         bytes32 blockHash = keccak256(abi.encode(messageBlock));
         ChannelBalance storage channelBalance = channelBalances[channelId];
         _persistInboundMessageBlock(channelId, blockHash, messageBlock);
@@ -123,6 +152,14 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Update dispute data based on the dispute commitment
         bytes32 forkId = dispute.input.forkId;
         DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
+        bytes32 commitment = keccak256(abi.encode(dispute));
+
+        bytes32[] storage commitments = disputeWindow.evidence.disputeCommitments;
+        for (uint256 i = 0; i < commitments.length; i++) {
+            if (commitments[i] == commitment) return;
+        }
+
+        // Update dispute data only after duplicate delivery has been excluded.
         disputeWindow.forkId = forkId;
         disputeWindow.evidence.creationTimestamp = windowCreationTimestamp;
         // Set lastEvidenceSubmissionTimestamp based on whether this is a threshold final dispute
@@ -131,8 +168,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         disputeWindow.evidence.lastEvidenceSubmissionTimestamp =
             isFinal ? windowCreationTimestamp : disputeCreationTimestamp;
         disputeWindow.evidence.hasPosted.push(dispute.input.disputer);
-
-        bytes32 commitment = keccak256(abi.encode(dispute));
 
         // Handle reduced result if this is a final/threshold dispute
         if (isFinal) {
@@ -144,11 +179,15 @@ contract LocalDiamond is StateChannelManagerProxy {
             delete disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments;
         }
 
-        disputeWindow.evidence.disputeCommitments.push(commitment);
+        commitments.push(commitment);
     }
 
     // Simple event handlers
     function onOnChainSlashAdded(bytes32 channelId, address participant, uint256 timestamp) external {
+        OnChainSlash[] storage slashes = disputeData[channelId].onChainSlashes;
+        for (uint256 i = 0; i < slashes.length; i++) {
+            if (slashes[i].participant == participant) return;
+        }
         disputeData[channelId].onChainSlashes.push(OnChainSlash(participant, timestamp));
     }
 
@@ -176,19 +215,34 @@ contract LocalDiamond is StateChannelManagerProxy {
         bytes32 forkId,
         bytes32 reducedForkId,
         uint256 reductionTimestamp,
-        address reducer
+        address reducer,
+        uint256 blockNumber,
+        uint256 logIndex
     ) external {
+        if (!_acceptEvent(channelId, REDUCED_RESULT_FAMILY, forkId, blockNumber, logIndex)) return;
         // Update the reduced result in the dispute window
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.forkId = reducedForkId;
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.timestamp = reductionTimestamp;
         disputeData[channelId].disputeWindowMap[forkId].reducedResult.reducer = reducer;
     }
 
-    function onWithdrawalsUpdated(bytes32 channelId, Balance calldata totalWithdrawals) external {
+    function onWithdrawalsUpdated(
+        bytes32 channelId,
+        Balance calldata totalWithdrawals,
+        uint256 blockNumber,
+        uint256 logIndex
+    ) external {
+        if (!_acceptEvent(channelId, WITHDRAWALS_FAMILY, bytes32(0), blockNumber, logIndex)) return;
         channelBalances[channelId].totalWithdrawals = totalWithdrawals;
     }
 
-    function onChannelStorageCleared(bytes32 channelId, bytes32 latestInboundMessageBlockHash) external {
+    function onChannelStorageCleared(
+        bytes32 channelId,
+        bytes32 latestInboundMessageBlockHash,
+        uint256 blockNumber,
+        uint256 logIndex
+    ) external {
+        if (!_acceptEvent(channelId, STORAGE_CLEARED_FAMILY, bytes32(0), blockNumber, logIndex)) return;
         // Clear dispute data
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes;
@@ -205,6 +259,25 @@ contract LocalDiamond is StateChannelManagerProxy {
             delete inboundMessageBlockMap[channelId][keyToDelete];
             keyToDelete = nextKeyToDelete;
         }
+    }
+
+    function _acceptEvent(bytes32 channelId, bytes32 family, bytes32 scope, uint256 blockNumber, uint256 logIndex)
+        private
+        returns (bool)
+    {
+        // (0, 0) is a trusted local reconciliation, not an observed event.
+        // Apply it unconditionally without changing the latest real event
+        // coordinate used for ordering and deduplication.
+        if (blockNumber == 0 && logIndex == 0) return true;
+
+        bytes32 key = keccak256(abi.encode(family, scope));
+        EventCoordinate storage latest = latestEventCoordinates[channelId][key];
+        if (blockNumber < latest.blockNumber || (blockNumber == latest.blockNumber && logIndex <= latest.logIndex)) {
+            return false;
+        }
+        latest.blockNumber = blockNumber;
+        latest.logIndex = logIndex;
+        return true;
     }
 
     function persistDisputeWindow(bytes32 channelId, DisputeWindow memory disputeWindow) public {

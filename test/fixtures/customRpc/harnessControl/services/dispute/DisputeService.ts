@@ -15,6 +15,7 @@ import type {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import type {
+    BlockConfirmationStruct,
     BlockStruct,
     SignedBlockStruct,
     TransactionHeaderStruct
@@ -226,6 +227,30 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         );
     }
 
+    async rewriteLastMilestoneBlockConfirmationInDispute(
+        dispute: DisputeStruct,
+        transform: BlockTransform
+    ): Promise<void> {
+        const proof = dispute.input.stateProof;
+        if (proof.milestones.length === 0) {
+            throw new Error(
+                "rewriteLastMilestoneBlockConfirmationInDispute: stateProof.milestones is empty"
+            );
+        }
+        const milestone = proof.milestones.at(-1)!;
+        if (milestone.blockConfirmations.length === 0) {
+            throw new Error(
+                "rewriteLastMilestoneBlockConfirmationInDispute: last milestone has no blockConfirmations"
+            );
+        }
+        const blockConfirmationIndex = milestone.blockConfirmations.length - 1;
+        milestone.blockConfirmations[blockConfirmationIndex] =
+            await this.remapBlockConfirmation(
+                milestone.blockConfirmations[blockConfirmationIndex],
+                transform
+            );
+    }
+
     async rewriteMilestoneSignedBlockAtIndex(
         dispute: DisputeStruct,
         milestoneIndex: number,
@@ -266,6 +291,35 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         const author = mapped.transaction.header.participant as string;
         const signer = this.signerService.signerForAddress(author);
         return (await Block.fromBlockStruct(mapped, signer)).signedBlock;
+    }
+
+    private async remapBlockConfirmation(
+        blockConfirmation: BlockConfirmationStruct,
+        transform: BlockTransform
+    ): Promise<BlockConfirmationStruct> {
+        const originalBlock = Block.fromBlockConfirmation(blockConfirmation);
+        const confirmationSigners = await Promise.all(
+            blockConfirmation.signatures.map(async (signature) =>
+                String(
+                    await originalBlock.signatureToAddress(signature as string)
+                )
+            )
+        );
+        const signedBlock = await this.remapSignedBlock(
+            blockConfirmation.signedBlock,
+            transform
+        );
+        const mappedBlock = Block.fromSignedBlock(signedBlock);
+        const signatures = await Promise.all(
+            confirmationSigners.map(async (address) =>
+                String(
+                    await mappedBlock.sign(
+                        this.signerService.signerForAddress(address)
+                    )
+                )
+            )
+        );
+        return { signedBlock, signatures };
     }
 
     /** Pop blocks past `targetHeight`, then recompute auditing data + hashes. */

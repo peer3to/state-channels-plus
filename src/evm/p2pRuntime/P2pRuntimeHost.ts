@@ -36,7 +36,10 @@ import {
     deserializeTransactionRequest,
     serializeTransactionResponse
 } from "./chainSignerSerialization";
-import { createRuntimeChainContext } from "./RuntimeChainContext";
+import {
+    createRuntimeChainContext,
+    type RuntimeChainContext
+} from "./RuntimeChainContext";
 
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
 import type { Logger } from "@/utils/logging/Logger";
@@ -86,11 +89,16 @@ function extractRevertData(error: unknown): string | undefined {
         error?: { data?: unknown };
         info?: { error?: { data?: unknown } };
         cause?: { data?: unknown };
+        originalError?: unknown;
         execResult?: { returnValue?: unknown };
     };
     const candidate =
         e.data ?? e.error?.data ?? e.info?.error?.data ?? e.cause?.data;
     if (typeof candidate === "string") return candidate;
+    if (e.originalError !== undefined) {
+        const originalErrorData = extractRevertData(e.originalError);
+        if (originalErrorData !== undefined) return originalErrorData;
+    }
     if (e.execResult?.returnValue !== undefined) {
         try {
             return ethers.hexlify(e.execResult.returnValue as ethers.BytesLike);
@@ -195,10 +203,19 @@ export async function startP2pRuntimeHost<
     TCustomRpcOptions = unknown
 >(port: RuntimePort, payload: SetupPayload, ctx: HostContext): Promise<void> {
     const { threadLabel, handlerExecutionContext } = ctx;
-    const chainContext = await createRuntimeChainContext(
-        payload.config,
-        payload.signerSecret
-    );
+    let chainContext: RuntimeChainContext;
+    try {
+        chainContext = await createRuntimeChainContext(
+            payload.config,
+            payload.signerSecret
+        );
+    } catch (error) {
+        // Provider creation happens before the rest of the runtime graph exists,
+        // but its failure must still settle the paired client's `ready` promise.
+        port.post({ type: "hostError", error: serializeError(error) });
+        port.close();
+        throw error;
+    }
     const { provider, signer } = chainContext;
     let logger: Logger | undefined;
     let contractExecutor: AContractExecutor | undefined;

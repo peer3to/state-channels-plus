@@ -6,12 +6,17 @@ import path from "path";
 // CommonJS dev scripts for the parallel e2e runner. We test the
 // destructive-tooling guards: a mis-resolved / symlinked log dir must never
 // wipe the working tree.
-const { parseCliArgs } = require("../../scripts/e2e-parallel/argParser.js") as {
-    parseCliArgs: (argv: string[]) => {
-        logDir: string;
-        logDirProvided: boolean;
+const { getHelpText, parseCliArgs } =
+    require("../../scripts/e2e-parallel/argParser.js") as {
+        getHelpText: () => string;
+        parseCliArgs: (argv: string[]) => {
+            logDir: string;
+            logDirProvided: boolean;
+            help: boolean;
+            e2eOnly: boolean;
+            schedulerTickMs?: number;
+        };
     };
-};
 const {
     isDangerousPurgeTarget,
     isWithinDefaultLogDir,
@@ -27,6 +32,37 @@ const {
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
 describe("e2e-parallel argParser - logDir validation", function () {
+    it("supports standard help flags and documents every option", function () {
+        expect(parseCliArgs(["node", "script", "--help"]).help).to.equal(true);
+        expect(parseCliArgs(["node", "script", "-h"]).help).to.equal(true);
+
+        const help = getHelpText();
+        for (const option of [
+            "--help",
+            "--grep",
+            "--e2e-only",
+            "--log-dir",
+            "--allow-logdir-purge",
+            "--slots",
+            "--workers",
+            "--target-load",
+            "--scheduler-tick-ms",
+            "--mem-limit-gb",
+            "--sdk-thread",
+            "--no-sdk-thread",
+            "--vm-thread",
+            "--no-vm-thread",
+            "--dry-run"
+        ]) {
+            expect(help).to.include(option);
+        }
+    });
+
+    it("runs all Mocha tests by default and supports --e2e-only", function () {
+        expect(parseCliArgs(argv()).e2eOnly).to.equal(false);
+        expect(parseCliArgs(argv("--e2e-only")).e2eOnly).to.equal(true);
+    });
+
     it("rejects an empty --logDir= value (falls back to default, not provided)", function () {
         const o = parseCliArgs(argv("--logDir="));
         expect(o.logDirProvided).to.equal(false);
@@ -48,6 +84,30 @@ describe("e2e-parallel argParser - logDir validation", function () {
         const o = parseCliArgs(argv("--logDir", "logs/run-x"));
         expect(o.logDirProvided).to.equal(true);
         expect(o.logDir).to.equal("logs/run-x");
+    });
+});
+
+describe("e2e-parallel argParser - scheduler tick", function () {
+    it("uses the scheduler default when no tick override is provided", function () {
+        expect(parseCliArgs(argv()).schedulerTickMs).to.equal(undefined);
+    });
+
+    it("accepts separated and equals scheduler tick values", function () {
+        expect(
+            parseCliArgs(argv("--scheduler-tick-ms", "250")).schedulerTickMs
+        ).to.equal(250);
+        expect(
+            parseCliArgs(argv("--scheduler-tick-ms=125")).schedulerTickMs
+        ).to.equal(125);
+    });
+
+    it("rejects zero and negative scheduler tick values", function () {
+        expect(
+            parseCliArgs(argv("--scheduler-tick-ms", "0")).schedulerTickMs
+        ).to.equal(undefined);
+        expect(
+            parseCliArgs(argv("--scheduler-tick-ms=-1")).schedulerTickMs
+        ).to.equal(undefined);
     });
 });
 

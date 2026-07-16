@@ -351,7 +351,8 @@ export class PeerTestHarness<
         let nodeUrl = process.env.PROVIDER_URL || process.env.HARDHAT_NODE_URL;
         if (!nodeUrl) {
             const node = await startHardhatNode({
-                label: "harness hardhat node"
+                label: "harness hardhat node",
+                env: { E2E_INTERVAL_MINING: "1" }
             });
             this.ownNode = node;
             nodeUrl = node.url;

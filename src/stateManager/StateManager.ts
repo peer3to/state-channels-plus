@@ -15,14 +15,8 @@ import {
     JoinChannelConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
-// TypeChain types - Proof types
-import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-
 // TypeChain types - Dispute types
-import {
-    DisputeStruct,
-    TimeoutStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // TypeChain types - Contract interfaces
 import { StateChannelManagerProxy } from "@typechain-types";
@@ -35,6 +29,8 @@ import DisputeManager from "@/disputeManager";
 import P2PManager from "@/P2PManager";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import ValidationService from "./ValidationService";
+import { ReductionManager } from "./reduction";
+import { SnapshotUpdateService } from "./snapshotUpdate";
 import Storage from "@/storage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { EventHandler } from "@/eventHandlers/EventHandler";
@@ -67,7 +63,6 @@ import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
 // Types
 import {
     BlockValidationResult,
-    ReduceData,
     Status,
     TimeConfig,
     firstBlockGrace
@@ -79,7 +74,6 @@ import {
     ChannelId,
     ForkId,
     Hash,
-    ReductionTimeoutHandle,
     Timestamp
 } from "@/types/types";
 
@@ -96,19 +90,12 @@ import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import MainRpcService from "@/rpc/MainRpcService";
 import type { CustomRpcConstructor } from "@/rpc/registry";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
-import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
+import EventSyncService from "./EventSyncService";
 import BlockQueueManager, {
     IngestBlockConfirmationOptions
 } from "./BlockQueueManager";
 
 const NULL = ZeroHash;
-
-type LocalReductionResult = {
-    disputes: DisputeStruct[];
-    reduceData: ReduceData;
-    reducedGenesisSnapshot: StateSnapshot;
-    expectedReducedForkId: ForkId;
-};
 
 type ParticipantChanges = {
     left: Set<Address>;
@@ -141,24 +128,13 @@ class StateManager<
     blockValidationStrategy: BlockValidationStrategy;
     spectatingValidationStrategy: SpectatingValidationStrategy;
     eventHandler: EventHandler;
-    reductionTriggerMap: Map<ForkId, ReductionTimeoutHandle> = new Map();
-    private readonly localReductions: Map<
-        ForkId,
-        Promise<LocalReductionResult | undefined>
-    > = new Map();
-    // Memoized `isKillPeriodExpired` per (channel, fork). A junk-fork flood then
-    // costs O(1) chain reads per window instead of one per block: a "not expired
-    // until killPeriodEnd" answer is reused until that time; an "expired" answer
-    // is terminal. Cleared on fork transition (see the `forkId` setter).
-    private readonly killPeriodExpiryCache: Map<
-        string,
-        { isExpired: boolean; killPeriodEnd: number }
-    > = new Map();
     status: Status = Status.NOT_OPENED;
     timeoutManager: TimeoutManager;
     logger: Logger;
-    private readonly blockDataAvailabilityService: BlockDataAvailabilityService;
+    readonly eventSyncService: EventSyncService;
     blockQueueManager: BlockQueueManager;
+    readonly reductionManager: ReductionManager;
+    readonly snapshotUpdateService: SnapshotUpdateService;
 
     constructor(
         signer: ethers.Signer,
@@ -195,17 +171,17 @@ class StateManager<
             this.diamondStateMachine,
             logger
         );
-        this.blockDataAvailabilityService = new BlockDataAvailabilityService(
+        this.eventSyncService = new EventSyncService(
             this.channelId,
             this.stateChannelManagerContract,
             this.eventHandler,
+            this.storage,
             this.timeConfig,
             logger
         );
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
-            this.eventHandler,
-            this.diamondStateMachine.localDiamondContract,
+            this.eventSyncService,
             logger
         );
         this.agreementManager = new AgreementManager(this.storage, this.logger);
@@ -232,6 +208,11 @@ class StateManager<
             this.timeoutManager,
             this.logger
         );
+        this.reductionManager = new ReductionManager(this.self, this.logger);
+        this.snapshotUpdateService = new SnapshotUpdateService(
+            this.self,
+            this.logger
+        );
         this.fraudProofService = new FraudProofService(
             this.storage,
             this.logger
@@ -241,7 +222,7 @@ class StateManager<
             this.diamondStateMachine,
             this.stateChannelManagerContract,
             this.timeConfig,
-            this.blockDataAvailabilityService,
+            this.eventSyncService,
             this.self,
             this.logger
         );
@@ -281,11 +262,7 @@ class StateManager<
     //Mark resources for garbage collection
     public async dispose() {
         this.isDisposed = true;
-        // Clear reduction timeouts
-        for (const [_, reductionHandle] of this.reductionTriggerMap) {
-            this.timeoutManager.cancelTask(reductionHandle.handle);
-        }
-        this.reductionTriggerMap.clear();
+        this.reductionManager.dispose();
 
         try {
             await Promise.all([
@@ -344,7 +321,9 @@ class StateManager<
                 try {
                     await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
                         this.channelId,
-                        snapshotStruct
+                        snapshotStruct,
+                        0,
+                        0
                     );
                     const snapshotMeta = LoggerUtils.getSnapshotMetadata(
                         StateSnapshot.from(snapshotStruct)
@@ -378,7 +357,7 @@ class StateManager<
         this.channelId = channelId;
         this.logger.updateSharedContext({ channelId: String(channelId) });
         this.disputeManager.setChannelId(channelId);
-        this.blockDataAvailabilityService.setChannelId(channelId);
+        this.eventSyncService.setChannelId(channelId);
         await this.stateChannelEventListener.setChannelId(channelId);
     }
     public getChannelId(): ChannelId {
@@ -396,409 +375,6 @@ class StateManager<
     public async getChannelStatus(): Promise<Status> {
         return this.status;
     }
-    public setReductionTimeout(
-        forkId: ForkId,
-        localTriggerTimestamp: Timestamp,
-        isRescheduled: boolean = false
-    ) {
-        const now = Clock.getTimeInSeconds();
-        this.logger.debug(
-            `setReductionTimeout called for fork ${forkId} at ${localTriggerTimestamp} (in ${localTriggerTimestamp - now}s)`
-        );
-        if (this.forkId !== forkId) return;
-
-        const existingHandle = this.reductionTriggerMap.get(forkId);
-
-        // If existing timeout exists, only replace if new timeout is further in the future or if it's reschduled (fix a bug where the rescheduled timeout isn't replaced and doesn't fire)
-        // TODO - probably has an edge-case related to the timestamp (think)
-        if (existingHandle) {
-            if (
-                !isRescheduled &&
-                existingHandle.triggerTimestamp >= localTriggerTimestamp
-            ) {
-                return;
-            }
-            this.timeoutManager.cancelTask(existingHandle.handle);
-        }
-
-        // Schedule new reduction attempt
-        const handle = this.timeoutManager.scheduleTask(
-            () => {
-                // Don't call reductionTriggerMap.delete(forkId) - race condition problem
-                void this.tryReduce(forkId);
-            },
-            Math.max(0, (localTriggerTimestamp - now) * 1000),
-            `reduction-${forkId}`
-        );
-
-        this.reductionTriggerMap.set(forkId, {
-            handle,
-            triggerTimestamp: localTriggerTimestamp
-        });
-
-        this.logger.info(
-            `Scheduled reduction timeout for fork ${forkId} at ${localTriggerTimestamp} (in ${localTriggerTimestamp - now}s)`
-        );
-    }
-
-    private async tryReduce(forkId: ForkId) {
-        // Ensure we're still on this fork
-        if (this.forkId !== forkId) {
-            this.logger.debug(
-                `Skipping reduction - no longer on fork ${forkId}`
-            );
-            return;
-        }
-
-        // Step 1: Check locally if kill period expired (fast, no RPC call)
-        const { isExpired: canReduceLocally, killPeriodEnd: killTimestamp } =
-            await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
-                this.channelId,
-                forkId
-            );
-
-        const timeRemaining = Math.max(
-            0,
-            Number(killTimestamp) - Clock.getTimeInSeconds()
-        );
-        this.logger.debug(
-            `Local Reduction check for fork ${forkId}: canReduce=${canReduceLocally}, timeRemaining=${timeRemaining}s`
-        );
-
-        // Step 2: If local state says not ready, reschedule check
-        if (!canReduceLocally) {
-            if (timeRemaining > 0) {
-                this.logger.debug(
-                    `Rescheduling reduction check in ${timeRemaining}s`
-                );
-                return this.setReductionTimeout(
-                    forkId,
-                    Clock.getTimeInSeconds() + timeRemaining,
-                    true
-                );
-            }
-            // timeRemaining is 0 but can't reduce -> local state not synced, fall through to on-chain check
-            this.logger.debug(
-                `Local state not synced, checking on-chain state`
-            );
-        }
-
-        // Step 3: Verify on-chain before committing to reduction
-        const {
-            isExpired: canReduceOnChain,
-            killPeriodEnd: onChainKillTimestamp,
-            blockTimestamp: onChainTimestamp
-        } = await this.stateChannelManagerContract.isKillPeriodExpired(
-            this.channelId,
-            forkId
-        );
-
-        const remaining = Math.max(
-            0,
-            Number(onChainKillTimestamp) - Number(onChainTimestamp) // TODO this was Clock.getTimeInSeconds() before, but we were ecountering remaining == 0
-        );
-
-        await LoggerUtils.logTimestamp(this.logger, "verbose");
-        this.logger.debug(
-            `On-chain Reduction check for fork ${forkId}: canReduce=${canReduceOnChain}, timeRemaining=${remaining}s`,
-            {
-                onChainKillTimestamp,
-                onChainTimestamp
-            }
-        );
-
-        if (!canReduceOnChain) {
-            if (remaining > 0) {
-                this.logger.debug(
-                    `On-chain check: rescheduling in ${remaining}s`
-                );
-                return this.setReductionTimeout(
-                    forkId,
-                    Clock.getTimeInSeconds() + remaining,
-                    true
-                );
-            }
-            throw new Error(
-                `Cannot reduce fork ${forkId}: kill period not expired on-chain (timeRemaining=${remaining})`
-            );
-        }
-
-        // Step 4: Perform reduction
-        try {
-            await this.performReduction(forkId);
-        } catch (error) {
-            if (
-                error instanceof Error &&
-                error.message.startsWith("Missing Dispute in storage")
-            ) {
-                this.logger.error(
-                    `Skipping reduction for fork ${forkId} because local dispute data is unavailable`,
-                    { error: error.message }
-                );
-            }
-            throw error;
-        }
-    }
-
-    /**
-     * Reduce `forkId` locally and set the reduced genesis — single-flight, no
-     * on-chain submission. Every reduction entry point (kill-period timeout,
-     * chain events observing a committed result) awaits the same run;
-     * resolved means the reduced genesis is stored and the fork switched.
-     * Resolves to undefined when there is nothing to reduce (fork already
-     * left, kill period not expired, or no local dispute data).
-     */
-    public reduceLocally(
-        forkId: ForkId
-    ): Promise<LocalReductionResult | undefined> {
-        if (this.forkId !== forkId) return Promise.resolve(undefined);
-        let inFlight = this.localReductions.get(forkId);
-        if (!inFlight) {
-            inFlight = this.performLocalReduction(forkId).finally(() => {
-                this.localReductions.delete(forkId);
-            });
-            this.localReductions.set(forkId, inFlight);
-        }
-        return inFlight;
-    }
-
-    private async performLocalReduction(
-        forkId: ForkId
-    ): Promise<LocalReductionResult | undefined> {
-        // The kill timestamp doubles as the reduced genesis timestamp, so it
-        // must be the on-chain value — identical for every peer, or the local
-        // reduced snapshot hash won't match the committed one.
-        const { isExpired, killPeriodEnd } =
-            await this.isKillPeriodExpiredCached(forkId);
-        if (!isExpired) {
-            // Guards event-driven callers: nothing to reduce (yet).
-            this.logger.debug(
-                `reduceLocally - kill period not expired for fork ${LoggerUtils.formatHash(forkId)}`
-            );
-            return undefined;
-        }
-        const genesisTimestamp = Number(killPeriodEnd);
-
-        const disputes = await this.agreementManager.getForkDisputes(
-            this.channelId,
-            forkId,
-            this.stateChannelManagerContract
-        );
-
-        this.logger.debug(
-            `Performing local reduction on disputes for fork ${LoggerUtils.formatHash(forkId)}`,
-            {
-                disputes: disputes.map((d) => LoggerUtils.getDisputeMetadata(d))
-            }
-        );
-        if (disputes.length === 0) {
-            this.logger.warn(
-                `No disputes found while reducing disputed fork ${forkId}; initiating local dispute`
-            );
-            await this.disputeManager.dispute(forkId);
-            return undefined;
-        }
-
-        try {
-            const reducedOutput =
-                await this.stateChannelManagerContract.reduce.staticCall(
-                    disputes
-                );
-
-            const reduceData = await this.agreementManager.getReduceData(
-                forkId,
-                reducedOutput
-            );
-            const [
-                reducedSnapshotData,
-                reducedEncodedStateMachineState,
-                reducedOutboundMessageBlock
-            ] =
-                await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
-                    forkId,
-                    reducedOutput,
-                    reduceData.latestStateSnapshot,
-                    reduceData.encodedStateMachineState,
-                    reduceData.inboundMessageBlocks
-                );
-            const expectedReducedForkId = ethers.keccak256(
-                Codec.encode(reducedSnapshotData, Type.SnapshotData)
-            );
-
-            // Pre-store the outbound message block so buildForkSnapshotCalldata
-            // can find it via getMessageBlocksInRange.
-            if (reducedOutboundMessageBlock) {
-                this.storage.outboundMessages.store(
-                    reducedOutboundMessageBlock,
-                    { justPersist: true }
-                );
-            }
-
-            const reducedGenesisSnapshot = StateSnapshot.from({
-                forkId: expectedReducedForkId,
-                blockHeight: 0,
-                timestamp: genesisTimestamp,
-                snapshotData: reducedSnapshotData
-            });
-
-            this.logger.info(
-                `Reduction complete (local): transitioning from fork ${LoggerUtils.formatHash(forkId)} to fork ${LoggerUtils.formatHash(expectedReducedForkId)}`
-            );
-            await this.setGenesisState(
-                reducedSnapshotData,
-                reducedEncodedStateMachineState,
-                expectedReducedForkId,
-                genesisTimestamp,
-                reducedOutboundMessageBlock
-            );
-
-            return {
-                disputes,
-                reduceData,
-                reducedGenesisSnapshot,
-                expectedReducedForkId
-            };
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            this.logger.error("Error computing reduced snapshot data", {
-                custom,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
-    }
-
-    private async performReduction(forkId: ForkId) {
-        // Local convergence first (shared with the event-driven entry
-        // points); the on-chain submission below is this path's extra step.
-        const reduction = await this.reduceLocally(forkId);
-        if (!reduction) return;
-        const {
-            disputes,
-            reduceData,
-            reducedGenesisSnapshot,
-            expectedReducedForkId
-        } = reduction;
-
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await this.stateChannelManagerContract.getStateSnapshot(
-                this.channelId
-            )
-        );
-        const { calldata: forkCalldata } = this.buildForkSnapshotCalldata(
-            reducedGenesisSnapshot,
-            currentOnChainSnapshot
-        );
-
-        const reduceCalldata =
-            this.stateChannelManagerContract.interface.encodeFunctionData(
-                "reduceAndFinalize",
-                [
-                    disputes,
-                    reduceData.latestStateSnapshot,
-                    reduceData.encodedStateMachineState,
-                    reduceData.inboundMessageBlocks,
-                    expectedReducedForkId
-                ]
-            );
-
-        this.logger.info("Reduction transaction submit", {
-            reducedForkId: expectedReducedForkId,
-            channelId: this.channelId
-        });
-
-        let txResponse: TransactionResponse;
-        this.logger.debug(
-            `Submitting reduction transaction for fork ${LoggerUtils.formatHash(forkId)}`,
-            {
-                disputes: disputes.map((d) =>
-                    LoggerUtils.getDisputeMetadata(d)
-                ),
-                reduceData: {
-                    latestStateSnapshot: LoggerUtils.getSnapshotMetadata(
-                        StateSnapshot.from(reduceData.latestStateSnapshot)
-                    ),
-                    encodedStateMachineState:
-                        reduceData.encodedStateMachineState,
-                    inboundMessageBlocks: reduceData.inboundMessageBlocks.map(
-                        (b) => LoggerUtils.getMessageBlockMetadata(b)
-                    )
-                }
-            }
-        );
-
-        const txResponsePromise = this.stateChannelManagerContract
-            // Right-sized from 10M: measures ~0.5M avg / ~1.2M max in e2e, so 3M
-            // leaves ample headroom while freeing block gas under concurrency
-            // (was inflated to dodge ethers gas-estimation failures).
-            .multicall([reduceCalldata, forkCalldata], { gasLimit: 3_000_000 })
-            .then((tx: TransactionResponse) => {
-                txResponse = tx;
-                const txReceiptPromise = tx.wait();
-                DetachedPromises.collect(txReceiptPromise);
-                return txReceiptPromise;
-            })
-            .then(() => {
-                this.logger.info(
-                    `Reduction complete (on-chain): transitioning from fork ${LoggerUtils.formatHash(forkId)}`
-                );
-            })
-            .catch(async (error: any) => {
-                const success = await tryHandleEvmError(error, {
-                    tx: txResponse!,
-                    forkId,
-                    logger: this.logger,
-                    handlers: {
-                        RaceConditionDisputeAlreadyReduced: () => {
-                            this.logger.debug(
-                                `Reduction already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionDisputeAlreadyReduced`
-                            );
-                        },
-                        RaceConditionReductionExpectationDoesntMatch: () => {
-                            this.logger.error(
-                                `Reduction expectation mismatch for fork ${LoggerUtils.formatHash(forkId)} -> expected ${LoggerUtils.formatHash(expectedReducedForkId)}`
-                            );
-                        },
-                        RaceConditionBlockHeightTooOld: () => {
-                            this.logger.error(
-                                `Update of on-chain snapshot already completed by another peer for fork ${LoggerUtils.formatHash(forkId)} - RaceConditionBlockHeightTooOld`
-                            );
-                        },
-                        ErrorCantParticipateInDispute: () => {
-                            // TODO -> ignore -> malicious peer
-                        }
-                    },
-                    signer: this.signer
-                });
-
-                if (!success) throw error;
-            });
-        DetachedPromises.collect(txResponsePromise);
-    }
-
-    private buildForkSnapshotCalldata(
-        reducedGenesisSnapshot: StateSnapshot,
-        currentOnChainSnapshot: StateSnapshot
-    ): { calldata: string; outboundMessageBlocks: MessageBlockStruct[] } {
-        // reducedGenesisSnapshot is  newer than currentOnChainSnapshot,
-        const outboundMessageBlocks =
-            this.storage.outboundMessages.getMessageBlocksInRange({
-                lowerBlockHash:
-                    currentOnChainSnapshot.latestOutboundMessageBlockHash,
-                upperBlockHash:
-                    reducedGenesisSnapshot.latestOutboundMessageBlockHash
-            });
-        const calldata =
-            this.stateChannelManagerContract.interface.encodeFunctionData(
-                "updateStateSnapshotFork",
-                [
-                    this.channelId,
-                    reducedGenesisSnapshot.toStruct(),
-                    outboundMessageBlocks
-                ]
-            );
-        return { calldata, outboundMessageBlocks };
-    }
     public getSignerAddress(): Address {
         return this.signerAddress;
     }
@@ -811,35 +387,13 @@ class StateManager<
     }
     public set forkId(forkId: ForkId) {
         if (this.latestForkId !== forkId) {
-            // A transition invalidates per-fork caches keyed on the old fork:
-            // the memoized kill-period-expired results and the fork-recovery
-            // scheduling/suppression gate.
-            this.killPeriodExpiryCache.clear();
+            // Queue recovery gates are tied to the active fork. Reduction
+            // operations and their kill-period observations remain fork-scoped.
             this.blockQueueManager.onForkTransition();
         }
         this.latestForkId = forkId;
     }
 
-    public async isKillPeriodExpiredCached(
-        forkId: ForkId
-    ): Promise<{ isExpired: boolean; killPeriodEnd: number }> {
-        const key = `${this.channelId}:${forkId}`;
-        const cached = this.killPeriodExpiryCache.get(key);
-        const now = Clock.getTimeInSeconds();
-        if (cached && (cached.isExpired || now < cached.killPeriodEnd)) {
-            return cached;
-        }
-        const { isExpired, killPeriodEnd } =
-            await this.stateChannelManagerContract.isKillPeriodExpired(
-                this.channelId,
-                forkId
-            );
-        const fresh = { isExpired, killPeriodEnd: Number(killPeriodEnd) };
-        this.killPeriodExpiryCache.set(key, fresh);
-        return fresh;
-    }
-
-    //Triggered by the On-chain Event Listener when a joinChannelEvent is emitted on-chain
     public async onInboundMessage(
         messageBlock: MessageBlockStruct,
         messageBlockHash: Hash
@@ -1026,7 +580,7 @@ class StateManager<
         });
     }
 
-    public async setGenesisState(
+    public async unsafeSetGenesisState(
         snapshotData: SnapshotDataStruct,
         encodedState: Bytes,
         forkId: ForkId,
@@ -1049,7 +603,7 @@ class StateManager<
         };
         this.logger.debug("Stored genesis snapshot", { _genesisSnapshot });
 
-        await this.setLatestState(
+        await this.unsafeSetLatestState(
             _genesisSnapshot,
             encodedState,
             outboundMessageBlock
@@ -1865,539 +1419,6 @@ class StateManager<
         }
     }
 
-    public async postStateSnapshot(
-        forkId: ForkId
-    ): Promise<StateSnapshot | undefined> {
-        const forkData = await this.prepareUpdateStateSnapshotFork();
-        const sameForkData = await this.prepareUpdateSnapshotSameFork(
-            forkId,
-            forkData?.expectedSnapshot
-        );
-
-        const expectedSnapshot =
-            sameForkData?.expectedSnapshot ??
-            forkData?.expectedSnapshot ??
-            undefined;
-
-        const callData: string[] = [
-            ...(forkData?.callData ?? []),
-            ...(sameForkData?.callData ?? [])
-        ];
-
-        if (callData.length > 0) {
-            this.logger.info(
-                `Posting state snapshot on-chain for fork ${LoggerUtils.formatHash(forkId)}`,
-                {
-                    expectedSnapshot: expectedSnapshot
-                        ? LoggerUtils.getSnapshotMetadata(expectedSnapshot)
-                        : "ERROR N/A",
-                    forkData: {
-                        snapshot: forkData?.expectedSnapshot
-                            ? LoggerUtils.getSnapshotMetadata(
-                                  forkData.expectedSnapshot
-                              )
-                            : "N/A",
-                        outboundMessageBlocks: forkData?.outboundMessageBlocks
-                            ? forkData.outboundMessageBlocks.map(
-                                  LoggerUtils.getMessageBlockMetadata
-                              )
-                            : "N/A"
-                    },
-                    sameForkData: {
-                        snapshot: sameForkData?.expectedSnapshot
-                            ? LoggerUtils.getSnapshotMetadata(
-                                  sameForkData.expectedSnapshot
-                              )
-                            : "N/A",
-                        outboundMessageBlocks:
-                            sameForkData?.outboundMessageBlocks
-                                ? sameForkData.outboundMessageBlocks.map(
-                                      LoggerUtils.getMessageBlockMetadata
-                                  )
-                                : "N/A"
-                    }
-                }
-            );
-            let transactionResponse: TransactionResponse;
-            const txResponsePromise = this.stateChannelManagerContract
-                .multicall(callData)
-                .then((txResponse) => {
-                    transactionResponse = txResponse;
-                    const txReceiptPromise = txResponse.wait();
-                    DetachedPromises.collect(txReceiptPromise);
-                    return txReceiptPromise;
-                })
-                .catch(async (error) => {
-                    const success = await tryHandleEvmError(error, {
-                        tx: transactionResponse!,
-                        logger: this.logger,
-                        signer: this.signer,
-                        forkId,
-                        handlers: {
-                            RaceConditionSnapshotForkMismatch: () => {
-                                this.logger.warn(
-                                    "postStateSnapshot: snapshot fork mismatch — another peer's snapshot landed first",
-                                    { forkId }
-                                );
-                            },
-                            RaceConditionBlockHeightTooOld: () => {
-                                this.logger.warn(
-                                    "postStateSnapshot: block height too old — newer snapshot already on-chain",
-                                    { forkId }
-                                );
-                            },
-                            RaceConditionPendingInboundNotConsumed: () => {
-                                this.logger.error(
-                                    "postStateSnapshot: pending inbound not consumed by our snapshot",
-                                    { forkId }
-                                );
-                                throw new Error(
-                                    `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
-                                );
-                            },
-                            RaceConditionReductionExpectationDoesntMatch:
-                                () => {
-                                    this.logger.error(
-                                        "postStateSnapshot: reduction already finalized to a different forkId",
-                                        { forkId }
-                                    );
-                                    throw new Error(
-                                        `postStateSnapshot: reduction already finalized to a different forkId for forkId=${forkId}`
-                                    );
-                                }
-                        }
-                    });
-                    if (success) return;
-                    const custom = tryDecodeCustomError(error);
-                    this.logger.error("Error posting state snapshot", {
-                        custom,
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
-                    });
-                    throw error;
-                });
-            DetachedPromises.collect(txResponsePromise);
-            return expectedSnapshot;
-        } else {
-            this.logger.debug("No state snapshot updates needed");
-            return undefined;
-        }
-    }
-
-    /**
-     * Prepares data for updating the state snapshot when the fork is the same
-     */
-    public async prepareUpdateSnapshotSameFork(
-        forkId: ForkId,
-        baseSnapshot?: StateSnapshot
-    ): Promise<
-        | {
-              callData: string[];
-              expectedSnapshot: StateSnapshot;
-              milestoneProofs: MilestoneProofStruct[];
-              milestoneSnapshots: StateSnapshot[];
-              outboundMessageBlocks: MessageBlockStruct[];
-          }
-        | undefined
-    > {
-        try {
-            // `baseSnapshot` is the snapshot that will be on-chain when this
-            // calldata executes - in a multicall the fork update lands first,
-            // so the same-fork update chains onto its expected result rather
-            // than the raw current on-chain snapshot.
-            const currentOnChainSnapshot =
-                baseSnapshot ??
-                StateSnapshot.from(
-                    await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                        this.channelId
-                    )
-                );
-
-            if (!currentOnChainSnapshot) {
-                return undefined;
-            }
-            // Get the latest block height for this fork from storage
-            const latestBlockHeight =
-                this.storage.blocks.getNextBlockHeight(forkId) - 1;
-
-            // Get the state proof from AgreementManager
-            const stateProof = await this.agreementManager.getStateProof(
-                forkId,
-                latestBlockHeight
-            );
-
-            // Filter milestone proofs to only include those relevant for the transition from current on-chain state
-            const milestoneProofs: MilestoneProofStruct[] = [];
-            const milestoneSnapshots: StateSnapshot[] = [];
-
-            for (const milestoneProof of stateProof.milestones) {
-                if (milestoneProof.blockConfirmations.length === 0) {
-                    throw new Error("Empty milestone proof found");
-                }
-
-                // Get the state snapshot
-                const snapshot =
-                    this.agreementManager.getSnapshotFromMilestone(
-                        milestoneProof
-                    );
-                if (!snapshot)
-                    throw new Error(
-                        "Milestone built but corresponding snapshot not found"
-                    );
-
-                if (
-                    await this.diamondStateMachine.localDiamondContract.isSnapshotNewer(
-                        snapshot.toStruct(),
-                        currentOnChainSnapshot.toStruct()
-                    )
-                ) {
-                    milestoneProofs.push(milestoneProof);
-                    milestoneSnapshots.push(snapshot);
-                }
-            }
-
-            // No relevant milestones found
-            if (milestoneSnapshots.length === 0) {
-                return undefined;
-            }
-
-            const latestSnapshot =
-                milestoneSnapshots[milestoneSnapshots.length - 1];
-
-            // Latest snapshot is the same as current on-chain
-            if (latestSnapshot.hash === currentOnChainSnapshot.hash) {
-                return undefined;
-            }
-
-            // A same-fork update only applies within one fork. Local state
-            // being on a newer fork than the chain is the normal design (the
-            // local reduction always lands before its on-chain commit) - not
-            // applicable now, retried once the chain catches up.
-            if (currentOnChainSnapshot.forkID !== latestSnapshot.forkID) {
-                this.logger.debug(
-                    "prepareUpdateSnapshotSameFork - base and latest snapshot on different forks, skipping",
-                    {
-                        baseForkId: currentOnChainSnapshot.forkID,
-                        latestForkId: latestSnapshot.forkID
-                    }
-                );
-                return undefined;
-            }
-
-            const currentOnChainExitBlockHash =
-                currentOnChainSnapshot.snapshotData
-                    .latestOutboundMessageBlockHash;
-            const latestLocalExitBlockHash =
-                latestSnapshot.snapshotData.latestOutboundMessageBlockHash;
-            const outboundMessageBlocks =
-                this.storage.outboundMessages.getMessageBlocksInRange({
-                    upperBlockHash: latestLocalExitBlockHash,
-                    lowerBlockHash: currentOnChainExitBlockHash
-                });
-
-            const sameForkCalldata =
-                this.stateChannelManagerContract.interface.encodeFunctionData(
-                    "updateStateSnapshotSameFork",
-                    [
-                        this.channelId,
-                        milestoneProofs,
-                        milestoneSnapshots.map((snapshot) =>
-                            snapshot.toStruct()
-                        ),
-                        outboundMessageBlocks
-                    ]
-                );
-
-            return {
-                callData: [sameForkCalldata],
-                expectedSnapshot: latestSnapshot,
-                milestoneProofs,
-                milestoneSnapshots,
-                outboundMessageBlocks
-            };
-        } catch (error) {
-            this.logger.error(
-                "Error preparing update snapshot for the same fork",
-                {
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                }
-            );
-            throw error;
-        }
-    }
-
-    /**
-     * Prepares data for updateStateSnapshotFork
-     */
-    public async prepareUpdateStateSnapshotFork(): Promise<
-        | {
-              callData: string[];
-              expectedSnapshot: StateSnapshot;
-              outboundMessageBlocks: MessageBlockStruct[];
-          }
-        | undefined
-    > {
-        try {
-            // Get the current on-chain snapshot first
-            const currentOnChainSnapshot = StateSnapshot.from(
-                await this.stateChannelManagerContract.getStateSnapshot(
-                    this.channelId
-                )
-            );
-
-            this.logger.debug("prepareUpdateStateSnapshotFork - start", {
-                channelId: this.channelId,
-                onChainForkId: currentOnChainSnapshot.forkID,
-                onChainBlockHeight: currentOnChainSnapshot.blockHeight,
-                onChainLatestOutboundMessageBlockHash:
-                    currentOnChainSnapshot.snapshotData
-                        .latestOutboundMessageBlockHash
-            });
-
-            let currentForkId = currentOnChainSnapshot.forkID;
-            const callData: string[] = [];
-
-            // Traverse through dispute windows until we reach a fork with no disputes
-            let isDisputed =
-                await this.stateChannelManagerContract.isForkDisputed(
-                    this.channelId,
-                    currentForkId
-                );
-
-            this.logger.verbose(
-                "prepareUpdateStateSnapshotFork - dispute status",
-                {
-                    forkId: currentForkId,
-                    isDisputed
-                }
-            );
-
-            if (!isDisputed) {
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - fork not disputed; no update needed",
-                    {
-                        forkId: currentForkId
-                    }
-                );
-                return undefined; // No fork update needed
-            }
-
-            while (isDisputed) {
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - traversing disputed fork",
-                    {
-                        forkId: currentForkId
-                    }
-                );
-                // If reduced result already exists on-chain, traverse to it
-                const existingReducedResult =
-                    await this.stateChannelManagerContract.getReducedResult(
-                        this.channelId,
-                        currentForkId
-                    );
-                // if reduceResult exists and is final
-                if (existingReducedResult?.reducedForkId != ethers.ZeroHash) {
-                    this.logger.verbose(
-                        "prepareUpdateStateSnapshotFork - reduced result exists; traversing",
-                        {
-                            fromForkId: currentForkId,
-                            toForkId: existingReducedResult.reducedForkId
-                        }
-                    );
-                    currentForkId = existingReducedResult.reducedForkId;
-                    isDisputed =
-                        await this.stateChannelManagerContract.isForkDisputed(
-                            this.channelId,
-                            currentForkId
-                        );
-
-                    this.logger.verbose(
-                        "prepareUpdateStateSnapshotFork - dispute status after traverse",
-                        {
-                            forkId: currentForkId,
-                            isDisputed
-                        }
-                    );
-                    continue;
-                }
-
-                // Fetch dispute commitments for this window
-                const disputeCommitments =
-                    await this.stateChannelManagerContract.getWindowCommitments(
-                        this.channelId,
-                        currentForkId
-                    );
-
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - window commitments",
-                    {
-                        forkId: currentForkId,
-                        commitmentsCount: disputeCommitments?.length ?? 0
-                    }
-                );
-                if (!disputeCommitments || disputeCommitments.length === 0) {
-                    // Nothing to reduce; wait for more data
-                    this.logger.verbose(
-                        "prepareUpdateStateSnapshotFork - no commitments; stopping traversal",
-                        {
-                            forkId: currentForkId
-                        }
-                    );
-                    break;
-                }
-
-                // Build disputes from local storage confirmations
-                const disputes: DisputeStruct[] = disputeCommitments.map(
-                    (commitment) => {
-                        const dispute =
-                            this.storage.disputes.getDispute(commitment);
-                        if (!dispute) {
-                            throw new Error(
-                                `Missing Dispute in storage for dispute commitment ${commitment}`
-                            );
-                        }
-                        return dispute;
-                    }
-                );
-
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - disputes built from storage",
-                    {
-                        forkId: currentForkId,
-                        disputesCount: disputes.length
-                    }
-                );
-
-                // Use proxy view to compute reduced output cheaply (no tx)
-                const reducedOutput =
-                    await this.stateChannelManagerContract.reduce.staticCall(
-                        disputes
-                    );
-                const reduceData = await this.agreementManager.getReduceData(
-                    currentForkId,
-                    reducedOutput
-                );
-
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - reduce data prepared",
-                    {
-                        forkId: currentForkId,
-                        latestStateSnapshotForkId:
-                            reduceData.latestStateSnapshot.forkId
-                    }
-                );
-
-                const [snapshotData] =
-                    await this.diamondStateMachine.localDiamondContract.reduceOutputToSnapshotData.staticCall(
-                        currentForkId,
-                        reducedOutput,
-                        reduceData.latestStateSnapshot,
-                        reduceData.encodedStateMachineState,
-                        reduceData.inboundMessageBlocks
-                    );
-                const reducedForkId = ethers.keccak256(
-                    Codec.encode(snapshotData, Type.SnapshotData)
-                );
-
-                const reduceAndFinalizeCalldata =
-                    this.stateChannelManagerContract.interface.encodeFunctionData(
-                        "reduceAndFinalize",
-                        [
-                            disputes,
-                            reduceData.latestStateSnapshot,
-                            reduceData.encodedStateMachineState,
-                            reduceData.inboundMessageBlocks,
-                            reducedForkId
-                        ]
-                    );
-                callData.push(reduceAndFinalizeCalldata);
-
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - reduced fork prepared",
-                    {
-                        fromForkId: currentForkId,
-                        reducedForkId
-                    }
-                );
-
-                // Traverse to the reduced fork
-                currentForkId = reducedForkId;
-                isDisputed =
-                    await this.stateChannelManagerContract.isForkDisputed(
-                        this.channelId,
-                        currentForkId
-                    );
-
-                this.logger.debug(
-                    "prepareUpdateStateSnapshotFork - dispute status after reduction",
-                    {
-                        forkId: currentForkId,
-                        isDisputed
-                    }
-                );
-            }
-
-            this.logger.debug(
-                "prepareUpdateStateSnapshotFork - traversal complete",
-                {
-                    resolvedForkId: currentForkId,
-                    resolvedForkIsDisputed: isDisputed
-                }
-            );
-
-            // Get the genesis snapshot for the final resolved fork
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                    currentForkId
-                );
-            if (!genesisSnapshot) {
-                throw new Error(
-                    `No genesis snapshot found for fork ${currentForkId}`
-                );
-            }
-
-            if (genesisSnapshot.forkID !== this.forkId) {
-                throw new Error(
-                    `Fork mismatch: update will result in fork ${genesisSnapshot.forkID}, but target fork is ${this.forkId}.`
-                );
-            }
-
-            const { calldata: forkCalldata, outboundMessageBlocks } =
-                this.buildForkSnapshotCalldata(
-                    genesisSnapshot,
-                    currentOnChainSnapshot
-                );
-
-            this.logger.debug(
-                "prepareUpdateStateSnapshotFork - outbound message block range",
-                {
-                    forkId: currentForkId,
-                    blocksCount: outboundMessageBlocks.length
-                }
-            );
-
-            callData.push(forkCalldata);
-
-            if (callData.length === 0) {
-                return undefined;
-            }
-
-            return {
-                callData,
-                expectedSnapshot: genesisSnapshot,
-                outboundMessageBlocks
-            };
-        } catch (error) {
-            this.logger.error("Error preparing update state snapshot fork", {
-                error: error instanceof Error ? error.message : String(error)
-            });
-            throw error;
-        }
-    }
-
     private async calculateTotalBalance(
         balances: { balance: BalanceStruct }[],
         initialTotal?: BalanceStruct
@@ -2413,28 +1434,6 @@ class StateManager<
         }
 
         return total;
-    }
-
-    private summarizeMilestoneProofsForLog(
-        milestoneProofs: MilestoneProofStruct[]
-    ): Array<{ blockHeight: number; signers: Address[] }> {
-        return milestoneProofs.flatMap((milestone) =>
-            milestone.blockConfirmations.map((blockConfirmation) => {
-                const block = Block.fromBlockConfirmation(blockConfirmation);
-                return {
-                    blockHeight: block.height,
-                    signers: Array.from(block.allSignerAddresses)
-                };
-            })
-        );
-    }
-
-    private summarizeMilestoneSnapshotsForLog(
-        milestoneSnapshots: StateSnapshot[]
-    ): Array<{ ThresholdSet: Address[] }> {
-        return milestoneSnapshots.map((snapshot) => ({
-            ThresholdSet: snapshot.snapshotData.participants
-        }));
     }
 
     // Fires the force-join dispute exactly once when N turns have passed without the joiner being included
@@ -2526,14 +1525,14 @@ class StateManager<
             !previousBlockOrSnapshot.block.onChainTimestamp
         ) {
             const scheduleStatus =
-                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
+                await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                     previousBlockOrSnapshot.block.forkId,
                     previousBlockOrSnapshot.block.height,
                     previousBlockOrSnapshot.block.author
                 );
 
             if (
-                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
+                this.eventSyncService.shouldDeferCurrentValidation(
                     scheduleStatus
                 )
             ) {
@@ -2620,15 +1619,13 @@ class StateManager<
 
         // (race condition) check if current block posted on-chain
         const scheduleStatus =
-            await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
+            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                 forkId,
                 blockHeight,
                 participantAddress
             );
         if (
-            this.blockDataAvailabilityService.shouldDeferCurrentValidation(
-                scheduleStatus
-            )
+            this.eventSyncService.shouldDeferCurrentValidation(scheduleStatus)
         ) {
             this.logger.info(
                 "tryTimeoutParticipant - waiting for current on-chain block validation",
@@ -3346,7 +2343,9 @@ class StateManager<
                         { blockHeight: block.height, forkId: block.forkId }
                     );
                     try {
-                        await this.postStateSnapshot(block.forkId);
+                        await this.snapshotUpdateService.postStateSnapshot(
+                            block.forkId
+                        );
                     } catch (error) {
                         this.logger.error(
                             `startMaybeExitOnChain - failed to post state snapshot`,
@@ -3388,15 +2387,6 @@ class StateManager<
             this.timeConfig.agreementTime * 1000,
             `MaybeExitOnChain - block ${block.height} - fork ${block.forkId}`
         );
-    }
-
-    private async dispute(
-        _blockConfirmation: BlockConfirmationStruct
-    ): Promise<void> {
-        // The fraud proof has already been stored by ValidationService
-        // rest is left as TODO for now
-        // https://trello.com/c/qwpYPLj8
-        throw new Error("Not implemented");
     }
 
     private getStrategyByStatus(status: Status): AValidationStrategy {
