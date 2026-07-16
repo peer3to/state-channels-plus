@@ -28,7 +28,9 @@ import {
 import { StateChannelManagerProxy } from "@typechain-types";
 
 // Core components
-import AgreementManager from "../agreementManager/AgreementManager";
+import AgreementManager, {
+    MissingDisputeInStorageError
+} from "../agreementManager/AgreementManager";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
 import DisputeManager from "@/disputeManager";
@@ -509,21 +511,11 @@ class StateManager<
             );
         }
 
-        // Step 4: Perform reduction
-        try {
-            await this.performReduction(forkId);
-        } catch (error) {
-            if (
-                error instanceof Error &&
-                error.message.startsWith("Missing Dispute in storage")
-            ) {
-                this.logger.error(
-                    `Skipping reduction for fork ${forkId} because local dispute data is unavailable`,
-                    { error: error.message }
-                );
-            }
-            throw error;
-        }
+        // Step 4: Perform reduction. The "dispute struct not yet stored" race is
+        // handled at the source (reduceLocally discards), so performReduction
+        // returns without reducing rather than throwing an unhandled rejection
+        // out of this fire-and-forget path.
+        await this.performReduction(forkId);
     }
 
     /**
@@ -568,11 +560,27 @@ class StateManager<
         }
         const genesisTimestamp = Number(killPeriodEnd);
 
-        const disputes = await this.agreementManager.getForkDisputes(
-            this.channelId,
-            forkId,
-            this.stateChannelManagerContract
-        );
+        let disputes: DisputeStruct[];
+        try {
+            disputes = await this.agreementManager.getForkDisputes(
+                this.channelId,
+                forkId,
+                this.stateChannelManagerContract
+            );
+        } catch (error) {
+            // Race: a dispute commitment is already on-chain (in the window) but
+            // our onDisputeCommitted handler hasn't stored the struct yet.
+            // Nothing to reduce until it lands — discard; a later reduction
+            // attempt converges once the struct arrives.
+            if (error instanceof MissingDisputeInStorageError) {
+                this.logger.warn(
+                    `reduceLocally - dispute struct not yet stored for fork ${LoggerUtils.formatHash(forkId)}; discarding until it lands`,
+                    { error: error.message }
+                );
+                return undefined;
+            }
+            throw error;
+        }
 
         this.logger.debug(
             `Performing local reduction on disputes for fork ${LoggerUtils.formatHash(forkId)}`,
@@ -2174,9 +2182,7 @@ class StateManager<
                         const dispute =
                             this.storage.disputes.getDispute(commitment);
                         if (!dispute) {
-                            throw new Error(
-                                `Missing Dispute in storage for dispute commitment ${commitment}`
-                            );
+                            throw new MissingDisputeInStorageError(commitment);
                         }
                         return dispute;
                     }

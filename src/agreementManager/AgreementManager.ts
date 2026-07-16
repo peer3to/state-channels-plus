@@ -24,6 +24,22 @@ import { ReduceData } from "@/types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 /**
+ * Thrown when a dispute commitment is present on-chain in the window but its
+ * struct has not been stored locally yet — the commitment landed before our
+ * onDisputeCommitted handler ran. Callers treat this as a transient "nothing to
+ * reduce yet" condition (discard and retry once the struct lands), so it is a
+ * typed error rather than a matched message string.
+ */
+export class MissingDisputeInStorageError extends Error {
+    constructor(public readonly commitment: string) {
+        super(
+            `Missing Dispute in storage for dispute commitment ${commitment}`
+        );
+        this.name = "MissingDisputeInStorageError";
+    }
+}
+
+/**
  * AgreementManager acts as a higher logic layer over storage
  * It interprets storage data and provides convenience methods
  */
@@ -527,9 +543,7 @@ class AgreementManager {
         for (const commitment of disputeCommitments) {
             const dispute = this.storage.disputes.getDispute(commitment);
             if (!dispute) {
-                throw new Error(
-                    `Missing Dispute in storage for dispute commitment ${commitment}`
-                );
+                throw new MissingDisputeInStorageError(commitment);
             }
 
             currentWindowDisputes.push(dispute);
