@@ -46,6 +46,7 @@ export default class ForkReductionService {
 
     /** Cancel any scheduled reduction timeouts and drop them. */
     dispose(): void {
+        // Clear reduction timeouts
         for (const [_, reductionHandle] of this.reductionTriggerMap) {
             this.stateManager.timeoutManager.cancelTask(reductionHandle.handle);
         }

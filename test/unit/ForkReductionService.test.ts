@@ -200,16 +200,18 @@ describe("Unit: ForkReductionService", function () {
                 20000
             );
 
-            // fire two reduceLocally at once - the single-flight map must give
-            // both the same run (one reduced fork, no double-submit)
+            // fire two at once. both forks converge even without the dedup
+            // (reduction is deterministic), so promise identity is the real
+            // single-flight oracle -> drop the map and p1 !== p2
             const r = await h.execOnHost(
                 observer,
                 async (sm, args) => {
-                    const [a, b] = await Promise.all([
-                        sm.reduceLocally(args.forkId),
-                        sm.reduceLocally(args.forkId)
-                    ]);
+                    const p1 = sm.reduceLocally(args.forkId);
+                    const p2 = sm.reduceLocally(args.forkId);
+                    const samePromise = p1 === p2;
+                    const [a, b] = await Promise.all([p1, p2]);
                     return {
+                        samePromise,
                         aFork: a ? String(a.expectedReducedForkId) : null,
                         bFork: b ? String(b.expectedReducedForkId) : null
                     };
@@ -217,6 +219,7 @@ describe("Unit: ForkReductionService", function () {
                 { forkId }
             );
 
+            expect(r.samePromise).to.equal(true);
             expect(r.aFork).to.not.be.null;
             expect(r.aFork).to.equal(r.bFork);
 
