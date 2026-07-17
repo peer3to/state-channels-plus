@@ -70,7 +70,7 @@ describe("E2E: final dispute resolution", function () {
             forkId: String(staged.finalResolution.forkId)
         });
         expect(expectedSnapshot).to.not.equal(undefined);
-        await h.assert.snapshot.onChainSnapshotChangedWait({
+        await h.assert.snapshot.localSnapshotsChangedWait({
             expectedSnapshot,
             timeoutMs: 15000
         });

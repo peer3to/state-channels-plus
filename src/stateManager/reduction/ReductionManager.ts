@@ -103,7 +103,7 @@ export default class ReductionManager {
                 }
                 DetachedPromises.collect(this.tryReduce(forkId));
             },
-            Math.max(0, (localTriggerTimestamp - now) * 1000),
+            Math.max(1, localTriggerTimestamp - now) * 1000,
             `reduction-${forkId}`
         );
 

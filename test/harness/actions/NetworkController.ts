@@ -49,8 +49,10 @@ export class NetworkController<
      * Wait for P2P connections to establish
      */
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
-        const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
-        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
+        // Parallel local runs have the same interval-mined, multi-process
+        // connection latency as CI. A shorter local-only deadline makes setup
+        // fail even though discovery is still progressing normally.
+        const defaultTimeout = 15000;
         const actualTimeout = timeoutMs ?? defaultTimeout;
 
         const condition = async () => {

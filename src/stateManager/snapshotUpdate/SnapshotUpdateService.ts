@@ -13,6 +13,27 @@ import {
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type StateManager from "../StateManager";
 
+type SnapshotSubmission = {
+    expectedSnapshot: StateSnapshot;
+    completion: Promise<void>;
+};
+
+type ForkSnapshotUpdatePreparation = {
+    canPost: boolean;
+    callData: string[];
+    expectedSnapshot?: StateSnapshot;
+    outboundMessageBlocks: MessageBlockStruct[];
+};
+
+export type SameForkSnapshotUpdatePreparation = {
+    canPost: boolean;
+    callData: string[];
+    expectedSnapshot?: StateSnapshot;
+    milestoneProofs: MilestoneProofStruct[];
+    milestoneSnapshots: StateSnapshot[];
+    outboundMessageBlocks: MessageBlockStruct[];
+};
+
 export default class SnapshotUpdateService {
     private readonly logger: Logger;
 
@@ -26,48 +47,76 @@ export default class SnapshotUpdateService {
     public async postStateSnapshot(
         forkId: ForkId
     ): Promise<StateSnapshot | undefined> {
+        const submission = await this.submitStateSnapshot(forkId);
+        if (!submission) return undefined;
+
+        DetachedPromises.collect(submission.completion);
+        return submission.expectedSnapshot;
+    }
+
+    public async postStateSnapshotWait(
+        forkId: ForkId
+    ): Promise<StateSnapshot | undefined> {
+        const submission = await this.submitStateSnapshot(forkId);
+        if (!submission) return undefined;
+
+        await submission.completion;
+        return submission.expectedSnapshot;
+    }
+
+    private async submitStateSnapshot(
+        forkId: ForkId
+    ): Promise<SnapshotSubmission | undefined> {
         const forkData = await this.prepareUpdateStateSnapshotFork();
         const sameForkData = await this.prepareUpdateSnapshotSameFork(
             forkId,
-            forkData?.expectedSnapshot
+            forkData.expectedSnapshot
         );
+
+        const callData = [...forkData.callData, ...sameForkData.callData];
         const expectedSnapshot =
-            sameForkData?.expectedSnapshot ?? forkData?.expectedSnapshot;
-        const callData = [
-            ...(forkData?.callData ?? []),
-            ...(sameForkData?.callData ?? [])
-        ];
+            sameForkData.expectedSnapshot ?? forkData.expectedSnapshot;
+
+        // Preparation always runs to completion. `canPost` only controls
+        // whether the resulting calldata is currently eligible for submission.
+        if (!forkData.canPost || !sameForkData.canPost) return undefined;
 
         if (callData.length === 0) {
             this.logger.debug("No state snapshot updates needed");
             return undefined;
         }
+        if (!expectedSnapshot) {
+            throw new Error(
+                "State snapshot calldata was prepared without an expected snapshot"
+            );
+        }
 
         this.logger.info(
             `Posting state snapshot on-chain for fork ${LoggerUtils.formatHash(forkId)}`,
             {
-                expectedSnapshot: expectedSnapshot
-                    ? LoggerUtils.getSnapshotMetadata(expectedSnapshot)
-                    : "ERROR N/A",
+                expectedSnapshot:
+                    LoggerUtils.getSnapshotMetadata(expectedSnapshot),
                 forkData: {
-                    snapshot: forkData?.expectedSnapshot
+                    canPost: forkData.canPost,
+                    snapshot: forkData.expectedSnapshot
                         ? LoggerUtils.getSnapshotMetadata(
                               forkData.expectedSnapshot
                           )
                         : "N/A",
-                    outboundMessageBlocks: forkData?.outboundMessageBlocks
+                    outboundMessageBlocks: forkData.outboundMessageBlocks
                         ? forkData.outboundMessageBlocks.map(
                               LoggerUtils.getMessageBlockMetadata
                           )
                         : "N/A"
                 },
                 sameForkData: {
-                    snapshot: sameForkData?.expectedSnapshot
+                    canPost: sameForkData.canPost,
+                    snapshot: sameForkData.expectedSnapshot
                         ? LoggerUtils.getSnapshotMetadata(
                               sameForkData.expectedSnapshot
                           )
                         : "N/A",
-                    outboundMessageBlocks: sameForkData?.outboundMessageBlocks
+                    outboundMessageBlocks: sameForkData.outboundMessageBlocks
                         ? sameForkData.outboundMessageBlocks.map(
                               LoggerUtils.getMessageBlockMetadata
                           )
@@ -77,13 +126,11 @@ export default class SnapshotUpdateService {
         );
 
         let transactionResponse: TransactionResponse;
-        const transaction = this.stateManager.stateChannelManagerContract
+        const completion = this.stateManager.stateChannelManagerContract
             .multicall(callData)
-            .then((response) => {
+            .then(async (response) => {
                 transactionResponse = response;
-                const receipt = response.wait();
-                DetachedPromises.collect(receipt);
-                return receipt;
+                await response.wait();
             })
             .catch(async (error) => {
                 const success = await tryHandleEvmError(error, {
@@ -133,21 +180,13 @@ export default class SnapshotUpdateService {
                 });
                 throw error;
             });
-        DetachedPromises.collect(transaction);
-        return expectedSnapshot;
+        return { expectedSnapshot, completion };
     }
 
     /**
      * Prepares data for updateStateSnapshotFork
      */
-    public async prepareUpdateStateSnapshotFork(): Promise<
-        | {
-              callData: string[];
-              expectedSnapshot: StateSnapshot;
-              outboundMessageBlocks: MessageBlockStruct[];
-          }
-        | undefined
-    > {
+    public async prepareUpdateStateSnapshotFork(): Promise<ForkSnapshotUpdatePreparation> {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -166,8 +205,6 @@ export default class SnapshotUpdateService {
             });
 
             let currentForkId = currentOnChainSnapshot.forkID;
-            const callData: string[] = [];
-
             // Traverse through dispute windows until we reach a fork with no disputes
             let isDisputed =
                 await this.stateManager.stateChannelManagerContract.isForkDisputed(
@@ -190,7 +227,11 @@ export default class SnapshotUpdateService {
                         forkId: currentForkId
                     }
                 );
-                return undefined; // No fork update needed
+                return {
+                    canPost: true,
+                    callData: [],
+                    outboundMessageBlocks: []
+                };
             }
 
             while (isDisputed) {
@@ -200,107 +241,51 @@ export default class SnapshotUpdateService {
                         forkId: currentForkId
                     }
                 );
-                // If reduced result already exists on-chain, traverse to it
                 const existingReducedResult =
                     await this.stateManager.stateChannelManagerContract.getReducedResult(
                         this.stateManager.channelId,
                         currentForkId
                     );
-                // if reduceResult exists and is final
-                if (existingReducedResult?.reducedForkId != ethers.ZeroHash) {
-                    this.logger.verbose(
-                        "prepareUpdateStateSnapshotFork - reduced result exists; traversing",
-                        {
-                            fromForkId: currentForkId,
-                            toForkId: existingReducedResult.reducedForkId
-                        }
+                if (existingReducedResult.reducedForkId === ethers.ZeroHash) {
+                    this.logger.warn(
+                        "State snapshot fork update is waiting for reduction",
+                        { forkId: currentForkId }
                     );
-                    currentForkId = existingReducedResult.reducedForkId;
-                    isDisputed =
-                        await this.stateManager.stateChannelManagerContract.isForkDisputed(
-                            this.stateManager.channelId,
-                            currentForkId
-                        );
-
-                    this.logger.verbose(
-                        "prepareUpdateStateSnapshotFork - dispute status after traverse",
-                        {
-                            forkId: currentForkId,
-                            isDisputed
-                        }
-                    );
-                    continue;
+                    return {
+                        canPost: false,
+                        callData: [],
+                        outboundMessageBlocks: []
+                    };
                 }
 
-                // Fetch dispute commitments for this window
-                const disputes =
-                    await this.stateManager.reductionManager.getSyncedForkDisputes(
+                const challengePeriodExpired =
+                    await this.stateManager.stateChannelManagerContract.isReduceChallengePeriodExpired(
+                        this.stateManager.channelId,
                         currentForkId
                     );
-
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - window commitments",
-                    {
-                        forkId: currentForkId,
-                        commitmentsCount: disputes.length
-                    }
-                );
-                if (disputes.length === 0) {
-                    // Nothing to reduce; wait for more data
-                    this.logger.verbose(
-                        "prepareUpdateStateSnapshotFork - no commitments; stopping traversal",
+                if (!challengePeriodExpired) {
+                    this.logger.warn(
+                        "State snapshot fork update is waiting for the reduction challenge period",
                         {
-                            forkId: currentForkId
+                            forkId: currentForkId,
+                            reducedForkId: existingReducedResult.reducedForkId
                         }
                     );
-                    break;
+                    return {
+                        canPost: false,
+                        callData: [],
+                        outboundMessageBlocks: []
+                    };
                 }
 
                 this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - disputes built from storage",
-                    {
-                        forkId: currentForkId,
-                        disputesCount: disputes.length
-                    }
-                );
-
-                // Use proxy view to compute reduced output cheaply (no tx)
-                const computation =
-                    await this.stateManager.reductionManager.computeReduction(
-                        currentForkId,
-                        disputes
-                    );
-                const { reduceData, reducedForkId } = computation;
-
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - reduce data prepared",
-                    {
-                        forkId: currentForkId,
-                        latestStateSnapshotForkId:
-                            reduceData.latestStateSnapshot.forkId
-                    }
-                );
-
-                const reduceAndFinalizeCalldata =
-                    this.stateManager.reductionManager.buildReduceAndFinalizeCalldata(
-                        disputes,
-                        reduceData.latestStateSnapshot,
-                        reduceData.encodedStateMachineState,
-                        reduceData.inboundMessageBlocks,
-                        reducedForkId
-                    );
-                callData.push(reduceAndFinalizeCalldata);
-
-                this.logger.verbose(
-                    "prepareUpdateStateSnapshotFork - reduced fork prepared",
+                    "prepareUpdateStateSnapshotFork - reduced result is final; traversing",
                     {
                         fromForkId: currentForkId,
-                        reducedForkId
+                        toForkId: existingReducedResult.reducedForkId
                     }
                 );
-
-                // Traverse to the reduced fork
-                currentForkId = reducedForkId;
+                currentForkId = existingReducedResult.reducedForkId;
                 isDisputed =
                     await this.stateManager.stateChannelManagerContract.isForkDisputed(
                         this.stateManager.channelId,
@@ -308,7 +293,7 @@ export default class SnapshotUpdateService {
                     );
 
                 this.logger.debug(
-                    "prepareUpdateStateSnapshotFork - dispute status after reduction",
+                    "prepareUpdateStateSnapshotFork - dispute status after traverse",
                     {
                         forkId: currentForkId,
                         isDisputed
@@ -355,14 +340,9 @@ export default class SnapshotUpdateService {
                 }
             );
 
-            callData.push(forkCalldata);
-
-            if (callData.length === 0) {
-                return undefined;
-            }
-
             return {
-                callData,
+                canPost: true,
+                callData: [forkCalldata],
                 expectedSnapshot: genesisSnapshot,
                 outboundMessageBlocks
             };
@@ -404,33 +384,61 @@ export default class SnapshotUpdateService {
     public async prepareUpdateSnapshotSameFork(
         forkId: ForkId,
         baseSnapshot?: StateSnapshot
-    ): Promise<
-        | {
-              callData: string[];
-              expectedSnapshot: StateSnapshot;
-              milestoneProofs: MilestoneProofStruct[];
-              milestoneSnapshots: StateSnapshot[];
-              outboundMessageBlocks: MessageBlockStruct[];
-          }
-        | undefined
-    > {
+    ): Promise<SameForkSnapshotUpdatePreparation> {
         try {
             // `baseSnapshot` is the snapshot that will be on-chain when this
             // calldata executes - in a multicall the fork update lands first,
             // so the same-fork update chains onto its expected result rather
             // than the raw current on-chain snapshot.
-            const currentOnChainSnapshot =
+            // The fallback supports callers that prepare raw same-fork calldata
+            // without first running the combined snapshot-post preparation.
+            let preparationBaseSnapshot =
                 baseSnapshot ??
                 StateSnapshot.from(
-                    await this.stateManager.diamondStateMachine.localDiamondContract.getStateSnapshot(
+                    await this.stateManager.stateChannelManagerContract.getStateSnapshot(
                         this.stateManager.channelId
                     )
                 );
+            let canPost = true;
 
-            if (!currentOnChainSnapshot) return undefined;
+            // A locally reduced fork can have finalized milestones before its
+            // fork snapshot reaches the chain. Use that fork's genesis as the
+            // prospective base so callers can inspect the prepared update, but
+            // keep canPost false: without preceding fork-update calldata this
+            // same-fork update cannot yet be submitted independently.
+            if (preparationBaseSnapshot.forkID !== forkId) {
+                const resolvedBaseForkId = preparationBaseSnapshot.forkID;
+                canPost = false;
+                const genesisSnapshot =
+                    this.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                        forkId
+                    );
+                if (!genesisSnapshot) {
+                    throw new Error(
+                        `Genesis snapshot unavailable for fork ${forkId}`
+                    );
+                }
+                preparationBaseSnapshot = genesisSnapshot;
+                this.logger.debug(
+                    "Preparing same-fork snapshot update from the local fork genesis",
+                    {
+                        requestedForkId: forkId,
+                        resolvedBaseForkId
+                    }
+                );
+            }
 
             const latestBlockHeight =
                 this.stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
+            if (latestBlockHeight < 0) {
+                return {
+                    canPost,
+                    callData: [],
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
+                    outboundMessageBlocks: []
+                };
+            }
             const stateProof =
                 await this.stateManager.agreementManager.getStateProof(
                     forkId,
@@ -455,9 +463,9 @@ export default class SnapshotUpdateService {
                 }
 
                 if (
-                    await this.stateManager.diamondStateMachine.localDiamondContract.isSnapshotNewer(
+                    await this.stateManager.stateChannelManagerContract.isSnapshotNewer(
                         snapshot.toStruct(),
-                        currentOnChainSnapshot.toStruct()
+                        preparationBaseSnapshot.toStruct()
                     )
                 ) {
                     milestoneProofs.push(milestoneProof);
@@ -465,33 +473,77 @@ export default class SnapshotUpdateService {
                 }
             }
 
-            if (milestoneSnapshots.length === 0) return undefined;
-
-            const latestSnapshot = milestoneSnapshots.at(-1)!;
-            if (latestSnapshot.hash === currentOnChainSnapshot.hash) {
-                return undefined;
+            if (milestoneSnapshots.length === 0) {
+                return {
+                    canPost,
+                    callData: [],
+                    milestoneProofs,
+                    milestoneSnapshots,
+                    outboundMessageBlocks: []
+                };
             }
 
-            // A same-fork update only applies within one fork. Local state
-            // being on a newer fork than the chain is the normal design (the
-            // local reduction always lands before its on-chain commit) - not
-            // applicable now, retried once the chain catches up.
-            if (currentOnChainSnapshot.forkID !== latestSnapshot.forkID) {
+            const latestSnapshot = milestoneSnapshots.at(-1)!;
+            if (latestSnapshot.hash === preparationBaseSnapshot.hash) {
+                return {
+                    canPost,
+                    callData: [],
+                    milestoneProofs,
+                    milestoneSnapshots,
+                    outboundMessageBlocks: []
+                };
+            }
+
+            // A same-fork update only applies within one fork.
+            if (preparationBaseSnapshot.forkID !== latestSnapshot.forkID) {
                 this.logger.debug(
                     "prepareUpdateSnapshotSameFork - base and latest snapshot on different forks, skipping",
                     {
-                        baseForkId: currentOnChainSnapshot.forkID,
+                        baseForkId: preparationBaseSnapshot.forkID,
                         latestForkId: latestSnapshot.forkID
                     }
                 );
-                return undefined;
+                return {
+                    canPost: false,
+                    callData: [],
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
+                    outboundMessageBlocks: []
+                };
+            }
+
+            const channelBalance =
+                await this.stateManager.stateChannelManagerContract.getChannelBalance(
+                    this.stateManager.channelId
+                );
+            if (
+                String(channelBalance.latestInboundMessageBlockHash) !==
+                String(latestSnapshot.latestInboundMessageBlockHash)
+            ) {
+                this.logger.warn(
+                    "Same-fork snapshot update is waiting for the latest inbound messages",
+                    {
+                        forkId,
+                        onChainInboundMessageBlockHash:
+                            channelBalance.latestInboundMessageBlockHash,
+                        snapshotInboundMessageBlockHash:
+                            latestSnapshot.latestInboundMessageBlockHash
+                    }
+                );
+                return {
+                    canPost: false,
+                    callData: [],
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
+                    outboundMessageBlocks: []
+                };
             }
 
             const outboundMessageBlocks =
                 this.stateManager.storage.outboundMessages.getMessageBlocksInRange(
                     {
                         lowerBlockHash:
-                            currentOnChainSnapshot.snapshotData
+                            preparationBaseSnapshot.snapshotData
                                 .latestOutboundMessageBlockHash,
                         upperBlockHash:
                             latestSnapshot.snapshotData
@@ -512,6 +564,7 @@ export default class SnapshotUpdateService {
                 );
 
             return {
+                canPost,
                 callData: [sameForkCalldata],
                 expectedSnapshot: latestSnapshot,
                 milestoneProofs,

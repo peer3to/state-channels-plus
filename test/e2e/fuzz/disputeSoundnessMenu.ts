@@ -80,7 +80,7 @@ export const DISPUTE_SOUNDNESS_MENU: FuzzAction[] = [
             );
             await h.dispute.resolveDisputeWait(RESOLVE);
             // settle the new fork before continuing (see ATTACK_CATALOG D-12)
-            await h.assert.snapshot.onChainSnapshotChangedWait({
+            await h.assert.snapshot.localSnapshotsChangedWait({
                 previousForkId: forkBefore,
                 timeoutMs: SETTLE_WAIT
             });

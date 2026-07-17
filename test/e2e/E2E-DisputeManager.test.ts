@@ -34,7 +34,7 @@ describe("E2E: Dispute Manager", function () {
                 peerIndex: 0
             });
 
-            await h.assert.snapshot.onChainSnapshotChangedDetached({
+            await h.assert.snapshot.localSnapshotsChangedDetached({
                 expectedSnapshot: expectedSnapshot2
             });
             return;

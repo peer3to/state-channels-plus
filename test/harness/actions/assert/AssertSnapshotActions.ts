@@ -31,7 +31,7 @@ export class AssertSnapshotActions<
             );
         }
     }
-    async onChainSnapshotChangedWait(options?: {
+    async localSnapshotsChangedWait(options?: {
         expectedForkId?: ForkId;
         previousForkId?: ForkId;
         expectedSnapshot?: StateSnapshot;
@@ -74,7 +74,7 @@ export class AssertSnapshotActions<
 
         const promise = this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: timeoutMs,
-            timeoutMessage: `On-chain snapshot did not change within ${timeoutMs}ms`,
+            timeoutMessage: `Honest peers' local snapshots did not change within ${timeoutMs}ms`,
             timeoutMeta: {
                 expectedForkId,
                 previousForkId,
@@ -89,12 +89,12 @@ export class AssertSnapshotActions<
         return promise;
     }
 
-    onChainSnapshotChangedDetached(options?: {
+    localSnapshotsChangedDetached(options?: {
         expectedForkId?: string;
         expectedSnapshot?: StateSnapshot;
         timeoutMs?: number;
     }): void {
-        const detachedPromise = this.onChainSnapshotChangedWait(options);
+        const detachedPromise = this.localSnapshotsChangedWait(options);
         DetachedPromises.collect(detachedPromise);
     }
 

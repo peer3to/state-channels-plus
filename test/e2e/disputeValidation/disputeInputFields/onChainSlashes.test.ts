@@ -49,13 +49,14 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         // address is in the on-chain onChainSlashes registry, but NOT in
         // the new snapshot's participants.
         const slashedAddress = h.getPeer(1).address;
+        const forkBeforeResolution = h.activeForkId!;
         await h.scenario.disputeAndResolve({
             maliciousPeerIndex: 1,
             forkSettleTimeoutMs: 15000,
             disputesCommittedTimeoutMs: 10000
         });
-        await h.assert.snapshot.onChainSnapshotChangedWait({
-            previousForkId: h.activeForkId!,
+        await h.assert.snapshot.localSnapshotsChangedWait({
+            previousForkId: forkBeforeResolution,
             timeoutMs: 15000
         });
 

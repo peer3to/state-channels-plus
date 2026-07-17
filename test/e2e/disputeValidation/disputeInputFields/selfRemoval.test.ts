@@ -16,6 +16,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
 
         const leaverIndex = 1;
         const leaverAddress = h.getPeer(leaverIndex).address;
+        const disputedForkId = h.activeForkId!;
 
         // forceExit yields a valid self-removal dispute; post untampered.
         await h
@@ -29,6 +30,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         ];
 
         await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
+            forkId: disputedForkId,
             markMalicious: false
         });
 
@@ -50,6 +52,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         );
 
         await h.dispute.resolveDisputeWait({
+            forkId: disputedForkId,
             assertMaliciousRemoved: false,
             honestPeerIndices: remainingPeerIndices
         });

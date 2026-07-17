@@ -1,7 +1,6 @@
 import { DetachedPromises } from "@/utils";
 import { Status } from "@/types";
 import { MathStateMachine } from "@typechain-types";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import {
     AdvanceStateBaseOptions,
     TransitionActions,
@@ -70,7 +69,8 @@ export class MathTransitionActions extends TransitionActions<
     ): Promise<number> {
         const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
             options ?? {};
-        const leaverIndex = await this.participantLeave(leaveOptions);
+        const leaverIndex =
+            await this.participantLeaveStateTransition(leaveOptions);
         await this.harness.event.waitUntilPeerStatus(
             leaverIndex,
             Status.SYNCED,
@@ -89,7 +89,8 @@ export class MathTransitionActions extends TransitionActions<
     ): Promise<number> {
         const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
             options ?? {};
-        const leaverIndex = await this.participantLeave(leaveOptions);
+        const leaverIndex =
+            await this.participantLeaveStateTransition(leaveOptions);
         const promise = this.harness.event.waitUntilPeerStatus(
             leaverIndex,
             Status.SYNCED,
@@ -104,7 +105,8 @@ export class MathTransitionActions extends TransitionActions<
         return leaverIndex;
     }
 
-    private async participantLeave(
+    /** Submit the leave transition without waiting for a later snapshot status. */
+    async participantLeaveStateTransition(
         options?: TransitionOptions
     ): Promise<number> {
         const leaver = await this.harness.query.getNextPeerToWrite();

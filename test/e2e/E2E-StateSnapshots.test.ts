@@ -61,15 +61,7 @@ describe("E2E: State Snapshots", function () {
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         h.event.resetEventSpies();
-        await h.transition.postSnapshot();
-
-        const honest = h.getHonestPeers().map((p) => p.index);
-        await h.event.waitForEventCounts(
-            "onStateSnapshotUpdated",
-            honest.map((peerId) => ({ peerId, expectedCount: 1 })),
-            10000,
-            { mode: "atLeast" }
-        );
+        await h.transition.postSnapshotWait({ timeoutMs: 10000 });
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.snapshotMatchesLocal();
@@ -89,18 +81,11 @@ describe("E2E: State Snapshots", function () {
         await h.transition.fromHonestPeersOnly((c) => c.add(3));
 
         await h.assert.sync.onlyHonestPeersInSync();
+        await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         h.event.resetEventSpies();
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
-        await h.transition.postSnapshot();
-
-        const honest = h.getHonestPeers().map((p) => p.index);
-        await h.event.waitForEventCounts(
-            "onStateSnapshotUpdated",
-            honest.map((peerId) => ({ peerId, expectedCount: 1 })),
-            10000,
-            { mode: "atLeast" }
-        );
+        await h.transition.postSnapshotWait({ timeoutMs: 10000 });
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.onChainSnapshotOnFork();
@@ -427,7 +412,7 @@ describe("E2E: State Snapshots", function () {
                 snapshotSubmission,
                 "same-fork snapshot transaction was not prepared"
             ).to.not.be.undefined;
-            await h.assert.snapshot.onChainSnapshotChangedWait({
+            await h.assert.snapshot.localSnapshotsChangedWait({
                 expectedSnapshot: snapshotSubmission?.snapshot
             });
 

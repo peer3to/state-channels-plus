@@ -50,6 +50,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             timeout: ReturnType<typeof setTimeout>;
         }
     >();
+    private disposalPromise?: Promise<void>;
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -89,12 +90,14 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         return this.self;
     }
     //Mark resources for garbage collection
-    public async dispose() {
-        this.rejectAllPendingRpcRequests(
-            new Error("P2PManager disposed before RPC response arrived")
-        );
-        await this.holepunch.dispose();
+    public dispose(): Promise<void> {
+        if (this.disposalPromise) {
+            return this.disposalPromise;
+        }
+
         this.disconnectAll();
+        this.disposalPromise = this.holepunch.dispose();
+        return this.disposalPromise;
     }
     public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
@@ -194,13 +197,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
 
-    private rejectAllPendingRpcRequests(reason: Error): void {
-        for (const [, pending] of this.pendingRpcRequests) {
-            this.stateManager.timeoutManager.cancelTask(pending.timeout);
-            pending.reject(reason);
-        }
-        this.pendingRpcRequests.clear();
-    }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
             // Reject oversized frames before parsing so a peer can't force

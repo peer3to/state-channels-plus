@@ -618,11 +618,11 @@ describe("E2E: Spectate Service", function () {
             await h.byzantine.submitInvalidStateTransitionBlock(
                 maliciousPeerIndex
             );
-            await h.assert.dispute.initiatedAndCommitedWait({
-                expectedCount: 1,
-                peersIndices: honestPeerIndices
-            });
+            await h.event.waitUntilPeerStatus(4, Status.OPENED);
 
+            // initiatedAndCommitedWait is flaky when it expects multiple peer to initiate and commit
+            // Why? Because peers race and if they commit at the same it is ok
+            // If 1 peer commits first and others audit -> it's possible that others hit hasMoreEvidence=false so they don't submit
             await h.dispute.resolveDisputeWait({
                 honestPeerIndices: honestPeerIndices
             });
@@ -744,7 +744,7 @@ describe("E2E: Spectate Service", function () {
 
     describe("Concurrent promotion", function () {
         const concurrentTimeConfig = {
-            p2pTime: 2,
+            p2pTime: 6, // 2s too low for joinChannelWait
             agreementTime: 4,
             chainFallbackTime: 4,
             evidenceTime: 6
@@ -921,7 +921,7 @@ describe("E2E: Spectate Service", function () {
                 assertMaliciousRemoved: false
             });
 
-            await h.assert.snapshot.onChainSnapshotChangedWait({
+            await h.assert.snapshot.localSnapshotsChangedWait({
                 previousForkId: originalForkId,
                 timeoutMs: 15000
             });

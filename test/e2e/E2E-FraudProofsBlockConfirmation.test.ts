@@ -539,13 +539,29 @@ describe("E2E: Block Fraud Proofs", function () {
         const honestSumsBefore = await Promise.all(
             honestPeers.map((p) => p.contractInstance.getSum())
         );
-        await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
+        const invalidBlock =
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
 
         await h.assert.dispute.initiatedAndCommitedWait();
         await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
+
+        // Fraud-proof persistence happens inside validation, before the
+        // onBlockConfirmation finally restores the VM. Wait for the processed
+        // hook, which is emitted after that restoration, before reading state.
+        await Promise.all(
+            honestPeers.map((peer) =>
+                h.event.waitForBlockConfirmationProcessed({
+                    peerIndex: peer.index,
+                    blockHash: invalidBlock.hash,
+                    timeoutMs: 10000
+                })
+            )
+        );
 
         // The block's add() executed on honest VMs before the snapshot-hash
         // check failed; the abort must have rolled the state back.

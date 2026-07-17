@@ -3,11 +3,18 @@ import { sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { TimeoutTooEarlyStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
+// Invalid-dispute scenarios require upload -> audit -> kill to fit inside the
+// evidence window. With one-second interval mining, the three-second minimum
+// has no scheduling margin for those two sequential on-chain transactions.
+const INVALID_DISPUTE_EVIDENCE_TIME = 5;
+
 describe("E2E: dispute validation / disputeInputFields / timeout", function () {
     it("dispute.input.timeout.blockHeight != stateProof.latest + 1 → TimeoutNotLinkedToLatestState", async function () {
         const h = TestSession.getHarness();
         // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
-        await h.lifecycle.timeoutSetup(3);
+        await h.lifecycle.timeoutSetup(3, 0, {
+            timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+        });
         await h.assert.sync.peersInSyncWait();
         h.contextApi.captureOriginalFork();
         h.event.resetEventSpies();
@@ -43,7 +50,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
     it("dispute.input.timeout.participant != next writer → TimeoutParticipantNotNext", async function () {
         const h = TestSession.getHarness();
         // 0 transitions → peer 0 is next to write but never does → peers 1 & 2 detect timeout.
-        await h.scenario.preDisputeSetup();
+        await h.scenario.preDisputeSetup({
+            timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+        });
 
         // Peer 0 submits a timeout dispute with the wrong participant.
         await h.tamper.stubConstructDispute(
@@ -60,7 +69,8 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // Peer 1 will upload a valid timeout dispute; peer 0's dispute is tampered
         // and should be killed by peer 1 detecting TimeoutNotLinkedToLatestState.
         await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
-            mode: "atLeast"
+            mode: "atLeast",
+            timeoutMs: h.event.protocolEventTimeoutMs(0)
         });
 
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
@@ -74,7 +84,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
     describe("TimeoutTooEarly", function () {
         it("dispute.input.timeout posted before wait period elapses → honest peers store TimeoutTooEarly", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
+            await h.scenario.preDisputeSetup({
+                timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+            });
             // peer 2 is the silent non-writer → exclude from fork-change barrier.
             h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
@@ -206,7 +218,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
     it("dispute.input.timeout.blockHeight = block whose calldata is on-chain; isForced=true → TimeoutCalldataPosted", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.timeoutSetup(4, 0);
+        await h.lifecycle.timeoutSetup(4, 0, {
+            timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+        });
 
         // Establish height 1 so the calldata block does not receive first-block grace.
         await h.transition.advanceState({ count: 2 });

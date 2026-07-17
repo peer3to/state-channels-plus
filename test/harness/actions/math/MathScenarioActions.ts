@@ -105,7 +105,7 @@ export class MathScenarioActions extends ScenarioActions {
         };
     }) {
         const { newForkId } = await this.fourPeersDisputeResolution(options);
-        this.harness.assert.snapshot.onChainSnapshotChangedDetached({
+        this.harness.assert.snapshot.localSnapshotsChangedDetached({
             expectedForkId: newForkId as string
         });
     }
@@ -119,7 +119,7 @@ export class MathScenarioActions extends ScenarioActions {
         };
     }) {
         const { newForkId } = await this.fourPeersDisputeResolution(options);
-        await this.harness.assert.snapshot.onChainSnapshotChangedWait({
+        await this.harness.assert.snapshot.localSnapshotsChangedWait({
             expectedForkId: newForkId as string
         });
     }
@@ -208,55 +208,6 @@ export class MathScenarioActions extends ScenarioActions {
 
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
-    }
-
-    async setupTwoLeaversWithPendingJoinerAcrossMilestones(options?: {
-        timeConfig?: {
-            p2pTime?: number;
-            agreementTime?: number;
-            chainFallbackTime?: number;
-            evidenceTime?: number;
-        };
-    }): Promise<{ pendingJoin: string }> {
-        const timeConfig = {
-            p2pTime: 1,
-            agreementTime: 6,
-            chainFallbackTime: 2,
-            evidenceTime: 12,
-            ...options?.timeConfig
-        };
-
-        await this.harness.lifecycle.timeoutSetup(5, 2, { timeConfig });
-
-        const firstLeaver =
-            await this.harness.transition.participantLeaveDetached({
-                waitForPeers: [0, 1, 3, 4]
-            });
-
-        await this.harness.transition.advanceState({
-            waitForPeers: [0, 1, 3, 4],
-            count: 1,
-            waitForFinalization: true
-        });
-
-        const { participant: pendingJoin } =
-            await this.harness.join.forceInboundJoinWait();
-
-        const secondLeaver =
-            await this.harness.transition.participantLeaveDetached({
-                waitForPeers: [0, 1, 3],
-                waitForFinalization: false
-            });
-
-        this.harness.context.leftChannelPeerIndices = [
-            firstLeaver,
-            secondLeaver
-        ];
-
-        this.harness.event.resetEventSpies();
-        this.harness.contextApi.captureOriginalFork();
-
-        return { pendingJoin };
     }
 
     async preDisputeSetupDisconnectedPeer(options?: {

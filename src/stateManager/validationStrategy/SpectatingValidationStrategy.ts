@@ -58,11 +58,11 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(
@@ -85,7 +85,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         );
         if (unexpectedSignatures.has(block.originalSignature)) {
             // Garbage author — stop spectating this feed.
-            this.disconnect();
+            this.abort();
             return BlockValidationResult.DISCONNECT;
         }
         // Stray confirmation signatures don't invalidate an otherwise valid block.
@@ -110,39 +110,39 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async blockAuthorIsNotParticipant(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
         _conflictingBlock: Block,
         block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async invalidStateTransitionDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async forgedInboundMessageBlockDetected(
         block: Block,
         _messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -163,13 +163,13 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async blockIsNotLinkedAndIsNotFirstBlock(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        this.disconnect();
+        this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(
@@ -178,7 +178,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.NOT_ENOUGH_TIME;
     }
 
-    private disconnect() {
-        this.p2pManager.disconnectAll();
+    private abort() {
+        this.p2pManager.stateManager.abort();
     }
 }

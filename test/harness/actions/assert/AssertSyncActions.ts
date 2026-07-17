@@ -200,16 +200,16 @@ export class AssertSyncActions<
             try {
                 await this.onChainSnapshotAndPeersSameFork();
                 return true;
-            } catch (error) {
+            } catch {
                 return false;
             }
         };
         await this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: options?.timeoutMs,
-            timeoutMessageFn: () => {
+            timeoutMessageFn: async () => {
                 let errorMsg = "";
                 try {
-                    void this.onChainSnapshotAndPeersSameFork();
+                    await this.onChainSnapshotAndPeersSameFork();
                 } catch (error) {
                     errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
                 }

@@ -162,13 +162,18 @@ export default class ReductionExecutor {
                 forkId
             );
         if (forkId !== this.stateManager.forkId) return;
-        if (!freshExpiry.isExpired) {
-            this.killPeriodExpiryCache.delete(
-                `${this.stateManager.channelId}:${forkId}`
-            );
+        const freshObservation = {
+            isExpired: freshExpiry.isExpired,
+            killPeriodEnd: Number(freshExpiry.killPeriodEnd)
+        };
+        this.killPeriodExpiryCache.set(
+            `${this.stateManager.channelId}:${forkId}`,
+            freshObservation
+        );
+        if (!freshObservation.isExpired) {
             this.stateManager.reductionManager.schedule(
                 forkId,
-                Number(freshExpiry.killPeriodEnd),
+                freshObservation.killPeriodEnd,
                 true
             );
             return;
@@ -184,7 +189,7 @@ export default class ReductionExecutor {
 
         const candidate = await this.prepareLocalCandidate(
             forkId,
-            Number(freshExpiry.killPeriodEnd),
+            freshObservation.killPeriodEnd,
             disputes
         );
         const submission = await this.prepareSubmission(candidate);

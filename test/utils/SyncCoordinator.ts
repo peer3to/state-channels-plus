@@ -57,7 +57,7 @@ export class SyncCoordinator<
         options?: WaitForPeersToSyncOptions
     ): Promise<void> {
         const {
-            timeoutMs = 8000,
+            timeoutMs = 15000,
             waitForFinalization,
             minHeight
         } = options || {};

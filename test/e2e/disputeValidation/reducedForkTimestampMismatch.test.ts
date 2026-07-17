@@ -27,7 +27,7 @@ describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
         const attacker1 = (await h.query.getNextPeerToWrite()).index;
         await h.byzantine.submitInvalidStateTransitionBlock(attacker1);
         await h.dispute.resolveDisputeWait(RESOLVE);
-        await h.assert.snapshot.onChainSnapshotChangedWait({
+        await h.assert.snapshot.localSnapshotsChangedWait({
             previousForkId: forkBefore1,
             timeoutMs: WAIT
         });

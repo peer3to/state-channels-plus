@@ -135,6 +135,7 @@ class StateManager<
     blockQueueManager: BlockQueueManager;
     readonly reductionManager: ReductionManager;
     readonly snapshotUpdateService: SnapshotUpdateService;
+    private disposalPromise?: Promise<void>;
 
     constructor(
         signer: ethers.Signer,
@@ -250,33 +251,38 @@ class StateManager<
      * rather than SYNCED or NOT_OPENED.
      */
     public abort() {
+        if (this.disposalPromise) return;
         this.logger.warn("Aborting channel participation", {
             channelId: this.channelId,
             status: Status[this.status]
         });
         this.setStatus(Status.OPENED);
-        this.p2pManager.disconnectAll();
-        void this.stateChannelEventListener.dispose();
+        DetachedPromises.collect(this.dispose());
     }
 
     //Mark resources for garbage collection
-    public async dispose() {
+    public dispose(): Promise<void> {
+        if (this.disposalPromise) {
+            return this.disposalPromise;
+        }
+
         this.isDisposed = true;
         this.reductionManager.dispose();
 
-        try {
-            await Promise.all([
-                this.timeoutManager.dispose(),
-                this.stateChannelEventListener.dispose(),
-                this.p2pManager.dispose(),
-                this.diamondStateMachine.dispose()
-            ]);
-        } finally {
-            this.logger.dispose({
-                cascadeChildren: true,
-                cascadeParent: true
+        this.disposalPromise = Promise.all([
+            this.timeoutManager.dispose(),
+            this.stateChannelEventListener.dispose(),
+            this.p2pManager.dispose(),
+            this.diamondStateMachine.dispose()
+        ])
+            .then(() => undefined)
+            .finally(() => {
+                this.logger.dispose({
+                    cascadeChildren: true,
+                    cascadeParent: true
+                });
             });
-        }
+        return this.disposalPromise;
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.p2pEventHooks = p2pEventHooks;

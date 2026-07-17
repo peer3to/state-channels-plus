@@ -1,5 +1,4 @@
 import { StateSnapshot } from "@/models";
-import { ForkId } from "@/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Codec, Logger, Type } from "@/utils";
@@ -49,7 +48,7 @@ export class ContextActions<
             .control(peer)
             .transition.prepareUpdateSnapshotSameFork(forkId)
             .request();
-        const encodedLastSnapshot = sameFork?.encodedMilestoneSnapshots.at(-1);
+        const encodedLastSnapshot = sameFork.encodedMilestoneSnapshots.at(-1);
         const lastSnapshot = encodedLastSnapshot
             ? StateSnapshot.from(
                   Codec.decode(encodedLastSnapshot, Type.StateSnapshot)

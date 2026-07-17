@@ -18,11 +18,18 @@ const { getHelpText, parseCliArgs } =
         };
     };
 const {
+    countStarvation,
+    parseTimings,
     isDangerousPurgeTarget,
     isWithinDefaultLogDir,
     safeEmptyDir,
     nextRunDir
 } = require("../../scripts/e2e-parallel/logging.js") as {
+    countStarvation: (text: string) => number;
+    parseTimings: (text: string) => {
+        el: { main: number; sdk: number; vm: number; watchdog: number };
+        maxEventLoopDelayMs: number;
+    };
     isDangerousPurgeTarget: (resolved: string) => boolean;
     isWithinDefaultLogDir: (resolved: string) => boolean;
     safeEmptyDir: (dirPath: string, allow: boolean) => void;
@@ -172,5 +179,32 @@ describe("e2e-parallel logging - purge guards", function () {
             process.chdir(prevCwd);
             fs.rmSync(repo, { recursive: true, force: true });
         }
+    });
+});
+
+describe("e2e-parallel logging - starvation diagnostics", function () {
+    it("deduplicates propagated watchdog errors and includes their real peak", function () {
+        const repeatedError =
+            "Event loop delay 1025.507327ms exceeded configured threshold 1000ms";
+        const output = [
+            '##E2E_TIMING## {"maxEventLoopDelayMs":649,"elThread":"vm"}',
+            ...Array.from({ length: 7 }, () => repeatedError)
+        ].join("\n");
+
+        expect(countStarvation(output)).to.equal(1);
+        const timing = parseTimings(output);
+        expect(timing.el.vm).to.equal(649);
+        expect(timing.el.watchdog).to.equal(1026);
+        expect(timing.maxEventLoopDelayMs).to.equal(1026);
+    });
+
+    it("counts genuinely different watchdog delays separately", function () {
+        const output = [
+            "Event loop delay 1025.5ms exceeded configured threshold 1000ms",
+            "Event loop delay 1100.25ms exceeded configured threshold 1000ms"
+        ].join("\n");
+
+        expect(countStarvation(output)).to.equal(2);
+        expect(parseTimings(output).maxEventLoopDelayMs).to.equal(1100);
     });
 });

@@ -36,14 +36,37 @@ function countOomEvents(text) {
     return workerHits + processHit;
 }
 
-// Event-loop starvation lines (the harness sets a 1s threshold). Counted for
-// every test, pass or fail, so passing-but-starved tests are still surfaced.
+// A watchdog error is often propagated through several peers and the harness,
+// which repeats the exact message in the combined log. Treat one distinct
+// delay/threshold pair as one starvation event rather than counting each copy.
 const STARVATION_RE =
-    /Event loop delay [\d.]+ms exceeded configured threshold/g;
+    /Event loop delay ([\d.]+)ms exceeded configured threshold ([\d.]+)ms/g;
+
+function parseStarvation(text) {
+    const events = new Map();
+    if (text) {
+        for (const match of text.matchAll(STARVATION_RE)) {
+            const delayMs = Number(match[1]);
+            const thresholdMs = Number(match[2]);
+            if (!Number.isFinite(delayMs) || !Number.isFinite(thresholdMs))
+                continue;
+            events.set(`${delayMs}:${thresholdMs}`, {
+                delayMs,
+                thresholdMs
+            });
+        }
+    }
+    return {
+        count: events.size,
+        maxDelayMs: Math.max(
+            0,
+            ...[...events.values()].map((event) => event.delayMs)
+        )
+    };
+}
 
 function countStarvation(text) {
-    if (!text) return 0;
-    return (text.match(STARVATION_RE) || []).length;
+    return parseStarvation(text).count;
 }
 
 // Per-setup timing markers the harness writes to stdout. Summed across all
@@ -56,7 +79,7 @@ function parseTimings(text) {
     let deployMs = 0;
     let workerBootMs = 0;
     // Peak event-loop delay per thread role (main + the peers' sdk/vm workers).
-    const el = { main: 0, sdk: 0, vm: 0 };
+    const el = { main: 0, sdk: 0, vm: 0, watchdog: 0 };
     let found = false;
     if (text) {
         let m;
@@ -80,8 +103,12 @@ function parseTimings(text) {
                 // Malformed marker — ignore.
             }
         }
+        // The fatal watchdog error may be serialized without its preceding
+        // timing marker. Keep its real delay in the peak without guessing
+        // which thread produced it.
+        el.watchdog = Math.round(parseStarvation(text).maxDelayMs);
     }
-    const maxEventLoopDelayMs = Math.max(el.main, el.sdk, el.vm);
+    const maxEventLoopDelayMs = Math.max(el.main, el.sdk, el.vm, el.watchdog);
     return {
         startupMs,
         deployMs,
@@ -306,7 +333,7 @@ function result({
         ? ` · startup ${formatDurationMs(timing.startupMs)} · deploy ${formatDurationMs(timing.deployMs)}`
         : " · timing n/a";
     const elMaxStr = timing.maxEventLoopDelayMs
-        ? ` · elMax harness/main:${timing.el.main}ms [peer:{sdk:${timing.el.sdk}ms,vm:${timing.el.vm}ms}]`
+        ? ` · elMax harness/main:${timing.el.main}ms [peer:{sdk:${timing.el.sdk}ms,vm:${timing.el.vm}ms},watchdog:${timing.el.watchdog}ms]`
         : "";
     const starveStr = starveCount > 0 ? ` · starved x${starveCount}` : "";
     if (code === 0) {
@@ -431,11 +458,13 @@ function summary({
     if (elPeak && elPeak.maxEventLoopDelayMs) {
         const e = elPeak.el || {};
         const role =
-            elPeak.maxEventLoopDelayMs === e.sdk
-                ? "peer/sdk"
-                : elPeak.maxEventLoopDelayMs === e.vm
-                  ? "peer/vm"
-                  : "harness/main";
+            elPeak.maxEventLoopDelayMs === e.watchdog
+                ? "watchdog/unattributed"
+                : elPeak.maxEventLoopDelayMs === e.sdk
+                  ? "peer/sdk"
+                  : elPeak.maxEventLoopDelayMs === e.vm
+                    ? "peer/vm"
+                    : "harness/main";
         console.log(
             `  event-loop delay: peak ${elPeak.maxEventLoopDelayMs}ms on ${role} (${elPeak.label})`
         );

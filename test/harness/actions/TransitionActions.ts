@@ -148,26 +148,7 @@ export class TransitionActions<
         peerIndex?: number;
         forkId?: string;
     }): Promise<StateSnapshot | undefined> {
-        const { peerIndex = 0 } = options || {};
-        const forkId = options?.forkId || this.harness.activeForkId;
-        if (!forkId) {
-            throw new Error("No active fork ID - channel must be opened first");
-        }
-
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const result = await this.harness
-            .control(peer)
-            .transition.postStateSnapshot(forkId)
-            .request();
-        return result
-            ? StateSnapshot.from(
-                  Codec.decode(result.encodedSnapshot, Type.StateSnapshot)
-              )
-            : undefined;
+        return this.requestPostSnapshot(options, false);
     }
 
     async postSnapshotWait(options?: {
@@ -175,7 +156,7 @@ export class TransitionActions<
         forkId?: string;
         timeoutMs?: number;
     }): Promise<StateSnapshot | undefined> {
-        const expectedSnapshot = await this.postSnapshot(options);
+        const expectedSnapshot = await this.requestPostSnapshot(options, true);
         if (!expectedSnapshot) return undefined;
 
         const timeoutMs = options?.timeoutMs ?? 8000;
@@ -199,6 +180,32 @@ export class TransitionActions<
         return expectedSnapshot;
     }
 
+    private async requestPostSnapshot(
+        options: { peerIndex?: number; forkId?: string } | undefined,
+        awaitCompletion: boolean
+    ): Promise<StateSnapshot | undefined> {
+        const { peerIndex = 0 } = options || {};
+        const forkId = options?.forkId || this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const transition = this.harness.control(peer).transition;
+        const result = awaitCompletion
+            ? await transition.postStateSnapshotWait(forkId).request()
+            : await transition.postStateSnapshot(forkId).request();
+        return result
+            ? StateSnapshot.from(
+                  Codec.decode(result.encodedSnapshot, Type.StateSnapshot)
+              )
+            : undefined;
+    }
+
     async postSameForkSnapshotOnlyWait(options?: {
         peerIndex?: number;
         forkId?: string;
@@ -218,7 +225,7 @@ export class TransitionActions<
             .control(peer)
             .transition.prepareUpdateSnapshotSameFork(forkId)
             .request();
-        if (!sameForkData || sameForkData.callData.length === 0)
+        if (!sameForkData.canPost || sameForkData.callData.length === 0)
             return undefined;
 
         const transaction =
@@ -226,6 +233,11 @@ export class TransitionActions<
                 sameForkData.callData
             );
         await transaction.wait();
+        if (!sameForkData.encodedExpectedSnapshot) {
+            throw new Error(
+                "Admissible same-fork snapshot calldata is missing its expected snapshot"
+            );
+        }
         return {
             snapshot: StateSnapshot.from(
                 Codec.decode(
