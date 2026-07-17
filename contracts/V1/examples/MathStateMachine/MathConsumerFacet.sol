@@ -2,10 +2,8 @@
 pragma solidity ^0.8.8;
 
 import "../../StateChannelDiamondProxy/AConsumerFacet.sol";
-import "../../StateChannelDiamondProxy/StateChannelManagerProxy.sol";
 import "./MathStateMachine.sol";
 import "../../types/DataTypes.sol";
-import "../../types/MessageTypeHashes.sol";
 
 /**
  * @title MathConsumerFacet
@@ -46,33 +44,5 @@ contract MathConsumerFacet is AConsumerFacet {
     function withdraw(ExitChannel memory) external pure override returns (bool) {
         // Implementation for withdrawing assets when a participant exits
         return true; // Placeholder implementation
-    }
-
-    function forceInboundJoin(bytes32 channelId, address participant, uint256 amount)
-        external
-        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
-    {
-        require(channelId != bytes32(0), "MathConsumerFacet: channelId required");
-        require(participant != address(0), "MathConsumerFacet: participant required");
-        require(amount > 0, "MathConsumerFacet: amount required");
-
-        JoinChannel[] memory joinChannels = new JoinChannel[](1);
-        joinChannels[0] = JoinChannel({
-            channelId: channelId,
-            participant: participant,
-            deadlineTimestamp: block.timestamp + 1 hours,
-            balance: Balance({amount: amount, data: ""})
-        });
-
-        Message[] memory messages = new Message[](1);
-        messages[0] = Message({
-            messageType: MESSAGE_TYPE_JOIN,
-            participant: participant,
-            balance: joinChannels[0].balance,
-            data: abi.encode(joinChannels[0])
-        });
-
-        (messageBlock, newTotalDeposits) =
-            StateChannelManagerProxy(address(this)).appendInboundMessages(channelId, messages);
     }
 }

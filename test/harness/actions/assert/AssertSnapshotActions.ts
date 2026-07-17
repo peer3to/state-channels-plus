@@ -47,7 +47,7 @@ export class AssertSnapshotActions<
         let honestPeers;
         let localSnapshots: StateSnapshot[] = [];
         const condition = async () => {
-            honestPeers = this.harness.getHonestPeers();
+            honestPeers = this.harness.getActiveHonestPeers();
             localSnapshots = await Promise.all(
                 honestPeers.map((peer) =>
                     this.harness.query.getLocalStateSnapshot(peer)

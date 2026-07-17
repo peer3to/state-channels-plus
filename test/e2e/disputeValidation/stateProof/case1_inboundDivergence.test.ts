@@ -163,7 +163,6 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                 await h.join.forceInboundJoinWait({
                     participant: firstLeaver.address
                 });
-            await h.network.connectPeers([firstLeaver.index]);
 
             // Consume the inbound join into M2. It remains pending on-chain
             // until the resulting state snapshot is posted.

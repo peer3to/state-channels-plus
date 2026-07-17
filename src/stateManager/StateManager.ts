@@ -57,7 +57,8 @@ import {
     Logger,
     DetachedPromises,
     createEthersResultProxy,
-    getChecksumAddress
+    getChecksumAddress,
+    union
 } from "@/utils";
 import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
 // Types
@@ -370,6 +371,18 @@ class StateManager<
         return this.channelId;
     }
 
+    public async getOnChainParticipantUnion(
+        channelId: ChannelId = this.channelId
+    ): Promise<Address[]> {
+        const [participants, pendingParticipants] = await Promise.all([
+            this.stateChannelManagerContract.getParticipants(channelId),
+            this.stateChannelManagerContract.getPendingParticipants(channelId)
+        ]);
+        return [
+            ...union(new Set(participants), new Set(pendingParticipants))
+        ].map(String) as Address[];
+    }
+
     /**
      * High-level status for SDK consumers.
      *
@@ -410,9 +423,15 @@ class StateManager<
     }
 
     public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
     ): Promise<void> {
-        if (this.status !== Status.SYNCED) return;
+        if (this.status !== Status.SYNCED) {
+            throw new Error(
+                `joinChannel requires SYNCED status, got ${Status[this.status]}`
+            );
+        }
 
         this.setStatus(Status.PENDING_PARTICIPANT);
         this.logger.info(
@@ -430,25 +449,29 @@ class StateManager<
         );
 
         try {
-            const expectedSnapshotHash = StateSnapshot.from(
-                await this.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                    this.channelId
-                )
-            ).hash;
             const tx = await this.stateChannelManagerContract.joinChannel(
                 confirmation,
-                expectedSnapshotHash
+                expectedSnapshotHash,
+                expectedForkId
             );
             await tx.wait();
         } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            if (custom?.name === "ErrorJoinChannelParticipantAlreadyExists") {
+                this.logger.warn(
+                    "joinChannel - participant already exists; preserving pending join state"
+                );
+                throw custom;
+            }
+
             this.setStatus(Status.SYNCED);
             this.storage.forceJoin.clear();
-
-            const custom = tryDecodeCustomError(error);
             switch (custom?.name) {
                 case "RaceConditionJoinChannelExpired":
+                case "RaceConditionSnapshotForkMismatch":
                 case "RaceConditionJoinChannelSnapshotMismatch":
-                case "RaceConditionJoinChannelForkDisputed":
+                case "RaceConditionForceInboundJoinForkDisputed":
+                case "ErrorJoinChannelInvalidSignature":
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
                         {
@@ -456,6 +479,7 @@ class StateManager<
                             args: custom.errorDescription.args
                         }
                     );
+                    // TODO: support concurrent joins by collecting safe extra signatures before submission.
                     // Rethrown as CustomEvmError
                     this.abort();
                     throw custom; //TODO - comunncate abort to the outside
@@ -463,6 +487,40 @@ class StateManager<
             this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
                 error: error instanceof Error ? error.message : String(error)
             });
+            throw error;
+        }
+    }
+
+    public async topUpBalance(
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
+    ): Promise<void> {
+        if (
+            this.status !== Status.PARTICIPATING &&
+            this.status !== Status.PENDING_PARTICIPANT
+        ) {
+            throw new Error(
+                `topUpBalance requires PARTICIPATING or PENDING_PARTICIPANT status, got ${Status[this.status]}`
+            );
+        }
+
+        try {
+            const tx = await this.stateChannelManagerContract.topUpBalance(
+                confirmation,
+                expectedSnapshotHash,
+                expectedForkId
+            );
+            await tx.wait();
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            if (custom) {
+                this.logger.warn(`topUpBalance failed: ${custom.name}`, {
+                    name: custom.name,
+                    args: custom.errorDescription.args
+                });
+                throw custom;
+            }
             throw error;
         }
     }

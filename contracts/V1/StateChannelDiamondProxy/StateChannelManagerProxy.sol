@@ -244,13 +244,29 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations, bytes32 expectedSnapshotHash)
-        public
-        override
-    {
+    function joinChannel(
+        JoinChannelConfirmation memory joinChannelConfirmations,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId
+    ) public override {
         _delegatecall(
             joinChannelFacetAddress,
-            abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash))
+            abi.encodeCall(
+                JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash, expectedForkId)
+            )
+        );
+    }
+
+    function topUpBalance(
+        JoinChannelConfirmation memory joinChannelConfirmations,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId
+    ) public override {
+        _delegatecall(
+            joinChannelFacetAddress,
+            abi.encodeCall(
+                JoinChannelFacet.topUpBalance, (joinChannelConfirmations, expectedSnapshotHash, expectedForkId)
+            )
         );
     }
 

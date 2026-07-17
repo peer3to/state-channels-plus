@@ -760,12 +760,7 @@ describe("E2E: Spectate Service", function () {
             const joinerB = await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait();
 
-            await h.join.joinChannelWait({
-                joiner: joinerA,
-                existingParticipantSigners: h.peers
-                    .slice(0, 3)
-                    .map((p) => p.signer)
-            });
+            await h.join.joinChannelWait({ joiner: joinerA });
             await h.join.forceInboundJoinObserveDetached({
                 participant: joinerB.address
             });
@@ -810,12 +805,9 @@ describe("E2E: Spectate Service", function () {
             await h.assert.sync.peersInSyncWait();
 
             // joinerA pre-signs its confirmation while pending is empty.
-            const confirmation = await h.join.buildJoinChannelConfirmation({
+            const prepared = await h.join.buildJoinChannelConfirmation({
                 joiner: joinerA,
-                channelId: h.channelId,
-                existingParticipantSigners: h.peers
-                    .slice(0, 3)
-                    .map((p) => p.signer)
+                channelId: h.channelId
             });
             // forceInboundJoin lands first → joinerB enters the pending set →
             // join threshold becomes {p0, p1, p2, joinerB}; joinerA's pre-signed
@@ -825,7 +817,11 @@ describe("E2E: Spectate Service", function () {
             });
 
             try {
-                await joinerA.p2pInstance.p2pSigner.joinChannel(confirmation);
+                await joinerA.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
                 expect.fail(
                     "expected joinChannel to revert: pending set changed between confirmation build and submission"
                 );
@@ -872,7 +868,7 @@ describe("E2E: Spectate Service", function () {
                     .request()
             ).to.equal(Status.SYNCED);
 
-            // forceInboundJoin appends inbound for the spectator. Status stays SYNCED.
+            // The compatibility helper submits through the spectator's StateManager.
             await h.join.forceInboundJoinWait({
                 participant: spectator.address
             });
@@ -881,7 +877,7 @@ describe("E2E: Spectate Service", function () {
                     .control(h.getPeer(spectator.index))
                     .query.getStatus()
                     .request()
-            ).to.equal(Status.SYNCED);
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             const pendingBefore = await h.channelManager.getPendingParticipants(
                 h.channelId

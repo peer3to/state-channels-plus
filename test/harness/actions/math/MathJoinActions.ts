@@ -1,10 +1,10 @@
-import { ethers } from "ethers";
+import { ethers, type Signer } from "ethers";
 
 import { JoinActions } from "@test/harness/actions/JoinActions";
-import { MathConsumerFacet__factory } from "@typechain-types";
 import type { Hash } from "@/types/types";
-import { DetachedPromises } from "@/utils";
+import { addressesEqual, DetachedPromises } from "@/utils";
 import { TestPeer } from "@test/harness/core/types";
+import Clock from "@/Clock";
 
 export type ForceInboundJoinOptions = {
     deposit?: bigint;
@@ -14,6 +14,20 @@ export type ForceInboundJoinOptions = {
 };
 
 export class MathJoinActions extends JoinActions {
+    // Test-only wallets retained so later N/N confirmations can include dead pending entries.
+    private retainedJoinWallets = new Map<string, Signer>();
+
+    protected override thresholdSignerForAddress(
+        address: string
+    ): Signer | undefined {
+        return (
+            super.thresholdSignerForAddress(address) ??
+            [...this.retainedJoinWallets.entries()].find(([walletAddress]) =>
+                addressesEqual(walletAddress, address)
+            )?.[1]
+        );
+    }
+
     private async pickSubmitterWithLatestInbound(): Promise<TestPeer> {
         const candidates = this.harness.getActiveHonestPeers();
         if (candidates.length === 0) {
@@ -49,24 +63,99 @@ export class MathJoinActions extends JoinActions {
     }> {
         const deposit = options?.deposit ?? 250n;
         const submitter = await this.pickSubmitterWithLatestInbound();
-        const participant =
-            options?.participant ?? ethers.Wallet.createRandom().address;
+        const peer = options?.participant
+            ? this.harness.peers.find((candidate) =>
+                  addressesEqual(candidate.address, options.participant!)
+              )
+            : undefined;
+        const randomWallet = options?.participant
+            ? undefined
+            : ethers.Wallet.createRandom().connect(
+                  this.harness.channelManager.runner!.provider!
+              );
+        if (options?.participant && !peer) {
+            throw new Error(
+                "forceInboundJoin: participant must be a harness peer so it can sign its join"
+            );
+        }
+        const participant = peer?.address ?? randomWallet!.address;
+        if (randomWallet) {
+            this.retainedJoinWallets.set(randomWallet.address, randomWallet);
+        }
         const previousLatestHash =
             ((await this.harness
                 .control(submitter)
                 .query.getLatestInboundMessageHash()
                 .request()) as Hash | null) ?? undefined;
 
-        const consumerFacet = MathConsumerFacet__factory.connect(
-            await this.harness.channelManager.getAddress(),
-            submitter.p2pInstance.chainSigner
+        const participantUnion = await this.harness
+            .control(submitter)
+            .query.getOnChainParticipantUnion()
+            .request();
+        const isTopUp = participantUnion.some((address) =>
+            addressesEqual(address, participant)
         );
-        const tx = await consumerFacet.forceInboundJoin(
-            this.harness.channelId,
-            participant,
-            deposit
-        );
-        await tx.wait();
+        if (
+            peer &&
+            this.harness
+                .getActiveHonestPeers()
+                .some((candidate) => candidate.index === peer.index)
+        ) {
+            const chainTime = await Clock.getBlockchainTime();
+            const prepared =
+                await peer.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
+                    {
+                        participant,
+                        channelId: this.harness.channelId,
+                        balance: { amount: deposit, data: "0x00" },
+                        deadlineTimestamp: BigInt(chainTime.timestamp + 120)
+                    }
+                );
+            if (isTopUp) {
+                await peer.p2pInstance.p2pSigner.topUpBalance(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
+            } else {
+                await peer.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
+            }
+        } else {
+            if (randomWallet) {
+                await (
+                    await submitter.p2pInstance.chainSigner.sendTransaction({
+                        to: participant,
+                        value: ethers.parseEther("1")
+                    })
+                ).wait();
+            }
+            const participantSigner = peer?.signer ?? randomWallet!;
+            const prepared = await this.buildJoinChannelConfirmation({
+                joiner: { address: participant, signer: participantSigner },
+                channelId: this.harness.channelId,
+                jcOverrides: {
+                    balance: { amount: deposit, data: "0x00" }
+                }
+            });
+            const channelManager =
+                this.harness.channelManager.connect(participantSigner);
+            const tx = isTopUp
+                ? await channelManager.topUpBalance(
+                      prepared.confirmation,
+                      prepared.expectedSnapshotHash,
+                      prepared.expectedForkId
+                  )
+                : await channelManager.joinChannel(
+                      prepared.confirmation,
+                      prepared.expectedSnapshotHash,
+                      prepared.expectedForkId
+                  );
+            await tx.wait();
+        }
 
         return { participant, previousLatestHash };
     }

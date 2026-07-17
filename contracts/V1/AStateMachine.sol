@@ -79,7 +79,7 @@ abstract contract AStateMachine {
         return false;
     }
 
-    // modifies the state to add a new participant to the channel
+    // Adds a new participant, or tops up an existing participant on a repeated join.
     function _joinChannel(JoinChannel memory joinChannel) internal virtual returns (bool);
 
     // define the logic that punishes a participant for misbehaving (can also remove the participant from the state channel)
@@ -136,7 +136,11 @@ abstract contract AStateMachine {
         return _removeParticipant(adr);
     }
 
-    function stateTransition(Transaction calldata transaction) external _nonReentrant returns (bool, Message[] memory) {
+    function stateTransition(Transaction calldata transaction)
+        external
+        _nonReentrant
+        returns (bool, Message[] memory)
+    {
         _clearOutboundMessages();
         _tx.header = transaction.header;
         (bool success, bytes memory result) = address(this).call{gas: gasLimit}(transaction.body.data);

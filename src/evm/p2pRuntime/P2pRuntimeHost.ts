@@ -10,11 +10,14 @@ import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
 import { TimeConfig } from "@/types";
+import type { ForkId, Hash } from "@/types/types";
 import {
     createLogger,
+    Codec,
     DebugProxy,
     DetachedPromises,
-    getErrorPeerAddress
+    getErrorPeerAddress,
+    Type
 } from "@/utils";
 import { config } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -496,9 +499,46 @@ export async function startP2pRuntimeHost<
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
                         await runtimeHandle.stateManager.p2pManager.p2pSigner.joinChannel(
-                            request.confirmation as JoinChannelConfirmationStruct
+                            Codec.decode(
+                                request.encodedJoinChannelConfirmation,
+                                Type.JoinChannelConfirmation
+                            ),
+                            request.expectedSnapshotHash as Hash,
+                            request.expectedForkId as ForkId
                         );
                         break;
+                    case "topUpBalance":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        await runtimeHandle.stateManager.p2pManager.p2pSigner.topUpBalance(
+                            Codec.decode(
+                                request.encodedJoinChannelConfirmation,
+                                Type.JoinChannelConfirmation
+                            ),
+                            request.expectedSnapshotHash as Hash,
+                            request.expectedForkId as ForkId
+                        );
+                        break;
+                    case "collectJoinChannelConfirmation": {
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        const prepared =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.collectJoinChannelConfirmation(
+                                Codec.decode(
+                                    request.encodedJoinChannel,
+                                    Type.JoinChannel
+                                )
+                            );
+                        result = {
+                            encodedJoinChannelConfirmation: Codec.encode(
+                                prepared.confirmation,
+                                Type.JoinChannelConfirmation
+                            ),
+                            expectedSnapshotHash: prepared.expectedSnapshotHash,
+                            expectedForkId: prepared.expectedForkId
+                        };
+                        break;
+                    }
                     case "setChannelId":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
@@ -546,8 +586,11 @@ export async function startP2pRuntimeHost<
                         // Drain this host realm's detached promises and report the
                         // ones that rejected, so the orchestrator can settle and
                         // surface host-side async work over the port.
-                        const settled =
-                            await DetachedPromises.awaitAllAndClear();
+                        // TODO: Separate operation promises from cleanup promises
+                        // so disposal can cancel cleanup without a bounded drain.
+                        const settled = runtimeHandle?.stateManager.isDisposed
+                            ? await DetachedPromises.collectSettledAndClear()
+                            : await DetachedPromises.awaitAllAndClear();
                         result = settled
                             .filter((entry) => entry.status === "rejected")
                             .map((entry) =>

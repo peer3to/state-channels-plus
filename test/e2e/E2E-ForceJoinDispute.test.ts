@@ -19,10 +19,7 @@ describe("E2E: Force Join Dispute", function () {
         const restoreInboundInclusion1 =
             await h.byzantine.stubPendingInboundInclusion(1);
 
-        await h.join.joinChannelWait({
-            joiner,
-            existingParticipantSigners: [h.peers[0].signer, h.peers[1].signer]
-        });
+        await h.join.joinChannelWait({ joiner });
         expect(
             await h.control(h.getPeer(joiner.index)).query.getStatus().request()
         ).to.equal(

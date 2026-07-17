@@ -229,14 +229,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         }
     }
 
-    function appendInboundMessages(bytes32 channelId, Message[] memory messages)
-        public
-        onlySelf
-        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
-    {
-        return _appendInboundMessages(channelId, messages);
-    }
-
     function _appendInboundMessages(bytes32 channelId, Message[] memory messages)
         internal
         returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)

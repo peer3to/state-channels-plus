@@ -2,6 +2,8 @@ import { ethers } from "ethers";
 import {
     BlockStruct,
     JoinChannelStruct,
+    SignedJoinChannelStruct,
+    JoinChannelConfirmationStruct,
     OpenChannelStruct,
     TransactionStruct,
     StateSnapshotStruct,
@@ -27,6 +29,8 @@ import {
     DisputeEthersType,
     DisputeConfirmationEthersType,
     JoinChannelEthersType,
+    SignedJoinChannelEthersType,
+    JoinChannelConfirmationEthersType,
     OpenChannelEthersType,
     TransactionEthersType,
     StateSnapshotEthersType,
@@ -119,6 +123,8 @@ type StructType =
     | { signedBlock: SignedBlockStruct; timestamp: Timestamp }
     | BlockConfirmationStruct
     | JoinChannelStruct
+    | SignedJoinChannelStruct
+    | JoinChannelConfirmationStruct
     | OpenChannelStruct
     | TransactionStruct
     | DisputeStruct
@@ -140,6 +146,8 @@ export enum Type {
     Block,
     BlockCommitment,
     JoinChannel,
+    SignedJoinChannel,
+    JoinChannelConfirmation,
     OpenChannel,
     BlockConfirmation,
     Transaction,
@@ -168,6 +176,8 @@ export class Codec {
         [Type.Block, BlockEthersType],
         [Type.BlockCommitment, BlockCommitmentEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
+        [Type.SignedJoinChannel, SignedJoinChannelEthersType],
+        [Type.JoinChannelConfirmation, JoinChannelConfirmationEthersType],
         [Type.OpenChannel, OpenChannelEthersType],
         [Type.BlockConfirmation, BlockConfirmationEthersType],
         [Type.Transaction, TransactionEthersType],
@@ -326,6 +336,14 @@ export class Codec {
         encoded: Bytes,
         type: Type.JoinChannel
     ): JoinChannelStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.SignedJoinChannel
+    ): SignedJoinChannelStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.JoinChannelConfirmation
+    ): JoinChannelConfirmationStruct;
     public static decode(
         encoded: Bytes,
         type: Type.OpenChannel

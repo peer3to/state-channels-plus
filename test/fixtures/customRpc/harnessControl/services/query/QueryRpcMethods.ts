@@ -69,6 +69,10 @@ export class QueryRpcMethods extends ARpcMethods {
         ).map((a) => String(a));
     }
 
+    public async getOnChainParticipantUnion(): Promise<string[]> {
+        return (await this.service.sm.getOnChainParticipantUnion()).map(String);
+    }
+
     public async getNextToWrite(): Promise<string> {
         return String(
             await this.service.sm.diamondStateMachine.getNextToWrite()

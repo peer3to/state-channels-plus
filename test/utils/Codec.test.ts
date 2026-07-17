@@ -22,6 +22,42 @@ describe("Codec", () => {
             expect(decoded).to.deep.equal(original);
         });
 
+        it("should encode and decode SignedJoinChannelStruct correctly", () => {
+            const original = {
+                encodedJoinChannel: Codec.encode(
+                    factory.joinChannel(),
+                    Type.JoinChannel
+                ),
+                signature: `0x${"11".repeat(65)}`
+            };
+
+            const encoded = Codec.encode(original, Type.SignedJoinChannel);
+            const decoded = Codec.decode(encoded, Type.SignedJoinChannel);
+
+            expect(decoded).to.deep.equal(original);
+        });
+
+        it("should encode and decode JoinChannelConfirmationStruct correctly", () => {
+            const original = {
+                signedJoinChannel: {
+                    encodedJoinChannel: Codec.encode(
+                        factory.joinChannel(),
+                        Type.JoinChannel
+                    ),
+                    signature: `0x${"11".repeat(65)}`
+                },
+                signatures: [`0x${"22".repeat(65)}`, `0x${"33".repeat(65)}`]
+            };
+
+            const encoded = Codec.encode(
+                original,
+                Type.JoinChannelConfirmation
+            );
+            const decoded = Codec.decode(encoded, Type.JoinChannelConfirmation);
+
+            expect(decoded).to.deep.equal(original);
+        });
+
         it("should encode and decode TransactionStruct correctly", () => {
             const original = factory.transaction();
 

@@ -93,13 +93,17 @@ describe("SnapshotUpdateService", function () {
     it("blocks same-fork calldata when its snapshot has not consumed the on-chain inbound head", async function () {
         this.timeout(90000);
         const h = TestSession.getHarness();
-        const { joiner, confirmation } =
+        const { joiner, confirmation, expectedSnapshotHash, expectedForkId } =
             await h.scenario.syncSpectatorAndPrepareJoin();
 
         for (const peerIndex of [0, 1, 2]) {
             await h.byzantine.stubPendingInboundInclusion(peerIndex);
         }
-        await joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
+        await joiner.p2pInstance.p2pSigner.joinChannel(
+            confirmation,
+            expectedSnapshotHash,
+            expectedForkId
+        );
         await h.transition.advanceState({
             count: 2,
             waitForPeers: [0, 1, 2]

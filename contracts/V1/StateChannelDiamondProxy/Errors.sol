@@ -23,6 +23,9 @@ error ErrorOutboundMessageTypeUnsupported(bytes32 messageType);
 //Join channel
 error ErrorInvalidChannelId();
 error ErrorJoinChannelInvalidSignature();
+error ErrorJoinChannelInvalidSubmitter(address expectedParticipant, address actualSubmitter);
+error ErrorJoinChannelParticipantAlreadyExists();
+error ErrorTopUpBalanceParticipantNotFound();
 error ErrorNoJoinChannelProvided();
 error ErrorNoSuccessfulJoinChannel();
 error ErrorJoinChannelAtomicFailure();
@@ -86,6 +89,5 @@ error RaceConditionGenesisTimestampNotAvailable();
 error RaceConditionOnChainSlashes();
 error RaceConditionJoinChannelSnapshotMismatch();
 error RaceConditionPendingInboundNotConsumed();
-error RaceConditionJoinChannelForkDisputed();
 error RaceConditionForceInboundJoinForkDisputed();
 error ErrorDisputeThrottled();

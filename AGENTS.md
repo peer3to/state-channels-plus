@@ -35,6 +35,21 @@ run's dir is cleared/cleaned. An explicit `--logDir <dir>` is used (and
 cleared) as-is; dirs outside `./logs` additionally need
 `--allow-logdir-purge`. Prune old `run-*` dirs manually when done comparing.
 
+### Test-chain RPC mutations
+
+- **Never call node-wide test RPC methods from a test that may share its node or
+  slot with another test.** This includes `evm_increaseTime`, `evm_mine`,
+  `evm_setNextBlockTimestamp`, snapshot/revert, automine/interval-mining changes,
+  `hardhat_mine`, `hardhat_reset`, impersonation, balance mutation, and similar
+  endpoints. They mutate global node state and can corrupt unrelated concurrent
+  tests.
+- Such methods are allowed only when the test owns a provably isolated node for
+  its entire lifetime. Do not infer isolation from the current command or from
+  tests usually running serially; verify it from the runner/provider setup.
+- Prefer exercising behavior through normal transactions and the harness. If an
+  isolated-node mutation is unavoidable, keep it in an explicitly isolated
+  test runner and restore reversible settings in `finally`.
+
 ### Testing changes to `src/`
 
 Every `src/` change ships with tests in the same pass — both kinds:

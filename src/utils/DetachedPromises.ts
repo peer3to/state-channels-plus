@@ -126,4 +126,48 @@ export class DetachedPromises {
                 });
         });
     }
+
+    public static async collectSettledAndClear(
+        settleWindowMs = 100
+    ): Promise<PromiseSettledResult<any>[]> {
+        const batch = DetachedPromises.getAndClear();
+        if (batch.length === 0) return [];
+
+        const unresolved = Symbol("unresolved");
+        const results = await Promise.all(
+            batch.map((entry) =>
+                Promise.race([
+                    Promise.resolve(entry.promise).then(
+                        (value): PromiseFulfilledResult<any> => ({
+                            status: "fulfilled",
+                            value
+                        }),
+                        (reason): PromiseRejectedResult => ({
+                            status: "rejected",
+                            reason
+                        })
+                    ),
+                    new Promise<typeof unresolved>((resolve) =>
+                        setTimeout(() => resolve(unresolved), settleWindowMs)
+                    )
+                ]).then((result) => ({ entry, result }))
+            )
+        );
+
+        DetachedPromises.pending.unshift(
+            ...results
+                .filter(({ result }) => result === unresolved)
+                .map(({ entry }) => entry)
+        );
+        return results
+            .filter(
+                (
+                    result
+                ): result is {
+                    entry: (typeof batch)[number];
+                    result: PromiseSettledResult<any>;
+                } => result.result !== unresolved
+            )
+            .map(({ result }) => result);
+    }
 }

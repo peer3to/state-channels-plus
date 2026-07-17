@@ -264,15 +264,12 @@ export class MathScenarioActions extends ScenarioActions {
         const stateSnapshot = await h.channelManager.getStateSnapshot(
             h.channelId
         );
-        const confirmation = await h.join.buildJoinChannelConfirmation({
+        const preparedJoin = await h.join.buildJoinChannelConfirmation({
             joiner,
-            channelId: h.channelId,
-            existingParticipantSigners: h.peers
-                .filter((p) => p.index !== joiner.index)
-                .map((p) => p.signer)
+            channelId: h.channelId
         });
 
-        return { joiner, stateSnapshot, confirmation };
+        return { joiner, stateSnapshot, ...preparedJoin };
     }
     async spectatorPromotedViaJoinChannelWait(options?: {
         initialPeers?: number;
@@ -298,10 +295,7 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.assert.sync.peersInSyncWait();
 
         await this.harness.join.joinChannelWait({
-            joiner,
-            existingParticipantSigners: this.harness.peers
-                .slice(0, initialPeers)
-                .map((p) => p.signer)
+            joiner
         });
         const joinerStatus = await this.harness
             .control(this.harness.getPeer(joiner.index))

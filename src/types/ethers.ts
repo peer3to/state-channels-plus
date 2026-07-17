@@ -80,6 +80,16 @@ uint deadlineTimestamp,
 ${BalanceEthersType} balance
 )`;
 
+export const SignedJoinChannelEthersType = `tuple(
+bytes encodedJoinChannel,
+bytes signature
+)`;
+
+export const JoinChannelConfirmationEthersType = `tuple(
+${SignedJoinChannelEthersType} signedJoinChannel,
+bytes[] signatures
+)`;
+
 export const OpenChannelEthersType = `tuple(
 bytes32 channelId,
 address[] participants,
