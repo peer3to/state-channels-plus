@@ -76,7 +76,9 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+                timestamp: BigInt(
+                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                )
             },
             body: { encodedData: transactionData, data: transactionData }
         };
