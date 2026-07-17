@@ -14,6 +14,7 @@ type P2pEventHooks = {
         turnStartedAtBlockTimestamp?: number
     ) => void;
     onSetState?: (forkId: ForkId) => void;
+    onAbort?: () => void;
     onStatusChanged?: (oldStatus: Status, newStatus: Status) => void;
     onPostingCalldata?: () => void;
     onPostedCalldata?: () => void;

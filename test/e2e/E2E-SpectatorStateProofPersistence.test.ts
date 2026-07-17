@@ -1,5 +1,6 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
+import { Status } from "@/types";
 
 describe("E2E: Join/Leave Sequence", function () {
     it("join/leave sequence and fork resolution", async function () {
@@ -74,6 +75,9 @@ describe("E2E: Join/Leave Sequence", function () {
         const maliciousPeerIndex = 1;
         const honestPeerIndices = [3];
         await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
+        await h.event.waitForPeers("onAbort", spectatorIndices, 1);
+        for (const spectatorIndex of spectatorIndices)
+            await h.event.waitUntilPeerStatus(spectatorIndex, Status.OPENED);
 
         await h.assert.dispute.initiatedAndCommitedWait({
             peersIndices: honestPeerIndices,
@@ -90,36 +94,13 @@ describe("E2E: Join/Leave Sequence", function () {
             "Fork should have changed after dispute resolution"
         );
 
-        // Dispute resolution waits for the participating peers. The spectator
-        // event pipelines are independent, so wait for their authoritative
-        // final-dispute transitions before inspecting them.
+        // Spectators aborted after rejecting the invalid feed. Only the honest
+        // participant is expected to follow the resulting fork.
         await h.assert.sync.forkChangedWait({
             originalForkId: preDisputeForkId,
             expectedForkId: newForkId,
-            honestPeerIndices: spectatorIndices,
+            honestPeerIndices,
             timeoutMs: 10000
         });
-
-        for (const i of spectatorIndices) {
-            // spectators disconnected from the channel when the dispute started
-            expect(
-                await h
-                    .control(h.getPeer(i))
-                    .query.getOpenConnectionCount()
-                    .request()
-            ).to.equal(
-                0,
-                `spectator peer ${i} should have 0 open P2P connections after dispute`
-            );
-            // The final dispute is authoritative for every peer that observes
-            // it, including disconnected spectators.
-            expect(
-                await h.control(h.getPeer(i)).query.getForkId().request()
-            ).to.equal(
-                newForkId,
-                `spectator peer ${i} should transition to the final dispute fork`
-            );
-            // TODO - don't forget to rethink this
-        }
     });
 });

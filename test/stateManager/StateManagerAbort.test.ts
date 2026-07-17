@@ -32,6 +32,7 @@ describe("StateManager abort", function () {
             {}
         );
 
+        await h.event.waitForPeers("onAbort", [0], 1);
         expect(result.status).to.equal(Status.OPENED);
         expect(result.taskRan).to.equal(false);
         expect(result.connectedPeerCount).to.equal(0);

@@ -571,6 +571,7 @@ export class PeerTestHarness<
             onConnection: sinon.spy(),
             onTurn: sinon.spy(),
             onSetState: sinon.spy(),
+            onAbort: sinon.spy(),
             onStatusChanged: sinon.spy(),
             onPostingCalldata: sinon.spy(),
             onPostedCalldata: sinon.spy(),
@@ -629,6 +630,13 @@ export class PeerTestHarness<
                     this.forkIdCache.set(index, forkId);
                 }
                 eventSpies.onSetState?.();
+                void this.eventCountsBarrier.signal();
+            },
+            onAbort: () => {
+                peerLogger.debug("Channel participation aborted", {
+                    component: "P2pEventHooks"
+                });
+                eventSpies.onAbort?.();
                 void this.eventCountsBarrier.signal();
             },
             onStatusChanged: (oldStatus, newStatus) => {

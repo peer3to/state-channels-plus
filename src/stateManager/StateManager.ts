@@ -253,10 +253,13 @@ class StateManager<
      */
     public abort() {
         if (this.disposalPromise) return;
+        // TODO: Abort should tear down the entire peer runtime and control port
+        // so disposed peers cannot continue serving host RPC queries.
         this.logger.warn("Aborting channel participation", {
             channelId: this.channelId,
             status: Status[this.status]
         });
+        this.p2pEventHooks.onAbort?.();
         this.setStatus(Status.OPENED);
         DetachedPromises.collect(this.dispose());
     }
