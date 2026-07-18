@@ -915,7 +915,10 @@ export class PeerTestHarness<
     ): Promise<TestPeer<TCustomRpc, TStateMachine>> {
         const unavailable = new Set([
             ...(this.context.maliciousPeerIndices ?? []),
-            ...(this.context.afkPeerIndices ?? [])
+            ...(this.context.afkPeerIndices ?? []),
+            ...this.peers
+                .filter((peer) => peer.eventSpies.onAbort?.called)
+                .map((peer) => peer.index)
         ]);
         const heights = await Promise.all(
             this.peers.map((peer) =>
@@ -937,15 +940,22 @@ export class PeerTestHarness<
                 best = peer;
             }
         });
-        return best ?? this.peers[0];
+        return (
+            best ??
+            this.peers.find((peer) => !unavailable.has(peer.index)) ??
+            this.peers[0]
+        );
     }
 
-    /** Every responsive honest harness peer except leavers. */
+    /** Every responsive honest harness peer except leavers and aborted peers. */
     getActiveHonestPeers(): TestPeer<TCustomRpc, TStateMachine>[] {
         const exclude = new Set([
             ...(this.context.leftChannelPeerIndices ?? []),
             ...(this.context.maliciousPeerIndices ?? []),
-            ...(this.context.afkPeerIndices ?? [])
+            ...(this.context.afkPeerIndices ?? []),
+            ...this.peers
+                .filter((peer) => peer.eventSpies.onAbort?.called)
+                .map((peer) => peer.index)
         ]);
         return this.peers.filter((p) => !exclude.has(p.index));
     }

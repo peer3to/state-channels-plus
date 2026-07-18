@@ -84,6 +84,7 @@ error RaceConditionDisputeAuditingRequired();
 error RaceConditionDisputeTimeoutCalldataPosted();
 error RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
 error RaceConditionDisputeTimeoutNotMinTimestamp();
+error RaceConditionDisputeTimeoutWindowCreatedTooEarly();
 error RaceConditionUnexpectedBlockCalldataPosted();
 error RaceConditionGenesisTimestampNotAvailable();
 error RaceConditionOnChainSlashes();

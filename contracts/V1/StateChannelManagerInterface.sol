@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "./types/DataTypes.sol";
 import "./types/DisputeTypes.sol";
+import "./types/DisputeFraudProofTypes.sol";
 
 abstract contract StateChannelManagerInterface {
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual;
@@ -95,6 +96,11 @@ abstract contract StateChannelManagerInterface {
     ) public virtual;
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public virtual;
+
+    function validateTimeoutCalldataPostedProof(TimeoutCalldataPosted memory proof, Dispute memory dispute)
+        public
+        virtual
+        returns (bool);
 
     function updateStateSnapshotFork(
         bytes32 channelId,

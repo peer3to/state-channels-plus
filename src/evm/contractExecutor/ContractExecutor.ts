@@ -8,11 +8,16 @@ import AContractExecutor, {
     type ContractExecutionLog,
     type ContractExecutionResult
 } from "./AContractExecutor";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class ContractExecutor extends AContractExecutor {
     private readonly evm: EVM;
     private readonly logger?: Logger;
+    // Canonical calls and simulations share one mutex because EthereumJS
+    // shallow copies still point at the same underlying state database.
     private readonly mutex: Mutex;
+    // Refreshed after each canonical write while the mutex is still held, so
+    // every later simulation starts from a fully committed local state.
     private simulationBaseEvm: EVM;
 
     constructor(evm: EVM, logger?: Logger) {
@@ -21,22 +26,21 @@ export default class ContractExecutor extends AContractExecutor {
         this.logger = logger?.child({
             component: "ContractExecutor"
         });
-        this.mutex = new Mutex(
-            this.logger?.child({
-                component: "ContractExecutor:Mutex"
-            })
-        );
+        this.mutex = new Mutex();
         this.simulationBaseEvm = evm.shallowCopy();
     }
 
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
-        await this.mutex.lock({ taskName: "deploy" });
+        await this.mutex.lock({
+            taskName: "deploy",
+            logMeta: LoggerUtils.getContractCallMetadata(data)
+        });
 
         try {
             return await this.deployOn(this.evm, data);
         } finally {
             this.simulationBaseEvm = this.evm.shallowCopy();
-            this.mutex.unlock();
+            this.mutex.unlock({ scheduleNextAsMacroTask: true });
         }
     }
 
@@ -44,13 +48,16 @@ export default class ContractExecutor extends AContractExecutor {
         data: Bytes,
         contractAddress: Address
     ): Promise<ContractExecutionResult> {
-        await this.mutex.lock({ taskName: "executeCall" });
+        await this.mutex.lock({
+            taskName: "executeCall",
+            logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
+        });
 
         try {
             return await this.executeCallOn(this.evm, data, contractAddress);
         } finally {
             this.simulationBaseEvm = this.evm.shallowCopy();
-            this.mutex.unlock();
+            this.mutex.unlock({ scheduleNextAsMacroTask: true });
         }
     }
 
@@ -58,12 +65,26 @@ export default class ContractExecutor extends AContractExecutor {
         data: Bytes,
         contractAddress: Address
     ): Promise<ContractExecutionResult> {
+        await this.mutex.lock({
+            taskName: "simulateCall",
+            logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
+        });
+
+        // EthereumJS shallow copies share their underlying state database.
+        // Serialize simulations with writes so each copy starts from a stable
+        // root and cannot race a commit on the canonical local EVM.
         const evm = this.simulationBaseEvm.shallowCopy();
-        await evm.journal.checkpoint();
         try {
-            return await this.executeCallOn(evm, data, contractAddress);
+            await evm.journal.checkpoint();
+            try {
+                return await this.executeCallOn(evm, data, contractAddress);
+            } finally {
+                await evm.journal.revert();
+            }
         } finally {
-            await evm.journal.revert();
+            // A burst of serialized simulations must yield to timers and I/O
+            // instead of draining the whole queue through microtasks.
+            this.mutex.unlock({ scheduleNextAsMacroTask: true });
         }
     }
 

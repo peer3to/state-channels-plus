@@ -126,6 +126,13 @@ methods }`. Never interleave a field declaration between methods. When adding a
   dropping it silently; flag stale commented-out dead code instead of removing
   it without mention.
 
+### Logging metadata
+
+- Reusable log-metadata extraction belongs in `LoggerUtils`, alongside the
+  existing block, dispute, transport, RPC, and contract-call helpers. Call
+  sites should delegate to those helpers instead of assembling selectors,
+  addresses, byte lengths, or other structured log metadata ad hoc.
+
 ### Reuse existing code
 
 - Search for an existing implementation before adding logic. When the same

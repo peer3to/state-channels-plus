@@ -111,12 +111,10 @@ contract DisputeManagerFacet is StateChannelCommon {
     function _disputeRaceConditionCheck(Dispute memory dispute) internal view {
         // *********** 1. Timeout *************
         if (dispute.input.timeout.participant != address(0) && !dispute.input.timeout.isForced) {
+            bytes32 forkId = _getDisputeFork(dispute);
             //check if participant posted calldata commitment
             (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(
-                dispute.input.channelId,
-                _getDisputeFork(dispute),
-                dispute.input.timeout.blockHeight,
-                dispute.input.timeout.participant
+                dispute.input.channelId, forkId, dispute.input.timeout.blockHeight, dispute.input.timeout.participant
             );
             if (found) {
                 revert RaceConditionDisputeTimeoutCalldataPosted();
@@ -126,7 +124,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             if (dispute.input.timeout.previousBlockProducer != address(0)) {
                 (found, blockCalldataCommitment) = getBlockCallDataCommitment(
                     dispute.input.channelId,
-                    _getDisputeFork(dispute),
+                    forkId,
                     dispute.input.timeout.blockHeight - 1,
                     dispute.input.timeout.previousBlockProducer
                 );
@@ -136,6 +134,12 @@ contract DisputeManagerFacet is StateChannelCommon {
             }
             if (block.timestamp < dispute.input.timeout.minTimeStamp) {
                 revert RaceConditionDisputeTimeoutNotMinTimestamp();
+            }
+
+            uint256 windowCreationTimestamp =
+                disputeData[dispute.input.channelId].disputeWindowMap[forkId].evidence.creationTimestamp;
+            if (windowCreationTimestamp != 0 && windowCreationTimestamp < dispute.input.timeout.minTimeStamp) {
+                revert RaceConditionDisputeTimeoutWindowCreatedTooEarly();
             }
         }
     }

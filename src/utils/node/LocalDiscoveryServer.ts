@@ -13,6 +13,7 @@ const REGISTRY_CONNECT_MAX_RETRIES = 10;
 type DiscoveryMode = "registry" | "peer";
 
 type Port = number;
+type PeerConnectionKey = `${Port}->${Port}`;
 
 type DiscoveryInfo = {
     port: Port;
@@ -66,8 +67,8 @@ export class LocalDiscoveryServer {
     private static _peerDiscoveryState: WeakMap<WebSocketServer, Set<number>> =
         new WeakMap();
 
-    /** Retry count per peerPort */
-    private static _peerRetryCount: Map<number, number> = new Map();
+    /** Retry count per outbound local-port to peer-port connection. */
+    private static _peerRetryCount: Map<PeerConnectionKey, number> = new Map();
 
     /** Prevent reconnect loops during/after cleanup */
     private static _cleanupRequested: boolean = false;
@@ -809,7 +810,8 @@ export class LocalDiscoveryServer {
         myPeerPort: Port
     ): void {
         const maxRetries = 3;
-        const retryCount = this._peerRetryCount.get(peerPort) || 0;
+        const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
+        const retryCount = this._peerRetryCount.get(connectionKey) || 0;
 
         if (retryCount >= maxRetries) {
             this.logger.warn("Max peer connection retries reached", {
@@ -834,28 +836,83 @@ export class LocalDiscoveryServer {
         };
 
         let retryScheduled = false;
+        let handshakeCompleted = false;
+
+        const scheduleRetry = (
+            reason: string,
+            details?: Record<string, unknown>
+        ) => {
+            if (
+                retryScheduled ||
+                handshakeCompleted ||
+                this._cleanupRequested
+            ) {
+                return;
+            }
+            retryScheduled = true;
+
+            this._peerRetryCount.set(connectionKey, attempt);
+            this.logger.warn("Peer connection failed; retrying", {
+                ...log,
+                reason,
+                ...(details ?? {})
+            });
+
+            setTimeout(
+                () =>
+                    this.connectToSinglePeer(
+                        peerPort,
+                        p2pManager,
+                        channelId,
+                        myPeerAddress,
+                        myPeerPort
+                    ),
+                100 * attempt
+            );
+        };
 
         this.createOutboundWebSocket({
             url: peerUrl,
             purpose: "peer",
             log,
             onOpen: (ws) => {
-                // Successful direct connection
                 const lt = new LocalTransport(ws, p2pManager);
-                p2pManager.localRpc.initHandshakeService.initHandshake(lt);
-                this._peerRetryCount.delete(peerPort);
-                this.logger.info("Connected to peer", {
-                    ...log
-                });
+                const handshakeService =
+                    p2pManager.localRpc.initHandshakeService;
+
+                handshakeService.initHandshake(lt);
+                void handshakeService
+                    .waitForHandshakeCompleted(
+                        lt,
+                        p2pManager.stateManager.timeConfig.agreementTime * 1000
+                    )
+                    .then((completed) => {
+                        if (!completed) {
+                            p2pManager.disconnectConnection(lt);
+                            scheduleRetry("handshake-timeout");
+                            return;
+                        }
+
+                        // Socket open only proves transport availability. The
+                        // authenticated handshake completes peer discovery.
+                        handshakeCompleted = true;
+                        this._peerRetryCount.delete(connectionKey);
+                        this.logger.info("Connected to peer", {
+                            ...log
+                        });
+                    });
             },
             onClose: (_ws, code: number, reason: Buffer) => {
-                // If it closes after open, LocalTransport will handle lifecycle.
                 this.logger.debug("Peer connection closed", {
                     mode: "peer",
                     myPeerAddress,
                     myPeerPort,
                     peerPort,
                     channelId,
+                    code,
+                    reason: reason?.toString?.() || ""
+                });
+                scheduleRetry("closed-before-handshake", {
                     code,
                     reason: reason?.toString?.() || ""
                 });
@@ -872,30 +929,7 @@ export class LocalDiscoveryServer {
                 });
             },
             onConnectFailure: (reason, details) => {
-                if (retryScheduled || this._cleanupRequested) {
-                    return;
-                }
-                retryScheduled = true;
-
-                // Retry with backoff
-                this._peerRetryCount.set(peerPort, attempt);
-                this.logger.warn("Peer connection failed; retrying", {
-                    ...log,
-                    reason,
-                    ...(details ?? {})
-                });
-
-                setTimeout(
-                    () =>
-                        this.connectToSinglePeer(
-                            peerPort,
-                            p2pManager,
-                            channelId,
-                            myPeerAddress,
-                            myPeerPort
-                        ),
-                    100 * attempt
-                );
+                scheduleRetry(reason, details);
             }
         });
 

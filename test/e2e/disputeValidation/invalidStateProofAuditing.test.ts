@@ -1,4 +1,4 @@
-import { Codec } from "@/utils";
+import { Codec, Type, hash } from "@/utils";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -9,7 +9,7 @@ import { expect } from "chai";
 import { hexString } from "../../factory";
 
 describe("E2E: dispute validation / invalidStateProofAuditing", function () {
-    it("[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → DisputeInvalidStateProof; proof author slashed", async function () {
+    it("[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetupCalldataPath();
 
@@ -63,12 +63,21 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
             "byzantine DisputeInvalidStateProof author must be on-chain slashed"
         );
 
-        await h.event.waitWhileEventCountsStayAtMost(
-            "onDisputeKilled",
-            h.getHonestPeers().map((p) => p.index),
-            { durationMs: 3000, maxCount: 0 }
+        const commitments = await h.channelManager.getWindowCommitments(
+            h.channelId,
+            dispute.input.forkId
+        );
+        expect(commitments).to.include(
+            hash(Codec.encode(dispute, Type.Dispute))
         );
 
-        await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        // The invalid proof must not alter the valid dispute commitment. Its
+        // author is added to the window's on-chain slash set, so normal
+        // reduction must settle the fork without that participant.
+        await h.dispute.resolveDisputeWait({
+            forkSettleTimeoutMs: 15000,
+            // preDisputeSetupCalldataPath force-joins one non-harness wallet.
+            syntheticOnChainParticipants: 1
+        });
     });
 });

@@ -482,7 +482,6 @@ export default class DisputeValidationService {
             }
             // [check] isPostedOnChain
             if (block?.onChainTimestamp) {
-                // TODO - race condtion
                 const previousBlockCalldata = previousBlockOrSnapshot?.block
                     ? this.storage.blockCalldata.getBlockCalldata(
                           previousBlockOrSnapshot.block.forkId,
@@ -490,17 +489,37 @@ export default class DisputeValidationService {
                           previousBlockOrSnapshot.block.author
                       )
                     : undefined;
-                this.disputeFraudProofService.createTimeoutCalldataPosted(
-                    dispute,
-                    disputeAuditingData.genesisStateSnapshotData,
-                    disputeAuditingData.latestStateSnapshot,
-                    latestStateMachineState,
-                    block.signedBlock,
-                    block.onChainTimestamp,
-                    previousBlockCalldata?.onChainTimestamp || 0,
-                    previousBlockCalldata?.signedBlock || block.signedBlock // block.signedBlock if set won't be used it should be fill(0, sizeof(SignedBlockStruct))
+                const proof =
+                    this.disputeFraudProofService.buildTimeoutCalldataPosted(
+                        disputeAuditingData.genesisStateSnapshotData,
+                        disputeAuditingData.latestStateSnapshot,
+                        latestStateMachineState,
+                        block.signedBlock,
+                        block.onChainTimestamp,
+                        previousBlockCalldata?.onChainTimestamp || 0,
+                        previousBlockCalldata?.signedBlock || block.signedBlock // block.signedBlock if set won't be used it should be fill(0, sizeof(SignedBlockStruct))
+                    );
+                // The contract owns every predicate used by the apply handler.
+                // Preflight the exact proof so an auditor never submits an
+                // invalid proof and gets itself slashed.
+                const isValid =
+                    await this.stateChannelManagerContract.validateTimeoutCalldataPostedProof.staticCall(
+                        proof,
+                        dispute
+                    );
+                if (isValid) {
+                    this.disputeFraudProofService.storeTimeoutCalldataPosted(
+                        dispute,
+                        proof
+                    );
+                    return false;
+                }
+                this.logger.warn(
+                    "TimeoutCalldataPosted proof is not valid on-chain; continuing dispute audit",
+                    {
+                        dispute: LoggerUtils.getDisputeMetadata(dispute)
+                    }
                 );
-                return false;
             }
         }
 

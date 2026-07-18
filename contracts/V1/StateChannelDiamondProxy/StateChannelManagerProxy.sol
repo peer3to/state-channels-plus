@@ -216,6 +216,18 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
+    function validateTimeoutCalldataPostedProof(TimeoutCalldataPosted memory proof, Dispute memory dispute)
+        public
+        override
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            disputeFraudProofFacetAddress,
+            abi.encodeCall(DisputeFraudProofFacet.validateTimeoutCalldataPostedProof, (proof, dispute))
+        );
+        return abi.decode(result, (bool));
+    }
+
     function updateStateSnapshotFork(
         bytes32 channelId,
         StateSnapshot memory newStateSnapshot,

@@ -38,6 +38,7 @@ describe("ContractCaller and ContractErrors", () => {
         const testCases = [
             "RaceConditionJoinChannelExpired",
             "RaceConditionDisputeKillPeriodExpired",
+            "RaceConditionDisputeTimeoutWindowCreatedTooEarly",
             "ErrorDisputeAlreadyPosted",
             "ErrorBlockCalldataAlreadyPosted"
         ];

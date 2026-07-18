@@ -1571,10 +1571,8 @@ class StateManager<
               )
             : previousBlockOrSnapshot.stateSnapshot!.timestamp;
         const timeoutWaitTime = this.getTimeoutWaitTimeSeconds(blockHeight);
-        let difference =
-            previousRelevantTimestamp +
-            timeoutWaitTime -
-            Clock.getTimeInSeconds();
+        const timeoutMinTimestamp = previousRelevantTimestamp + timeoutWaitTime;
+        let difference = timeoutMinTimestamp - Clock.getTimeInSeconds();
         if (difference > 0) {
             this.logger.info(
                 `tryTimeoutParticipant - rescheduling in (${difference}s)`,
@@ -1598,6 +1596,33 @@ class StateManager<
                 },
                 difference * 1000,
                 `timeoutParticipantDelayed - fork ${forkId} - block ${blockHeight} - participant ${participantAddress}`
+            );
+            return;
+        }
+
+        // A timeout added to an existing dispute window is judged against the
+        // window's original creation time, not the new transaction timestamp.
+        // Do not submit if that window opened before this timeout became valid;
+        // the on-chain race-condition guard repeats this check authoritatively.
+        const disputeWindowCreationTimestamp = Number(
+            await this.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
+                this.channelId,
+                forkId
+            )
+        );
+        if (
+            disputeWindowCreationTimestamp !== 0 &&
+            disputeWindowCreationTimestamp < timeoutMinTimestamp
+        ) {
+            this.logger.info(
+                "tryTimeoutParticipant - existing dispute window predates timeout deadline; not submitting",
+                {
+                    forkId,
+                    blockHeight,
+                    participantAddress,
+                    disputeWindowCreationTimestamp,
+                    timeoutMinTimestamp
+                }
             );
             return;
         }
@@ -1692,6 +1717,7 @@ class StateManager<
                 forkId,
                 blockHeight,
                 participantAddress,
+                timeoutMinTimestamp,
                 true
             );
         }
@@ -1740,6 +1766,7 @@ class StateManager<
                 forkId,
                 blockHeight,
                 participantAddress,
+                timeoutMinTimestamp,
                 true
             );
         }
@@ -1748,6 +1775,7 @@ class StateManager<
             forkId,
             blockHeight,
             participantAddress,
+            timeoutMinTimestamp,
             false
         );
     }
@@ -1774,6 +1802,7 @@ class StateManager<
         forkId: ForkId,
         blockHeight: BlockHeight,
         participantAddress: Address,
+        timeoutMinTimestamp: Timestamp,
         isForced: boolean = false
     ): Promise<void> {
         const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
@@ -1803,7 +1832,7 @@ class StateManager<
         const timeout: TimeoutStruct = {
             participant: participantAddress.toString(),
             blockHeight: BigInt(blockHeight),
-            minTimeStamp: Clock.getTimeInSeconds(),
+            minTimeStamp: timeoutMinTimestamp,
             isForced: isForced,
             previousBlockProducer: previousBlock
                 ? previousBlock.author.toString()

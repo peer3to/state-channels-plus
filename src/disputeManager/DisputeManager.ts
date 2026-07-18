@@ -178,6 +178,12 @@ class DisputeManager {
                             { forkId, channelId: this.channelId }
                         );
                     },
+                    RaceConditionDisputeTimeoutWindowCreatedTooEarly: () => {
+                        this.logger.info(
+                            "dispute no-op: existing window predates timeout deadline",
+                            { forkId, channelId: this.channelId }
+                        );
+                    },
                     RaceConditionDisputeEvidencePeriodExpired: () => {
                         this.logger.error(
                             "dispute: evidence period already expired",

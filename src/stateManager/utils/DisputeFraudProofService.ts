@@ -141,8 +141,7 @@ export default class DisputeFraudProofService {
             struct: proof
         });
     }
-    createTimeoutCalldataPosted(
-        dispute: DisputeStruct,
+    buildTimeoutCalldataPosted(
         genesisStateSnapshotData: DisputeAuditingDataStruct["genesisStateSnapshotData"],
         latestStateSnapshot: StateSnapshotStruct,
         latestStateStateMachineState: Bytes,
@@ -150,8 +149,8 @@ export default class DisputeFraudProofService {
         onChainTimestamp: BigNumberish,
         previousBlockOnChainTimestamp: BigNumberish,
         previousBlockcalldata: SignedBlockStruct
-    ): Hash {
-        const proof: TimeoutCalldataPostedStruct = {
+    ): TimeoutCalldataPostedStruct {
+        return {
             genesisStateSnapshotData,
             latestStateSnapshot,
             latestStateStateMachineState,
@@ -160,7 +159,12 @@ export default class DisputeFraudProofService {
             previousBlockOnChainTimestamp,
             previousBlockcalldata
         };
+    }
 
+    storeTimeoutCalldataPosted(
+        dispute: DisputeStruct,
+        proof: TimeoutCalldataPostedStruct
+    ): Hash {
         return this.storeFraudProof(dispute, {
             type: DisputeFraudProofType.TimeoutCalldataPosted,
             struct: proof

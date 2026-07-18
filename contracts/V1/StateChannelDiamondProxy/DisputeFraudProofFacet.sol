@@ -34,6 +34,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         }
     }
 
+    function validateTimeoutCalldataPostedProof(TimeoutCalldataPosted memory proof, Dispute memory dispute)
+        public
+        returns (bool)
+    {
+        return _validateTimeoutCalldataPostedProof(proof, dispute);
+    }
+
     function _getHandle(DisputeFraudProofType proofType)
         internal
         pure
@@ -502,21 +509,37 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         TimeoutCalldataPosted memory timeoutCalldataPostedProof = abi.decode(encodedFraudProof, (TimeoutCalldataPosted));
+        if (_validateTimeoutCalldataPostedProof(timeoutCalldataPostedProof, dispute)) {
+            return _valid(dispute.input.disputer);
+        }
+        return _invalid();
+    }
+
+    function _validateTimeoutCalldataPostedProof(
+        TimeoutCalldataPosted memory timeoutCalldataPostedProof,
+        Dispute memory dispute
+    ) internal returns (bool) {
         SignedBlock memory postedBlock = timeoutCalldataPostedProof.postedBlock;
         Block memory _block = abi.decode(postedBlock.encodedBlock, (Block));
         StateSnapshot memory latestStateSnapshot = timeoutCalldataPostedProof.latestStateSnapshot;
 
         // Check channelId
-        if (!_areDisputeAndBlockSameChannel(dispute, _block)) return _invalid();
+        if (!_areDisputeAndBlockSameChannel(dispute, _block)) {
+            return false;
+        }
 
         // Check forkId
-        if (!_areDisputeAndBlockSameFork(dispute, _block)) return _invalid();
+        if (!_areDisputeAndBlockSameFork(dispute, _block)) return false;
 
         // Check timeout == postedBlock
-        if (dispute.input.timeout.blockHeight != _getBlockHeight(_block)) return _invalid();
+        if (dispute.input.timeout.blockHeight != _getBlockHeight(_block)) {
+            return false;
+        }
 
         // Check timeout participant == block author
-        if (dispute.input.timeout.participant != _getBlockAuthor(_block)) return _invalid();
+        if (dispute.input.timeout.participant != _getBlockAuthor(_block)) {
+            return false;
+        }
 
         // Check block calldata posted
         (bool isFound, bytes32 commitment) = getBlockCallDataCommitment(
@@ -525,9 +548,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             dispute.input.timeout.blockHeight,
             dispute.input.timeout.participant
         );
-        if (!isFound) return _invalid();
+        if (!isFound) return false;
         bytes32 _commitment = keccak256(abi.encode(postedBlock, timeoutCalldataPostedProof.onChainTimestamp));
-        if (commitment != _commitment) return _invalid();
+        if (commitment != _commitment) return false;
 
         // get previousTimestamp
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
@@ -539,7 +562,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                     dispute.input.forkId, timeoutCalldataPostedProof.genesisStateSnapshotData
                 )
             ) {
-                return _invalid();
+                return false;
             }
             (bool hasGenesis, uint256 genesisTimestamp) = getGenesisTimestamp(
                 dispute.input.channelId,
@@ -570,7 +593,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                         timeoutCalldataPostedProof.previousBlockOnChainTimestamp
                     )
                 );
-                if (previousBlockCommitment != _previousBlockCommitment) return _invalid();
+                if (previousBlockCommitment != _previousBlockCommitment) {
+                    return false;
+                }
                 if (
                     keccak256(abi.encode(latestBlock))
                         == keccak256(timeoutCalldataPostedProof.previousBlockcalldata.encodedBlock)
@@ -586,7 +611,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         (bool ok, uint256 maxValidTimestamp) =
             Math.tryAdd(previousTimestamp, getP2pTime() + getAgreementTime() + getChainFallbackTime());
         if (ok && timeoutCalldataPostedProof.onChainTimestamp > maxValidTimestamp) {
-            return _invalid();
+            return false;
         }
         // make sure we can do the STF - it's a valid block
         bool isSuccess;
@@ -597,7 +622,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             dispute.input.channelId, timeoutCalldataPostedProof.latestStateStateMachineState, _block.transaction
         );
         if (!isSuccess) {
-            return _invalid();
+            return false;
         }
 
         Balance memory updatedTotalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
@@ -621,7 +646,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         }
 
         SnapshotData memory newSnapshotData = SnapshotData({
-            originForkId: latestStateSnapshot.forkId,
+            originForkId: latestStateSnapshot.snapshotData.originForkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
             participants: getStateMachineParticipants(encodedModifiedState),
             latestInboundMessageBlockHash: latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
@@ -640,9 +665,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         });
 
         if (_block.stateSnapshotHash != keccak256(abi.encode(recomputedSnapshot))) {
-            return _invalid();
+            return false;
         }
-        return _valid(dispute.input.disputer);
+        return true;
     }
 
     function _handleDisputeInvalidBlockInStateProofApplyFraudProof(

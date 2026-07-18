@@ -14,7 +14,7 @@ import {
 import { Codec, Type } from "./Codec";
 import { hash } from "./hash";
 import { difference } from "./set";
-import { Address, BlockOrSnapshot, Hash } from "@/types/types";
+import { Address, BlockOrSnapshot, Bytes, Hash } from "@/types/types";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -34,6 +34,7 @@ import {
 import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
 import type Rpc from "@/rpc/Rpc";
+import { ethers } from "ethers";
 
 export type InitHandshakeMessage =
     | "request"
@@ -124,6 +125,17 @@ export class LoggerUtils {
             service: rpc.service,
             method: rpc.method,
             params: rpc.params.map((param) => this.redactRpcParam(param))
+        };
+    }
+
+    static getContractCallMetadata(data: Bytes, contractAddress?: Address) {
+        const encodedData = ethers.hexlify(data);
+        return {
+            ...(contractAddress
+                ? { contractAddress: contractAddress.toString() }
+                : {}),
+            functionSelector: encodedData.slice(0, 10),
+            calldataBytes: ethers.dataLength(encodedData)
         };
     }
 

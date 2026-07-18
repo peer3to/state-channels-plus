@@ -23,6 +23,7 @@ export type RaceConditionErrorName =
     | "RaceConditionDisputeTimeoutCalldataPosted"
     | "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
     | "RaceConditionDisputeTimeoutNotMinTimestamp"
+    | "RaceConditionDisputeTimeoutWindowCreatedTooEarly"
     | "RaceConditionUnexpectedBlockCalldataPosted"
     | "RaceConditionGenesisTimestampNotAvailable"
     | "RaceConditionOnChainSlashes"

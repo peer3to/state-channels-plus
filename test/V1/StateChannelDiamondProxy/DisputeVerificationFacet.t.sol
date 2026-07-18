@@ -6,11 +6,15 @@ import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondP
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
 import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
-import {RaceConditionDisputeKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {
+    RaceConditionDisputeKillPeriodExpired,
+    RaceConditionDisputeTimeoutWindowCreatedTooEarly
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {_isKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol";
 import {
     DisputeBlockAuthorNotParticipant,
-    DisputeInvalidBlockStructure
+    DisputeInvalidBlockStructure,
+    TimeoutCalldataPosted
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {BlockInvalidStateTransitionProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
@@ -243,6 +247,48 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(harness.commitmentCount(CHANNEL_ID, expired.input.forkId), 1);
     }
 
+    function test_uploadDispute_timeoutWindowCreatedBeforeEligibility_reverts() public {
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(1);
+        participants[1] = vm.addr(2);
+        _openChannel(participants);
+        (, StateSnapshot memory snapshot) = diamond.isChannelOpen(CHANNEL_ID);
+
+        Dispute memory firstDispute;
+        firstDispute.input.channelId = CHANNEL_ID;
+        firstDispute.input.forkId = snapshot.forkId;
+        firstDispute.input.disputer = participants[0];
+        vm.prank(participants[0]);
+        diamond.uploadDispute(_confirmation(firstDispute));
+
+        uint256 eligibleAt = block.timestamp + 1;
+        vm.warp(eligibleAt);
+        Dispute memory timeoutDispute;
+        timeoutDispute.input.channelId = CHANNEL_ID;
+        timeoutDispute.input.forkId = snapshot.forkId;
+        timeoutDispute.input.disputer = participants[1];
+        timeoutDispute.input.timeout.participant = participants[0];
+        timeoutDispute.input.timeout.minTimeStamp = eligibleAt;
+
+        vm.prank(participants[1]);
+        vm.expectRevert(RaceConditionDisputeTimeoutWindowCreatedTooEarly.selector);
+        diamond.uploadDispute(_confirmation(timeoutDispute));
+    }
+
+    function test_validateTimeoutCalldataPostedProof_validProof_returnsTrueAndPreservesOriginForkId() public {
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) = _timeoutCalldataPostedProof();
+
+        assertNotEq(proof.latestStateSnapshot.forkId, proof.latestStateSnapshot.snapshotData.originForkId);
+        assertTrue(diamond.validateTimeoutCalldataPostedProof(proof, dispute));
+    }
+
+    function test_validateTimeoutCalldataPostedProof_wrongOriginForkId_returnsFalse() public {
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) = _timeoutCalldataPostedProof();
+        proof.latestStateSnapshot.snapshotData.originForkId = keccak256("wrong-origin");
+
+        assertFalse(diamond.validateTimeoutCalldataPostedProof(proof, dispute));
+    }
+
     function test_disputeBlockAuthorNotParticipant_validOutsiderBlock_killsDisputer() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
@@ -361,6 +407,62 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         proof.proofType = DisputeFraudProofType.DisputeInvalidBlockStructure;
         proof.encodedProof = abi.encode(DisputeInvalidBlockStructure({blockIndexInUnfinalizedPartOfStateProof: 0}));
         proof.participant = dispute.input.disputer;
+    }
+
+    function _confirmation(Dispute memory dispute) internal pure returns (DisputeConfirmation memory confirmation) {
+        confirmation.signedDispute.encodedDispute = abi.encode(dispute);
+        confirmation.signatures = new bytes[](0);
+    }
+
+    function _timeoutCalldataPostedProof()
+        internal
+        returns (Dispute memory dispute, TimeoutCalldataPosted memory proof)
+    {
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(1);
+        participants[1] = vm.addr(2);
+        _openChannel(participants);
+        (, StateSnapshot memory latestSnapshot) = diamond.isChannelOpen(CHANNEL_ID);
+
+        MathState memory latestState;
+        latestState.participants = participants;
+        latestState.balances = new uint256[](participants.length);
+        bytes memory encodedLatestState = abi.encode(latestState);
+
+        MathState memory resultingState = latestState;
+        resultingState.number = 1;
+        resultingState.currentTurnIndex = 1;
+        StateSnapshot memory resultingSnapshot = abi.decode(abi.encode(latestSnapshot), (StateSnapshot));
+        resultingSnapshot.snapshotData.stateMachineStateHash = keccak256(abi.encode(resultingState));
+        resultingSnapshot.blockHeight = latestSnapshot.blockHeight + 1;
+        resultingSnapshot.timestamp = block.timestamp;
+
+        Block memory postedBlock;
+        postedBlock.transaction.header.channelId = CHANNEL_ID;
+        postedBlock.transaction.header.participant = participants[0];
+        postedBlock.transaction.header.forkId = latestSnapshot.forkId;
+        postedBlock.transaction.header.timestamp = block.timestamp;
+        postedBlock.transaction.body.data = abi.encodeCall(MathStateMachine.add, (1));
+        postedBlock.previousBlockHash = keccak256(abi.encode(latestSnapshot));
+        postedBlock.stateSnapshotHash = keccak256(abi.encode(resultingSnapshot));
+        bytes memory encodedPostedBlock = abi.encode(postedBlock);
+        SignedBlock memory signedPostedBlock =
+            SignedBlock({encodedBlock: encodedPostedBlock, signature: _sign(1, encodedPostedBlock)});
+
+        vm.prank(participants[0]);
+        diamond.postBlockCalldata(signedPostedBlock, block.timestamp);
+
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.forkId = latestSnapshot.forkId;
+        dispute.input.disputer = participants[1];
+        dispute.input.timeout.blockHeight = 0;
+        dispute.input.timeout.participant = participants[0];
+
+        proof.genesisStateSnapshotData = latestSnapshot.snapshotData;
+        proof.latestStateSnapshot = latestSnapshot;
+        proof.latestStateStateMachineState = encodedLatestState;
+        proof.postedBlock = signedPostedBlock;
+        proof.onChainTimestamp = block.timestamp;
     }
 
     function _disputeBlockAuthorNotParticipantProof()

@@ -419,6 +419,22 @@ export class DisputeTamperingActions<
             .request();
     }
 
+    async plantFreshTimeoutForParticipant(
+        disputerIndex: number,
+        participant: string
+    ): Promise<void> {
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error(
+                "plantFreshTimeoutForParticipant: no active fork ID — channel must be opened first"
+            );
+        }
+        await this.harness
+            .control(this.harness.getPeer(disputerIndex))
+            .dispute.plantFreshTimeout(forkId, participant)
+            .request();
+    }
+
     async corruptValidatorSnapshotForBalanceInvariant(
         validatorPeerIndex: number,
         options?: { forkId?: ForkId }

@@ -1,7 +1,8 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
-import { sleep } from "@/utils";
+import { sleep, tryDecodeCustomError } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { TimeoutTooEarlyStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
+import { expect } from "chai";
 
 // Invalid-dispute scenarios require upload -> audit -> kill to fit inside the
 // evidence window. With one-second interval mining, the three-second minimum
@@ -82,6 +83,50 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
     });
 
     describe("TimeoutTooEarly", function () {
+        it("existing window predates timeout deadline → upload reverts with race-condition guard", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup({
+                timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
+            });
+            h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
+
+            await h.tamper.postTamperedDispute(0, () => {}, {
+                markMalicious: false
+            });
+            await h.assert.dispute.committedWait({
+                peersIndices: [0],
+                expectedCount: 1
+            });
+
+            const windowCreationTimestamp =
+                await h.channelManager.getDisputeWindowCreationTimestamp(
+                    h.channelId,
+                    h.activeForkId!
+                );
+            await h.tamper.plantFreshTimeoutForNextWriter(1);
+
+            try {
+                await h.tamper.postTamperedDispute(
+                    1,
+                    (dispute) => {
+                        dispute.input.timeout.minTimeStamp =
+                            windowCreationTimestamp + 1n;
+                    },
+                    { markMalicious: false }
+                );
+                throw new Error("expected timeout dispute upload to revert");
+            } catch (error: unknown) {
+                const customError = tryDecodeCustomError(error);
+                if (!customError) throw error;
+                if (
+                    customError.errorDescription.name !==
+                    "RaceConditionDisputeTimeoutWindowCreatedTooEarly"
+                ) {
+                    throw error;
+                }
+            }
+        });
+
         it("dispute.input.timeout posted before wait period elapses → honest peers store TimeoutTooEarly", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
@@ -250,14 +295,18 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             timeoutMs: 15000
         });
 
-        await h.tamper.plantFreshTimeoutForNextWriter(3);
+        // Construct the committed output for the same participant blamed by
+        // the timeout. Mutating the participant afterwards invalidates the
+        // dispute output before TimeoutCalldataPosted is even evaluated.
+        await h.tamper.plantFreshTimeoutForParticipant(
+            3,
+            calldataAuthor.address
+        );
         await sleep(6000);
 
         h.contextApi.captureOriginalFork();
         h.event.resetEventSpies();
         await h.tamper.postTamperedDispute(3, (dispute) => {
-            dispute.input.timeout.blockHeight = 2n;
-            dispute.input.timeout.participant = calldataAuthor.address;
             dispute.input.timeout.isForced = true;
         });
 
@@ -270,5 +319,14 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             peerIndices: [0, 1, 2],
             timeoutMs: 15000
         });
+
+        const slashed = (
+            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
+        ).map((address) => address.toLowerCase());
+        for (const peerIndex of [0, 1, 2]) {
+            expect(slashed).not.to.include(
+                h.getPeer(peerIndex).address.toLowerCase()
+            );
+        }
     });
 });
