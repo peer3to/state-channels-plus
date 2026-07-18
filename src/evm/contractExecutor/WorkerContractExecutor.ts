@@ -18,7 +18,11 @@ import {
 } from "@platform/contractExecutorWorkerRuntime";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
-type ContractExecutorOperation = "init" | "deploy" | WorkerCallMethod;
+type ContractExecutorOperation =
+    | "init"
+    | "dispose"
+    | "deploy"
+    | WorkerCallMethod;
 
 type PendingRequest = {
     resolve: (result: null | ContractExecutionResult) => void;
@@ -54,6 +58,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
     private readonly workerReady: Promise<void>;
     private rejectWorkerReady!: (error: Error) => void;
     private resolveWorkerReady!: () => void;
+    private workerFailure?: Error;
+    private disposed = false;
 
     static async create(
         customPrecompiles: readonly EvmCustomPrecompileManifest[] = [],
@@ -81,6 +87,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.worker = createContractExecutorWorker(
             (message: WorkerResponseMessage) => this.handleResponse(message),
             (error: Error) => {
+                this.workerFailure = error;
                 this.rejectWorkerReady(error);
                 this.rejectAll(error);
             }
@@ -110,8 +117,20 @@ export default class WorkerContractExecutor extends AContractExecutor {
     }
 
     async dispose(): Promise<void> {
-        this.rejectAll(new Error("Contract executor worker disposed"), false);
-        await this.worker.terminate?.();
+        if (this.disposed) return;
+        this.disposed = true;
+
+        try {
+            if (!this.workerFailure) {
+                await this.request({ type: "dispose" });
+            }
+        } finally {
+            this.rejectAll(
+                new Error("Contract executor worker disposed"),
+                false
+            );
+            await this.worker.terminate?.();
+        }
     }
 
     private async callWorker(

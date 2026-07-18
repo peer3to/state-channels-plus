@@ -880,27 +880,34 @@ export class LocalDiscoveryServer {
                 const handshakeService =
                     p2pManager.localRpc.initHandshakeService;
 
-                handshakeService.initHandshake(lt);
-                void handshakeService
-                    .waitForHandshakeCompleted(
-                        lt,
-                        p2pManager.stateManager.timeConfig.agreementTime * 1000
-                    )
-                    .then((completed) => {
-                        if (!completed) {
-                            p2pManager.disconnectConnection(lt);
-                            scheduleRetry("handshake-timeout");
-                            return;
-                        }
+                // The client `open` event can run before the server's
+                // `connection` callback installs its LocalTransport listener.
+                // Defer the first payload one turn so it cannot be dropped.
+                setImmediate(() => {
+                    if (this._cleanupRequested || lt.isClosed) return;
+                    handshakeService.initHandshake(lt);
+                    void handshakeService
+                        .waitForHandshakeCompleted(
+                            lt,
+                            p2pManager.stateManager.timeConfig.agreementTime *
+                                1000
+                        )
+                        .then((completed) => {
+                            if (!completed) {
+                                p2pManager.disconnectConnection(lt);
+                                scheduleRetry("handshake-timeout");
+                                return;
+                            }
 
-                        // Socket open only proves transport availability. The
-                        // authenticated handshake completes peer discovery.
-                        handshakeCompleted = true;
-                        this._peerRetryCount.delete(connectionKey);
-                        this.logger.info("Connected to peer", {
-                            ...log
+                            // Socket open only proves transport availability. The
+                            // authenticated handshake completes peer discovery.
+                            handshakeCompleted = true;
+                            this._peerRetryCount.delete(connectionKey);
+                            this.logger.info("Connected to peer", {
+                                ...log
+                            });
                         });
-                    });
+                });
             },
             onClose: (_ws, code: number, reason: Buffer) => {
                 this.logger.debug("Peer connection closed", {

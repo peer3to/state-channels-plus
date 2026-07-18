@@ -94,6 +94,15 @@ describe("WorkerContractExecutor", function () {
         }
     });
 
+    it("should dispose idempotently", async function () {
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true
+        });
+
+        await executor.dispose();
+        await executor.dispose();
+    });
+
     for (const dedicatedThread of [false, true]) {
         it(`should serialize simulations with local writes (${dedicatedThread ? "worker" : "inline"})`, async function () {
             const customAddress = Address.fromString(

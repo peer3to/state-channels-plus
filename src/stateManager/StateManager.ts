@@ -273,19 +273,24 @@ class StateManager<
         this.isDisposed = true;
         this.reductionManager.dispose();
 
-        this.disposalPromise = Promise.all([
-            this.timeoutManager.dispose(),
-            this.stateChannelEventListener.dispose(),
-            this.p2pManager.dispose(),
-            this.diamondStateMachine.dispose()
-        ])
-            .then(() => undefined)
-            .finally(() => {
-                this.logger.dispose({
-                    cascadeChildren: true,
-                    cascadeParent: true
-                });
+        // Event handlers may still need the local EVM while draining already
+        // scheduled contract logs. Dispose their dependencies only afterward.
+        this.disposalPromise = (async () => {
+            try {
+                await this.stateChannelEventListener.dispose();
+            } finally {
+                await Promise.all([
+                    this.timeoutManager.dispose(),
+                    this.p2pManager.dispose(),
+                    this.diamondStateMachine.dispose()
+                ]);
+            }
+        })().finally(() => {
+            this.logger.dispose({
+                cascadeChildren: true,
+                cascadeParent: true
             });
+        });
         return this.disposalPromise;
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {

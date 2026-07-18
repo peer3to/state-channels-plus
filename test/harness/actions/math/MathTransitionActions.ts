@@ -120,6 +120,11 @@ export class MathTransitionActions extends TransitionActions<
             delayMs: options?.delayMs
         });
 
+        if (
+            !this.harness.context.leftChannelPeerIndices.includes(leaverIndex)
+        ) {
+            this.harness.context.leftChannelPeerIndices.push(leaverIndex);
+        }
         this.logger.debug(`Peer ${leaverIndex} left channel`);
 
         return leaverIndex;
