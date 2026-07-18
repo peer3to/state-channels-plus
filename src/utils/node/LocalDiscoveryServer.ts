@@ -7,6 +7,10 @@ import { config } from "@/utils/config";
 
 const MAX_PORT_RETRIES = 20;
 const LOCAL_WS_HOST = "127.0.0.1";
+const LOCAL_TRANSPORT_CLIENT_READY_MESSAGE =
+    "peer3:local-transport-client-ready:v1";
+const LOCAL_TRANSPORT_SERVER_READY_MESSAGE =
+    "peer3:local-transport-server-ready:v1";
 const WS_CONNECT_TIMEOUT_MS = 750;
 const REGISTRY_CONNECT_MAX_RETRIES = 10;
 
@@ -556,12 +560,25 @@ export class LocalDiscoveryServer {
             myPeerAddress,
             onConnection: (ws: WebSocket) => {
                 // Accepted a direct connection from another peer
+                ws.once("message", (message: Buffer) => {
+                    if (
+                        message.toString() !==
+                        LOCAL_TRANSPORT_CLIENT_READY_MESSAGE
+                    ) {
+                        ws.close();
+                        return;
+                    }
 
-                const lt = new LocalTransport(ws, p2pManager);
-                p2pManager.localRpc.initHandshakeService.initHandshake(lt);
-                this.logger.debug("Inbound peer connection accepted", {
-                    ...peerLog,
-                    myPeerPort: port
+                    // Acknowledge the raw socket before either endpoint sends
+                    // handshake RPCs. WebSocket ordering then guarantees both
+                    // LocalTransport listeners are installed first.
+                    ws.send(LOCAL_TRANSPORT_SERVER_READY_MESSAGE);
+                    const lt = new LocalTransport(ws, p2pManager);
+                    p2pManager.localRpc.initHandshakeService.initHandshake(lt);
+                    this.logger.debug("Inbound peer connection accepted", {
+                        ...peerLog,
+                        myPeerPort: port
+                    });
                 });
             },
             onError: (err: Error) => {
@@ -837,6 +854,8 @@ export class LocalDiscoveryServer {
 
         let retryScheduled = false;
         let handshakeCompleted = false;
+        let transport: LocalTransport | undefined;
+        let transportReadyTimeout: ReturnType<typeof setTimeout> | undefined;
 
         const scheduleRetry = (
             reason: string,
@@ -876,40 +895,50 @@ export class LocalDiscoveryServer {
             purpose: "peer",
             log,
             onOpen: (ws) => {
+                ws.send(LOCAL_TRANSPORT_CLIENT_READY_MESSAGE);
+                transportReadyTimeout = setTimeout(() => {
+                    if (transport || this._cleanupRequested) return;
+                    ws.close();
+                    scheduleRetry("transport-ready-timeout");
+                }, p2pManager.stateManager.timeConfig.agreementTime * 1000);
+            },
+            onMessage: (ws, message) => {
+                if (
+                    transport ||
+                    message.toString() !== LOCAL_TRANSPORT_SERVER_READY_MESSAGE
+                ) {
+                    return;
+                }
+
+                clearTimeout(transportReadyTimeout);
                 const lt = new LocalTransport(ws, p2pManager);
+                transport = lt;
                 const handshakeService =
                     p2pManager.localRpc.initHandshakeService;
+                handshakeService.initHandshake(lt);
+                void handshakeService
+                    .waitForHandshakeCompleted(
+                        lt,
+                        p2pManager.stateManager.timeConfig.agreementTime * 1000
+                    )
+                    .then((completed) => {
+                        if (!completed) {
+                            p2pManager.disconnectConnection(lt);
+                            scheduleRetry("handshake-timeout");
+                            return;
+                        }
 
-                // The client `open` event can run before the server's
-                // `connection` callback installs its LocalTransport listener.
-                // Defer the first payload one turn so it cannot be dropped.
-                setImmediate(() => {
-                    if (this._cleanupRequested || lt.isClosed) return;
-                    handshakeService.initHandshake(lt);
-                    void handshakeService
-                        .waitForHandshakeCompleted(
-                            lt,
-                            p2pManager.stateManager.timeConfig.agreementTime *
-                                1000
-                        )
-                        .then((completed) => {
-                            if (!completed) {
-                                p2pManager.disconnectConnection(lt);
-                                scheduleRetry("handshake-timeout");
-                                return;
-                            }
-
-                            // Socket open only proves transport availability. The
-                            // authenticated handshake completes peer discovery.
-                            handshakeCompleted = true;
-                            this._peerRetryCount.delete(connectionKey);
-                            this.logger.info("Connected to peer", {
-                                ...log
-                            });
+                        // Socket open only proves transport availability. The
+                        // authenticated handshake completes peer discovery.
+                        handshakeCompleted = true;
+                        this._peerRetryCount.delete(connectionKey);
+                        this.logger.info("Connected to peer", {
+                            ...log
                         });
-                });
+                    });
             },
             onClose: (_ws, code: number, reason: Buffer) => {
+                clearTimeout(transportReadyTimeout);
                 this.logger.debug("Peer connection closed", {
                     mode: "peer",
                     myPeerAddress,

@@ -142,7 +142,7 @@ export class MathByzantineActions extends ByzantineActions {
         const transactionData = this.encodeMathAdd(peer);
         const blockTimestampBase =
             ctx.latestBlockTimestamp !== null
-                ? ctx.latestBlockTimestamp + 1
+                ? Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
                 : ctx.currentTimestamp;
 
         const transaction: TransactionStruct = {
@@ -228,7 +228,9 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+                timestamp: BigInt(
+                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                )
             },
             body: {
                 encodedData: malformedData as Bytes,
@@ -299,7 +301,9 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+                timestamp: BigInt(
+                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                )
             },
             body: { encodedData: transactionData, data: transactionData }
         };
@@ -403,7 +407,9 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+                timestamp: BigInt(
+                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                )
             },
             body: { encodedData: transactionData, data: transactionData }
         };

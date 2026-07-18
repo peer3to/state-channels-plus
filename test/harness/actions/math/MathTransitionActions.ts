@@ -14,6 +14,7 @@ type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
 };
 
 type ParticipantLeaveOptions = TransitionOptions & {
+    leaverIndex?: number;
     statusTimeoutMs?: number;
     statusTimeoutMessage?: string;
 };
@@ -107,12 +108,14 @@ export class MathTransitionActions extends TransitionActions<
 
     /** Submit the leave transition without waiting for a later snapshot status. */
     async participantLeaveStateTransition(
-        options?: TransitionOptions
+        options?: ParticipantLeaveOptions
     ): Promise<number> {
-        const leaver = await this.harness.query.getNextPeerToWrite();
-        const leaverIndex = leaver.index;
+        const leaverIndex =
+            options?.leaverIndex ??
+            (await this.harness.query.getNextPeerToWrite()).index;
+        const leaver = this.harness.getPeer(leaverIndex);
 
-        await this.submitNext((contract) => contract.leaveChannel(), {
+        await this.submit(leaver, (contract) => contract.leaveChannel(), {
             waitForTurn: true,
             waitForSync: options?.waitForSync ?? true,
             waitForPeers: options?.waitForPeers,

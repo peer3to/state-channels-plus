@@ -315,9 +315,10 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             await h.event.waitForPeers("onDisputeKilled", [0], 1, {
                 mode: "atLeast"
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeBlockAuthorNotParticipant,
+                peerIndices: [0, 1, 3],
                 timeoutMs: 15000
             });
 
@@ -326,7 +327,9 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                 DisputeFraudProofType.DisputeInvalidStateProof,
                 DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             ].map((type) => String(toSolidityDisputeFraudProofType(type)));
-            for (const peer of h.getHonestPeers()) {
+            // Peer 2 is deliberately disconnected before the state proof is
+            // built, so it cannot audit against the resulting snapshot.
+            for (const peer of h.getFilteredPeers([0, 1, 3])) {
                 const proofTypes = await h
                     .control(peer)
                     .query.getDisputeFraudProofTypes()

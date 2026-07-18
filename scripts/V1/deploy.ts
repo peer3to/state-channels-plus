@@ -18,6 +18,8 @@ import type { Address } from "@/types/types";
 
 const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
+const NONCE_GAP_RETRY_DELAY_MS = 10;
+const NONCE_GAP_MAX_RETRIES = 500;
 
 const facetArtifacts = [
     DisputeManagerFacetArtifact,
@@ -129,15 +131,37 @@ export async function deployFacets(
 ): Promise<string[]> {
     const nextNonce = await signer.getNonce("pending");
     return Promise.all(
-        facetArtifacts.map((artifact, index) =>
-            deployArtifact(artifact, signer, {
-                libs,
-                txOverrides: {
-                    nonce: nextNonce + index,
-                    gasLimit: FACET_DEPLOY_GAS_LIMIT
+        facetArtifacts.map(async (artifact, index) => {
+            for (let attempt = 0; ; attempt++) {
+                try {
+                    return (
+                        await deployArtifact(artifact, signer, {
+                            libs,
+                            txOverrides: {
+                                nonce: nextNonce + index,
+                                gasLimit: FACET_DEPLOY_GAS_LIMIT
+                            }
+                        })
+                    ).address;
+                } catch (error) {
+                    const message =
+                        error instanceof Error ? error.message : String(error);
+                    if (
+                        !message.includes("Nonce too high") ||
+                        attempt >= NONCE_GAP_MAX_RETRIES
+                    ) {
+                        throw error;
+                    }
+
+                    // Automining providers reject future nonces instead of
+                    // queueing them. Retry only that provider limitation while
+                    // keeping all facet deployments concurrent elsewhere.
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, NONCE_GAP_RETRY_DELAY_MS)
+                    );
                 }
-            }).then(({ address }) => address)
-        )
+            }
+        })
     );
 }
 
@@ -147,8 +171,8 @@ export async function deployFacetsLocal(
 ): Promise<string[]> {
     return Promise.all(
         facetArtifacts.map((artifact) =>
-            deployArtifactLocal(artifact, signer, { libs }).then((a) =>
-                a.toString()
+            deployArtifactLocal(artifact, signer, { libs }).then((address) =>
+                address.toString()
             )
         )
     );

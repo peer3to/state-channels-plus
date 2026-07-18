@@ -178,6 +178,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                 (peerIndex) => peerIndex !== secondLeaver.index
             );
             await h.transition.participantLeaveStateTransition({
+                leaverIndex: secondLeaver.index,
                 waitForPeers: afterSecondLeave,
                 waitForFinalization: false
             });
