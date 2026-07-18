@@ -60,6 +60,8 @@ import {
     TimeoutParticipantNotNextProofEthersType,
     TimeoutTooEarlyProofEthersType,
     DisputeInvalidBlockInStateProofApplyFraudProofEthersType,
+    DisputeBlockAuthorNotParticipantProofEthersType,
+    DisputeInvalidBlockStructureProofEthersType,
     MessageBlockEthersType,
     BalanceEthersType,
     SignedBlockEthersType,
@@ -90,7 +92,9 @@ import {
     TimeoutTooEarlyStruct,
     DisputeLastMilestoneNotFinalAndNoAuditingDataStruct,
     InvalidDisputeReasonStruct,
-    DisputeStateProofHeaderMismatchStruct
+    DisputeStateProofHeaderMismatchStruct,
+    DisputeInvalidBlockStructureStruct,
+    DisputeBlockAuthorNotParticipantStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 export type FraudStruct =
@@ -114,7 +118,9 @@ export type DisputeFraudStruct =
     | DisputeInvalidBlockInStateProofApplyFraudProofStruct
     | DisputeLastMilestoneNotFinalAndNoAuditingDataStruct
     | InvalidDisputeReasonStruct
-    | DisputeStateProofHeaderMismatchStruct;
+    | DisputeStateProofHeaderMismatchStruct
+    | DisputeInvalidBlockStructureStruct
+    | DisputeBlockAuthorNotParticipantStruct;
 
 type StructType =
     | FraudStruct
@@ -263,6 +269,14 @@ export class Codec {
         [
             DisputeFraudProofType.DisputeInboundHashNotInChain,
             DisputeInboundHashNotInChainProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidBlockStructure,
+            DisputeInvalidBlockStructureProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeBlockAuthorNotParticipant,
+            DisputeBlockAuthorNotParticipantProofEthersType
         ]
     ]);
 
@@ -399,6 +413,14 @@ export class Codec {
         encoded: Bytes,
         type: Type.StateProof
     ): StateProofStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInvalidBlockStructure
+    ): DisputeInvalidBlockStructureStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeBlockAuthorNotParticipant
+    ): DisputeBlockAuthorNotParticipantStruct;
 
     public static decode<T extends StructType>(
         encoded: Bytes,

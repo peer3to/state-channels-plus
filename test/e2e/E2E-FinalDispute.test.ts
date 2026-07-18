@@ -82,7 +82,9 @@ describe("E2E: final dispute resolution", function () {
         const targetPeerIndex = 0;
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            // Keep the ordinary dispute active while the threshold-final
+            // payload is assembled under parallel-run load.
+            timeConfig: { evidenceTime: 15 }
         });
         const targetPeer = h.getPeer(targetPeerIndex);
         await h.control(targetPeer).stub.stubHoldReductionTasks().request();

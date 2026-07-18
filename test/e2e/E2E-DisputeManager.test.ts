@@ -1,5 +1,5 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
-import { Codec, Type, hash } from "@/utils";
+import { Codec, Type, hash, sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 
 /**
@@ -130,6 +130,93 @@ describe("E2E: Dispute Manager", function () {
     });
 
     describe("Partial Syncing via Dispute Validation", function () {
+        it("recovers an expired posted-data dispute and reduces from persisted proof data", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath({
+                timeConfig: { evidenceTime: 3 }
+            });
+            const disputedForkId = h.activeForkId;
+            if (!disputedForkId) throw new Error("Expected an active fork");
+
+            const missedPeerIndex = 2;
+            for (const peer of h.peers) {
+                await h.control(peer).stub.stubHoldReductionTasks().request();
+            }
+            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+                missedPeerIndex,
+                {
+                    passFirst: false
+                }
+            );
+            await h
+                .control(h.getPeer(missedPeerIndex))
+                .stub.stubSuppressDisputeInitiation()
+                .request();
+            await h.byzantine.disconnect(missedPeerIndex);
+            await h.transition.advanceState({
+                waitForPeers: [0, 1, 3]
+            });
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.event.waitForDisputeFromAnyPeer([0, 1, 3]);
+            const initiatingPeer = [0, 1, 3]
+                .map((peerIndex) => h.getPeer(peerIndex))
+                .find(
+                    (peer) =>
+                        (peer.eventSpies.onInitiatingDispute?.callCount ?? 0) >
+                        0
+                );
+            if (!initiatingPeer)
+                throw new Error("Expected a dispute initiator");
+            const initiatedDispute =
+                initiatingPeer.eventSpies.onInitiatingDispute!.lastCall.args[1];
+            if (!initiatedDispute.postedAuditingData) {
+                throw new Error("Expected a calldata-backed dispute");
+            }
+            await h.event.waitForPeers("onDisputeCommitted", [0, 1, 3], 1, {
+                mode: "atLeast",
+                timeoutMs: 10000
+            });
+
+            await sleep(4000);
+            // The peer missed the event while disconnected, then reconnects so
+            // event recovery can fetch the committed dispute payloads.
+            await h.network.connectPeers([missedPeerIndex]);
+            await restoreEvents(false);
+            const missedPeer = h.getPeer(missedPeerIndex);
+            const recoveredCount = await h
+                .control(missedPeer)
+                .dispute.recoverCommittedDisputes(disputedForkId)
+                .request();
+            if (recoveredCount < 1) {
+                throw new Error("Expected at least one recovered dispute");
+            }
+            await h.assert.storage.storedDisputeConfirmationsWait({
+                peerIndices: [missedPeerIndex],
+                forkId: disputedForkId,
+                timeoutMs: 10000
+            });
+
+            for (const peerIndex of [0, 1, 3]) {
+                await h
+                    .control(h.getPeer(peerIndex))
+                    .stub.restoreReductionTasks(false)
+                    .request();
+            }
+            await h
+                .control(missedPeer)
+                .stub.restoreReductionTasks(true)
+                .request();
+            const reducedForkId = await h
+                .control(missedPeer)
+                .dispute.awaitReduction(disputedForkId)
+                .request();
+            if (!reducedForkId || reducedForkId === disputedForkId) {
+                throw new Error(
+                    "Expected the recovered expired dispute to reduce to a new fork"
+                );
+            }
+        });
+
         it("should have missing state Storage when peer receives dispute with blocks it doesn't have", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);

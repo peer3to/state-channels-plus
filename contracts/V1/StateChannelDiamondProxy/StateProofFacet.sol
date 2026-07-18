@@ -127,6 +127,61 @@ contract StateProofFacet is StateChannelCommon {
         return _areSignedBlocksLinkedAndVerified(signedBlocks);
     }
 
+    function isInvalidBlockStructureInStateProof(StateProof memory stateProof, uint256 blockIndex)
+        public
+        view
+        returns (bool)
+    {
+        BlockConfirmation[] memory unfinalized = _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
+        if (blockIndex >= unfinalized.length) return false;
+
+        return _isInvalidBlockStructureInStateProof(stateProof, unfinalized, blockIndex);
+    }
+
+    function findFirstInvalidBlockStructureInStateProof(StateProof memory stateProof)
+        public
+        view
+        returns (bool found, uint256 blockIndex)
+    {
+        BlockConfirmation[] memory unfinalized = _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
+        for (uint256 i = 0; i < unfinalized.length; i++) {
+            if (_isInvalidBlockStructureInStateProof(stateProof, unfinalized, i)) return (true, i);
+        }
+        return (false, 0);
+    }
+
+    function _isInvalidBlockStructureInStateProof(
+        StateProof memory stateProof,
+        BlockConfirmation[] memory unfinalized,
+        uint256 blockIndex
+    ) internal view returns (bool) {
+        SignedBlock memory currentSignedBlock = unfinalized[blockIndex].signedBlock;
+        if (!isBlockAuthentic(currentSignedBlock)) return true;
+
+        (bool currentDecoded, Block memory currentBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(currentSignedBlock.encodedBlock);
+        if (!currentDecoded) return true;
+
+        if (stateProof.milestones.length == 0 && blockIndex == 0) {
+            return currentBlock.transaction.header.transactionCnt != 0;
+        }
+
+        SignedBlock memory previousSignedBlock;
+        if (stateProof.milestones.length > 0) {
+            MilestoneProof memory lastMilestone = stateProof.milestones[stateProof.milestones.length - 1];
+            previousSignedBlock = lastMilestone.blockConfirmations[blockIndex].signedBlock;
+        } else {
+            previousSignedBlock = stateProof.signedBlocks[blockIndex - 1];
+        }
+
+        (bool previousDecoded, Block memory previousBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(previousSignedBlock.encodedBlock);
+        if (!previousDecoded) return true;
+
+        return currentBlock.previousBlockHash != keccak256(previousSignedBlock.encodedBlock)
+            || currentBlock.transaction.header.transactionCnt != previousBlock.transaction.header.transactionCnt + 1;
+    }
+
     function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks)
         internal
         view

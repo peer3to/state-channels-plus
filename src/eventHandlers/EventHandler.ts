@@ -254,6 +254,8 @@ export class EventHandler {
                 Block.fromSignedBlock(signedBlock)
             )
         });
+        // Recovery schedules this handler without awaiting validation; keep
+        // this store before the first await so its immediate re-read is valid.
         this.storage.blockCalldata.storeBlockCalldata({
             signedBlock,
             onChainTimestamp: timestamp
@@ -460,6 +462,65 @@ export class EventHandler {
             return;
         }
 
+        // Use the authoritative on-chain window for this current-time race
+        // decision. Only an existing, expired window changes the normal audit
+        // path: challenging is then forbidden, so persist for reduction.
+        const { windowExists, isExpired, killPeriodEnd } =
+            await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
+                channelId,
+                forkId
+            );
+        if (windowExists && isExpired) {
+            // The kill period is over, so this dispute can no longer be
+            // challenged. Preserve all available data and reduce from it.
+            this.logger.warn(
+                "onDisputeCommited: Kill period EXPIRED! Unconditionally persisting the dispute!",
+                { dispute: disputeMeta }
+            );
+            let persistableAuditingData = disputeAuditingData;
+            if (!persistableAuditingData) {
+                try {
+                    const derived =
+                        this.stateManager.disputeManager.getAuditingData(
+                            forkId,
+                            dispute.input.stateProof,
+                            {
+                                disputeLatestInboundMessageBlockHash:
+                                    dispute.input.latestInboundMessageBlockHash
+                            }
+                        );
+                    if (!derived.isPartial) {
+                        persistableAuditingData = derived.auditingData;
+                    } else {
+                        this.logger.warn(
+                            "Expired dispute proof data is partial; snapshots, state, or messages are unavailable",
+                            { dispute: disputeMeta }
+                        );
+                    }
+                } catch (error) {
+                    this.logger.warn(
+                        "Expired dispute auditing data is unavailable; persisting decodable committed blocks only",
+                        { dispute: disputeMeta, error }
+                    );
+                }
+            }
+            this.stateManager.disputeValidationService.persistDisputeDataWithoutAudit(
+                dispute,
+                persistableAuditingData,
+                { includeUnfinalizedBlocks: true }
+            );
+            await this.persistDisputeAndNotify(
+                channelId,
+                forkId,
+                disputeConfirmation
+            );
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                Number(killPeriodEnd)
+            );
+            return;
+        }
+
         // not final - validate dispute and challenge if invalid
         const isValid =
             await this.stateManager.disputeValidationService.validateDispute(
@@ -475,6 +536,16 @@ export class EventHandler {
             const killReason = disputeFraudProof
                 ? LoggerUtils.getDisputeFraudProofMeta(disputeFraudProof)
                 : undefined;
+
+            if (!disputeFraudProof) {
+                this.logger.error(
+                    "Dispute audit returned false without a stored fraud proof",
+                    { channelId, forkId, dispute: disputeMeta }
+                );
+                throw new Error(
+                    `Dispute audit failed without fraud proof: ${disputeMeta.disputeHash}`
+                );
+            }
 
             this.logger.warn(
                 `❌ Dispute auditing failed - killing dispute ${formattedHash}`,
@@ -495,16 +566,11 @@ export class EventHandler {
         }
 
         this.logger.info(`✅ Dispute auditing successful ${formattedHash}`);
-        this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
-
-        await P2pEventHooksUtils.notifyDisputeUpdate({
+        await this.persistDisputeAndNotify(
             channelId,
             forkId,
-            storage: this.storage,
-            p2pEventHooks: this.p2pEventHooks,
-            diamondStateMachine: this.diamondStateMachine,
-            logger: this.logger
-        });
+            disputeConfirmation
+        );
 
         // this is like success - TODO - consider moving this to DisputeStrategy.success
         const canConstructMoreEvidence =
@@ -516,16 +582,26 @@ export class EventHandler {
             return this.stateManager.disputeManager.dispute(forkId);
         }
 
-        const { killPeriodEnd } =
-            await this.diamondStateMachine.localDiamondContract.isKillPeriodExpired(
-                channelId,
-                forkId
-            );
-
         this.stateManager.reductionManager.schedule(
             forkId,
             Number(killPeriodEnd)
         );
+    }
+
+    private async persistDisputeAndNotify(
+        channelId: ChannelId,
+        forkId: ForkId,
+        disputeConfirmation: DisputeConfirmationStruct
+    ): Promise<void> {
+        this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+        await P2pEventHooksUtils.notifyDisputeUpdate({
+            channelId,
+            forkId,
+            storage: this.storage,
+            p2pEventHooks: this.p2pEventHooks,
+            diamondStateMachine: this.diamondStateMachine,
+            logger: this.logger
+        });
     }
 
     private async canConstructMoreEvidence(

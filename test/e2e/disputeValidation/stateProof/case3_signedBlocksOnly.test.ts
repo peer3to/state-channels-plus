@@ -1,6 +1,10 @@
-import { DisputeFraudProofType } from "@/types/sol-enums";
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
 import { Hash } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 // Trello card Case 3: signedBlocks-only stateProof. Must build on genesis and
 // blocks must be linked to each other. Subcases break the linkage or block content
@@ -196,13 +200,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
     });
 
     describe("stateProof.signedBlocks[1].previousBlockHash = random (inter-block linkage break)", function () {
-        // _areSignedBlocksLinkedAndVerified (StateProofFacet.sol:104) returns false at iter 1
-        // when signedBlocks[1].previousBlockHash != keccak256(signedBlocks[0].encodedBlock).
-        // The off-chain pipeline detects this and creates a fraud proof, but the on-chain
-        // applyFraudProof handler currently rejects with ErrorInvalidFraudProof — the
-        // off-chain pipeline and on-chain handler disagree on the apply step for linkage
-        // failures. Keeping the test in place so the failure surfaces continuously.
-        it("signedBlocks[1].previousBlockHash = random → DisputeInvalidStateProof", async function () {
+        it("signedBlocks[1].previousBlockHash = random → DisputeInvalidBlockStructure", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
 
@@ -236,9 +234,145 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
+                    DisputeFraudProofType.DisputeInvalidBlockStructure,
                 timeoutMs: 10000
             });
+            await h.dispute.resolveDisputeWait();
+        });
+    });
+
+    describe("stateProof signed-block structural proof", function () {
+        it("invalid author signature → DisputeInvalidBlockStructure", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            await h.tamper.stubConstructDispute(3, (dispute) => {
+                if (dispute.input.stateProof.signedBlocks.length < 2) {
+                    throw new Error("Expected at least two signed blocks");
+                }
+                dispute.input.stateProof.signedBlocks.at(-1)!.signature =
+                    dispute.input.stateProof.signedBlocks[0].signature;
+            });
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: false
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBlockStructure,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait();
+        });
+
+        it("skipped height → DisputeInvalidBlockStructure", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const d = sm.p2pManager.localRpc.dispute;
+                const index = dispute.input.stateProof.signedBlocks.length - 1;
+                if (index < 1)
+                    throw new Error("Expected at least two signed blocks");
+                await d.rewriteSignedBlockAtIndex(dispute, index, (block) =>
+                    d.blockStructWithTransactionHeader(block, {
+                        transactionCnt:
+                            BigInt(block.transaction.header.transactionCnt) + 1n
+                    })
+                );
+            });
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBlockStructure,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait();
+        });
+    });
+
+    describe("stateProof block authored by a non-participant", function () {
+        it("valid outsider-authored block → dedicated dispute proof only", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const d = sm.p2pManager.localRpc.dispute;
+                d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
+                await d.rewriteLastSignedBlockAuthorAsOutsider(dispute);
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: false
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeBlockAuthorNotParticipant,
+                timeoutMs: 15000
+            });
+
+            const overlappingProofTypes = [
+                DisputeFraudProofType.DisputeInvalidBlockStructure,
+                DisputeFraudProofType.DisputeInvalidStateProof,
+                DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+            ].map((type) => String(toSolidityDisputeFraudProofType(type)));
+            for (const peer of h.getHonestPeers()) {
+                const proofTypes = await h
+                    .control(peer)
+                    .query.getDisputeFraudProofTypes()
+                    .request();
+                expect(proofTypes).to.include(
+                    String(
+                        toSolidityDisputeFraudProofType(
+                            DisputeFraudProofType.DisputeBlockAuthorNotParticipant
+                        )
+                    )
+                );
+                for (const overlappingType of overlappingProofTypes) {
+                    expect(proofTypes).not.to.include(overlappingType);
+                }
+            }
+
+            await h.dispute.resolveDisputeWait();
+        });
+
+        it("outsider-authored block with fabricated snapshot hash → fallback transition proof", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const d = sm.p2pManager.localRpc.dispute;
+                d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
+                await d.rewriteLastSignedBlockAuthorAsOutsider(
+                    dispute,
+                    d.randomHash() as Hash
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: false
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+                timeoutMs: 15000
+            });
+
             await h.dispute.resolveDisputeWait();
         });
     });

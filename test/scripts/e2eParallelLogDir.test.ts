@@ -53,7 +53,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--slots",
             "--workers",
             "--target-load",
-            "--scheduler-tick-ms",
+            "--interval",
             "--mem-limit-gb",
             "--sdk-thread",
             "--no-sdk-thread",
@@ -94,27 +94,27 @@ describe("e2e-parallel argParser - logDir validation", function () {
     });
 });
 
-describe("e2e-parallel argParser - scheduler tick", function () {
-    it("uses the scheduler default when no tick override is provided", function () {
+describe("e2e-parallel argParser - interval", function () {
+    it("uses the scheduler default when no interval override is provided", function () {
         expect(parseCliArgs(argv()).schedulerTickMs).to.equal(undefined);
     });
 
-    it("accepts separated and equals scheduler tick values", function () {
+    it("accepts long, short, separated, and equals interval values", function () {
         expect(
-            parseCliArgs(argv("--scheduler-tick-ms", "250")).schedulerTickMs
+            parseCliArgs(argv("--interval", "250")).schedulerTickMs
         ).to.equal(250);
-        expect(
-            parseCliArgs(argv("--scheduler-tick-ms=125")).schedulerTickMs
-        ).to.equal(125);
+        expect(parseCliArgs(argv("--interval=125")).schedulerTickMs).to.equal(
+            125
+        );
+        expect(parseCliArgs(argv("-i", "75")).schedulerTickMs).to.equal(75);
+        expect(parseCliArgs(argv("-i=50")).schedulerTickMs).to.equal(50);
     });
 
-    it("rejects zero and negative scheduler tick values", function () {
-        expect(
-            parseCliArgs(argv("--scheduler-tick-ms", "0")).schedulerTickMs
-        ).to.equal(undefined);
-        expect(
-            parseCliArgs(argv("--scheduler-tick-ms=-1")).schedulerTickMs
-        ).to.equal(undefined);
+    it("rejects zero and negative interval values", function () {
+        expect(parseCliArgs(argv("--interval", "0")).schedulerTickMs).to.equal(
+            undefined
+        );
+        expect(parseCliArgs(argv("-i=-1")).schedulerTickMs).to.equal(undefined);
     });
 });
 

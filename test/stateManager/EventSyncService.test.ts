@@ -17,5 +17,20 @@ describe("EventSyncService", function () {
         expect(result.firstError).to.equal("Expected event-sync rejection");
         expect(result.secondError).to.equal("Expected event-sync rejection");
         expect(result.cursorAfter).to.equal(result.cursorBefore);
+        expect(result.detachedError).to.equal("Expected event-sync rejection");
+    });
+
+    it("joins concurrent calldata recovery onto one chain query", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0);
+        const result = await h
+            .control(h.getPeer(0))
+            .stub.probeConcurrentCalldataRecovery()
+            .request();
+
+        expect(result.queryCount).to.equal(2);
+        expect(result.firstFound).to.equal(false);
+        expect(result.secondFound).to.equal(false);
+        expect(result.retryFound).to.equal(false);
     });
 });

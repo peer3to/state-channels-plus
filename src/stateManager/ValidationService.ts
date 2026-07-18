@@ -7,12 +7,7 @@ import Storage from "@/storage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { Block, StateSnapshot } from "@/models";
 import { Logger } from "@/utils";
-import {
-    BlockValidationResult,
-    OnChainBlockStatus,
-    TimeConfig,
-    firstBlockGrace
-} from "@/types";
+import { BlockValidationResult, TimeConfig, firstBlockGrace } from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
@@ -24,7 +19,6 @@ import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStr
 import EventSyncService from "./EventSyncService";
 
 export enum OnChainPostTiming {
-    NOT_READY,
     NOT_POSTED,
     ON_TIME,
     TOO_LATE
@@ -422,37 +416,23 @@ export default class ValidationService {
             }
 
             // Try on-chain query to schedule validation for the previous block.
-            const scheduleStatus =
-                await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
-                    previousBlock.forkId,
-                    previousBlock.height,
-                    previousBlock.author
-                );
+            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                previousBlock.forkId,
+                previousBlock.height,
+                previousBlock.author
+            );
 
-            if (
-                this.eventSyncService.shouldDeferCurrentValidation(
-                    scheduleStatus
-                )
-            ) {
-                await this.stateManager.ingestBlockConfirmation(
-                    block.blockConfirmationStruct,
-                    { onChainTimestamp: block.onChainTimestamp }
+            const recoveredPreviousCalldata =
+                this.storage.blockCalldata.getMatchingBlockCalldata(
+                    previousBlock
                 );
-                this.logger.info(
-                    "validateTimeLogic - queued block while waiting for previous on-chain block validation",
-                    {
-                        block: LoggerUtils.getBlockMetadata(
-                            block,
-                            this.storage
-                        ),
-                        previousBlock: LoggerUtils.getBlockMetadata(
-                            previousBlock,
-                            this.storage
-                        ),
-                        scheduleStatus: OnChainBlockStatus[scheduleStatus]
-                    }
+            if (recoveredPreviousCalldata) {
+                previousBlock.onChainTimestamp =
+                    recoveredPreviousCalldata.onChainTimestamp;
+                this.storage.blocks.setOnChainTimestamp(
+                    previousBlock.hash,
+                    recoveredPreviousCalldata.onChainTimestamp
                 );
-                return BlockValidationResult.NOT_READY;
             }
 
             const previousBlockOnChainTimestamp =
@@ -493,10 +473,6 @@ export default class ValidationService {
             previousTimestamp,
             block
         );
-        if (onChainPostTiming === OnChainPostTiming.NOT_READY) {
-            return BlockValidationResult.NOT_READY;
-        }
-
         if (onChainPostTiming === OnChainPostTiming.TOO_LATE) {
             // Block posted too late - create InvalidTimestamp fraud proof
             logTimeFailure({
@@ -599,34 +575,11 @@ export default class ValidationService {
 
         // if doesn't have on-chain timestamp try and fetch it
         if (block.onChainTimestamp === undefined) {
-            const scheduleStatus =
-                await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
-                    block.forkId,
-                    block.height,
-                    block.author
-                );
-
-            if (
-                this.eventSyncService.shouldDeferCurrentValidation(
-                    scheduleStatus
-                )
-            ) {
-                await this.stateManager.ingestBlockConfirmation(
-                    block.blockConfirmationStruct,
-                    { onChainTimestamp: block.onChainTimestamp }
-                );
-                this.logger.info(
-                    "isPostedOnChainTooLate - queued block while waiting for current on-chain block validation",
-                    {
-                        block: LoggerUtils.getBlockMetadata(
-                            block,
-                            this.storage
-                        ),
-                        scheduleStatus: OnChainBlockStatus[scheduleStatus]
-                    }
-                );
-                return OnChainPostTiming.NOT_READY;
-            }
+            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                block.forkId,
+                block.height,
+                block.author
+            );
 
             const onChainTimestamp = this.getStoredOnChainTimestamp(block);
 
@@ -659,11 +612,8 @@ export default class ValidationService {
     private getStoredOnChainTimestamp(block: Block): Timestamp | undefined {
         return (
             this.storage.blocks.getBlock(block.hash)?.onChainTimestamp ??
-            this.storage.blockCalldata.getBlockCalldata(
-                block.forkId,
-                block.height,
-                block.author
-            )?.onChainTimestamp ??
+            this.storage.blockCalldata.getMatchingBlockCalldata(block)
+                ?.onChainTimestamp ??
             block.onChainTimestamp
         );
     }

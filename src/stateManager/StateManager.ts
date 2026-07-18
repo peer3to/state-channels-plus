@@ -793,7 +793,19 @@ class StateManager<
             const validationResult =
                 await strategy.notAllSingersAreParticipants(
                     entry,
-                    unexpectedSignatures
+                    unexpectedSignatures,
+                    (() => {
+                        const previous = this.storage.getPreviousStateSnapshot(
+                            block.coordinates
+                        );
+                        const resulting =
+                            this.storage.stateSnapshots.getStateSnapshotByHash(
+                                block.stateSnapshotHash
+                            );
+                        return previous && resulting
+                            ? { previous, resulting }
+                            : undefined;
+                    })()
                 );
             if (validationResult !== BlockValidationResult.SUCCESS) {
                 return validationResult;
@@ -1116,7 +1128,11 @@ class StateManager<
                 restoreReason = "signers not in participant union";
                 validationResult = await strategy.notAllSingersAreParticipants(
                     entry,
-                    unexpectedSignatures
+                    unexpectedSignatures,
+                    {
+                        previous: previousStateSnapshot,
+                        resulting: stateSnapshot
+                    }
                 );
                 this.logger.warn(
                     "onBlockConfirmation - signers outside the participant union",
@@ -1591,18 +1607,14 @@ class StateManager<
             previousBlockOrSnapshot.block &&
             !previousBlockOrSnapshot.block.onChainTimestamp
         ) {
-            const scheduleStatus =
+            const recovery =
                 await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                     previousBlockOrSnapshot.block.forkId,
                     previousBlockOrSnapshot.block.height,
                     previousBlockOrSnapshot.block.author
                 );
 
-            if (
-                this.eventSyncService.shouldDeferCurrentValidation(
-                    scheduleStatus
-                )
-            ) {
+            if (recovery.validationScheduled) {
                 this.logger.info(
                     "tryTimeoutParticipant - waiting for previous on-chain block validation",
                     {
@@ -1613,7 +1625,7 @@ class StateManager<
                             previousBlockOrSnapshot.block,
                             this.storage
                         ),
-                        scheduleStatus
+                        validationScheduled: recovery.validationScheduled
                     }
                 );
                 this.scheduleTimeoutParticipantRetry(
@@ -1625,13 +1637,13 @@ class StateManager<
                 return;
             }
 
-            const updatedPreviousBlock = this.storage.blocks.getBlock(
-                previousBlockOrSnapshot.block.forkId,
-                previousBlockOrSnapshot.block.height
-            );
-            if (updatedPreviousBlock?.onChainTimestamp) {
+            const matchingPreviousCalldata =
+                this.storage.blockCalldata.getMatchingBlockCalldata(
+                    previousBlockOrSnapshot.block
+                );
+            if (matchingPreviousCalldata) {
                 difference =
-                    updatedPreviousBlock.onChainTimestamp +
+                    matchingPreviousCalldata.onChainTimestamp +
                     this.getTimeoutWaitTimeSeconds(blockHeight) -
                     Clock.getTimeInSeconds();
                 if (difference > 0) {
@@ -1645,7 +1657,7 @@ class StateManager<
                             blockHeight,
                             participantAddress,
                             difference,
-                            updatedPreviousBlock,
+                            previousBlock: previousBlockOrSnapshot.block,
                             timeoutWaitTime
                         }
                     );
@@ -1685,22 +1697,20 @@ class StateManager<
         }
 
         // (race condition) check if current block posted on-chain
-        const scheduleStatus =
+        const recovery =
             await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                 forkId,
                 blockHeight,
                 participantAddress
             );
-        if (
-            this.eventSyncService.shouldDeferCurrentValidation(scheduleStatus)
-        ) {
+        if (recovery.validationScheduled) {
             this.logger.info(
                 "tryTimeoutParticipant - waiting for current on-chain block validation",
                 {
                     forkId,
                     blockHeight,
                     participantAddress,
-                    scheduleStatus
+                    validationScheduled: recovery.validationScheduled
                 }
             );
             this.scheduleTimeoutParticipantRetry(

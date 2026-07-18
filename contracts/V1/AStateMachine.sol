@@ -136,6 +136,8 @@ abstract contract AStateMachine {
         return _removeParticipant(adr);
     }
 
+    // Implementations must reject a transaction whose participant is not
+    // getNextToWrite(); wrong-turn fraud-proof soundness depends on it.
     function stateTransition(Transaction calldata transaction)
         external
         _nonReentrant

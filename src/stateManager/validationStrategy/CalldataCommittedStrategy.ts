@@ -4,7 +4,9 @@ import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import AValidationStrategy from "./AValidationStrategy";
+import AValidationStrategy, {
+    ParticipantSnapshots
+} from "./AValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import DisputeManager from "@/disputeManager";
 import BlockValidationStrategy from "./BlockValidationStrategy";
@@ -44,7 +46,8 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     }
     public async notAllSingersAreParticipants(
         _entry: QueuedBlockEntry,
-        _unexpectedSignatures: Set<Signature>
+        _unexpectedSignatures: Set<Signature>,
+        _participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
         // Calldata confirmations carry only the author's signature, and the
         // author was already authenticated against the chain event.

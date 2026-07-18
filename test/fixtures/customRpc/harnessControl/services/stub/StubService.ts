@@ -5,6 +5,10 @@ import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { id, Log } from "ethers";
+import { DetachedPromises } from "@/utils";
+import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
+import { BlockValidationResult } from "@/types";
+import { Block } from "@/models";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
@@ -63,6 +67,27 @@ export type EventSyncFailureProbe = {
     secondError: string | null;
     cursorBefore: number | null;
     cursorAfter: number | null;
+    detachedError: string | null;
+};
+
+export type ConcurrentCalldataRecoveryProbe = {
+    queryCount: number;
+    firstFound: boolean;
+    secondFound: boolean;
+    retryFound: boolean;
+};
+
+export type DisputeStrategyResultMatrix = Record<string, string>;
+
+export type CleanCommittedDivergenceProbe = {
+    result: string;
+    proofStored: boolean;
+};
+
+export type MissingParticipantSnapshotsProbe = {
+    earlyAuthorResult: string;
+    signatureUnionResult: string;
+    proofStored: boolean;
 };
 
 /**
@@ -166,6 +191,7 @@ export class StubService extends ARpcService<
         try {
             const first = sm.eventSyncService.scheduleLog(log, sm.channelId);
             const second = sm.eventSyncService.scheduleLog(log, sm.channelId);
+            DetachedPromises.collect(first);
             const [firstError, secondError] = await Promise.all([
                 first.then(
                     () => null,
@@ -178,6 +204,16 @@ export class StubService extends ARpcService<
                         error instanceof Error ? error.message : String(error)
                 )
             ]);
+            const detached = await DetachedPromises.collectSettledAndClear();
+            const rejected = detached.find(
+                (result): result is PromiseRejectedResult =>
+                    result.status === "rejected"
+            );
+            const detachedError = rejected
+                ? rejected.reason instanceof Error
+                    ? rejected.reason.message
+                    : String(rejected.reason)
+                : null;
             return {
                 samePromise: first === second,
                 handlerCallCount,
@@ -187,11 +223,158 @@ export class StubService extends ARpcService<
                 cursorAfter:
                     sm.storage.eventSync.getLatestProcessedBlock(
                         sm.channelId
-                    ) ?? null
+                    ) ?? null,
+                detachedError
             };
         } finally {
             eventHandler.onStateSnapshotUpdated = original;
         }
+    }
+
+    public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract.getBlockCallDataCommitment;
+        let queryCount = 0;
+        let release: (() => void) | undefined;
+        const held = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        contract.getBlockCallDataCommitment = (async (...parameters) => {
+            queryCount += 1;
+            await held;
+            return original(...parameters);
+        }) as typeof contract.getBlockCallDataCommitment;
+        try {
+            const first =
+                this.sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                    id("recovery-fork"),
+                    1,
+                    this.sm.signerAddress
+                );
+            const second =
+                this.sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                    id("recovery-fork"),
+                    1,
+                    this.sm.signerAddress
+                );
+            release?.();
+            const [firstResult, secondResult] = await Promise.all([
+                first,
+                second
+            ]);
+            const retryResult =
+                await this.sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                    id("recovery-fork"),
+                    1,
+                    this.sm.signerAddress
+                );
+            return {
+                queryCount,
+                firstFound: firstResult.blockCalldata !== undefined,
+                secondFound: secondResult.blockCalldata !== undefined,
+                retryFound: retryResult.blockCalldata !== undefined
+            };
+        } finally {
+            contract.getBlockCallDataCommitment = original;
+        }
+    }
+
+    public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
+        const { dispute } = await this.sm.disputeManager.constructDispute(
+            this.sm.forkId
+        );
+        const strategy = new DisputeValidationStrategy(
+            this.sm.storage,
+            dispute,
+            0,
+            this.sm.diamondStateMachine.localDiamondContract,
+            this.sm.logger
+        );
+        const matrix: DisputeStrategyResultMatrix = {};
+        for (const result of [
+            BlockValidationResult.SUCCESS,
+            BlockValidationResult.NOT_READY,
+            BlockValidationResult.DISCONNECT,
+            BlockValidationResult.DISPUTE,
+            BlockValidationResult.BROADCAST,
+            BlockValidationResult.NOT_ENOUGH_TIME,
+            BlockValidationResult.DUPLICATE
+        ]) {
+            const name = BlockValidationResult[result];
+            try {
+                matrix[name] = String(
+                    await strategy.interpretFinalValidationResult(result)
+                );
+            } catch {
+                matrix[name] = "throw";
+            }
+        }
+        return matrix;
+    }
+
+    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
+        const { dispute } = await this.sm.disputeManager.constructDispute(
+            this.sm.forkId
+        );
+        const latestBlock = this.sm.storage.blocks.getLatestBlock(
+            this.sm.forkId
+        );
+        if (!latestBlock) throw new Error("Expected a latest block");
+        const strategy = new DisputeValidationStrategy(
+            this.sm.storage,
+            dispute,
+            0,
+            this.sm.diamondStateMachine.localDiamondContract,
+            this.sm.logger
+        );
+        const result =
+            await strategy.blockIsNotLinkedAndIsNotFirstBlock(latestBlock);
+        return {
+            result: BlockValidationResult[result],
+            proofStored:
+                this.sm.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                    dispute
+                ) !== undefined
+        };
+    }
+
+    public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
+        const { dispute } = await this.sm.disputeManager.constructDispute(
+            this.sm.forkId
+        );
+        const latestBlock = this.sm.storage.blocks.getLatestBlock(
+            this.sm.forkId
+        );
+        if (!latestBlock) throw new Error("Expected a latest block");
+        const block = await Block.fromBlockStruct(
+            {
+                ...latestBlock.blockStruct,
+                stateSnapshotHash: id("missing-participant-snapshot")
+            },
+            this.sm.signer
+        );
+        const strategy = new DisputeValidationStrategy(
+            this.sm.storage,
+            dispute,
+            0,
+            this.sm.diamondStateMachine.localDiamondContract,
+            this.sm.logger
+        );
+        const earlyAuthorResult =
+            await strategy.blockAuthorIsNotParticipant(block);
+        const signatureUnionResult =
+            await strategy.notAllSingersAreParticipants(
+                this.sm.storage.queues.createEntry(block),
+                new Set([block.originalSignature])
+            );
+        return {
+            earlyAuthorResult: BlockValidationResult[earlyAuthorResult],
+            signatureUnionResult: BlockValidationResult[signatureUnionResult],
+            proofStored:
+                this.sm.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                    dispute
+                ) !== undefined
+        };
     }
 
     public createRPCMethods(transport: ATransport): StubRpcMethods {

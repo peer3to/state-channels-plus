@@ -16,7 +16,11 @@ import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
     EventSyncFailureProbe,
     PausedReductionStatus,
-    ReductionSimulationErrorName
+    ReductionSimulationErrorName,
+    ConcurrentCalldataRecoveryProbe,
+    CleanCommittedDivergenceProbe,
+    DisputeStrategyResultMatrix,
+    MissingParticipantSnapshotsProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
 
@@ -631,6 +635,22 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
         return this.service.probeRejectedEventSyncLog();
+    }
+
+    public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
+        return this.service.probeConcurrentCalldataRecovery();
+    }
+
+    public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
+        return this.service.probeDisputeStrategyResultMatrix();
+    }
+
+    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
+        return this.service.probeCleanCommittedDivergence();
+    }
+
+    public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
+        return this.service.probeMissingParticipantSnapshots();
     }
 
     /** Pause a real reduction once it enters its kill-period lookup. */

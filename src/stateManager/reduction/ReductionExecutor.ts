@@ -19,6 +19,7 @@ import type { ReductionComputation } from "./ReductionComputationService";
 import type StateManager from "../StateManager";
 
 type KillPeriodObservation = {
+    windowExists: boolean;
     isExpired: boolean;
     killPeriodEnd: Timestamp;
 };
@@ -118,6 +119,7 @@ export default class ReductionExecutor {
                 forkId
             );
         const observation = {
+            windowExists: fresh.windowExists,
             isExpired: fresh.isExpired,
             killPeriodEnd: Number(fresh.killPeriodEnd)
         };
@@ -139,12 +141,13 @@ export default class ReductionExecutor {
     private async tryReduceLocked(forkId: ForkId): Promise<void> {
         if (forkId !== this.stateManager.forkId) return;
 
-        const { isExpired, killPeriodEnd } =
+        const { windowExists, isExpired, killPeriodEnd } =
             await this.isKillPeriodExpiredCached(forkId);
         // A final dispute can transition the fork while this attempt is waiting
         // on any provider call. Its completion is authoritative, so the stale
         // ordinary attempt simply stands down.
         if (forkId !== this.stateManager.forkId) return;
+        if (!windowExists) return;
         if (!isExpired) {
             this.stateManager.reductionManager.schedule(
                 forkId,
@@ -163,6 +166,7 @@ export default class ReductionExecutor {
             );
         if (forkId !== this.stateManager.forkId) return;
         const freshObservation = {
+            windowExists: freshExpiry.windowExists,
             isExpired: freshExpiry.isExpired,
             killPeriodEnd: Number(freshExpiry.killPeriodEnd)
         };
@@ -170,6 +174,7 @@ export default class ReductionExecutor {
             `${this.stateManager.channelId}:${forkId}`,
             freshObservation
         );
+        if (!freshObservation.windowExists) return;
         if (!freshObservation.isExpired) {
             this.stateManager.reductionManager.schedule(
                 forkId,

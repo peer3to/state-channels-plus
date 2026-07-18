@@ -210,3 +210,14 @@ export const DisputeInvalidBlockInStateProofApplyFraudProofEthersType = `tuple(
     ${FraudProofEthersType} fraudProof,
     uint256 blockIndexInUnfinalizedPartOfStateProof
 )`;
+
+export const DisputeBlockAuthorNotParticipantProofEthersType = `tuple(
+    uint256 blockIndexInUnfinalizedPartOfStateProof,
+    ${SignedBlockEthersType} previousBlock,
+    ${StateSnapshotEthersType} previousStateSnapshot,
+    ${StateSnapshotEthersType} resultingStateSnapshot
+)`;
+
+export const DisputeInvalidBlockStructureProofEthersType = `tuple(
+    uint256 blockIndexInUnfinalizedPartOfStateProof
+)`;

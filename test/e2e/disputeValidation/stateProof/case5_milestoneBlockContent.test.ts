@@ -1,10 +1,12 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import Clock from "@/Clock";
+import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 describe("E2E: dispute validation / stateProof / milestone block content integrity", function () {
     describe("stateProof.milestones[-1].blockConfirmations[-1].header.transactionCnt", function () {
-        it("transactionCnt += 5 → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
+        it("transactionCnt += 5 → DisputeInvalidBlockStructure", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
                 peerCount: 5,
@@ -59,7 +61,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             ).to.not.have.length(0);
             await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+                    DisputeFraudProofType.DisputeInvalidBlockStructure,
                 timeoutMs: 10000
             });
 
@@ -73,11 +75,181 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 ).to.be.undefined;
             }
 
-            // This test verifies the dispute fraud proof. Peer 2's underlying
-            // block fraud proof may be applied by a later dispute.
+            // This test verifies the dispute's malformed block structure. It
+            // deliberately does not assert which later dispute applies the
+            // underlying block fraud proof or which participants are slashed.
             await h.dispute.resolveDisputeWait({
                 forkId: disputedForkId,
                 assertMaliciousRemoved: false
+            });
+        });
+    });
+
+    describe("posted auditing data", function () {
+        it("still replays a structurally clean invalid-STF tail", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath({
+                timeConfig: { evidenceTime: 6 }
+            });
+
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const svc = sm.p2pManager.localRpc.dispute;
+                const confirmations =
+                    dispute.input.stateProof.milestones.at(
+                        -1
+                    )?.blockConfirmations;
+                if (!confirmations || confirmations.length === 0) {
+                    throw new Error("Expected a milestone anchor");
+                }
+                const previous = confirmations.at(-1)!;
+                const previousHash = svc.hash(
+                    previous.signedBlock.encodedBlock
+                );
+                await svc.appendLastMilestoneSignedBlockInDispute(
+                    dispute,
+                    (block) => {
+                        block.transaction.header.transactionCnt =
+                            BigInt(block.transaction.header.transactionCnt) +
+                            1n;
+                        block.transaction.header.timestamp =
+                            BigInt(block.transaction.header.timestamp) + 1n;
+                        block.transaction.body.data = "0x";
+                        block.previousBlockHash = previousHash;
+                        return block;
+                    }
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: true
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast",
+                timeoutMs: 15000
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait({
+                syntheticOnChainParticipants: 1,
+                forkSettleTimeoutMs: 20000
+            });
+        });
+
+        it("recovers missed block calldata during replay before killing the dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath({
+                timeConfig: { evidenceTime: 8 }
+            });
+
+            // Keep the next block off-chain until we post it explicitly, then
+            // make peer 0 miss that event so dispute replay must recover it.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h
+                        .control(peer)
+                        .stub.stubSuppressMaybePostBlockOnChain()
+                        .request()
+                )
+            );
+            await h.transition.advanceState({ waitForFinalization: false });
+
+            const forkId = h.activeForkId;
+            if (!forkId) throw new Error("Expected an active fork");
+            const auditor = h.getPeer(0);
+            const postedBlock = await h
+                .control(auditor)
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            if (!postedBlock) throw new Error("Expected a block to post");
+            expect(postedBlock.onChainTimestamp).to.be.null;
+
+            await h.byzantine.stubCalldataHandler(auditor.index);
+            const author = h.peers.find(
+                (peer) =>
+                    peer.address.toLowerCase() ===
+                    postedBlock.author.toLowerCase()
+            );
+            if (!author) throw new Error("Expected the block author peer");
+            const tx =
+                await author.p2pInstance.stateChannelManagerContract.postBlockCalldata(
+                    Codec.decode(
+                        postedBlock.encodedSignedBlock,
+                        Type.SignedBlock
+                    ),
+                    Clock.getTimeInSeconds() + 1000
+                );
+            const receipt = await tx.wait();
+            const minedBlock = await h.provider.getBlock(receipt!.blockNumber);
+            if (!minedBlock) throw new Error("Expected calldata receipt block");
+            await h.event.waitForPeers("onBlockCalldataPosted", [1, 2, 3], 1, {
+                mode: "atLeast",
+                timeoutMs: 10000
+            });
+            expect(
+                (
+                    await h
+                        .control(auditor)
+                        .query.getBlockByHash(postedBlock.hash)
+                        .request()
+                )?.onChainTimestamp
+            ).to.be.null;
+            await h.byzantine.restoreCalldataHandler(auditor.index);
+
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const svc = sm.p2pManager.localRpc.dispute;
+                const confirmations =
+                    dispute.input.stateProof.milestones.at(
+                        -1
+                    )?.blockConfirmations;
+                if (!confirmations || confirmations.length < 2) {
+                    throw new Error(
+                        "Expected a replayable block after the milestone anchor"
+                    );
+                }
+                const previous = confirmations.at(-1)!;
+                const previousHash = svc.hash(
+                    previous.signedBlock.encodedBlock
+                );
+                await svc.appendLastMilestoneSignedBlockInDispute(
+                    dispute,
+                    (block) => {
+                        block.transaction.header.transactionCnt =
+                            BigInt(block.transaction.header.transactionCnt) +
+                            1n;
+                        block.transaction.header.timestamp =
+                            BigInt(block.transaction.header.timestamp) + 1n;
+                        block.transaction.body.data = "0x";
+                        block.previousBlockHash = previousHash;
+                        return block;
+                    }
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.event.waitForPeers("onDisputeKilled", [auditor.index], 1, {
+                mode: "atLeast",
+                timeoutMs: 15000
+            });
+
+            // Peer 0 could only acquire this timestamp by recovering the
+            // historical calldata event from inside block replay.
+            expect(
+                (
+                    await h
+                        .control(auditor)
+                        .query.getBlockByHash(postedBlock.hash)
+                        .request()
+                )?.onChainTimestamp
+            ).to.equal(Number(minedBlock.timestamp));
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+                timeoutMs: 10000
             });
         });
     });

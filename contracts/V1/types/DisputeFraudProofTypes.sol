@@ -18,7 +18,9 @@ contract DisputeFraudProofTypes {
         DisputeLastMilestoneNotFinalAndNoAuditingData memory o,
         InvalidDisputeReason memory p,
         DisputeStateProofHeaderMismatch memory q,
-        DisputeInboundHashNotInChain memory r
+        DisputeInboundHashNotInChain memory r,
+        DisputeInvalidBlockStructure memory s,
+        DisputeBlockAuthorNotParticipant memory t
     ) {}
 }
 
@@ -102,4 +104,15 @@ struct DisputeStateProofHeaderMismatch {
 
 struct DisputeInboundHashNotInChain {
     bool __;
+}
+
+struct DisputeInvalidBlockStructure {
+    uint256 blockIndexInUnfinalizedPartOfStateProof;
+}
+
+struct DisputeBlockAuthorNotParticipant {
+    uint256 blockIndexInUnfinalizedPartOfStateProof;
+    SignedBlock previousBlock;
+    StateSnapshot previousStateSnapshot;
+    StateSnapshot resultingStateSnapshot;
 }

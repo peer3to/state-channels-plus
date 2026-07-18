@@ -4,9 +4,16 @@ import { Filter, Log, hexlify, zeroPadValue } from "ethers";
 import Clock from "@/Clock";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import Storage from "@/storage";
-import { OnChainBlockStatus, TimeConfig, firstBlockGrace } from "@/types";
-import { Address, BlockHeight, ChannelId, ForkId, Hash } from "@/types/types";
-import { convertEthersValue, hash, Logger } from "@/utils";
+import { TimeConfig, firstBlockGrace } from "@/types";
+import {
+    Address,
+    BlockCalldata,
+    BlockHeight,
+    ChannelId,
+    ForkId,
+    Hash
+} from "@/types/types";
+import { convertEthersValue, DetachedPromises, hash, Logger } from "@/utils";
 
 type BlockState = { pending: number; complete: boolean; failed: boolean };
 type OnChainBlockValidationKey = string;
@@ -15,6 +22,10 @@ type ChannelKey = string;
 type BlockNumber = number;
 type NormalizedDisputeCommitment = string;
 type EventPromise = Promise<void>;
+export type BlockCalldataRecoveryResult = {
+    blockCalldata?: BlockCalldata;
+    validationScheduled: boolean;
+};
 type BlockStates = Map<BlockNumber, BlockState>;
 type StateChannelManagerEventName = keyof StateChannelManagerProxy["filters"];
 const STATE_CHANNEL_MANAGER_EVENT_NAMES = [
@@ -39,8 +50,10 @@ const STATE_CHANNEL_MANAGER_EVENT_NAME_SET =
 
 export default class EventSyncService {
     /** Calldata recoveries currently querying or scheduling validation. */
-    private readonly pendingOnChainBlockValidationKeys =
-        new Set<OnChainBlockValidationKey>();
+    private readonly pendingOnChainBlockValidations = new Map<
+        OnChainBlockValidationKey,
+        Promise<BlockCalldataRecoveryResult>
+    >();
     /** Calldata recoveries already completed during this service lifetime. */
     private readonly processedOnChainBlockValidationKeys =
         new Set<OnChainBlockValidationKey>();
@@ -131,26 +144,43 @@ export default class EventSyncService {
         return promise;
     }
 
-    shouldDeferCurrentValidation(status: OnChainBlockStatus): boolean {
-        return (
-            status === OnChainBlockStatus.SCHEDULED ||
-            status === OnChainBlockStatus.ALREADY_SCHEDULED
-        );
-    }
-
     async tryRecoverBlockCalldataAndScheduleValidation(
         forkId: ForkId,
         blockHeight: BlockHeight,
         blockAuthor: Address
-    ): Promise<OnChainBlockStatus> {
+    ): Promise<BlockCalldataRecoveryResult> {
         const validationKey = `${String(forkId)}:${blockHeight}:${String(blockAuthor).toLowerCase()}`;
-        if (this.pendingOnChainBlockValidationKeys.has(validationKey)) {
-            return OnChainBlockStatus.ALREADY_SCHEDULED;
-        }
+        const pending = this.pendingOnChainBlockValidations.get(validationKey);
+        if (pending) return pending;
         if (this.processedOnChainBlockValidationKeys.has(validationKey)) {
-            return OnChainBlockStatus.ALREADY_PROCESSED;
+            return {
+                blockCalldata: this.storage.blockCalldata.getBlockCalldata(
+                    forkId,
+                    blockHeight,
+                    blockAuthor
+                ),
+                validationScheduled: false
+            };
         }
-        this.pendingOnChainBlockValidationKeys.add(validationKey);
+
+        const recovery = this.recoverBlockCalldataAndScheduleValidation(
+            validationKey,
+            forkId,
+            blockHeight,
+            blockAuthor
+        ).finally(() => {
+            this.pendingOnChainBlockValidations.delete(validationKey);
+        });
+        this.pendingOnChainBlockValidations.set(validationKey, recovery);
+        return recovery;
+    }
+
+    private async recoverBlockCalldataAndScheduleValidation(
+        validationKey: OnChainBlockValidationKey,
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        blockAuthor: Address
+    ): Promise<BlockCalldataRecoveryResult> {
         try {
             const commitmentResult =
                 await this.stateChannelManagerContract.getBlockCallDataCommitment(
@@ -159,13 +189,16 @@ export default class EventSyncService {
                     blockHeight,
                     blockAuthor
                 );
-            if (!commitmentResult.found) return OnChainBlockStatus.NOT_FOUND;
+            if (!commitmentResult.found) {
+                return { validationScheduled: false };
+            }
             const commitment = commitmentResult.blockCalldataCommitment;
             const existing = this.storage.blockCalldata.getBlockCalldata(
                 forkId,
                 blockHeight,
                 blockAuthor
             );
+            let validationScheduled = false;
             if (!existing) {
                 const latest = await this.getProvider().getBlockNumber();
                 const fallback = this.getBlockFallbackFrom(latest, blockHeight);
@@ -182,23 +215,28 @@ export default class EventSyncService {
                     latest
                 );
                 const scheduledChannelId = this.channelId;
-                await Promise.all(
-                    logs.map((log) => this.scheduleLog(log, scheduledChannelId))
-                );
+                // onBlockCalldataPosted stores before its first await, so the
+                // explicit read below observes calldata without waiting for validation.
+                for (const log of logs) {
+                    const eventPromise = this.scheduleLog(
+                        log,
+                        scheduledChannelId
+                    );
+                    DetachedPromises.collect(eventPromise);
+                    validationScheduled = true;
+                }
             }
             const recovered = this.storage.blockCalldata.getBlockCalldata(
                 forkId,
                 blockHeight,
                 blockAuthor
             );
-            if (!recovered) return OnChainBlockStatus.NOT_FOUND;
+            if (!recovered) return { validationScheduled };
             this.processedOnChainBlockValidationKeys.add(validationKey);
-            return OnChainBlockStatus.SCHEDULED;
+            return { blockCalldata: recovered, validationScheduled };
         } catch (error) {
             this.logger.error("Block calldata recovery failed", { error });
-            return OnChainBlockStatus.NOT_FOUND;
-        } finally {
-            this.pendingOnChainBlockValidationKeys.delete(validationKey);
+            return { validationScheduled: false };
         }
     }
 

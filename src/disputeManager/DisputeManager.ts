@@ -217,6 +217,18 @@ class DisputeManager {
             if (!disputeFraudProof) {
                 throw new Error("No dispute fraud proof found for dispute");
             }
+            const { windowExists, isExpired } =
+                await this.stateChannelManagerContract.isKillPeriodExpired(
+                    dispute.input.channelId,
+                    dispute.input.forkId
+                );
+            if (!windowExists || isExpired) {
+                this.logger.warn(
+                    "killDispute no-op: dispute kill period is unavailable or expired",
+                    { disputeMeta, windowExists, isExpired }
+                );
+                return;
+            }
             txResponse =
                 await this.stateChannelManagerContract.applyDisputeFraudProofs([
                     disputeFraudProof
@@ -224,7 +236,7 @@ class DisputeManager {
 
             await txResponse.wait();
             this.logger.info(
-                `✅ Dispute killed successfully: ${formattedHash}`
+                `✅ Dispute fraud-proof transaction accepted: ${formattedHash}`
             );
         } catch (error) {
             const success = await tryHandleEvmError(error, {
@@ -233,6 +245,12 @@ class DisputeManager {
                 forkId: dispute.input.forkId,
                 signer: this.signer,
                 handlers: {
+                    RaceConditionDisputeKillPeriodExpired: () => {
+                        this.logger.info(
+                            `killDispute no-op: kill period expired for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
+                    },
                     RaceConditionOnChainSlashes: () => {
                         this.logger.info(
                             `killDispute no-op: on-chain slashes already cover dispute ${formattedHash}`,

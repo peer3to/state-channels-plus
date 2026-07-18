@@ -391,6 +391,8 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         if (!verifiedPeerAddress) return;
         if (!this.didReceiveAck(transport)) return;
         if (remotePreferred === undefined) return;
+        const stateManager = this.p2pManager.stateManager;
+        if (stateManager.isDisposed) return;
 
         // Only create/update the profile once the handshake has fully completed.
         let profile =
@@ -439,14 +441,25 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             );
         }
 
-        const stateManager = this.p2pManager.stateManager;
         const isChannelOpenedStatus =
             stateManager.getStatus() === Status.OPENED;
-        const isPeerParticipant =
-            await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
-                stateManager.getChannelId(),
-                completedPeerAddress
-            );
+        let isPeerParticipant: boolean;
+        try {
+            isPeerParticipant =
+                await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
+                    stateManager.getChannelId(),
+                    completedPeerAddress
+                );
+        } catch (error) {
+            if (stateManager.isDisposed) {
+                this.logger.debug(
+                    "Skipping finalized handshake after state manager disposal"
+                );
+                return;
+            }
+            throw error;
+        }
+        if (stateManager.isDisposed) return;
 
         if (isChannelOpenedStatus) {
             if (isPeerParticipant) {

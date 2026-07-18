@@ -509,7 +509,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         // require that the dispute window exists and is not expired
         (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        require(!isExpired, ErrorDisputeExpired());
+        require(!isExpired, RaceConditionDisputeKillPeriodExpired());
         bytes32 commitment = keccak256(abi.encode(dispute));
         bool isFound = false;
         uint256 foundIndex;

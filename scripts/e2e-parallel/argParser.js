@@ -17,7 +17,7 @@ Options:
       --slots <count>            Warm E2E infrastructure slots (0 disables)
   -w, --workers <count>          Maximum concurrent test processes
       --target-load <number>     Maximum average system load per CPU core
-      --scheduler-tick-ms <ms>   Scheduler admission interval
+  -i, --interval <ms>            Scheduler admission interval
       --mem-limit-gb <gb>        Memory budget for owned test processes
       --sdk-thread               Run the SDK host in a worker thread
       --no-sdk-thread            Run the SDK host on the main thread
@@ -198,7 +198,7 @@ function parseCliArgs(argv) {
             continue;
         }
 
-        if (arg === "--scheduler-tick-ms") {
+        if (arg === "--interval" || arg === "-i") {
             const v = takeNumber(argv[i + 1], (s) => Number.parseInt(s, 10));
             if (v !== undefined) {
                 options.schedulerTickMs = v;
@@ -206,8 +206,8 @@ function parseCliArgs(argv) {
             }
             continue;
         }
-        if (arg.startsWith("--scheduler-tick-ms=")) {
-            const v = takeNumber(arg.split("=")[1], (s) =>
+        if (arg.startsWith("--interval=") || arg.startsWith("-i=")) {
+            const v = takeNumber(arg.split("=").slice(1).join("="), (s) =>
                 Number.parseInt(s, 10)
             );
             if (v !== undefined) options.schedulerTickMs = v;

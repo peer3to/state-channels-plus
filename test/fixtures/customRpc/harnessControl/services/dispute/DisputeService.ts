@@ -1,4 +1,4 @@
-import { BytesLike, ZeroAddress, ZeroHash } from "ethers";
+import { BytesLike, Wallet, ZeroAddress, ZeroHash } from "ethers";
 
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
@@ -7,7 +7,7 @@ import Clock from "@/Clock";
 import { SignatureUtils, Codec, Type, hash as keccakHash } from "@/utils";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
 import type {
     DisputeStruct,
     DisputeConfirmationStruct,
@@ -202,6 +202,31 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         );
     }
 
+    async rewriteLastSignedBlockAuthorAsOutsider(
+        dispute: DisputeStruct,
+        stateSnapshotHash?: Hash
+    ): Promise<void> {
+        const proof = dispute.input.stateProof;
+        const index = proof.signedBlocks.length - 1;
+        if (index < 0) {
+            throw new Error(
+                "rewriteLastSignedBlockAuthorAsOutsider: stateProof has no signed blocks"
+            );
+        }
+        const outsider = Wallet.createRandom();
+        const block = Block.fromSignedBlock(proof.signedBlocks[index]);
+        const blockStruct = {
+            ...factoryBlockStructWithHeader(block.blockStruct, {
+                participant: outsider.address
+            }),
+            stateSnapshotHash:
+                stateSnapshotHash ?? block.blockStruct.stateSnapshotHash
+        };
+        proof.signedBlocks[index] = (
+            await Block.fromBlockStruct(blockStruct, outsider)
+        ).signedBlock;
+    }
+
     async rewriteLastMilestoneSignedBlockInDispute(
         dispute: DisputeStruct,
         transform: BlockTransform
@@ -249,6 +274,26 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
                 milestone.blockConfirmations[blockConfirmationIndex],
                 transform
             );
+    }
+
+    async appendLastMilestoneSignedBlockInDispute(
+        dispute: DisputeStruct,
+        transform: BlockTransform
+    ): Promise<void> {
+        const milestone = dispute.input.stateProof.milestones.at(-1);
+        const source = milestone?.blockConfirmations.at(-1);
+        if (!milestone || !source) {
+            throw new Error(
+                "appendLastMilestoneSignedBlockInDispute: milestone block missing"
+            );
+        }
+        milestone.blockConfirmations.push({
+            signedBlock: await this.remapSignedBlock(
+                source.signedBlock,
+                transform
+            ),
+            signatures: []
+        });
     }
 
     async rewriteMilestoneSignedBlockAtIndex(
@@ -460,6 +505,20 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         this.disputeManager.constructDispute = this.originalConstructDispute;
         this.originalConstructDispute = undefined;
         return true;
+    }
+
+    async recoverCommittedDisputes(forkId: ForkId): Promise<number> {
+        const commitments =
+            await this.sm.stateChannelManagerContract.getWindowCommitments(
+                this.sm.channelId,
+                forkId
+            );
+        await this.sm.eventSyncService.ensureDisputesProcessed(
+            this.sm.channelId,
+            forkId,
+            commitments
+        );
+        return commitments.length;
     }
 
     public createRPCMethods(transport: ATransport): DisputeRpcMethods {

@@ -95,4 +95,50 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
             });
         });
     });
+
+    describe("unfinalized milestone block structure", function () {
+        it("invalid tail signature → DisputeInvalidBlockStructure", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath();
+            await h.tamper.stubConstructDispute(3, (dispute) => {
+                const confirmations =
+                    dispute.input.stateProof.milestones.at(
+                        -1
+                    )?.blockConfirmations;
+                if (!confirmations || confirmations.length === 0) {
+                    throw new Error("Expected a milestone block");
+                }
+                const source = confirmations.at(-1)!;
+                const wrongSignerSignature = source.signatures[0];
+                if (!wrongSignerSignature) {
+                    throw new Error(
+                        "Expected a milestone confirmation signature"
+                    );
+                }
+                confirmations.push({
+                    signedBlock: {
+                        encodedBlock: source.signedBlock.encodedBlock,
+                        signature: wrongSignerSignature
+                    },
+                    signatures: []
+                });
+            });
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: true
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBlockStructure,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait({
+                syntheticOnChainParticipants: 1
+            });
+        });
+    });
 });

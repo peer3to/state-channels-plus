@@ -16,6 +16,7 @@ export type RaceConditionErrorName =
     | "RaceConditionForceInboundJoinForkDisputed"
     | "RaceConditionDisputeEvidencePeriodExpired"
     | "RaceConditionDisputeKillPeriodNotExpired"
+    | "RaceConditionDisputeKillPeriodExpired"
     | "RaceConditionDisputeAlreadyReduced"
     | "RaceConditionReductionExpectationDoesntMatch"
     | "RaceConditionDisputeAuditingRequired"

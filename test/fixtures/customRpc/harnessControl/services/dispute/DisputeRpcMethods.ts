@@ -52,6 +52,11 @@ export class DisputeRpcMethods extends ARpcMethods {
         );
     }
 
+    /** Recover missed committed-dispute logs through the production query path. */
+    public recoverCommittedDisputes(forkId: ForkId): Promise<number> {
+        return this.service.recoverCommittedDisputes(forkId);
+    }
+
     public probeReductionScheduleIsolation(
         forkId: ForkId,
         triggerTimestamp: number

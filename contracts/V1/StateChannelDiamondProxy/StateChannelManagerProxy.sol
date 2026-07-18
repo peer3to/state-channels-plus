@@ -484,6 +484,30 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool));
     }
 
+    function isInvalidBlockStructureInStateProof(StateProof memory stateProof, uint256 blockIndex)
+        public
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(StateProofFacet.isInvalidBlockStructureInStateProof, (stateProof, blockIndex))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function findFirstInvalidBlockStructureInStateProof(StateProof memory stateProof)
+        public
+        override(StateChannelManagerInterface)
+        returns (bool found, uint256 blockIndex)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(StateProofFacet.findFirstInvalidBlockStructureInStateProof, (stateProof))
+        );
+        return abi.decode(result, (bool, uint256));
+    }
+
     function verifyMilestones(
         bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
@@ -630,12 +654,13 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
         public
         view
-        returns (bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
+        returns (bool windowExists, bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
     {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        windowExists = _isDisputeWidnowCreated(disputeWindow);
         (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        return (isExpired, killPeriodEnd, block.timestamp);
+        return (windowExists, isExpired, killPeriodEnd, block.timestamp);
     }
 
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {

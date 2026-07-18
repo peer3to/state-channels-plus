@@ -37,6 +37,7 @@ describe("ContractCaller and ContractErrors", () => {
     it("should decode  contract errors correctly", async () => {
         const testCases = [
             "RaceConditionJoinChannelExpired",
+            "RaceConditionDisputeKillPeriodExpired",
             "ErrorDisputeAlreadyPosted",
             "ErrorBlockCalldataAlreadyPosted"
         ];

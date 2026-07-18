@@ -51,7 +51,6 @@ error ErrorNoDisputesProvided();
 
 //Auditing errors
 error ErrorDisputeCommitmentNotAvailable();
-error ErrorDisputeExpired();
 error ErrorDisputeGenesisInvalid();
 error ErrorDisputeStateMachineJoiningFailed();
 error ErrorDisputeStateMachineSlashingFailed();
@@ -78,6 +77,7 @@ error RaceConditionBlockHeightTooOld();
 error RaceConditionJoinChannelExpired();
 error RaceConditionDisputeEvidencePeriodExpired();
 error RaceConditionDisputeKillPeriodNotExpired();
+error RaceConditionDisputeKillPeriodExpired();
 error RaceConditionDisputeAlreadyReduced();
 error RaceConditionReductionExpectationDoesntMatch();
 error RaceConditionDisputeAuditingRequired();

@@ -4,7 +4,9 @@ import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import AValidationStrategy from "./AValidationStrategy";
+import AValidationStrategy, {
+    ParticipantSnapshots
+} from "./AValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
@@ -74,7 +76,8 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     }
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
-        unexpectedSignatures: Set<Signature>
+        unexpectedSignatures: Set<Signature>,
+        _participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
         const block = entry.block;
         // Punish the offenders: the transports that supplied the stray

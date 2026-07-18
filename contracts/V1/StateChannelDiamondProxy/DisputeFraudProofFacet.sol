@@ -18,6 +18,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             Dispute memory dispute = proofs[i].dispute;
             // not committed -> already killed (lost the kill-race) or never committed; no-op.
             if (!isDisputeCommitted(dispute)) continue;
+            DisputeWindow storage disputeWindow =
+                disputeData[dispute.input.channelId].disputeWindowMap[dispute.input.forkId];
+            (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+            // A successful batch means every committed proof was eligible and applied.
+            require(!isExpired, RaceConditionDisputeKillPeriodExpired());
             address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
             if (slashedParticipant == proofs[i].participant) {
                 _delegatecall(
@@ -67,6 +72,12 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeInboundHashNotInChain) {
             return _handleDisputeInboundHashNotInChain;
         }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBlockStructure) {
+            return _handleDisputeInvalidBlockStructure;
+        }
+        if (proofType == DisputeFraudProofType.DisputeBlockAuthorNotParticipant) {
+            return _handleDisputeBlockAuthorNotParticipant;
+        }
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -97,6 +108,66 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         return _isDisputeInboundHashValid(dispute) ? _invalid() : _valid(dispute.input.disputer);
+    }
+
+    function _handleDisputeInvalidBlockStructure(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        DisputeInvalidBlockStructure memory proof = abi.decode(encodedFraudProof, (DisputeInvalidBlockStructure));
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(
+                StateProofFacet.isInvalidBlockStructureInStateProof,
+                (dispute.input.stateProof, proof.blockIndexInUnfinalizedPartOfStateProof)
+            )
+        );
+        if (abi.decode(result, (bool))) return _valid(dispute.input.disputer);
+        return _invalid();
+    }
+
+    function _handleDisputeBlockAuthorNotParticipant(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        DisputeBlockAuthorNotParticipant memory proof =
+            abi.decode(encodedFraudProof, (DisputeBlockAuthorNotParticipant));
+        BlockConfirmation[] memory blockConfirmations =
+            _getUnfinalizedBlockConfirmationsFromStateProof(dispute.input.stateProof);
+        if (proof.blockIndexInUnfinalizedPartOfStateProof >= blockConfirmations.length) return _invalid();
+
+        SignedBlock memory signedBlock = blockConfirmations[proof.blockIndexInUnfinalizedPartOfStateProof].signedBlock;
+        (bool decoded, Block memory invalidBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(signedBlock.encodedBlock);
+        if (!decoded || dispute.input.channelId != invalidBlock.transaction.header.channelId) return _invalid();
+
+        (address signer, bool signatureValid) =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(signedBlock.encodedBlock, signedBlock.signature);
+        if (!signatureValid || signer != invalidBlock.transaction.header.participant) return _invalid();
+        if (invalidBlock.stateSnapshotHash != keccak256(abi.encode(proof.resultingStateSnapshot))) return _invalid();
+
+        if (invalidBlock.transaction.header.transactionCnt == 0) {
+            if (invalidBlock.previousBlockHash != keccak256(abi.encode(proof.previousStateSnapshot))) return _invalid();
+        } else {
+            (bool previousDecoded, Block memory previousBlock) =
+                UtilityFacet(utilityFacetAddress).tryDecodeBlock(proof.previousBlock.encodedBlock);
+            if (!previousDecoded) return _invalid();
+            if (invalidBlock.previousBlockHash != keccak256(proof.previousBlock.encodedBlock)) return _invalid();
+            if (previousBlock.stateSnapshotHash != keccak256(abi.encode(proof.previousStateSnapshot))) {
+                return _invalid();
+            }
+        }
+
+        if (
+            UtilityFacet(utilityFacetAddress).isAddressInArray(
+                proof.previousStateSnapshot.snapshotData.participants, signer
+            )
+                || UtilityFacet(utilityFacetAddress).isAddressInArray(
+                    proof.resultingStateSnapshot.snapshotData.participants, signer
+                )
+        ) return _invalid();
+        return _valid(dispute.input.disputer);
     }
 
     function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)

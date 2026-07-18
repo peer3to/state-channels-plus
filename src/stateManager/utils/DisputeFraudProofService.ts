@@ -1,4 +1,5 @@
 import Storage from "@/storage";
+import { Block, StateSnapshot } from "@/models";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -33,7 +34,9 @@ import {
     TimeoutTooEarlyStruct,
     DisputeLastMilestoneNotFinalAndNoAuditingDataStruct,
     InvalidDisputeReasonStruct,
-    DisputeStateProofHeaderMismatchStruct
+    DisputeStateProofHeaderMismatchStruct,
+    DisputeInvalidBlockStructureStruct,
+    DisputeBlockAuthorNotParticipantStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import { BigNumberish, BytesLike } from "ethers";
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
@@ -261,6 +264,48 @@ export default class DisputeFraudProofService {
 
         return this.storeFraudProof(dispute, {
             type: DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+            struct: proof
+        });
+    }
+
+    createDisputeInvalidBlockStructure(
+        dispute: DisputeStruct,
+        blockIndexInUnfinalizedPartOfStateProof: number
+    ): Hash {
+        const proof: DisputeInvalidBlockStructureStruct = {
+            blockIndexInUnfinalizedPartOfStateProof
+        };
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.DisputeInvalidBlockStructure,
+            struct: proof
+        });
+    }
+
+    createDisputeBlockAuthorNotParticipant(
+        dispute: DisputeStruct,
+        block: Block,
+        previousStateSnapshot: StateSnapshot,
+        resultingStateSnapshot: StateSnapshot,
+        blockIndexInUnfinalizedPartOfStateProof: number
+    ): Hash {
+        const previousBlock =
+            block.height === 0
+                ? { encodedBlock: "0x", signature: "0x" }
+                : this.storage.blocks.getBlock(block.previousBlockHash)
+                      ?.signedBlock;
+        if (!previousBlock) {
+            throw new Error(
+                `Cannot create dispute block-author proof: previous block ${block.previousBlockHash} is missing`
+            );
+        }
+        const proof: DisputeBlockAuthorNotParticipantStruct = {
+            blockIndexInUnfinalizedPartOfStateProof,
+            previousBlock,
+            previousStateSnapshot: previousStateSnapshot.toStruct(),
+            resultingStateSnapshot: resultingStateSnapshot.toStruct()
+        };
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.DisputeBlockAuthorNotParticipant,
             struct: proof
         });
     }
