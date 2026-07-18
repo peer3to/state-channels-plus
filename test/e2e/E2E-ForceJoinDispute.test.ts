@@ -32,9 +32,9 @@ describe("E2E: Force Join Dispute", function () {
 
         await h.transition.advanceState({ count: 3 });
 
-        // Restore stubs before canConstructMoreEvidence runs: peers 0/1 now read
-        // the real getLatestBlockHash() (join message hash) so their constructDispute
-        // matches the joiner's committed dispute → canConstructMoreEvidence = false
+        // Block assembly can include pending inbound messages again. Dispute
+        // construction always reads the real inbound head while this stub is
+        // active.
         await restoreInboundInclusion0();
         await restoreInboundInclusion1();
 

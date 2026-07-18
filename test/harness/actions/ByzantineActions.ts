@@ -172,8 +172,8 @@ export class ByzantineActions<
     }
 
     /**
-     * Suppress this peer's pending-inbound-inclusion reporting. Returns an async
-     * teardown that restores the original behavior.
+     * Make this peer omit pending inbound messages from authored blocks. Returns
+     * an async teardown that restores the original behavior.
      */
     async stubPendingInboundInclusion(
         peerIndex: number

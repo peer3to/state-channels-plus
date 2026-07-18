@@ -16,6 +16,10 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             if (!disputedForkId) throw new Error("Expected an active fork");
             h.event.resetEventSpies();
 
+            // The tamper below re-signs peer 2's milestone block with peer 2's
+            // harness key, so peer 2 is colluding even though peer 0 submits it.
+            h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 2 });
+
             await h.tamper.stubConstructDispute(0, async (dispute, sm) => {
                 const svc = sm.p2pManager.localRpc.dispute;
                 await svc.rewriteLastMilestoneBlockConfirmationInDispute(
@@ -69,7 +73,12 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 ).to.be.undefined;
             }
 
-            await h.dispute.resolveDisputeWait({ forkId: disputedForkId });
+            // This test verifies the dispute fraud proof. Peer 2's underlying
+            // block fraud proof may be applied by a later dispute.
+            await h.dispute.resolveDisputeWait({
+                forkId: disputedForkId,
+                assertMaliciousRemoved: false
+            });
         });
     });
 });

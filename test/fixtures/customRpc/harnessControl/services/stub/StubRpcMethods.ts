@@ -8,6 +8,8 @@ import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcM
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
+import type { StateSnapshot } from "@/models";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { id } from "ethers";
 import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
@@ -86,16 +88,23 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    /** Make this peer report no pending inbound message inclusion. */
+    /** Make authored blocks omit pending inbound messages. */
     public stubPendingInboundInclusion(): boolean {
-        const inbound = this.service.sm.storage.inboundMessages;
+        // This is deliberately scoped to block assembly. Stubbing the inbound
+        // storage head also corrupts disputes constructed while the stub is
+        // active.
+        const sm = this.service.sm as unknown as {
+            getPendingInboundMessageBlocks: (
+                previousStateSnapshot: StateSnapshot
+            ) => MessageBlockStruct[];
+        };
         if (!this.service.stubOriginals.has("pendingInboundInclusion")) {
             this.service.stubOriginals.set(
                 "pendingInboundInclusion",
-                inbound.getLatestBlockHash
+                sm.getPendingInboundMessageBlocks
             );
         }
-        inbound.getLatestBlockHash = () => undefined;
+        sm.getPendingInboundMessageBlocks = () => [];
         return true;
     }
 
@@ -104,9 +113,10 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             "pendingInboundInclusion"
         );
         if (original === undefined) return false;
-        const inbound = this.service.sm.storage.inboundMessages;
-        inbound.getLatestBlockHash =
-            original as typeof inbound.getLatestBlockHash;
+        const sm = this.service.sm as unknown as {
+            getPendingInboundMessageBlocks: unknown;
+        };
+        sm.getPendingInboundMessageBlocks = original;
         this.service.stubOriginals.delete("pendingInboundInclusion");
         return true;
     }

@@ -277,9 +277,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     });
 
                     const leaverIndex =
-                        await h.transition.participantLeaveDetached({
-                            statusTimeoutMs: 20000
-                        });
+                        await h.transition.participantLeaveStateTransition();
                     await h.transition.advanceState({
                         waitForPeers: [0, 1, 3],
                         count: 3
@@ -291,6 +289,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         count: 1
                     });
                     h.contextApi.captureOriginalFork();
+                    const disputedForkId = h.context.originalForkId!;
                     h.event.resetEventSpies();
 
                     await h.tamper.stubConstructDispute(3, (d, sm) => {
@@ -322,7 +321,9 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                             timeoutMs: 15000
                         }
                     );
-                    await h.dispute.resolveDisputeWait();
+                    await h.dispute.resolveDisputeWait({
+                        forkId: disputedForkId
+                    });
                 });
             });
         });
