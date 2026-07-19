@@ -20,6 +20,20 @@ describe("EventSyncService", function () {
         expect(result.detachedError).to.equal("Expected event-sync rejection");
     });
 
+    it("advances the processed-block cursor after a failed log is retried successfully", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0);
+        const result = await h
+            .control(h.getPeer(0))
+            .stub.probeRetriedEventSyncLog()
+            .request();
+
+        expect(result.handlerCallCount).to.equal(2);
+        expect(result.firstError).to.equal("Expected event-sync rejection");
+        expect(result.cursorAfterFailure).to.equal(result.cursorBefore);
+        expect(result.cursorAfterRetry).to.equal(result.blockNumber);
+    });
+
     it("joins concurrent calldata recovery onto one chain query", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);

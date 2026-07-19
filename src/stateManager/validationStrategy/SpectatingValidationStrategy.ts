@@ -57,14 +57,21 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
                 return true;
         }
     }
+    // Two classes of deviation, split by who caused it. A non-participant fault
+    // (unauthenticated junk, outsider author, wrong channel, stray signatures)
+    // is dropped + blacklisted while we keep spectating - author membership is
+    // checked before any linkage/timestamp check, so a non-participant only ever
+    // reaches these DISCONNECT hooks and must never be able to take us offline.
+    // A *provable* fraud by an actual channel participant (double-sign, invalid
+    // transition, wrong genesis, forged inbound, invalid timestamp) is the
+    // opposite: a peer in the channel lied to us, so we abort() - stop following
+    // the feed and lose interest in joining a channel with a proven liar.
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
-        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
-        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(
@@ -87,8 +94,14 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
             unexpectedSignatures
         );
         if (unexpectedSignatures.has(block.originalSignature)) {
-            // Garbage author — stop spectating this feed.
-            this.abort();
+            // Garbage author outside the participant union - not a channel
+            // member, so nobody to slash and no dispute. Blacklist the signers
+            // of the junk block and drop it; keep spectating.
+            for (const signature of unexpectedSignatures) {
+                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                    block.signatureToAddress(signature)
+                );
+            }
             return BlockValidationResult.DISCONNECT;
         }
         // Stray confirmation signatures don't invalidate an otherwise valid block.
@@ -113,18 +126,21 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async blockAuthorIsNotParticipant(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.abort();
+        // Non-participant author: authentication passed (they signed with their
+        // own key) but they are not in the channel. Drop + blacklist the sender,
+        // keep spectating - this is the DoS vector, never an abort.
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
         _conflictingBlock: Block,
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
+        // Provable fraud by a channel participant - stop following this channel.
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async invalidStateTransitionDetected(
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
         this.abort();
         return BlockValidationResult.DISPUTE;
@@ -136,7 +152,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async forgedInboundMessageBlockDetected(
-        block: Block,
+        _block: Block,
         _messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
         this.abort();
@@ -145,7 +161,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async conflictingButNotLinkedBlockDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.abort();
+        // Malformed linkage, not a provable fraud proof - drop the sender.
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -166,11 +182,11 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async blockIsNotLinkedAndIsNotFirstBlock(
         _block: Block
     ): Promise<BlockValidationResult> {
-        this.abort();
+        // Malformed linkage, not a provable fraud proof - drop the sender.
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
         this.abort();
         return BlockValidationResult.DISPUTE;

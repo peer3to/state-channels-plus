@@ -229,4 +229,77 @@ export class ByzantineActions<
             }
         };
     }
+
+    /**
+     * Take a source peer's real latest block and re-sign it with a throwaway
+     * outsider key: the block body is authentic, only the author signature is
+     * forged, so authentication fails on the signature alone.
+     */
+    async craftJunkBlockConfirmation(
+        sourcePeerIndex: number,
+        forkId: ForkId
+    ): Promise<{ encodedBlockConfirmation: string }> {
+        const bundle = await this.harness
+            .control(this.harness.getPeer(sourcePeerIndex))
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        const signedBlock = Codec.decode(
+            bundle!.encodedSignedBlock,
+            Type.SignedBlock
+        );
+        const outsider = ethers.Wallet.createRandom();
+        const forgedSignature = await outsider.signMessage(
+            ethers.getBytes(bundle!.hash)
+        );
+        return {
+            encodedBlockConfirmation: Codec.encode(
+                {
+                    signedBlock: {
+                        encodedBlock: signedBlock.encodedBlock,
+                        signature: forgedSignature
+                    },
+                    signatures: []
+                },
+                Type.BlockConfirmation
+            ) as string
+        };
+    }
+
+    /**
+     * Craft the next block (head height + 1) authored + signed by a throwaway
+     * outsider key: a new block position, so it is validated fresh rather than
+     * CRDT-merged into the head. Authentication passes (signature matches the
+     * author) but the author is not a channel participant, and membership is
+     * checked before linkage -> reaches blockAuthorIsNotParticipant (the
+     * handshaken-outsider DoS vector).
+     */
+    async craftOutsiderAuthoredBlockConfirmation(
+        sourcePeerIndex: number,
+        forkId: ForkId
+    ): Promise<{ encodedBlockConfirmation: string }> {
+        const bundle = await this.harness
+            .control(this.harness.getPeer(sourcePeerIndex))
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        const head = Block.fromSignedBlock(
+            Codec.decode(bundle!.encodedSignedBlock, Type.SignedBlock)
+        );
+        const outsider = ethers.Wallet.createRandom();
+        const nextBlockStruct = {
+            ...factory.blockStructWithTransactionHeader(head.blockStruct, {
+                participant: outsider.address as Address,
+                transactionCnt: Number(head.height) + 1
+            }),
+            previousBlockHash: bundle!.hash
+        };
+        const outsiderSignedBlock = (
+            await Block.fromBlockStruct(nextBlockStruct, outsider)
+        ).signedBlock;
+        return {
+            encodedBlockConfirmation: Codec.encode(
+                { signedBlock: outsiderSignedBlock, signatures: [] },
+                Type.BlockConfirmation
+            ) as string
+        };
+    }
 }

@@ -607,9 +607,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 }
             }
         }
+        uint256 firstBlockGrace = hasBlock ? 0 : getEvidenceTime();
         //TODO think >= or >
         (bool ok, uint256 maxValidTimestamp) =
-            Math.tryAdd(previousTimestamp, getP2pTime() + getAgreementTime() + getChainFallbackTime());
+            Math.tryAdd(previousTimestamp, firstBlockGrace + getP2pTime() + getAgreementTime() + getChainFallbackTime());
         if (ok && timeoutCalldataPostedProof.onChainTimestamp > maxValidTimestamp) {
             return false;
         }
