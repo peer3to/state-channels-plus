@@ -74,7 +74,7 @@ describe("E2E: Join/Leave Sequence", function () {
         });
 
         // Capture the state before malicious action
-        const preDisputeForkId = h.activeForkId;
+        const preDisputeForkId = h.activeForkId!;
         h.event.resetEventSpies();
 
         // next is turn of peer 1

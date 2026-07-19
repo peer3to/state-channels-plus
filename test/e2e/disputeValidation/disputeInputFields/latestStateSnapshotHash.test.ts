@@ -13,6 +13,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetup();
                     await h.assert.sync.peersInSyncWait();
+                    const forkId = h.activeForkId!;
 
                     await h.tamper.stubConstructDispute(1, (dispute, sm) => {
                         dispute.input.stateProof.milestones = [];
@@ -38,7 +39,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                             timeoutMs: 10000
                         }
                     );
-                    await h.dispute.resolveDisputeWait();
+                    await h.dispute.resolveDisputeWait({ forkId });
                 });
             });
         });
@@ -49,6 +50,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetup();
                     await h.assert.sync.peersInSyncWait();
+                    const forkId = h.activeForkId!;
 
                     await h.tamper.stubConstructDispute(1, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
@@ -73,7 +75,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                             timeoutMs: 10000
                         }
                     );
-                    await h.dispute.resolveDisputeWait();
+                    await h.dispute.resolveDisputeWait({ forkId });
                 });
             });
 
@@ -81,6 +83,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                 it("[no calldata] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 3)", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetup({ peerCount: 4 });
+                    const forkId = h.activeForkId!;
 
                     const disconnectedAuditorIndex = 3;
                     await h.network.disconnectPeer(disconnectedAuditorIndex);
@@ -111,7 +114,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                             timeoutMs: 10000
                         }
                     );
-                    await h.dispute.resolveDisputeWait();
+                    await h.dispute.resolveDisputeWait({ forkId });
                 });
             });
         });
@@ -123,6 +126,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                 it("[no calldata] dispute.input.latestStateSnapshotHash = random → DisputeInvalidStateProof (killed by peer 0)", async function () {
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupDisconnectedPeer();
+                    const forkId = h.activeForkId!;
 
                     await h.tamper.stubConstructDispute(3, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
@@ -148,7 +152,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                             timeoutMs: 15000
                         }
                     );
-                    await h.dispute.resolveDisputeWait();
+                    await h.dispute.resolveDisputeWait({ forkId });
                 });
             });
 
@@ -158,6 +162,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetupDisconnectedPeer({
                         timeConfig: { p2pTime: 3 }
                     });
+                    const forkId = h.activeForkId!;
 
                     await h.tamper.stubConstructDispute(3, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
@@ -184,7 +189,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                             timeoutMs: 10000
                         }
                     );
-                    await h.dispute.resolveDisputeWait();
+                    await h.dispute.resolveDisputeWait({ forkId });
                 });
             });
         });
@@ -197,6 +202,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupCalldataPath();
                     await h.assert.sync.peersInSyncWait();
+                    const forkId = h.activeForkId!;
 
                     await h.tamper.stubConstructDispute(3, (d, sm) => {
                         d.input.stateProof.milestones = [];
@@ -223,6 +229,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         }
                     );
                     await h.dispute.resolveDisputeWait({
+                        forkId,
                         syntheticOnChainParticipants: 1
                     });
                 });
@@ -235,6 +242,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const h = TestSession.getHarness();
                     await h.scenario.preDisputeSetupCalldataPath();
                     await h.assert.sync.peersInSyncWait();
+                    const forkId = h.activeForkId!;
 
                     await h.tamper.stubConstructDispute(3, (d, sm) => {
                         d.input.latestStateSnapshotHash =
@@ -259,6 +267,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         }
                     );
                     await h.dispute.resolveDisputeWait({
+                        forkId,
                         syntheticOnChainParticipants: 1
                     });
                 });
@@ -337,6 +346,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetupDisconnectedPeer({
                         timeConfig: { p2pTime: 3 }
                     });
+                    const forkId = h.activeForkId!;
 
                     // signedBlocks-only disputes do not auto-post calldata (no milestones).
                     await h.tamper.stubConstructDispute(3, (d, sm) => {
@@ -367,7 +377,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                             timeoutMs: 15000
                         }
                     );
-                    await h.dispute.resolveDisputeWait();
+                    await h.dispute.resolveDisputeWait({ forkId });
                 });
             });
         });

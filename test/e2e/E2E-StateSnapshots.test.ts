@@ -361,9 +361,10 @@ describe("E2E: State Snapshots", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 2);
+        const forkId = h.activeForkId!;
 
         await h.byzantine.submitDoubleSignBlock(1);
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
 
         const honest = [0, 2, 3];
         await h.event.waitForEventCounts(
@@ -395,6 +396,7 @@ describe("E2E: State Snapshots", function () {
         it("disputeWindow.evidence.creationTimestamp != 0 → on-chain snapshot updates but disputeWindowMap NOT cleared (dispute kill still resolves)", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
 
             await h.tamper.postTamperedDispute(1, (dispute) => {
                 dispute.input.stateProof.milestones = [];
@@ -437,7 +439,10 @@ describe("E2E: State Snapshots", function () {
                 )
             );
 
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 15000
+            });
         });
     });
 });

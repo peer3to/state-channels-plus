@@ -10,6 +10,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
         it("stateProof.signedBlocks[-1].header.channelId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -36,12 +37,13 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                     DisputeFraudProofType.DisputeStateProofHeaderMismatch,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("stateProof.signedBlocks[-1].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -68,7 +70,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                     DisputeFraudProofType.DisputeStateProofHeaderMismatch,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("stateProof.signedBlocks[0].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
@@ -78,6 +80,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             // ever reached for a block[0] that is genuinely on the disputed fork.
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -104,7 +107,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                     DisputeFraudProofType.DisputeStateProofHeaderMismatch,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -112,6 +115,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
         it("stateProof.milestones[-1].blockConfirmations[-1].header.channelId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -140,6 +144,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 syntheticOnChainParticipants: 1
             });
         });
@@ -147,6 +152,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
         it("stateProof.milestones[-1].blockConfirmations[-1].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -175,6 +181,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 syntheticOnChainParticipants: 1
             });
         });

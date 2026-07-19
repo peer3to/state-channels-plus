@@ -78,7 +78,10 @@ export const DISPUTE_SOUNDNESS_MENU: FuzzAction[] = [
             console.log(
                 `[fuzz]   attack=${attack.name} attacker=peer${attacker}`
             );
-            await h.dispute.resolveDisputeWait(RESOLVE);
+            await h.dispute.resolveDisputeWait({
+                ...RESOLVE,
+                forkId: forkBefore
+            });
             // settle the new fork before continuing (see ATTACK_CATALOG D-12)
             await h.assert.snapshot.localSnapshotsChangedWait({
                 previousForkId: forkBefore,

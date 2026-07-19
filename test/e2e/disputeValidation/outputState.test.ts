@@ -10,6 +10,7 @@ describe("E2E: dispute validation / outputState", function () {
     it("dispute.outputSnapshotDataHash = random → DisputeInvalidOutputState", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
+        const forkId = h.activeForkId!;
 
         await h.tamper.stubConstructDispute(2, async (dispute, sm) => {
             dispute.outputSnapshotDataHash =
@@ -31,6 +32,6 @@ describe("E2E: dispute validation / outputState", function () {
                 DisputeFraudProofType.DisputeInvalidOutputState,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 });

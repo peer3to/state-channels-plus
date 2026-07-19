@@ -25,7 +25,7 @@ describe("test time config", () => {
 
     it("includes first-block grace only at height zero", () => {
         const config = resolveTestTimeConfig();
-        expect(protocolEventTimeoutMs(config, 0, 4)).to.equal(12000);
-        expect(protocolEventTimeoutMs(config, 1, 4)).to.equal(9000);
+        expect(protocolEventTimeoutMs(config, 0, 4)).to.equal(15000);
+        expect(protocolEventTimeoutMs(config, 1, 4)).to.equal(12000);
     });
 });

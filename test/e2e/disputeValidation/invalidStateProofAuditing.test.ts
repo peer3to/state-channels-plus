@@ -12,6 +12,7 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
     it("[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetupCalldataPath();
+        const forkId = h.activeForkId!;
 
         const byzantineProofAuthorIndex = 2;
         h.contextApi.markMaliciousPeer({
@@ -75,6 +76,7 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
         // author is added to the window's on-chain slash set, so normal
         // reduction must settle the fork without that participant.
         await h.dispute.resolveDisputeWait({
+            forkId,
             forkSettleTimeoutMs: 15000,
             // preDisputeSetupCalldataPath force-joins one non-harness wallet.
             syntheticOnChainParticipants: 1

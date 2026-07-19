@@ -6,6 +6,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
     it("dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
+        const forkId = h.activeForkId!;
 
         const fakeSlashedAddress = h.getPeer(0).address;
         await h.tamper.stubConstructDispute(
@@ -35,7 +36,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
                 DisputeFraudProofType.DisputeOnChainSlashesNotSubset,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 
     it("dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason", async function () {
@@ -92,6 +93,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
             timeoutMs: 10000
         });
         await h.dispute.resolveDisputeWait({
+            forkId: h.context.originalForkId!,
             forkSettleTimeoutMs: 15000
         });
     });
@@ -99,6 +101,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
     it("dispute.input.onChainSlashes has > maxSlashCount distinct addresses → reduce must not OOB-panic, both offenders slashed", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({ peerCount: 4 });
+        const forkId = h.activeForkId!;
 
         const junkSlashes = Array.from({ length: 8 }, randomAddress);
         await h.tamper.stubConstructDispute(
@@ -116,7 +119,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
             initiatedWithAuditingData: false
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
 
         await h.assert.dispute.slashedOnChainExactly([
             h.getPeer(1).address,

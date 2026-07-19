@@ -17,10 +17,11 @@ describe("E2E: Dispute Manager", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({ peerCount: 4 });
+            const forkId = h.activeForkId!;
             const nextPeer = await h.query.getNextPeerToWrite();
             await h.byzantine.submitInvalidStateTransitionBlock(nextPeer.index);
             await h.assert.dispute.initiatedAndCommitedWait();
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("should post updated state snapshot after fork resolution", async function () {
@@ -47,6 +48,7 @@ describe("E2E: Dispute Manager", function () {
             await h.scenario.preDisputeSetup({
                 timeConfig: { evidenceTime: 6 }
             });
+            const forkId = h.activeForkId!;
 
             // Post a dispute from peer 1 that is internally valid but has no legitimate
             // enforcement basis: no timeout, no on-chain slashes, no self-removal.
@@ -66,12 +68,16 @@ describe("E2E: Dispute Manager", function () {
                     DisputeFraudProofType.InvalidDisputeReason
             });
 
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 15000
+            });
         });
 
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
 
             await h.tamper.postTamperedDispute(
                 3,
@@ -107,6 +113,7 @@ describe("E2E: Dispute Manager", function () {
                 timeoutMs: 15000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 forkSettleTimeoutMs: 15000,
                 syntheticOnChainParticipants: 1
             });
@@ -117,6 +124,7 @@ describe("E2E: Dispute Manager", function () {
             await h.scenario.preDisputeSetup({
                 timeConfig: { evidenceTime: 6 }
             });
+            const forkId = h.activeForkId!;
             await h.byzantine.tamperedDisputeDoubleFault(1);
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
                 mode: "atLeast"
@@ -125,7 +133,10 @@ describe("E2E: Dispute Manager", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 20000 });
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 20000
+            });
         });
     });
 

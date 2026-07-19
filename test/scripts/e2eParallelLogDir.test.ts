@@ -20,6 +20,7 @@ const { getHelpText, parseCliArgs } =
 const {
     colorize,
     countStarvation,
+    getStarvationSummary,
     parseTimings,
     isDangerousPurgeTarget,
     isWithinDefaultLogDir,
@@ -28,6 +29,10 @@ const {
 } = require("../../scripts/e2e-parallel/logging.js") as {
     colorize: (color: string, text: string) => string;
     countStarvation: (text: string) => number;
+    getStarvationSummary: (tasks: Array<Record<string, unknown>>) => {
+        recovered: Array<Record<string, unknown>>;
+        repeated: Array<Record<string, unknown>>;
+    };
     parseTimings: (text: string) => {
         el: { main: number; sdk: number; vm: number; watchdog: number };
         maxEventLoopDelayMs: number;
@@ -44,6 +49,12 @@ const { getStarvationDisposition } =
             starvationRetryCount: number
         ) => "complete" | "retry" | "fail";
     };
+const { buildBaseEnv } = require("../../scripts/test-e2e-parallel.js") as {
+    buildBaseEnv: (threadModes: {
+        sdkThread: boolean;
+        vmThread: boolean;
+    }) => NodeJS.ProcessEnv;
+};
 
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
@@ -205,6 +216,19 @@ describe("e2e-parallel logging - starvation diagnostics", function () {
         expect(colorize("darkYellow", "fail")).to.equal(
             "\u001b[33mfail\u001b[0m"
         );
+        expect(colorize("lightGreen", "recovered")).to.equal(
+            "\u001b[92mrecovered\u001b[0m"
+        );
+    });
+
+    it("reports only successful retries as recovered and repeated starvation as yellow", function () {
+        const recovered = { starvationRetrySucceeded: true };
+        const repeated = { repeatedStarvation: true };
+        const ordinary = { starveCount: 0 };
+
+        expect(
+            getStarvationSummary([recovered, repeated, ordinary])
+        ).to.deep.equal({ recovered: [recovered], repeated: [repeated] });
     });
 
     it("deduplicates propagated watchdog errors and includes their real peak", function () {
@@ -230,5 +254,13 @@ describe("e2e-parallel logging - starvation diagnostics", function () {
 
         expect(countStarvation(output)).to.equal(2);
         expect(parseTimings(output).maxEventLoopDelayMs).to.equal(1100);
+    });
+});
+
+describe("e2e-parallel child environment", function () {
+    it("disables remote crash-log uploads because each child has a local run log", function () {
+        const env = buildBaseEnv({ sdkThread: true, vmThread: true });
+
+        expect(env.CRASH_LOG_UPLOAD_ENDPOINT).to.equal("");
     });
 });

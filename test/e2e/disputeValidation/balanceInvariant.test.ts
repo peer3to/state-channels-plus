@@ -6,6 +6,7 @@ describe("E2E: dispute validation / balanceInvariant", function () {
     it("peer 2 uploads a dispute whose committed snapshot breaks the balance invariant → DisputeInvalidBalanceInvariant", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
+        const forkId = h.activeForkId!;
 
         const forged = await h.tamper.buildForgedSnapshot(2, (ctx) => ({
             snapshotData: {
@@ -66,6 +67,6 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
             mode: "atLeast"
         });
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 });

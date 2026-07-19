@@ -30,6 +30,7 @@ describe("E2E: Force Join Dispute", function () {
         // Advance N=3 blocks (peers 0/1 produce blocks without the join message)
         //  on the 3rd block, the force-join dispute is triggered
 
+        const forkId = h.activeForkId!;
         await h.transition.advanceState({ count: 3 });
 
         // Block assembly can include pending inbound messages again. Dispute
@@ -38,7 +39,10 @@ describe("E2E: Force Join Dispute", function () {
         await restoreInboundInclusion0();
         await restoreInboundInclusion1();
 
-        await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            forkSettleTimeoutMs: 15000
+        });
 
         expect(
             await h.control(h.getPeer(joiner.index)).query.getStatus().request()

@@ -248,7 +248,10 @@ class P2pRuntimeClient<T = ethers.Contract> {
         // rejected by the guard in `request` — the host needs it to gracefully
         // close its transport/timers before the worker is terminated.
         try {
-            await this.request<void>({ type: "dispose" });
+            // Disposal owns its cleanup bounds. The generic request timeout can
+            // otherwise terminate a worker while provider/DHT handles are still
+            // closing, which makes Node abort in uv_loop_close().
+            await this.request<void>({ type: "dispose" }, { timeoutMs: null });
         } catch {
             // The host may already be gone; proceed with local teardown.
         }

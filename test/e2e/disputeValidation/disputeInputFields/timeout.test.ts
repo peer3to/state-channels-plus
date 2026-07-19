@@ -45,7 +45,10 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 DisputeFraudProofType.TimeoutNotLinkedToLatestState,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        await h.dispute.resolveDisputeWait({
+            forkId: h.context.originalForkId!,
+            forkSettleTimeoutMs: 15000
+        });
     });
 
     it("dispute.input.timeout.participant != next writer → TimeoutParticipantNotNext", async function () {
@@ -54,6 +57,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         await h.scenario.preDisputeSetup({
             timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
         });
+        const forkId = h.activeForkId!;
 
         // Peer 0 submits a timeout dispute with the wrong participant.
         await h.tamper.stubConstructDispute(
@@ -79,7 +83,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 DisputeFraudProofType.TimeoutParticipantNotNext,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 
     describe("TimeoutTooEarly", function () {
@@ -88,6 +92,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             await h.scenario.preDisputeSetup({
                 timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
             });
+            const forkId = h.activeForkId!;
             h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
             await h.tamper.postTamperedDispute(0, () => {}, {
@@ -132,6 +137,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             await h.scenario.preDisputeSetup({
                 timeConfig: { evidenceTime: INVALID_DISPUTE_EVIDENCE_TIME }
             });
+            const forkId = h.activeForkId!;
             // peer 2 is the silent non-writer → exclude from fork-change barrier.
             h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
@@ -156,7 +162,10 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             });
 
             await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 15000
+            });
         });
 
         it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
@@ -165,6 +174,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             // Mark the non-writer up front so honest-peer barriers (committedWait,
             // resolveDisputeWait) exclude peer 2.
             h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
+            const originalForkId = h.activeForkId!;
 
             // Natural timeout: peer 2 never authors.
             await h.assert.dispute.initiatedAndCommitedWait({
@@ -191,7 +201,10 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 }
             }
 
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
+                forkSettleTimeoutMs: 15000
+            });
         });
 
         it("forged TimeoutTooEarly against a legitimate timeout dispute → proof author slashed", async function () {
@@ -199,6 +212,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             await h.scenario.preDisputeSetup();
             // peer 2 does not write, so it will timeout naturally.
             h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
+            const forkId = h.activeForkId!;
 
             await h.assert.dispute.initiatedAndCommitedWait({
                 peersIndices: [0, 1],
@@ -216,7 +230,10 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
             await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
 
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 15000
+            });
         });
     });
 

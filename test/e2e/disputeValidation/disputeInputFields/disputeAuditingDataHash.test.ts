@@ -17,6 +17,7 @@ describe("E2E: dispute validation / disputeInputFields / disputeAuditingDataHash
         await h.scenario.preDisputeSetup({
             timeConfig: { evidenceTime: 6 }
         });
+        const forkId = h.activeForkId!;
 
         await h.tamper.stubConstructDispute(
             0,
@@ -45,7 +46,7 @@ describe("E2E: dispute validation / disputeInputFields / disputeAuditingDataHash
             { durationMs: 3000, maxCount: 0 }
         );
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
 
         await h.assert.sync.maliciousPeerExcluded();
         // preDisputeSetup defaults to 3 peers; one malicious peer (the double-signer)

@@ -109,6 +109,7 @@ describe("E2E: dispute validation / futureBlock", function () {
         }
 
         await h.dispute.resolveDisputeWait({
+            forkId,
             assertMaliciousRemoved: false
         });
     });

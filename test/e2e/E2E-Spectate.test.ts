@@ -623,6 +623,7 @@ describe("E2E: Spectate Service", function () {
 
             const maliciousPeerIndex = 0;
             const honestPeerIndices = [1, 2, 3];
+            const forkId = h.activeForkId!;
 
             h.event.resetEventSpies();
             await h.byzantine.submitInvalidStateTransitionBlock(
@@ -634,6 +635,7 @@ describe("E2E: Spectate Service", function () {
             // Why? Because peers race and if they commit at the same it is ok
             // If 1 peer commits first and others audit -> it's possible that others hit hasMoreEvidence=false so they don't submit
             await h.dispute.resolveDisputeWait({
+                forkId,
                 honestPeerIndices: honestPeerIndices
             });
 
@@ -700,6 +702,7 @@ describe("E2E: Spectate Service", function () {
 
             const maliciousPeerIndex = 0;
             const honestPeerIndices = [1, joiner.index];
+            const forkId = h.activeForkId!;
 
             await h.byzantine.submitInvalidStateTransitionBlock(
                 maliciousPeerIndex
@@ -710,6 +713,7 @@ describe("E2E: Spectate Service", function () {
             });
 
             const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId,
                 honestPeerIndices,
                 forkSettleTimeoutMs: 15000
             });
@@ -900,6 +904,7 @@ describe("E2E: Spectate Service", function () {
             // block consumes the spectator's inbound. agreementTime=4s gives a
             // window where no peer has posted a block yet.
             const leaverIndex = 0;
+            const originalForkId = h.activeForkId!;
             await h
                 .control(h.getPeer(leaverIndex))
                 .dispute.setForceExit(true)
@@ -920,8 +925,8 @@ describe("E2E: Spectate Service", function () {
                 expectedCount: 1
             });
 
-            const originalForkId = h.activeForkId!;
             await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
                 forkSettleTimeoutMs: 15000,
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false

@@ -23,5 +23,10 @@ export function protocolEventTimeoutMs(
         timeConfig.agreementTime +
         timeConfig.chainFallbackTime +
         firstBlockGrace(timeConfig, blockHeight);
-    return (triggerSeconds + settlementMarginSeconds) * 1000;
+    // After the timeout becomes eligible, allow the full evidence window for
+    // the dispute upload, audit, fraud-proof transaction, and kill event.
+    return (
+        (triggerSeconds + timeConfig.evidenceTime + settlementMarginSeconds) *
+        1000
+    );
 }

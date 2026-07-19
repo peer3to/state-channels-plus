@@ -7,6 +7,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
             const h = TestSession.getHarness();
             // preDisputeSetupCalldataPath produces a milestones-only state proof.
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
 
             // Inject an extra signedBlock alongside the real milestones.
             // verifyStateProof rejects any proof where both arrays are non-empty.
@@ -49,6 +50,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 syntheticOnChainParticipants: 1
             });
         });
@@ -58,6 +60,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
         it("stateProof.milestones[0].blockConfirmations = [] → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
 
             // Empty blockConfirmations on the first milestone causes
             // _isMilestoneFinalWithExpectedParticipants to return (false, 0)
@@ -91,6 +94,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 syntheticOnChainParticipants: 1
             });
         });
@@ -100,6 +104,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
         it("invalid tail signature → DisputeInvalidBlockStructure", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
             await h.tamper.stubConstructDispute(3, (dispute) => {
                 const confirmations =
                     dispute.input.stateProof.milestones.at(
@@ -137,6 +142,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 syntheticOnChainParticipants: 1
             });
         });

@@ -11,6 +11,7 @@ describe("E2E: dispute validation / stateProof / undecodableBlock", function () 
     it("stateProof.milestones[-1].blockConfirmations[-1].signedBlock.encodedBlock = junk → DisputeInvalidStateProof", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetupCalldataPath();
+        const forkId = h.activeForkId!;
 
         await h.tamper.stubConstructDispute(
             3,
@@ -38,6 +39,9 @@ describe("E2E: dispute validation / stateProof / undecodableBlock", function () 
                 DisputeFraudProofType.DisputeInvalidStateProof,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait({ syntheticOnChainParticipants: 1 });
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            syntheticOnChainParticipants: 1
+        });
     });
 });

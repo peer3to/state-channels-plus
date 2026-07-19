@@ -33,6 +33,9 @@ function buildBaseEnv(threadModes) {
     return {
         ...process.env,
         LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
+        // Every child already writes its complete output to the run directory.
+        // Remote uploads can leave DNS/HTTP requests active during worker exit.
+        CRASH_LOG_UPLOAD_ENDPOINT: "",
         NODE_OPTIONS: [
             process.env.NODE_OPTIONS,
             "--enable-source-maps",
@@ -228,8 +231,12 @@ async function main() {
     }
 }
 
-main().catch((err) => {
-    _teardown();
-    console.error(err);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch((err) => {
+        _teardown();
+        console.error(err);
+        process.exit(1);
+    });
+}
+
+module.exports = { buildBaseEnv };

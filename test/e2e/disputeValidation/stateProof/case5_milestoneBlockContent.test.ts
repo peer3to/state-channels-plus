@@ -91,6 +91,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             await h.scenario.preDisputeSetupCalldataPath({
                 timeConfig: { evidenceTime: 6 }
             });
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const svc = sm.p2pManager.localRpc.dispute;
@@ -135,6 +136,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 syntheticOnChainParticipants: 1,
                 forkSettleTimeoutMs: 20000
             });

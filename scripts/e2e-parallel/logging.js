@@ -11,6 +11,7 @@ const COLORS = {
     blue: "\x1b[34m",
     orange: "\x1b[38;5;208m",
     green: "\x1b[32m",
+    lightGreen: "\x1b[92m",
     red: "\x1b[31m",
     yellow: "\x1b[33m",
     darkYellow: "\x1b[33m",
@@ -391,6 +392,13 @@ function gasPeakLine(slotId, { used, limit, pct, block }) {
     );
 }
 
+function getStarvationSummary(tasks) {
+    return {
+        recovered: tasks.filter((task) => task.starvationRetrySucceeded),
+        repeated: tasks.filter((task) => task.repeatedStarvation)
+    };
+}
+
 function summary({
     tasks,
     failed,
@@ -408,7 +416,7 @@ function summary({
     const totalPassing = tasks.length - totalFailing;
     const speedup = wallMs > 0 ? sumDurationMs / wallMs : 0;
     const oomTasks = tasks.filter((t) => (t.oomCount || 0) > 0);
-    const starvedTasks = tasks.filter((t) => (t.starveCount || 0) > 0);
+    const starvation = getStarvationSummary(tasks);
     const totalStartupMs = tasks.reduce((s, t) => s + (t.startupMs || 0), 0);
     const totalDeployMs = tasks.reduce((s, t) => s + (t.deployMs || 0), 0);
     const totalWorkerBootMs = tasks.reduce(
@@ -443,15 +451,26 @@ function summary({
             `  Raise SCP_WORKER_MAX_OLD_SPACE_MB / NODE_OPTIONS=--max-old-space-size, lower --slots, or lower --target-load.`
         );
     }
-    if (starvedTasks.length > 0) {
-        const totalStarve = starvedTasks.reduce((s, t) => s + t.starveCount, 0);
+    if (starvation.recovered.length > 0) {
+        console.log(
+            colorize(
+                "lightGreen",
+                `  ${starvation.recovered.length} test(s) recovered from starvation on their second run`
+            )
+        );
+    }
+    if (starvation.repeated.length > 0) {
+        const totalStarve = starvation.repeated.reduce(
+            (sum, task) => sum + task.starveCount,
+            0
+        );
         console.log(
             colorize(
                 "yellow",
-                `  ${starvedTasks.length} test(s) hit event-loop starvation (>1s, ${totalStarve} event(s) total):`
+                `  ${starvation.repeated.length} test(s) hit event-loop starvation on both runs (>1s, ${totalStarve} event(s) total):`
             )
         );
-        for (const t of starvedTasks) {
+        for (const t of starvation.repeated) {
             console.log(`    - ${t.label}: starved x${t.starveCount}`);
         }
     }
@@ -539,5 +558,6 @@ module.exports = {
     starvationRetry,
     result,
     gasPeakLine,
+    getStarvationSummary,
     summary
 };

@@ -64,6 +64,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
         it("first signedBlock height is not 0 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -92,7 +93,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                     DisputeFraudProofType.DisputeInvalidStateProof,
                 timeoutMs: 15000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -100,6 +101,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
         it("stateSnapshotHash = ZeroHash → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const svc = sm.p2pManager.localRpc.dispute;
@@ -132,7 +134,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                     DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -140,6 +142,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
         it("messageBlocks injected with forged inbound message → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(
                 3,
@@ -195,7 +198,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                     DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -203,6 +206,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
         it("signedBlocks[1].previousBlockHash = random → DisputeInvalidBlockStructure", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -237,7 +241,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                     DisputeFraudProofType.DisputeInvalidBlockStructure,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -245,6 +249,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
         it("invalid author signature → DisputeInvalidBlockStructure", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
             await h.tamper.stubConstructDispute(3, (dispute) => {
                 if (dispute.input.stateProof.signedBlocks.length < 2) {
                     throw new Error("Expected at least two signed blocks");
@@ -265,12 +270,13 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                     DisputeFraudProofType.DisputeInvalidBlockStructure,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("skipped height → DisputeInvalidBlockStructure", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 const index = dispute.input.stateProof.signedBlocks.length - 1;
@@ -292,7 +298,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                     DisputeFraudProofType.DisputeInvalidBlockStructure,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -300,6 +306,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
         it("valid outsider-authored block → dedicated dispute proof only", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -346,12 +353,13 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                 }
             }
 
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("outsider-authored block with fabricated snapshot hash → fallback transition proof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
@@ -376,7 +384,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
                 timeoutMs: 15000
             });
 
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 });

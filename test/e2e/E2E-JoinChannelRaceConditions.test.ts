@@ -298,6 +298,7 @@ describe("E2E: Join channel race conditions", function () {
             // dispute. The dispute is valid (selfRemoval=true) and not slashed.
             const leaverIndex = 0;
             const leaverAddress = h.getPeer(leaverIndex).address;
+            const originalForkId = h.activeForkId!;
             await h
                 .control(h.getPeer(leaverIndex))
                 .dispute.setForceExit(true)
@@ -327,8 +328,8 @@ describe("E2E: Join channel race conditions", function () {
                 "joiner must remain in on-chain pendingParticipants during the dispute window"
             ).to.include(joiner.address.toLowerCase());
 
-            const originalForkId = h.activeForkId!;
             await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
                 forkSettleTimeoutMs: 15000,
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false
@@ -377,6 +378,7 @@ describe("E2E: Join channel race conditions", function () {
                     .totalDeposits.amount
             );
             const leaverIndex = 0;
+            const originalForkId = h.activeForkId!;
             await h
                 .control(h.getPeer(leaverIndex))
                 .dispute.setForceExit(true)
@@ -433,8 +435,8 @@ describe("E2E: Join channel race conditions", function () {
                 pendingPrepared.expectedForkId
             );
 
-            const originalForkId = h.activeForkId!;
             await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
                 forkSettleTimeoutMs: 15000,
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false

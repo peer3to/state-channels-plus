@@ -5,6 +5,7 @@ describe("E2E: dispute validation / notLatestState", function () {
     it("dispute.input.stateProof truncated below disputer's last signed block → DisputeNotLatestState", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
+        const forkId = h.activeForkId!;
 
         await h.transition.advanceState({ count: 3 });
         //  now it is peer 2 turn, current block height is 4 (5 transactions done)
@@ -33,6 +34,6 @@ describe("E2E: dispute validation / notLatestState", function () {
             disputeFraudProofType: DisputeFraudProofType.DisputeNotLatestState,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 });

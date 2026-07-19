@@ -202,22 +202,26 @@ export class DisputeOrchestrator<
 
     /**
      * Waits for dispute commitment and resolution, agnostic to how the dispute was created.
+     * forkId must be captured before the action that can open the dispute.
      */
-    async resolveDisputeWait(
-        options: {
-            maliciousPeerIndices?: number[];
-            forkId?: ForkId;
-            honestPeerIndices?: number[];
-            disputesCommittedTimeoutMs?: number;
-            forkSettleTimeoutMs?: number;
-            expectedDisputesCommittedPerPeer?: number;
-            disputesCommittedMode?: "exact" | "atLeast";
-            assertMaliciousRemoved?: boolean;
-            syntheticOnChainParticipants?: number;
-            expectedResolution?: DisputeResolutionExpectation;
-        } = {}
-    ): Promise<CreateAndResolveDisputeResult<TCustomRpc>> {
-        const originalForkId = options.forkId || this.harness.activeForkId!;
+    async resolveDisputeWait(options: {
+        forkId: ForkId;
+        maliciousPeerIndices?: number[];
+        honestPeerIndices?: number[];
+        disputesCommittedTimeoutMs?: number;
+        forkSettleTimeoutMs?: number;
+        expectedDisputesCommittedPerPeer?: number;
+        disputesCommittedMode?: "exact" | "atLeast";
+        assertMaliciousRemoved?: boolean;
+        syntheticOnChainParticipants?: number;
+        expectedResolution?: DisputeResolutionExpectation;
+    }): Promise<CreateAndResolveDisputeResult<TCustomRpc>> {
+        if (!options.forkId) {
+            throw new Error(
+                "resolveDisputeWait requires the forkId captured before the dispute"
+            );
+        }
+        const originalForkId = options.forkId;
         const maliciousPeerIndices = Array.from(
             new Set<number>([
                 ...(options.maliciousPeerIndices ?? []),

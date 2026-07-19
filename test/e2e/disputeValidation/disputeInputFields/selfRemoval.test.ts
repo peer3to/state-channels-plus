@@ -76,6 +76,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         await h.scenario.preDisputeSetup({
             timeConfig: { evidenceTime: 6 }
         });
+        const forkId = h.activeForkId!;
 
         // Tamper helper flipSelfRemovalWithoutOutputRecompute flips
         // selfRemoval=!selfRemoval and zeroes timeout/onChainSlashes, but does
@@ -94,6 +95,9 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
                 DisputeFraudProofType.DisputeInvalidOutputState,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            forkSettleTimeoutMs: 15000
+        });
     });
 });

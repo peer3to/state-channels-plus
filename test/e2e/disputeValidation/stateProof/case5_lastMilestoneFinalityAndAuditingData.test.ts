@@ -6,6 +6,7 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
         it("→ DisputeLastMilestoneNotFinalAndNoAuditingData", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
 
             await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
 
@@ -34,7 +35,7 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
                     DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 });

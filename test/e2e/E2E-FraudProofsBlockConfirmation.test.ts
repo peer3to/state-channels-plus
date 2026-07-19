@@ -398,6 +398,7 @@ describe("E2E: Block Fraud Proofs", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
         const maliciousPeerIndex = 1;
+        const forkId = h.activeForkId!;
         await h.byzantine.submitDoubleSignBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
@@ -406,13 +407,14 @@ describe("E2E: Block Fraud Proofs", function () {
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("wrong genesis → WrongGenesis", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a competing block at height 0 with a wrong previousBlockHash.
         const maliciousPeerIndex = 2;
@@ -424,13 +426,14 @@ describe("E2E: Block Fraud Proofs", function () {
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("unexpected next leader → BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);
+        const forkId = h.activeForkId!;
 
         const maliciousPeerIndex = 1; // NOT the expected next leader
         await h.byzantine.submitUnexpectedNextLeaderBlock(maliciousPeerIndex);
@@ -441,13 +444,14 @@ describe("E2E: Block Fraud Proofs", function () {
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("invalid timestamp → InvalidTimestamp", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block with a timestamp before the previous block's
         // timestamp → objectiveInvalidTimestampDetected → InvalidTimestamp.
@@ -460,13 +464,14 @@ describe("E2E: Block Fraud Proofs", function () {
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("broken inbound chain → BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block that includes a messageBlock whose
         // previousBlockHash does not chain from the stored inbound state
@@ -481,13 +486,14 @@ describe("E2E: Block Fraud Proofs", function () {
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("forged inbound message → ForgedInboundMessageBlock", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block that contains a fabricated inbound message
         // block that was never actually sent by any peer
@@ -502,13 +508,14 @@ describe("E2E: Block Fraud Proofs", function () {
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("applyTransaction failure → BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block whose transaction body is malformed data that
         // the contract rejects; applyTransaction returns success=false
@@ -522,13 +529,14 @@ describe("E2E: Block Fraud Proofs", function () {
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("stateSnapshotHash mismatch → BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block with a valid transaction but a wrong
         // stateSnapshotHash (ZeroHash).
@@ -574,7 +582,7 @@ describe("E2E: Block Fraud Proofs", function () {
 
         await h.assert.storage.storedDisputeConfirmationsWait();
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 });

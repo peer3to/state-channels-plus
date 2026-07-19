@@ -240,6 +240,11 @@ async function runScheduler({
             // happened to exit cleanly after emitting the starvation marker.
             const repeatedStarvation = starvationDisposition === "fail";
             const finalCode = repeatedStarvation && code === 0 ? 1 : code;
+            task.repeatedStarvation = repeatedStarvation;
+            task.starvationRetrySucceeded =
+                task.starvationRetryCount === 1 &&
+                !repeatedStarvation &&
+                finalCode === 0;
 
             completed++;
             if (finalCode !== 0) {
