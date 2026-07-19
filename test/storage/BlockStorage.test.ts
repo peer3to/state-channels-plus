@@ -845,6 +845,26 @@ describe("Persistence", () => {
         expect(reader.blocks.getNextBlockHeight(forkId)).to.equal(6);
     });
 
+    it("justPersist blocks are not write-through persisted, so they don't bump forkIdToMaxHeightMap on hydrate", async () => {
+        const persistence = new FakePersistence();
+        const writer = new BlockStorage(persistence);
+        writer.storeBlock(blockAt(0));
+
+        const milestone = blockAt(10);
+        writer.storeBlock(milestone, { justPersist: true });
+
+        // justPersist still advances the live in-memory view...
+        expect(writer.getNextBlockHeight(forkId)).to.equal(1);
+        expect(persistence.persisted.has(milestone.hash)).to.be.false;
+
+        // ...but a restart never replays it, so the tip doesn't jump to 10.
+        const reader = new BlockStorage(persistence);
+        await reader.hydrate();
+
+        expect(reader.getNextBlockHeight(forkId)).to.equal(1);
+        expect(reader.getBlock(milestone.hash)).to.be.undefined;
+    });
+
     it("hydrate() from a store truncated mid-write skips the corrupt entry and reports the highest contiguous height", async () => {
         const persistence = new FakePersistence();
         const writer = new BlockStorage(persistence);

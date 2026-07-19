@@ -405,7 +405,15 @@ export class BlockStorage {
                 this._updateMaxHeight(coordinates.forkId, coordinates.height);
             }
 
-            if (persist) this.writeThroughPersistBlock(block);
+            // justPersist blocks (e.g. dispute-proof milestones ahead of the
+            // live tip) are never write-through persisted: the flag isn't part
+            // of the persisted blob, so hydrate() would replay them with
+            // options: undefined and incorrectly advance forkIdToMaxHeightMap
+            // on restart. These milestones are re-derived from the state
+            // proof on the next replay instead.
+            if (persist && !options?.justPersist) {
+                this.writeThroughPersistBlock(block);
+            }
             return blockHash;
         }
 
@@ -420,7 +428,9 @@ export class BlockStorage {
             existingBlock.onChainTimestamp = block.onChainTimestamp;
         }
 
-        if (persist) this.writeThroughPersistBlock(existingBlock);
+        if (persist && !options?.justPersist) {
+            this.writeThroughPersistBlock(existingBlock);
+        }
         // Return the hash (same object in both maps)
         return blockHash;
     }
