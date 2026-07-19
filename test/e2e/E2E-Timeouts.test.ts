@@ -17,8 +17,7 @@ describe("E2E: Timeouts", function () {
             await h.lifecycle.timeoutSetup(3, 2);
 
             await h.assert.dispute.initiatedWait({
-                peersIndices: [0, 1],
-                timeoutMs: 10000
+                peersIndices: [0, 1]
             });
             await h.assert.dispute.didNotInitiate({ peers: [2] });
             h.assert.calldata.noCalldataPosted();
@@ -28,8 +27,7 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 2);
             await h.assert.dispute.initiatedWait({
-                peersIndices: [0, 1],
-                timeoutMs: 10000
+                peersIndices: [0, 1]
             });
         });
     });
@@ -59,8 +57,7 @@ describe("E2E: Timeouts", function () {
             h.event.resetEventSpies();
             await h.network.disconnectPeer(1);
             await h.assert.dispute.initiatedWait({
-                peersIndices: [0, 2],
-                timeoutMs: 10000
+                peersIndices: [0, 2]
             });
         });
     });
@@ -82,8 +79,7 @@ describe("E2E: Timeouts", function () {
             });
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
             await h.assert.dispute.initiatedWait({
-                peersIndices: [0, 1],
-                timeoutMs: 10000
+                peersIndices: [0, 1]
             });
             await h.assert.dispute.committedWait();
             await h.assert.storage.storedTimeout({
@@ -109,8 +105,7 @@ describe("E2E: Timeouts", function () {
             await h.event.waitUntilEventOccurs("onBlockCalldataPosted");
             h.event.resetEventSpies();
             await h.assert.dispute.initiatedAndCommitedWait({
-                peersIndices: [1, 2],
-                timeoutMs: 10000
+                peersIndices: [1, 2]
             });
             await h.assert.storage.storedTimeout({
                 timedoutParticipantIndex: 0,

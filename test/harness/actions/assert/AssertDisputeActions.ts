@@ -28,7 +28,7 @@ export class AssertDisputeActions<
     }): Promise<void> {
         const {
             peersIndices,
-            timeoutMs = 5000,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(0),
             initiatedWithAuditingData
         } = options || {};
 

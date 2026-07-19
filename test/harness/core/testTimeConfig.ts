@@ -1,10 +1,10 @@
 import { TimeConfig, firstBlockGrace } from "@/types";
 
 export const MIN_TEST_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
-    p2pTime: 1,
-    agreementTime: 2,
-    chainFallbackTime: 2,
-    evidenceTime: 3
+    p2pTime: 2,
+    agreementTime: 3,
+    chainFallbackTime: 3,
+    evidenceTime: 6
 });
 
 export function resolveTestTimeConfig(

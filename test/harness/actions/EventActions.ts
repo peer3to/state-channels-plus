@@ -277,7 +277,7 @@ export class EventActions<
         peerIndices: number[],
         options?: { timeoutMs?: number }
     ): Promise<void> {
-        const { timeoutMs = 10000 } = options || {};
+        const timeoutMs = options?.timeoutMs ?? this.protocolEventTimeoutMs(0);
         const condition = () => {
             for (const peerIndex of peerIndices) {
                 if (
