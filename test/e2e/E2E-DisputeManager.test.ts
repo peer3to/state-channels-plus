@@ -138,7 +138,18 @@ describe("E2E: Dispute Manager", function () {
             const disputedForkId = h.activeForkId;
             if (!disputedForkId) throw new Error("Expected an active fork");
 
-            const missedPeerIndex = 2;
+            const nextPeer = await h.query.getNextPeerToWrite();
+            // Keep the next block producer connected so the setup transition
+            // advances; account allocation can change which index owns the turn.
+            const missedPeerIndex = [2, 3, 0].find(
+                (peerIndex) => peerIndex !== nextPeer.index
+            );
+            if (missedPeerIndex === undefined) {
+                throw new Error("Expected a non-producing peer to disconnect");
+            }
+            const connectedPeerIndices = h.peers
+                .map((peer) => peer.index)
+                .filter((peerIndex) => peerIndex !== missedPeerIndex);
             for (const peer of h.peers) {
                 await h.control(peer).stub.stubHoldReductionTasks().request();
             }
@@ -154,11 +165,11 @@ describe("E2E: Dispute Manager", function () {
                 .request();
             await h.byzantine.disconnect(missedPeerIndex);
             await h.transition.advanceState({
-                waitForPeers: [0, 1, 3]
+                waitForPeers: connectedPeerIndices
             });
             await h.byzantine.submitDoubleSignBlock(1);
-            await h.event.waitForDisputeFromAnyPeer([0, 1, 3]);
-            const initiatingPeer = [0, 1, 3]
+            await h.event.waitForDisputeFromAnyPeer(connectedPeerIndices);
+            const initiatingPeer = connectedPeerIndices
                 .map((peerIndex) => h.getPeer(peerIndex))
                 .find(
                     (peer) =>
@@ -172,10 +183,15 @@ describe("E2E: Dispute Manager", function () {
             if (!initiatedDispute.postedAuditingData) {
                 throw new Error("Expected a calldata-backed dispute");
             }
-            await h.event.waitForPeers("onDisputeCommitted", [0, 1, 3], 1, {
-                mode: "atLeast",
-                timeoutMs: 10000
-            });
+            await h.event.waitForPeers(
+                "onDisputeCommitted",
+                connectedPeerIndices,
+                1,
+                {
+                    mode: "atLeast",
+                    timeoutMs: 10000
+                }
+            );
 
             await sleep(4000);
             // The peer missed the event while disconnected, then reconnects so
@@ -196,12 +212,13 @@ describe("E2E: Dispute Manager", function () {
                 timeoutMs: 10000
             });
 
-            for (const peerIndex of [0, 1, 3]) {
+            for (const peerIndex of connectedPeerIndices) {
                 await h
                     .control(h.getPeer(peerIndex))
                     .stub.restoreReductionTasks(false)
                     .request();
             }
+            h.event.resetEventSpies();
             await h
                 .control(missedPeer)
                 .stub.restoreReductionTasks(true)
@@ -215,6 +232,19 @@ describe("E2E: Dispute Manager", function () {
                     "Expected the recovered expired dispute to reduce to a new fork"
                 );
             }
+
+            // The recovered peer posts the new-fork snapshot, which starts
+            // reduction from the snapshot event on the connected peers. The
+            // forwarded hook fires only after each real handler has settled.
+            await h.event.waitForPeers(
+                "onStateSnapshotUpdated",
+                connectedPeerIndices,
+                1,
+                { mode: "atLeast", timeoutMs: 20000 }
+            );
+
+            const hostErrors = await h.quiesceHosts();
+            if (hostErrors.length > 0) throw hostErrors[0];
         });
 
         it("should have missing state Storage when peer receives dispute with blocks it doesn't have", async function () {

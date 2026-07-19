@@ -93,7 +93,10 @@ export class MathScenarioActions extends ScenarioActions {
     }): Promise<CreateAndResolveDisputeResult> {
         await this.harness.lifecycle.start(4, 2, options);
         await this.harness.assert.sync.peersInSyncWait();
-        return this.disputeWithReduction({ maliciousPeerIndex: 2 });
+        const maliciousPeerIndex = (
+            await this.harness.query.getNextPeerToWrite()
+        ).index;
+        return this.disputeWithReduction({ maliciousPeerIndex });
     }
 
     async fourPeersDisputeResolutionAndSnapshotUpdateDetached(options?: {

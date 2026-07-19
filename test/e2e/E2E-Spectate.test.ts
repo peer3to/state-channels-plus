@@ -548,8 +548,16 @@ describe("E2E: Spectate Service", function () {
             await h.transition.advanceState({ count: 5 });
             await h.assert.sync.peersInSyncWait();
 
+            // Keep this scenario about a bad transition from the valid writer;
+            // participant order differs between parallel account allocations.
+            const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
+                .index;
+            const honestPeerIndices = h.peers
+                .map((peer) => peer.index)
+                .filter((peerIndex) => peerIndex !== maliciousPeerIndex);
             await h.scenario.disputeWithReduction({
-                maliciousPeerIndex: 2,
+                maliciousPeerIndex,
+                honestPeerIndices,
                 forkSettleTimeoutMs: 15000,
                 disputesCommittedTimeoutMs: 10000
             });
@@ -560,24 +568,26 @@ describe("E2E: Spectate Service", function () {
                 (c) => c.add(2),
                 (c) => c.add(2)
             ]);
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices
+            });
 
             await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
 
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
 
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
             await h.assert.sync.participantCount({
                 expectedCount: 4,

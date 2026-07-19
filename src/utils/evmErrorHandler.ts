@@ -33,7 +33,7 @@ export type RaceConditionErrorName =
     | "ErrorDisputeCommitmentNotAvailable";
 
 export type RaceConditionErrorHandlers = Partial<
-    Record<RaceConditionErrorName, () => void>
+    Record<RaceConditionErrorName, (error: CustomEvmError) => void>
 >;
 
 // interface for parsing errors
@@ -130,7 +130,7 @@ async function _tryHandleEvmError(
             logger?.info(
                 `tryHandleEvmError - Handling custom EVM error: ${customError.name} for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
             );
-            handler();
+            handler(customError);
             return true;
         }
         // unhandled custom error

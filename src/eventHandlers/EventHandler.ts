@@ -841,8 +841,25 @@ export class EventHandler {
         const isRelevant = this.stateManager.forkId === forkId;
         if (!isRelevant) return;
 
-        // create new dispute
-        await this.stateManager.disputeManager.dispute(forkId);
+        // All honest peers can observe the kill and attempt to replace the
+        // dispute. Only the first upload wins; the others keep the intentional
+        // DisputeManager throw contained to this expected redispute race.
+        try {
+            await this.stateManager.disputeManager.dispute(forkId);
+        } catch (error) {
+            const customError = tryDecodeCustomError(error);
+            if (
+                customError?.errorDescription.name ===
+                "RaceConditionDisputeEvidencePeriodExpired"
+            ) {
+                this.logger.info(
+                    "onDisputeKilled: another participant supplied replacement evidence",
+                    { forkId, channelId }
+                );
+                return;
+            }
+            throw error;
+        }
     }
 
     async onInboundMessagesProcessed(

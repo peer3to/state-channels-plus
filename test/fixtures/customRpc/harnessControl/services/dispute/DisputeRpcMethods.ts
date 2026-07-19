@@ -3,7 +3,6 @@ import { ZeroAddress } from "ethers";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import Clock from "@/Clock";
-import StateSnapshot from "@/models/StateSnapshot";
 import { Codec, Type } from "@/utils";
 import type { ForkId } from "@/types/types";
 import type {
@@ -203,47 +202,6 @@ export class DisputeRpcMethods extends ARpcMethods {
             previousBlockProducerPostedCalldata: false,
             participantSignatureOnPreviousBlock: "0x"
         });
-        return true;
-    }
-
-    /**
-     * Corrupt the head snapshot's `totalDeposits` (amount + 1) and re-store it
-     * under the original hash — breaks the balance invariant.
-     */
-    public corruptSnapshotBalanceInvariant(forkId: ForkId): boolean {
-        const storage = this.service.storage;
-        const latestBlock = storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
-            throw new Error(
-                `corruptSnapshotBalanceInvariant: no latest block for ${forkId}`
-            );
-        }
-        const originalSnapshot = storage.stateSnapshots.getStateSnapshotByHash(
-            latestBlock.stateSnapshotHash
-        );
-        if (!originalSnapshot) {
-            throw new Error(
-                `corruptSnapshotBalanceInvariant: no snapshot for ${latestBlock.stateSnapshotHash}`
-            );
-        }
-        const struct = originalSnapshot.toStruct();
-        const corrupted = {
-            ...struct,
-            snapshotData: {
-                ...struct.snapshotData,
-                totalDeposits: {
-                    ...struct.snapshotData.totalDeposits,
-                    amount:
-                        BigInt(struct.snapshotData.totalDeposits.amount) + 1n
-                }
-            }
-        };
-        storage.stateSnapshots.storeStateSnapshot(
-            StateSnapshot.from(corrupted),
-            {
-                hash: originalSnapshot.hash
-            }
-        );
         return true;
     }
 }

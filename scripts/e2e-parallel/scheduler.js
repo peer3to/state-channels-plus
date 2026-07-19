@@ -60,6 +60,11 @@ function rssGbForPids(pids) {
     }
 }
 
+function getStarvationDisposition(starveCount, starvationRetryCount) {
+    if (starveCount === 0) return "complete";
+    return starvationRetryCount === 0 ? "retry" : "fail";
+}
+
 /**
  * Run all tasks with one admission per tick, gated by latest CPU utilization,
  * live memory, and a concurrency cap. Slots are assigned round-robin; account
@@ -86,6 +91,9 @@ async function runScheduler({
     let completed = 0;
     let sumDurationMs = 0;
     const failed = [];
+    // Starved tasks go behind every first attempt so their retry runs after the
+    // original admission burst, when the suite is more likely to have capacity.
+    const retryQueue = [];
 
     // Latest CPU utilization (busy fraction over the last tick interval).
     let lastCpu = cpuTimes();
@@ -192,30 +200,62 @@ async function runScheduler({
             sumDurationMs += durationMs;
 
             const combined = stdout + stderr;
-            task.oomCount = logging.countOomEvents(combined);
-            task.starveCount = logging.countStarvation(combined);
+            const attemptOomCount = logging.countOomEvents(combined);
+            const attemptStarveCount = logging.countStarvation(combined);
+            task.oomCount = (task.oomCount || 0) + attemptOomCount;
+            task.starveCount = (task.starveCount || 0) + attemptStarveCount;
             const timing = logging.parseTimings(combined);
-            task.startupMs = timing.startupMs;
-            task.deployMs = timing.deployMs;
-            task.workerBootMs = timing.workerBootMs;
-            task.maxEventLoopDelayMs = timing.maxEventLoopDelayMs;
-            task.el = timing.el;
-            task.timingFound = timing.found;
+            task.startupMs = (task.startupMs || 0) + timing.startupMs;
+            task.deployMs = (task.deployMs || 0) + timing.deployMs;
+            task.workerBootMs = (task.workerBootMs || 0) + timing.workerBootMs;
+            task.maxEventLoopDelayMs = Math.max(
+                task.maxEventLoopDelayMs || 0,
+                timing.maxEventLoopDelayMs
+            );
+            task.el = Object.fromEntries(
+                Object.keys(timing.el).map((role) => [
+                    role,
+                    Math.max(task.el?.[role] || 0, timing.el[role])
+                ])
+            );
+            task.timingFound = task.timingFound || timing.found;
+
+            const starvationDisposition = getStarvationDisposition(
+                attemptStarveCount,
+                task.starvationRetryCount || 0
+            );
+            if (starvationDisposition === "retry") {
+                task.starvationRetryCount = 1;
+                retryQueue.push({ task, seq });
+                logging.starvationRetry({
+                    seq,
+                    total: tasks.length,
+                    label,
+                    starveCount: attemptStarveCount
+                });
+                return;
+            }
+
+            // A second watchdog hit is a failed task even if the test process
+            // happened to exit cleanly after emitting the starvation marker.
+            const repeatedStarvation = starvationDisposition === "fail";
+            const finalCode = repeatedStarvation && code === 0 ? 1 : code;
 
             completed++;
-            if (code !== 0) {
+            if (finalCode !== 0) {
                 failed.push(task);
                 logging.markLogAsError(logDir, task.logName);
             }
             logging.result({
                 completed,
                 total: tasks.length,
-                code,
+                code: finalCode,
                 label,
                 durationMs,
-                oomCount: task.oomCount,
-                starveCount: task.starveCount,
-                timing
+                oomCount: attemptOomCount,
+                starveCount: attemptStarveCount,
+                timing,
+                repeatedStarvation
             });
         });
     };
@@ -225,12 +265,16 @@ async function runScheduler({
             sampleCpu();
             sampleMemory();
 
-            if (idx >= tasks.length && running === 0) {
+            if (
+                idx >= tasks.length &&
+                retryQueue.length === 0 &&
+                running === 0
+            ) {
                 clearInterval(timer);
                 resolve();
                 return;
             }
-            if (idx >= tasks.length) return; // draining
+            if (idx >= tasks.length && retryQueue.length === 0) return; // draining
 
             const countOk = running < concurrencyCap;
             const cpuOk = cpuUtil < targetLoad;
@@ -239,15 +283,22 @@ async function runScheduler({
             // Always keep one test in flight (avoids stalling when the gates start
             // closed); otherwise admit one only when all gates are open.
             if (running === 0 || (countOk && cpuOk && memOk)) {
-                idx++;
-                launch(tasks[idx - 1], idx);
+                if (idx < tasks.length) {
+                    idx++;
+                    launch(tasks[idx - 1], idx);
+                } else {
+                    const retry = retryQueue.shift();
+                    launch(retry.task, retry.seq);
+                }
             } else {
+                const nextSeq =
+                    idx < tasks.length ? idx + 1 : retryQueue[0].seq;
                 const reason = !countOk
                     ? `cap (running ${running}/${concurrencyCap})`
                     : !memOk
                       ? `memory (owned ${occupiedGb.toFixed(1)}+${avgPerTestGb.toFixed(1)}≥${memBoundGb.toFixed(1)}GB)`
                       : `cpu ${(cpuUtil * 100).toFixed(0)}%>=${(targetLoad * 100).toFixed(0)}%`;
-                logging.hold({ seq: idx + 1, total: tasks.length, reason });
+                logging.hold({ seq: nextSeq, total: tasks.length, reason });
             }
         };
         const timer = setInterval(tick, tickMs);
@@ -269,4 +320,10 @@ async function runScheduler({
     };
 }
 
-module.exports = { resolveThreadModes, cpuTimes, rssGbForPids, runScheduler };
+module.exports = {
+    resolveThreadModes,
+    cpuTimes,
+    rssGbForPids,
+    getStarvationDisposition,
+    runScheduler
+};

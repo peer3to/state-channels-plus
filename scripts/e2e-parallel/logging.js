@@ -13,6 +13,8 @@ const COLORS = {
     green: "\x1b[32m",
     red: "\x1b[31m",
     yellow: "\x1b[33m",
+    darkYellow: "\x1b[33m",
+    lightYellow: "\x1b[93m",
     purple: "\x1b[35m",
     reset: "\x1b[0m"
 };
@@ -316,6 +318,16 @@ function hold({ seq, total, reason }) {
     console.log(colorize("orange", `[${seq}/${total}] holding — ${reason}`));
 }
 
+// Light yellow: a starved task gets its single clean retry.
+function starvationRetry({ seq, total, label, starveCount }) {
+    console.log(
+        colorize(
+            "lightYellow",
+            `[${seq}/${total}] STARVED x${starveCount} — rescheduling once [${label}]`
+        )
+    );
+}
+
 // Green PASS / red FAIL, with timing + starvation annotations.
 function result({
     completed,
@@ -325,7 +337,8 @@ function result({
     durationMs,
     oomCount,
     starveCount,
-    timing
+    timing,
+    repeatedStarvation = false
 }) {
     const tag = `[${completed}/${total}]`;
     const duration = formatDurationMs(durationMs);
@@ -350,12 +363,18 @@ function result({
         const reason =
             oomCount > 0
                 ? `OOM x${oomCount}`
-                : starvedFail
-                  ? "starved"
-                  : `exit ${code}`;
+                : repeatedStarvation
+                  ? "starved twice"
+                  : starvedFail
+                    ? "starved"
+                    : `exit ${code}`;
         console.log(
             colorize(
-                starvedFail ? "yellow" : "red",
+                repeatedStarvation
+                    ? "darkYellow"
+                    : starvedFail
+                      ? "yellow"
+                      : "red",
                 `${tag} FAIL [${reason}] [${label}]${timingStr}${elMaxStr}${starveStr}`
             )
         );
@@ -517,6 +536,7 @@ module.exports = {
     dryRun,
     admission,
     hold,
+    starvationRetry,
     result,
     gasPeakLine,
     summary

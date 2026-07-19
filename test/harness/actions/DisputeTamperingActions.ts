@@ -435,29 +435,6 @@ export class DisputeTamperingActions<
             .request();
     }
 
-    async corruptValidatorSnapshotForBalanceInvariant(
-        validatorPeerIndex: number,
-        options?: { forkId?: ForkId }
-    ): Promise<void> {
-        const forkId = options?.forkId ?? this.harness.activeForkId;
-        if (!forkId) {
-            throw new Error(
-                "corruptValidatorSnapshotForBalanceInvariant: no active fork ID"
-            );
-        }
-
-        await this.harness
-            .control(this.harness.getPeer(validatorPeerIndex))
-            .dispute.corruptSnapshotBalanceInvariant(forkId)
-            .request();
-        this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: validatorPeerIndex
-        });
-        this.logger.debug(
-            `Corrupted validator ${validatorPeerIndex} snapshot for balance invariant`
-        );
-    }
-
     async buildForgedSnapshot(
         peerIndex: number,
         mutate: ForgeSubmitterSnapshotMutate

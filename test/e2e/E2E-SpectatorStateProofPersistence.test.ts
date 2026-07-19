@@ -24,11 +24,14 @@ describe("E2E: Join/Leave Sequence", function () {
 
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
-        // turns of 3,0, blocks 3,4 — default sync excludes `leftChannelPeerIndices`
+        // turns of 3,0, blocks 3,4; the leaver may disconnect at any point
         await h.transition.advanceState({
             count: 2
         });
-        await h.assert.sync.blockHeight({ expectedHeight: 4 });
+        await h.assert.sync.blockHeight({
+            expectedHeight: 4,
+            peerIndices: [0, 1, 3]
+        });
 
         // Join peer 4 as spectator (`addPeer` waits for SYNCED)
         await h.join.addSpectatorWait();
@@ -40,7 +43,10 @@ describe("E2E: Join/Leave Sequence", function () {
             count: 2
         });
 
-        await h.assert.sync.blockHeight({ expectedHeight: 6 });
+        await h.assert.sync.blockHeight({
+            expectedHeight: 6,
+            peerIndices: [0, 1, 3, 4]
+        });
 
         // peer 0 is leaving the channel, block 7
 

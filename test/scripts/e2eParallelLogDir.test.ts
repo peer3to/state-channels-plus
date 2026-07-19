@@ -18,6 +18,7 @@ const { getHelpText, parseCliArgs } =
         };
     };
 const {
+    colorize,
     countStarvation,
     parseTimings,
     isDangerousPurgeTarget,
@@ -25,6 +26,7 @@ const {
     safeEmptyDir,
     nextRunDir
 } = require("../../scripts/e2e-parallel/logging.js") as {
+    colorize: (color: string, text: string) => string;
     countStarvation: (text: string) => number;
     parseTimings: (text: string) => {
         el: { main: number; sdk: number; vm: number; watchdog: number };
@@ -35,6 +37,13 @@ const {
     safeEmptyDir: (dirPath: string, allow: boolean) => void;
     nextRunDir: (baseDir: string) => string;
 };
+const { getStarvationDisposition } =
+    require("../../scripts/e2e-parallel/scheduler.js") as {
+        getStarvationDisposition: (
+            starveCount: number,
+            starvationRetryCount: number
+        ) => "complete" | "retry" | "fail";
+    };
 
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
@@ -183,6 +192,21 @@ describe("e2e-parallel logging - purge guards", function () {
 });
 
 describe("e2e-parallel logging - starvation diagnostics", function () {
+    it("retries the first starved attempt and fails a second starved attempt", function () {
+        expect(getStarvationDisposition(1, 0)).to.equal("retry");
+        expect(getStarvationDisposition(1, 1)).to.equal("fail");
+        expect(getStarvationDisposition(0, 1)).to.equal("complete");
+    });
+
+    it("uses light yellow for rescheduling and dark yellow for repeated starvation", function () {
+        expect(colorize("lightYellow", "retry")).to.equal(
+            "\u001b[93mretry\u001b[0m"
+        );
+        expect(colorize("darkYellow", "fail")).to.equal(
+            "\u001b[33mfail\u001b[0m"
+        );
+    });
+
     it("deduplicates propagated watchdog errors and includes their real peak", function () {
         const repeatedError =
             "Event loop delay 1025.507327ms exceeded configured threshold 1000ms";

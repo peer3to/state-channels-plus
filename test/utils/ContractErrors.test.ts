@@ -1,6 +1,10 @@
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
+import {
+    CustomEvmError,
+    tryDecodeCustomError,
+    tryHandleEvmError
+} from "@/utils/evmErrorHandler";
 import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
@@ -86,6 +90,34 @@ describe("ContractCaller and ContractErrors", () => {
             expect(customError).to.equal(null);
             expect(error.message).to.equal("Out of gas");
         }
+    });
+
+    it("passes the decoded custom error to its handler", async () => {
+        const errorData = ethers
+            .keccak256(
+                ethers.toUtf8Bytes(
+                    "RaceConditionDisputeEvidencePeriodExpired()"
+                )
+            )
+            .slice(0, 10);
+        const originalError = Object.assign(new Error("execution reverted"), {
+            data: errorData
+        });
+        let handledError: CustomEvmError | undefined;
+
+        const handled = await tryHandleEvmError(originalError, {
+            handlers: {
+                RaceConditionDisputeEvidencePeriodExpired: (customError) => {
+                    handledError = customError;
+                }
+            }
+        });
+
+        expect(handled).to.be.true;
+        expect(handledError!.originalError).to.equal(originalError);
+        expect(handledError!.errorDescription.name).to.equal(
+            "RaceConditionDisputeEvidencePeriodExpired"
+        );
     });
 
     describe("Real contract calls", () => {
