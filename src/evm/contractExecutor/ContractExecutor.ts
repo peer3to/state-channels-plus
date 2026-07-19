@@ -13,12 +13,9 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 export default class ContractExecutor extends AContractExecutor {
     private readonly evm: EVM;
     private readonly logger?: Logger;
-    // Canonical calls and simulations share one mutex because EthereumJS
-    // shallow copies still point at the same underlying state database.
+    // Canonical calls and simulations share one mutex so a simulation's
+    // checkpoint/revert cannot overlap a canonical write.
     private readonly mutex: Mutex;
-    // Refreshed after each canonical write while the mutex is still held, so
-    // every later simulation starts from a fully committed local state.
-    private simulationBaseEvm: EVM;
 
     constructor(evm: EVM, logger?: Logger) {
         super();
@@ -27,7 +24,6 @@ export default class ContractExecutor extends AContractExecutor {
             component: "ContractExecutor"
         });
         this.mutex = new Mutex();
-        this.simulationBaseEvm = evm.shallowCopy();
     }
 
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
@@ -39,7 +35,6 @@ export default class ContractExecutor extends AContractExecutor {
         try {
             return await this.deployOn(this.evm, data);
         } finally {
-            this.simulationBaseEvm = this.evm.shallowCopy();
             this.mutex.unlock({ scheduleNextAsMacroTask: true });
         }
     }
@@ -56,7 +51,6 @@ export default class ContractExecutor extends AContractExecutor {
         try {
             return await this.executeCallOn(this.evm, data, contractAddress);
         } finally {
-            this.simulationBaseEvm = this.evm.shallowCopy();
             this.mutex.unlock({ scheduleNextAsMacroTask: true });
         }
     }
@@ -70,10 +64,10 @@ export default class ContractExecutor extends AContractExecutor {
             logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
         });
 
-        // EthereumJS shallow copies share their underlying state database.
-        // Serialize simulations with writes so each copy starts from a stable
-        // root and cannot race a commit on the canonical local EVM.
-        const evm = this.simulationBaseEvm.shallowCopy();
+        // The mutex makes the canonical EVM the single owner of local state.
+        // Checkpointing here lets a simulation use that exact committed state
+        // while the outer revert keeps all of its mutations ephemeral.
+        const evm = this.evm;
         try {
             await evm.journal.checkpoint();
             try {

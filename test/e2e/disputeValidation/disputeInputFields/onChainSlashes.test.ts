@@ -36,7 +36,13 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
                 DisputeFraudProofType.DisputeOnChainSlashesNotSubset,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait({ forkId });
+        // This case proves that the malformed on-chain-slash claim is killed.
+        // It does not control which later counter-dispute wins, so it cannot
+        // require every peer marked malicious by the setup to be evicted.
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            assertMaliciousRemoved: false
+        });
     });
 
     it("dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason", async function () {

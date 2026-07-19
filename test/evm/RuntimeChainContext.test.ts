@@ -10,6 +10,10 @@ import P2pRuntimeClient from "@/evm/p2pRuntime/P2pRuntimeClient";
 import Clock from "@/Clock";
 import { createConfig } from "@/utils/config";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
+import type {
+    RuntimeClientRequest,
+    RuntimeHostMessage
+} from "@/evm/p2pRuntime/types";
 
 describe("RuntimeChainContext", () => {
     it("accepts WebSocket URLs and optimistically converts HTTP URLs", () => {
@@ -93,6 +97,67 @@ describe("RuntimeChainContext", () => {
             expect((clientError as Error).message).to.not.include("timed out");
         } finally {
             destroySpy.restore();
+        }
+    });
+
+    it("lets the host own the quiesce timeout", async () => {
+        const clock = sinon.useFakeTimers({
+            toFake: ["setTimeout", "clearTimeout"]
+        });
+        const channel = createRuntimeChannel();
+        const signer = ethers.Wallet.createRandom();
+        const scm = {
+            address: ethers.Wallet.createRandom().address,
+            abiJson:
+                StateChannelManagerProxy__factory.createInterface().formatJson()
+        };
+        const client = new P2pRuntimeClient(channel.port1, {
+            signerAddress: signer.address,
+            scm,
+            stateMachine: {
+                address: ethers.Wallet.createRandom().address,
+                abiJson: "[]"
+            },
+            provider: ethers.provider
+        });
+        let quiesceRequestId: number | undefined;
+        let resolveQuiesceReceived!: () => void;
+        const quiesceReceived = new Promise<void>((resolve) => {
+            resolveQuiesceReceived = resolve;
+        });
+
+        channel.port2.onMessage((raw) => {
+            const request = raw as RuntimeClientRequest;
+            if (request.type === "quiesce") {
+                quiesceRequestId = request.requestId;
+                resolveQuiesceReceived();
+                return;
+            }
+            channel.port2.post({
+                type: "response",
+                requestId: request.requestId,
+                ok: true,
+                result: undefined
+            } satisfies RuntimeHostMessage);
+        });
+        channel.port2.start();
+
+        try {
+            const quiesce = client.quiesce();
+            await quiesceReceived;
+            await clock.tickAsync(30_001);
+            channel.port2.post({
+                type: "response",
+                requestId: quiesceRequestId!,
+                ok: true,
+                result: []
+            } satisfies RuntimeHostMessage);
+
+            expect(await quiesce).to.deep.equal([]);
+        } finally {
+            clock.restore();
+            await client.dispose();
+            channel.port2.close();
         }
     });
 });

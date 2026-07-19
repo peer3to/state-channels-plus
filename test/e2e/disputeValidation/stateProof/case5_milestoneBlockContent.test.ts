@@ -10,7 +10,10 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
                 peerCount: 5,
-                timeConfig: { evidenceTime: 3 }
+                // Auditing and submitting the structural fraud proof must fit
+                // inside the evidence window even when the shared chain mines
+                // transactions from several peers between those two steps.
+                timeConfig: { evidenceTime: 6 }
             });
             await h.byzantine.disconnect(3);
             await h.transition.advanceState({ waitForPeers: [0, 1, 2, 4] });

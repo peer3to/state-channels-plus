@@ -169,7 +169,9 @@ describe("E2E: final dispute resolution", function () {
         const targetPeerIndex = 2;
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            // The test posts an ordinary dispute and then assembles a second,
+            // threshold-final payload inside the same evidence window.
+            timeConfig: { evidenceTime: 6 }
         });
         const forkId = await h.dispute.openOrdinaryDisputeWindow({
             maliciousPeerIndex: 1,

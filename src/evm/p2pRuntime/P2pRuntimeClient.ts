@@ -235,9 +235,13 @@ class P2pRuntimeClient<T = ethers.Contract> {
      * the host runs.
      */
     async quiesce(): Promise<Error[]> {
-        const serialized = await this.request<SerializedError[]>({
-            type: "quiesce"
-        });
+        // The host-side detached-work drain owns its timeout and returns the
+        // unresolved promise origins. A second client timeout at the same
+        // boundary can hide that result by winning the race.
+        const serialized = await this.request<SerializedError[]>(
+            { type: "quiesce" },
+            { timeoutMs: null }
+        );
         return serialized.map(deserializeError);
     }
 
