@@ -53,8 +53,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
 
             await h.assert.dispute.committedWait({
                 expectedCount: 2,
-                mode: "atLeast",
-                timeoutMs: 10000
+                mode: "atLeast"
             });
             expect(
                 await h.channelManager.getWindowCommitments(

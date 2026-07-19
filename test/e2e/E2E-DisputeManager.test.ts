@@ -200,11 +200,11 @@ describe("E2E: Dispute Manager", function () {
                 1,
                 {
                     mode: "atLeast",
-                    timeoutMs: 10000
+                    timeoutMs: h.event.protocolEventTimeoutMs(0)
                 }
             );
 
-            await sleep(4000);
+            await sleep(h.event.evidencePeriodWaitMs());
             // The peer missed the event while disconnected, then reconnects so
             // event recovery can fetch the committed dispute payloads.
             await h.network.connectPeers([missedPeerIndex]);

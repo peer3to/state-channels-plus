@@ -178,8 +178,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
             // Natural timeout: peer 2 never authors.
             await h.assert.dispute.initiatedAndCommitedWait({
-                peersIndices: [0, 1],
-                timeoutMs: 15000
+                peersIndices: [0, 1]
             });
 
             // No honest peer should fire onDisputeKilled and none
@@ -215,8 +214,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             const forkId = h.activeForkId!;
 
             await h.assert.dispute.initiatedAndCommitedWait({
-                peersIndices: [0, 1],
-                timeoutMs: 15000
+                peersIndices: [0, 1]
             });
 
             await h.tamper.submitForgedFraudProof(
@@ -319,7 +317,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             3,
             calldataAuthor.address
         );
-        await sleep(6000);
+        await sleep(h.event.evidencePeriodWaitMs());
 
         h.contextApi.captureOriginalFork();
         h.event.resetEventSpies();

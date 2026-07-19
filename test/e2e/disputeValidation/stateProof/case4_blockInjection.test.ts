@@ -224,8 +224,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
 
                 await h.assert.dispute.committedWait({
                     peersIndices: h.getHonestPeers().map((p) => p.index),
-                    expectedCount: 1,
-                    timeoutMs: 10000
+                    expectedCount: 1
                 });
 
                 await h.event.waitWhileEventCountsStayAtMost(
@@ -267,8 +266,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
 
                 await h.assert.dispute.committedWait({
                     peersIndices: h.getHonestPeers().map((p) => p.index),
-                    expectedCount: 1,
-                    timeoutMs: 10000
+                    expectedCount: 1
                 });
 
                 await h.event.waitWhileEventCountsStayAtMost(

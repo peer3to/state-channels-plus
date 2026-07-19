@@ -13,20 +13,37 @@ export function resolveTestTimeConfig(
     return { ...MIN_TEST_TIME_CONFIG, ...overrides };
 }
 
+export function participantTimeoutWaitMs(
+    timeConfig: TimeConfig,
+    blockHeight: number,
+    settlementMarginSeconds: number = 1
+): number {
+    return (
+        (timeConfig.p2pTime +
+            timeConfig.agreementTime +
+            timeConfig.chainFallbackTime +
+            firstBlockGrace(timeConfig, blockHeight) +
+            settlementMarginSeconds) *
+        1000
+    );
+}
+
+export function evidencePeriodWaitMs(
+    timeConfig: TimeConfig,
+    settlementMarginSeconds: number = 1
+): number {
+    return (timeConfig.evidenceTime + settlementMarginSeconds) * 1000;
+}
+
 export function protocolEventTimeoutMs(
     timeConfig: TimeConfig,
     blockHeight: number,
     settlementMarginSeconds: number = 4
 ): number {
-    const triggerSeconds =
-        timeConfig.p2pTime +
-        timeConfig.agreementTime +
-        timeConfig.chainFallbackTime +
-        firstBlockGrace(timeConfig, blockHeight);
     // After the timeout becomes eligible, allow the full evidence window for
     // the dispute upload, audit, fraud-proof transaction, and kill event.
     return (
-        (triggerSeconds + timeConfig.evidenceTime + settlementMarginSeconds) *
-        1000
+        participantTimeoutWaitMs(timeConfig, blockHeight, 0) +
+        evidencePeriodWaitMs(timeConfig, settlementMarginSeconds)
     );
 }

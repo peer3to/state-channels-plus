@@ -7,8 +7,9 @@ describe("StateManager timeout", function () {
     it("does not submit a timeout when the existing dispute window predates its deadline", async function () {
         this.timeout(90000);
         const h = TestSession.getHarness();
+        const evidenceTime = 8;
         await h.scenario.preDisputeSetup({
-            timeConfig: { evidenceTime: 8 }
+            timeConfig: { evidenceTime }
         });
         h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
@@ -20,7 +21,7 @@ describe("StateManager timeout", function () {
             expectedCount: 1
         });
 
-        await sleep(7000);
+        await sleep((evidenceTime - 1) * 1000);
         const timeout = await h
             .control(h.getPeer(1))
             .query.getTimeout(h.activeForkId!)

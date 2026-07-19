@@ -24,8 +24,7 @@ describe("E2E: dispute validation / disputeInputFields / forkId", function () {
         // 1) Honest peers observe the disputeCommitted event (the junk dispute lands on-chain).
         await h.assert.dispute.committedWait({
             peersIndices: h.getHonestPeers().map((p) => p.index),
-            expectedCount: 1,
-            timeoutMs: 10000
+            expectedCount: 1
         });
 
         // 2) No onDisputeKilled — honest peers are on genesis; the dispute targets a

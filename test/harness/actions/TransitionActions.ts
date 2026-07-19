@@ -370,15 +370,17 @@ export class TransitionActions<
      */
     private async waitForTurn(
         peer: TestPeer<TCustomRpc, TContract>,
-        timeoutMs = 3000
+        timeoutMs?: number
     ): Promise<void> {
+        const waitTimeoutMs =
+            timeoutMs ?? this.harness.event.participantTimeoutWaitMs(1);
         try {
             await peer.turnBarrier.waitFor(
                 async () =>
                     await this.harness.control(peer).query.isMyTurn().request(),
                 {
-                    timeoutMs,
-                    timeoutMessage: `Turn not received within ${timeoutMs}ms`
+                    timeoutMs: waitTimeoutMs,
+                    timeoutMessage: `Turn not received within ${waitTimeoutMs}ms`
                 }
             );
             this.logger.debug(`Peer ${peer.index} turn`);

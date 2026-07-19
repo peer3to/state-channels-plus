@@ -24,8 +24,7 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
         // peers 1,2,3 dispute the timed-out peer 0 -> 3 commitments (peer 0 is the defendant)
         await h.assert.dispute.committedWait({
             expectedCount: 3,
-            mode: "atLeast",
-            timeoutMs: 15000
+            mode: "atLeast"
         });
 
         const dispute = h.getPeer(honestDisputerIndex).eventSpies

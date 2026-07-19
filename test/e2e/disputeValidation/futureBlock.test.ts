@@ -86,8 +86,7 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         await h.assert.dispute.committedWait({
             peersIndices: [0, 1, 2],
-            expectedCount: 1,
-            timeoutMs: 10000
+            expectedCount: 1
         });
 
         // confirm other peers did not modify their local state forward, their tip is at block height 2

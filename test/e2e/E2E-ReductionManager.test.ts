@@ -36,7 +36,7 @@ describe("E2E: ReductionManager", function () {
             await h.assert.dispute.initiatedAndCommitedWait({
                 expectedCount: 1
             });
-            await sleep(5000);
+            await sleep(h.event.evidencePeriodWaitMs(2));
         });
 
         it("RaceConditionDisputeAlreadyReduced completes the installed reduction as success", async function () {
@@ -152,7 +152,7 @@ describe("E2E: ReductionManager", function () {
         // The replacement dispute may include the independently elapsed block
         // timeout as evidence, so wait past the harness's full timeout window
         // before asking ReductionManager to construct it.
-        await sleep(8000);
+        await sleep(h.event.participantTimeoutWaitMs(1));
         await h.control(targetPeer).stub.restoreDisputeInitiation().request();
         await h.tamper.stubConstructDispute(0, (dispute) => {
             // This scenario is about the emptied on-chain dispute window. A

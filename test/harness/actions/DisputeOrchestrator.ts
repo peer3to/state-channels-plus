@@ -89,7 +89,7 @@ export class DisputeOrchestrator<
                     }
                 },
                 {
-                    timeoutMs: 10000,
+                    timeoutMs: this.harness.event.protocolEventTimeoutMs(0),
                     timeoutMessage: `Final-dispute author ${finalAuthor.index} did not store double-sign evidence`,
                     label: "finalDisputeAuthorEvidence"
                 }

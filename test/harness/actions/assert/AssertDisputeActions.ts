@@ -89,7 +89,7 @@ export class AssertDisputeActions<
     }): Promise<void> {
         const {
             expectedCount = this.harness.getHonestPeers().length,
-            timeoutMs = 5000,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(0),
             peersIndices,
             mode = "atLeast"
         } = options || {};
@@ -140,7 +140,8 @@ export class AssertDisputeActions<
                                 options.sourceForkId
                             )
                             .request()) !== null,
-                    options.timeoutMs ?? 20000,
+                    options.timeoutMs ??
+                        this.harness.event.protocolEventTimeoutMs(0),
                     50
                 )
             )
