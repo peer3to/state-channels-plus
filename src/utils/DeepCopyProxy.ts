@@ -23,6 +23,12 @@ export function deepCopyProxy<T extends object>(original: T): T {
                         return result;
                     }
 
+                    // Don't deep copy promises - cloneDeep has no special case for
+                    // them and strips the internal slots .then() needs.
+                    if (result instanceof Promise) {
+                        return result;
+                    }
+
                     // Deep copy other results
                     return cloneDeep(result);
                 };

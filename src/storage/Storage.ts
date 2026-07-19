@@ -48,14 +48,8 @@ export class Storage {
     public readonly blockCalldata: BlockCalldataStorage;
     public readonly eventSync: EventSyncStorage;
 
-    // Unproxied reference to the blocks store, used only for hydrate(): deepCopyProxy
-    // clones every method's return value with lodash.cloneDeep, which corrupts Promises
-    // (they clone to plain `{}`) - so the async hydrate() path must bypass the proxy.
-    private readonly rawBlocks: BlockStorage;
-
     constructor(persistence?: StoragePersistenceFactory) {
-        this.rawBlocks = new BlockStorage(persistence?.blocks);
-        this.blocks = deepCopyProxy(this.rawBlocks);
+        this.blocks = deepCopyProxy(new BlockStorage(persistence?.blocks));
         this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());
@@ -77,7 +71,7 @@ export class Storage {
 
     /** Repopulate the blocks store's in-memory maps from its persistence port. */
     async hydrate(): Promise<void> {
-        await this.rawBlocks.hydrate();
+        await this.blocks.hydrate();
     }
 
     /**

@@ -830,6 +830,21 @@ describe("Persistence", () => {
         expect(persistence.errors).to.have.lengthOf(1);
     });
 
+    it("Storage.hydrate() rehydrates through the deepCopyProxy without corrupting the promise", async () => {
+        const persistence = new FakePersistence();
+        const writer = new Storage({ blocks: persistence });
+        writer.blocks.storeBlock(blockAt(0));
+        writer.blocks.storeBlock(blockAt(5));
+
+        const reader = new Storage({ blocks: persistence });
+        expect(reader.blocks.getNextBlockHeight(forkId)).to.equal(0);
+
+        await reader.hydrate();
+
+        expect(reader.blocks.getLatestBlock(forkId)?.height).to.equal(5);
+        expect(reader.blocks.getNextBlockHeight(forkId)).to.equal(6);
+    });
+
     it("hydrate() from a store truncated mid-write skips the corrupt entry and reports the highest contiguous height", async () => {
         const persistence = new FakePersistence();
         const writer = new BlockStorage(persistence);
