@@ -37,7 +37,8 @@ export type SyncFailReason =
     | "aborted"
     | "request-failed"
     | "timeout"
-    | "in-flight-collision";
+    | "in-flight-collision"
+    | "malformed-payload";
 
 export type SyncOutcome =
     | {
@@ -226,17 +227,29 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     ): Promise<SyncOutcome> {
         const channelId = syncRequest.channelId;
 
+        // A malicious/broken peer can return bytes that aren't a valid
+        // Codec.encode(SyncPayload). Decoded in its own try/catch (not the big
+        // one below) because that's unambiguously the peer's fault - no
+        // legitimate on-chain race explains undecodable bytes, unlike every
+        // other "aborted" reason below - so `failSync` punishes it even in
+        // resume mode.
+        let syncPayload: SyncPayload;
         try {
-            // Decode inside the try: a malicious/broken peer can return bytes
-            // that aren't a valid Codec.encode(SyncPayload). A decode throw must
-            // be treated as a failed sync (abort/disconnect), not propagate as an
-            // unhandled rejection from the background sync task.
-            const syncPayload = Codec.decode(
-                encodedSyncPayload,
-                Type.SyncPayload
+            syncPayload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
+        } catch (e) {
+            this.logger.warn("applySyncResponse - malformed sync payload", {
+                peerAddress,
+                error: e instanceof Error ? e.message : String(e)
+            });
+            return this.failSync(
+                peerAddress,
+                "malformed-payload",
+                opts.resumeMode
             );
-            this.logger.debug(`Sync payload received`, { syncPayload });
+        }
+        this.logger.debug(`Sync payload received`, { syncPayload });
 
+        try {
             const localTime = Clock.getTimeInSeconds();
             const rtt = localTime - syncRequest.initTime;
 
@@ -1094,13 +1107,19 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
      * `abort()` for its full side effects (hard nuke / blacklist), unchanged
      * from before this ticket. Resume mode still calls `abort()` so the
      * failure is logged consistently, but `abort()` itself suppresses every
-     * side effect in that mode.
+     * side effect in that mode - except a "malformed-payload" reason, which
+     * `abort()` never sees blacklist responsibility for: that's punished here
+     * unconditionally, since it's the one reason resume mode can't excuse as a
+     * legitimate on-chain race.
      */
     private failSync(
         peerAddress: string,
         reason: SyncFailReason,
         resumeMode: boolean
     ): SyncOutcome {
+        if (resumeMode && reason === "malformed-payload") {
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+        }
         this.abort(peerAddress, { resumeMode });
         return { ok: false, reason };
     }
