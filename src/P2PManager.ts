@@ -468,7 +468,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 await sleep(Math.min(RESUME_PEER_SWITCH_DELAY_MS, remainingMs));
                 continue;
             }
-            attemptedPeers.add(peer);
 
             const remainingMs = deadline - Date.now();
             if (remainingMs <= 0) break;
@@ -492,7 +491,14 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 { channelId, peer, reason: outcome.reason }
             );
 
-            if (attemptedPeers.size >= MAX_RESUME_SYNC_PEERS) break;
+            // A collision with an already-running sync to this same peer is
+            // transient - that sync may finish and resync us within a beat.
+            // Don't burn a peer slot on it; retry the same peer after the
+            // delay instead of permanently giving up on it.
+            if (outcome.reason !== "in-flight-collision") {
+                attemptedPeers.add(peer);
+                if (attemptedPeers.size >= MAX_RESUME_SYNC_PEERS) break;
+            }
             const remainingAfter = deadline - Date.now();
             if (remainingAfter <= 0) break;
             await sleep(Math.min(RESUME_PEER_SWITCH_DELAY_MS, remainingAfter));
