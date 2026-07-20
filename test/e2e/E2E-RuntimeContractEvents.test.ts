@@ -1,7 +1,6 @@
 import { expect } from "chai";
 
 import { MathTestSession as TestSession } from "@test/harness";
-import { waitFor } from "@test/utils/waitFor";
 
 /**
  * A contract event emitted by the host EVM must reach a subscriber on the
@@ -29,11 +28,17 @@ describe("E2E: Runtime contract events", function () {
 
         const received: Array<[bigint, bigint, bigint]> = [];
         // Subscribe exactly like the app: through the main-thread contract whose
-        // runner is the provider-less ClientP2pSigner.
+        // runner is the provider-less ClientP2pSigner. The listener itself
+        // signals arrival — no need to poll `received` afterwards.
+        let onReceived: () => void;
+        const receivedEvent = new Promise<void>((resolve) => {
+            onReceived = resolve;
+        });
         await contract.on(
             contract.filters.Addition(),
             (a: bigint, b: bigint, result: bigint) => {
                 received.push([a, b, result]);
+                onReceived();
             }
         );
 
@@ -42,7 +47,18 @@ describe("E2E: Runtime contract events", function () {
         // the log and forwards it over its own runtime port.
         await h.transition.advanceState({ count: 1 });
 
-        await waitFor(() => received.length >= 1, 15_000);
+        await Promise.race([
+            receivedEvent,
+            new Promise<never>((_, reject) =>
+                setTimeout(
+                    () =>
+                        reject(
+                            new Error("timed out waiting for Addition event")
+                        ),
+                    15_000
+                )
+            )
+        ]);
 
         expect(received).to.have.lengthOf(1);
         const [a, b, result] = received[0];
