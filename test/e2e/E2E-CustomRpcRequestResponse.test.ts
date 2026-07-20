@@ -154,14 +154,20 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
 
         // Track connection completion via client-side p2p event hooks (these
         // cross the port from the host). No host/state-manager access is used.
-        const connectedTo = new Map<string, Set<string>>([
-            [peer0Address, new Set<string>()],
-            [peer1Address, new Set<string>()]
-        ]);
+        // Each listener resolves its own deferred promise on arrival — no
+        // polling needed.
+        let resolveConnectedPeer0ToPeer1: () => void;
+        const connectedPeer0ToPeer1 = new Promise<void>((resolve) => {
+            resolveConnectedPeer0ToPeer1 = resolve;
+        });
+        let resolveConnectedPeer1ToPeer0: () => void;
+        const connectedPeer1ToPeer0 = new Promise<void>((resolve) => {
+            resolveConnectedPeer1ToPeer0 = resolve;
+        });
 
         const makePeer = async (
             runtimeWallet: ethers.HDNodeWallet,
-            selfAddress: string
+            onConnectedTo: (address: string) => void
         ): Promise<PingPeer> => {
             const runtimeSigner = runtimeWallet;
             const scm = StateChannelManagerProxy__factory.connect(
@@ -191,17 +197,23 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             // Track connection completion via a client-side p2p event listener
             // (forwarded over the port from the host).
             instance.on("onConnection", (address) => {
-                connectedTo
-                    .get(selfAddress)
-                    ?.add(String(address).toLowerCase());
+                onConnectedTo(String(address).toLowerCase());
             });
 
             return instance;
         };
 
-        const peer0 = await makePeer(peer0Wallet, peer0Address);
+        const peer0 = await makePeer(peer0Wallet, (address) => {
+            if (address === peer1Address.toLowerCase()) {
+                resolveConnectedPeer0ToPeer1();
+            }
+        });
         peers.push(peer0);
-        const peer1 = await makePeer(peer1Wallet, peer1Address);
+        const peer1 = await makePeer(peer1Wallet, (address) => {
+            if (address === peer0Address.toLowerCase()) {
+                resolveConnectedPeer1ToPeer0();
+            }
+        });
         peers.push(peer1);
 
         // Open a channel with both participants, driven entirely from the
@@ -234,16 +246,20 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         await openTx.wait();
 
         // Wait until both peers report a completed handshake to each other.
-        await waitFor(
-            () =>
-                connectedTo
-                    .get(peer0Address)
-                    ?.has(peer1Address.toLowerCase()) === true &&
-                connectedTo
-                    .get(peer1Address)
-                    ?.has(peer0Address.toLowerCase()) === true,
-            20_000
-        );
+        await Promise.race([
+            Promise.all([connectedPeer0ToPeer1, connectedPeer1ToPeer0]),
+            new Promise<never>((_, reject) =>
+                setTimeout(
+                    () =>
+                        reject(
+                            new Error(
+                                "timed out waiting for mutual handshake completion"
+                            )
+                        ),
+                    20_000
+                )
+            )
+        ]);
 
         // --- Self-call (no target): runs on the peer's own host (loopback) ---
         const sumSelf: SumResponse = await peer0.hostRpc.pingService
