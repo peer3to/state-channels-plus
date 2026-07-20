@@ -87,10 +87,13 @@ class ClientP2pSigner implements Signer {
     async sendTransaction(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
-        await this.client.request<void>({
-            type: "sendTransaction",
-            data: ethers.hexlify(tx.data ?? "0x")
-        });
+        await this.client.request<void>(
+            {
+                type: "sendTransaction",
+                data: ethers.hexlify(tx.data ?? "0x")
+            },
+            { timeoutMs: null }
+        );
         return "There is no TransactionResponse p2p - everything executed locally" as unknown as TransactionResponse;
     }
 
@@ -132,10 +135,13 @@ class ClientP2pSigner implements Signer {
     }
 
     connectToChannel(channelId: Bytes): Promise<void> {
-        return this.client.request<void>({
-            type: "connectToChannel",
-            channelId: channelId.toString()
-        });
+        return this.client.request<void>(
+            {
+                type: "connectToChannel",
+                channelId: channelId.toString()
+            },
+            { timeoutMs: null }
+        );
     }
 
     async joinChannel(
@@ -143,14 +149,17 @@ class ClientP2pSigner implements Signer {
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<void> {
-        await this.client.request<void>({
-            type: "joinChannel",
-            encodedJoinChannelConfirmation: String(
-                Codec.encode(confirmation, Type.JoinChannelConfirmation)
-            ),
-            expectedSnapshotHash: String(expectedSnapshotHash),
-            expectedForkId: String(expectedForkId)
-        });
+        await this.client.request<void>(
+            {
+                type: "joinChannel",
+                encodedJoinChannelConfirmation: String(
+                    Codec.encode(confirmation, Type.JoinChannelConfirmation)
+                ),
+                expectedSnapshotHash: String(expectedSnapshotHash),
+                expectedForkId: String(expectedForkId)
+            },
+            { timeoutMs: null }
+        );
     }
 
     async topUpBalance(
@@ -158,14 +167,17 @@ class ClientP2pSigner implements Signer {
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<void> {
-        await this.client.request<void>({
-            type: "topUpBalance",
-            encodedJoinChannelConfirmation: String(
-                Codec.encode(confirmation, Type.JoinChannelConfirmation)
-            ),
-            expectedSnapshotHash: String(expectedSnapshotHash),
-            expectedForkId: String(expectedForkId)
-        });
+        await this.client.request<void>(
+            {
+                type: "topUpBalance",
+                encodedJoinChannelConfirmation: String(
+                    Codec.encode(confirmation, Type.JoinChannelConfirmation)
+                ),
+                expectedSnapshotHash: String(expectedSnapshotHash),
+                expectedForkId: String(expectedForkId)
+            },
+            { timeoutMs: null }
+        );
     }
 
     async collectJoinChannelConfirmation(

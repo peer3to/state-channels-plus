@@ -72,4 +72,60 @@ describe("parallel Mocha task discovery", function () {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
+
+    it("enumerates substituted it titles into isolated tasks", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "mocha-dynamic-it-")
+        );
+        const testDir = path.join(root, "test");
+        const file = path.join(testDir, "dynamic.test.ts");
+        fs.mkdirSync(testDir, { recursive: true });
+        fs.writeFileSync(
+            file,
+            'describe("matrix", () => { for (const value of [1, 2]) it(`case ${value}`, () => {}); it("static", () => {}); });'
+        );
+
+        try {
+            const { tasks } = discoverTasks(testDir);
+            expect(tasks.map((task) => task.fullTitle)).to.have.members([
+                "matrix case 1",
+                "matrix case 2",
+                "matrix static"
+            ]);
+            expect(tasks).to.have.lengthOf(3);
+            expect(
+                tasks.every((task) => task.args.includes("--grep"))
+            ).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("enumerates dynamic describe titles before applying --grep", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "mocha-dynamic-describe-")
+        );
+        const testDir = path.join(root, "test");
+        const file = path.join(testDir, "dynamic.test.ts");
+        fs.mkdirSync(testDir, { recursive: true });
+        fs.writeFileSync(
+            file,
+            'for (const value of [1, 2]) describe(`suite ${value}`, () => { it("runs", () => {}); });'
+        );
+
+        try {
+            const { tasks } = discoverTasks(testDir, "suite 2");
+            expect(tasks).to.have.lengthOf(1);
+            expect(tasks[0].fullTitle).to.equal("suite 2 runs");
+            expect(tasks[0].args).to.deep.equal([
+                "test",
+                "--no-compile",
+                file,
+                "--grep",
+                "^suite 2 runs$"
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
 });

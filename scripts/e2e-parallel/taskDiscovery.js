@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 const { createHash } = require("crypto");
+const { spawnSync } = require("child_process");
 const path = require("path");
 const { globSync } = require("glob");
 const { Project, SyntaxKind } = require("ts-morph");
@@ -47,6 +48,7 @@ function extractMochaTests(filePath) {
     const project = new Project();
     const sourceFile = project.addSourceFileAtPath(filePath);
     const tests = [];
+    let requiresFileFallback = false;
 
     // Expand each implemented it() independently. Walking from the test back
     // through its describe() ancestors avoids duplicates from nested suites.
@@ -65,8 +67,25 @@ function extractMochaTests(filePath) {
             if (!isFunction) return;
 
             const testName = getStringLiteralValue(args[0]);
-            if (!testName) return;
+            if (!testName) {
+                requiresFileFallback = true;
+                return;
+            }
             const describeTitles = collectDescribeTitlesFromIt(callExpr);
+            let current = callExpr.getParent();
+            while (current) {
+                if (current.getKind() === SyntaxKind.SourceFile) break;
+                if (current.getKind() === SyntaxKind.CallExpression) {
+                    const expression = current.getExpression();
+                    if (
+                        isDescribeCallee(expression) &&
+                        !getStringLiteralValue(current.getArguments()[0])
+                    ) {
+                        requiresFileFallback = true;
+                    }
+                }
+                current = current.getParent();
+            }
             const suiteName = describeTitles[0] ?? path.basename(filePath);
             const fullTitle = [...describeTitles, testName.trim()].join(" ");
             tests.push({
@@ -76,7 +95,33 @@ function extractMochaTests(filePath) {
             });
         });
 
-    return tests;
+    return { tests, requiresFileFallback };
+}
+
+function enumerateMochaTests(filePath) {
+    const result = spawnSync(
+        process.execPath,
+        [
+            "-r",
+            "ts-node/register/transpile-only",
+            "-r",
+            "tsconfig-paths/register",
+            "-r",
+            "hardhat/register",
+            path.join(__dirname, "enumerateMochaTests.js"),
+            path.resolve(filePath)
+        ],
+        {
+            cwd: path.resolve(__dirname, "../.."),
+            encoding: "utf8"
+        }
+    );
+    if (result.status !== 0) {
+        throw new Error(
+            `Failed to enumerate dynamic Mocha titles in ${filePath}: ${result.stderr || result.stdout}`
+        );
+    }
+    return JSON.parse(result.stdout);
 }
 
 function escapeRegex(text) {
@@ -104,7 +149,23 @@ function discoverTasks(testDir, grep, e2eDir = path.resolve("test/e2e")) {
         const isE2E =
             resolvedFile.startsWith(`${resolvedE2eDir}${path.sep}`) ||
             resolvedFile === resolvedE2eDir;
-        for (const { suite, test, fullTitle } of extractMochaTests(f)) {
+        const { tests, requiresFileFallback } = extractMochaTests(f);
+        if (requiresFileFallback) {
+            for (const fullTitle of enumerateMochaTests(f)) {
+                const taskGrep = `^${escapeRegex(fullTitle)}$`;
+                tasks.push({
+                    label: `test:${path.basename(f)}:${fullTitle}`,
+                    args: ["test", "--no-compile", f, "--grep", taskGrep],
+                    logName: sanitizeFileName(
+                        `${path.basename(f, path.extname(f))}__${fullTitle}`
+                    ),
+                    fullTitle,
+                    isE2E
+                });
+            }
+            continue;
+        }
+        for (const { suite, test, fullTitle } of tests) {
             const taskGrep = `^${escapeRegex(fullTitle)}$`;
             const logName = sanitizeFileName(
                 `${path.basename(f, path.extname(f))}__${suite}__${test}`
@@ -130,6 +191,7 @@ module.exports = {
     isDescribeCallee,
     collectDescribeTitlesFromIt,
     extractMochaTests,
+    enumerateMochaTests,
     escapeRegex,
     sanitizeFileName,
     discoverTasks

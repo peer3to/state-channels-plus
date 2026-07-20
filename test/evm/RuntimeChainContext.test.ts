@@ -160,4 +160,67 @@ describe("RuntimeChainContext", () => {
             channel.port2.close();
         }
     });
+
+    it("lets an uncancellable P2P signer mutation outlive the request timeout", async () => {
+        const clock = sinon.useFakeTimers({
+            toFake: ["setTimeout", "clearTimeout"]
+        });
+        const channel = createRuntimeChannel();
+        const signer = ethers.Wallet.createRandom();
+        const scm = {
+            address: ethers.Wallet.createRandom().address,
+            abiJson:
+                StateChannelManagerProxy__factory.createInterface().formatJson()
+        };
+        const client = new P2pRuntimeClient(channel.port1, {
+            signerAddress: signer.address,
+            scm,
+            stateMachine: {
+                address: ethers.Wallet.createRandom().address,
+                abiJson: "[]"
+            },
+            provider: ethers.provider
+        });
+        let sendRequestId: number | undefined;
+        let resolveSendReceived!: () => void;
+        const sendReceived = new Promise<void>((resolve) => {
+            resolveSendReceived = resolve;
+        });
+
+        channel.port2.onMessage((raw) => {
+            const request = raw as RuntimeClientRequest;
+            if (request.type === "sendTransaction") {
+                sendRequestId = request.requestId;
+                resolveSendReceived();
+                return;
+            }
+            channel.port2.post({
+                type: "response",
+                requestId: request.requestId,
+                ok: true,
+                result: undefined
+            } satisfies RuntimeHostMessage);
+        });
+        channel.port2.start();
+
+        try {
+            const send = client.signer.sendTransaction({ data: "0x" });
+            await sendReceived;
+            await clock.tickAsync(30_001);
+            channel.port2.post({
+                type: "response",
+                requestId: sendRequestId!,
+                ok: true,
+                result: undefined
+            } satisfies RuntimeHostMessage);
+
+            expect(await send).to.equal(
+                "There is no TransactionResponse p2p - everything executed locally"
+            );
+        } finally {
+            clock.restore();
+            await client.dispose();
+            channel.port2.close();
+        }
+    });
 });

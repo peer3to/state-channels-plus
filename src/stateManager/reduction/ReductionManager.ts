@@ -187,7 +187,7 @@ export default class ReductionManager {
         genesis: ReductionGenesis
     ): Promise<boolean> {
         const completion = this.getOrCreateCompletion(forkId);
-        let installed: boolean;
+        let installed = false;
         try {
             installed = await this.stateManager.withMutex(
                 async () => {
@@ -222,7 +222,6 @@ export default class ReductionManager {
         } catch (error) {
             this.failCompletion(completion, error);
             await completion.promise;
-            return false;
         }
 
         const result = await completion.promise;

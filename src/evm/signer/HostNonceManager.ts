@@ -64,12 +64,6 @@ class HostNonceManager extends AbstractSigner {
             taskName: "HostNonceManager.sendTransaction"
         });
         try {
-            assert(
-                !this.nonceStateIndeterminate,
-                "cannot send while the account nonce state is indeterminate",
-                "UNKNOWN_ERROR",
-                { operation: "sendTransaction" }
-            );
             const provider = this.provider;
             assert(
                 provider,
@@ -77,6 +71,10 @@ class HostNonceManager extends AbstractSigner {
                 "UNSUPPORTED_OPERATION",
                 { operation: "sendTransaction" }
             );
+            if (this.nonceStateIndeterminate) {
+                this.nextNonce = await this.signer.getNonce("pending");
+                this.nonceStateIndeterminate = false;
+            }
             const nonce =
                 this.nextNonce ?? (await this.signer.getNonce("pending"));
             const populated = await this.signer.populateTransaction({

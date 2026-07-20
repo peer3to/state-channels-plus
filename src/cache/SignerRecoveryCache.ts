@@ -6,7 +6,7 @@ import { config } from "@/utils/config";
  * Per-thread memo of ECDSA signer recovery, keyed by (message digest, signature).
  * `verifyMessage` is a pure function of its inputs, so this only skips repeating
  * the secp256k1 work — never changes who a signature resolves to. Generic over
- * any message+signature (blocks, join/open/transaction/dispute), not just blocks.
+ * byte-message signatures (blocks, join/open/transaction/dispute), not just blocks.
  *
  * Local-only derived data: never serialized or transmitted. One instance per
  * worker thread (module singleton). Bounded by SIGNER_RECOVERY_CACHE_MAX with
@@ -14,12 +14,12 @@ import { config } from "@/utils/config";
  */
 const cache = new Map<string, Address>();
 
-function keyOf(message: Uint8Array | string, signature: Signature): string {
+function keyOf(message: Uint8Array, signature: Signature): string {
     return hexlify(message) + signature;
 }
 
 export function recoverSigner(
-    message: Uint8Array | string,
+    message: Uint8Array,
     signature: Signature
 ): Address {
     const key = keyOf(message, signature);

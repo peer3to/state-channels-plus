@@ -1,6 +1,8 @@
 import { expect } from "chai";
 import type { TransactionResponse } from "ethers";
 import { ethers } from "hardhat";
+import assert from "node:assert/strict";
+import sinon from "sinon";
 
 import HostNonceManager from "@/evm/signer/HostNonceManager";
 
@@ -75,5 +77,64 @@ describe("HostNonceManager", () => {
         expect(() => manager.connect(null)).to.throw(
             "cannot reconnect host nonce manager"
         );
+    });
+
+    it("recovers an indeterminate nonce lazily on the next send", async () => {
+        const [funder, recipient] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+        const originalGetNonce = sender.getNonce.bind(sender);
+        let nonceQueries = 0;
+        const getNonce = sinon
+            .stub(sender, "getNonce")
+            .callsFake(async (blockTag) => {
+                nonceQueries += 1;
+                if (nonceQueries === 2 || nonceQueries === 3) {
+                    throw new Error("transient nonce query failure");
+                }
+                return originalGetNonce(blockTag);
+            });
+
+        try {
+            await assert.rejects(
+                manager.sendTransaction({
+                    to: recipient.address,
+                    value: ethers.parseEther("2")
+                }),
+                /account nonce state could not be reconciled/
+            );
+            expect(nonceQueries).to.equal(2);
+
+            await assert.rejects(
+                manager.sendTransaction({
+                    to: recipient.address,
+                    value: 1n
+                }),
+                /transient nonce query failure/
+            );
+            expect(nonceQueries).to.equal(3);
+
+            const response = await manager.sendTransaction({
+                to: recipient.address,
+                value: 1n
+            });
+            await response.wait();
+
+            expect(nonceQueries).to.equal(4);
+            expect(response.nonce).to.equal(
+                await ethers.provider.getTransactionCount(
+                    sender.address,
+                    response.blockNumber! - 1
+                )
+            );
+        } finally {
+            getNonce.restore();
+        }
     });
 });

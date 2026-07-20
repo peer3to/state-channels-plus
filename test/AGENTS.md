@@ -189,5 +189,5 @@ in the parallel summary is the detector.
 - Parallel runner: `yarn test:parallel` — each run logs to a fresh
   `./logs/run-N/`; earlier run dirs (and their `error_*` logs) are retained
   for cross-run comparison. Only the current run's dir is cleared. See root
-  `AGENTS.md` ("E2E parallel run logs").
+  `AGENTS.md` ("Canonical test command and parallel run logs").
 - Narrow first: run the single `*.test.ts` you touched before the suite.
