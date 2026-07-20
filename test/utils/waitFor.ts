@@ -1,7 +1,7 @@
 export async function waitFor(
     condition: () => boolean | Promise<boolean>,
     timeoutMs: number = 1000,
-    pollIntervalMs: number = 5
+    pollIntervalMs: number = 100
 ): Promise<void> {
     const startTime = Date.now();
 
