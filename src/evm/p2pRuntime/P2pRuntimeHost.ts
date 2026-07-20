@@ -638,6 +638,12 @@ export async function startP2pRuntimeHost<
                             );
                         break;
                     }
+                    case "resumeFromBackground":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.resumeFromBackground();
+                        break;
                     case "dispose":
                         await disposeRuntime();
                         break;

@@ -138,6 +138,14 @@ export type DisposeRequest = RuntimeRequest<"dispose">;
 export type QuiesceRequest = RuntimeRequest<"quiesce">;
 
 /**
+ * Mobile reconnect: recover this host's channel after coming back from
+ * background — rejoin the topic, hydrate storage, resync through a connected
+ * peer. See `P2PManager.resumeFromBackground`. Returns `ResumeResult`.
+ */
+export type ResumeFromBackgroundRequest =
+    RuntimeRequest<"resumeFromBackground">;
+
+/**
  * Mirrors a `hostRpc.<service>.<method>(...params).<delivery>(...args)` call
  * invoked from the client. The port is a pure proxy: the host replays the exact
  * same chained call on its live `remoteRpc` and (for `request`) awaits and
@@ -184,6 +192,7 @@ export type RuntimeClientRequest =
     | DeployCompleteRequest
     | HostRpcRequest
     | QuiesceRequest
+    | ResumeFromBackgroundRequest
     | DisposeRequest;
 
 /** A request without its correlation id, as supplied by callers. */
