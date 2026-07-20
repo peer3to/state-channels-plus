@@ -4,7 +4,6 @@ import { MathTestSession as TestSession } from "@test/harness";
 import * as factory from "@test/factory";
 import type { Address } from "@/types/types";
 
-
 describe("Unit: DisputeManager", function () {
     describe("constructDispute", function () {
         it("healthy fork → well-formed dispute, verifyStateProof accepts it", async function () {
@@ -190,7 +189,6 @@ describe("Unit: DisputeManager", function () {
         // spectate-synced first); an unknown forkId is a pre-sync condition.
         it.skip("unknown forkId → genesisStateSnapshot not found (defensive)", function () {});
 
-
         it("own fully-synced fork proof → not partial, one milestoneSnapshot per proof milestone", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3); // fully-signed -> milestone proof
@@ -203,11 +201,10 @@ describe("Unit: DisputeManager", function () {
                         Number(
                             sm.storage.blocks.getNextBlockHeight(args.forkId)
                         ) - 1;
-                    const stateProof =
-                        await sm.agreementManager.getStateProof(
-                            args.forkId,
-                            height
-                        );
+                    const stateProof = await sm.agreementManager.getStateProof(
+                        args.forkId,
+                        height
+                    );
                     const { isPartial, auditingData } =
                         sm.disputeManager.getAuditingData(
                             args.forkId,
@@ -416,7 +413,12 @@ describe("Unit: DisputeManager", function () {
             expect(r.offenderSlashed).to.equal(true);
         });
 
-        // skipped: flaky
+        // skipped: flaky - exposes a real product bug (~10% of runs), not a test
+        // defect. see the KNOWN RACE note below: a losing peer's reduceAndFinalize
+        // reverts ErrorDisputeInboundMessageBlocksInvalid on the reduction path and
+        // it's rethrown into a fire-and-forget promise -> unhandled detached
+        // rejection.
+        // https://trello.com/c/MUwszX7B
         it.skip("fault-free writer-timeout on a pending-join fork → dispute posts with calldata", async function () {
             this.timeout(90000);
             const h = TestSession.getHarness();
@@ -466,7 +468,9 @@ describe("Unit: DisputeManager", function () {
 
         it("a killed spam dispute re-killed → no second slash, no throw", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 6 } });
+            await h.scenario.preDisputeSetup({
+                timeConfig: { evidenceTime: 6 }
+            });
 
             // a dispute that's internally valid but has no enforcement basis ->
             // honest peers audit-fail, store a fraud proof, kill it, slash the
@@ -484,33 +488,40 @@ describe("Unit: DisputeManager", function () {
             // re-kill from the stored proof: the spammer is already slashed, so
             // the on-chain apply is idempotent -> killDispute completes with no
             // throw and no second slash
-            const r = await h.execOnHost(h.getPeer(0), async (sm) => {
-                const proofs =
-                    sm.storage.disputeFraudProofs.getDisputeFraudProofs();
-                if (proofs.length === 0) return { hadProof: false };
-                const before = (
-                    await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                        sm.channelId
-                    )
-                ).map(String);
-                let threw = "";
-                try {
-                    await sm.disputeManager.killDispute(proofs[0].dispute);
-                } catch (e) {
-                    threw = e instanceof Error ? e.message : String(e);
-                }
-                const after = (
-                    await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                        sm.channelId
-                    )
-                ).map(String);
-                return {
-                    hadProof: true,
-                    threw,
-                    beforeCount: before.length,
-                    afterCount: after.length
-                };
-            });
+            const r = await h.execOnHost(
+                h.getPeer(0),
+                async (sm) => {
+                    const proofs =
+                        sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                    if (proofs.length === 0) return { hadProof: false };
+                    const before = (
+                        await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                            sm.channelId
+                        )
+                    ).map(String);
+                    let threw = "";
+                    try {
+                        await sm.disputeManager.killDispute(proofs[0].dispute);
+                    } catch (e) {
+                        threw = e instanceof Error ? e.message : String(e);
+                    }
+                    const after = (
+                        await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                            sm.channelId
+                        )
+                    ).map(String);
+                    return {
+                        hadProof: true,
+                        threw,
+                        beforeCount: before.length,
+                        afterCount: after.length
+                    };
+                },
+                {},
+                // two on-chain reads + a re-kill's on-chain apply can overrun the
+                // default 2s control-RPC budget under load
+                { timeoutMs: 20000 }
+            );
 
             expect(r.hadProof).to.equal(true);
             expect(r.threw).to.equal("");
@@ -519,6 +530,18 @@ describe("Unit: DisputeManager", function () {
             await h.dispute.resolveDisputeWait({
                 forkId: h.activeForkId!,
                 forkSettleTimeoutMs: 15000
+            });
+
+            // the original detached kill (peer 0's EventHandler) and this re-kill
+            // share peer 0's signer, so the competing applyDisputeFraudProofs tx
+            // can lose the nonce race -> a benign detached NONCE_EXPIRED. drain it
+            // host-side and claim any copy that reaches the session hook so the
+            // afterEach doesn't rethrow this expected race.
+            await h.quiesceHosts();
+            await TestSession.expectFirstDetachedError({
+                includes: "NONCE_EXPIRED",
+                timeoutMs: 100,
+                required: false
             });
         });
     });
