@@ -6,7 +6,6 @@ import {
     encodeMathState,
     type MathStateDecoded
 } from "@test/utils/mathHarnessAbi";
-import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import Clock from "@/Clock";
 import assert from "node:assert/strict";
@@ -335,12 +334,10 @@ describe("E2E: Join channel race conditions", function () {
                 assertMaliciousRemoved: false
             });
 
-            await waitFor(async () => {
-                const snapshot = await h.channelManager.getStateSnapshot(
-                    h.channelId
-                );
-                return snapshot.forkId !== originalForkId;
-            }, 15000);
+            await h.assert.snapshot.localSnapshotsChangedWait({
+                previousForkId: originalForkId,
+                timeoutMs: 15000
+            });
 
             const onChainParticipants = await h.channelManager.getParticipants(
                 h.channelId
@@ -441,12 +438,10 @@ describe("E2E: Join channel race conditions", function () {
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false
             });
-            await waitFor(async () => {
-                const snapshot = await h.channelManager.getStateSnapshot(
-                    h.channelId
-                );
-                return snapshot.forkId !== originalForkId;
-            }, 15000);
+            await h.assert.snapshot.localSnapshotsChangedWait({
+                previousForkId: originalForkId,
+                timeoutMs: 15000
+            });
 
             const union = await h
                 .control(h.getPeer(1))
