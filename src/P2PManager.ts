@@ -62,13 +62,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     self = config.DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
-    // Dedups concurrent resumeFromBackground(channelId) calls - keyed by the
-    // stringified channelId (BytesLike has more than one valid runtime
-    // representation, so normalize before using it as a Map key).
-    private resumeInFlightByChannelId = new Map<
-        string,
-        Promise<ResumeResult>
-    >();
+    // Dedups concurrent resumeFromBackground() calls. A single in-flight
+    // promise (not a per-channel map) is enough: this P2PManager instance is
+    // itself scoped to one channel, via `stateManager`.
+    private resumeInFlight?: Promise<ResumeResult>;
 
     private rpcRequestCounter = 0;
     private pendingRpcRequests = new Map<
@@ -385,21 +382,19 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
      * the process-global Holepunch swarm (it's shared across every open
      * channel - see Holepunch.ts/HolepunchRelay.ts). Channel-scoped recovery
      * is topic rejoin + re-handshake + an awaited resync; no swarm
-     * dispose/destroy/close. Dedups concurrent calls for the same channel by
-     * returning the in-flight promise.
+     * dispose/destroy/close. Dedups concurrent calls by returning the
+     * in-flight promise.
      */
-    public resumeFromBackground(channelId: ChannelId): Promise<ResumeResult> {
-        const key = String(channelId);
-        const inFlight = this.resumeInFlightByChannelId.get(key);
-        if (inFlight) return inFlight;
+    public resumeFromBackground(): Promise<ResumeResult> {
+        if (this.resumeInFlight) return this.resumeInFlight;
 
-        const resumePromise = this.doResumeFromBackground(channelId).finally(
+        const channelId = this.stateManager.getChannelId();
+        this.resumeInFlight = this.doResumeFromBackground(channelId).finally(
             () => {
-                this.resumeInFlightByChannelId.delete(key);
+                this.resumeInFlight = undefined;
             }
         );
-        this.resumeInFlightByChannelId.set(key, resumePromise);
-        return resumePromise;
+        return this.resumeInFlight;
     }
 
     private async doResumeFromBackground(
