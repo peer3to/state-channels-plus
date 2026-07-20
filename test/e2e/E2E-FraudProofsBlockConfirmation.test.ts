@@ -4,7 +4,6 @@ import Clock from "@/Clock";
 import { FraudProofType } from "@/types/sol-enums";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
-import { waitFor } from "@test/utils/waitFor";
 import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 
 /**
@@ -130,13 +129,16 @@ describe("E2E: Block Fraud Proofs", function () {
         // maybePostBlockOnChain is stubbed ()=>{} + after AgreementTime the subjective check each peer does would fail, so if the block is accepted -> calldata path
         await postBlockCalldata(block1!);
 
-        await waitFor(
+        await h.eventCountsBarrier.waitFor(
             async () =>
                 (await h
                     .control(observer)
                     .query.getBlockByHash(block1!.hash)
                     .request()) !== null,
-            5000
+            {
+                timeoutMs: 5000,
+                timeoutMessage: `observer did not store block1 (${block1!.hash}) within 5000ms`
+            }
         );
 
         // Re-deliver block2 from the chain (as an event re-read would) — it
@@ -151,13 +153,16 @@ describe("E2E: Block Fraud Proofs", function () {
             keepConnection: true,
             waitForProcessed: false
         });
-        await waitFor(
+        await h.eventCountsBarrier.waitFor(
             async () =>
                 (await h
                     .control(observer)
                     .query.getBlockByHash(block2!.hash)
                     .request()) !== null,
-            5000
+            {
+                timeoutMs: 5000,
+                timeoutMessage: `observer did not store block2 (${block2!.hash}) within 5000ms`
+            }
         );
 
         const storedBlock2 = await h
@@ -245,7 +250,7 @@ describe("E2E: Block Fraud Proofs", function () {
             processedKeepConnection: true
         });
 
-        await waitFor(
+        await h.eventCountsBarrier.waitFor(
             async () =>
                 (
                     await h
@@ -253,7 +258,10 @@ describe("E2E: Block Fraud Proofs", function () {
                         .query.getBlockByHash(block!.hash)
                         .request()
                 )?.onChainTimestamp === expectedTimestamp,
-            5000
+            {
+                timeoutMs: 5000,
+                timeoutMessage: `observer's stored block ${block!.hash} did not merge onChainTimestamp ${expectedTimestamp} within 5000ms`
+            }
         );
         expect(
             Number(
@@ -304,19 +312,19 @@ describe("E2E: Block Fraud Proofs", function () {
             ingestOptions: { senderAddress: h.getPeer(1).address },
             keepConnection: true,
             // The merge is a scheduled task and setup echoes of this block
-            // fire matching processed events, so waiting on the event races —
-            // poll for the strategy's outcome (sender blacklisted) instead.
+            // fire matching processed events, so waiting on the *processed*
+            // event races (ingestBlockConfirmationWait's own wait matches
+            // stale spy-history hits) — wait on the strategy's outcome
+            // (sender blacklisted) instead, which reads live state rather
+            // than event history so it isn't vulnerable to the same race.
             waitForProcessed: false
         });
 
-        await waitFor(
-            async () =>
-                await h
-                    .control(observer)
-                    .query.isBlacklisted(h.getPeer(1).address)
-                    .request(),
-            5000
-        );
+        await h.assert.sync.peerBlacklistedWait({
+            peerIndex: observer.index,
+            targetAddress: h.getPeer(1).address,
+            timeoutMs: 5000
+        });
         const storedBlock = await h
             .control(observer)
             .query.getBlockByHash(block!.hash)
