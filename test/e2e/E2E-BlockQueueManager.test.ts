@@ -123,14 +123,11 @@ describe("E2E: BlockQueueManager", function () {
             )
             .request();
 
-        await waitFor(
-            async () =>
-                await h
-                    .control(observer)
-                    .query.isBlacklisted(sender.address)
-                    .request(),
-            5000
-        );
+        await h.assert.sync.peerBlacklistedWait({
+            peerIndex: observer.index,
+            targetAddress: sender.address,
+            timeoutMs: 5000
+        });
         expect(
             await h
                 .control(observer)
@@ -287,14 +284,11 @@ describe("E2E: BlockQueueManager", function () {
             .transition.storeBlock(block1!.encodedBlockConfirmation)
             .request();
 
-        await waitFor(
-            async () =>
-                await h
-                    .control(observer)
-                    .query.isBlacklisted(h.getPeer(1).address)
-                    .request(),
-            (timeConfig.agreementTime + 5) * 1000
-        );
+        await h.assert.sync.peerBlacklistedWait({
+            peerIndex: observer.index,
+            targetAddress: h.getPeer(1).address,
+            timeoutMs: (timeConfig.agreementTime + 5) * 1000
+        });
         const storedBlock = await h
             .control(observer)
             .query.getBlockByHash(block1!.hash)
@@ -380,13 +374,19 @@ describe("E2E: BlockQueueManager", function () {
 
             await writerPeer!.p2pInstance.p2pContractInstance.add(1);
 
-            await waitFor(async () => {
-                const block = await h
-                    .control(sourcePeer)
-                    .query.getBlockByHeight(newForkId, 0)
-                    .request();
-                return Boolean(block?.encodedBlockConfirmation);
-            }, 10000);
+            await h.eventCountsBarrier.waitFor(
+                async () => {
+                    const block = await h
+                        .control(sourcePeer)
+                        .query.getBlockByHeight(newForkId, 0)
+                        .request();
+                    return Boolean(block?.encodedBlockConfirmation);
+                },
+                {
+                    timeoutMs: 10000,
+                    timeoutMessage: `sourcePeer did not observe the first reduced-fork block within 10000ms`
+                }
+            );
 
             const firstBlock = await h
                 .control(sourcePeer)
@@ -410,14 +410,12 @@ describe("E2E: BlockQueueManager", function () {
                 timeoutMs: 20000
             });
 
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(targetPeer)
-                        .query.getForkId()
-                        .request()) === newForkId,
-                10000
-            );
+            await h.assert.sync.forkChangedWait({
+                originalForkId,
+                expectedForkId: newForkId,
+                honestPeerIndices: [targetPeerIndex],
+                timeoutMs: 10000
+            });
             expect(
                 h.event.getEventCallCount(targetPeerIndex, "onSetState")
             ).to.equal(1, "ingest-time local reduction should set state once");
@@ -530,14 +528,11 @@ describe("E2E: BlockQueueManager", function () {
             // The punishment arrives through the sync flow, not the queue:
             // the supplier cannot prove the fork, so the failed sync
             // blacklists them.
-            await waitFor(
-                async () =>
-                    await h
-                        .control(observer)
-                        .query.isBlacklisted(author.address)
-                        .request(),
-                15000
-            );
+            await h.assert.sync.peerBlacklistedWait({
+                peerIndex: observer.index,
+                targetAddress: author.address,
+                timeoutMs: 15000
+            });
             expect(
                 await h.control(observer).query.getForkId().request()
             ).to.equal(originalForkId);
@@ -640,14 +635,11 @@ describe("E2E: BlockQueueManager", function () {
             ).to.be.null;
             // The supplier cannot prove the bogus fork - the failed sync
             // blacklists them.
-            await waitFor(
-                async () =>
-                    await h
-                        .control(targetPeer)
-                        .query.isBlacklisted(author.address)
-                        .request(),
-                15000
-            );
+            await h.assert.sync.peerBlacklistedWait({
+                peerIndex: targetPeerIndex,
+                targetAddress: author.address,
+                timeoutMs: 15000
+            });
 
             await race.release();
             await h.event.waitWhileEventCountsStayAtMost(
@@ -714,13 +706,19 @@ describe("E2E: BlockQueueManager", function () {
 
             await writerPeer!.p2pInstance.p2pContractInstance.add(1);
 
-            await waitFor(async () => {
-                const block = await h
-                    .control(sourcePeer)
-                    .query.getBlockByHeight(newForkId, 0)
-                    .request();
-                return Boolean(block?.encodedBlockConfirmation);
-            }, 10000);
+            await h.eventCountsBarrier.waitFor(
+                async () => {
+                    const block = await h
+                        .control(sourcePeer)
+                        .query.getBlockByHeight(newForkId, 0)
+                        .request();
+                    return Boolean(block?.encodedBlockConfirmation);
+                },
+                {
+                    timeoutMs: 10000,
+                    timeoutMessage: `sourcePeer did not observe the first reduced-fork block within 10000ms`
+                }
+            );
             const firstBlock = await h
                 .control(sourcePeer)
                 .query.getBlockByHeight(newForkId, 0)
@@ -770,21 +768,22 @@ describe("E2E: BlockQueueManager", function () {
             await restoreReduce();
             await race.release();
 
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(targetPeer)
-                        .query.getForkId()
-                        .request()) === newForkId,
-                15000
-            );
-            await waitFor(
+            await h.assert.sync.forkChangedWait({
+                originalForkId,
+                expectedForkId: newForkId,
+                honestPeerIndices: [targetPeerIndex],
+                timeoutMs: 15000
+            });
+            await h.eventCountsBarrier.waitFor(
                 async () =>
                     (await h
                         .control(targetPeer)
                         .query.getBlockByHeight(newForkId, 0)
                         .request()) !== null,
-                15000
+                {
+                    timeoutMs: 15000,
+                    timeoutMessage: `targetPeer did not observe the drained block at fork ${newForkId} height 0 within 15000ms`
+                }
             );
             expect(
                 h.event.getEventCallCount(targetPeerIndex, "onSetState")
