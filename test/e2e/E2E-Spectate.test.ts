@@ -1049,22 +1049,16 @@ describe("E2E: Spectate Service", function () {
                 .spectate.startSync(responder.address, forkId, 9999)
                 .request();
 
-            await waitFor(
-                async () =>
-                    await h
-                        .control(responder)
-                        .query.isBlacklisted(requester.address)
-                        .request(),
-                10000
-            );
-            await waitFor(
-                async () =>
-                    await h
-                        .control(requester)
-                        .query.isBlacklisted(responder.address)
-                        .request(),
-                10000
-            );
+            await h.assert.sync.peerBlacklistedWait({
+                peerIndex: responder.index,
+                targetAddress: requester.address,
+                timeoutMs: 10000
+            });
+            await h.assert.sync.peerBlacklistedWait({
+                peerIndex: requester.index,
+                targetAddress: responder.address,
+                timeoutMs: 10000
+            });
         });
     });
 

@@ -1,6 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
-import { waitFor } from "@test/utils/waitFor";
 import { Status } from "@/types";
 
 describe("E2E: Spectate stale-proof guard", function () {
@@ -131,14 +130,11 @@ describe("E2E: Spectate stale-proof guard", function () {
 
         // The stale-proof bound aborts the sync and the participant blacklists
         // the responder.
-        await waitFor(
-            async () =>
-                await h
-                    .control(requester)
-                    .query.isBlacklisted(responder.address)
-                    .request(),
-            15000
-        );
+        await h.assert.sync.peerBlacklistedWait({
+            peerIndex: requesterIndex,
+            targetAddress: responder.address,
+            timeoutMs: 15000
+        });
         expect(
             await h
                 .control(requester)

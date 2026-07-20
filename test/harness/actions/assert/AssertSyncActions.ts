@@ -1,4 +1,4 @@
-import type { ForkId, Hash } from "@/types/types";
+import type { Address, ForkId, Hash } from "@/types/types";
 import { expect } from "chai";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -356,6 +356,27 @@ export class AssertSyncActions<
             {
                 timeoutMs,
                 timeoutMessage: `Spectator ${spectatorPeerIndex} should have no transport to/from peers [${peerIndices.join(", ")}] within ${timeoutMs}ms`
+            }
+        );
+    }
+
+    async peerBlacklistedWait(options: {
+        peerIndex: number;
+        targetAddress: Address;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const { peerIndex, targetAddress, timeoutMs = 15000 } = options;
+        const peer = this.harness.getPeer(peerIndex);
+
+        await this.harness.eventCountsBarrier.waitFor(
+            async () =>
+                await this.harness
+                    .control(peer)
+                    .query.isBlacklisted(targetAddress)
+                    .request(),
+            {
+                timeoutMs,
+                timeoutMessage: `Peer ${peerIndex} did not blacklist ${targetAddress} within ${timeoutMs}ms`
             }
         );
     }
