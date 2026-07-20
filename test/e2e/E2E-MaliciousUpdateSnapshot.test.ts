@@ -9,7 +9,6 @@ import {
 } from "@test/utils/mathHarnessAbi";
 import { Status } from "@/types";
 import { expect } from "chai";
-import { waitFor } from "@test/utils/waitFor";
 import type {
     MessageBlockStruct,
     BalanceStruct,
@@ -256,16 +255,12 @@ describe("E2E: Malicious updateSnapshot", function () {
         // getPeer to recover the harness's typed peer handle.
         const added = await h.join.addSpectator();
         const spectator = h.getPeer(added.index);
-        await h.control(spectator).stub.stubRecordSpectateAbort().request();
 
-        // Wait for abort.
-        await waitFor(
-            () => h.control(spectator).stub.wasSpectateAbortCalled().request(),
-            5000
-        );
-        expect(
-            await h.control(spectator).stub.wasSpectateAbortCalled().request()
-        ).to.equal(true, "SpectateService.abort must be called");
+        // Wait for abort. `SpectateService.abort` (not-yet-participating path)
+        // calls `StateManager.abort`, which fires the `onAbort` event hook.
+        await h.event.waitForPeers("onAbort", [spectator.index], 1, {
+            timeoutMs: 5000
+        });
 
         expect(
             await h.control(spectator).query.getStatus().request()

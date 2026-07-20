@@ -28,7 +28,6 @@ export type StubKey =
     | "captureInitHandshake"
     | "initHandshakeCreateRpcMethods"
     | "maybePostBlockOnChain"
-    | "spectateAbort"
     | "reductionTasks"
     | "snapshotUpdatedEvents"
     | "disputeCommittedEvents"
@@ -114,8 +113,6 @@ export class StubService extends ARpcService<
     spectateGuardBlocked = false;
     /** Transport captured by the init-handshake capture stub (pre-handshake). */
     capturedInitHandshakeTransport?: ATransport;
-    /** Set by the record-spectate-abort stub when `abort` fires. */
-    spectateAbortCalled = false;
     /** Incremented by the count-spectate-requests stub per onSpectateRequest. */
     spectateRequestCount = 0;
     /** `reduction-*` timer tasks captured by the hold-reduction-tasks stub. */

@@ -460,35 +460,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
-     * Wrap `spectateService.abort` to record when it fires (queried via
-     * `wasSpectateAbortCalled`) while still running the original — the host-side
-     * stand-in for spying on abort from the main thread.
-     */
-    public stubRecordSpectateAbort(): boolean {
-        const service = this.p2pManager.localRpc.spectateService;
-        if (!this.service.stubOriginals.has("spectateAbort")) {
-            this.service.stubOriginals.set(
-                "spectateAbort",
-                service.abort.bind(service)
-            );
-        }
-        this.service.spectateAbortCalled = false;
-        const original = this.service.stubOriginals.get(
-            "spectateAbort"
-        ) as typeof service.abort;
-        const stubService = this.service;
-        service.abort = (peerAddress) => {
-            stubService.spectateAbortCalled = true;
-            return original(peerAddress);
-        };
-        return true;
-    }
-
-    public wasSpectateAbortCalled(): boolean {
-        return this.service.spectateAbortCalled;
-    }
-
-    /**
      * Capture the transport this peer initiates a handshake over (its outbound
      * `initHandshake`), recording it on the service so a test can send an RPC
      * over a pre-handshake transport (read via `execOnHost`). Runs the original.
