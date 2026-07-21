@@ -259,13 +259,16 @@ function runHeader({
     targetLoad,
     tickMs,
     memBoundGb,
-    concurrencyCap
+    concurrencyCap,
+    autoWorkers,
+    cores,
+    memFloorGb
 }) {
     console.log(
         `Running ${taskCount} ${e2eOnly ? "E2E" : "Mocha"} task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
     console.log(
-        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
+        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}${autoWorkers ? ` (auto from ${cores} cores)` : ""} · keep ≥${memFloorGb.toFixed(1)}GB free`
     );
 }
 
@@ -277,7 +280,10 @@ function dryRun({
     memBoundGb,
     totalGb,
     concurrencyCap,
-    tickMs
+    tickMs,
+    autoWorkers,
+    cores,
+    memFloorGb
 }) {
     console.log(`\nDry-run (${taskCount} task(s)):`);
     console.log(`  slots            : ${slotCount}`);
@@ -287,7 +293,12 @@ function dryRun({
     console.log(
         `  memBound         : ${memBoundGb.toFixed(1)}GB of ${totalGb.toFixed(1)}GB (${((memBoundGb / totalGb) * 100).toFixed(0)}%)`
     );
-    console.log(`  concurrencyCap   : ${concurrencyCap}`);
+    console.log(
+        `  concurrencyCap   : ${concurrencyCap}${autoWorkers ? ` (auto from ${cores} cores)` : " (--workers)"}`
+    );
+    console.log(
+        `  keep free        : ≥${memFloorGb.toFixed(1)}GB system-available`
+    );
     console.log(`  scheduler        : one admission per ${tickMs}ms tick`);
 }
 
@@ -320,11 +331,16 @@ function hold({ seq, total, reason }) {
 }
 
 // Light yellow: a starved task gets its single clean retry.
-function starvationRetry({ seq, total, label, starveCount }) {
+function starvationRetry({ seq, total, label, starveCount, elDelayMs }) {
+    // starveCount > 0 means the watchdog fired; otherwise report the stall.
+    const cause =
+        starveCount > 0
+            ? `STARVED x${starveCount}`
+            : `STARVED (event-loop peak ${elDelayMs}ms)`;
     console.log(
         colorize(
             "lightYellow",
-            `[${seq}/${total}] STARVED x${starveCount} — rescheduling once [${label}]`
+            `[${seq}/${total}] ${cause} — rescheduling once [${label}]`
         )
     );
 }

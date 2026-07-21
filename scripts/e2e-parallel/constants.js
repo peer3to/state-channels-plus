@@ -42,6 +42,21 @@ const TARGET_LOAD_PER_CORE = 0.8;
 const MEM_LIMIT_FRACTION = 0.8;
 const PER_TEST_MEM_GB = 2;
 
+// ---------------------------------------------------------------------------
+// Machine-aware defaults
+// ---------------------------------------------------------------------------
+// Hardware threads reserved per concurrent E2E test when auto-sizing --workers.
+// Each test runs a Hardhat node plus an SDK and a VM thread per peer.
+const HW_THREADS_PER_TEST = 4;
+
+// Minimum MemAvailable to keep free. Counts other processes, unlike the
+// owned-RSS gate above, so a box full of browser/editor RSS stops before swapping.
+const SYSTEM_MEM_FLOOR_GB = 3;
+
+// Event-loop peak that marks a failed task as load-induced and earns it one
+// retry. Below the 1s watchdog in test/peer3.test.config.ts.
+const LOAD_RETRY_EL_DELAY_MS = 750;
+
 module.exports = {
     DEFAULT_LOG_DIR,
     HARDHAT_CLI,
@@ -54,5 +69,8 @@ module.exports = {
     SCHEDULER_TICK_MS,
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
-    PER_TEST_MEM_GB
+    PER_TEST_MEM_GB,
+    HW_THREADS_PER_TEST,
+    SYSTEM_MEM_FLOOR_GB,
+    LOAD_RETRY_EL_DELAY_MS
 };

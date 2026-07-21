@@ -5,10 +5,16 @@ const {
     HARDHAT_CLI,
     SCHEDULER_TICK_MS,
     MAX_SLOTS_FROM_POOL,
-    PER_TEST_MEM_GB
+    PER_TEST_MEM_GB,
+    LOAD_RETRY_EL_DELAY_MS
 } = require("./constants");
 const { liveTaskChildren, runTask } = require("./runTask");
 const logging = require("./logging");
+const {
+    availableMemGb,
+    pickLeastLoadedSlot,
+    evaluateAdmission
+} = require("./adaptiveScheduling");
 
 // Resolve a thread-mode boolean with precedence: CLI flag > inherited env > default.
 // (Env value "false" disables; any other set value enables; unset → fallback.)
@@ -60,9 +66,24 @@ function rssGbForPids(pids) {
     }
 }
 
-function getStarvationDisposition(starveCount, starvationRetryCount) {
-    if (starveCount === 0) return "complete";
-    return starvationRetryCount === 0 ? "retry" : "fail";
+// A failed task whose event loop was starved gets one retry. starveCount is the
+// watchdog signal; maxEventLoopDelayMs catches stalls under its threshold.
+function getStarvationDisposition(
+    starveCount,
+    starvationRetryCount,
+    { code = 0, maxEventLoopDelayMs = 0 } = {}
+) {
+    if (starveCount > 0) {
+        return starvationRetryCount === 0 ? "retry" : "fail";
+    }
+    if (
+        code !== 0 &&
+        starvationRetryCount === 0 &&
+        maxEventLoopDelayMs >= LOAD_RETRY_EL_DELAY_MS
+    ) {
+        return "retry";
+    }
+    return "complete";
 }
 
 /**
@@ -81,6 +102,7 @@ async function runScheduler({
     concurrencyCap,
     targetLoad,
     memBoundGb,
+    memFloorGb,
     baseEnv,
     logDir,
     infraPids,
@@ -118,6 +140,9 @@ async function runScheduler({
         (_, i) => i
     );
 
+    // In-flight test count per slot, for idle-first assignment.
+    const slotLoad = new Array(Math.max(slotCount, 0)).fill(0);
+
     // Live memory: RSS of our own processes (infra + live test children), with a
     // running per-test average used to project whether one more test fits.
     let avgPerTestGb = PER_TEST_MEM_GB; // conservative seed until measured
@@ -139,11 +164,20 @@ async function runScheduler({
         }
     };
 
+    // System-available memory, resampled each tick: counts other processes, so we
+    // back off before the box swaps.
+    let availGb = availableMemGb();
+    const sampleSystem = () => {
+        availGb = availableMemGb();
+    };
+
     const launch = (task, seq) => {
         running++;
         const acct = freeAccounts.shift();
-        const slot =
-            task.isE2E && slotCount > 0 ? slots[(seq - 1) % slotCount] : null;
+        const slotIdx =
+            task.isE2E && slotCount > 0 ? pickLeastLoadedSlot(slotLoad) : -1;
+        if (slotIdx >= 0) slotLoad[slotIdx]++;
+        const slot = slotIdx >= 0 ? slots[slotIdx] : null;
         const where = slot ? `slot ${slot.id}/${slotCount}` : "in-process";
 
         let taskArgs = task.args;
@@ -197,6 +231,7 @@ async function runScheduler({
         ).then(({ code, label, stdout, stderr, durationMs }) => {
             running--;
             freeAccounts.push(acct);
+            if (slotIdx >= 0) slotLoad[slotIdx]--;
             sumDurationMs += durationMs;
 
             const combined = stdout + stderr;
@@ -222,7 +257,8 @@ async function runScheduler({
 
             const starvationDisposition = getStarvationDisposition(
                 attemptStarveCount,
-                task.starvationRetryCount || 0
+                task.starvationRetryCount || 0,
+                { code, maxEventLoopDelayMs: timing.maxEventLoopDelayMs }
             );
             if (starvationDisposition === "retry") {
                 task.starvationRetryCount = 1;
@@ -231,7 +267,8 @@ async function runScheduler({
                     seq,
                     total: tasks.length,
                     label,
-                    starveCount: attemptStarveCount
+                    starveCount: attemptStarveCount,
+                    elDelayMs: timing.maxEventLoopDelayMs
                 });
                 return;
             }
@@ -269,6 +306,7 @@ async function runScheduler({
         const tick = () => {
             sampleCpu();
             sampleMemory();
+            sampleSystem();
 
             if (
                 idx >= tasks.length &&
@@ -281,13 +319,20 @@ async function runScheduler({
             }
             if (idx >= tasks.length && retryQueue.length === 0) return; // draining
 
-            const countOk = running < concurrencyCap;
-            const cpuOk = cpuUtil < targetLoad;
-            const memOk = occupiedGb + avgPerTestGb < memBoundGb;
+            // Admit one per tick when the gates allow; running === 0 always admits.
+            const decision = evaluateAdmission({
+                running,
+                concurrencyCap,
+                cpuUtil,
+                targetLoad,
+                occupiedGb,
+                avgPerTestGb,
+                memBoundGb,
+                availGb,
+                memFloorGb
+            });
 
-            // Always keep one test in flight (avoids stalling when the gates start
-            // closed); otherwise admit one only when all gates are open.
-            if (running === 0 || (countOk && cpuOk && memOk)) {
+            if (decision.admit) {
                 if (idx < tasks.length) {
                     idx++;
                     launch(tasks[idx - 1], idx);
@@ -298,12 +343,11 @@ async function runScheduler({
             } else {
                 const nextSeq =
                     idx < tasks.length ? idx + 1 : retryQueue[0].seq;
-                const reason = !countOk
-                    ? `cap (running ${running}/${concurrencyCap})`
-                    : !memOk
-                      ? `memory (owned ${occupiedGb.toFixed(1)}+${avgPerTestGb.toFixed(1)}≥${memBoundGb.toFixed(1)}GB)`
-                      : `cpu ${(cpuUtil * 100).toFixed(0)}%>=${(targetLoad * 100).toFixed(0)}%`;
-                logging.hold({ seq: nextSeq, total: tasks.length, reason });
+                logging.hold({
+                    seq: nextSeq,
+                    total: tasks.length,
+                    reason: decision.reason
+                });
             }
         };
         const timer = setInterval(tick, tickMs);

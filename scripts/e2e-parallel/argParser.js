@@ -16,9 +16,11 @@ Options:
                                   Allow clearing an explicit dir outside logs/
       --slots <count>            Warm E2E infrastructure slots (0 disables)
   -w, --workers <count>          Maximum concurrent test processes
+                                  (default: auto-scaled from CPU core count)
       --target-load <number>     Maximum average system load per CPU core
   -i, --interval <ms>            Scheduler admission interval
       --mem-limit-gb <gb>        Memory budget for owned test processes
+      --mem-floor-gb <gb>        Min system-available memory to keep free
       --sdk-thread               Run the SDK host in a worker thread
       --no-sdk-thread            Run the SDK host on the main thread
       --vm-thread                Run the VM executor in a worker thread
@@ -63,6 +65,8 @@ function parseCliArgs(argv) {
         schedulerTickMs: undefined,
         // Memory budget in GiB; undefined → totalmem × MEM_LIMIT_FRACTION.
         memLimitGb: undefined,
+        // Min system-available memory to keep free (GiB); undefined → SYSTEM_MEM_FLOOR_GB.
+        memFloorGb: undefined,
         // Thread-mode toggles: undefined = fall back to env/default.
         sdkThread: undefined,
         vmThread: undefined
@@ -225,6 +229,20 @@ function parseCliArgs(argv) {
         if (arg.startsWith("--mem-limit-gb=")) {
             const v = takeNumber(arg.split("=")[1], Number.parseFloat);
             if (v !== undefined) options.memLimitGb = v;
+            continue;
+        }
+
+        if (arg === "--mem-floor-gb") {
+            const v = takeNumber(argv[i + 1], Number.parseFloat);
+            if (v !== undefined) {
+                options.memFloorGb = v;
+                i++;
+            }
+            continue;
+        }
+        if (arg.startsWith("--mem-floor-gb=")) {
+            const v = takeNumber(arg.split("=")[1], Number.parseFloat);
+            if (v !== undefined) options.memFloorGb = v;
             continue;
         }
 

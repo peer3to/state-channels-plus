@@ -46,7 +46,8 @@ const { getStarvationDisposition } =
     require("../../scripts/e2e-parallel/scheduler.js") as {
         getStarvationDisposition: (
             starveCount: number,
-            starvationRetryCount: number
+            starvationRetryCount: number,
+            attempt?: { code?: number; maxEventLoopDelayMs?: number }
         ) => "complete" | "retry" | "fail";
     };
 const { buildBaseEnv } = require("../../scripts/test-e2e-parallel.js") as {
@@ -207,6 +208,40 @@ describe("e2e-parallel logging - starvation diagnostics", function () {
         expect(getStarvationDisposition(1, 0)).to.equal("retry");
         expect(getStarvationDisposition(1, 1)).to.equal("fail");
         expect(getStarvationDisposition(0, 1)).to.equal("complete");
+    });
+
+    it("retries a failed task whose event loop stalled just under the watchdog", function () {
+        // stall under the 1s watchdog -> starveCount 0
+        expect(
+            getStarvationDisposition(0, 0, {
+                code: 1,
+                maxEventLoopDelayMs: 959
+            })
+        ).to.equal("retry");
+    });
+
+    it("does not retry a failure that ran on a healthy event loop", function () {
+        expect(
+            getStarvationDisposition(0, 0, {
+                code: 1,
+                maxEventLoopDelayMs: 120
+            })
+        ).to.equal("complete");
+    });
+
+    it("never retries a near-miss stall twice, and never retries a pass", function () {
+        expect(
+            getStarvationDisposition(0, 1, {
+                code: 1,
+                maxEventLoopDelayMs: 959
+            })
+        ).to.equal("complete");
+        expect(
+            getStarvationDisposition(0, 0, {
+                code: 0,
+                maxEventLoopDelayMs: 959
+            })
+        ).to.equal("complete");
     });
 
     it("uses light yellow for rescheduling and dark yellow for repeated starvation", function () {

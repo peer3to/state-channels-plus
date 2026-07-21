@@ -8,7 +8,8 @@ const {
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     MAX_SLOTS_FROM_POOL,
-    DEFAULT_STREAM_CHILD_OUTPUT
+    DEFAULT_STREAM_CHILD_OUTPUT,
+    SYSTEM_MEM_FLOOR_GB
 } = require("./e2e-parallel/constants");
 
 const { getHelpText, parseCliArgs } = require("./e2e-parallel/argParser");
@@ -17,6 +18,7 @@ const {
     resolveThreadModes,
     runScheduler
 } = require("./e2e-parallel/scheduler");
+const { resolveDefaultWorkers } = require("./e2e-parallel/adaptiveScheduling");
 const {
     provisionSlots,
     teardownInfra,
@@ -95,24 +97,30 @@ async function main() {
     // non-E2E tests use the shared harness and could reuse slots, while plain
     // unit/contract tests still require an isolated in-process Hardhat node.
     const hasE2ETasks = tasks.some((task) => task.isE2E);
-    const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
-    const slotCount = hasE2ETasks
-        ? Math.min(requestedSlotCount, MAX_SLOTS_FROM_POOL)
-        : 0;
-    if (hasE2ETasks && requestedSlotCount > slotCount) {
-        console.log(
-            `slots clamped to ${slotCount} (account pool allows ${MAX_SLOTS_FROM_POOL})`
-        );
-    }
     const threadModes = resolveThreadModes(cli);
     const targetLoad = cli.targetLoad ?? TARGET_LOAD_PER_CORE;
     const schedulerTickMs = cli.schedulerTickMs ?? SCHEDULER_TICK_MS;
     const totalGb = os.totalmem() / 1024 ** 3;
     const memBoundGb = cli.memLimitGb ?? totalGb * MEM_LIMIT_FRACTION;
+    const memFloorGb = cli.memFloorGb ?? SYSTEM_MEM_FLOOR_GB;
+    const cores = os.cpus().length;
+    // Auto-size --workers from cores unless pinned; the gates throttle below it.
+    const autoWorkers = cli.workers == null;
     const concurrencyCap = Math.min(
         MAX_SLOTS_FROM_POOL,
-        cli.workers ?? MAX_SLOTS_FROM_POOL
+        cli.workers ?? resolveDefaultWorkers(cores, MAX_SLOTS_FROM_POOL)
     );
+
+    // At most concurrencyCap tests run at once, so extra slots never get used.
+    const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
+    const slotCount = hasE2ETasks
+        ? Math.min(requestedSlotCount, MAX_SLOTS_FROM_POOL, concurrencyCap)
+        : 0;
+    if (hasE2ETasks && requestedSlotCount > slotCount) {
+        console.log(
+            `slots clamped to ${slotCount} (concurrency cap ${concurrencyCap}, account pool allows ${MAX_SLOTS_FROM_POOL})`
+        );
+    }
 
     if (cli.dryRun) {
         logging.dryRun({
@@ -123,7 +131,10 @@ async function main() {
             memBoundGb,
             totalGb,
             concurrencyCap,
-            tickMs: schedulerTickMs
+            tickMs: schedulerTickMs,
+            autoWorkers,
+            cores,
+            memFloorGb
         });
         return;
     }
@@ -137,7 +148,10 @@ async function main() {
         targetLoad,
         tickMs: schedulerTickMs,
         memBoundGb,
-        concurrencyCap
+        concurrencyCap,
+        autoWorkers,
+        cores,
+        memFloorGb
     });
 
     // Default: a fresh run-N dir per run (./logs/run-0, ./logs/run-1, ...)
@@ -197,6 +211,7 @@ async function main() {
             targetLoad,
             tickMs: schedulerTickMs,
             memBoundGb,
+            memFloorGb,
             baseEnv: buildBaseEnv(threadModes),
             logDir,
             infraPids
