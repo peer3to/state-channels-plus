@@ -2,17 +2,38 @@ import { expect } from "chai";
 
 const {
     availableMemGb,
-    resolveDefaultWorkers,
+    nextAdaptiveCap,
     pickLeastLoadedSlot,
     evaluateAdmission
 } = require("../../scripts/e2e-parallel/adaptiveScheduling.js") as {
     availableMemGb: () => number;
-    resolveDefaultWorkers: (cores: number, maxCap: number) => number;
+    nextAdaptiveCap: (params: {
+        current: number;
+        starved: boolean;
+        elDelayMs: number;
+        hasTiming: boolean;
+        healthyStreak?: number;
+        goodCap?: number;
+        badCap?: number;
+        maxCap: number;
+    }) => {
+        cap: number;
+        healthyStreak: number;
+        goodCap: number;
+        badCap: number;
+    };
     pickLeastLoadedSlot: (slotLoad: number[]) => number;
     evaluateAdmission: (params: Record<string, unknown>) => {
         admit: boolean;
         reason: string | null;
     };
+};
+
+const healthy = {
+    starved: false,
+    elDelayMs: 100,
+    hasTiming: true,
+    maxCap: 40
 };
 
 // A baseline where every gate is open, so each test can close exactly one.
@@ -29,21 +50,138 @@ const openGates = {
 };
 
 describe("parallel scheduler — machine-aware sizing", function () {
-    describe("resolveDefaultWorkers", function () {
-        it("gives each concurrent test ~4 hardware threads", function () {
-            expect(resolveDefaultWorkers(16, 40)).to.equal(4);
-            expect(resolveDefaultWorkers(128, 40)).to.equal(32);
+    describe("nextAdaptiveCap", function () {
+        // a level is promoted only after two healthy finishes
+        const confirm = { ...healthy, healthyStreak: 1 };
+
+        function converge(realLimit: number, steps = 60) {
+            let s = { cap: 2, healthyStreak: 0, goodCap: 1, badCap: Infinity };
+            const trace: number[] = [];
+            for (let i = 0; i < steps; i++) {
+                const starved = s.cap > realLimit;
+                s = nextAdaptiveCap({
+                    ...healthy,
+                    ...s,
+                    current: s.cap,
+                    starved,
+                    elDelayMs: starved ? 900 : 100
+                });
+                trace.push(s.cap);
+            }
+            return { cap: s.cap, trace };
+        }
+
+        it("doubles while nothing has starved yet", function () {
+            expect(nextAdaptiveCap({ ...confirm, current: 2 }).cap).to.equal(4);
+            expect(nextAdaptiveCap({ ...confirm, current: 8 }).cap).to.equal(
+                16
+            );
         });
 
-        it("never drops below 2, even on tiny hosts or bad input", function () {
-            expect(resolveDefaultWorkers(4, 40)).to.equal(2);
-            expect(resolveDefaultWorkers(2, 40)).to.equal(2);
-            expect(resolveDefaultWorkers(0, 40)).to.equal(2);
-            expect(resolveDefaultWorkers(NaN, 40)).to.equal(2);
+        it("needs two healthy finishes before moving up", function () {
+            const first = nextAdaptiveCap({
+                ...healthy,
+                current: 8,
+                healthyStreak: 0
+            });
+            expect(first.cap).to.equal(8);
+            expect(
+                nextAdaptiveCap({
+                    ...healthy,
+                    current: 8,
+                    healthyStreak: first.healthyStreak
+                }).cap
+            ).to.equal(16);
         });
 
-        it("never exceeds the account-pool cap on big workstations", function () {
-            expect(resolveDefaultWorkers(256, 40)).to.equal(40);
+        it("bisects between the good level and the starved one", function () {
+            const out = nextAdaptiveCap({
+                ...healthy,
+                current: 8,
+                starved: true,
+                goodCap: 4
+            });
+            expect(out.cap).to.equal(6);
+            expect(out.badCap).to.equal(8);
+        });
+
+        it("keeps bisecting down while the probe still starves", function () {
+            expect(
+                nextAdaptiveCap({
+                    ...healthy,
+                    current: 6,
+                    starved: true,
+                    goodCap: 4,
+                    badCap: 8
+                }).cap
+            ).to.equal(5);
+            expect(
+                nextAdaptiveCap({
+                    ...healthy,
+                    current: 5,
+                    starved: true,
+                    goodCap: 4,
+                    badCap: 6
+                }).cap
+            ).to.equal(4);
+        });
+
+        it("probes upward again when the midpoint is healthy", function () {
+            expect(
+                nextAdaptiveCap({
+                    ...confirm,
+                    current: 6,
+                    goodCap: 4,
+                    badCap: 8
+                }).cap
+            ).to.equal(7);
+        });
+
+        it("stops once the bounds are adjacent", function () {
+            expect(
+                nextAdaptiveCap({
+                    ...confirm,
+                    current: 3,
+                    goodCap: 3,
+                    badCap: 4
+                }).cap
+            ).to.equal(3);
+        });
+
+        it("never exceeds the ceiling or drops below 1", function () {
+            expect(
+                nextAdaptiveCap({ ...confirm, current: 30, maxCap: 40 }).cap
+            ).to.equal(40);
+            expect(
+                nextAdaptiveCap({ ...healthy, current: 1, starved: true }).cap
+            ).to.equal(1);
+        });
+
+        it("holds steady on a middling event loop or missing timing", function () {
+            expect(
+                nextAdaptiveCap({ ...confirm, current: 8, elDelayMs: 500 }).cap
+            ).to.equal(8);
+            expect(
+                nextAdaptiveCap({ ...confirm, current: 8, hasTiming: false })
+                    .cap
+            ).to.equal(8);
+        });
+
+        // #400 review: a 12-core box that comfortably runs 13 must not be pinned
+        // to 3 while its cpu sits at 20%
+        it("finds a roomy machine's real limit", function () {
+            expect(converge(13).cap).to.equal(13);
+        });
+
+        it("settles on a constrained machine and stops moving", function () {
+            const { cap, trace } = converge(3);
+            expect(cap).to.equal(3);
+            expect(new Set(trace.slice(-20)).size).to.equal(1);
+        });
+
+        it("converges after only a few starved probes", function () {
+            const { trace } = converge(8);
+            expect(trace.filter((c) => c > 8).length).to.be.lessThan(6);
         });
     });
 

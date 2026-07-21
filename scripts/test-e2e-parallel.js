@@ -18,7 +18,6 @@ const {
     resolveThreadModes,
     runScheduler
 } = require("./e2e-parallel/scheduler");
-const { resolveDefaultWorkers } = require("./e2e-parallel/adaptiveScheduling");
 const {
     provisionSlots,
     teardownInfra,
@@ -103,12 +102,12 @@ async function main() {
     const totalGb = os.totalmem() / 1024 ** 3;
     const memBoundGb = cli.memLimitGb ?? totalGb * MEM_LIMIT_FRACTION;
     const memFloorGb = cli.memFloorGb ?? SYSTEM_MEM_FLOOR_GB;
-    const cores = os.cpus().length;
-    // Auto-size --workers from cores unless pinned; the gates throttle below it.
-    const autoWorkers = cli.workers == null;
+    // Hard ceiling only. Without --workers the scheduler measures its own
+    // concurrency from finished tests instead of guessing from the hardware.
+    const adaptiveWorkers = cli.workers == null;
     const concurrencyCap = Math.min(
         MAX_SLOTS_FROM_POOL,
-        cli.workers ?? resolveDefaultWorkers(cores, MAX_SLOTS_FROM_POOL)
+        cli.workers ?? MAX_SLOTS_FROM_POOL
     );
 
     // At most concurrencyCap tests run at once, so extra slots never get used.
@@ -132,8 +131,7 @@ async function main() {
             totalGb,
             concurrencyCap,
             tickMs: schedulerTickMs,
-            autoWorkers,
-            cores,
+            adaptiveWorkers,
             memFloorGb
         });
         return;
@@ -149,8 +147,7 @@ async function main() {
         tickMs: schedulerTickMs,
         memBoundGb,
         concurrencyCap,
-        autoWorkers,
-        cores,
+        adaptiveWorkers,
         memFloorGb
     });
 
@@ -208,6 +205,7 @@ async function main() {
             slots,
             slotCount,
             concurrencyCap,
+            adaptiveWorkers,
             targetLoad,
             tickMs: schedulerTickMs,
             memBoundGb,
@@ -229,6 +227,7 @@ async function main() {
             avgPerTestGb: stats.avgPerTestGb,
             memBoundGb,
             targetLoad,
+            peakAdaptiveCap: stats.peakAdaptiveCap,
             gasPeak: gasMonitor.gasPeak
         });
 

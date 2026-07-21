@@ -45,10 +45,6 @@ const PER_TEST_MEM_GB = 2;
 // ---------------------------------------------------------------------------
 // Machine-aware defaults
 // ---------------------------------------------------------------------------
-// Hardware threads reserved per concurrent E2E test when auto-sizing --workers.
-// Each test runs a Hardhat node plus an SDK and a VM thread per peer.
-const HW_THREADS_PER_TEST = 4;
-
 // Minimum MemAvailable to keep free. Counts other processes, unlike the
 // owned-RSS gate above, so a box full of browser/editor RSS stops before swapping.
 const SYSTEM_MEM_FLOOR_GB = 3;
@@ -56,6 +52,17 @@ const SYSTEM_MEM_FLOOR_GB = 3;
 // Event-loop peak that marks a failed task as load-induced and earns it one
 // retry. Below the 1s watchdog in test/peer3.test.config.ts.
 const LOAD_RETRY_EL_DELAY_MS = 750;
+
+// Adaptive concurrency. The ceiling is measured, not guessed: it doubles while
+// finished tests report healthy event loops and halves when one comes back
+// starved, so it converges on what the machine actually sustains.
+const ADAPTIVE_START_CAP = 4;
+const ADAPTIVE_MIN_CAP = 1;
+// Event-loop peak a finished test must stay under to count as headroom.
+const HEALTHY_EL_DELAY_MS = 250;
+// Healthy finishes required per +1 once slow-start is over, so one lucky test
+// doesn't push the ceiling up.
+const GROW_AFTER_HEALTHY = 2;
 
 module.exports = {
     DEFAULT_LOG_DIR,
@@ -70,7 +77,10 @@ module.exports = {
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     PER_TEST_MEM_GB,
-    HW_THREADS_PER_TEST,
     SYSTEM_MEM_FLOOR_GB,
-    LOAD_RETRY_EL_DELAY_MS
+    LOAD_RETRY_EL_DELAY_MS,
+    ADAPTIVE_START_CAP,
+    ADAPTIVE_MIN_CAP,
+    HEALTHY_EL_DELAY_MS,
+    GROW_AFTER_HEALTHY
 };

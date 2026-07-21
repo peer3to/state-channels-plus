@@ -6,12 +6,15 @@ const {
     SCHEDULER_TICK_MS,
     MAX_SLOTS_FROM_POOL,
     PER_TEST_MEM_GB,
-    LOAD_RETRY_EL_DELAY_MS
+    LOAD_RETRY_EL_DELAY_MS,
+    ADAPTIVE_START_CAP,
+    ADAPTIVE_MIN_CAP
 } = require("./constants");
 const { liveTaskChildren, runTask } = require("./runTask");
 const logging = require("./logging");
 const {
     availableMemGb,
+    nextAdaptiveCap,
     pickLeastLoadedSlot,
     evaluateAdmission
 } = require("./adaptiveScheduling");
@@ -100,6 +103,7 @@ async function runScheduler({
     slots,
     slotCount,
     concurrencyCap,
+    adaptiveWorkers = true,
     targetLoad,
     memBoundGb,
     memFloorGb,
@@ -142,6 +146,18 @@ async function runScheduler({
 
     // In-flight test count per slot, for idle-first assignment.
     const slotLoad = new Array(Math.max(slotCount, 0)).fill(0);
+
+    // Measured concurrency ceiling, bounded by --workers / the account pool.
+    // goodCap/badCap bracket the machine's real limit; the probe bisects between
+    // them and stops once they are adjacent. An explicit --workers is a fixed
+    // value, not a starting point: the probe never runs and the cap never moves.
+    let adaptiveCap = adaptiveWorkers
+        ? Math.min(ADAPTIVE_START_CAP, concurrencyCap)
+        : concurrencyCap;
+    let healthyStreak = 0;
+    let goodCap = ADAPTIVE_MIN_CAP;
+    let badCap = Infinity;
+    let peakAdaptiveCap = adaptiveCap;
 
     // Live memory: RSS of our own processes (infra + live test children), with a
     // running per-test average used to project whether one more test fits.
@@ -255,6 +271,39 @@ async function runScheduler({
             );
             task.timingFound = task.timingFound || timing.found;
 
+            // Feed this run's event loop back into the ceiling. Skipped entirely
+            // when --workers pins a fixed value.
+            const starvedSignal =
+                attemptStarveCount > 0 ||
+                timing.maxEventLoopDelayMs >= LOAD_RETRY_EL_DELAY_MS;
+            if (adaptiveWorkers) {
+                const next = nextAdaptiveCap({
+                    current: adaptiveCap,
+                    starved: starvedSignal,
+                    elDelayMs: timing.maxEventLoopDelayMs,
+                    hasTiming: timing.found,
+                    healthyStreak,
+                    goodCap,
+                    badCap,
+                    maxCap: concurrencyCap
+                });
+                if (next.cap !== adaptiveCap) {
+                    logging.adaptiveCap({
+                        from: adaptiveCap,
+                        to: next.cap,
+                        elDelayMs: timing.maxEventLoopDelayMs,
+                        starved: starvedSignal,
+                        settled: next.goodCap + 1 >= next.badCap
+                    });
+                }
+                adaptiveCap = next.cap;
+                healthyStreak = next.healthyStreak;
+                goodCap = next.goodCap;
+                badCap = next.badCap;
+                if (adaptiveCap > peakAdaptiveCap)
+                    peakAdaptiveCap = adaptiveCap;
+            }
+
             const starvationDisposition = getStarvationDisposition(
                 attemptStarveCount,
                 task.starvationRetryCount || 0,
@@ -322,7 +371,7 @@ async function runScheduler({
             // Admit one per tick when the gates allow; running === 0 always admits.
             const decision = evaluateAdmission({
                 running,
-                concurrencyCap,
+                concurrencyCap: adaptiveCap,
                 cpuUtil,
                 targetLoad,
                 occupiedGb,
@@ -365,7 +414,8 @@ async function runScheduler({
         peakCpu,
         avgCpu,
         peakOccupiedGb,
-        avgPerTestGb
+        avgPerTestGb,
+        peakAdaptiveCap
     };
 }
 

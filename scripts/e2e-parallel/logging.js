@@ -260,15 +260,14 @@ function runHeader({
     tickMs,
     memBoundGb,
     concurrencyCap,
-    autoWorkers,
-    cores,
+    adaptiveWorkers,
     memFloorGb
 }) {
     console.log(
         `Running ${taskCount} ${e2eOnly ? "E2E" : "Mocha"} task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
     console.log(
-        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}${autoWorkers ? ` (auto from ${cores} cores)` : ""} · keep ≥${memFloorGb.toFixed(1)}GB free`
+        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrency=${adaptiveWorkers ? `adaptive (ceiling ${concurrencyCap})` : concurrencyCap} · keep ≥${memFloorGb.toFixed(1)}GB free`
     );
 }
 
@@ -281,8 +280,7 @@ function dryRun({
     totalGb,
     concurrencyCap,
     tickMs,
-    autoWorkers,
-    cores,
+    adaptiveWorkers,
     memFloorGb
 }) {
     console.log(`\nDry-run (${taskCount} task(s)):`);
@@ -294,7 +292,7 @@ function dryRun({
         `  memBound         : ${memBoundGb.toFixed(1)}GB of ${totalGb.toFixed(1)}GB (${((memBoundGb / totalGb) * 100).toFixed(0)}%)`
     );
     console.log(
-        `  concurrencyCap   : ${concurrencyCap}${autoWorkers ? ` (auto from ${cores} cores)` : " (--workers)"}`
+        `  concurrency      : ${adaptiveWorkers ? `adaptive, ceiling ${concurrencyCap}` : `${concurrencyCap} (--workers)`}`
     );
     console.log(
         `  keep free        : ≥${memFloorGb.toFixed(1)}GB system-available`
@@ -331,6 +329,19 @@ function hold({ seq, total, reason }) {
 }
 
 // Light yellow: a starved task gets its single clean retry.
+// The measured concurrency ceiling moved.
+function adaptiveCap({ from, to, elDelayMs, starved, settled }) {
+    const why = starved
+        ? `starved (event-loop ${elDelayMs}ms)`
+        : `headroom (event-loop ${elDelayMs}ms)`;
+    console.log(
+        colorize(
+            to > from ? "lightGreen" : "yellow",
+            `concurrency ${from} -> ${to} · ${why}${settled ? " · settled" : ""}`
+        )
+    );
+}
+
 function starvationRetry({ seq, total, label, starveCount, elDelayMs }) {
     // starveCount > 0 means the watchdog fired; otherwise report the stall.
     const cause =
@@ -426,6 +437,7 @@ function summary({
     avgPerTestGb,
     memBoundGb,
     targetLoad,
+    peakAdaptiveCap,
     gasPeak
 }) {
     const totalFailing = failed.length;
@@ -500,7 +512,9 @@ function summary({
         `  mem: peak owned ${peakOccupiedGb.toFixed(1)}GB, avg/process ${avgPerTestGb.toFixed(2)}GB (bound ${memBoundGb.toFixed(1)}GB)`
     );
     console.log(
-        `  cpu: avg ${(avgCpu * 100).toFixed(0)}% · peak ${(peakCpu * 100).toFixed(0)}% (target ${(targetLoad * 100).toFixed(0)}%)`
+        `  cpu: avg ${(avgCpu * 100).toFixed(0)}% · peak ${(peakCpu * 100).toFixed(0)}% (target ${(targetLoad * 100).toFixed(0)}%)${
+            peakAdaptiveCap ? ` · peak concurrency ${peakAdaptiveCap}` : ""
+        }`
     );
     const elPeak = tasks.reduce(
         (best, t) =>
@@ -571,6 +585,7 @@ module.exports = {
     dryRun,
     admission,
     hold,
+    adaptiveCap,
     starvationRetry,
     result,
     gasPeakLine,
