@@ -65,18 +65,10 @@ export type EventSyncFailureProbe = {
     handlerCallCount: number;
     firstError: string | null;
     secondError: string | null;
+    rescheduledError: string | null;
     cursorBefore: number | null;
     cursorAfter: number | null;
     detachedError: string | null;
-};
-
-export type EventSyncRetryProbe = {
-    handlerCallCount: number;
-    firstError: string | null;
-    cursorBefore: number | null;
-    cursorAfterFailure: number | null;
-    cursorAfterRetry: number | null;
-    blockNumber: number;
 };
 
 export type ConcurrentCalldataRecoveryProbe = {
@@ -223,88 +215,35 @@ export class StubService extends ARpcService<
                     ? rejected.reason.message
                     : String(rejected.reason)
                 : null;
+
+            // A failed log is fatal - rescheduling it returns the cached
+            // rejection and never re-enters the handler, even once the handler
+            // would succeed.
+            eventHandler.onStateSnapshotUpdated = async () => {
+                handlerCallCount += 1;
+            };
+            const rescheduled = sm.eventSyncService.scheduleLog(
+                log,
+                sm.channelId
+            );
+            const rescheduledError = await rescheduled.then(
+                () => null,
+                (error: unknown) =>
+                    error instanceof Error ? error.message : String(error)
+            );
+
             return {
                 samePromise: first === second,
                 handlerCallCount,
                 firstError,
                 secondError,
+                rescheduledError,
                 cursorBefore,
                 cursorAfter:
                     sm.storage.eventSync.getLatestProcessedBlock(
                         sm.channelId
                     ) ?? null,
                 detachedError
-            };
-        } finally {
-            eventHandler.onStateSnapshotUpdated = original;
-        }
-    }
-
-    /** Fail a log once, then reschedule with the handler fixed - the watermark must advance. */
-    public async probeRetriedEventSyncLog(): Promise<EventSyncRetryProbe> {
-        const sm = this.sm;
-        const contract = sm.stateChannelManagerContract;
-        const provider = contract.runner?.provider;
-        if (!provider) throw new Error("Expected a provider for event sync");
-        const latestBlock = await provider.getBlock("latest");
-        if (!latestBlock?.hash) throw new Error("Expected a latest block");
-        const stateSnapshot = await contract.getStateSnapshot(sm.channelId);
-        const event = contract.interface.getEvent("StateSnapshotUpdated");
-        const encodedEvent = contract.interface.encodeEventLog(event, [
-            sm.channelId,
-            stateSnapshot
-        ]);
-        const blockNumber = latestBlock.number + 1;
-        const log = new Log(
-            {
-                address: String(contract.target),
-                blockHash: latestBlock.hash,
-                blockNumber,
-                data: encodedEvent.data,
-                index: 0,
-                removed: false,
-                topics: encodedEvent.topics,
-                transactionHash: id(`event-sync-retry-${Date.now()}`),
-                transactionIndex: 0
-            },
-            provider
-        );
-        const eventHandler = sm.eventHandler;
-        const original = eventHandler.onStateSnapshotUpdated.bind(eventHandler);
-        let handlerCallCount = 0;
-        eventHandler.onStateSnapshotUpdated = async () => {
-            handlerCallCount += 1;
-            if (handlerCallCount === 1) {
-                throw new Error("Expected event-sync rejection");
-            }
-            // Retry: handler now succeeds so the block can complete.
-        };
-        const cursorBefore =
-            sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ?? null;
-        try {
-            const firstError = await sm.eventSyncService
-                .scheduleLog(log, sm.channelId)
-                .then(
-                    () => null,
-                    (error: unknown) =>
-                        error instanceof Error ? error.message : String(error)
-                );
-            const cursorAfterFailure =
-                sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ??
-                null;
-            // Same log, handler fixed: the failed key clears and the block
-            // completes, advancing the processed-block watermark past it.
-            await sm.eventSyncService.scheduleLog(log, sm.channelId);
-            const cursorAfterRetry =
-                sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ??
-                null;
-            return {
-                handlerCallCount,
-                firstError,
-                cursorBefore,
-                cursorAfterFailure,
-                cursorAfterRetry,
-                blockNumber
             };
         } finally {
             eventHandler.onStateSnapshotUpdated = original;
@@ -332,11 +271,10 @@ export class StubService extends ARpcService<
             aborted = true;
         };
         try {
-            const result =
-                await sm.validationService.validateBlockConfirmation(
-                    entry,
-                    strategy
-                );
+            const result = await sm.validationService.validateBlockConfirmation(
+                entry,
+                strategy
+            );
             return { aborted, result: BlockValidationResult[result] };
         } finally {
             sm.abort = realAbort;

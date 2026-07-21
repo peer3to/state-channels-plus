@@ -15,14 +15,7 @@ import {
 } from "@/types/types";
 import { convertEthersValue, DetachedPromises, hash, Logger } from "@/utils";
 
-type BlockState = {
-    pending: number;
-    complete: boolean;
-    // Keys of logs in this block whose handler currently failed. A block only
-    // completes once every failure has cleared, so a successful retry (which
-    // removes its key on reschedule) lets the watermark advance past it.
-    failedEventKeys: Set<EventKey>;
-};
+type BlockState = { pending: number; complete: boolean; failed: boolean };
 type OnChainBlockValidationKey = string;
 type EventKey = string;
 type ChannelKey = string;
@@ -124,20 +117,18 @@ export default class EventSyncService {
         const state = states.get(log.blockNumber) ?? {
             pending: 0,
             complete: false,
-            failedEventKeys: new Set<EventKey>()
+            failed: false
         };
-        // Rescheduling this log clears its prior failure so a successful retry
-        // can complete the block; a still-failing retry re-adds it below.
-        state.failedEventKeys.delete(eventKey);
         state.pending += 1;
         state.complete = false;
         states.set(log.blockNumber, state);
 
+        // A log executes atomically: it either completes or throws. A throw is
+        // fatal - the rejected promise stays cached so the log is never
+        // re-dispatched, and its block never completes so the watermark holds.
         const promise = this.dispatchLog(log, scheduledChannelId)
             .catch((error) => {
-                this.eventPromises.delete(eventKey);
-                this.eventBlockNumbers.delete(eventKey);
-                state.failedEventKeys.add(eventKey);
+                state.failed = true;
                 this.logger.error("Contract event pipeline failed", {
                     blockNumber: log.blockNumber,
                     logIndex: log.index,
@@ -148,8 +139,7 @@ export default class EventSyncService {
             })
             .finally(() => {
                 state.pending -= 1;
-                state.complete =
-                    state.pending === 0 && state.failedEventKeys.size === 0;
+                state.complete = state.pending === 0 && !state.failed;
                 this.publishCompletedBlocks(scheduledChannelId, channelKey);
             });
         this.eventPromises.set(eventKey, promise);

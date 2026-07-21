@@ -15,7 +15,6 @@ import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
     EventSyncFailureProbe,
-    EventSyncRetryProbe,
     PausedReductionStatus,
     ReductionSimulationErrorName,
     ConcurrentCalldataRecoveryProbe,
@@ -636,10 +635,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
         return this.service.probeRejectedEventSyncLog();
-    }
-
-    public async probeRetriedEventSyncLog(): Promise<EventSyncRetryProbe> {
-        return this.service.probeRetriedEventSyncLog();
     }
 
     public async probeSpectateBlockNoAbort(
