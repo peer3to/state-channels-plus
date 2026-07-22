@@ -3,8 +3,13 @@ import { expect } from "chai";
 import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
 
+// A non-participant that sends a spectator a block it must reject should be
+// dropped + blacklisted, never able to take the spectator offline. Covers both
+// rejection paths: unauthenticated junk (rejected synchronously in ingest) and
+// an authenticated outsider-authored block (queued, then rejected when
+// executeQueuedEntry runs onBlockConfirmation).
 describe("E2E: spectating strategy junk-block handling", function () {
-    it("blacklists the sender but keeps a SYNCED spectator running on a junk block from a non-participant", async function () {
+    it("cuts the sender of an unauthenticated junk block and keeps a SYNCED spectator running", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);
         const forkId = h.activeForkId!;
@@ -22,9 +27,6 @@ describe("E2E: spectating strategy junk-block handling", function () {
                 timeoutMessage: "attacker never connected to victim"
             }
         );
-        expect(
-            await h.control(victim).query.getStatus().request()
-        ).to.equal(Status.SYNCED);
 
         const { encodedBlockConfirmation } =
             await h.byzantine.craftJunkBlockConfirmation(0, forkId);
@@ -36,32 +38,22 @@ describe("E2E: spectating strategy junk-block handling", function () {
             )
             .request();
 
-        await h.disconnectionBarrier.waitFor(
-            async () =>
-                await h
-                    .control(victim)
-                    .query.isBlacklisted(attacker.address)
-                    .request(),
-            {
-                timeoutMs: h.event.protocolEventTimeoutMs(1),
-                timeoutMessage: "victim never blacklisted attacker"
-            }
-        );
-        expect(
-            await h.control(victim).query.getStatus().request()
-        ).to.equal(Status.SYNCED);
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: attacker
+        });
     });
 
-    it("keeps a PENDING_PARTICIPANT running on a junk block from a non-participant", async function () {
+    it("cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);
         const forkId = h.activeForkId!;
 
         const victim = await h.join.addSpectatorWait();
         await h.join.joinChannelWait({ joiner: victim });
-        expect(
-            await h.control(victim).query.getStatus().request()
-        ).to.equal(Status.PENDING_PARTICIPANT);
+        expect(await h.control(victim).query.getStatus().request()).to.equal(
+            Status.PENDING_PARTICIPANT
+        );
 
         const attacker = await h.join.addSpectator();
         await h.connectionBarrier.waitFor(
@@ -86,43 +78,54 @@ describe("E2E: spectating strategy junk-block handling", function () {
             )
             .request();
 
-        await h.disconnectionBarrier.waitFor(
-            async () =>
-                await h
-                    .control(victim)
-                    .query.isBlacklisted(attacker.address)
-                    .request(),
-            {
-                timeoutMs: h.event.protocolEventTimeoutMs(1),
-                timeoutMessage: "victim never blacklisted attacker"
-            }
-        );
-        expect(
-            await h.control(victim).query.getStatus().request()
-        ).to.equal(Status.PENDING_PARTICIPANT);
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: attacker
+        });
     });
 
-    it("does not abort a SYNCED spectator validating an authenticated block from a non-participant author", async function () {
+    it("cuts the sender of an authenticated outsider-authored block over the live queue and keeps a SYNCED spectator running", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);
         const forkId = h.activeForkId!;
 
         const victim = await h.join.addSpectatorWait();
-        expect(
-            await h.control(victim).query.getStatus().request()
-        ).to.equal(Status.SYNCED);
+        const attacker = await h.join.addSpectator();
+        await h.connectionBarrier.waitFor(
+            async () =>
+                await h
+                    .control(attacker)
+                    .query.isConnectedTo(victim.address)
+                    .request(),
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(1),
+                timeoutMessage: "attacker never connected to victim"
+            }
+        );
 
+        // the attacker is connected to the channel's p2p network but is not a
+        // channel participant. it authors + signs a well-formed next block with
+        // its own key: authentication passes, so it is queued and validated fresh
+        // -> reaches blockAuthorIsNotParticipant on the live queue, not the inline
+        // authenticate-failed path the junk cases hit. this is the vector that
+        // used to abort the spectator.
         const { encodedBlockConfirmation } =
-            await h.byzantine.craftOutsiderAuthoredBlockConfirmation(0, forkId);
-        const { aborted, result } = await h
-            .control(victim)
-            .stub.probeSpectateBlockNoAbort(encodedBlockConfirmation)
+            await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
+                0,
+                forkId,
+                attacker.signer
+            );
+        await h
+            .control(attacker)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
             .request();
 
-        expect(result).to.equal("DISCONNECT");
-        expect(aborted).to.equal(false);
-        expect(
-            await h.control(victim).query.getStatus().request()
-        ).to.equal(Status.SYNCED);
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: attacker
+        });
     });
 });

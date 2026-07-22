@@ -637,12 +637,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.probeRejectedEventSyncLog();
     }
 
-    public async probeSpectateBlockNoAbort(
-        encodedBlockConfirmation: string
-    ): Promise<{ aborted: boolean; result: string }> {
-        return this.service.probeSpectateBlockNoAbort(encodedBlockConfirmation);
-    }
-
     public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
         return this.service.probeConcurrentCalldataRecovery();
     }

@@ -5,7 +5,7 @@ import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { id, Log } from "ethers";
-import { Codec, DetachedPromises, Type } from "@/utils";
+import { DetachedPromises } from "@/utils";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
 import { Block } from "@/models";
@@ -247,37 +247,6 @@ export class StubService extends ARpcService<
             };
         } finally {
             eventHandler.onStateSnapshotUpdated = original;
-        }
-    }
-
-    /**
-     * Run the real spectator block validation on an outsider-authored block and
-     * report whether it aborted. Author membership is checked before linkage, so
-     * this reaches blockAuthorIsNotParticipant; the fix must drop the sender
-     * (DISCONNECT) without tearing the spectator down.
-     */
-    public async probeSpectateBlockNoAbort(
-        encodedBlockConfirmation: string
-    ): Promise<{ aborted: boolean; result: string }> {
-        const sm = this.sm;
-        const block = Block.fromBlockConfirmation(
-            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
-        );
-        const entry = sm.storage.queues.createEntry(block);
-        const strategy = sm.getActiveValidationStrategy();
-        let aborted = false;
-        const realAbort = sm.abort.bind(sm);
-        sm.abort = () => {
-            aborted = true;
-        };
-        try {
-            const result = await sm.validationService.validateBlockConfirmation(
-                entry,
-                strategy
-            );
-            return { aborted, result: BlockValidationResult[result] };
-        } finally {
-            sm.abort = realAbort;
         }
     }
 

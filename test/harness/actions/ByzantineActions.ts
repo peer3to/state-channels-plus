@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, Signer } from "ethers";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import * as factory from "@test/factory";
 import { Block } from "@/models";
@@ -266,16 +266,18 @@ export class ByzantineActions<
     }
 
     /**
-     * Craft the next block (head height + 1) authored + signed by a throwaway
-     * outsider key: a new block position, so it is validated fresh rather than
-     * CRDT-merged into the head. Authentication passes (signature matches the
-     * author) but the author is not a channel participant, and membership is
-     * checked before linkage -> reaches blockAuthorIsNotParticipant (the
-     * handshaken-outsider DoS vector).
+     * Craft the next block (head height + 1) authored + signed by `author` - a
+     * peer connected to the channel's p2p network but not a channel participant
+     * (a spectator that never joined). A new block position, so it is validated
+     * fresh rather than CRDT-merged into the head. Authentication passes (the
+     * signature matches the declared author) but the author is not a participant,
+     * and membership is checked before linkage -> reaches
+     * blockAuthorIsNotParticipant (the connected-outsider DoS vector).
      */
     async craftOutsiderAuthoredBlockConfirmation(
         sourcePeerIndex: number,
-        forkId: ForkId
+        forkId: ForkId,
+        author: Signer
     ): Promise<{ encodedBlockConfirmation: string }> {
         const bundle = await this.harness
             .control(this.harness.getPeer(sourcePeerIndex))
@@ -284,16 +286,16 @@ export class ByzantineActions<
         const head = Block.fromSignedBlock(
             Codec.decode(bundle!.encodedSignedBlock, Type.SignedBlock)
         );
-        const outsider = ethers.Wallet.createRandom();
+        const authorAddress = (await author.getAddress()) as Address;
         const nextBlockStruct = {
             ...factory.blockStructWithTransactionHeader(head.blockStruct, {
-                participant: outsider.address as Address,
+                participant: authorAddress,
                 transactionCnt: Number(head.height) + 1
             }),
             previousBlockHash: bundle!.hash
         };
         const outsiderSignedBlock = (
-            await Block.fromBlockStruct(nextBlockStruct, outsider)
+            await Block.fromBlockStruct(nextBlockStruct, author)
         ).signedBlock;
         return {
             encodedBlockConfirmation: Codec.encode(
