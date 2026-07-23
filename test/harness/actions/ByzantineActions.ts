@@ -304,4 +304,57 @@ export class ByzantineActions<
             ) as string
         };
     }
+
+    /**
+     * Craft the next block authored + signed by `author`, but declaring the
+     * state-snapshot hash of the block at `staleSnapshotHeight` instead of the
+     * head's.
+     */
+    async craftStaleMembershipBlockConfirmation(
+        sourcePeerIndex: number,
+        forkId: ForkId,
+        author: Signer,
+        staleSnapshotHeight: BlockHeight
+    ): Promise<{ encodedBlockConfirmation: string }> {
+        const source = this.harness.control(
+            this.harness.getPeer(sourcePeerIndex)
+        );
+        const headBundle = await source.query
+            .getLatestBlockBundle(forkId)
+            .request();
+        const staleBundle = await source.query
+            .getBlockByHeight(forkId, staleSnapshotHeight)
+            .request();
+        if (!headBundle) throw new Error("missing head block");
+        if (!staleBundle)
+            throw new Error(
+                `missing block at stale height ${staleSnapshotHeight}`
+            );
+
+        const head = Block.fromSignedBlock(
+            Codec.decode(headBundle.encodedSignedBlock, Type.SignedBlock)
+        );
+        const stale = Block.fromSignedBlock(
+            Codec.decode(staleBundle.encodedSignedBlock, Type.SignedBlock)
+        );
+        const authorAddress = (await author.getAddress()) as Address;
+        const nextBlockStruct = {
+            ...factory.blockStructWithTransactionHeader(head.blockStruct, {
+                participant: authorAddress,
+                transactionCnt: Number(head.height) + 1
+            }),
+            previousBlockHash: headBundle.hash,
+            // the lever: a snapshot whose participant set still contains `author`
+            stateSnapshotHash: stale.stateSnapshotHash
+        };
+        const staleSignedBlock = (
+            await Block.fromBlockStruct(nextBlockStruct, author)
+        ).signedBlock;
+        return {
+            encodedBlockConfirmation: Codec.encode(
+                { signedBlock: staleSignedBlock, signatures: [] },
+                Type.BlockConfirmation
+            ) as string
+        };
+    }
 }

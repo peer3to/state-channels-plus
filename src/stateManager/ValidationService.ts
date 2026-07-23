@@ -72,14 +72,8 @@ export default class ValidationService {
             return await strategy.channelNotOpened(entry);
         }
 
-        //  Get participants
-        const participants = await this.getParticipantsUnionOrOnChain(
-            block,
-            block.channelId
-        );
-
         // Author is a participant
-        if (!participants.has(block.author)) {
+        if (!(await this.isBlockAuthorParticipant(block, block.channelId))) {
             this.logger.warn(
                 "validateBlockConfirmation - author is not participant",
                 {
@@ -535,19 +529,16 @@ export default class ValidationService {
 
     // ────────────────────── Helpers ─────────────────────
 
-    private async getParticipantsUnionOrOnChain(
+    private async isBlockAuthorParticipant(
         block: Block,
         channelId: ChannelId
-    ): Promise<Set<Address>> {
-        let participants = new Set(
-            this.storage.getParticipantsUnion(
-                block.coordinates,
-                block.stateSnapshotHash
-            )
+    ): Promise<boolean> {
+        const previousSnapshot = this.storage.getPreviousStateSnapshot(
+            block.coordinates
         );
 
-        if (participants.size === 0) {
-            // get participants from chain
+        if (!previousSnapshot) {
+            // No local anchor to bind against - fall back to the on-chain union.
             const [participantsFromChain, pendingParticipants] =
                 await Promise.all([
                     this.stateChannelManagerContract.getParticipants(channelId),
@@ -555,13 +546,25 @@ export default class ValidationService {
                         channelId
                     )
                 ]);
-            participants = new Set([
+            return new Set<Address>([
                 ...participantsFromChain,
                 ...pendingParticipants
-            ]);
+            ]).has(block.author);
         }
 
-        return participants;
+        // The author counts if it is in the previous snapshot, or in the block's
+        // declared resulting snapshot bound to the block's coordinates.
+        const resultingSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                block.stateSnapshotHash
+            );
+        // No declared snapshot in storage -> an empty snapshot contributes no
+        // participants, so the check degrades to the previous snapshot alone.
+        return await this.diamondStateMachine.localDiamondContract.isBlockAuthorParticipant(
+            block.blockStruct,
+            previousSnapshot.toStruct(),
+            (resultingSnapshot ?? StateSnapshot.empty()).toStruct()
+        );
     }
 
     private async getOnChainPostTiming(

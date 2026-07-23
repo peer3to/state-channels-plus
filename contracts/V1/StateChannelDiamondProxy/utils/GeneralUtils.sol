@@ -24,3 +24,22 @@ function _isAddressInArray(address[] memory array, address adr) pure returns (bo
     }
     return false;
 }
+
+function _isBlockAuthorParticipant(
+    Block memory _block,
+    StateSnapshot memory previousSnapshot,
+    StateSnapshot memory resultingSnapshot
+) pure returns (bool) {
+    address author = _getBlockAuthor(_block);
+    if (_isAddressInArray(previousSnapshot.snapshotData.participants, author)) {
+        return true;
+    }
+
+    if (
+        resultingSnapshot.blockHeight == _getBlockHeight(_block) && resultingSnapshot.forkId == _getBlockFork(_block)
+            && _isAddressInArray(resultingSnapshot.snapshotData.participants, author)
+    ) {
+        return true;
+    }
+    return false;
+}
