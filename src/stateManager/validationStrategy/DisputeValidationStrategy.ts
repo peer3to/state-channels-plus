@@ -255,7 +255,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return this.handleInvalidBlockStructure();
     }
@@ -274,7 +274,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         );
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return this.handleInvalidBlockStructure();
     }

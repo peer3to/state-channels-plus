@@ -150,7 +150,7 @@ export default class ValidationService {
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             // TODO -> here for the dispute strategy we can kill the dispute, since the stateProof comitted to the whole structure
-            return await strategy.blockIsNotLinkedAndIsNotFirstBlock(block);
+            return await strategy.blockIsNotLinkedAndIsNotFirstBlock(entry);
         }
 
         // isNextLeader
@@ -288,7 +288,7 @@ export default class ValidationService {
             return await strategy.wrongGenesisDetected(entry);
         }
 
-        return await strategy.conflictingButNotLinkedBlockDetected(block);
+        return await strategy.conflictingButNotLinkedBlockDetected(entry);
     }
 
     public async isDisputedFork(

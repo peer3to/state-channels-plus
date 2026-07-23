@@ -346,8 +346,9 @@ export class StubService extends ARpcService<
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
         );
-        const result =
-            await strategy.blockIsNotLinkedAndIsNotFirstBlock(latestBlock);
+        const result = await strategy.blockIsNotLinkedAndIsNotFirstBlock(
+            this.sm.storage.queues.createEntry(latestBlock)
+        );
         return {
             result: BlockValidationResult[result],
             proofStored:

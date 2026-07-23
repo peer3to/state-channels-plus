@@ -205,8 +205,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        // Malformed linkage, not a provable fraud proof - drop the sender.
+        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -249,8 +251,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        // Malformed linkage, not a provable fraud proof - drop the sender.
+        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(
