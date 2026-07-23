@@ -123,6 +123,9 @@ export default class EventSyncService {
         state.complete = false;
         states.set(log.blockNumber, state);
 
+        // A log executes atomically: it either completes or throws. A throw is
+        // fatal - the rejected promise stays cached so the log is never
+        // re-dispatched, and its block never completes so the watermark holds.
         const promise = this.dispatchLog(log, scheduledChannelId)
             .catch((error) => {
                 state.failed = true;

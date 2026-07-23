@@ -57,14 +57,16 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
                 return true;
         }
     }
+    // Deviations split by whether the fault is provable, not by who caused it.
+    // No fraud proof possible (junk, outsider author, wrong channel, stray
+    // signatures, malformed linkage, missing genesis) -> drop the sender and keep
+    // spectating. Provable fraud by a participant -> abort() and stop following.
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
-        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
-        this.abort();
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(
@@ -87,8 +89,14 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
             unexpectedSignatures
         );
         if (unexpectedSignatures.has(block.originalSignature)) {
-            // Garbage author — stop spectating this feed.
-            this.abort();
+            // Garbage author outside the participant union - not a channel
+            // member, so nobody to slash and no dispute. Blacklist the signers
+            // of the junk block and drop it; keep spectating.
+            for (const signature of unexpectedSignatures) {
+                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                    block.signatureToAddress(signature)
+                );
+            }
             return BlockValidationResult.DISCONNECT;
         }
         // Stray confirmation signatures don't invalidate an otherwise valid block.
@@ -111,41 +119,62 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.BROADCAST;
     }
     public async blockAuthorIsNotParticipant(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        this.abort();
+        // Non-participant author: authentication passed (they signed with their
+        // own key) but they are not in the channel. Drop + blacklist the sender,
+        // keep spectating - this is the DoS vector, never an abort.
+        const culprits = new Set(entry.sourcePeers);
+        culprits.add(entry.block.author);
+        this.p2pManager.disconnectAndBlacklistPeers(culprits);
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
         _conflictingBlock: Block,
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
+        // Provable fraud by a channel participant - stop following this channel.
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async invalidStateTransitionDetected(
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
-        _entry: QueuedBlockEntry
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
+        if (
+            !this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                block.forkId
+            )
+        ) {
+            // No genesis snapshot means no fraud proof to build - nothing is
+            // proven against a participant, so cut the suppliers and the author
+            // and keep spectating rather than abort.
+            const culprits = new Set(entry.sourcePeers);
+            culprits.add(block.author);
+            this.p2pManager.disconnectAndBlacklistPeers(culprits);
+            return BlockValidationResult.DISCONNECT;
+        }
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async forgedInboundMessageBlockDetected(
-        block: Block,
+        _block: Block,
         _messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        this.abort();
+        // Malformed linkage, not a provable fraud proof - drop the sender
+        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -164,13 +193,14 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        this.abort();
+        // Malformed linkage, not a provable fraud proof - drop the sender
+        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(
-        block: Block
+        _block: Block
     ): Promise<BlockValidationResult> {
         this.abort();
         return BlockValidationResult.DISPUTE;

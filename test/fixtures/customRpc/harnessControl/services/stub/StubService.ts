@@ -65,6 +65,7 @@ export type EventSyncFailureProbe = {
     handlerCallCount: number;
     firstError: string | null;
     secondError: string | null;
+    rescheduledError: string | null;
     cursorBefore: number | null;
     cursorAfter: number | null;
     detachedError: string | null;
@@ -214,11 +215,29 @@ export class StubService extends ARpcService<
                     ? rejected.reason.message
                     : String(rejected.reason)
                 : null;
+
+            // A failed log is fatal - rescheduling it returns the cached
+            // rejection and never re-enters the handler, even once the handler
+            // would succeed.
+            eventHandler.onStateSnapshotUpdated = async () => {
+                handlerCallCount += 1;
+            };
+            const rescheduled = sm.eventSyncService.scheduleLog(
+                log,
+                sm.channelId
+            );
+            const rescheduledError = await rescheduled.then(
+                () => null,
+                (error: unknown) =>
+                    error instanceof Error ? error.message : String(error)
+            );
+
             return {
                 samePromise: first === second,
                 handlerCallCount,
                 firstError,
                 secondError,
+                rescheduledError,
                 cursorBefore,
                 cursorAfter:
                     sm.storage.eventSync.getLatestProcessedBlock(
@@ -327,8 +346,9 @@ export class StubService extends ARpcService<
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
         );
-        const result =
-            await strategy.blockIsNotLinkedAndIsNotFirstBlock(latestBlock);
+        const result = await strategy.blockIsNotLinkedAndIsNotFirstBlock(
+            this.sm.storage.queues.createEntry(latestBlock)
+        );
         return {
             result: BlockValidationResult[result],
             proofStored:
@@ -360,11 +380,12 @@ export class StubService extends ARpcService<
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
         );
+        const entry = this.sm.storage.queues.createEntry(block);
         const earlyAuthorResult =
-            await strategy.blockAuthorIsNotParticipant(block);
+            await strategy.blockAuthorIsNotParticipant(entry);
         const signatureUnionResult =
             await strategy.notAllSingersAreParticipants(
-                this.sm.storage.queues.createEntry(block),
+                entry,
                 new Set([block.originalSignature])
             );
         return {

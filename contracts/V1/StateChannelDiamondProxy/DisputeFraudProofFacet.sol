@@ -96,6 +96,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return address(0);
     }
 
+    function _timeoutDeadline(uint256 previousTimestamp, bool hasBlock)
+        internal
+        view
+        returns (bool ok, uint256 deadline)
+    {
+        uint256 firstBlockGrace = hasBlock ? 0 : getEvidenceTime();
+        return
+            Math.tryAdd(previousTimestamp, firstBlockGrace + getP2pTime() + getAgreementTime() + getChainFallbackTime());
+    }
+
     function _handleInvalidDisputeFraudProofType(bytes memory, Dispute memory) internal pure returns (address) {
         return _invalid();
     }
@@ -495,9 +505,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 }
             }
         }
-        uint256 firstBlockGrace = hasBlock ? 0 : getEvidenceTime();
-        (bool ok, uint256 minValidTimestamp) =
-            Math.tryAdd(previousTimestamp, firstBlockGrace + getP2pTime() + getAgreementTime() + getChainFallbackTime());
+        (bool ok, uint256 minValidTimestamp) = _timeoutDeadline(previousTimestamp, hasBlock);
         if (!ok || timeoutTimestamp < minValidTimestamp) {
             return _valid(dispute.input.disputer);
         }
@@ -608,8 +616,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             }
         }
         //TODO think >= or >
-        (bool ok, uint256 maxValidTimestamp) =
-            Math.tryAdd(previousTimestamp, getP2pTime() + getAgreementTime() + getChainFallbackTime());
+        (bool ok, uint256 maxValidTimestamp) = _timeoutDeadline(previousTimestamp, hasBlock);
         if (ok && timeoutCalldataPostedProof.onChainTimestamp > maxValidTimestamp) {
             return false;
         }

@@ -3,8 +3,7 @@ import { expect } from "chai";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("EventSyncService", function () {
-    it("retains a rejected log promise and holds the processed-block cursor", async function () {
-        this.timeout(90000);
+    it("treats a failed log as fatal - never re-dispatched, cursor holds", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
         const result = await h
@@ -16,8 +15,13 @@ describe("EventSyncService", function () {
         expect(result.handlerCallCount).to.equal(1);
         expect(result.firstError).to.equal("Expected event-sync rejection");
         expect(result.secondError).to.equal("Expected event-sync rejection");
-        expect(result.cursorAfter).to.equal(result.cursorBefore);
+        // the failure bubbles out of the detached promise
         expect(result.detachedError).to.equal("Expected event-sync rejection");
+        // rescheduling after the failure replays the rejection, it does not retry
+        expect(result.rescheduledError).to.equal(
+            "Expected event-sync rejection"
+        );
+        expect(result.cursorAfter).to.equal(result.cursorBefore);
     });
 
     it("joins concurrent calldata recovery onto one chain query", async function () {

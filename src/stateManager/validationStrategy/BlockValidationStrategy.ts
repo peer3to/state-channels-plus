@@ -119,8 +119,11 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.BROADCAST;
     }
     public async blockAuthorIsNotParticipant(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const culprits = new Set(entry.sourcePeers);
+        culprits.add(entry.block.author);
+        this.p2pManager.disconnectAndBlacklistPeers(culprits);
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
@@ -175,9 +178,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             // here - covered by the no-false-positive e2e.
             const culprits = new Set(entry.sourcePeers);
             culprits.add(block.author);
-            for (const peer of culprits) {
-                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
-            }
+            this.p2pManager.disconnectAndBlacklistPeers(culprits);
             return BlockValidationResult.DISCONNECT;
         }
         this.logger.warn("Wrong genesis detected", {
@@ -204,8 +205,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        // Malformed linkage, not a provable fraud proof - drop the sender.
+        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -248,8 +251,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        // Malformed linkage, not a provable fraud proof - drop the sender.
+        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(

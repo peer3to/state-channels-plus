@@ -289,6 +289,34 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertFalse(diamond.validateTimeoutCalldataPostedProof(proof, dispute));
     }
 
+    // A height-0 author gets an extra evidenceTime of grace on the calldata-posted
+    // defense. graceWindow = p2p+agreement+chainFallback + evidenceTime; a post at
+    // this edge is beyond the no-grace window and only validates because of the
+    // +evidenceTime first-block grace. (Separate tests: each opens the channel once.)
+    function _firstBlockGraceWindow() internal view returns (uint256) {
+        return diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
+            + diamond.getChainFallbackTime();
+    }
+
+    function test_validateTimeoutCalldataPostedProof_firstBlockGraceEdge_valid() public {
+        require(diamond.getEvidenceTime() > 0, "evidenceTime is 0 - grace not observable");
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) =
+            _timeoutCalldataPostedProofPostedAfter(_firstBlockGraceWindow());
+        assertTrue(
+            diamond.validateTimeoutCalldataPostedProof(proof, dispute), "first-block grace edge rejected"
+        );
+    }
+
+    function test_validateTimeoutCalldataPostedProof_pastFirstBlockGrace_invalid() public {
+        require(diamond.getEvidenceTime() > 0, "evidenceTime is 0 - grace not observable");
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) =
+            _timeoutCalldataPostedProofPostedAfter(_firstBlockGraceWindow() + 1);
+        assertFalse(
+            diamond.validateTimeoutCalldataPostedProof(proof, dispute),
+            "calldata posted past the grace window accepted"
+        );
+    }
+
     function test_disputeBlockAuthorNotParticipant_validOutsiderBlock_killsDisputer() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
@@ -418,10 +446,21 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         internal
         returns (Dispute memory dispute, TimeoutCalldataPosted memory proof)
     {
+        return _timeoutCalldataPostedProofPostedAfter(0);
+    }
+
+    function _timeoutCalldataPostedProofPostedAfter(uint256 postDelay)
+        internal
+        returns (Dispute memory dispute, TimeoutCalldataPosted memory proof)
+    {
         address[] memory participants = new address[](2);
         participants[0] = vm.addr(1);
         participants[1] = vm.addr(2);
         _openChannel(participants);
+        // genesis timestamp is fixed at channel open; warp forward so the calldata
+        // is posted `postDelay` seconds after genesis - exercises the first-block
+        // grace band on the timeout-calldata-posted defense.
+        vm.warp(block.timestamp + postDelay);
         (, StateSnapshot memory latestSnapshot) = diamond.isChannelOpen(CHANNEL_ID);
 
         MathState memory latestState;
