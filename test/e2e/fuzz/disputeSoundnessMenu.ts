@@ -16,7 +16,7 @@ const RESOLVE = {
 const SETTLE_WAIT = 30000;
 
 const survivorCount = (h: MathPeerTestHarness) =>
-    h.getPeersExcludingMaliciousAndLeavers().length;
+    h.getActiveHonestPeers().length;
 const disputesSoFar = (h: MathPeerTestHarness) =>
     h.peers.length - survivorCount(h);
 
@@ -78,15 +78,16 @@ export const DISPUTE_SOUNDNESS_MENU: FuzzAction[] = [
             console.log(
                 `[fuzz]   attack=${attack.name} attacker=peer${attacker}`
             );
-            await h.dispute.resolveDisputeWait(RESOLVE);
+            await h.dispute.resolveDisputeWait({
+                ...RESOLVE,
+                forkId: forkBefore
+            });
             // settle the new fork before continuing (see ATTACK_CATALOG D-12)
-            await h.assert.snapshot.onChainSnapshotChangedWait({
+            await h.assert.snapshot.localSnapshotsChangedWait({
                 previousForkId: forkBefore,
                 timeoutMs: SETTLE_WAIT
             });
-            const survivors = h
-                .getPeersExcludingMaliciousAndLeavers()
-                .map((p) => p.index);
+            const survivors = h.getActiveHonestPeers().map((p) => p.index);
             await h.assert.sync.peersInSyncWait({
                 peerIndices: survivors,
                 timeout: SETTLE_WAIT

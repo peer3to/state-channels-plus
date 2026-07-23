@@ -51,10 +51,9 @@ export interface SetupPayload {
     stateMachine: SerializedContract;
     /**
      * Signer secret (private key or mnemonic) used to reconstruct the same
-     * `ethers.Wallet` inside the host. Required in threaded mode; omitted in
-     * inline mode where the live signer is provided directly to the host.
+     * `ethers.Wallet` inside the host.
      */
-    signerSecret?: string;
+    signerSecret: string;
     peerId?: number;
     /** Optional dynamic custom RPC manifest resolved on the host side. */
     customRpcManifest?: CustomRpcManifest;
@@ -88,16 +87,38 @@ export interface SerializedError {
     name?: string;
     stack?: string;
     data?: string;
+    /** Ethers error metadata restored on the client for classification. */
+    code?: string;
+    shortMessage?: string;
+    info?: unknown;
+    action?: string;
+    reason?: string;
+    transaction?: unknown;
+    receipt?: unknown;
+    /**
+     * EVM address of the peer host the error originated on, when stamped (see
+     * `errorPeerAddress`). Carried explicitly because the in-process stamp
+     * doesn't survive the structured-clone hop across the port.
+     */
+    peerAddress?: string;
 }
 
 /** Minimal surface needed to issue requests to the host. */
 export interface RuntimeRequester {
-    request<TResult>(request: RuntimeRequestInput): Promise<TResult>;
+    request<TResult>(
+        request: RuntimeRequestInput,
+        options?: { timeoutMs?: number | null }
+    ): Promise<TResult>;
 }
 
 export type {
     CallViewRequest,
+    ChainSignerSendTransactionRequest,
+    ChainSignerSignMessageRequest,
+    ChainSignerSignTransactionRequest,
+    ChainSignerSignTypedDataRequest,
     ConnectToChannelRequest,
+    CollectJoinChannelConfirmationRequest,
     HostRpcRequest,
     DeployCompleteRequest,
     DeploySignerCallRequest,
@@ -109,6 +130,7 @@ export type {
     DisposeRequest,
     GetChannelStatusRequest,
     JoinChannelRequest,
+    TopUpBalanceRequest,
     P2pRuntimeBootstrapMessage,
     P2pRuntimeHostMessage,
     P2pRuntimeRequestMessage,
@@ -121,6 +143,7 @@ export type {
     RuntimeReadyMessage,
     RuntimeRequestInput,
     RuntimeResponse,
+    RuntimeWebRTCBridgePortMessage,
     SendTransactionRequest,
     SetChannelIdRequest,
     SetIsLeaderRequest,

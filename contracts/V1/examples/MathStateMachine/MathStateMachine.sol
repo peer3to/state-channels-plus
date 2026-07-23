@@ -120,6 +120,12 @@ contract MathStateMachine is AStateMachine {
     }
 
     function _joinChannel(JoinChannel memory joinChannel) internal virtual override returns (bool) {
+        for (uint256 i = 0; i < state.participants.length; i++) {
+            if (state.participants[i] == joinChannel.participant) {
+                state.balances[i] += joinChannel.balance.amount;
+                return true;
+            }
+        }
         state.participants.push(joinChannel.participant);
         state.balances.push(joinChannel.balance.amount);
         if (state.participants.length == 1) {

@@ -3,6 +3,7 @@ import ContractExecutor from "../ContractExecutor";
 import { createEvm } from "../../EvmFactory";
 import { config, createConfig } from "@/utils/config";
 import { createLogger } from "@platform/createLogger";
+import type { Logger } from "@/utils";
 import type {
     ContractExecutorRequestPayload,
     WorkerHostMessage,
@@ -21,6 +22,7 @@ workerGlobal.window ||= globalThis;
 
 class ContractExecutorWorkerHost {
     private executor: ContractExecutor | undefined;
+    private logger: Logger | undefined;
 
     private async init(
         request: Extract<ContractExecutorRequestPayload, { type: "init" }>
@@ -34,6 +36,7 @@ class ContractExecutorWorkerHost {
             { component: "ContractExecutorWorker" },
             { attachErrorListener: false }
         );
+        this.logger = logger;
         if (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0) {
             logger.startPerformanceMonitoring({ threadLabel: "vm" });
         }
@@ -53,6 +56,13 @@ class ContractExecutorWorkerHost {
             logger
         );
         this.executor = new ContractExecutor(evm, logger);
+        return null;
+    }
+
+    private dispose() {
+        this.logger?.stopPerformanceMonitoring();
+        this.logger = undefined;
+        this.executor = undefined;
         return null;
     }
 
@@ -90,7 +100,9 @@ class ContractExecutorWorkerHost {
             const result =
                 payload.type === "init"
                     ? await this.init(payload)
-                    : await this.call(payload);
+                    : payload.type === "dispose"
+                      ? this.dispose()
+                      : await this.call(payload);
 
             return { type: "response", requestId, ok: true, result };
         } catch (error) {

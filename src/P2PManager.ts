@@ -15,7 +15,7 @@ import { ethers } from "ethers";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
-import { config } from "@/utils/config";
+import { config, isNodeRuntime } from "@/utils/config";
 import { Address } from "./types/types";
 import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
@@ -50,6 +50,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             timeout: ReturnType<typeof setTimeout>;
         }
     >();
+    private disposalPromise?: Promise<void>;
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -89,12 +90,14 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         return this.self;
     }
     //Mark resources for garbage collection
-    public async dispose() {
-        this.rejectAllPendingRpcRequests(
-            new Error("P2PManager disposed before RPC response arrived")
-        );
-        await this.holepunch.dispose();
+    public dispose(): Promise<void> {
+        if (this.disposalPromise) {
+            return this.disposalPromise;
+        }
+
         this.disconnectAll();
+        this.disposalPromise = this.holepunch.dispose();
+        return this.disposalPromise;
     }
     public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
@@ -194,13 +197,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
 
-    private rejectAllPendingRpcRequests(reason: Error): void {
-        for (const [, pending] of this.pendingRpcRequests) {
-            this.stateManager.timeoutManager.cancelTask(pending.timeout);
-            pending.reject(reason);
-        }
-        this.pendingRpcRequests.clear();
-    }
     public onRpc(serializedRpc: string, transport: ATransport) {
         try {
             // Reject oversized frames before parsing so a peer can't force
@@ -253,13 +249,19 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
     public async tryOpenConnectionToChannel(channelId: string) {
         if (config.DEBUG_LOCAL_TRANSPORT) {
+            // In the browser there's no harness fixture to drive discovery, so
+            // form the local mesh here via the relay hub. In node the harness
+            // drives LocalDiscoveryServer.connectToPeers itself (and also sets a
+            // registry URL for its own peer-mesh), so stay a no-op there.
+            if (!isNodeRuntime() && config.LOCAL_DISCOVERY_REGISTRY_URL) {
+                await LocalDiscoveryServer.tryStart();
+                await LocalDiscoveryServer.connectToPeers(
+                    this.self,
+                    channelId,
+                    this.stateManager.signerAddress.toString()
+                );
+            }
             return;
-            await LocalDiscoveryServer.tryStart();
-            await LocalDiscoveryServer.connectToPeers(
-                this.self,
-                channelId,
-                this.stateManager.signerAddress.toString()
-            );
         }
         const topic = Buffer.alloc(32).fill(channelId);
         await this.holepunch.join(topic);
@@ -304,6 +306,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         const transport = profile.getTransport();
         if (!transport) return;
         this.disconnectConnection(transport);
+    }
+
+    public disconnectAndBlacklistPeers(peers: Iterable<Address>) {
+        for (const peer of peers) {
+            this.disconnectAndBlacklistPeerByEvmAddress(peer);
+        }
     }
 
     public isBlacklisted(evmAddress: Address): boolean {

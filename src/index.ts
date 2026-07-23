@@ -73,6 +73,7 @@ export { Status } from "@/types";
 
 export { startP2pRuntimeWorker } from "@/evm/p2pRuntime/worker/startP2pRuntimeWorker";
 export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
+export { default as ClientChainSigner } from "@/evm/signer/ClientChainSigner";
 export type {
     P2pRuntimeWorker,
     SetupPayload,

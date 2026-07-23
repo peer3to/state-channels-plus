@@ -13,6 +13,8 @@ import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/Mat
 import { OpenChannelConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { createContractExecutorFactory } from "@/evm";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
+import { LocalDiamond__factory } from "@typechain-types";
+import { dispute } from "@test/factory";
 
 describe("Universal Deployment", () => {
     let deployer: HardhatEthersSigner;
@@ -63,6 +65,83 @@ describe("Universal Deployment", () => {
 
             expect(diamondAddress).to.not.equal(ethers.ZeroAddress);
             expect(diamondAddress).to.match(/^0x[a-fA-F0-9]{40}$/);
+        });
+
+        it("ignores stale overwrite events and deduplicates on-chain slashes", async () => {
+            const { address } = await deployLocalDiamond(
+                deployMathStateMachineLocally,
+                localSigner,
+                undefined,
+                12_000_000
+            );
+            const contract = LocalDiamond__factory.connect(
+                address.toString(),
+                localSigner
+            );
+            const channelId = ethers.id("local-diamond-event-ordering");
+            const participant = deployer.address;
+
+            await contract.onWithdrawalsUpdated(
+                channelId,
+                { amount: 20n, data: "0x" },
+                20,
+                1
+            );
+            await contract.onWithdrawalsUpdated(
+                channelId,
+                { amount: 10n, data: "0x" },
+                10,
+                1
+            );
+            expect(
+                (await contract.getChannelBalance(channelId)).totalWithdrawals
+                    .amount
+            ).to.equal(20n);
+
+            await contract.onChannelStorageCleared(
+                channelId,
+                ethers.ZeroHash,
+                30,
+                1
+            );
+            await contract.onOnChainSlashAdded(channelId, participant, 31);
+            await contract.onOnChainSlashAdded(channelId, participant, 32);
+            await contract.onChannelStorageCleared(
+                channelId,
+                ethers.ZeroHash,
+                25,
+                1
+            );
+            expect(
+                await contract.getOnChainSlashedParticipants(channelId)
+            ).to.deep.equal([participant]);
+
+            const forkId = ethers.id("duplicate-dispute-fork");
+            const committedDispute = dispute({
+                input: { channelId, forkId, disputer: participant }
+            });
+            await contract.onDisputeCommitted(
+                channelId,
+                committedDispute,
+                100,
+                false,
+                90
+            );
+            await contract.onDisputeCommitted(
+                channelId,
+                committedDispute,
+                50,
+                false,
+                40
+            );
+            const [window] = await contract.getDisputeWindows(channelId, [
+                forkId
+            ]);
+            expect(window.evidence.disputeCommitments).to.have.length(1);
+            expect(window.evidence.hasPosted).to.deep.equal([participant]);
+            expect(window.evidence.lastEvidenceSubmissionTimestamp).to.equal(
+                100n
+            );
         });
     });
 

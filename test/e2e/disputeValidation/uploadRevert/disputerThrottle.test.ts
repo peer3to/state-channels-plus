@@ -5,13 +5,15 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("E2E: dispute validation / uploadRevert / disputerThrottle", function () {
-    const evidenceTime = 2;
+    const expiryEvidenceTime = 2;
+    // Leave enough chain time for dispute construction under parallel load.
+    const activeEvidenceTime = 5;
 
     describe("disputer already throttled; opens NEW window", function () {
         it("second postDispute from same disputer within evidenceTime → dispute upload fails → ErrorDisputeThrottled", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 0, {
-                timeConfig: { evidenceTime }
+                timeConfig: { evidenceTime: activeEvidenceTime }
             });
             await h.assert.sync.peersInSyncWait();
             h.event.resetEventSpies();
@@ -47,7 +49,7 @@ describe("E2E: dispute validation / uploadRevert / disputerThrottle", function (
         it("second postDispute from same disputer after evidenceTime → dispute upload succeeds", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 0, {
-                timeConfig: { evidenceTime }
+                timeConfig: { evidenceTime: expiryEvidenceTime }
             });
             await h.assert.sync.peersInSyncWait();
             h.event.resetEventSpies();
@@ -59,7 +61,7 @@ describe("E2E: dispute validation / uploadRevert / disputerThrottle", function (
                 dispute.input.onChainSlashes = [];
                 dispute.input.selfRemoval = true;
             });
-            await sleep((evidenceTime + 1) * 1000);
+            await sleep((expiryEvidenceTime + 1) * 1000);
 
             await h.tamper.postTamperedDispute(1, (dispute) => {
                 dispute.input.forkId = randomHash();
@@ -74,7 +76,7 @@ describe("E2E: dispute validation / uploadRevert / disputerThrottle", function (
         it("postDispute reuses dispute.input.forkId from another peer's open window within evidenceTime → dispute upload fails → ErrorDisputeThrottled", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 0, {
-                timeConfig: { evidenceTime }
+                timeConfig: { evidenceTime: activeEvidenceTime }
             });
             await h.assert.sync.peersInSyncWait();
             h.event.resetEventSpies();

@@ -29,9 +29,15 @@ import type {
     PingPongRpc,
     SumResponse
 } from "@test/fixtures/customRpc/PingPongRpcManifest";
+import {
+    startDiscoveryRegistry,
+    startHardhatNode,
+    type DiscoveryHandle,
+    type NodeHandle
+} from "@test/utils/nodeInfra";
 
-const HARDHAT_NODE_URL =
-    process.env.HARDHAT_NODE_URL ?? "http://127.0.0.1:18545";
+let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
+let localDiscoveryRegistryUrl = process.env.LOCAL_DISCOVERY_REGISTRY_URL;
 const DEFAULT_HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
 
@@ -84,10 +90,21 @@ async function deployLocalStateMachine(signer: Signer): Promise<string> {
 
 describe("E2E: custom RPC request/response over the runtime port", function () {
     let peers: PingPeer[] = [];
+    let nodeHandle: NodeHandle | undefined;
+    let discoveryHandle: DiscoveryHandle | undefined;
 
     before(async function () {
         this.timeout(60_000);
-        await waitForNode(HARDHAT_NODE_URL);
+        if (hardhatNodeUrl) {
+            await waitForNode(hardhatNodeUrl);
+        } else {
+            nodeHandle = await startHardhatNode();
+            hardhatNodeUrl = nodeHandle.url;
+        }
+        if (!localDiscoveryRegistryUrl) {
+            discoveryHandle = await startDiscoveryRegistry();
+            localDiscoveryRegistryUrl = discoveryHandle.url;
+        }
     });
 
     afterEach(async function () {
@@ -97,10 +114,21 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         await LocalDiscoveryServer.cleanup();
     });
 
+    after(function () {
+        discoveryHandle?.stop();
+        nodeHandle?.stop();
+    });
+
     it("lets a client drive hostRpc.request()/sendOne() across the port (self + peer)", async function () {
         this.timeout(120_000);
 
-        const provider = new ethers.JsonRpcProvider(HARDHAT_NODE_URL);
+        if (!hardhatNodeUrl) {
+            throw new Error("Hardhat node URL is not initialized");
+        }
+        if (!localDiscoveryRegistryUrl) {
+            throw new Error("Local discovery registry URL is not initialized");
+        }
+        const provider = new ethers.JsonRpcProvider(hardhatNodeUrl);
         const deployerSigner = new NonceManager(
             walletAt(slotDeployerIndex(), provider)
         );
@@ -135,7 +163,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             runtimeWallet: ethers.HDNodeWallet,
             selfAddress: string
         ): Promise<PingPeer> => {
-            const runtimeSigner = new NonceManager(runtimeWallet);
+            const runtimeSigner = runtimeWallet;
             const scm = StateChannelManagerProxy__factory.connect(
                 scmDeployment.address,
                 runtimeSigner
@@ -148,21 +176,17 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             const instance = await EvmStateMachine.p2pSetup<
                 MathStateMachine,
                 PingPongRpc
-            >(
-                runtimeSigner,
-                scm,
-                stateMachineTemplate,
-                deployLocalStateMachine,
-                {
-                    customRpcManifest: { module: PING_PONG_MANIFEST },
-                    config: {
-                        PROVIDER_URL: HARDHAT_NODE_URL,
-                        RUN_SDK_IN_THREAD: false,
-                        VM_DEDICATED_THREAD: false,
-                        DEBUG_LOCAL_TRANSPORT: true
-                    }
+            >(scm, stateMachineTemplate, deployLocalStateMachine, {
+                signerSecret: runtimeWallet.privateKey,
+                customRpcManifest: { module: PING_PONG_MANIFEST },
+                config: {
+                    PROVIDER_URL: hardhatNodeUrl,
+                    LOCAL_DISCOVERY_REGISTRY_URL: localDiscoveryRegistryUrl,
+                    RUN_SDK_IN_THREAD: false,
+                    VM_DEDICATED_THREAD: false,
+                    DEBUG_LOCAL_TRANSPORT: true
                 }
-            );
+            });
 
             // Track connection completion via a client-side p2p event listener
             // (forwarded over the port from the host).
@@ -195,8 +219,9 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             )
         );
 
-        await peer0.p2pSigner.connectToChannel(openChannel.channelId);
-        await peer1.p2pSigner.connectToChannel(openChannel.channelId);
+        const channelId = ethers.hexlify(openChannel.channelId);
+        await peer0.hostRpc.network.connectToChannel(channelId).request();
+        await peer1.hostRpc.network.connectToChannel(channelId).request();
 
         const channelManager = StateChannelManagerProxy__factory.connect(
             scmDeployment.address,

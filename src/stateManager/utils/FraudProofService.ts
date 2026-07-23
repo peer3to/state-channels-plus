@@ -76,18 +76,31 @@ export default class FraudProofService {
         const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
             block.coordinates
         );
+        // A fraudulent block may lie about its transactionCnt, so the normal
+        // coordinate lookup at height - 1 can miss its real predecessor. Fall
+        // back to previousBlockHash, which identifies the block the submitted
+        // block actually claims to extend.
+        const previousBlock =
+            previousBlockOrSnapshot.block ??
+            (block.height > 0
+                ? this.storage.blocks.getBlock(block.previousBlockHash)
+                : undefined);
 
-        if (previousBlockOrSnapshot.block) {
+        if (previousBlock) {
             // Height > 0 case - we have a previous block
-            prevSignedBlock = previousBlockOrSnapshot.block.signedBlock;
+            prevSignedBlock = previousBlock.signedBlock;
             prevStateSnapshot =
                 this.storage.stateSnapshots.getStateSnapshotByHash(
-                    previousBlockOrSnapshot.block.stateSnapshotHash
+                    previousBlock.stateSnapshotHash
                 )!;
-        } else {
+        } else if (block.height === 0) {
             // Height === 0 case - we have genesis state snapshot
             prevSignedBlock = createEmptySignedBlock();
             prevStateSnapshot = previousBlockOrSnapshot.stateSnapshot!;
+        } else {
+            throw new Error(
+                `Cannot create invalid state transition proof: previous block ${block.previousBlockHash} is missing`
+            );
         }
 
         const proof: BlockInvalidStateTransitionProofStruct = {

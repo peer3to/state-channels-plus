@@ -1,18 +1,64 @@
 import type { ForkId } from "@/types/types";
+import type { Status } from "@/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { TestPeer } from "@test/harness/core/types";
+import { expect } from "chai";
 
 export class AssertRPCActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
 > {
     constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
 
+    // The observer blacklists and disconnects the target (a byzantine sender it
+    // rejected) without going offline
+    async peerBlacklistedAndDisconnected(options: {
+        observer: TestPeer<TCustomRpc>;
+        target: TestPeer<TCustomRpc>;
+        expectedStatus: Status;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            observer,
+            target,
+            expectedStatus,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(1)
+        } = options;
+
+        await this.harness.disconnectionBarrier.waitFor(
+            async () =>
+                await this.harness
+                    .control(observer)
+                    .query.isBlacklisted(target.address)
+                    .request(),
+            {
+                timeoutMs,
+                timeoutMessage: `Expected peer ${observer.index} to blacklist peer ${target.index} within ${timeoutMs}ms`
+            }
+        );
+        expect(
+            await this.harness
+                .control(observer)
+                .query.isConnectedTo(target.address)
+                .request(),
+            `peer ${observer.index} stayed connected to blacklisted peer ${target.index}`
+        ).to.equal(false);
+        expect(
+            await this.harness.control(observer).query.getStatus().request(),
+            `peer ${observer.index} status changed while dropping peer ${target.index}`
+        ).to.equal(expectedStatus);
+    }
+
     async peerDisconnectedFrom(options: {
         peerIndex: number;
         expectedFinalCount: number;
         timeoutMs?: number;
     }): Promise<void> {
-        const { peerIndex, expectedFinalCount, timeoutMs = 5000 } = options;
+        const {
+            peerIndex,
+            expectedFinalCount,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(1)
+        } = options;
 
         await this.harness.disconnectionBarrier.waitFor(
             async () =>
@@ -61,7 +107,7 @@ export class AssertRPCActions<
             requestingPeer,
             forkId,
             excludePeers = [],
-            timeoutMs = 5000
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(1)
         } = options;
 
         const activeForkId = forkId ?? this.harness.activeForkId;

@@ -216,6 +216,18 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
+    function validateTimeoutCalldataPostedProof(TimeoutCalldataPosted memory proof, Dispute memory dispute)
+        public
+        override
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            disputeFraudProofFacetAddress,
+            abi.encodeCall(DisputeFraudProofFacet.validateTimeoutCalldataPostedProof, (proof, dispute))
+        );
+        return abi.decode(result, (bool));
+    }
+
     function updateStateSnapshotFork(
         bytes32 channelId,
         StateSnapshot memory newStateSnapshot,
@@ -244,13 +256,29 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         );
     }
 
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations, bytes32 expectedSnapshotHash)
-        public
-        override
-    {
+    function joinChannel(
+        JoinChannelConfirmation memory joinChannelConfirmations,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId
+    ) public override {
         _delegatecall(
             joinChannelFacetAddress,
-            abi.encodeCall(JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash))
+            abi.encodeCall(
+                JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash, expectedForkId)
+            )
+        );
+    }
+
+    function topUpBalance(
+        JoinChannelConfirmation memory joinChannelConfirmations,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId
+    ) public override {
+        _delegatecall(
+            joinChannelFacetAddress,
+            abi.encodeCall(
+                JoinChannelFacet.topUpBalance, (joinChannelConfirmations, expectedSnapshotHash, expectedForkId)
+            )
         );
     }
 
@@ -468,6 +496,30 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (bool));
     }
 
+    function isInvalidBlockStructureInStateProof(StateProof memory stateProof, uint256 blockIndex)
+        public
+        override(StateChannelManagerInterface)
+        returns (bool)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(StateProofFacet.isInvalidBlockStructureInStateProof, (stateProof, blockIndex))
+        );
+        return abi.decode(result, (bool));
+    }
+
+    function findFirstInvalidBlockStructureInStateProof(StateProof memory stateProof)
+        public
+        override(StateChannelManagerInterface)
+        returns (bool found, uint256 blockIndex)
+    {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(StateProofFacet.findFirstInvalidBlockStructureInStateProof, (stateProof))
+        );
+        return abi.decode(result, (bool, uint256));
+    }
+
     function verifyMilestones(
         bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
@@ -593,13 +645,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return abi.decode(result, (SnapshotData, bytes, MessageBlock));
     }
 
-    function commitToReducedResult(bytes32 channelId, bytes32 disputedForkId, bytes32 reducedForkId) public {
-        _delegatecall(
-            disputeManagerFacetAddress,
-            abi.encodeCall(DisputeManagerFacet.commitToReducedResult, (channelId, disputedForkId, reducedForkId))
-        );
-    }
-
     function reduceAndFinalize(
         Dispute[] memory disputes,
         StateSnapshot memory stateSnapshot,
@@ -621,12 +666,13 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
         public
         view
-        returns (bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
+        returns (bool windowExists, bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
     {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        windowExists = _isDisputeWidnowCreated(disputeWindow);
         (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
-        return (isExpired, killPeriodEnd, block.timestamp);
+        return (windowExists, isExpired, killPeriodEnd, block.timestamp);
     }
 
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {

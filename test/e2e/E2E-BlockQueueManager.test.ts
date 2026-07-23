@@ -473,11 +473,16 @@ describe("E2E: BlockQueueManager", function () {
                 .query.getForkId()
                 .request();
 
+            const observerStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
+
             // Record (and forward) sync requests + reduction attempts.
             const restoreSync = await h.rpcStub.recordSpectateSync(0, {
                 forward: true
             });
-            const restoreReduce = await h.rpcStub.recordReduceLocally(0);
+            const restoreReduce = await h.rpcStub.recordReduce(0);
 
             const author = h.getPeer(1);
             const { bogusBlock, blockConfirmation } =
@@ -501,7 +506,7 @@ describe("E2E: BlockQueueManager", function () {
             ).to.equal(true);
             expect(await h.rpcStub.spectateSyncCallCount(0)).to.equal(0);
             // Current fork is not disputed - no reduction probe fired.
-            expect(await h.rpcStub.reduceLocallyCallCount(0)).to.equal(0);
+            expect(await h.rpcStub.reduceCallCount(0)).to.equal(0);
             expect(
                 await h.control(observer).query.getForkId().request()
             ).to.equal(originalForkId);
@@ -512,32 +517,29 @@ describe("E2E: BlockQueueManager", function () {
                     .request()
             ).to.be.null;
 
-            // Evicted at the queue deadline.
-            await waitFor(
-                async () =>
-                    !(await h
-                        .control(observer)
-                        .query.isBlockQueued(bogusBlock.hash)
-                        .request()),
-                (timeConfig.agreementTime + 5) * 1000
-            );
+            // Punishment arrives through the sync flow, not the queue: the
+            // supplier cannot prove the fork, so the failed sync blacklists them.
+            // `queueTimeout` removes the block before it issues that sync probe,
+            // so once the blacklist lands the eviction has already happened -
+            // asserted synchronously below.
+            await h.assert.rpc.peerBlacklistedAndDisconnected({
+                observer,
+                target: author,
+                expectedStatus: observerStatus
+            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(bogusBlock.hash)
+                    .request(),
+                "bogus block still queued after the deadline"
+            ).to.equal(false);
             expect(
                 await h
                     .control(observer)
                     .query.getBlockByHash(bogusBlock.hash)
                     .request()
             ).to.be.null;
-            // The punishment arrives through the sync flow, not the queue:
-            // the supplier cannot prove the fork, so the failed sync
-            // blacklists them.
-            await waitFor(
-                async () =>
-                    await h
-                        .control(observer)
-                        .query.isBlacklisted(author.address)
-                        .request(),
-                15000
-            );
             expect(
                 await h.control(observer).query.getForkId().request()
             ).to.equal(originalForkId);
@@ -684,8 +686,7 @@ describe("E2E: BlockQueueManager", function () {
             // recovery finds nothing to reduce and must queue for sync. The
             // sync flow itself stays quiet - this test isolates the
             // queue-drain-after-transition property.
-            const restoreReduce =
-                await h.rpcStub.reduceLocallyNoop(targetPeerIndex);
+            const restoreReduce = await h.rpcStub.reduceNoop(targetPeerIndex);
             const restoreSync = await h.rpcStub.recordSpectateSync(
                 targetPeerIndex,
                 { forward: false }

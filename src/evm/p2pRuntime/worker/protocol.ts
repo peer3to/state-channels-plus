@@ -5,6 +5,7 @@ import type {
     SerializedError,
     SetupPayload
 } from "../types";
+import type { SerializedTransactionRequest } from "../chainSignerSerialization";
 
 /**
  * Worker-level bootstrap message (NOT a runtime-port message). Sent via
@@ -34,8 +35,20 @@ export interface ConnectToChannelRequest
 }
 
 export interface JoinChannelRequest extends RuntimeRequest<"joinChannel"> {
-    /** JoinChannelConfirmation struct (structured-clone serializable). */
-    confirmation: unknown;
+    encodedJoinChannelConfirmation: string;
+    expectedSnapshotHash: string;
+    expectedForkId: string;
+}
+
+export interface TopUpBalanceRequest extends RuntimeRequest<"topUpBalance"> {
+    encodedJoinChannelConfirmation: string;
+    expectedSnapshotHash: string;
+    expectedForkId: string;
+}
+
+export interface CollectJoinChannelConfirmationRequest
+    extends RuntimeRequest<"collectJoinChannelConfirmation"> {
+    encodedJoinChannel: string;
 }
 
 export interface SetChannelIdRequest extends RuntimeRequest<"setChannelId"> {
@@ -56,6 +69,30 @@ export interface SignMessageRequest extends RuntimeRequest<"signMessage"> {
 }
 
 export interface SignTypedDataRequest extends RuntimeRequest<"signTypedData"> {
+    domain: unknown;
+    types: unknown;
+    value: unknown;
+}
+
+export interface ChainSignerSignTransactionRequest
+    extends RuntimeRequest<"chainSignerSignTransaction"> {
+    serializedTransaction: SerializedTransactionRequest;
+}
+
+export interface ChainSignerSendTransactionRequest
+    extends RuntimeRequest<"chainSignerSendTransaction"> {
+    serializedTransaction: SerializedTransactionRequest;
+}
+
+export interface ChainSignerSignMessageRequest
+    extends RuntimeRequest<"chainSignerSignMessage"> {
+    message:
+        | { kind: "string"; value: string }
+        | { kind: "bytes"; encodedBytes: string };
+}
+
+export interface ChainSignerSignTypedDataRequest
+    extends RuntimeRequest<"chainSignerSignTypedData"> {
     domain: unknown;
     types: unknown;
     value: unknown;
@@ -127,12 +164,18 @@ export type RuntimeClientRequest =
     | CallViewRequest
     | ConnectToChannelRequest
     | JoinChannelRequest
+    | TopUpBalanceRequest
+    | CollectJoinChannelConfirmationRequest
     | SetChannelIdRequest
     | GetChannelStatusRequest
     | SetIsLeaderRequest
     | DisconnectFromPeersRequest
     | SignMessageRequest
     | SignTypedDataRequest
+    | ChainSignerSignTransactionRequest
+    | ChainSignerSendTransactionRequest
+    | ChainSignerSignMessageRequest
+    | ChainSignerSignTypedDataRequest
     | DeploySignerGetAddressRequest
     | DeploySignerGetNonceRequest
     | DeploySignerResolveNameRequest
@@ -198,6 +241,17 @@ export interface RuntimeHostErrorMessage {
     error: SerializedError;
 }
 
+/**
+ * Host→client hand-off of the main-thread end of the WebRTC bridge
+ * `MessageChannel`. Emitted (with `port` in the transfer list) only when the
+ * host runs in a worker that cannot negotiate WebRTC itself, so the caller can
+ * forward the port up to the real main thread and bind it to the bridge.
+ */
+export interface RuntimeWebRTCBridgePortMessage {
+    type: "webRTCBridgePort";
+    port: MessagePort;
+}
+
 /** Union of all host→client messages. */
 export type RuntimeHostMessage =
     | RuntimeReadyMessage
@@ -205,7 +259,8 @@ export type RuntimeHostMessage =
     | RuntimeP2pEventHookMessage
     | RuntimeContractEventMessage
     | RuntimeEventHandlerMessage
-    | RuntimeHostErrorMessage;
+    | RuntimeHostErrorMessage
+    | RuntimeWebRTCBridgePortMessage;
 
 export type P2pRuntimeRequestMessage = RuntimeClientRequest;
 export type P2pRuntimeHostMessage = RuntimeHostMessage;

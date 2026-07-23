@@ -63,6 +63,11 @@ function convertValue(value: any): any {
     return value;
 }
 
+/** Normalize values decoded outside a proxied contract method/listener. */
+export function convertEthersValue<T>(value: T): T {
+    return convertValue(value);
+}
+
 function convertReturn<T>(result: T): T {
     if (isPromiseLike(result)) {
         return result.then((resolved) => convertValue(resolved)) as T;

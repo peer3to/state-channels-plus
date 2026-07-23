@@ -11,8 +11,9 @@ import type { TransitionService } from "./TransitionService";
  * bigints, so they cross the port `Codec.encode`d as `Type.StateSnapshot`.
  */
 export interface SameForkSnapshotUpdate {
+    canPost: boolean;
     callData: string[];
-    encodedExpectedSnapshot: string;
+    encodedExpectedSnapshot?: string;
     encodedMilestoneSnapshots: string[];
 }
 
@@ -34,7 +35,28 @@ export class TransitionRpcMethods extends ARpcMethods {
         forkId: ForkId
     ): Promise<{ encodedSnapshot: string } | null> {
         const struct = (
-            await this.service.sm.postStateSnapshot(forkId)
+            await this.service.sm.snapshotUpdateService.postStateSnapshot(
+                forkId
+            )
+        )?.toStruct();
+        return struct
+            ? {
+                  encodedSnapshot: Codec.encode(
+                      struct,
+                      Type.StateSnapshot
+                  ) as string
+              }
+            : null;
+    }
+
+    /** Post a fresh snapshot and propagate its exact transaction failure. */
+    public async postStateSnapshotWait(
+        forkId: ForkId
+    ): Promise<{ encodedSnapshot: string } | null> {
+        const struct = (
+            await this.service.sm.snapshotUpdateService.postStateSnapshotWait(
+                forkId
+            )
         )?.toStruct();
         return struct
             ? {
@@ -49,16 +71,20 @@ export class TransitionRpcMethods extends ARpcMethods {
     /** Same-fork snapshot-update data (calldata + encoded snapshots). */
     public async prepareUpdateSnapshotSameFork(
         forkId: ForkId
-    ): Promise<SameForkSnapshotUpdate | null> {
+    ): Promise<SameForkSnapshotUpdate> {
         const data =
-            await this.service.sm.prepareUpdateSnapshotSameFork(forkId);
-        if (!data) return null;
+            await this.service.sm.snapshotUpdateService.prepareUpdateSnapshotSameFork(
+                forkId
+            );
         return {
+            canPost: data.canPost,
             callData: data.callData,
-            encodedExpectedSnapshot: Codec.encode(
-                data.expectedSnapshot.toStruct(),
-                Type.StateSnapshot
-            ) as string,
+            encodedExpectedSnapshot: data.expectedSnapshot
+                ? (Codec.encode(
+                      data.expectedSnapshot.toStruct(),
+                      Type.StateSnapshot
+                  ) as string)
+                : undefined,
             encodedMilestoneSnapshots: data.milestoneSnapshots.map(
                 (s) => Codec.encode(s.toStruct(), Type.StateSnapshot) as string
             )

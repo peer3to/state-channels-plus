@@ -548,8 +548,16 @@ describe("E2E: Spectate Service", function () {
             await h.transition.advanceState({ count: 5 });
             await h.assert.sync.peersInSyncWait();
 
+            // Keep this scenario about a bad transition from the valid writer;
+            // participant order differs between parallel account allocations.
+            const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
+                .index;
+            const honestPeerIndices = h.peers
+                .map((peer) => peer.index)
+                .filter((peerIndex) => peerIndex !== maliciousPeerIndex);
             await h.scenario.disputeWithReduction({
-                maliciousPeerIndex: 2,
+                maliciousPeerIndex,
+                honestPeerIndices,
                 forkSettleTimeoutMs: 15000,
                 disputesCommittedTimeoutMs: 10000
             });
@@ -560,24 +568,26 @@ describe("E2E: Spectate Service", function () {
                 (c) => c.add(2),
                 (c) => c.add(2)
             ]);
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices
+            });
 
             await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
 
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
 
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
             await h.assert.sync.participantCount({
                 expectedCount: 4,
@@ -613,17 +623,19 @@ describe("E2E: Spectate Service", function () {
 
             const maliciousPeerIndex = 0;
             const honestPeerIndices = [1, 2, 3];
+            const forkId = h.activeForkId!;
 
             h.event.resetEventSpies();
             await h.byzantine.submitInvalidStateTransitionBlock(
                 maliciousPeerIndex
             );
-            await h.assert.dispute.initiatedAndCommitedWait({
-                expectedCount: 1,
-                peersIndices: honestPeerIndices
-            });
+            await h.event.waitUntilPeerStatus(4, Status.OPENED);
 
+            // initiatedAndCommitedWait is flaky when it expects multiple peer to initiate and commit
+            // Why? Because peers race and if they commit at the same it is ok
+            // If 1 peer commits first and others audit -> it's possible that others hit hasMoreEvidence=false so they don't submit
             await h.dispute.resolveDisputeWait({
+                forkId,
                 honestPeerIndices: honestPeerIndices
             });
 
@@ -690,6 +702,7 @@ describe("E2E: Spectate Service", function () {
 
             const maliciousPeerIndex = 0;
             const honestPeerIndices = [1, joiner.index];
+            const forkId = h.activeForkId!;
 
             await h.byzantine.submitInvalidStateTransitionBlock(
                 maliciousPeerIndex
@@ -700,6 +713,7 @@ describe("E2E: Spectate Service", function () {
             });
 
             const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId,
                 honestPeerIndices,
                 forkSettleTimeoutMs: 15000
             });
@@ -744,7 +758,7 @@ describe("E2E: Spectate Service", function () {
 
     describe("Concurrent promotion", function () {
         const concurrentTimeConfig = {
-            p2pTime: 2,
+            p2pTime: 6, // 2s too low for joinChannelWait
             agreementTime: 4,
             chainFallbackTime: 4,
             evidenceTime: 6
@@ -760,12 +774,7 @@ describe("E2E: Spectate Service", function () {
             const joinerB = await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait();
 
-            await h.join.joinChannelWait({
-                joiner: joinerA,
-                existingParticipantSigners: h.peers
-                    .slice(0, 3)
-                    .map((p) => p.signer)
-            });
+            await h.join.joinChannelWait({ joiner: joinerA });
             await h.join.forceInboundJoinObserveDetached({
                 participant: joinerB.address
             });
@@ -810,12 +819,9 @@ describe("E2E: Spectate Service", function () {
             await h.assert.sync.peersInSyncWait();
 
             // joinerA pre-signs its confirmation while pending is empty.
-            const confirmation = await h.join.buildJoinChannelConfirmation({
+            const prepared = await h.join.buildJoinChannelConfirmation({
                 joiner: joinerA,
-                channelId: h.channelId,
-                existingParticipantSigners: h.peers
-                    .slice(0, 3)
-                    .map((p) => p.signer)
+                channelId: h.channelId
             });
             // forceInboundJoin lands first → joinerB enters the pending set →
             // join threshold becomes {p0, p1, p2, joinerB}; joinerA's pre-signed
@@ -825,7 +831,11 @@ describe("E2E: Spectate Service", function () {
             });
 
             try {
-                await joinerA.p2pInstance.p2pSigner.joinChannel(confirmation);
+                await joinerA.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
                 expect.fail(
                     "expected joinChannel to revert: pending set changed between confirmation build and submission"
                 );
@@ -872,7 +882,7 @@ describe("E2E: Spectate Service", function () {
                     .request()
             ).to.equal(Status.SYNCED);
 
-            // forceInboundJoin appends inbound for the spectator. Status stays SYNCED.
+            // The compatibility helper submits through the spectator's StateManager.
             await h.join.forceInboundJoinWait({
                 participant: spectator.address
             });
@@ -881,7 +891,7 @@ describe("E2E: Spectate Service", function () {
                     .control(h.getPeer(spectator.index))
                     .query.getStatus()
                     .request()
-            ).to.equal(Status.SYNCED);
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             const pendingBefore = await h.channelManager.getPendingParticipants(
                 h.channelId
@@ -894,6 +904,7 @@ describe("E2E: Spectate Service", function () {
             // block consumes the spectator's inbound. agreementTime=4s gives a
             // window where no peer has posted a block yet.
             const leaverIndex = 0;
+            const originalForkId = h.activeForkId!;
             await h
                 .control(h.getPeer(leaverIndex))
                 .dispute.setForceExit(true)
@@ -907,21 +918,21 @@ describe("E2E: Spectate Service", function () {
             });
 
             const remainingPeerIndices = h
-                .getPeersExcludingMaliciousAndLeavers()
+                .getActiveHonestPeers()
                 .map((p) => p.index);
             await h.assert.dispute.committedWait({
                 peersIndices: remainingPeerIndices,
                 expectedCount: 1
             });
 
-            const originalForkId = h.activeForkId!;
             await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
                 forkSettleTimeoutMs: 15000,
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false
             });
 
-            await h.assert.snapshot.onChainSnapshotChangedWait({
+            await h.assert.snapshot.localSnapshotsChangedWait({
                 previousForkId: originalForkId,
                 timeoutMs: 15000
             });

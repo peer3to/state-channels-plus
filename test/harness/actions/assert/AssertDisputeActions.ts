@@ -3,6 +3,8 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { addressesEqual } from "@/utils";
+import type { ForkId } from "@/types/types";
+import { waitFor } from "@test/utils/waitFor";
 
 export class AssertDisputeActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
@@ -26,11 +28,11 @@ export class AssertDisputeActions<
     }): Promise<void> {
         const {
             peersIndices,
-            timeoutMs = 5000,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(0),
             initiatedWithAuditingData
         } = options || {};
 
-        let peers = this.harness.getFilteredOrHonestPeers(peersIndices);
+        const peers = this.harness.getFilteredOrHonestPeers(peersIndices);
 
         const expectedCounts = peers.map((peer) => ({
             peerId: peer.index,
@@ -87,7 +89,7 @@ export class AssertDisputeActions<
     }): Promise<void> {
         const {
             expectedCount = this.harness.getHonestPeers().length,
-            timeoutMs = 5000,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(0),
             peersIndices,
             mode = "atLeast"
         } = options || {};
@@ -120,6 +122,50 @@ export class AssertDisputeActions<
                 `Peer ${peer.index} should not have initiated dispute`
             );
         }
+    }
+
+    async reductionCompletedWait(options: {
+        sourceForkId: ForkId;
+        reducedForkId?: ForkId;
+        peerIndices: number[];
+        timeoutMs?: number;
+    }): Promise<void> {
+        await Promise.all(
+            options.peerIndices.map((peerIndex) =>
+                waitFor(
+                    async () =>
+                        (await this.harness
+                            .control(this.harness.getPeer(peerIndex))
+                            .query.getCompletedReductionForkId(
+                                options.sourceForkId
+                            )
+                            .request()) !== null,
+                    options.timeoutMs ??
+                        this.harness.event.protocolEventTimeoutMs(0),
+                    50
+                )
+            )
+        );
+        const completedForkIds = await Promise.all(
+            options.peerIndices.map((peerIndex) =>
+                this.harness
+                    .control(this.harness.getPeer(peerIndex))
+                    .query.getCompletedReductionForkId(options.sourceForkId)
+                    .request()
+            )
+        );
+        const expectedForkIds =
+            options.reducedForkId !== undefined
+                ? options.peerIndices.map(() => options.reducedForkId)
+                : await Promise.all(
+                      options.peerIndices.map((peerIndex) =>
+                          this.harness
+                              .control(this.harness.getPeer(peerIndex))
+                              .query.getForkId()
+                              .request()
+                      )
+                  );
+        expect(completedForkIds).to.deep.equal(expectedForkIds);
     }
 
     noDisputes(): void {

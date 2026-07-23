@@ -1,5 +1,6 @@
 import { ethers } from "ethers";
 import type { Address, Bytes } from "@/types/types";
+import type { Logger } from "@/utils";
 import { config } from "@/utils/config";
 import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import AContractExecutor, {
@@ -15,10 +16,21 @@ import {
     createContractExecutorWorker,
     type WorkerLike
 } from "@platform/contractExecutorWorkerRuntime";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+
+type ContractExecutorOperation =
+    | "init"
+    | "dispose"
+    | "deploy"
+    | WorkerCallMethod;
 
 type PendingRequest = {
     resolve: (result: null | ContractExecutionResult) => void;
     reject: (error: Error) => void;
+    startedAtMs: number;
+    operation: ContractExecutorOperation;
+    contractAddress?: string;
+    functionSelector?: string;
 };
 
 function isWorkerReadyResponse(
@@ -41,15 +53,19 @@ function serializePrecompileManifest(
 export default class WorkerContractExecutor extends AContractExecutor {
     private nextRequestId = 1;
     private readonly pending = new Map<number, PendingRequest>();
+    private readonly logger?: Logger;
     private readonly worker: WorkerLike;
     private readonly workerReady: Promise<void>;
     private rejectWorkerReady!: (error: Error) => void;
     private resolveWorkerReady!: () => void;
+    private workerFailure?: Error;
+    private disposed = false;
 
     static async create(
-        customPrecompiles: readonly EvmCustomPrecompileManifest[] = []
+        customPrecompiles: readonly EvmCustomPrecompileManifest[] = [],
+        logger?: Logger
     ): Promise<WorkerContractExecutor> {
-        const executor = new WorkerContractExecutor();
+        const executor = new WorkerContractExecutor(logger);
         await executor.workerReady;
         await executor.request({
             type: "init",
@@ -61,8 +77,9 @@ export default class WorkerContractExecutor extends AContractExecutor {
         return executor;
     }
 
-    private constructor() {
+    private constructor(logger?: Logger) {
         super();
+        this.logger = logger?.child({ component: "WorkerContractExecutor" });
         this.workerReady = new Promise((resolve, reject) => {
             this.resolveWorkerReady = resolve;
             this.rejectWorkerReady = reject;
@@ -70,6 +87,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.worker = createContractExecutorWorker(
             (message: WorkerResponseMessage) => this.handleResponse(message),
             (error: Error) => {
+                this.workerFailure = error;
                 this.rejectWorkerReady(error);
                 this.rejectAll(error);
             }
@@ -99,8 +117,20 @@ export default class WorkerContractExecutor extends AContractExecutor {
     }
 
     async dispose(): Promise<void> {
-        this.rejectAll(new Error("Contract executor worker disposed"));
-        await this.worker.terminate?.();
+        if (this.disposed) return;
+        this.disposed = true;
+
+        try {
+            if (!this.workerFailure) {
+                await this.request({ type: "dispose" });
+            }
+        } finally {
+            this.rejectAll(
+                new Error("Contract executor worker disposed"),
+                false
+            );
+            await this.worker.terminate?.();
+        }
     }
 
     private async callWorker(
@@ -125,7 +155,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
 
         return new Promise<null | ContractExecutionResult>(
             (resolve, reject) => {
-                this.pending.set(request.requestId, { resolve, reject });
+                this.trackRequest(request.requestId, message, resolve, reject);
                 try {
                     this.worker.postMessage(request);
                 } catch (error) {
@@ -150,9 +180,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
             return;
         }
 
-        const pending = this.pending.get(response.requestId);
+        const pending = this.completeRequest(response.requestId, response.ok);
         if (!pending) return;
-        this.pending.delete(response.requestId);
 
         if (response.ok) {
             pending.resolve(response.result);
@@ -166,7 +195,71 @@ export default class WorkerContractExecutor extends AContractExecutor {
         pending.reject(error);
     }
 
-    private rejectAll(error: Error): void {
+    private trackRequest(
+        requestId: number,
+        message: ContractExecutorRequestPayload,
+        resolve: PendingRequest["resolve"],
+        reject: PendingRequest["reject"]
+    ): void {
+        const operation =
+            message.type === "call" ? message.method : message.type;
+        const contractAddress =
+            message.type === "call" && "contractAddress" in message
+                ? message.contractAddress
+                : undefined;
+        const callMetadata =
+            message.type === "call"
+                ? LoggerUtils.getContractCallMetadata(
+                      message.data,
+                      contractAddress
+                  )
+                : undefined;
+
+        this.pending.set(requestId, {
+            resolve,
+            reject,
+            startedAtMs: Date.now(),
+            operation,
+            contractAddress,
+            functionSelector: callMetadata?.functionSelector
+        });
+    }
+
+    private completeRequest(
+        requestId: number,
+        ok: boolean
+    ): PendingRequest | undefined {
+        const pending = this.pending.get(requestId);
+        if (!pending) return undefined;
+        this.pending.delete(requestId);
+
+        const durationMs = Date.now() - pending.startedAtMs;
+        if (durationMs >= 1000) {
+            this.logger?.warn("Slow worker request completed", {
+                requestId,
+                operation: pending.operation,
+                contractAddress: pending.contractAddress,
+                functionSelector: pending.functionSelector,
+                durationMs,
+                ok,
+                pendingRequests: this.pending.size
+            });
+        }
+        return pending;
+    }
+
+    private rejectAll(error: Error, logFailure = true): void {
+        if (logFailure && this.pending.size > 0) {
+            this.logger?.error("Worker failed with pending requests", {
+                error,
+                pendingRequests: [...this.pending.values()].map((pending) => ({
+                    operation: pending.operation,
+                    contractAddress: pending.contractAddress,
+                    functionSelector: pending.functionSelector,
+                    durationMs: Date.now() - pending.startedAtMs
+                }))
+            });
+        }
         for (const pending of this.pending.values()) {
             pending.reject(error);
         }

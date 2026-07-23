@@ -76,7 +76,9 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+                timestamp: BigInt(
+                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                )
             },
             body: { encodedData: transactionData, data: transactionData }
         };
@@ -140,7 +142,7 @@ export class MathByzantineActions extends ByzantineActions {
         const transactionData = this.encodeMathAdd(peer);
         const blockTimestampBase =
             ctx.latestBlockTimestamp !== null
-                ? ctx.latestBlockTimestamp + 1
+                ? Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
                 : ctx.currentTimestamp;
 
         const transaction: TransactionStruct = {
@@ -226,7 +228,9 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+                timestamp: BigInt(
+                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                )
             },
             body: {
                 encodedData: malformedData as Bytes,
@@ -297,7 +301,9 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+                timestamp: BigInt(
+                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                )
             },
             body: { encodedData: transactionData, data: transactionData }
         };
@@ -401,7 +407,9 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(ctx.latestBlockTimestamp) + 1n
+                timestamp: BigInt(
+                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                )
             },
             body: { encodedData: transactionData, data: transactionData }
         };
@@ -480,15 +488,23 @@ export class MathByzantineActions extends ByzantineActions {
             options.mutate
         );
 
+        // buildForgedSnapshot signs the forged block with every harness peer.
+        // They are colluding signers, so host errors from those peers are
+        // expected Byzantine errors rather than failures of the honest path.
+        for (const peer of this.harness.peers) {
+            this.harness.contextApi.markMaliciousPeer({
+                maliciousPeerIndex: peer.index
+            });
+        }
+
         const outboundBlocks: MessageBlockStruct[] = forgedSnapshot.mutated
             .outboundMessageBlock
             ? [forgedSnapshot.mutated.outboundMessageBlock]
             : [];
 
         const submitter = this.harness.getPeer(poster);
-        const channelManager = this.harness.channelManager.connect(
-            submitter.signer
-        );
+        const channelManager =
+            submitter.p2pInstance.stateChannelManagerContract;
         const callData = channelManager.interface.encodeFunctionData(
             "updateStateSnapshotSameFork",
             [

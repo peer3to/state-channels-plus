@@ -21,14 +21,18 @@ import {
 } from "@typechain-types";
 import { ForkId, ChannelId, Address, Hash } from "@/types/types";
 import { TimeConfig } from "@/types";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 
 import {
     createLogger,
     LocalDiscoveryServer,
     Logger,
     EventBarrier,
-    createEthersResultProxy
+    createEthersResultProxy,
+    getErrorPeerAddress,
+    maybeStampErrorWithPeerAddress
 } from "@/utils";
+import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { createConfig, Config, config } from "@/utils/config";
 import testConfig from "../peer3.test.config";
@@ -92,7 +96,6 @@ export class PeerTestHarness<
     private readonly deployment: HarnessDeploymentConfig<TStateMachine>;
     public logger: Logger;
     public syncCoordinator!: SyncCoordinator<TCustomRpc>;
-    private onBlockHeartbeat?: () => void;
 
     // Chain access. The harness owns its provider built from a node URL — either
     // one passed in (PROVIDER_URL, e.g. a parallel-runner slot) or one it starts
@@ -263,13 +266,9 @@ export class PeerTestHarness<
             testConfig
         );
 
-        const resolvedTimeConfig: TimeConfig = {
-            p2pTime: 1,
-            agreementTime: 2,
-            chainFallbackTime: 2,
-            evidenceTime: 3,
-            ...(options?.timeConfig || {})
-        };
+        const resolvedTimeConfig: TimeConfig = resolveTestTimeConfig(
+            options?.timeConfig
+        );
 
         this.options = {
             logLevel:
@@ -320,9 +319,6 @@ export class PeerTestHarness<
 
         // Pulse the event-counts barrier on every mined block so barriers
         // don't stall waiting for chain-time to advance between transactions.
-        const onBlock = () => this.eventCountsBarrier.signal();
-        this.onBlockHeartbeat = onBlock;
-        this.provider.on("block", onBlock);
 
         // Startup = everything in setup() except the contract deploy (peer/SDK
         // init + connection). Emitted for the parallel runner to parse/sum; one
@@ -355,7 +351,8 @@ export class PeerTestHarness<
         let nodeUrl = process.env.PROVIDER_URL || process.env.HARDHAT_NODE_URL;
         if (!nodeUrl) {
             const node = await startHardhatNode({
-                label: "harness hardhat node"
+                label: "harness hardhat node",
+                env: { E2E_INTERVAL_MINING: "1" }
             });
             this.ownNode = node;
             nodeUrl = node.url;
@@ -574,6 +571,7 @@ export class PeerTestHarness<
             onConnection: sinon.spy(),
             onTurn: sinon.spy(),
             onSetState: sinon.spy(),
+            onAbort: sinon.spy(),
             onStatusChanged: sinon.spy(),
             onPostingCalldata: sinon.spy(),
             onPostedCalldata: sinon.spy(),
@@ -601,15 +599,15 @@ export class PeerTestHarness<
                     component: "P2pEventHooks"
                 });
                 eventSpies.onConnection?.(addr, isChannelOpened);
-                this.connectionBarrier.signal();
-                this.eventCountsBarrier.signal();
+                void this.connectionBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onDisconnection: (addr: Address) => {
                 peerLogger.verbose(`Disconnection from ${addr}`, {
                     component: "P2pEventHooks"
                 });
-                this.disconnectionBarrier.signal();
-                this.eventCountsBarrier.signal();
+                void this.disconnectionBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onTurn: (
                 addr: Address,
@@ -621,8 +619,8 @@ export class PeerTestHarness<
                     component: "P2pEventHooks"
                 });
                 eventSpies.onTurn?.(addr);
-                peerTurnBarrier.signal();
-                this.eventCountsBarrier.signal();
+                void peerTurnBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onSetState: (forkId: ForkId) => {
                 peerLogger.debug("State set", { component: "P2pEventHooks" });
@@ -632,7 +630,14 @@ export class PeerTestHarness<
                     this.forkIdCache.set(index, forkId);
                 }
                 eventSpies.onSetState?.();
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
+            },
+            onAbort: () => {
+                peerLogger.debug("Channel participation aborted", {
+                    component: "P2pEventHooks"
+                });
+                eventSpies.onAbort?.();
+                void this.eventCountsBarrier.signal();
             },
             onStatusChanged: (oldStatus, newStatus) => {
                 peerLogger.debug("Status changed (hook)", {
@@ -641,21 +646,21 @@ export class PeerTestHarness<
                     newStatus
                 });
                 eventSpies.onStatusChanged?.(oldStatus, newStatus);
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onPostingCalldata: () => {
                 peerLogger.debug("Posting calldata to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostingCalldata?.();
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onPostedCalldata: () => {
                 peerLogger.debug("Calldata posted to blockchain", {
                     component: "P2pEventHooks"
                 });
                 eventSpies.onPostedCalldata?.();
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onDisputeStarted: (maxDuration: number) => {
                 peerLogger.debug("Dispute started", {
@@ -663,7 +668,7 @@ export class PeerTestHarness<
                     maxDuration
                 });
                 eventSpies.disputeStarted?.(maxDuration);
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onInitiatingDispute: (
                 disputeHash: Hash,
@@ -676,7 +681,7 @@ export class PeerTestHarness<
                     }
                 );
                 eventSpies.onInitiatingDispute?.(disputeHash, dispute);
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onDisputeUpdate: (slashes: Address[], timeout?: Address) => {
                 peerLogger.info("Dispute updated", {
@@ -685,7 +690,7 @@ export class PeerTestHarness<
                     timeout
                 });
                 eventSpies.onDisputeUpdate?.(slashes, timeout);
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onDisputeAcknowledgment: (addr: Address) => {
                 peerLogger.verbose(
@@ -694,11 +699,11 @@ export class PeerTestHarness<
                         component: "P2pEventHooks"
                     }
                 );
-                this.rpcBarrier.signal();
-                this.eventCountsBarrier.signal();
+                void this.rpcBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onBlockFinalized: () => {
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             },
             onBlockConfirmationProcessed: (
                 blockHash: Hash,
@@ -713,7 +718,7 @@ export class PeerTestHarness<
                     blockHash,
                     keepConnection
                 );
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             }
         };
 
@@ -723,15 +728,17 @@ export class PeerTestHarness<
         );
 
         const useWorker = this.harnessConfig.RUN_SDK_IN_THREAD;
-        const signerSecret = useWorker
-            ? this.resolveSignerSecret(index, address)
-            : undefined;
+        const signerSecret = this.resolveSignerSecret(index, address);
+        if (!signerSecret) {
+            throw new Error(
+                `Peer ${index} signer cannot be reconstructed by the runtime host`
+            );
+        }
 
         const p2pInstance = await EvmStateMachine.p2pSetup<
             TStateMachine,
             TCustomRpc
         >(
-            signer,
             this.channelManager,
             contractInstanceMock,
             this.sharedStateMachineDeployer,
@@ -741,7 +748,10 @@ export class PeerTestHarness<
                 customPrecompiles: this.options.customPrecompiles!,
                 customRpcManifest: this.resolveHarnessRpcManifest(),
                 signerSecret,
-                config: this.harnessConfig
+                config: this.harnessConfig,
+                handlerExecutionContext: useWorker
+                    ? undefined
+                    : new PeerIdentityExecutionContext(address)
             }
         );
 
@@ -808,7 +818,7 @@ export class PeerTestHarness<
             peer.p2pInstance.on(name, (...args: unknown[]) => {
                 const spy = spies[name as keyof EventSpies];
                 spy?.(...(args as Parameters<sinon.SinonSpy>));
-                this.eventCountsBarrier.signal();
+                void this.eventCountsBarrier.signal();
             });
         }
     }
@@ -818,13 +828,8 @@ export class PeerTestHarness<
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
 
-        if (this.onBlockHeartbeat) {
-            this.provider?.off("block", this.onBlockHeartbeat);
-            this.onBlockHeartbeat = undefined;
-        }
-
         if (this.channelManager) {
-            this.channelManager.removeAllListeners();
+            await this.channelManager.removeAllListeners();
         }
 
         this.connectionBarrier.clear();
@@ -867,7 +872,7 @@ export class PeerTestHarness<
         await LocalDiscoveryServer.cleanup();
 
         // Drop the provider's pollers; stop the node/discovery we started (if any).
-        this.provider?.destroy();
+        await this.provider?.destroy();
         this.ownNode?.stop();
         this.ownDiscovery?.stop();
         this.ownNode = undefined;
@@ -899,7 +904,8 @@ export class PeerTestHarness<
     ): TestPeer<TCustomRpc, TStateMachine>[] {
         const excludeSet = new Set<number>([
             ...(excludePeerIndices ?? []),
-            ...(this.context.maliciousPeerIndices ?? [])
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? [])
         ]);
         return this.peers.filter((peer) => !excludeSet.has(peer.index));
     }
@@ -907,10 +913,16 @@ export class PeerTestHarness<
     async peerWithHighestBlock(
         forkId: ForkId
     ): Promise<TestPeer<TCustomRpc, TStateMachine>> {
-        const malicious = new Set(this.context.maliciousPeerIndices ?? []);
+        const unavailable = new Set([
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? []),
+            ...this.peers
+                .filter((peer) => peer.eventSpies.onAbort?.called)
+                .map((peer) => peer.index)
+        ]);
         const heights = await Promise.all(
             this.peers.map((peer) =>
-                malicious.has(peer.index)
+                unavailable.has(peer.index)
                     ? Promise.resolve(null)
                     : this.control(peer)
                           .query.getLatestBlockHeight(forkId)
@@ -928,17 +940,22 @@ export class PeerTestHarness<
                 best = peer;
             }
         });
-        return best ?? this.peers[0];
+        return (
+            best ??
+            this.peers.find((peer) => !unavailable.has(peer.index)) ??
+            this.peers[0]
+        );
     }
 
-    /** Every harness `peers` entry except leavers and malicious (same nodes as post-`addPeer` spectators). */
-    getPeersExcludingMaliciousAndLeavers(): TestPeer<
-        TCustomRpc,
-        TStateMachine
-    >[] {
+    /** Every responsive honest harness peer except leavers and aborted peers. */
+    getActiveHonestPeers(): TestPeer<TCustomRpc, TStateMachine>[] {
         const exclude = new Set([
             ...(this.context.leftChannelPeerIndices ?? []),
-            ...(this.context.maliciousPeerIndices ?? [])
+            ...(this.context.maliciousPeerIndices ?? []),
+            ...(this.context.afkPeerIndices ?? []),
+            ...this.peers
+                .filter((peer) => peer.eventSpies.onAbort?.called)
+                .map((peer) => peer.index)
         ]);
         return this.peers.filter((p) => !exclude.has(p.index));
     }
@@ -988,18 +1005,50 @@ export class PeerTestHarness<
     }
 
     async quiesceHosts(): Promise<Error[]> {
+        if (this.peers.length === 0) return [];
+        // In worker mode each drained worker thread runs exactly one peer, so
+        // an unstamped rejection is attributable to the peer whose host
+        // returned it. Inline hosts share one process (any peer's quiesce can
+        // drain another's work) - there only collect-time stamps are
+        // trustworthy.
+        const stampPerHostThread = !!this.harnessConfig.RUN_SDK_IN_THREAD;
         const perPeer = await Promise.all(
-            this.peers.map((peer) =>
-                peer.p2pInstance
+            this.peers.map(async (peer) => {
+                const errors = await peer.p2pInstance
                     .quiesce()
                     .catch((error: unknown) => [
                         error instanceof Error
                             ? error
                             : new Error(String(error))
-                    ])
-            )
+                    ]);
+                if (stampPerHostThread) {
+                    for (const error of errors) {
+                        maybeStampErrorWithPeerAddress(error, peer.address);
+                    }
+                }
+                return errors;
+            })
         );
         return perPeer.flat();
+    }
+
+    /**
+     * EVM addresses of peers a scenario marked byzantine/malicious or
+     * left-channel. Errors originating on these peers are expected and
+     * suppressed.
+     */
+    private byzantinePeerAddresses(): Set<string> {
+        return new Set(
+            [...this.context.maliciousPeerIndices].map(
+                (i) => this.getPeer(i).address
+            )
+        );
+    }
+
+    isExpectedByzantineError(error: unknown): boolean {
+        const address = getErrorPeerAddress(error);
+        if (!address) return false;
+        return this.byzantinePeerAddresses().has(address);
     }
 
     async ensurePeerSignersRegistered(

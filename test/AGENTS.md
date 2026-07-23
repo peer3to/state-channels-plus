@@ -181,11 +181,13 @@ in the parallel summary is the detector.
 - Typecheck: `yarn tsc --noEmit -p tsconfig.json` (the `TestPeer`/control surface
   is fully typed — a removed/renamed field is a compile error, your free
   checklist).
-- Unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
+- Canonical full gate: `yarn test:parallel`. Add `--e2e-only` to run only E2E
+  tests, or `--grep <regexp>` for the narrowest relevant task.
+- Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
 - E2E in worker mode: `yarn test:e2e:worker` (per-file process isolation +
   internal X/N progress; needs the hardhat node — `yarn infra:hardhat-node`).
-- E2E parallel: `yarn test:e2e:parallel` — each run logs to a fresh
+- Parallel runner: `yarn test:parallel` — each run logs to a fresh
   `./logs/run-N/`; earlier run dirs (and their `error_*` logs) are retained
   for cross-run comparison. Only the current run's dir is cleared. See root
-  `AGENTS.md` ("E2E parallel run logs").
+  `AGENTS.md` ("Canonical test command and parallel run logs").
 - Narrow first: run the single `*.test.ts` you touched before the suite.

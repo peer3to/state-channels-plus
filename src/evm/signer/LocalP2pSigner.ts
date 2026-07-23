@@ -2,7 +2,8 @@ import { ethers, Signer, TransactionResponse } from "ethers";
 
 import {
     TransactionStruct,
-    JoinChannelConfirmationStruct
+    JoinChannelConfirmationStruct,
+    JoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
@@ -10,6 +11,8 @@ import MainRpcService from "@/rpc/MainRpcService";
 import { Address, Bytes } from "@/types/types";
 import { Status } from "@/types";
 import type { Logger } from "@/utils";
+import type { ForkId, Hash } from "@/types/types";
+import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
 
 /**
  * Signer used by the live p2p runtime state manager for channel-scoped
@@ -146,9 +149,35 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public async joinChannel(
-        confirmation: JoinChannelConfirmationStruct
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
     ): Promise<void> {
-        return this.p2pManager.stateManager.joinChannel(confirmation);
+        return this.p2pManager.stateManager.joinChannel(
+            confirmation,
+            expectedSnapshotHash,
+            expectedForkId
+        );
+    }
+
+    public async topUpBalance(
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
+    ): Promise<void> {
+        return this.p2pManager.stateManager.topUpBalance(
+            confirmation,
+            expectedSnapshotHash,
+            expectedForkId
+        );
+    }
+
+    public collectJoinChannelConfirmation(
+        joinChannel: JoinChannelStruct
+    ): Promise<PreparedJoinChannelConfirmation> {
+        return this.p2pManager.localRpc.joinChannelService.collectJoinChannelConfirmation(
+            joinChannel
+        );
     }
 
     public disconnectFromPeers() {

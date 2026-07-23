@@ -1,4 +1,5 @@
 import WebRTCSetupService from "../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts";
+import WorkerBridgeWebRTCConnectionFactory from "../../src/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts";
 import { TransportType } from "../../src/transport/TransportType.ts";
 
 // Force the SDK down the main-thread bridge path even in browsers that expose
@@ -195,6 +196,14 @@ async function handleMessage(message) {
 }
 
 globalThis.onmessage = (event) => {
+    // The main thread hands the bridge port over once; register it directly
+    // (the SDK host does this internally via registerPort).
+    if (event.data?.type === "bridgePort") {
+        WorkerBridgeWebRTCConnectionFactory.getInstance().registerPort(
+            event.ports[0]
+        );
+        return;
+    }
     Promise.resolve(handleMessage(event.data)).catch((error) => {
         globalThis.postMessage({
             type: "workerError",

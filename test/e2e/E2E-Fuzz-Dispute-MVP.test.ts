@@ -44,7 +44,7 @@ describe("E2E: Fuzz - dispute soundness under randomized state evolution", funct
 
             // eslint-disable-next-line no-console
             console.log(
-                `[fuzz] DONE rep=${rep}/${REPS} seed=${rng.seed}: ${JSON.stringify(ran)}, ${h.getPeersExcludingMaliciousAndLeavers().length} honest survivors in sync`
+                `[fuzz] DONE rep=${rep}/${REPS} seed=${rng.seed}: ${JSON.stringify(ran)}, ${h.getActiveHonestPeers().length} honest survivors in sync`
             );
         });
     }

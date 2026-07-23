@@ -51,8 +51,7 @@ export class MathScenarioActions extends ScenarioActions {
                 .filter((i) => i !== options.maliciousPeerIndex);
 
         this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: options.maliciousPeerIndex,
-            honestPeerIndices
+            maliciousPeerIndex: options.maliciousPeerIndex
         });
 
         await this.harness.dispute.createInvalidStateTransitionDispute(
@@ -94,7 +93,10 @@ export class MathScenarioActions extends ScenarioActions {
     }): Promise<CreateAndResolveDisputeResult> {
         await this.harness.lifecycle.start(4, 2, options);
         await this.harness.assert.sync.peersInSyncWait();
-        return this.disputeWithReduction({ maliciousPeerIndex: 2 });
+        const maliciousPeerIndex = (
+            await this.harness.query.getNextPeerToWrite()
+        ).index;
+        return this.disputeWithReduction({ maliciousPeerIndex });
     }
 
     async fourPeersDisputeResolutionAndSnapshotUpdateDetached(options?: {
@@ -106,7 +108,7 @@ export class MathScenarioActions extends ScenarioActions {
         };
     }) {
         const { newForkId } = await this.fourPeersDisputeResolution(options);
-        this.harness.assert.snapshot.onChainSnapshotChangedDetached({
+        this.harness.assert.snapshot.localSnapshotsChangedDetached({
             expectedForkId: newForkId as string
         });
     }
@@ -120,7 +122,7 @@ export class MathScenarioActions extends ScenarioActions {
         };
     }) {
         const { newForkId } = await this.fourPeersDisputeResolution(options);
-        await this.harness.assert.snapshot.onChainSnapshotChangedWait({
+        await this.harness.assert.snapshot.localSnapshotsChangedWait({
             expectedForkId: newForkId as string
         });
     }
@@ -211,55 +213,6 @@ export class MathScenarioActions extends ScenarioActions {
         this.harness.contextApi.captureOriginalFork();
     }
 
-    async setupTwoLeaversWithPendingJoinerAcrossMilestones(options?: {
-        timeConfig?: {
-            p2pTime?: number;
-            agreementTime?: number;
-            chainFallbackTime?: number;
-            evidenceTime?: number;
-        };
-    }): Promise<{ pendingJoin: string }> {
-        const timeConfig = {
-            p2pTime: 1,
-            agreementTime: 6,
-            chainFallbackTime: 2,
-            evidenceTime: 12,
-            ...options?.timeConfig
-        };
-
-        await this.harness.lifecycle.timeoutSetup(5, 2, { timeConfig });
-
-        const firstLeaver =
-            await this.harness.transition.participantLeaveDetached({
-                waitForPeers: [0, 1, 3, 4]
-            });
-
-        await this.harness.transition.advanceState({
-            waitForPeers: [0, 1, 3, 4],
-            count: 1,
-            waitForFinalization: true
-        });
-
-        const { participant: pendingJoin } =
-            await this.harness.join.forceInboundJoinWait();
-
-        const secondLeaver =
-            await this.harness.transition.participantLeaveDetached({
-                waitForPeers: [0, 1, 3],
-                waitForFinalization: false
-            });
-
-        this.harness.context.leftChannelPeerIndices = [
-            firstLeaver,
-            secondLeaver
-        ];
-
-        this.harness.event.resetEventSpies();
-        this.harness.contextApi.captureOriginalFork();
-
-        return { pendingJoin };
-    }
-
     async preDisputeSetupDisconnectedPeer(options?: {
         timeConfig?: {
             p2pTime?: number;
@@ -293,7 +246,7 @@ export class MathScenarioActions extends ScenarioActions {
     async peerWithUnbroadcastedBlock(peerIndex: number = 1) {
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
-        this.harness.byzantine.stubBroadcast(peerIndex);
+        await this.harness.byzantine.stubBroadcast(peerIndex);
         await this.harness.transition.advanceState({ waitForSync: false });
     }
 
@@ -314,15 +267,12 @@ export class MathScenarioActions extends ScenarioActions {
         const stateSnapshot = await h.channelManager.getStateSnapshot(
             h.channelId
         );
-        const confirmation = await h.join.buildJoinChannelConfirmation({
+        const preparedJoin = await h.join.buildJoinChannelConfirmation({
             joiner,
-            channelId: h.channelId,
-            existingParticipantSigners: h.peers
-                .filter((p) => p.index !== joiner.index)
-                .map((p) => p.signer)
+            channelId: h.channelId
         });
 
-        return { joiner, stateSnapshot, confirmation };
+        return { joiner, stateSnapshot, ...preparedJoin };
     }
     async spectatorPromotedViaJoinChannelWait(options?: {
         initialPeers?: number;
@@ -348,10 +298,7 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.assert.sync.peersInSyncWait();
 
         await this.harness.join.joinChannelWait({
-            joiner,
-            existingParticipantSigners: this.harness.peers
-                .slice(0, initialPeers)
-                .map((p) => p.signer)
+            joiner
         });
         const joinerStatus = await this.harness
             .control(this.harness.getPeer(joiner.index))
@@ -409,7 +356,7 @@ export class MathScenarioActions extends ScenarioActions {
         const initialPeers = options?.initialPeers ?? 3;
         const initialTransitions = options?.initialTransitions ?? 2;
         const timeConfig = options?.timeConfig ?? {
-            p2pTime: 2,
+            p2pTime: 5,
             agreementTime: 4,
             chainFallbackTime: 4,
             evidenceTime: 6
@@ -417,6 +364,7 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.lifecycle.start(initialPeers, initialTransitions, {
             timeConfig
         });
+        // TODO -  try making this task detached, since it requires us to increase p2pTime
         const spectator = await this.harness.join.addSpectatorWait();
         await this.harness.assert.sync.peersInSyncWait();
         return { spectator, initialPeers };

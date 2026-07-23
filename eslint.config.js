@@ -72,6 +72,7 @@ export default [
             ],
 
             "@typescript-eslint/no-explicit-any": "warn",
+            "@typescript-eslint/no-floating-promises": "error",
             "@typescript-eslint/no-unused-expressions": "off",
             "@typescript-eslint/no-require-imports": "off",
             "@typescript-eslint/no-var-requires": "off",

@@ -9,10 +9,16 @@ import {
     TypedDataField
 } from "ethers";
 
-import type { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type {
+    JoinChannelConfirmationStruct,
+    JoinChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import type { Status } from "@/types";
-import type { Address, Bytes } from "@/types/types";
+import type { Address, Bytes, ForkId, Hash } from "@/types/types";
 import type { RuntimeRequester } from "../p2pRuntime/types";
+import NoopEventProvider from "./NoopEventProvider";
+import { Codec, Type } from "@/utils";
+import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
 
 const UNSUPPORTED =
     "Operation not supported by the p2p runtime client signer. " +
@@ -23,7 +29,12 @@ const UNSUPPORTED =
  * runtime message port to the host-owned signer.
  */
 class ClientP2pSigner implements Signer {
-    provider: Provider | null = null;
+    // The facade forwards calls/transactions to the host (see `call` /
+    // `sendTransaction`), so this provider never routes RPC. It exists only so
+    // the main-thread contract can register event subscriptions: ethers'
+    // `Contract.on(...)` requires `runner.provider` to be set, and contract
+    // events are then delivered via `P2pRuntimeClient.dispatchContractEvent`.
+    provider: Provider = new NoopEventProvider();
     signerAddress: Address;
     private isLeader = false;
 
@@ -76,10 +87,13 @@ class ClientP2pSigner implements Signer {
     async sendTransaction(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
-        await this.client.request<void>({
-            type: "sendTransaction",
-            data: ethers.hexlify(tx.data ?? "0x")
-        });
+        await this.client.request<void>(
+            {
+                type: "sendTransaction",
+                data: ethers.hexlify(tx.data ?? "0x")
+            },
+            { timeoutMs: null }
+        );
         return "There is no TransactionResponse p2p - everything executed locally" as unknown as TransactionResponse;
     }
 
@@ -121,16 +135,72 @@ class ClientP2pSigner implements Signer {
     }
 
     connectToChannel(channelId: Bytes): Promise<void> {
-        return this.client.request<void>({
-            type: "connectToChannel",
-            channelId: channelId.toString()
-        });
+        return this.client.request<void>(
+            {
+                type: "connectToChannel",
+                channelId: channelId.toString()
+            },
+            { timeoutMs: null }
+        );
     }
 
     async joinChannel(
-        confirmation: JoinChannelConfirmationStruct
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
     ): Promise<void> {
-        await this.client.request<void>({ type: "joinChannel", confirmation });
+        await this.client.request<void>(
+            {
+                type: "joinChannel",
+                encodedJoinChannelConfirmation: String(
+                    Codec.encode(confirmation, Type.JoinChannelConfirmation)
+                ),
+                expectedSnapshotHash: String(expectedSnapshotHash),
+                expectedForkId: String(expectedForkId)
+            },
+            { timeoutMs: null }
+        );
+    }
+
+    async topUpBalance(
+        confirmation: JoinChannelConfirmationStruct,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
+    ): Promise<void> {
+        await this.client.request<void>(
+            {
+                type: "topUpBalance",
+                encodedJoinChannelConfirmation: String(
+                    Codec.encode(confirmation, Type.JoinChannelConfirmation)
+                ),
+                expectedSnapshotHash: String(expectedSnapshotHash),
+                expectedForkId: String(expectedForkId)
+            },
+            { timeoutMs: null }
+        );
+    }
+
+    async collectJoinChannelConfirmation(
+        joinChannel: JoinChannelStruct
+    ): Promise<PreparedJoinChannelConfirmation> {
+        const result = await this.client.request<{
+            encodedJoinChannelConfirmation: string;
+            expectedSnapshotHash: Hash;
+            expectedForkId: ForkId;
+        }>({
+            type: "collectJoinChannelConfirmation",
+            encodedJoinChannel: String(
+                Codec.encode(joinChannel, Type.JoinChannel)
+            )
+        });
+        return {
+            confirmation: Codec.decode(
+                result.encodedJoinChannelConfirmation,
+                Type.JoinChannelConfirmation
+            ),
+            expectedSnapshotHash: String(result.expectedSnapshotHash),
+            expectedForkId: String(result.expectedForkId)
+        };
     }
 
     disconnectFromPeers(): void {

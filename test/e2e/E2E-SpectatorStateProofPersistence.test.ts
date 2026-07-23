@@ -1,5 +1,6 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
+import { Status } from "@/types";
 
 describe("E2E: Join/Leave Sequence", function () {
     it("join/leave sequence and fork resolution", async function () {
@@ -23,11 +24,14 @@ describe("E2E: Join/Leave Sequence", function () {
 
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
-        // turns of 3,0, blocks 3,4 — default sync excludes `leftChannelPeerIndices`
+        // turns of 3,0, blocks 3,4; the leaver may disconnect at any point
         await h.transition.advanceState({
             count: 2
         });
-        await h.assert.sync.blockHeight({ expectedHeight: 4 });
+        await h.assert.sync.blockHeight({
+            expectedHeight: 4,
+            peerIndices: [0, 1, 3]
+        });
 
         // Join peer 4 as spectator (`addPeer` waits for SYNCED)
         await h.join.addSpectatorWait();
@@ -39,7 +43,10 @@ describe("E2E: Join/Leave Sequence", function () {
             count: 2
         });
 
-        await h.assert.sync.blockHeight({ expectedHeight: 6 });
+        await h.assert.sync.blockHeight({
+            expectedHeight: 6,
+            peerIndices: [0, 1, 3, 4]
+        });
 
         // peer 0 is leaving the channel, block 7
 
@@ -67,13 +74,16 @@ describe("E2E: Join/Leave Sequence", function () {
         });
 
         // Capture the state before malicious action
-        const preDisputeForkId = h.activeForkId;
+        const preDisputeForkId = h.activeForkId!;
         h.event.resetEventSpies();
 
         // next is turn of peer 1
         const maliciousPeerIndex = 1;
         const honestPeerIndices = [3];
         await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
+        await h.event.waitForPeers("onAbort", spectatorIndices, 1);
+        for (const spectatorIndex of spectatorIndices)
+            await h.event.waitUntilPeerStatus(spectatorIndex, Status.OPENED);
 
         await h.assert.dispute.initiatedAndCommitedWait({
             peersIndices: honestPeerIndices,
@@ -81,6 +91,7 @@ describe("E2E: Join/Leave Sequence", function () {
         });
 
         const { newForkId } = await h.dispute.resolveDisputeWait({
+            forkId: preDisputeForkId,
             honestPeerIndices
         });
 
@@ -89,25 +100,13 @@ describe("E2E: Join/Leave Sequence", function () {
             "Fork should have changed after dispute resolution"
         );
 
-        for (const i of spectatorIndices) {
-            // spectators disconnected from the channel when the dispute started
-            expect(
-                await h
-                    .control(h.getPeer(i))
-                    .query.getOpenConnectionCount()
-                    .request()
-            ).to.equal(
-                0,
-                `spectator peer ${i} should have 0 open P2P connections after dispute`
-            );
-            // spectator should have stayes on the pre-dispute fork
-            expect(
-                await h.control(h.getPeer(i)).query.getForkId().request()
-            ).to.equal(
-                preDisputeForkId,
-                `spectator peer ${i} should be on pre-dispute fork`
-            );
-            // TODO - don't forget to rethink this
-        }
+        // Spectators aborted after rejecting the invalid feed. Only the honest
+        // participant is expected to follow the resulting fork.
+        await h.assert.sync.forkChangedWait({
+            originalForkId: preDisputeForkId,
+            expectedForkId: newForkId,
+            honestPeerIndices,
+            timeoutMs: 10000
+        });
     });
 });

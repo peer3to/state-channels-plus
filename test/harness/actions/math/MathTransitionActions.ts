@@ -1,7 +1,6 @@
 import { DetachedPromises } from "@/utils";
 import { Status } from "@/types";
 import { MathStateMachine } from "@typechain-types";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import {
     AdvanceStateBaseOptions,
     TransitionActions,
@@ -15,6 +14,7 @@ type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
 };
 
 type ParticipantLeaveOptions = TransitionOptions & {
+    leaverIndex?: number;
     statusTimeoutMs?: number;
     statusTimeoutMessage?: string;
 };
@@ -70,7 +70,8 @@ export class MathTransitionActions extends TransitionActions<
     ): Promise<number> {
         const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
             options ?? {};
-        const leaverIndex = await this.participantLeave(leaveOptions);
+        const leaverIndex =
+            await this.participantLeaveStateTransition(leaveOptions);
         await this.harness.event.waitUntilPeerStatus(
             leaverIndex,
             Status.SYNCED,
@@ -89,7 +90,8 @@ export class MathTransitionActions extends TransitionActions<
     ): Promise<number> {
         const { statusTimeoutMs, statusTimeoutMessage, ...leaveOptions } =
             options ?? {};
-        const leaverIndex = await this.participantLeave(leaveOptions);
+        const leaverIndex =
+            await this.participantLeaveStateTransition(leaveOptions);
         const promise = this.harness.event.waitUntilPeerStatus(
             leaverIndex,
             Status.SYNCED,
@@ -104,13 +106,16 @@ export class MathTransitionActions extends TransitionActions<
         return leaverIndex;
     }
 
-    private async participantLeave(
-        options?: TransitionOptions
+    /** Submit the leave transition without waiting for a later snapshot status. */
+    async participantLeaveStateTransition(
+        options?: ParticipantLeaveOptions
     ): Promise<number> {
-        const leaver = await this.harness.query.getNextPeerToWrite();
-        const leaverIndex = leaver.index;
+        const leaverIndex =
+            options?.leaverIndex ??
+            (await this.harness.query.getNextPeerToWrite()).index;
+        const leaver = this.harness.getPeer(leaverIndex);
 
-        await this.submitNext((contract) => contract.leaveChannel(), {
+        await this.submit(leaver, (contract) => contract.leaveChannel(), {
             waitForTurn: true,
             waitForSync: options?.waitForSync ?? true,
             waitForPeers: options?.waitForPeers,
@@ -118,6 +123,11 @@ export class MathTransitionActions extends TransitionActions<
             delayMs: options?.delayMs
         });
 
+        if (
+            !this.harness.context.leftChannelPeerIndices.includes(leaverIndex)
+        ) {
+            this.harness.context.leftChannelPeerIndices.push(leaverIndex);
+        }
         this.logger.debug(`Peer ${leaverIndex} left channel`);
 
         return leaverIndex;

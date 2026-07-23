@@ -61,15 +61,7 @@ describe("E2E: State Snapshots", function () {
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         h.event.resetEventSpies();
-        await h.transition.postSnapshot();
-
-        const honest = h.getHonestPeers().map((p) => p.index);
-        await h.event.waitForEventCounts(
-            "onStateSnapshotUpdated",
-            honest.map((peerId) => ({ peerId, expectedCount: 1 })),
-            10000,
-            { mode: "atLeast" }
-        );
+        await h.transition.postSnapshotWait({ timeoutMs: 10000 });
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.snapshotMatchesLocal();
@@ -89,18 +81,11 @@ describe("E2E: State Snapshots", function () {
         await h.transition.fromHonestPeersOnly((c) => c.add(3));
 
         await h.assert.sync.onlyHonestPeersInSync();
+        await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
         h.event.resetEventSpies();
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
-        await h.transition.postSnapshot();
-
-        const honest = h.getHonestPeers().map((p) => p.index);
-        await h.event.waitForEventCounts(
-            "onStateSnapshotUpdated",
-            honest.map((peerId) => ({ peerId, expectedCount: 1 })),
-            10000,
-            { mode: "atLeast" }
-        );
+        await h.transition.postSnapshotWait({ timeoutMs: 10000 });
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.onChainSnapshotOnFork();
@@ -188,7 +173,7 @@ describe("E2E: State Snapshots", function () {
         ).to.equal(expectedSum, "target peer should retain the transition");
     });
 
-    it("should not re-emit setState when an already-entered old-fork reduction completes after snapshot-event reduction", async function () {
+    it("should not re-emit setState when a snapshot event joins an already-entered old-fork reduction", async function () {
         this.timeout(90000);
 
         const h = TestSession.getHarness();
@@ -200,6 +185,11 @@ describe("E2E: State Snapshots", function () {
         await h.lifecycle.start(4, 2, {
             timeConfig: {
                 ...forkTimeConfig,
+                // The target is deliberately paused while the other peers
+                // resolve the first dispute. Keep the resulting fork from
+                // timing out and opening a second dispute before we release
+                // the one shared reduction operation.
+                p2pTime: 20,
                 agreementTime: 4
             }
         });
@@ -215,7 +205,7 @@ describe("E2E: State Snapshots", function () {
         await h.control(targetPeer).stub.stubHoldReductionTasks().request();
         await h
             .control(targetPeer)
-            .stub.stubPauseTryReduceAtKillPeriod(originalForkId)
+            .stub.stubPauseReductionAtKillPeriod(originalForkId)
             .request();
 
         h.event.resetEventSpies();
@@ -240,7 +230,7 @@ describe("E2E: State Snapshots", function () {
             );
             await h
                 .control(targetPeer)
-                .stub.startPausedTryReduce(originalForkId)
+                .dispute.startReduction(originalForkId)
                 .request();
 
             await waitFor(
@@ -248,7 +238,7 @@ describe("E2E: State Snapshots", function () {
                     (
                         await h
                             .control(targetPeer)
-                            .stub.getPausedTryReduceStatus()
+                            .stub.getPausedReductionStatus()
                             .request()
                     ).entered,
                 15000,
@@ -256,6 +246,32 @@ describe("E2E: State Snapshots", function () {
             );
 
             await resolvePromise;
+
+            // The snapshot event has joined the already-entered operation; it
+            // cannot create a second reduction attempt. Releasing that one
+            // operation lets both entry points settle through one install.
+            await h.control(targetPeer).stub.releasePausedReduction().request();
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getPausedReductionStatus()
+                            .request()
+                    ).settled,
+                30000,
+                50
+            );
+            const reductionStatus = await h
+                .control(targetPeer)
+                .stub.getPausedReductionStatus()
+                .request();
+            await h.control(targetPeer).stub.restorePausedReduction().request();
+            await h
+                .control(targetPeer)
+                .stub.restoreReductionTasks(false)
+                .request();
+            expect(reductionStatus.error).to.equal(undefined);
 
             await h.event.waitForPeers("onSetState", [targetPeerIndex], 1, {
                 timeoutMs: 20000,
@@ -274,29 +290,6 @@ describe("E2E: State Snapshots", function () {
             const expectedSum = await h
                 .getPeer(targetPeerIndex)
                 .contractInstance.getSum();
-
-            await h.control(targetPeer).stub.releasePausedTryReduce().request();
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(targetPeer)
-                            .stub.getPausedTryReduceStatus()
-                            .request()
-                    ).settled,
-                30000,
-                50
-            );
-            const tryReduceStatus = await h
-                .control(targetPeer)
-                .stub.getPausedTryReduceStatus()
-                .request();
-            await h.control(targetPeer).stub.restorePausedTryReduce().request();
-            await h
-                .control(targetPeer)
-                .stub.restoreReductionTasks(false)
-                .request();
-            expect(tryReduceStatus.error).to.equal(undefined);
 
             await h.event.waitWhileEventCountsStayAtMost(
                 "onSetState",
@@ -320,12 +313,12 @@ describe("E2E: State Snapshots", function () {
             // exit path so it never leaks into teardown.
             await h
                 .control(targetPeer)
-                .stub.releasePausedTryReduce()
+                .stub.releasePausedReduction()
                 .request()
                 .catch(() => {});
             await h
                 .control(targetPeer)
-                .stub.restorePausedTryReduce()
+                .stub.restorePausedReduction()
                 .request()
                 .catch(() => {});
             await h
@@ -368,9 +361,10 @@ describe("E2E: State Snapshots", function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(4, 2);
+        const forkId = h.activeForkId!;
 
         await h.byzantine.submitDoubleSignBlock(1);
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
 
         const honest = [0, 2, 3];
         await h.event.waitForEventCounts(
@@ -402,6 +396,7 @@ describe("E2E: State Snapshots", function () {
         it("disputeWindow.evidence.creationTimestamp != 0 → on-chain snapshot updates but disputeWindowMap NOT cleared (dispute kill still resolves)", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
 
             await h.tamper.postTamperedDispute(1, (dispute) => {
                 dispute.input.stateProof.milestones = [];
@@ -411,12 +406,16 @@ describe("E2E: State Snapshots", function () {
             // _updateStateSnapshot(shouldClearStorage=true) guards on creationTimestamp==0.
             // If the guard failed, _clearStorage → _clearDisputeData would delete
             // disputeWindowMap, and the kill TX below would revert (no dispute on-chain).
-            const expectedSnapshot =
+            const snapshotSubmission =
                 await h.transition.postSameForkSnapshotOnlyWait({
                     peerIndex: 0
                 });
-            await h.assert.snapshot.onChainSnapshotChangedWait({
-                expectedSnapshot
+            expect(
+                snapshotSubmission,
+                "same-fork snapshot transaction was not prepared"
+            ).to.not.be.undefined;
+            await h.assert.snapshot.localSnapshotsChangedWait({
+                expectedSnapshot: snapshotSubmission?.snapshot
             });
 
             await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
@@ -428,7 +427,22 @@ describe("E2E: State Snapshots", function () {
                 timeoutMs: 10000
             });
 
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            const hostErrors = await h.quiesceHosts();
+            expect(hostErrors.map((error) => error.message)).to.deep.equal([]);
+            expect(
+                (await snapshotSubmission!.transaction.wait())?.status
+            ).to.equal(1);
+            expect(snapshotSubmission!.transaction.nonce).to.be.lessThan(
+                await h.provider.getTransactionCount(
+                    h.getPeer(0).address,
+                    "latest"
+                )
+            );
+
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 15000
+            });
         });
     });
 });

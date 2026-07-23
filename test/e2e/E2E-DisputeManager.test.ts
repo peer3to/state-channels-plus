@@ -1,5 +1,5 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
-import { Codec, Type, hash } from "@/utils";
+import { Codec, Type, hash, sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 
 /**
@@ -17,10 +17,11 @@ describe("E2E: Dispute Manager", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({ peerCount: 4 });
+            const forkId = h.activeForkId!;
             const nextPeer = await h.query.getNextPeerToWrite();
             await h.byzantine.submitInvalidStateTransitionBlock(nextPeer.index);
             await h.assert.dispute.initiatedAndCommitedWait();
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("should post updated state snapshot after fork resolution", async function () {
@@ -34,7 +35,7 @@ describe("E2E: Dispute Manager", function () {
                 peerIndex: 0
             });
 
-            await h.assert.snapshot.onChainSnapshotChangedDetached({
+            await h.assert.snapshot.localSnapshotsChangedDetached({
                 expectedSnapshot: expectedSnapshot2
             });
             return;
@@ -47,6 +48,7 @@ describe("E2E: Dispute Manager", function () {
             await h.scenario.preDisputeSetup({
                 timeConfig: { evidenceTime: 6 }
             });
+            const forkId = h.activeForkId!;
 
             // Post a dispute from peer 1 that is internally valid but has no legitimate
             // enforcement basis: no timeout, no on-chain slashes, no self-removal.
@@ -66,12 +68,16 @@ describe("E2E: Dispute Manager", function () {
                     DisputeFraudProofType.InvalidDisputeReason
             });
 
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 15000
+            });
         });
 
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
 
             await h.tamper.postTamperedDispute(
                 3,
@@ -107,6 +113,7 @@ describe("E2E: Dispute Manager", function () {
                 timeoutMs: 15000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 forkSettleTimeoutMs: 15000,
                 syntheticOnChainParticipants: 1
             });
@@ -117,6 +124,7 @@ describe("E2E: Dispute Manager", function () {
             await h.scenario.preDisputeSetup({
                 timeConfig: { evidenceTime: 6 }
             });
+            const forkId = h.activeForkId!;
             await h.byzantine.tamperedDisputeDoubleFault(1);
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
                 mode: "atLeast"
@@ -125,17 +133,137 @@ describe("E2E: Dispute Manager", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 20000 });
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 20000
+            });
         });
     });
 
     describe("Partial Syncing via Dispute Validation", function () {
+        it("recovers an expired posted-data dispute and reduces from persisted proof data", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath({
+                timeConfig: { evidenceTime: 3 }
+            });
+            const disputedForkId = h.activeForkId;
+            if (!disputedForkId) throw new Error("Expected an active fork");
+
+            const nextPeer = await h.query.getNextPeerToWrite();
+            // Keep the next block producer connected so the setup transition
+            // advances; account allocation can change which index owns the turn.
+            const missedPeerIndex = [2, 3, 0].find(
+                (peerIndex) => peerIndex !== nextPeer.index
+            );
+            if (missedPeerIndex === undefined) {
+                throw new Error("Expected a non-producing peer to disconnect");
+            }
+            const connectedPeerIndices = h.peers
+                .map((peer) => peer.index)
+                .filter((peerIndex) => peerIndex !== missedPeerIndex);
+            for (const peer of h.peers) {
+                await h.control(peer).stub.stubHoldReductionTasks().request();
+            }
+            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+                missedPeerIndex,
+                {
+                    passFirst: false
+                }
+            );
+            await h
+                .control(h.getPeer(missedPeerIndex))
+                .stub.stubSuppressDisputeInitiation()
+                .request();
+            await h.byzantine.disconnect(missedPeerIndex);
+            await h.transition.advanceState({
+                waitForPeers: connectedPeerIndices
+            });
+            await h.byzantine.submitDoubleSignBlock(1);
+            await h.event.waitForDisputeFromAnyPeer(connectedPeerIndices);
+            const initiatingPeer = connectedPeerIndices
+                .map((peerIndex) => h.getPeer(peerIndex))
+                .find(
+                    (peer) =>
+                        (peer.eventSpies.onInitiatingDispute?.callCount ?? 0) >
+                        0
+                );
+            if (!initiatingPeer)
+                throw new Error("Expected a dispute initiator");
+            const initiatedDispute =
+                initiatingPeer.eventSpies.onInitiatingDispute!.lastCall.args[1];
+            if (!initiatedDispute.postedAuditingData) {
+                throw new Error("Expected a calldata-backed dispute");
+            }
+            await h.event.waitForPeers(
+                "onDisputeCommitted",
+                connectedPeerIndices,
+                1,
+                {
+                    mode: "atLeast",
+                    timeoutMs: h.event.protocolEventTimeoutMs(0)
+                }
+            );
+
+            await sleep(h.event.evidencePeriodWaitMs());
+            // The peer missed the event while disconnected, then reconnects so
+            // event recovery can fetch the committed dispute payloads.
+            await h.network.connectPeers([missedPeerIndex]);
+            await restoreEvents(false);
+            const missedPeer = h.getPeer(missedPeerIndex);
+            const recoveredCount = await h
+                .control(missedPeer)
+                .dispute.recoverCommittedDisputes(disputedForkId)
+                .request();
+            if (recoveredCount < 1) {
+                throw new Error("Expected at least one recovered dispute");
+            }
+            await h.assert.storage.storedDisputeConfirmationsWait({
+                peerIndices: [missedPeerIndex],
+                forkId: disputedForkId,
+                timeoutMs: 10000
+            });
+
+            for (const peerIndex of connectedPeerIndices) {
+                await h
+                    .control(h.getPeer(peerIndex))
+                    .stub.restoreReductionTasks(false)
+                    .request();
+            }
+            h.event.resetEventSpies();
+            await h
+                .control(missedPeer)
+                .stub.restoreReductionTasks(true)
+                .request();
+            const reducedForkId = await h
+                .control(missedPeer)
+                .dispute.awaitReduction(disputedForkId)
+                .request();
+            if (!reducedForkId || reducedForkId === disputedForkId) {
+                throw new Error(
+                    "Expected the recovered expired dispute to reduce to a new fork"
+                );
+            }
+
+            // The recovered peer posts the new-fork snapshot, which starts
+            // reduction from the snapshot event on the connected peers. The
+            // forwarded hook fires only after each real handler has settled.
+            await h.event.waitForPeers(
+                "onStateSnapshotUpdated",
+                connectedPeerIndices,
+                1,
+                { mode: "atLeast", timeoutMs: 20000 }
+            );
+
+            const hostErrors = await h.quiesceHosts();
+            if (hostErrors.length > 0) throw hostErrors[0];
+        });
+
         it("should have missing state Storage when peer receives dispute with blocks it doesn't have", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
             await h.assert.sync.peersInSyncWait();
             h.event.resetEventSpies();
-            h.byzantine.stubBroadcast(1);
+            await h.byzantine.stubBroadcast(1);
             await h.transition.advanceState({ waitForSync: false });
 
             await h.assert.sync.peerBlockHeightGreaterThan(1, 2);
@@ -172,8 +300,8 @@ describe("E2E: Dispute Manager", function () {
             // This is NOT a good test, since peer 2 will try and timeout peer 0 and while doing so will fetch on-chain block (and run it through the pipeline) while checking race condition (calldata posted)
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            h.byzantine.stubCalldataHandler(2);
-            h.contextApi.storeSnapshotCount(2, "before_isolation");
+            await h.byzantine.stubCalldataHandler(2);
+            await h.contextApi.storeSnapshotCount(2, "before_isolation");
             await h.byzantine.disconnect(2);
             h.event.resetEventSpies();
 
@@ -186,7 +314,7 @@ describe("E2E: Dispute Manager", function () {
             await h.assert.storage.honestPeersStoredBlockAndStateWait({
                 height: 1
             });
-            h.byzantine.restoreCalldataHandler(2);
+            await h.byzantine.restoreCalldataHandler(2);
         });
     });
 });

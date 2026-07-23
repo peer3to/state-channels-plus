@@ -1,5 +1,6 @@
 // Core types and interfaces
 export * from "./core/types";
+export * from "./core/testTimeConfig";
 
 import { MathTestSession } from "./session/MathTestSession";
 import { registerTestSessionHooks } from "./session/registerTestSessionHooks";

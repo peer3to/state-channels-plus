@@ -22,11 +22,17 @@ wss.on("connection", (ws) => {
 
         const peerPort = Number(parsed.port);
         const channelId = String(parsed.channelId || "");
-        if (!Number.isFinite(peerPort) || peerPort <= 0 || !channelId) {
+        const peerAddress = String(parsed.peerAddress || "");
+        if (
+            !Number.isFinite(peerPort) ||
+            peerPort <= 0 ||
+            !channelId ||
+            !peerAddress
+        ) {
             return;
         }
 
-        const entry = { port: peerPort, channelId };
+        const entry = { port: peerPort, channelId, peerAddress };
         registrations.set(ws, entry);
 
         // Send current members from the same channel to the newly connected peer.

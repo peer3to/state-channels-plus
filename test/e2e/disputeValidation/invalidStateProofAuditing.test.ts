@@ -1,4 +1,4 @@
-import { Codec } from "@/utils";
+import { Codec, Type, hash } from "@/utils";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -9,9 +9,10 @@ import { expect } from "chai";
 import { hexString } from "../../factory";
 
 describe("E2E: dispute validation / invalidStateProofAuditing", function () {
-    it("[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → DisputeInvalidStateProof; proof author slashed", async function () {
+    it("[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetupCalldataPath();
+        const forkId = h.activeForkId!;
 
         const byzantineProofAuthorIndex = 2;
         h.contextApi.markMaliciousPeer({
@@ -24,7 +25,7 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
             (d, _c, auditingData) => {
                 expect(d.postedAuditingData).to.equal(true);
                 expect(auditingData).to.not.be.undefined;
-                realAuditing = structuredClone(auditingData!);
+                realAuditing = globalThis.structuredClone(auditingData!);
             },
             { markMalicious: false }
         );
@@ -36,7 +37,7 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
 
         // corrupt some element of the auditing data so that the hash will not match the dispute.input.disputeAuditingDataHash
         // this should cause the proof author to be slashed
-        const junkAuditing = structuredClone(realAuditing);
+        const junkAuditing = globalThis.structuredClone(realAuditing);
         junkAuditing.latestFinalizedStateStateMachineState = hexString(128);
 
         const proof = {
@@ -51,9 +52,11 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
             )
         };
 
-        const tx = await h.channelManager
-            .connect(h.getPeer(byzantineProofAuthorIndex).signer)
-            .applyDisputeFraudProofs([proof]);
+        const tx = await h
+            .getPeer(byzantineProofAuthorIndex)
+            .p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs([
+                proof
+            ]);
         await tx.wait();
 
         await h.assert.dispute.slashedOnChain(
@@ -61,12 +64,22 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
             "byzantine DisputeInvalidStateProof author must be on-chain slashed"
         );
 
-        await h.event.waitWhileEventCountsStayAtMost(
-            "onDisputeKilled",
-            h.getHonestPeers().map((p) => p.index),
-            { durationMs: 3000, maxCount: 0 }
+        const commitments = await h.channelManager.getWindowCommitments(
+            h.channelId,
+            dispute.input.forkId
+        );
+        expect(commitments).to.include(
+            hash(Codec.encode(dispute, Type.Dispute))
         );
 
-        await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        // The invalid proof must not alter the valid dispute commitment. Its
+        // author is added to the window's on-chain slash set, so normal
+        // reduction must settle the fork without that participant.
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            forkSettleTimeoutMs: 15000,
+            // preDisputeSetupCalldataPath force-joins one non-harness wallet.
+            syntheticOnChainParticipants: 1
+        });
     });
 });

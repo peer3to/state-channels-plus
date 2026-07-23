@@ -6,9 +6,10 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
     it("dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
+        const forkId = h.activeForkId!;
 
         const fakeSlashedAddress = h.getPeer(0).address;
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             1,
             async (dispute, _sm, args) => {
                 dispute.input.onChainSlashes = [
@@ -35,7 +36,13 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
                 DisputeFraudProofType.DisputeOnChainSlashesNotSubset,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait();
+        // This case proves that the malformed on-chain-slash claim is killed.
+        // It does not control which later counter-dispute wins, so it cannot
+        // require every peer marked malicious by the setup to be evicted.
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            assertMaliciousRemoved: false
+        });
     });
 
     it("dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason", async function () {
@@ -49,13 +56,14 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         // address is in the on-chain onChainSlashes registry, but NOT in
         // the new snapshot's participants.
         const slashedAddress = h.getPeer(1).address;
+        const forkBeforeResolution = h.activeForkId!;
         await h.scenario.disputeAndResolve({
             maliciousPeerIndex: 1,
             forkSettleTimeoutMs: 15000,
             disputesCommittedTimeoutMs: 10000
         });
-        await h.assert.snapshot.onChainSnapshotChangedWait({
-            previousForkId: h.activeForkId!,
+        await h.assert.snapshot.localSnapshotsChangedWait({
+            previousForkId: forkBeforeResolution,
             timeoutMs: 15000
         });
 
@@ -65,7 +73,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();
 
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             3,
             async (dispute, sm, args) => {
                 dispute.input.timeout.participant =
@@ -91,6 +99,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
             timeoutMs: 10000
         });
         await h.dispute.resolveDisputeWait({
+            forkId: h.context.originalForkId!,
             forkSettleTimeoutMs: 15000
         });
     });
@@ -98,9 +107,10 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
     it("dispute.input.onChainSlashes has > maxSlashCount distinct addresses → reduce must not OOB-panic, both offenders slashed", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({ peerCount: 4 });
+        const forkId = h.activeForkId!;
 
         const junkSlashes = Array.from({ length: 8 }, randomAddress);
-        h.tamper.stubConstructDispute(
+        await h.tamper.stubConstructDispute(
             1,
             (dispute, _sm, args) => {
                 dispute.input.onChainSlashes = args.junkSlashes as string[];
@@ -115,7 +125,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
             initiatedWithAuditingData: false
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
 
         await h.assert.dispute.slashedOnChainExactly([
             h.getPeer(1).address,

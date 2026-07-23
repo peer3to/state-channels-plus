@@ -49,21 +49,34 @@ export class NetworkController<
      * Wait for P2P connections to establish
      */
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
-        const isGitHubActionsEnv = process.env.GITHUB_ACTIONS === "true";
-        const defaultTimeout = isGitHubActionsEnv ? 15000 : 5000;
+        // Parallel local runs have the same interval-mined, multi-process
+        // connection latency as CI. A shorter local-only deadline makes setup
+        // fail even though discovery is still progressing normally.
+        const defaultTimeout = 15000;
         const actualTimeout = timeoutMs ?? defaultTimeout;
 
         const condition = async () => {
-            const counts = await Promise.all(
-                this.harness.peers.map((p) =>
+            const connectedAddressesByPeer = await Promise.all(
+                this.harness.peers.map((peer) =>
                     this.harness
-                        .control(p)
-                        .query.getOpenConnectionCount()
+                        .control(peer)
+                        .query.getConnectedPeerAddresses()
                         .request()
                 )
             );
-            const connectedPeers = counts.filter((c) => c > 0).length;
-            return connectedPeers >= Math.min(2, this.harness.peers.length);
+
+            return this.harness.peers.every((peer, peerIndex) => {
+                const connectedAddresses = connectedAddressesByPeer[peerIndex];
+                return this.harness.peers.every(
+                    (expectedPeer) =>
+                        expectedPeer.index === peer.index ||
+                        connectedAddresses.some(
+                            (connectedAddress) =>
+                                connectedAddress.toLowerCase() ===
+                                expectedPeer.address.toLowerCase()
+                        )
+                );
+            });
         };
 
         if (await condition()) return;

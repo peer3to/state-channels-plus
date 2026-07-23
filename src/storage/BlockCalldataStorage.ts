@@ -48,6 +48,18 @@ export class BlockCalldataStorage {
         return this.coordinatesToBlockMap.get(coordinateKey);
     }
 
+    getMatchingBlockCalldata(block: Block): BlockCalldata | undefined {
+        const calldata = this.getBlockCalldata(
+            block.forkId,
+            block.height,
+            block.author
+        );
+        if (!calldata) return undefined;
+        return Block.fromSignedBlock(calldata.signedBlock).hash === block.hash
+            ? calldata
+            : undefined;
+    }
+
     private buildCoordinateKey(
         forkId: ForkId,
         height: BlockHeight,

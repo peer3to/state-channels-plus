@@ -1,4 +1,4 @@
-import { MathTestSession as TestSession, sleep } from "@test/harness";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 /**
@@ -38,7 +38,7 @@ describe("E2E: Is Fork Disputed", function () {
                 requestingPeer: 0,
                 excludePeers: [1]
             });
-            h.assert.rpc.duplicateDisputeRequestIgnored({ peerIndex: 0 });
+            await h.assert.rpc.duplicateDisputeRequestIgnored({ peerIndex: 0 });
             await h.assert.rpc.allPeersAcknowledgedDispute({
                 requestingPeer: 0,
                 excludePeers: [1]
@@ -74,10 +74,10 @@ describe("E2E: Is Fork Disputed", function () {
             await h.rpc.requestFakeDisputeWithSpiedDisconnect({
                 requestingPeer: 0
             });
-            await sleep(2500);
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
-                expectedFinalCount: 0
+                expectedFinalCount: 0,
+                timeoutMs: h.event.protocolEventTimeoutMs(1)
             });
         });
     });

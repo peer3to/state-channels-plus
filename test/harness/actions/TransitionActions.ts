@@ -109,7 +109,7 @@ export class TransitionActions<
         options?: { waitForSync?: boolean }
     ): Promise<void> {
         const syncIndices = this.harness
-            .getPeersExcludingMaliciousAndLeavers()
+            .getActiveHonestPeers()
             .map((p) => p.index);
 
         // waitForPeers limits who we barrier on, but we still want union finalization on those peers.
@@ -125,7 +125,7 @@ export class TransitionActions<
         txFns: Array<(contract: TContract) => Promise<any>>
     ): Promise<void> {
         const syncIndices = this.harness
-            .getPeersExcludingMaliciousAndLeavers()
+            .getActiveHonestPeers()
             .map((p) => p.index);
         if (!syncIndices) {
             throw new Error(
@@ -148,26 +148,7 @@ export class TransitionActions<
         peerIndex?: number;
         forkId?: string;
     }): Promise<StateSnapshot | undefined> {
-        const { peerIndex = 0 } = options || {};
-        const forkId = options?.forkId || this.harness.activeForkId;
-        if (!forkId) {
-            throw new Error("No active fork ID - channel must be opened first");
-        }
-
-        const peer = this.harness.peers[peerIndex];
-        if (!peer) {
-            throw new Error(`Peer ${peerIndex} not found`);
-        }
-
-        const result = await this.harness
-            .control(peer)
-            .transition.postStateSnapshot(forkId)
-            .request();
-        return result
-            ? StateSnapshot.from(
-                  Codec.decode(result.encodedSnapshot, Type.StateSnapshot)
-              )
-            : undefined;
+        return this.requestPostSnapshot(options, false);
     }
 
     async postSnapshotWait(options?: {
@@ -175,7 +156,7 @@ export class TransitionActions<
         forkId?: string;
         timeoutMs?: number;
     }): Promise<StateSnapshot | undefined> {
-        const expectedSnapshot = await this.postSnapshot(options);
+        const expectedSnapshot = await this.requestPostSnapshot(options, true);
         if (!expectedSnapshot) return undefined;
 
         const timeoutMs = options?.timeoutMs ?? 8000;
@@ -199,10 +180,36 @@ export class TransitionActions<
         return expectedSnapshot;
     }
 
+    private async requestPostSnapshot(
+        options: { peerIndex?: number; forkId?: string } | undefined,
+        awaitCompletion: boolean
+    ): Promise<StateSnapshot | undefined> {
+        const { peerIndex = 0 } = options || {};
+        const forkId = options?.forkId || this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error("No active fork ID - channel must be opened first");
+        }
+
+        const peer = this.harness.peers[peerIndex];
+        if (!peer) {
+            throw new Error(`Peer ${peerIndex} not found`);
+        }
+
+        const transition = this.harness.control(peer).transition;
+        const result = awaitCompletion
+            ? await transition.postStateSnapshotWait(forkId).request()
+            : await transition.postStateSnapshot(forkId).request();
+        return result
+            ? StateSnapshot.from(
+                  Codec.decode(result.encodedSnapshot, Type.StateSnapshot)
+              )
+            : undefined;
+    }
+
     async postSameForkSnapshotOnlyWait(options?: {
         peerIndex?: number;
         forkId?: string;
-    }): Promise<StateSnapshot | undefined> {
+    }) {
         const { peerIndex = 0 } = options || {};
         const forkId = options?.forkId || this.harness.activeForkId;
         if (!forkId) {
@@ -218,18 +225,28 @@ export class TransitionActions<
             .control(peer)
             .transition.prepareUpdateSnapshotSameFork(forkId)
             .request();
-        if (!sameForkData || sameForkData.callData.length === 0)
+        if (!sameForkData.canPost || sameForkData.callData.length === 0)
             return undefined;
 
-        const channelManager = this.harness.channelManager.connect(peer.signer);
-        const tx = await channelManager.multicall(sameForkData.callData);
-        await tx.wait();
-        return StateSnapshot.from(
-            Codec.decode(
-                sameForkData.encodedExpectedSnapshot,
-                Type.StateSnapshot
-            )
-        );
+        const transaction =
+            await peer.p2pInstance.stateChannelManagerContract.multicall(
+                sameForkData.callData
+            );
+        await transaction.wait();
+        if (!sameForkData.encodedExpectedSnapshot) {
+            throw new Error(
+                "Admissible same-fork snapshot calldata is missing its expected snapshot"
+            );
+        }
+        return {
+            snapshot: StateSnapshot.from(
+                Codec.decode(
+                    sameForkData.encodedExpectedSnapshot,
+                    Type.StateSnapshot
+                )
+            ),
+            transaction
+        };
     }
 
     async validWithoutPeer(
@@ -281,7 +298,7 @@ export class TransitionActions<
             const peers =
                 options.waitForPeers !== undefined
                     ? this.harness.getFilteredPeers(options.waitForPeers)
-                    : this.harness.getPeersExcludingMaliciousAndLeavers();
+                    : this.harness.getActiveHonestPeers();
             const waitForFinalization = effectiveWaitForFinalization(options);
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
@@ -353,15 +370,17 @@ export class TransitionActions<
      */
     private async waitForTurn(
         peer: TestPeer<TCustomRpc, TContract>,
-        timeoutMs = 3000
+        timeoutMs?: number
     ): Promise<void> {
+        const waitTimeoutMs =
+            timeoutMs ?? this.harness.event.participantTimeoutWaitMs(1);
         try {
             await peer.turnBarrier.waitFor(
                 async () =>
                     await this.harness.control(peer).query.isMyTurn().request(),
                 {
-                    timeoutMs,
-                    timeoutMessage: `Turn not received within ${timeoutMs}ms`
+                    timeoutMs: waitTimeoutMs,
+                    timeoutMessage: `Turn not received within ${waitTimeoutMs}ms`
                 }
             );
             this.logger.debug(`Peer ${peer.index} turn`);

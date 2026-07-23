@@ -8,7 +8,7 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
-import { Logger } from "@/utils";
+import { DetachedPromises, Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
@@ -174,7 +174,9 @@ export default class BlockQueueManager {
         if (!(await this.stateManager.isForkDisputed(currentForkId, channelId)))
             return;
         const { isExpired, killPeriodEnd } =
-            await this.stateManager.isKillPeriodExpiredCached(currentForkId);
+            await this.stateManager.reductionManager.isKillPeriodExpiredCached(
+                currentForkId
+            );
         if (!isExpired) {
             this.recoverySuppressedUntil.set(currentForkId, killPeriodEnd);
             return;
@@ -193,7 +195,9 @@ export default class BlockQueueManager {
         }
         this.recoveryScheduledForFork.add(forkId);
         this.timeoutManager.scheduleTask(
-            () => this.runForkRecovery(forkId),
+            () => {
+                DetachedPromises.collect(this.runForkRecovery(forkId));
+            },
             0,
             `BlockQueueManager.runForkRecovery - fork ${forkId}`
         );
@@ -213,19 +217,22 @@ export default class BlockQueueManager {
                 return;
             }
             const { isExpired, killPeriodEnd } =
-                await this.stateManager.isKillPeriodExpiredCached(forkId);
+                await this.stateManager.reductionManager.isKillPeriodExpiredCached(
+                    forkId
+                );
             if (!isExpired) {
                 this.recoverySuppressedUntil.set(forkId, killPeriodEnd);
                 return;
             }
             // Idempotent single-flight: on success `setGenesisState` transitions
             // the fork and the post-transition drain picks up queued blocks.
-            await this.stateManager.reduceLocally(forkId);
+            await this.stateManager.reductionManager.tryReduce(forkId);
         } catch (error) {
             this.logger.error("runForkRecovery - local reduction failed", {
                 forkId: String(forkId),
                 error: error instanceof Error ? error.message : String(error)
             });
+            throw error;
         } finally {
             this.recoveryScheduledForFork.delete(forkId);
         }
@@ -384,6 +391,12 @@ export default class BlockQueueManager {
         }
     }
 
+    private disconnectEntrySources(entry: QueuedBlockEntry): void {
+        this.stateManager.p2pManager.disconnectAndBlacklistPeers(
+            entry.sourcePeers
+        );
+    }
+
     public scheduleStoredBlockConfirmationMerge(
         entry: QueuedBlockEntry,
         strategy: AValidationStrategy
@@ -495,11 +508,7 @@ export default class BlockQueueManager {
             await strategy.interpretFinalValidationResult(validationResult);
 
         if (!shouldKeepConnection) {
-            for (const peer of entry.sourcePeers) {
-                this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peer
-                );
-            }
+            this.disconnectEntrySources(entry);
         }
         P2pEventHooksUtils.notifyBlockConfirmationProcessed({
             blockHash: entry.block.hash,

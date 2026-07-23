@@ -16,6 +16,7 @@ import { ForceExitStorage } from "./ForceExitStorage";
 import { ForceJoinStorage } from "./ForceJoinStorage";
 import { DisputeFraudProofStorage } from "./DisputeFraudProofStorage";
 import { BlockCalldataStorage } from "./BlockCalldataStorage";
+import { EventSyncStorage } from "./EventSyncStorage";
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -32,6 +33,7 @@ export class Storage {
     public readonly forceExit: ForceExitStorage;
     public readonly forceJoin: ForceJoinStorage;
     public readonly blockCalldata: BlockCalldataStorage;
+    public readonly eventSync: EventSyncStorage;
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
@@ -50,6 +52,7 @@ export class Storage {
         this.forceExit = deepCopyProxy(new ForceExitStorage());
         this.forceJoin = deepCopyProxy(new ForceJoinStorage());
         this.blockCalldata = deepCopyProxy(new BlockCalldataStorage());
+        this.eventSync = deepCopyProxy(new EventSyncStorage());
         return deepCopyProxy(this);
     }
 

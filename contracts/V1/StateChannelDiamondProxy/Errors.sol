@@ -23,6 +23,9 @@ error ErrorOutboundMessageTypeUnsupported(bytes32 messageType);
 //Join channel
 error ErrorInvalidChannelId();
 error ErrorJoinChannelInvalidSignature();
+error ErrorJoinChannelInvalidSubmitter(address expectedParticipant, address actualSubmitter);
+error ErrorJoinChannelParticipantAlreadyExists();
+error ErrorTopUpBalanceParticipantNotFound();
 error ErrorNoJoinChannelProvided();
 error ErrorNoSuccessfulJoinChannel();
 error ErrorJoinChannelAtomicFailure();
@@ -48,7 +51,6 @@ error ErrorNoDisputesProvided();
 
 //Auditing errors
 error ErrorDisputeCommitmentNotAvailable();
-error ErrorDisputeExpired();
 error ErrorDisputeGenesisInvalid();
 error ErrorDisputeStateMachineJoiningFailed();
 error ErrorDisputeStateMachineSlashingFailed();
@@ -75,17 +77,18 @@ error RaceConditionBlockHeightTooOld();
 error RaceConditionJoinChannelExpired();
 error RaceConditionDisputeEvidencePeriodExpired();
 error RaceConditionDisputeKillPeriodNotExpired();
+error RaceConditionDisputeKillPeriodExpired();
 error RaceConditionDisputeAlreadyReduced();
 error RaceConditionReductionExpectationDoesntMatch();
 error RaceConditionDisputeAuditingRequired();
 error RaceConditionDisputeTimeoutCalldataPosted();
 error RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
 error RaceConditionDisputeTimeoutNotMinTimestamp();
+error RaceConditionDisputeTimeoutWindowCreatedTooEarly();
 error RaceConditionUnexpectedBlockCalldataPosted();
 error RaceConditionGenesisTimestampNotAvailable();
 error RaceConditionOnChainSlashes();
 error RaceConditionJoinChannelSnapshotMismatch();
 error RaceConditionPendingInboundNotConsumed();
-error RaceConditionJoinChannelForkDisputed();
 error RaceConditionForceInboundJoinForkDisputed();
 error ErrorDisputeThrottled();

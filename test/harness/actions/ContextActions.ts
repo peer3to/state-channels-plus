@@ -1,5 +1,4 @@
 import { StateSnapshot } from "@/models";
-import { ForkId } from "@/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Codec, Logger, Type } from "@/utils";
@@ -13,19 +12,22 @@ export class ContextActions<
         private _logger: Logger
     ) {}
 
-    markMaliciousPeer(options: {
-        maliciousPeerIndex: number;
-        honestPeerIndices?: number[];
-    }): void {
-        const { maliciousPeerIndex, honestPeerIndices } = options;
-        const totalPeers = this.harness.peers.length;
-        const honest =
-            honestPeerIndices ||
-            Array.from({ length: totalPeers }, (_, i) => i).filter(
-                (i) => i !== maliciousPeerIndex
-            );
+    markMaliciousPeer(options: { maliciousPeerIndex: number }): void {
+        const { maliciousPeerIndex } = options;
+        if (
+            !this.harness.context.maliciousPeerIndices.includes(
+                maliciousPeerIndex
+            )
+        ) {
+            this.harness.context.maliciousPeerIndices.push(maliciousPeerIndex);
+        }
+    }
 
-        this.harness.context.maliciousPeerIndices.push(maliciousPeerIndex);
+    markAfkPeer(options: { afkPeerIndex: number }): void {
+        const { afkPeerIndex } = options;
+        if (!this.harness.context.afkPeerIndices.includes(afkPeerIndex)) {
+            this.harness.context.afkPeerIndices.push(afkPeerIndex);
+        }
     }
 
     async capturePrePostSnapshotContext(options?: {
@@ -46,7 +48,7 @@ export class ContextActions<
             .control(peer)
             .transition.prepareUpdateSnapshotSameFork(forkId)
             .request();
-        const encodedLastSnapshot = sameFork?.encodedMilestoneSnapshots.at(-1);
+        const encodedLastSnapshot = sameFork.encodedMilestoneSnapshots.at(-1);
         const lastSnapshot = encodedLastSnapshot
             ? StateSnapshot.from(
                   Codec.decode(encodedLastSnapshot, Type.StateSnapshot)

@@ -11,8 +11,11 @@ const COLORS = {
     blue: "\x1b[34m",
     orange: "\x1b[38;5;208m",
     green: "\x1b[32m",
+    lightGreen: "\x1b[92m",
     red: "\x1b[31m",
     yellow: "\x1b[33m",
+    darkYellow: "\x1b[33m",
+    lightYellow: "\x1b[93m",
     purple: "\x1b[35m",
     reset: "\x1b[0m"
 };
@@ -36,14 +39,37 @@ function countOomEvents(text) {
     return workerHits + processHit;
 }
 
-// Event-loop starvation lines (the harness sets a 1s threshold). Counted for
-// every test, pass or fail, so passing-but-starved tests are still surfaced.
+// A watchdog error is often propagated through several peers and the harness,
+// which repeats the exact message in the combined log. Treat one distinct
+// delay/threshold pair as one starvation event rather than counting each copy.
 const STARVATION_RE =
-    /Event loop delay [\d.]+ms exceeded configured threshold/g;
+    /Event loop delay ([\d.]+)ms exceeded configured threshold ([\d.]+)ms/g;
+
+function parseStarvation(text) {
+    const events = new Map();
+    if (text) {
+        for (const match of text.matchAll(STARVATION_RE)) {
+            const delayMs = Number(match[1]);
+            const thresholdMs = Number(match[2]);
+            if (!Number.isFinite(delayMs) || !Number.isFinite(thresholdMs))
+                continue;
+            events.set(`${delayMs}:${thresholdMs}`, {
+                delayMs,
+                thresholdMs
+            });
+        }
+    }
+    return {
+        count: events.size,
+        maxDelayMs: Math.max(
+            0,
+            ...[...events.values()].map((event) => event.delayMs)
+        )
+    };
+}
 
 function countStarvation(text) {
-    if (!text) return 0;
-    return (text.match(STARVATION_RE) || []).length;
+    return parseStarvation(text).count;
 }
 
 // Per-setup timing markers the harness writes to stdout. Summed across all
@@ -56,7 +82,7 @@ function parseTimings(text) {
     let deployMs = 0;
     let workerBootMs = 0;
     // Peak event-loop delay per thread role (main + the peers' sdk/vm workers).
-    const el = { main: 0, sdk: 0, vm: 0 };
+    const el = { main: 0, sdk: 0, vm: 0, watchdog: 0 };
     let found = false;
     if (text) {
         let m;
@@ -80,8 +106,12 @@ function parseTimings(text) {
                 // Malformed marker — ignore.
             }
         }
+        // The fatal watchdog error may be serialized without its preceding
+        // timing marker. Keep its real delay in the peak without guessing
+        // which thread produced it.
+        el.watchdog = Math.round(parseStarvation(text).maxDelayMs);
     }
-    const maxEventLoopDelayMs = Math.max(el.main, el.sdk, el.vm);
+    const maxEventLoopDelayMs = Math.max(el.main, el.sdk, el.vm, el.watchdog);
     return {
         startupMs,
         deployMs,
@@ -223,17 +253,19 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
 function runHeader({
     taskCount,
     grep,
+    e2eOnly,
     slotCount,
     threadModes,
     targetLoad,
+    tickMs,
     memBoundGb,
     concurrencyCap
 }) {
     console.log(
-        `Running ${taskCount} E2E task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
+        `Running ${taskCount} ${e2eOnly ? "E2E" : "Mocha"} task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
     console.log(
-        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
+        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
     );
 }
 
@@ -287,6 +319,16 @@ function hold({ seq, total, reason }) {
     console.log(colorize("orange", `[${seq}/${total}] holding — ${reason}`));
 }
 
+// Light yellow: a starved task gets its single clean retry.
+function starvationRetry({ seq, total, label, starveCount }) {
+    console.log(
+        colorize(
+            "lightYellow",
+            `[${seq}/${total}] STARVED x${starveCount} — rescheduling once [${label}]`
+        )
+    );
+}
+
 // Green PASS / red FAIL, with timing + starvation annotations.
 function result({
     completed,
@@ -296,7 +338,8 @@ function result({
     durationMs,
     oomCount,
     starveCount,
-    timing
+    timing,
+    repeatedStarvation = false
 }) {
     const tag = `[${completed}/${total}]`;
     const duration = formatDurationMs(durationMs);
@@ -304,7 +347,7 @@ function result({
         ? ` · startup ${formatDurationMs(timing.startupMs)} · deploy ${formatDurationMs(timing.deployMs)}`
         : " · timing n/a";
     const elMaxStr = timing.maxEventLoopDelayMs
-        ? ` · elMax harness/main:${timing.el.main}ms [peer:{sdk:${timing.el.sdk}ms,vm:${timing.el.vm}ms}]`
+        ? ` · elMax harness/main:${timing.el.main}ms [peer:{sdk:${timing.el.sdk}ms,vm:${timing.el.vm}ms},watchdog:${timing.el.watchdog}ms]`
         : "";
     const starveStr = starveCount > 0 ? ` · starved x${starveCount}` : "";
     if (code === 0) {
@@ -321,12 +364,18 @@ function result({
         const reason =
             oomCount > 0
                 ? `OOM x${oomCount}`
-                : starvedFail
-                  ? "starved"
-                  : `exit ${code}`;
+                : repeatedStarvation
+                  ? "starved twice"
+                  : starvedFail
+                    ? "starved"
+                    : `exit ${code}`;
         console.log(
             colorize(
-                starvedFail ? "yellow" : "red",
+                repeatedStarvation
+                    ? "darkYellow"
+                    : starvedFail
+                      ? "yellow"
+                      : "red",
                 `${tag} FAIL [${reason}] [${label}]${timingStr}${elMaxStr}${starveStr}`
             )
         );
@@ -341,6 +390,13 @@ function gasPeakLine(slotId, { used, limit, pct, block }) {
             `slot ${slotId} · block #${block} gas ${used.toLocaleString()}/${limit.toLocaleString()} (${pct.toFixed(1)}%) ↑ new peak`
         )
     );
+}
+
+function getStarvationSummary(tasks) {
+    return {
+        recovered: tasks.filter((task) => task.starvationRetrySucceeded),
+        repeated: tasks.filter((task) => task.repeatedStarvation)
+    };
 }
 
 function summary({
@@ -360,7 +416,7 @@ function summary({
     const totalPassing = tasks.length - totalFailing;
     const speedup = wallMs > 0 ? sumDurationMs / wallMs : 0;
     const oomTasks = tasks.filter((t) => (t.oomCount || 0) > 0);
-    const starvedTasks = tasks.filter((t) => (t.starveCount || 0) > 0);
+    const starvation = getStarvationSummary(tasks);
     const totalStartupMs = tasks.reduce((s, t) => s + (t.startupMs || 0), 0);
     const totalDeployMs = tasks.reduce((s, t) => s + (t.deployMs || 0), 0);
     const totalWorkerBootMs = tasks.reduce(
@@ -395,15 +451,26 @@ function summary({
             `  Raise SCP_WORKER_MAX_OLD_SPACE_MB / NODE_OPTIONS=--max-old-space-size, lower --slots, or lower --target-load.`
         );
     }
-    if (starvedTasks.length > 0) {
-        const totalStarve = starvedTasks.reduce((s, t) => s + t.starveCount, 0);
+    if (starvation.recovered.length > 0) {
+        console.log(
+            colorize(
+                "lightGreen",
+                `  ${starvation.recovered.length} test(s) recovered from starvation on their second run`
+            )
+        );
+    }
+    if (starvation.repeated.length > 0) {
+        const totalStarve = starvation.repeated.reduce(
+            (sum, task) => sum + task.starveCount,
+            0
+        );
         console.log(
             colorize(
                 "yellow",
-                `  ${starvedTasks.length} test(s) hit event-loop starvation (>1s, ${totalStarve} event(s) total):`
+                `  ${starvation.repeated.length} test(s) hit event-loop starvation on both runs (>1s, ${totalStarve} event(s) total):`
             )
         );
-        for (const t of starvedTasks) {
+        for (const t of starvation.repeated) {
             console.log(`    - ${t.label}: starved x${t.starveCount}`);
         }
     }
@@ -429,11 +496,13 @@ function summary({
     if (elPeak && elPeak.maxEventLoopDelayMs) {
         const e = elPeak.el || {};
         const role =
-            elPeak.maxEventLoopDelayMs === e.sdk
-                ? "peer/sdk"
-                : elPeak.maxEventLoopDelayMs === e.vm
-                  ? "peer/vm"
-                  : "harness/main";
+            elPeak.maxEventLoopDelayMs === e.watchdog
+                ? "watchdog/unattributed"
+                : elPeak.maxEventLoopDelayMs === e.sdk
+                  ? "peer/sdk"
+                  : elPeak.maxEventLoopDelayMs === e.vm
+                    ? "peer/vm"
+                    : "harness/main";
         console.log(
             `  event-loop delay: peak ${elPeak.maxEventLoopDelayMs}ms on ${role} (${elPeak.label})`
         );
@@ -486,7 +555,9 @@ module.exports = {
     dryRun,
     admission,
     hold,
+    starvationRetry,
     result,
     gasPeakLine,
+    getStarvationSummary,
     summary
 };

@@ -21,6 +21,7 @@ export interface StartInfraOptions {
     port?: number;
     logPath?: string;
     label?: string;
+    env?: Record<string, string | undefined>;
 }
 
 export interface Slot {

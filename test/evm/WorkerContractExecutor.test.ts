@@ -93,4 +93,56 @@ describe("WorkerContractExecutor", function () {
             await executor.dispose();
         }
     });
+
+    it("should dispose idempotently", async function () {
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true
+        });
+
+        await executor.dispose();
+        await executor.dispose();
+    });
+
+    for (const dedicatedThread of [false, true]) {
+        it(`should serialize simulations with local writes (${dedicatedThread ? "worker" : "inline"})`, async function () {
+            const customAddress = Address.fromString(
+                "0x00000000000000000000000000000000000000bc"
+            );
+            const customPrecompile: EvmCustomPrecompileManifest = {
+                address: customAddress.toString(),
+                module: path.resolve(
+                    __dirname,
+                    "../fixtures/workerConcurrencyPrecompile.ts"
+                ),
+                options: { delayMs: 50 }
+            };
+            const executor = await createContractExecutorFactory({
+                dedicatedThread,
+                customPrecompiles: [customPrecompile]
+            });
+
+            try {
+                const simulation = executor.simulateCall(
+                    "0x1234",
+                    customAddress.toString()
+                );
+                const write = executor.executeCall(
+                    "0x5678",
+                    customAddress.toString()
+                );
+                const results = await Promise.all([simulation, write]);
+
+                for (const result of results) {
+                    const [maximumActiveCalls] =
+                        ethers.AbiCoder.defaultAbiCoder().decode(
+                            ["uint256"],
+                            result.returnValue
+                        );
+                    expect(maximumActiveCalls).to.equal(1n);
+                }
+            } finally {
+                await executor.dispose();
+            }
+        });
+    }
 });

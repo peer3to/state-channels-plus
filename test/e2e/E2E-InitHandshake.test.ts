@@ -32,7 +32,7 @@ describe("E2E: Init Handshake", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0, { autoConnect: true });
             await h.event.waitUntilEventOccurs("onConnection", 5000);
-            h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
+            await h.assert.rpc.handshakeCompleted({ peer1: 0, peer2: 1 });
 
             const peer0 = h.getPeer(0);
             const peer1Address = h.getPeer(1).address;
@@ -44,7 +44,7 @@ describe("E2E: Init Handshake", function () {
             h.event.resetEventSpies();
             const before = await h.execOnHost(
                 peer0,
-                (sm, args) => {
+                async (sm, args) => {
                     const profile =
                         sm.p2pManager.profileManager.getProfileByEvmAddress(
                             args.peer1Address
@@ -56,19 +56,24 @@ describe("E2E: Init Handshake", function () {
                     }
                     const transportType = profile.transport.transportType;
                     (profile as { upgradeTag?: number }).upgradeTag = 1;
-                    void sm.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
+                    await sm.p2pManager.localRpc.webRTCSetupService.initiateWebRTC(
                         profile.transport
                     );
                     return { transportType };
                 },
-                { peer1Address }
+                { peer1Address },
+                // Creating the real werift offer can exceed the protocol's
+                // short default RPC timeout when the parallel runner is under
+                // CPU pressure. This is a test-control RPC, not a protocol
+                // deadline, so give the host-side operation its own bound.
+                { timeoutMs: 20000 }
             );
             expect(before.transportType).to.equal(
                 TransportType.HOLEPUNCH,
                 "initial handshake should complete over HOLEPUNCH"
             );
 
-            await h.event.waitUntilEventOccurs("onConnection", 10000);
+            await h.event.waitUntilEventOccurs("onConnection", 20000);
 
             // The same profile object must now point at a WEBRTC transport.
             const after = await h.execOnHost(

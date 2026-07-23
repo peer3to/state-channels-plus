@@ -7,12 +7,14 @@ type P2pEventHooks = {
     onDisconnection?: (address: Address) => void;
     onTurn?: (
         address: Address,
+        // nominal p2p turn window; height-0 evidenceTime grace is not included
         turnTime: number,
         agreementTime: number,
         chainFallbackTime: number,
         turnStartedAtBlockTimestamp?: number
     ) => void;
     onSetState?: (forkId: ForkId) => void;
+    onAbort?: () => void;
     onStatusChanged?: (oldStatus: Status, newStatus: Status) => void;
     onPostingCalldata?: () => void;
     onPostedCalldata?: () => void;

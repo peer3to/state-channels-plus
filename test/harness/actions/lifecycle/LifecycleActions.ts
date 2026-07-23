@@ -10,13 +10,7 @@ import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { NetworkController } from "../NetworkController";
 import { HarnessOptions } from "@test/harness/core/types";
 import { TimeConfig } from "@/types";
-
-const defaultTimeConfig: TimeConfig = {
-    p2pTime: 1,
-    agreementTime: 2,
-    chainFallbackTime: 2,
-    evidenceTime: 8
-};
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 
 /**
  * Handles channel-related operations: open channel and bootstrap.
@@ -64,10 +58,7 @@ export class LifecycleActions<
             };
         }
     ) {
-        const timeConfig = {
-            ...defaultTimeConfig,
-            ...options?.timeConfig
-        };
+        const timeConfig = resolveTestTimeConfig(options?.timeConfig);
         await this.start(peerCount, transitionCount, {
             timeConfig
         });

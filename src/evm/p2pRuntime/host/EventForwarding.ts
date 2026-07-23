@@ -1,6 +1,7 @@
 import type { EventHandler } from "@/eventHandlers/EventHandler";
 import type P2pEventHooks from "@/P2pEventHooks";
 import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
+import type { HostHandlerExecutionContext } from "../HostHandlerExecutionContext";
 import type { RuntimePort } from "../types";
 
 /** Best-effort structured-clone of handler args; `[]` if not cloneable. */
@@ -37,14 +38,15 @@ export function createForwardingHooks(port: RuntimePort): P2pEventHooks {
  */
 export function forwardEventHandlerInvocations(
     eventHandler: EventHandler,
-    port: RuntimePort
+    port: RuntimePort,
+    handlerExecutionContext?: HostHandlerExecutionContext
 ): void {
     const handler = eventHandler as unknown as Record<string, unknown>;
     for (const name of EVENT_HANDLER_HOOK_NAMES) {
         const original = handler[name];
         if (typeof original !== "function") continue;
         const originalFn = original as (...args: unknown[]) => unknown;
-        handler[name] = async function (...args: unknown[]) {
+        const forwardingMethod = async function (...args: unknown[]) {
             const result = await originalFn.apply(handler, args);
             port.post({
                 type: "eventHandlerInvoked",
@@ -53,5 +55,11 @@ export function forwardEventHandlerInvocations(
             });
             return result;
         };
+        handler[name] = handlerExecutionContext
+            ? (...args: unknown[]) =>
+                  handlerExecutionContext.runHandler(() =>
+                      forwardingMethod(...args)
+                  )
+            : forwardingMethod;
     }
 }

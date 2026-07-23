@@ -8,12 +8,14 @@ import AContractExecutor, {
     type ContractExecutionLog,
     type ContractExecutionResult
 } from "./AContractExecutor";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class ContractExecutor extends AContractExecutor {
     private readonly evm: EVM;
     private readonly logger?: Logger;
+    // Canonical calls and simulations share one mutex so a simulation's
+    // checkpoint/revert cannot overlap a canonical write.
     private readonly mutex: Mutex;
-    private simulationBaseEvm: EVM;
 
     constructor(evm: EVM, logger?: Logger) {
         super();
@@ -21,22 +23,19 @@ export default class ContractExecutor extends AContractExecutor {
         this.logger = logger?.child({
             component: "ContractExecutor"
         });
-        this.mutex = new Mutex(
-            this.logger?.child({
-                component: "ContractExecutor:Mutex"
-            })
-        );
-        this.simulationBaseEvm = evm.shallowCopy();
+        this.mutex = new Mutex();
     }
 
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
-        await this.mutex.lock({ taskName: "deploy" });
+        await this.mutex.lock({
+            taskName: "deploy",
+            logMeta: LoggerUtils.getContractCallMetadata(data)
+        });
 
         try {
             return await this.deployOn(this.evm, data);
         } finally {
-            this.simulationBaseEvm = this.evm.shallowCopy();
-            this.mutex.unlock();
+            this.mutex.unlock({ scheduleNextAsMacroTask: true });
         }
     }
 
@@ -44,13 +43,15 @@ export default class ContractExecutor extends AContractExecutor {
         data: Bytes,
         contractAddress: Address
     ): Promise<ContractExecutionResult> {
-        await this.mutex.lock({ taskName: "executeCall" });
+        await this.mutex.lock({
+            taskName: "executeCall",
+            logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
+        });
 
         try {
             return await this.executeCallOn(this.evm, data, contractAddress);
         } finally {
-            this.simulationBaseEvm = this.evm.shallowCopy();
-            this.mutex.unlock();
+            this.mutex.unlock({ scheduleNextAsMacroTask: true });
         }
     }
 
@@ -58,12 +59,26 @@ export default class ContractExecutor extends AContractExecutor {
         data: Bytes,
         contractAddress: Address
     ): Promise<ContractExecutionResult> {
-        const evm = this.simulationBaseEvm.shallowCopy();
-        await evm.journal.checkpoint();
+        await this.mutex.lock({
+            taskName: "simulateCall",
+            logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
+        });
+
+        // The mutex makes the canonical EVM the single owner of local state.
+        // Checkpointing here lets a simulation use that exact committed state
+        // while the outer revert keeps all of its mutations ephemeral.
+        const evm = this.evm;
         try {
-            return await this.executeCallOn(evm, data, contractAddress);
+            await evm.journal.checkpoint();
+            try {
+                return await this.executeCallOn(evm, data, contractAddress);
+            } finally {
+                await evm.journal.revert();
+            }
         } finally {
-            await evm.journal.revert();
+            // A burst of serialized simulations must yield to timers and I/O
+            // instead of draining the whole queue through microtasks.
+            this.mutex.unlock({ scheduleNextAsMacroTask: true });
         }
     }
 

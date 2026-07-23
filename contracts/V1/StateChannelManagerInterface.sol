@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "./types/DataTypes.sol";
 import "./types/DisputeTypes.sol";
+import "./types/DisputeFraudProofTypes.sol";
 
 abstract contract StateChannelManagerInterface {
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual;
@@ -49,6 +50,16 @@ abstract contract StateChannelManagerInterface {
 
     function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public virtual returns (bool);
 
+    function isInvalidBlockStructureInStateProof(StateProof memory stateProof, uint256 blockIndex)
+        public
+        virtual
+        returns (bool);
+
+    function findFirstInvalidBlockStructureInStateProof(StateProof memory stateProof)
+        public
+        virtual
+        returns (bool found, uint256 blockIndex);
+
     function verifyMilestones(
         bytes32 forkId,
         MilestoneProof[] memory milestoneProofs,
@@ -86,6 +97,11 @@ abstract contract StateChannelManagerInterface {
 
     function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public virtual;
 
+    function validateTimeoutCalldataPostedProof(TimeoutCalldataPosted memory proof, Dispute memory dispute)
+        public
+        virtual
+        returns (bool);
+
     function updateStateSnapshotFork(
         bytes32 channelId,
         StateSnapshot memory newStateSnapshot,
@@ -99,9 +115,17 @@ abstract contract StateChannelManagerInterface {
         MessageBlock[] memory outboundMessageBlocks
     ) public virtual;
 
-    function joinChannel(JoinChannelConfirmation memory joinChannelConfirmations, bytes32 expectedSnapshotHash)
-        public
-        virtual;
+    function joinChannel(
+        JoinChannelConfirmation memory joinChannelConfirmations,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId
+    ) public virtual;
+
+    function topUpBalance(
+        JoinChannelConfirmation memory joinChannelConfirmations,
+        bytes32 expectedSnapshotHash,
+        bytes32 expectedForkId
+    ) public virtual;
 
     function isForkDisputed(bytes32 channelId, bytes32 forkId) public view virtual returns (bool);
 

@@ -135,7 +135,10 @@ contract FraudProofFacet is StateChannelCommon {
             }
         } else {
             Block memory previousBlock = abi.decode(blockInvalidSTProof.previousBlock.encodedBlock, (Block));
-            if (fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))) return _invalid();
+            // Hashing canonical encoded bytes is equivalent to hashing the decoded block.
+            if (fraudBlock.previousBlockHash != keccak256(blockInvalidSTProof.previousBlock.encodedBlock)) {
+                return _invalid();
+            }
 
             if (
                 previousStateSnapshot.snapshotData.stateMachineStateHash != keccak256(previousStateStateMachineState)

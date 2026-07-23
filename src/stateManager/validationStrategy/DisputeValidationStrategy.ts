@@ -2,7 +2,9 @@ import { Block } from "@/models";
 import { BlockValidationResult, Hash, Signature } from "@/types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
-import AValidationStrategy from "./AValidationStrategy";
+import AValidationStrategy, {
+    ParticipantSnapshots
+} from "./AValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
@@ -12,6 +14,7 @@ import {
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Logger } from "@/utils";
+import { LocalDiamond } from "@typechain-types";
 
 export default class DisputeValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
@@ -22,6 +25,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         private readonly storage: Storage,
         private readonly dispute: DisputeStruct,
         private readonly blockIndexInUnfinalizedPartOfStateProof: number,
+        private readonly localDiamondContract: LocalDiamond,
         logger: Logger
     ) {
         super();
@@ -48,6 +52,29 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         );
     }
 
+    private async handleInvalidBlockStructure(): Promise<BlockValidationResult> {
+        const isInvalid =
+            await this.localDiamondContract.isInvalidBlockStructureInStateProof.staticCall(
+                this.dispute.input.stateProof,
+                this.blockIndexInUnfinalizedPartOfStateProof
+            );
+        // Reaching this strategy hook means the off-chain replay observed an
+        // authentication or linkage deviation. That observation alone cannot
+        // kill a dispute: the committed stateProof must satisfy the canonical
+        // Solidity fraud-proof predicate that will also run on-chain. A local
+        // linkage deviation can, for example, come from a missing local
+        // baseline while the blocks committed inside the proof remain linked.
+        // In that case this proof type does not apply, so SUCCESS means
+        // "continue replay", not "the dispute is valid". A later transition,
+        // snapshot, or other authoritative check must make the final decision.
+        if (!isInvalid) return BlockValidationResult.SUCCESS;
+        this.disputeFraudProofService.createDisputeInvalidBlockStructure(
+            this.dispute,
+            this.blockIndexInUnfinalizedPartOfStateProof
+        );
+        return BlockValidationResult.DISPUTE;
+    }
+
     public async interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
     ): Promise<boolean> {
@@ -56,7 +83,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
                 // do nothing, do not disconnect
                 return true;
             case BlockValidationResult.NOT_READY:
-                return false;
+                throw new Error(
+                    "NOT_READY result in DisputeValidationStrategy"
+                );
             case BlockValidationResult.DUPLICATE:
                 return true;
             case BlockValidationResult.NOT_ENOUGH_TIME:
@@ -64,7 +93,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
                     "NOT_ENOUGH_TIME result in DisputeValidationStrategy"
                 );
             case BlockValidationResult.DISCONNECT:
-                return false;
+                throw new Error(
+                    "DISCONNECT result in DisputeValidationStrategy"
+                );
             case BlockValidationResult.BROADCAST:
                 throw new Error(
                     "BROADCAST result in DisputeValidationStrategy"
@@ -80,19 +111,24 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
-        return BlockValidationResult.DISCONNECT;
+        return this.handleInvalidBlockStructure();
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
-        return BlockValidationResult.DISCONNECT;
+        throw new Error(
+            "DisputeValidationStrategy - wrongChannel should not be called"
+        );
     }
     public async channelNotOpened(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        return BlockValidationResult.DISCONNECT;
+        throw new Error(
+            "DisputeValidationStrategy - channelNotOpened should not be called"
+        );
     }
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
-        unexpectedSignatures: Set<Signature>
+        unexpectedSignatures: Set<Signature>,
+        participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
         const block = entry.block;
         if (unexpectedSignatures.has(block.originalSignature)) {
@@ -100,7 +136,21 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             // (a union member) packaged this block into the stateProof — kill
             // the dispute with evidence against the submitter. No transport
             // punishment: these blocks are replayed from a proof, not gossiped.
-            return this.invalidStateTransitionDetected(block);
+            if (!participantSnapshots) {
+                this.logger.debug(
+                    "Skipping dispute outsider-author proof because participant snapshots are unavailable",
+                    { blockHash: block.hash, path: "signature-union" }
+                );
+                return BlockValidationResult.SUCCESS;
+            }
+            this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
+                this.dispute,
+                block,
+                participantSnapshots.previous,
+                participantSnapshots.resulting,
+                this.blockIndexInUnfinalizedPartOfStateProof
+            );
+            return BlockValidationResult.DISPUTE;
         }
         // Stray confirmation signatures don't invalidate the replayed block.
         block.removeConfirmationSignatures(unexpectedSignatures);
@@ -119,11 +169,36 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DUPLICATE;
     }
     public async blockAuthorIsNotParticipant(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        // TODO - DisputeFraudProof - previousStateSnapshot.participants does not contain block author -> kill dispute
-        // let it fail on invalid STF or prior
-        return BlockValidationResult.SUCCESS;
+        const block = entry.block;
+        const previousStateSnapshot = this.storage.getPreviousStateSnapshot(
+            block.coordinates
+        );
+        const resultingStateSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                block.stateSnapshotHash
+            );
+        if (!previousStateSnapshot || !resultingStateSnapshot) {
+            this.logger.debug(
+                "Skipping dispute outsider-author proof because participant snapshots are unavailable",
+                {
+                    blockHash: block.hash,
+                    path: "early-author",
+                    previousSnapshotFound: previousStateSnapshot !== undefined,
+                    resultingSnapshotFound: resultingStateSnapshot !== undefined
+                }
+            );
+            return BlockValidationResult.SUCCESS;
+        }
+        this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
+            this.dispute,
+            block,
+            previousStateSnapshot,
+            resultingStateSnapshot,
+            this.blockIndexInUnfinalizedPartOfStateProof
+        );
+        return BlockValidationResult.DISPUTE;
     }
     public async doubleSignDetected(
         conflictingBlock: Block,
@@ -180,28 +255,28 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        return this.blockIsNotLinkedAndIsNotFirstBlock(block);
+        return this.handleInvalidBlockStructure();
     }
     public async blockForkIsDisputed(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        // continue syncing
-        return BlockValidationResult.SUCCESS;
+        throw new Error(
+            "DisputeValidationStrategy - blockForkIsDisputed should not be called"
+        );
     }
     public async blockIsNotNextAndIsInTheFuture(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        return BlockValidationResult.DISCONNECT;
+        throw new Error(
+            "DisputeValidationStrategy - blockIsNotNextAndIsInTheFuture should not be called"
+        );
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        const hash =
-            this.fraudProofService.createInvalidStateTransitionProof(block);
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
-        return BlockValidationResult.DISPUTE;
+        return this.handleInvalidBlockStructure();
     }
     public async objectiveInvalidTimestampDetected(
         block: Block

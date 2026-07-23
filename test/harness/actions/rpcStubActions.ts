@@ -1,6 +1,7 @@
 import { Logger } from "@/utils";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { ReductionSimulationErrorName } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 
 /**
  * RPC-method stubs that wrap a service's `createRPCMethods` host-side.
@@ -108,6 +109,54 @@ export class RpcStubActions<
             .request();
     }
 
+    async holdDisputeCommittedEvents(
+        peerIndex: number,
+        options: {
+            /**
+             * Let the first new dispute event reach the peer, then drop later
+             * events. Defaults to true so the peer validates the original
+             * dispute while missing replacement evidence; false drops the
+             * original event as well.
+             */
+            passFirst?: boolean;
+        } = {}
+    ): Promise<(replay: boolean) => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubHoldDisputeCommittedEvents(options.passFirst ?? true)
+            .request();
+        return async (replay: boolean) => {
+            await this.harness
+                .control(peer)
+                .stub.restoreDisputeCommittedEvents(replay)
+                .request();
+        };
+    }
+
+    async getHeldDisputeCommittedCount(peerIndex: number): Promise<number> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.getHeldDisputeCommittedCount()
+            .request();
+    }
+
+    async failNextFinalDisputePreparation(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubFailNextFinalDisputePreparation()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreFinalDisputePreparation()
+                .request();
+        };
+    }
+
     /**
      * Count `onSpectateRequest` calls reaching the given peer (real handler still
      * runs). Returns a teardown. Pair with `getSpectateRequestCount`.
@@ -212,41 +261,38 @@ export class RpcStubActions<
         };
     }
 
-    /**
-     * Make `reduceLocally` a counted no-op on the peer (simulates "nothing to
-     * reduce yet", e.g. an unexpired kill period). Returns a teardown.
-     */
-    async reduceLocallyNoop(peerIndex: number): Promise<() => Promise<void>> {
+    /** Make `ReductionManager.tryReduce` a counted no-op. Returns a teardown. */
+    async reduceNoop(peerIndex: number): Promise<() => Promise<void>> {
         const peer = this.harness.getPeer(peerIndex);
-        await this.harness.control(peer).stub.stubReduceLocallyNoop().request();
+        await this.harness.control(peer).stub.stubReduceNoop().request();
         return async () => {
-            await this.harness
-                .control(peer)
-                .stub.restoreReduceLocally()
-                .request();
+            await this.harness.control(peer).stub.restoreReduce().request();
         };
     }
 
-    /** Count `reduceLocally` calls while forwarding to the real one. */
-    async recordReduceLocally(peerIndex: number): Promise<() => Promise<void>> {
+    /** Count `ReductionManager.tryReduce` calls while forwarding to the real one. */
+    async recordReduce(peerIndex: number): Promise<() => Promise<void>> {
         const peer = this.harness.getPeer(peerIndex);
-        await this.harness
-            .control(peer)
-            .stub.stubRecordReduceLocally()
-            .request();
+        await this.harness.control(peer).stub.stubRecordReduce().request();
         return async () => {
-            await this.harness
-                .control(peer)
-                .stub.restoreReduceLocally()
-                .request();
+            await this.harness.control(peer).stub.restoreReduce().request();
         };
     }
 
-    async reduceLocallyCallCount(peerIndex: number): Promise<number> {
+    async reduceCallCount(peerIndex: number): Promise<number> {
         return await this.harness
             .control(this.harness.getPeer(peerIndex))
-            .stub.getReduceLocallyCallCount()
+            .stub.getReduceCallCount()
             .request();
+    }
+
+    async releaseReductionWithSimulationError(
+        peerIndex: number,
+        errorName: ReductionSimulationErrorName
+    ): Promise<void> {
+        const stub = this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await stub.stubNextReductionSimulationError(errorName).request();
+        await stub.restoreReductionTasks(true).request();
     }
 
     /**

@@ -7,7 +7,7 @@ import Storage from "@/storage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { Block, StateSnapshot } from "@/models";
 import { Logger } from "@/utils";
-import { BlockValidationResult, OnChainBlockStatus, TimeConfig } from "@/types";
+import { BlockValidationResult, TimeConfig, firstBlockGrace } from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
 import FraudProofService from "./utils/FraudProofService";
@@ -16,10 +16,9 @@ import type StateManager from "@/stateManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
-import BlockDataAvailabilityService from "./BlockDataAvailabilityService";
+import EventSyncService from "./EventSyncService";
 
-enum OnChainPostTiming {
-    NOT_READY,
+export enum OnChainPostTiming {
     NOT_POSTED,
     ON_TIME,
     TOO_LATE
@@ -33,7 +32,7 @@ export default class ValidationService {
         private readonly diamondStateMachine: ADiamondStateMachine,
         private readonly stateChannelManagerContract: StateChannelManagerProxy,
         private readonly timeConfig: TimeConfig,
-        private readonly blockDataAvailabilityService: BlockDataAvailabilityService,
+        private readonly eventSyncService: EventSyncService,
         private readonly stateManager: StateManager,
         logger: Logger
     ) {
@@ -88,7 +87,7 @@ export default class ValidationService {
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
-            return await strategy.blockAuthorIsNotParticipant(block);
+            return await strategy.blockAuthorIsNotParticipant(entry);
         }
 
         // Check conflicting block
@@ -151,7 +150,7 @@ export default class ValidationService {
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
             // TODO -> here for the dispute strategy we can kill the dispute, since the stateProof comitted to the whole structure
-            return await strategy.blockIsNotLinkedAndIsNotFirstBlock(block);
+            return await strategy.blockIsNotLinkedAndIsNotFirstBlock(entry);
         }
 
         // isNextLeader
@@ -289,7 +288,7 @@ export default class ValidationService {
             return await strategy.wrongGenesisDetected(entry);
         }
 
-        return await strategy.conflictingButNotLinkedBlockDetected(block);
+        return await strategy.conflictingButNotLinkedBlockDetected(entry);
     }
 
     public async isDisputedFork(
@@ -391,8 +390,11 @@ export default class ValidationService {
             ));
 
         if (!isValidTimestamp) {
+            const graceSeconds = firstBlockGrace(this.timeConfig, block.height);
             const violatedRule =
-                "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
+                block.height === 0
+                    ? "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + evidenceTime + p2pTime"
+                    : "timestamp >= previousOriginalTimestamp && timestamp <= previousTimestamp + p2pTime";
 
             // if first block or previous block has on-chain timestamp -> we have all the data (best timestamp) -> safe to create a fraud proof
             if (
@@ -405,7 +407,7 @@ export default class ValidationService {
                 logTimeFailure({
                     validationResult: BlockValidationResult.DISPUTE,
                     checkType: "objective",
-                    allowedSkewSeconds: this.timeConfig.p2pTime,
+                    allowedSkewSeconds: graceSeconds + this.timeConfig.p2pTime,
                     violatedRule,
                     previousTimestamp,
                     previousOriginalTimestamp
@@ -414,37 +416,23 @@ export default class ValidationService {
             }
 
             // Try on-chain query to schedule validation for the previous block.
-            const scheduleStatus =
-                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
-                    previousBlock.forkId,
-                    previousBlock.height,
-                    previousBlock.author
-                );
+            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                previousBlock.forkId,
+                previousBlock.height,
+                previousBlock.author
+            );
 
-            if (
-                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
-                    scheduleStatus
-                )
-            ) {
-                await this.stateManager.ingestBlockConfirmation(
-                    block.blockConfirmationStruct,
-                    { onChainTimestamp: block.onChainTimestamp }
+            const recoveredPreviousCalldata =
+                this.storage.blockCalldata.getMatchingBlockCalldata(
+                    previousBlock
                 );
-                this.logger.info(
-                    "validateTimeLogic - queued block while waiting for previous on-chain block validation",
-                    {
-                        block: LoggerUtils.getBlockMetadata(
-                            block,
-                            this.storage
-                        ),
-                        previousBlock: LoggerUtils.getBlockMetadata(
-                            previousBlock,
-                            this.storage
-                        ),
-                        scheduleStatus: OnChainBlockStatus[scheduleStatus]
-                    }
+            if (recoveredPreviousCalldata) {
+                previousBlock.onChainTimestamp =
+                    recoveredPreviousCalldata.onChainTimestamp;
+                this.storage.blocks.setOnChainTimestamp(
+                    previousBlock.hash,
+                    recoveredPreviousCalldata.onChainTimestamp
                 );
-                return BlockValidationResult.NOT_READY;
             }
 
             const previousBlockOnChainTimestamp =
@@ -461,7 +449,7 @@ export default class ValidationService {
                 logTimeFailure({
                     validationResult: BlockValidationResult.DISPUTE,
                     checkType: "objective",
-                    allowedSkewSeconds: this.timeConfig.p2pTime,
+                    allowedSkewSeconds: graceSeconds + this.timeConfig.p2pTime,
                     violatedRule,
                     previousTimestamp,
                     previousOriginalTimestamp
@@ -485,18 +473,20 @@ export default class ValidationService {
             previousTimestamp,
             block
         );
-        if (onChainPostTiming === OnChainPostTiming.NOT_READY) {
-            return BlockValidationResult.NOT_READY;
-        }
-
         if (onChainPostTiming === OnChainPostTiming.TOO_LATE) {
             // Block posted too late - create InvalidTimestamp fraud proof
             logTimeFailure({
                 validationResult: BlockValidationResult.DISPUTE,
                 checkType: "objective",
-                allowedSkewSeconds: this.timeConfig.p2pTime,
+                allowedSkewSeconds:
+                    firstBlockGrace(this.timeConfig, block.height) +
+                    this.timeConfig.p2pTime +
+                    this.timeConfig.agreementTime +
+                    this.timeConfig.chainFallbackTime,
                 violatedRule:
-                    "onChainTimestamp <= previousTimestamp + p2pTime + agreementTime + chainFallbackTime",
+                    block.height === 0
+                        ? "onChainTimestamp <= previousTimestamp + evidenceTime + p2pTime + agreementTime + chainFallbackTime"
+                        : "onChainTimestamp <= previousTimestamp + p2pTime + agreementTime + chainFallbackTime",
                 previousTimestamp,
                 previousOriginalTimestamp
             });
@@ -585,34 +575,11 @@ export default class ValidationService {
 
         // if doesn't have on-chain timestamp try and fetch it
         if (block.onChainTimestamp === undefined) {
-            const scheduleStatus =
-                await this.blockDataAvailabilityService.tryFetchOnChainBlockAndScheduleValidation(
-                    block.forkId,
-                    block.height,
-                    block.author
-                );
-
-            if (
-                this.blockDataAvailabilityService.shouldDeferCurrentValidation(
-                    scheduleStatus
-                )
-            ) {
-                await this.stateManager.ingestBlockConfirmation(
-                    block.blockConfirmationStruct,
-                    { onChainTimestamp: block.onChainTimestamp }
-                );
-                this.logger.info(
-                    "isPostedOnChainTooLate - queued block while waiting for current on-chain block validation",
-                    {
-                        block: LoggerUtils.getBlockMetadata(
-                            block,
-                            this.storage
-                        ),
-                        scheduleStatus: OnChainBlockStatus[scheduleStatus]
-                    }
-                );
-                return OnChainPostTiming.NOT_READY;
-            }
+            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                block.forkId,
+                block.height,
+                block.author
+            );
 
             const onChainTimestamp = this.getStoredOnChainTimestamp(block);
 
@@ -632,7 +599,8 @@ export default class ValidationService {
             previousTimestamp +
             this.timeConfig.p2pTime +
             this.timeConfig.agreementTime +
-            this.timeConfig.chainFallbackTime;
+            this.timeConfig.chainFallbackTime +
+            firstBlockGrace(this.timeConfig, block.height);
 
         if (block.onChainTimestamp > maxAllowedTimestamp) {
             return OnChainPostTiming.TOO_LATE;
@@ -644,11 +612,8 @@ export default class ValidationService {
     private getStoredOnChainTimestamp(block: Block): Timestamp | undefined {
         return (
             this.storage.blocks.getBlock(block.hash)?.onChainTimestamp ??
-            this.storage.blockCalldata.getBlockCalldata(
-                block.forkId,
-                block.height,
-                block.author
-            )?.onChainTimestamp ??
+            this.storage.blockCalldata.getMatchingBlockCalldata(block)
+                ?.onChainTimestamp ??
             block.onChainTimestamp
         );
     }

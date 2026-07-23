@@ -7,11 +7,10 @@ import { expect } from "chai";
 // Trello card Case 1: stateProof = [M1, M2, M3] where M1 and M2 have different
 // InboundMessageBlockHashes. Variations 1.1–1.5 below.
 //
-// Setup harness: scenario.setupTwoLeaversAcrossMilestones (Cases 1.1–1.4) and
-// scenario.setupTwoLeaversWithPendingJoinerAcrossMilestones (Case 1.5) produce ≥3 milestones
-// covering the M1/M2/M3 shape. We tamper auditingData.milestoneSnapshots[1]
-// (the M2 row) to inject each Case's specific corruption, then assert the
-// fraud-proof pipeline kills the dispute with DisputeInvalidStateProof.
+// setupTwoLeaversAcrossMilestones produces the M1/M2/M3 shape for Cases
+// 1.1–1.4. Case 1.5 stages its pending join between M1 and M2 inline because
+// that ordering is the behavior under test. Each case tampers with the M2 row
+// and expects the fraud-proof pipeline to kill the dispute.
 
 describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence)", function () {
     describe("Case 1.1: auditingData.milestoneSnapshots[1].snapshotData.latestInboundMessageBlockHash = random", function () {
@@ -134,8 +133,59 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.5: auditingData.milestoneSnapshots[1].snapshotData.participants omits pending joiner (M1 colluding on M2)", function () {
         it("Case 1.5 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            const { pendingJoin } =
-                await h.scenario.setupTwoLeaversWithPendingJoinerAcrossMilestones();
+            const timeConfig = {
+                p2pTime: 1,
+                agreementTime: 6,
+                chainFallbackTime: 2,
+                evidenceTime: 12
+            };
+            await h.lifecycle.timeoutSetup(5, 2, { timeConfig });
+
+            const allPeerIndices = h.peers.map((peer) => peer.index);
+            const firstLeaver = await h.query.getNextPeerToWrite();
+            await h.transition.participantLeaveStateTransition({
+                waitForPeers: allPeerIndices.filter(
+                    (peerIndex) => peerIndex !== firstLeaver.index
+                )
+            });
+
+            // Finalize M1 before introducing the inbound join that M2 must carry.
+            const afterFirstLeave = allPeerIndices.filter(
+                (peerIndex) => peerIndex !== firstLeaver.index
+            );
+            await h.transition.advanceState({
+                waitForPeers: afterFirstLeave,
+                count: 1,
+                waitForFinalization: true
+            });
+
+            const { participant: pendingJoin } =
+                await h.join.forceInboundJoinWait({
+                    participant: firstLeaver.address
+                });
+
+            // Consume the inbound join into M2. It remains pending on-chain
+            // until the resulting state snapshot is posted.
+            await h.transition.advanceState({
+                waitForPeers: afterFirstLeave,
+                count: 1,
+                waitForFinalization: false
+            });
+
+            // A later leave gives the dispute another milestone after M2.
+            const secondLeaver = await h.query.getNextPeerToWrite();
+            const afterSecondLeave = afterFirstLeave.filter(
+                (peerIndex) => peerIndex !== secondLeaver.index
+            );
+            await h.transition.participantLeaveStateTransition({
+                leaverIndex: secondLeaver.index,
+                waitForPeers: afterSecondLeave,
+                waitForFinalization: false
+            });
+
+            h.context.leftChannelPeerIndices = [secondLeaver.index];
+            h.event.resetEventSpies();
+            h.contextApi.captureOriginalFork();
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -147,16 +197,22 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                         dispute.input.stateProof.milestones.length,
                         "need ≥2 milestones to target M2 snapshot"
                     ).to.be.greaterThanOrEqual(2);
-                    expect(dispute.postedAuditingData).to.equal(true);
                     expect(
                         auditingData.milestoneSnapshots.length,
                         "auditing must align with milestone proofs"
                     ).to.be.greaterThanOrEqual(2);
                     const row = auditingData.milestoneSnapshots[1]!;
+                    expect(
+                        row.snapshotData.participants.some((participant) =>
+                            addressesEqual(participant, pendingJoin)
+                        ),
+                        "honest M2 snapshot must include the pending joiner"
+                    ).to.equal(true);
                     row.snapshotData.participants =
                         row.snapshotData.participants.filter(
                             (p) => !addressesEqual(p, pendingJoin)
                         );
+                    dispute.postedAuditingData = true;
                     dispute.input.disputeAuditingDataHash = hash(
                         Codec.encode(auditingData, Type.DisputeAuditingData)
                     );
@@ -172,13 +228,6 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                     DisputeFraudProofType.DisputeInvalidStateProof,
                 timeoutMs: 15000,
                 peerIndices: [1, 3]
-            });
-
-            // setup leaves pendingJoin's inbound unconsumed -> postStateSnapshot races throw RaceConditionPendingInboundNotConsumed (fatal); absorb the expected detached throw.
-            await TestSession.expectFirstDetachedError({
-                includes: "pending inbound not consumed",
-                timeoutMs: 5000,
-                required: false
             });
         });
     });

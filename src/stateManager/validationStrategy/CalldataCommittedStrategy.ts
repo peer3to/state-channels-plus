@@ -4,7 +4,9 @@ import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import AValidationStrategy from "./AValidationStrategy";
+import AValidationStrategy, {
+    ParticipantSnapshots
+} from "./AValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import DisputeManager from "@/disputeManager";
 import BlockValidationStrategy from "./BlockValidationStrategy";
@@ -44,7 +46,8 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     }
     public async notAllSingersAreParticipants(
         _entry: QueuedBlockEntry,
-        _unexpectedSignatures: Set<Signature>
+        _unexpectedSignatures: Set<Signature>,
+        _participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
         // Calldata confirmations carry only the author's signature, and the
         // author was already authenticated against the chain event.
@@ -67,7 +70,7 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async blockAuthorIsNotParticipant(
-        _block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         throw new Error(
             "CalldataCommittedStrategy - blockAuthorIsNotParticipant should not be collected"
@@ -105,10 +108,10 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return this.blockValidationStrategy.conflictingButNotLinkedBlockDetected(
-            _block
+            entry
         );
     }
     public async blockForkIsDisputed(
@@ -124,13 +127,13 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // TODO - this one is anyoing since we have to treat this as `junk` even though peers are maybe colluding to perform a double sign or invalid state transition - we don't have the data for that
         // We have to FORCE TIMEOUT this - the force timeout challenge HAS TO require that presenting this calldata on-chain is linked to the dispute.StateProof for the disputeFraudProof to be accepted,
         // otherwise our dispute.StateProof will reveal information for the timeout peer to do a dispute containing a double sign or invalid state transition fraud proof, which when reduce will cancel the timeout
         return this.blockValidationStrategy.blockIsNotLinkedAndIsNotFirstBlock(
-            _block
+            entry
         );
     }
     public async objectiveInvalidTimestampDetected(
