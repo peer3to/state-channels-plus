@@ -11,8 +11,11 @@ const COLORS = {
     blue: "\x1b[34m",
     orange: "\x1b[38;5;208m",
     green: "\x1b[32m",
+    lightGreen: "\x1b[92m",
     red: "\x1b[31m",
     yellow: "\x1b[33m",
+    darkYellow: "\x1b[33m",
+    lightYellow: "\x1b[93m",
     purple: "\x1b[35m",
     reset: "\x1b[0m"
 };
@@ -36,14 +39,37 @@ function countOomEvents(text) {
     return workerHits + processHit;
 }
 
-// Event-loop starvation lines (the harness sets a 1s threshold). Counted for
-// every test, pass or fail, so passing-but-starved tests are still surfaced.
+// A watchdog error is often propagated through several peers and the harness,
+// which repeats the exact message in the combined log. Treat one distinct
+// delay/threshold pair as one starvation event rather than counting each copy.
 const STARVATION_RE =
-    /Event loop delay [\d.]+ms exceeded configured threshold/g;
+    /Event loop delay ([\d.]+)ms exceeded configured threshold ([\d.]+)ms/g;
+
+function parseStarvation(text) {
+    const events = new Map();
+    if (text) {
+        for (const match of text.matchAll(STARVATION_RE)) {
+            const delayMs = Number(match[1]);
+            const thresholdMs = Number(match[2]);
+            if (!Number.isFinite(delayMs) || !Number.isFinite(thresholdMs))
+                continue;
+            events.set(`${delayMs}:${thresholdMs}`, {
+                delayMs,
+                thresholdMs
+            });
+        }
+    }
+    return {
+        count: events.size,
+        maxDelayMs: Math.max(
+            0,
+            ...[...events.values()].map((event) => event.delayMs)
+        )
+    };
+}
 
 function countStarvation(text) {
-    if (!text) return 0;
-    return (text.match(STARVATION_RE) || []).length;
+    return parseStarvation(text).count;
 }
 
 // Per-setup timing markers the harness writes to stdout. Summed across all
@@ -56,7 +82,7 @@ function parseTimings(text) {
     let deployMs = 0;
     let workerBootMs = 0;
     // Peak event-loop delay per thread role (main + the peers' sdk/vm workers).
-    const el = { main: 0, sdk: 0, vm: 0 };
+    const el = { main: 0, sdk: 0, vm: 0, watchdog: 0 };
     let found = false;
     if (text) {
         let m;
@@ -80,8 +106,12 @@ function parseTimings(text) {
                 // Malformed marker — ignore.
             }
         }
+        // The fatal watchdog error may be serialized without its preceding
+        // timing marker. Keep its real delay in the peak without guessing
+        // which thread produced it.
+        el.watchdog = Math.round(parseStarvation(text).maxDelayMs);
     }
-    const maxEventLoopDelayMs = Math.max(el.main, el.sdk, el.vm);
+    const maxEventLoopDelayMs = Math.max(el.main, el.sdk, el.vm, el.watchdog);
     return {
         startupMs,
         deployMs,
@@ -92,17 +122,95 @@ function parseTimings(text) {
     };
 }
 
+// Resolve, following symlinks where the path (or its nearest ancestor) exists,
+// so a symlinked ./logs is compared by its real target on both sides.
+function realpathOrResolve(p) {
+    const resolved = path.resolve(p);
+    try {
+        return fs.realpathSync(resolved);
+    } catch {
+        return resolved;
+    }
+}
+
+// Never auto-purge (nor purge with the flag) the CWD/repo root or the fs root -
+// a mis-resolved log dir must not wipe the working tree. Checks BOTH the lexical
+// resolved path AND its real (symlink-followed) target, since fs.rmSync operates
+// through symlinks: `--logDir ./logs` where `./logs` links to the repo root
+// resolves lexically to `<repo>/logs` but really targets `<repo>`.
+function isDangerousPurgeTarget(resolved) {
+    const cwd = process.cwd();
+    const cwdReal = realpathOrResolve(cwd);
+    for (const p of [resolved, realpathOrResolve(resolved)]) {
+        if (p === cwd || p === cwdReal || p === path.parse(p).root) return true;
+    }
+    return false;
+}
+
+// The default ./logs dir and anything under it (run-N dirs) are safe to
+// purge/clean without the explicit allow flag. Compare real paths so a
+// symlinked ./logs can't smuggle a purge of its target past the gate; and if
+// the default log dir itself resolves somewhere dangerous (e.g. a symlink to the
+// repo root), nothing is "safely within" it.
+function isWithinDefaultLogDir(resolved) {
+    const expected = realpathOrResolve(DEFAULT_LOG_DIR);
+    if (isDangerousPurgeTarget(expected)) return false;
+    const real = realpathOrResolve(resolved);
+    return real === expected || real.startsWith(expected + path.sep);
+}
+
+/**
+ * Allocate the next run-N directory under baseDir. Runs accumulate
+ * (./logs/run-0, ./logs/run-1, ...) so error logs from earlier runs
+ * survive for cross-run comparison.
+ */
+function nextRunDir(baseDir) {
+    const base = path.resolve(baseDir);
+    // Refuse BEFORE any mkdir/readdir: run allocation must not write through a
+    // symlinked base whose real target is the repo root / fs root (e.g. a
+    // `./logs -> .` symlink would otherwise scatter run-N dirs at the repo root
+    // before the later purge guard even runs).
+    if (isDangerousPurgeTarget(base)) {
+        throw new Error(
+            `Refusing to allocate run dirs under ${base}: it resolves to the repo root / fs root.`
+        );
+    }
+    fs.mkdirSync(base, { recursive: true });
+
+    let next = 0;
+    for (const entry of fs.readdirSync(base)) {
+        const match = /^run-(\d+)$/.exec(entry);
+        if (match) next = Math.max(next, Number(match[1]) + 1);
+    }
+    // mkdir non-recursive so a concurrent run can't silently share a dir.
+    for (;;) {
+        const dir = path.join(base, `run-${next}`);
+        try {
+            fs.mkdirSync(dir);
+            return dir;
+        } catch (err) {
+            if (err.code !== "EEXIST") throw err;
+            next++;
+        }
+    }
+}
+
 function safeEmptyDir(dirPath, allowLogdirPurge) {
     const resolved = path.resolve(dirPath);
-    const expected = path.resolve(DEFAULT_LOG_DIR);
 
-    // Safety: only auto-purge the default ./logs directory unless explicitly allowed.
-    const canAutoPurge = resolved === expected;
+    // Never purge the repo root / fs root, even with the flag.
+    if (isDangerousPurgeTarget(resolved)) {
+        console.warn(`Refusing to purge ${resolved} (repo root / fs root).`);
+        return;
+    }
+
+    // Safety: only auto-purge dirs under the default ./logs unless explicitly allowed.
+    const canAutoPurge = isWithinDefaultLogDir(resolved);
     const allowUnsafe = allowLogdirPurge === true;
 
     if (!canAutoPurge && !allowUnsafe) {
         console.warn(
-            `Skipping purge of ${resolved}. Set ALLOW_LOGDIR_PURGE=1 to allow.`
+            `Skipping purge of ${resolved}. Pass --allow-logdir-purge to allow.`
         );
         return;
     }
@@ -115,13 +223,18 @@ function safeEmptyDir(dirPath, allowLogdirPurge) {
 
 function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
     const resolved = path.resolve(logDir);
-    const expected = path.resolve(DEFAULT_LOG_DIR);
-    const canAutoPurge = resolved === expected;
+
+    if (isDangerousPurgeTarget(resolved)) {
+        console.warn(`Refusing to clean ${resolved} (repo root / fs root).`);
+        return;
+    }
+
+    const canAutoPurge = isWithinDefaultLogDir(resolved);
     const allowUnsafe = allowLogdirPurge === true;
 
     if (!canAutoPurge && !allowUnsafe) {
         console.warn(
-            `Skipping end-of-run cleanup in ${resolved}. Set ALLOW_LOGDIR_PURGE=1 to allow.`
+            `Skipping end-of-run cleanup in ${resolved}. Pass --allow-logdir-purge to allow.`
         );
         return;
     }
@@ -140,17 +253,19 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
 function runHeader({
     taskCount,
     grep,
+    e2eOnly,
     slotCount,
     threadModes,
     targetLoad,
+    tickMs,
     memBoundGb,
     concurrencyCap
 }) {
     console.log(
-        `Running ${taskCount} E2E task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
+        `Running ${taskCount} ${e2eOnly ? "E2E" : "Mocha"} task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
     console.log(
-        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
+        `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
     );
 }
 
@@ -204,6 +319,16 @@ function hold({ seq, total, reason }) {
     console.log(colorize("orange", `[${seq}/${total}] holding — ${reason}`));
 }
 
+// Light yellow: a starved task gets its single clean retry.
+function starvationRetry({ seq, total, label, starveCount }) {
+    console.log(
+        colorize(
+            "lightYellow",
+            `[${seq}/${total}] STARVED x${starveCount} — rescheduling once [${label}]`
+        )
+    );
+}
+
 // Green PASS / red FAIL, with timing + starvation annotations.
 function result({
     completed,
@@ -213,7 +338,8 @@ function result({
     durationMs,
     oomCount,
     starveCount,
-    timing
+    timing,
+    repeatedStarvation = false
 }) {
     const tag = `[${completed}/${total}]`;
     const duration = formatDurationMs(durationMs);
@@ -221,7 +347,7 @@ function result({
         ? ` · startup ${formatDurationMs(timing.startupMs)} · deploy ${formatDurationMs(timing.deployMs)}`
         : " · timing n/a";
     const elMaxStr = timing.maxEventLoopDelayMs
-        ? ` · elMax harness/main:${timing.el.main}ms [peer:{sdk:${timing.el.sdk}ms,vm:${timing.el.vm}ms}]`
+        ? ` · elMax harness/main:${timing.el.main}ms [peer:{sdk:${timing.el.sdk}ms,vm:${timing.el.vm}ms},watchdog:${timing.el.watchdog}ms]`
         : "";
     const starveStr = starveCount > 0 ? ` · starved x${starveCount}` : "";
     if (code === 0) {
@@ -238,12 +364,18 @@ function result({
         const reason =
             oomCount > 0
                 ? `OOM x${oomCount}`
-                : starvedFail
-                  ? "starved"
-                  : `exit ${code}`;
+                : repeatedStarvation
+                  ? "starved twice"
+                  : starvedFail
+                    ? "starved"
+                    : `exit ${code}`;
         console.log(
             colorize(
-                starvedFail ? "yellow" : "red",
+                repeatedStarvation
+                    ? "darkYellow"
+                    : starvedFail
+                      ? "yellow"
+                      : "red",
                 `${tag} FAIL [${reason}] [${label}]${timingStr}${elMaxStr}${starveStr}`
             )
         );
@@ -258,6 +390,13 @@ function gasPeakLine(slotId, { used, limit, pct, block }) {
             `slot ${slotId} · block #${block} gas ${used.toLocaleString()}/${limit.toLocaleString()} (${pct.toFixed(1)}%) ↑ new peak`
         )
     );
+}
+
+function getStarvationSummary(tasks) {
+    return {
+        recovered: tasks.filter((task) => task.starvationRetrySucceeded),
+        repeated: tasks.filter((task) => task.repeatedStarvation)
+    };
 }
 
 function summary({
@@ -277,7 +416,7 @@ function summary({
     const totalPassing = tasks.length - totalFailing;
     const speedup = wallMs > 0 ? sumDurationMs / wallMs : 0;
     const oomTasks = tasks.filter((t) => (t.oomCount || 0) > 0);
-    const starvedTasks = tasks.filter((t) => (t.starveCount || 0) > 0);
+    const starvation = getStarvationSummary(tasks);
     const totalStartupMs = tasks.reduce((s, t) => s + (t.startupMs || 0), 0);
     const totalDeployMs = tasks.reduce((s, t) => s + (t.deployMs || 0), 0);
     const totalWorkerBootMs = tasks.reduce(
@@ -312,15 +451,26 @@ function summary({
             `  Raise SCP_WORKER_MAX_OLD_SPACE_MB / NODE_OPTIONS=--max-old-space-size, lower --slots, or lower --target-load.`
         );
     }
-    if (starvedTasks.length > 0) {
-        const totalStarve = starvedTasks.reduce((s, t) => s + t.starveCount, 0);
+    if (starvation.recovered.length > 0) {
+        console.log(
+            colorize(
+                "lightGreen",
+                `  ${starvation.recovered.length} test(s) recovered from starvation on their second run`
+            )
+        );
+    }
+    if (starvation.repeated.length > 0) {
+        const totalStarve = starvation.repeated.reduce(
+            (sum, task) => sum + task.starveCount,
+            0
+        );
         console.log(
             colorize(
                 "yellow",
-                `  ${starvedTasks.length} test(s) hit event-loop starvation (>1s, ${totalStarve} event(s) total):`
+                `  ${starvation.repeated.length} test(s) hit event-loop starvation on both runs (>1s, ${totalStarve} event(s) total):`
             )
         );
-        for (const t of starvedTasks) {
+        for (const t of starvation.repeated) {
             console.log(`    - ${t.label}: starved x${t.starveCount}`);
         }
     }
@@ -346,11 +496,13 @@ function summary({
     if (elPeak && elPeak.maxEventLoopDelayMs) {
         const e = elPeak.el || {};
         const role =
-            elPeak.maxEventLoopDelayMs === e.sdk
-                ? "peer/sdk"
-                : elPeak.maxEventLoopDelayMs === e.vm
-                  ? "peer/vm"
-                  : "harness/main";
+            elPeak.maxEventLoopDelayMs === e.watchdog
+                ? "watchdog/unattributed"
+                : elPeak.maxEventLoopDelayMs === e.sdk
+                  ? "peer/sdk"
+                  : elPeak.maxEventLoopDelayMs === e.vm
+                    ? "peer/vm"
+                    : "harness/main";
         console.log(
             `  event-loop delay: peak ${elPeak.maxEventLoopDelayMs}ms on ${role} (${elPeak.label})`
         );
@@ -391,15 +543,21 @@ module.exports = {
     countOomEvents,
     countStarvation,
     parseTimings,
+    // Exported for unit tests of the destructive-tooling guards.
+    isDangerousPurgeTarget,
+    isWithinDefaultLogDir,
     safeEmptyDir,
     cleanupNonErrorLogs,
+    nextRunDir,
     getLogPath,
     markLogAsError,
     runHeader,
     dryRun,
     admission,
     hold,
+    starvationRetry,
     result,
     gasPeakLine,
+    getStarvationSummary,
     summary
 };

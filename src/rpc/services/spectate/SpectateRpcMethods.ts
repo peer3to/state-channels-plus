@@ -14,9 +14,11 @@ class SpectateServiceRpcMethods extends ARpcMethods {
 
     /**
      * Request/response: prove the latest possible snapshot for the requested
-     * channel and return it encoded to the spectator's `.request(...)`. A missing
-     * peer address or an unprovable channel disconnects the spectator and throws
-     * so its request rejects.
+     * channel and return it encoded to the spectator's `.request(...)`. p2p sync
+     * is mutual-cooperation: a request must be answerable with a valid proof. A
+     * missing peer address, or a target we can't prove (bad/above-latest height,
+     * unknown fork), disconnects and blacklists the requester and throws, so its
+     * `.request(...)` rejects and it blacklists us in turn.
      */
     public async onSpectateRequest(
         syncRequest: SyncRequest
@@ -45,6 +47,8 @@ class SpectateServiceRpcMethods extends ARpcMethods {
         );
 
         if (!syncPayload) {
+            // Couldn't prove the requested target: the requester failed to
+            // cooperate (spammed an invalid/unprovable request) - cut it.
             this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                 peerAddress
             );

@@ -19,6 +19,9 @@ export type ContractExecutorRequestPayload =
           config: Partial<Config>;
       }
     | {
+          type: "dispose";
+      }
+    | {
           type: "call";
           method: "deploy";
           data: string;

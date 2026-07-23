@@ -1,15 +1,17 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Signer, BytesLike } from "ethers";
+import { Signer } from "ethers";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { Status } from "@/types";
-import { DetachedPromises, SignatureUtils } from "@/utils";
+import { addressesEqual, DetachedPromises, SignatureUtils } from "@/utils";
 import {
     JoinChannelConfirmationStruct,
     JoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
 import { TestPeer } from "@test/harness/core/types";
+import StateSnapshot from "@/models/StateSnapshot";
+import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
 
 export type AddPeerOptions = {
     signer?: Signer;
@@ -20,7 +22,6 @@ export type AddPeerOptions = {
 export type BuildJoinChannelConfirmationParams = {
     joiner: { address: string; signer: Signer };
     channelId: JoinChannelStruct["channelId"];
-    existingParticipantSigners: readonly Signer[];
     jcOverrides?: Partial<JoinChannelStruct>;
 };
 
@@ -28,6 +29,27 @@ export class JoinActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
 > {
     constructor(protected harness: PeerTestHarness<TCustomRpc>) {}
+
+    protected thresholdSignerForAddress(address: string): Signer | undefined {
+        return this.harness.peers.find((candidate) =>
+            addressesEqual(candidate.address, address)
+        )?.signer;
+    }
+
+    private async buildJoinChannel(
+        joiner: { address: string },
+        channelId: JoinChannelStruct["channelId"],
+        overrides?: Partial<JoinChannelStruct>
+    ): Promise<JoinChannelStruct> {
+        const chainTime = await Clock.getBlockchainTime();
+        return {
+            participant: joiner.address,
+            channelId,
+            balance: { amount: 500n, data: "0x00" },
+            deadlineTimestamp: BigInt(chainTime.timestamp + 120),
+            ...overrides
+        };
+    }
 
     /** Add a spectator without waiting for sync (lets a test install host-side
      * stubs before sync starts). Prefer {@link addSpectatorWait}. */
@@ -104,53 +126,71 @@ export class JoinActions<
 
     async joinChannelWait(params: {
         joiner: TestPeer<TCustomRpc>;
-        existingParticipantSigners: readonly Signer[];
         channelId?: JoinChannelStruct["channelId"];
         jcOverrides?: Partial<JoinChannelStruct>;
     }): Promise<JoinChannelConfirmationStruct> {
         const channelId = params.channelId ?? this.harness.channelId;
-        const confirmation = await this.buildJoinChannelConfirmation({
-            joiner: params.joiner,
+        const joinChannel = await this.buildJoinChannel(
+            params.joiner,
             channelId,
-            existingParticipantSigners: params.existingParticipantSigners,
-            jcOverrides: params.jcOverrides
-        });
-        await params.joiner.p2pInstance.p2pSigner.joinChannel(confirmation);
-        return confirmation;
+            params.jcOverrides
+        );
+        const prepared =
+            await params.joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
+                joinChannel
+            );
+        await params.joiner.p2pInstance.p2pSigner.joinChannel(
+            prepared.confirmation,
+            prepared.expectedSnapshotHash,
+            prepared.expectedForkId
+        );
+        return prepared.confirmation;
     }
 
     async buildJoinChannelConfirmation(
         params: BuildJoinChannelConfirmationParams
-    ): Promise<JoinChannelConfirmationStruct> {
-        const { joiner, channelId, existingParticipantSigners, jcOverrides } =
-            params;
-        if (existingParticipantSigners.length === 0) {
-            throw new Error(
-                "buildJoinChannelConfirmation: existingParticipantSigners must include every current participant signer"
-            );
-        }
-        const jc: JoinChannelStruct = {
-            participant: joiner.address,
-            channelId,
-            balance: { amount: 500n, data: "0x00" },
-            deadlineTimestamp: BigInt(Clock.getTimeInSeconds() + 120),
-            ...jcOverrides
-        };
+    ): Promise<PreparedJoinChannelConfirmation> {
+        const { joiner, channelId, jcOverrides } = params;
+        const jc = await this.buildJoinChannel(joiner, channelId, jcOverrides);
         const { encoded, signature: joinerSignature } =
             await SignatureUtils.signJoinChannel(jc, joiner.signer);
+        const snapshot = StateSnapshot.from(
+            await this.harness.channelManager.getStateSnapshot(channelId)
+        );
+        const thresholdParticipants = await this.harness
+            .control(this.harness.getPeer(0))
+            .query.getOnChainParticipantUnion()
+            .request();
+        const existingParticipantSigners = thresholdParticipants.map(
+            (participant) => {
+                const signer = this.thresholdSignerForAddress(
+                    String(participant)
+                );
+                if (!signer) {
+                    throw new Error(
+                        `buildJoinChannelConfirmation: no harness signer for ${participant}`
+                    );
+                }
+                return signer;
+            }
+        );
         const confirmationSignatures = await Promise.all(
             existingParticipantSigners.map((signer) =>
-                SignatureUtils.signJoinChannel(jc, signer).then(
-                    (s) => s.signature as BytesLike
+                SignatureUtils.signJoinChannel(jc, signer).then((s) =>
+                    String(s.signature)
                 )
             )
         );
         return {
-            signedJoinChannel: {
-                encodedJoinChannel: encoded as BytesLike,
-                signature: joinerSignature as BytesLike
+            confirmation: {
+                signedJoinChannel: {
+                    encodedJoinChannel: String(encoded),
+                    signature: String(joinerSignature)
+                },
+                signatures: confirmationSignatures
             },
-            signatures: confirmationSignatures
+            expectedSnapshotHash: snapshot.hash,
+            expectedForkId: snapshot.forkID
         };
     }
 }

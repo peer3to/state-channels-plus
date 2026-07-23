@@ -25,13 +25,18 @@ export function applyNodeGlobalsShim(scope: NodeGlobalScope): void {
             ...args: unknown[]
         ) => void;
         browser?: boolean;
+        versions?: { node?: string };
     };
+    const isNodeProcess = typeof processShim.versions?.node === "string";
     processShim.env ??= {};
     processShim.nextTick ??= (
         callback: (...args: unknown[]) => void,
         ...args: unknown[]
-    ) => queueMicrotask(() => callback(...args));
-    processShim.browser ??= true;
+    ) => globalThis.queueMicrotask(() => callback(...args));
+    // A bundler-provided browser shim has no Node version. Do not mark the real
+    // Node process as a browser: Mocha and other libraries use process.browser
+    // to choose environment-specific cleanup paths.
+    processShim.browser ??= !isNodeProcess;
 }
 
 applyNodeGlobalsShim(globalThis as unknown as NodeGlobalScope);

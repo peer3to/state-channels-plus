@@ -19,10 +19,7 @@ describe("E2E: Force Join Dispute", function () {
         const restoreInboundInclusion1 =
             await h.byzantine.stubPendingInboundInclusion(1);
 
-        await h.join.joinChannelWait({
-            joiner,
-            existingParticipantSigners: [h.peers[0].signer, h.peers[1].signer]
-        });
+        await h.join.joinChannelWait({ joiner });
         expect(
             await h.control(h.getPeer(joiner.index)).query.getStatus().request()
         ).to.equal(
@@ -33,15 +30,19 @@ describe("E2E: Force Join Dispute", function () {
         // Advance N=3 blocks (peers 0/1 produce blocks without the join message)
         //  on the 3rd block, the force-join dispute is triggered
 
+        const forkId = h.activeForkId!;
         await h.transition.advanceState({ count: 3 });
 
-        // Restore stubs before canConstructMoreEvidence runs: peers 0/1 now read
-        // the real getLatestBlockHash() (join message hash) so their constructDispute
-        // matches the joiner's committed dispute → canConstructMoreEvidence = false
-        restoreInboundInclusion0();
-        restoreInboundInclusion1();
+        // Block assembly can include pending inbound messages again. Dispute
+        // construction always reads the real inbound head while this stub is
+        // active.
+        await restoreInboundInclusion0();
+        await restoreInboundInclusion1();
 
-        await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            forkSettleTimeoutMs: 15000
+        });
 
         expect(
             await h.control(h.getPeer(joiner.index)).query.getStatus().request()

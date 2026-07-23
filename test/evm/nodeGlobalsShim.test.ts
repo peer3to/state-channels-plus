@@ -9,6 +9,7 @@ type ProcessShim = {
         ...args: unknown[]
     ) => void;
     browser?: boolean;
+    versions?: { node?: string };
 };
 type Scope = { global?: unknown; process?: ProcessShim };
 
@@ -46,6 +47,16 @@ describe("applyNodeGlobalsShim", () => {
         applyNodeGlobalsShim(scope);
 
         expect(scope.process!.nextTick).to.equal(nextTick);
+    });
+
+    it("does not identify a real Node process as a browser", () => {
+        const scope: Scope = {
+            process: { versions: { node: "22.0.0" } }
+        };
+
+        applyNodeGlobalsShim(scope);
+
+        expect(scope.process!.browser).to.equal(false);
     });
 
     it("schedules the callback asynchronously via the shimmed nextTick", async () => {

@@ -1,4 +1,4 @@
-import { Signer, verifyMessage, keccak256, getBytes } from "ethers";
+import { Signer, keccak256, getBytes } from "ethers";
 import {
     JoinChannelStruct,
     OpenChannelStruct,
@@ -8,6 +8,7 @@ import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes"
 import { Block } from "@/models";
 import { Codec, Type } from "./Codec";
 import { Address, Bytes, Signature } from "@/types/types";
+import { recoverSigner } from "@/cache";
 
 export class SignatureUtils {
     public static signMsg(msg: Bytes, signer: Signer): Promise<Signature> {
@@ -15,7 +16,7 @@ export class SignatureUtils {
     }
 
     public static getSignerAddress(msg: Bytes, signature: Signature): Address {
-        return verifyMessage(getBytes(keccak256(msg)), signature);
+        return recoverSigner(getBytes(keccak256(msg)), signature);
     }
 
     public static async signBlock(

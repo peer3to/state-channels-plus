@@ -4,6 +4,8 @@ import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
 import { Logger } from "@/utils";
 import type StateManager from "@/stateManager/StateManager";
 import type ClientP2pSigner from "./signer/ClientP2pSigner";
+import type ClientChainSigner from "./signer/ClientChainSigner";
+import type { StateChannelManagerProxy } from "@typechain-types";
 import type P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
 import type {
     RuntimeEventMap,
@@ -22,9 +24,21 @@ export default class P2pInstance<
 > {
     p2pContractInstance: T;
     p2pSigner: ClientP2pSigner;
+    chainSigner: ClientChainSigner;
+    stateChannelManagerContract: StateChannelManagerProxy;
     logger: Logger;
 
+    /**
+     * Typed mirror of the host's `remoteRpc`. Calls are forwarded over the
+     * runtime port and applied by the host: with no target the method runs on
+     * the host itself (loopback); with a peer address it is relayed to that
+     * peer (and, for request/response methods, the reply is returned across the
+     * port).
+     */
+    hostRpc: RemoteRpcProxyType<TCustomRpc>;
+
     private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
+    private readonly client: P2pRuntimeClient<T>;
 
     /**
      * Main-thread end of the WebRTC bridge `MessagePort`. Present only when the
@@ -52,21 +66,12 @@ export default class P2pInstance<
         });
     }
 
-    /**
-     * Typed mirror of the host's `remoteRpc`. Calls are forwarded over the
-     * runtime port and applied by the host: with no target the method runs on
-     * the host itself (loopback); with a peer address it is relayed to that
-     * peer (and, for request/response methods, the reply is returned across the
-     * port).
-     */
-    hostRpc: RemoteRpcProxyType<TCustomRpc>;
-
-    private readonly client: P2pRuntimeClient<T>;
-
     constructor(client: P2pRuntimeClient<T>, logger: Logger) {
         this.client = client;
         this.p2pContractInstance = client.contract;
         this.p2pSigner = client.signer;
+        this.chainSigner = client.chainSigner;
+        this.stateChannelManagerContract = client.stateChannelManagerContract;
         this.logger = logger;
         this.hostRpc = createHostRpc<TCustomRpc>(client);
     }
@@ -75,6 +80,7 @@ export default class P2pInstance<
         try {
             await Promise.all([
                 this.p2pContractInstance.removeAllListeners(),
+                this.stateChannelManagerContract.removeAllListeners(),
                 this.client.dispose()
             ]);
         } finally {

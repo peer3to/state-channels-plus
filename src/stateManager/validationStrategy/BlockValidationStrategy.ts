@@ -4,7 +4,9 @@ import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import AValidationStrategy from "./AValidationStrategy";
+import AValidationStrategy, {
+    ParticipantSnapshots
+} from "./AValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
@@ -69,12 +71,13 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.storage.queues.restoreEntry(entry);
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
-        unexpectedSignatures: Set<Signature>
+        unexpectedSignatures: Set<Signature>,
+        _participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
         const block = entry.block;
         // Punish the offenders: the transports that supplied the stray
@@ -116,8 +119,11 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.BROADCAST;
     }
     public async blockAuthorIsNotParticipant(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const culprits = new Set(entry.sourcePeers);
+        culprits.add(entry.block.author);
+        this.p2pManager.disconnectAndBlacklistPeers(culprits);
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
@@ -144,8 +150,37 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
+        if (
+            !this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                block.forkId
+            )
+        ) {
+            // Defense in depth: the queue's fork gate should keep
+            // unknown-fork blocks out of validation entirely. No genesis
+            // snapshot means no fraud proof to build and no dispute to raise
+            // — cut the suppliers instead.
+            this.logger.warn(
+                "Missing genesis reached validation despite fork gate - blacklisting sources and author",
+                {
+                    blockAuthor: block.author,
+                    blockForkId: block.forkId,
+                    sourcePeers: Array.from(entry.sourcePeers)
+                }
+            );
+            // Cut the transport suppliers AND the signer: the author put its
+            // name on a height-0 block for a fork we have no genesis for. This
+            // branch is defense-in-depth only (the fork gate should keep
+            // unknown-fork blocks out of validation); an honest first block on
+            // a not-yet-known fork is queued + timeout-synced, never reaching
+            // here - covered by the no-false-positive e2e.
+            const culprits = new Set(entry.sourcePeers);
+            culprits.add(block.author);
+            this.p2pManager.disconnectAndBlacklistPeers(culprits);
+            return BlockValidationResult.DISCONNECT;
+        }
         this.logger.warn("Wrong genesis detected", {
             blockAuthor: block.author,
             blockHeight: block.height
@@ -170,8 +205,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        // Malformed linkage, not a provable fraud proof - drop the sender.
+        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -201,28 +238,23 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         }
 
         // Queue the block - will process normally
-        this.storage.queues.restoreEntry(entry);
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        const block = entry.block;
-        // not ready - ask the peers that supplied this block to sync us up
-        for (const peer of entry.sourcePeers) {
-            this.p2pManager.localRpc.spectateService.sync(
-                peer as string,
-                block.channelId,
-                block.forkId,
-                block.height
-            );
-        }
-        this.storage.queues.restoreEntry(entry);
+        // Not ready: put it back and let the queue timeout be the sole sync
+        // probe (no arrival-time sync from strategy hooks - that punished honest
+        // peers before the convergence window).
+        this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        // Malformed linkage, not a provable fraud proof - drop the sender.
+        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
     }
     public async objectiveInvalidTimestampDetected(

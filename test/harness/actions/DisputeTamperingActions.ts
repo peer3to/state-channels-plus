@@ -15,7 +15,7 @@ import {
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
 import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { ForkId, Address, Hash } from "@/types/types";
+import { ForkId, Address, Hash, Timestamp } from "@/types/types";
 import StateSnapshot from "@/models/StateSnapshot";
 import Block from "@/models/Block";
 import { BytesLike, Signer, ZeroAddress } from "ethers";
@@ -36,6 +36,16 @@ export type DisputeTamper = (
     disputeConfirmation: DisputeConfirmationStruct,
     auditingData?: DisputeAuditingDataStruct
 ) => void | Promise<void>;
+
+export type FinalDisputeResolution = {
+    forkId: ForkId;
+    genesisTimestamp: Timestamp;
+};
+
+type PostedDispute = {
+    dispute: DisputeStruct;
+    disputeConfirmation: DisputeConfirmationStruct;
+};
 
 /**
  * Tamper for the host-side `constructDispute` stub. Runs host-side (the body is
@@ -145,11 +155,30 @@ export class DisputeTamperingActions<
     async postTamperedDispute(
         authorPeerIndex: number,
         tamper: DisputeTamper,
-        options?: { forkId?: ForkId; markMalicious?: boolean }
-    ): Promise<{
-        dispute: DisputeStruct;
-        disputeConfirmation: DisputeConfirmationStruct;
-    }> {
+        options?: {
+            forkId?: ForkId;
+            markMalicious?: boolean;
+            final?: false;
+        }
+    ): Promise<PostedDispute & { finalResolution?: undefined }>;
+    async postTamperedDispute(
+        authorPeerIndex: number,
+        tamper: DisputeTamper,
+        options: {
+            forkId?: ForkId;
+            markMalicious?: boolean;
+            final: true;
+        }
+    ): Promise<PostedDispute & { finalResolution: FinalDisputeResolution }>;
+    async postTamperedDispute(
+        authorPeerIndex: number,
+        tamper: DisputeTamper,
+        options: {
+            forkId?: ForkId;
+            markMalicious?: boolean;
+            final?: boolean;
+        } = {}
+    ): Promise<PostedDispute & { finalResolution?: FinalDisputeResolution }> {
         const markMalicious = options?.markMalicious ?? true;
         const forkId = options?.forkId;
 
@@ -185,22 +214,93 @@ export class DisputeTamperingActions<
         await tamper(dispute, disputeConfirmation, auditingData);
         await this.resignDispute(peer.signer, dispute, disputeConfirmation);
 
+        if (options.final) {
+            const thresholdSet =
+                await peer.p2pInstance.stateChannelManagerContract.getOnChainThresholdSet(
+                    this.harness.channelId
+                );
+            const otherSignatures = await Promise.all(
+                thresholdSet
+                    .filter(
+                        (thresholdAddress) =>
+                            !addressesEqual(thresholdAddress, peer.address)
+                    )
+                    .map(async (thresholdAddress) => {
+                        const thresholdPeer = this.harness.peers.find((p) =>
+                            addressesEqual(p.address, thresholdAddress)
+                        );
+                        if (!thresholdPeer) {
+                            throw new Error(
+                                `No harness signer for threshold participant ${thresholdAddress}`
+                            );
+                        }
+                        return (
+                            await SignatureUtils.signDispute(
+                                dispute,
+                                thresholdPeer.signer
+                            )
+                        ).signature;
+                    })
+            );
+            disputeConfirmation.signatures = otherSignatures as BytesLike[];
+        }
+
         this.logger.debug(
             `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
         );
 
-        const channelManager = this.harness.channelManager.connect(peer.signer);
-        const txResp = dispute.postedAuditingData
-            ? await channelManager.uploadDisputeWithCalldata(
-                  disputeConfirmation,
-                  auditingData
-              )
-            : await channelManager.uploadDispute(disputeConfirmation);
-        await txResp.wait();
+        const channelManager = peer.p2pInstance.stateChannelManagerContract;
+        let receipt;
+        try {
+            const txResp = dispute.postedAuditingData
+                ? await channelManager.uploadDisputeWithCalldata(
+                      disputeConfirmation,
+                      auditingData
+                  )
+                : await channelManager.uploadDispute(disputeConfirmation);
+            receipt = await txResp.wait();
+        } catch (error) {
+            if (!options.final) throw error;
+            throw new Error(
+                `Threshold-final dispute upload failed for peer ${authorPeerIndex} on fork ${targetForkId}: ${error instanceof Error ? error.message : String(error)}`
+            );
+        }
+        if (!receipt) throw new Error("Dispute upload receipt unavailable");
 
         this.harness.context.tamperedDisputes.push(dispute);
 
-        return { dispute, disputeConfirmation };
+        if (!options.final) return { dispute, disputeConfirmation };
+
+        const committedEvent = receipt.logs
+            .map((log) => {
+                try {
+                    return channelManager.interface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .find(
+                (event) =>
+                    (event?.name === "DisputeCommitted" ||
+                        event?.name === "DisputeCommittedWithAuditingData") &&
+                    event.args.isFinal === true
+            );
+        if (!committedEvent) {
+            throw new Error(
+                `Threshold signatures did not finalize dispute for peer ${authorPeerIndex} on fork ${targetForkId}`
+            );
+        }
+
+        return {
+            dispute,
+            disputeConfirmation,
+            finalResolution: {
+                forkId: dispute.outputSnapshotDataHash as ForkId,
+                genesisTimestamp: Number(
+                    committedEvent.args.disputeCreationTimestamp
+                )
+            }
+        };
     }
 
     async submitForgedFraudProof(
@@ -212,6 +312,9 @@ export class DisputeTamperingActions<
         }) => DisputeFraudStruct
     ): Promise<void> {
         const peer = this.harness.getPeer(disputerIndex);
+        this.harness.contextApi.markMaliciousPeer({
+            maliciousPeerIndex: disputerIndex
+        });
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
         const genesisResult = await this.harness
@@ -233,9 +336,10 @@ export class DisputeTamperingActions<
             dispute,
             encodedProof: Codec.encode(proofStruct, proofType)
         };
-        const tx = await this.harness.channelManager
-            .connect(peer.signer)
-            .applyDisputeFraudProofs([forged]);
+        const tx =
+            await peer.p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs(
+                [forged]
+            );
         await tx.wait();
     }
 
@@ -315,27 +419,20 @@ export class DisputeTamperingActions<
             .request();
     }
 
-    async corruptValidatorSnapshotForBalanceInvariant(
-        validatorPeerIndex: number,
-        options?: { forkId?: ForkId }
+    async plantFreshTimeoutForParticipant(
+        disputerIndex: number,
+        participant: string
     ): Promise<void> {
-        const forkId = options?.forkId ?? this.harness.activeForkId;
+        const forkId = this.harness.activeForkId;
         if (!forkId) {
             throw new Error(
-                "corruptValidatorSnapshotForBalanceInvariant: no active fork ID"
+                "plantFreshTimeoutForParticipant: no active fork ID — channel must be opened first"
             );
         }
-
         await this.harness
-            .control(this.harness.getPeer(validatorPeerIndex))
-            .dispute.corruptSnapshotBalanceInvariant(forkId)
+            .control(this.harness.getPeer(disputerIndex))
+            .dispute.plantFreshTimeout(forkId, participant)
             .request();
-        this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: validatorPeerIndex
-        });
-        this.logger.debug(
-            `Corrupted validator ${validatorPeerIndex} snapshot for balance invariant`
-        );
     }
 
     async buildForgedSnapshot(

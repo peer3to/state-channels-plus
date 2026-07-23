@@ -27,5 +27,5 @@ export async function createContractExecutorFactory(
 
         return new InlineContractExecutor(evm, logger);
     }
-    return WorkerContractExecutor.create(options.customPrecompiles);
+    return WorkerContractExecutor.create(options.customPrecompiles, logger);
 }

@@ -2,6 +2,8 @@ import { ethers } from "ethers";
 import {
     BlockStruct,
     JoinChannelStruct,
+    SignedJoinChannelStruct,
+    JoinChannelConfirmationStruct,
     OpenChannelStruct,
     TransactionStruct,
     StateSnapshotStruct,
@@ -27,6 +29,8 @@ import {
     DisputeEthersType,
     DisputeConfirmationEthersType,
     JoinChannelEthersType,
+    SignedJoinChannelEthersType,
+    JoinChannelConfirmationEthersType,
     OpenChannelEthersType,
     TransactionEthersType,
     StateSnapshotEthersType,
@@ -56,6 +60,8 @@ import {
     TimeoutParticipantNotNextProofEthersType,
     TimeoutTooEarlyProofEthersType,
     DisputeInvalidBlockInStateProofApplyFraudProofEthersType,
+    DisputeBlockAuthorNotParticipantProofEthersType,
+    DisputeInvalidBlockStructureProofEthersType,
     MessageBlockEthersType,
     BalanceEthersType,
     SignedBlockEthersType,
@@ -86,7 +92,9 @@ import {
     TimeoutTooEarlyStruct,
     DisputeLastMilestoneNotFinalAndNoAuditingDataStruct,
     InvalidDisputeReasonStruct,
-    DisputeStateProofHeaderMismatchStruct
+    DisputeStateProofHeaderMismatchStruct,
+    DisputeInvalidBlockStructureStruct,
+    DisputeBlockAuthorNotParticipantStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 
 export type FraudStruct =
@@ -110,7 +118,9 @@ export type DisputeFraudStruct =
     | DisputeInvalidBlockInStateProofApplyFraudProofStruct
     | DisputeLastMilestoneNotFinalAndNoAuditingDataStruct
     | InvalidDisputeReasonStruct
-    | DisputeStateProofHeaderMismatchStruct;
+    | DisputeStateProofHeaderMismatchStruct
+    | DisputeInvalidBlockStructureStruct
+    | DisputeBlockAuthorNotParticipantStruct;
 
 type StructType =
     | FraudStruct
@@ -119,6 +129,8 @@ type StructType =
     | { signedBlock: SignedBlockStruct; timestamp: Timestamp }
     | BlockConfirmationStruct
     | JoinChannelStruct
+    | SignedJoinChannelStruct
+    | JoinChannelConfirmationStruct
     | OpenChannelStruct
     | TransactionStruct
     | DisputeStruct
@@ -140,6 +152,8 @@ export enum Type {
     Block,
     BlockCommitment,
     JoinChannel,
+    SignedJoinChannel,
+    JoinChannelConfirmation,
     OpenChannel,
     BlockConfirmation,
     Transaction,
@@ -168,6 +182,8 @@ export class Codec {
         [Type.Block, BlockEthersType],
         [Type.BlockCommitment, BlockCommitmentEthersType],
         [Type.JoinChannel, JoinChannelEthersType],
+        [Type.SignedJoinChannel, SignedJoinChannelEthersType],
+        [Type.JoinChannelConfirmation, JoinChannelConfirmationEthersType],
         [Type.OpenChannel, OpenChannelEthersType],
         [Type.BlockConfirmation, BlockConfirmationEthersType],
         [Type.Transaction, TransactionEthersType],
@@ -253,6 +269,14 @@ export class Codec {
         [
             DisputeFraudProofType.DisputeInboundHashNotInChain,
             DisputeInboundHashNotInChainProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeInvalidBlockStructure,
+            DisputeInvalidBlockStructureProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeBlockAuthorNotParticipant,
+            DisputeBlockAuthorNotParticipantProofEthersType
         ]
     ]);
 
@@ -328,6 +352,14 @@ export class Codec {
     ): JoinChannelStruct;
     public static decode(
         encoded: Bytes,
+        type: Type.SignedJoinChannel
+    ): SignedJoinChannelStruct;
+    public static decode(
+        encoded: Bytes,
+        type: Type.JoinChannelConfirmation
+    ): JoinChannelConfirmationStruct;
+    public static decode(
+        encoded: Bytes,
         type: Type.OpenChannel
     ): OpenChannelStruct;
     public static decode(
@@ -381,6 +413,14 @@ export class Codec {
         encoded: Bytes,
         type: Type.StateProof
     ): StateProofStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInvalidBlockStructure
+    ): DisputeInvalidBlockStructureStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeBlockAuthorNotParticipant
+    ): DisputeBlockAuthorNotParticipantStruct;
 
     public static decode<T extends StructType>(
         encoded: Bytes,

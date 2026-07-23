@@ -18,14 +18,12 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
         await h.lifecycle.timeoutSetup(4);
 
         await h.assert.dispute.initiatedWait({
-            peersIndices: [honestDisputerIndex],
-            timeoutMs: 15000
+            peersIndices: [honestDisputerIndex]
         });
         // peers 1,2,3 dispute the timed-out peer 0 -> 3 commitments (peer 0 is the defendant)
         await h.assert.dispute.committedWait({
             expectedCount: 3,
-            mode: "atLeast",
-            timeoutMs: 15000
+            mode: "atLeast"
         });
 
         const dispute = h.getPeer(honestDisputerIndex).eventSpies
@@ -71,9 +69,11 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
             )
         };
 
-        const tx = await h.channelManager
-            .connect(h.getPeer(byzantineIndex).signer)
-            .applyDisputeFraudProofs([proof]);
+        const tx = await h
+            .getPeer(byzantineIndex)
+            .p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs([
+                proof
+            ]);
         await tx.wait();
 
         // The honest disputer must NOT be slashed by the bogus proof,

@@ -10,11 +10,7 @@ import {
 } from "@test/test_utils/testHelpers";
 import { SignatureUtils } from "@/utils";
 import StateSnapshot from "@/models/StateSnapshot";
-import {
-    StateChannelManagerProxy,
-    MathStateMachine,
-    MathConsumerFacet__factory
-} from "@typechain-types";
+import { StateChannelManagerProxy, MathStateMachine } from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { Bytes } from "@/types/types";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -178,19 +174,25 @@ describe("StateChannelManagerProxy", function () {
             const expectedSnapshotHash = StateSnapshot.from(
                 await mathChannelManager.getStateSnapshot(jc1.channelId)
             ).hash;
-            const resultPromise = mathChannelManager.joinChannel(
-                {
-                    signedJoinChannel: {
-                        encodedJoinChannel: jc1Signed.encoded,
-                        signature: jc1Signed.signature as Bytes
+            const expectedForkId = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(jc1.channelId)
+            ).forkID;
+            const resultPromise = mathChannelManager
+                .connect(firstSigner)
+                .joinChannel(
+                    {
+                        signedJoinChannel: {
+                            encodedJoinChannel: jc1Signed.encoded,
+                            signature: jc1Signed.signature as Bytes
+                        },
+                        signatures: [
+                            jc1Signed.signature,
+                            jc2Signed.signature + "00"
+                        ]
                     },
-                    signatures: [
-                        jc1Signed.signature,
-                        jc2Signed.signature + "00"
-                    ]
-                },
-                expectedSnapshotHash
-            );
+                    expectedSnapshotHash,
+                    expectedForkId
+                );
             await expect(resultPromise)
                 .to.be.revertedWithCustomError(
                     {
@@ -204,10 +206,6 @@ describe("StateChannelManagerProxy", function () {
         });
 
         it("forces inbound join message and updates math state machine", async function () {
-            const consumerFacet = MathConsumerFacet__factory.connect(
-                await mathChannelManager.getAddress(),
-                firstSigner
-            );
             const openTx = await mathChannelManager.open({
                 encodedOpenChannel: openChannelSigned.encoded,
                 signatures: [
@@ -237,17 +235,57 @@ describe("StateChannelManagerProxy", function () {
             const genesisState = channelOpenedEvent.args.encodedState as string;
 
             const forcedAmount = 250n;
-            const [messageBlock, newTotalDeposits] =
-                await consumerFacet.forceInboundJoin.staticCall(
-                    openChannel.channelId,
-                    thirdSigner.address,
-                    forcedAmount
-                );
-            await consumerFacet.forceInboundJoin(
-                openChannel.channelId,
-                thirdSigner.address,
-                forcedAmount
+            const join = {
+                participant: thirdSigner.address,
+                channelId: openChannel.channelId,
+                balance: { amount: forcedAmount, data: "0x00" },
+                deadlineTimestamp: BigInt(Math.floor(Date.now() / 1000) + 300)
+            };
+            const signedJoin = await SignatureUtils.signJoinChannel(
+                join,
+                thirdSigner
             );
+            const snapshot = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(openChannel.channelId)
+            );
+            const joinTx = await mathChannelManager
+                .connect(thirdSigner)
+                .joinChannel(
+                    {
+                        signedJoinChannel: {
+                            encodedJoinChannel: String(signedJoin.encoded),
+                            signature: String(signedJoin.signature)
+                        },
+                        signatures: await Promise.all(
+                            [firstSigner, secondSigner].map((signer) =>
+                                SignatureUtils.signJoinChannel(
+                                    join,
+                                    signer
+                                ).then(({ signature }) => String(signature))
+                            )
+                        )
+                    },
+                    snapshot.hash,
+                    snapshot.forkID
+                );
+            const joinReceipt = await joinTx.wait();
+            const inboundEvent = joinReceipt?.logs
+                .map((log) => {
+                    try {
+                        return mathChannelManager.interface.parseLog(log);
+                    } catch {
+                        return null;
+                    }
+                })
+                .find((parsed) => parsed?.name === "InboundMessagesProcessed");
+            expect(inboundEvent, "InboundMessagesProcessed event not found").to
+                .exist;
+            const messageBlock = inboundEvent!.args.messageBlock;
+            const newTotalDeposits = (
+                await mathChannelManager.getChannelBalance(
+                    openChannel.channelId
+                )
+            ).totalDeposits;
 
             expect(messageBlock.messages.length).to.equal(1);
             expect(messageBlock.blockHeight).to.equal(2);
@@ -290,6 +328,105 @@ describe("StateChannelManagerProxy", function () {
             expect(insertedBalance).to.equal(forcedAmount);
         });
 
+        it("requires the encoded participant to submit the join", async function () {
+            const snapshot = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(jc1.channelId)
+            );
+            await expect(
+                mathChannelManager.connect(secondSigner).joinChannel(
+                    {
+                        signedJoinChannel: {
+                            encodedJoinChannel: jc1Signed.encoded,
+                            signature: String(jc1Signed.signature)
+                        },
+                        signatures: []
+                    },
+                    snapshot.hash,
+                    snapshot.forkID
+                )
+            )
+                .to.be.revertedWithCustomError(
+                    {
+                        interface: new ethers.Interface([
+                            "error ErrorJoinChannelInvalidSubmitter(address expectedParticipant, address actualSubmitter)"
+                        ])
+                    },
+                    "ErrorJoinChannelInvalidSubmitter"
+                )
+                .withArgs(firstSigner.address, secondSigner.address);
+        });
+
+        it("tops up an existing participant without duplicating membership", async function () {
+            await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: openChannelSigned.encoded,
+                    signatures: await Promise.all(
+                        [firstSigner, secondSigner].map((signer) =>
+                            SignatureUtils.signOpenChannel(
+                                openChannel,
+                                signer
+                            ).then(({ signature }) => String(signature))
+                        )
+                    )
+                })
+            ).wait();
+            const topUp = {
+                participant: firstSigner.address,
+                channelId: openChannel.channelId,
+                balance: { amount: 125n, data: "0x00" },
+                deadlineTimestamp: BigInt(Math.floor(Date.now() / 1000) + 300)
+            };
+            const signedTopUp = await SignatureUtils.signJoinChannel(
+                topUp,
+                firstSigner
+            );
+            const snapshot = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(openChannel.channelId)
+            );
+            await (
+                await mathChannelManager.connect(firstSigner).topUpBalance(
+                    {
+                        signedJoinChannel: {
+                            encodedJoinChannel: String(signedTopUp.encoded),
+                            signature: String(signedTopUp.signature)
+                        },
+                        signatures: await Promise.all(
+                            [firstSigner, secondSigner].map((signer) =>
+                                SignatureUtils.signJoinChannel(
+                                    topUp,
+                                    signer
+                                ).then(({ signature }) => String(signature))
+                            )
+                        )
+                    },
+                    snapshot.hash,
+                    snapshot.forkID
+                )
+            ).wait();
+
+            const pending = await mathChannelManager.getPendingParticipants(
+                openChannel.channelId
+            );
+            expect(pending).to.deep.equal([
+                firstSigner.address,
+                secondSigner.address
+            ]);
+            expect(
+                new Set(pending.map((address) => address.toLowerCase())).size
+            ).to.equal(2);
+            expect(
+                (
+                    await mathChannelManager.getChannelBalance(
+                        openChannel.channelId
+                    )
+                ).totalDeposits.amount
+            ).to.equal(
+                BigInt(openChannel.balances[0].amount) +
+                    BigInt(openChannel.balances[1].amount) +
+                    125n
+            );
+        });
+
         it("2 participants channelId = 0 - fail", async function () {
             // Override default objects for this test
             jc1.channelId = new Uint8Array(32);
@@ -301,8 +438,11 @@ describe("StateChannelManagerProxy", function () {
             const expectedSnapshotHash = StateSnapshot.from(
                 await mathChannelManager.getStateSnapshot(jc1.channelId)
             ).hash;
+            const expectedForkId = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(jc1.channelId)
+            ).forkID;
             await expect(
-                mathChannelManager.joinChannel(
+                mathChannelManager.connect(firstSigner).joinChannel(
                     {
                         signedJoinChannel: {
                             encodedJoinChannel: jc1Signed.encoded,
@@ -310,7 +450,8 @@ describe("StateChannelManagerProxy", function () {
                         },
                         signatures: [jc1Signed.signature, jc2Signed.signature]
                     },
-                    expectedSnapshotHash
+                    expectedSnapshotHash,
+                    expectedForkId
                 )
             ).to.be.revertedWithCustomError(
                 {
@@ -456,7 +597,12 @@ describe("StateChannelManagerProxy", function () {
                     invalidJoinChannel.channelId
                 )
             ).hash;
-            const res = mathChannelManager.joinChannel(
+            const expectedForkId = StateSnapshot.from(
+                await mathChannelManager.getStateSnapshot(
+                    invalidJoinChannel.channelId
+                )
+            ).forkID;
+            const res = mathChannelManager.connect(firstSigner).joinChannel(
                 {
                     signedJoinChannel: {
                         encodedJoinChannel: invalidJoinChannelSigned.encoded,
@@ -467,7 +613,8 @@ describe("StateChannelManagerProxy", function () {
                         jc2Signed.signature
                     ]
                 },
-                expectedSnapshotHash
+                expectedSnapshotHash,
+                expectedForkId
             );
             await expect(res).to.be.revertedWithCustomError(
                 {

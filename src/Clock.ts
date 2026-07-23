@@ -1,7 +1,8 @@
 import { ethers } from "ethers";
 
 class Clock {
-    private static instance: Clock;
+    private static instance: Clock | undefined;
+    private static initialization: Promise<void> | undefined;
     private clockAdjustmentSeconds: number;
     private provider: ethers.Provider;
     private averageBlockTime: number | undefined; // in seconds
@@ -11,9 +12,23 @@ class Clock {
         this.clockAdjustmentSeconds = 0;
     }
 
-    public static async init(provider: ethers.Provider) {
-        Clock.instance = new Clock(provider);
-        await Clock.instance.syncClock();
+    public static async init(provider: ethers.Provider): Promise<void> {
+        if (!Clock.initialization) {
+            const instance = new Clock(provider);
+            Clock.initialization = instance
+                .syncClock()
+                .then(() => {
+                    Clock.instance = instance;
+                })
+                .catch((error) => {
+                    Clock.initialization = undefined;
+                    throw error;
+                });
+        }
+        await Clock.initialization;
+    }
+    public static ownsProvider(provider: ethers.Provider): boolean {
+        return Clock.instance?.provider === provider;
     }
     public static getTimeInSeconds(): number {
         return (
@@ -52,7 +67,9 @@ class Clock {
         return Clock.instance;
     }
     private async syncClock() {
-        const currentTime = Clock.getTimeInSeconds();
+        const currentTime =
+            Math.floor(new Date().getTime() / 1000) +
+            this.clockAdjustmentSeconds;
 
         const latestBlock = await this.provider.getBlock("latest");
         if (!latestBlock) throw new Error("Could not get latest block");
@@ -61,6 +78,11 @@ class Clock {
         const difference = latestTimestamp - currentTime;
 
         const blockCnt = Math.min(latestBlock.number, 10);
+        if (blockCnt === 0) {
+            this.averageBlockTime = 0;
+            this.clockAdjustmentSeconds += difference;
+            return;
+        }
         const pastBlock = await this.provider.getBlock(
             latestBlock.number - blockCnt
         );

@@ -11,9 +11,18 @@ export type QueuedBlockEntry = {
     firstSeenAt: number;
     sourcePeers: Set<Address>;
     signatureSources: Map<Signature, Set<Address>>;
+    // Set once a structural cap was hit: a peer flooded unique junk signatures
+    // for this hash. Attribution/rate-limiting hint only - never a validity
+    // decision (a later valid copy still processes).
+    overflowedSources?: boolean;
 };
 
 export class QueueStorage {
+    // Structural per-entry retention caps: bound memory against a peer flooding
+    // unique junk signatures/sources for one block hash. Far above any real
+    // participant union; overflow is retained as a marker, never rejected.
+    private static readonly MAX_ENTRY_SOURCES = 128;
+
     private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
 
     // Secondary index for efficient queries by coordinates
@@ -123,6 +132,8 @@ export class QueueStorage {
     /**
      * Re-insert a previously dequeued entry, merging its signatures and
      * source attribution into any entry queued for the same block meanwhile.
+     * Storage only mutates data - it never schedules or fires timeouts;
+     * `BlockQueueManager` reads the entry back (`getQueuedEntry`) to (re)schedule.
      */
     restoreEntry(entry: QueuedBlockEntry): void {
         const existing = this.queuedBlocks.get(entry.block.hash);
@@ -142,12 +153,13 @@ export class QueueStorage {
             existing.firstSeenAt,
             entry.firstSeenAt
         );
-        for (const peer of entry.sourcePeers) existing.sourcePeers.add(peer);
+        if (entry.overflowedSources) existing.overflowedSources = true;
+        for (const peer of entry.sourcePeers)
+            this.addSourcePeer(existing, peer);
         for (const [signature, peers] of entry.signatureSources) {
-            const merged =
-                existing.signatureSources.get(signature) ?? new Set();
-            for (const peer of peers) merged.add(peer);
-            existing.signatureSources.set(signature, merged);
+            for (const peer of peers) {
+                this.addSignatureSource(existing, signature, peer);
+            }
         }
     }
 
@@ -225,12 +237,45 @@ export class QueueStorage {
     ): void {
         if (!senderAddress) return;
 
-        entry.sourcePeers.add(senderAddress);
+        this.addSourcePeer(entry, senderAddress);
         for (const signature of signatures) {
-            const peers = entry.signatureSources.get(signature) ?? new Set();
-            peers.add(senderAddress);
+            this.addSignatureSource(entry, signature, senderAddress);
+        }
+    }
+
+    // Capped inserts: retention stops at MAX_ENTRY_SOURCES and flips the
+    // overflow marker; existing members are never evicted, so a junk-first
+    // flood can't crowd out an already-tracked honest source, and a later
+    // valid copy is never rejected for it.
+    private addSourcePeer(entry: QueuedBlockEntry, peer: Address): void {
+        if (entry.sourcePeers.has(peer)) return;
+        if (entry.sourcePeers.size >= QueueStorage.MAX_ENTRY_SOURCES) {
+            entry.overflowedSources = true;
+            return;
+        }
+        entry.sourcePeers.add(peer);
+    }
+
+    private addSignatureSource(
+        entry: QueuedBlockEntry,
+        signature: Signature,
+        peer: Address
+    ): void {
+        let peers = entry.signatureSources.get(signature);
+        if (!peers) {
+            if (entry.signatureSources.size >= QueueStorage.MAX_ENTRY_SOURCES) {
+                entry.overflowedSources = true;
+                return;
+            }
+            peers = new Set();
             entry.signatureSources.set(signature, peers);
         }
+        if (peers.has(peer)) return;
+        if (peers.size >= QueueStorage.MAX_ENTRY_SOURCES) {
+            entry.overflowedSources = true;
+            return;
+        }
+        peers.add(peer);
     }
 
     private mergeOnChainTimestamp(existing: Block, incoming: Block): void {

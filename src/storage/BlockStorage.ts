@@ -251,8 +251,14 @@ export class BlockStorage {
                 }
             }
         } else {
-            // Start from startHeight or maxHeight, go down to 0
-            const start = startHeight !== undefined ? startHeight : maxHeight;
+            // Start from startHeight or maxHeight, go down to 0. Clamp to
+            // maxHeight so a caller passing an absurd startHeight (e.g. a
+            // remote-supplied sync target) can't loop over the empty range
+            // above the fork's tip and stall the event loop.
+            const start =
+                startHeight !== undefined
+                    ? Math.min(startHeight, maxHeight)
+                    : maxHeight;
             for (let height = start; height >= 0; height--) {
                 const coordinateKey = this.coordinatesToKey({ forkId, height });
                 const block = this.coordinatesToBlockMap.get(coordinateKey);

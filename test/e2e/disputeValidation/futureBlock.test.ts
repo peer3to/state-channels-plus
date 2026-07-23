@@ -29,7 +29,7 @@ describe("E2E: dispute validation / futureBlock", function () {
         const forkId = h.activeForkId!;
 
         // Suppress peer 3's outbound block broadcast
-        h.byzantine.stubBroadcast(3);
+        await h.byzantine.stubBroadcast(3);
         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 3 });
 
         await h.transition.peerWrite({ peer: 3, waitForPeers: [3] });
@@ -86,8 +86,7 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         await h.assert.dispute.committedWait({
             peersIndices: [0, 1, 2],
-            expectedCount: 1,
-            timeoutMs: 10000
+            expectedCount: 1
         });
 
         // confirm other peers did not modify their local state forward, their tip is at block height 2
@@ -109,6 +108,7 @@ describe("E2E: dispute validation / futureBlock", function () {
         }
 
         await h.dispute.resolveDisputeWait({
+            forkId,
             assertMaliciousRemoved: false
         });
     });

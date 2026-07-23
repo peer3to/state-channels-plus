@@ -18,6 +18,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             Dispute memory dispute = proofs[i].dispute;
             // not committed -> already killed (lost the kill-race) or never committed; no-op.
             if (!isDisputeCommitted(dispute)) continue;
+            DisputeWindow storage disputeWindow =
+                disputeData[dispute.input.channelId].disputeWindowMap[dispute.input.forkId];
+            (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+            // A successful batch means every committed proof was eligible and applied.
+            require(!isExpired, RaceConditionDisputeKillPeriodExpired());
             address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
             if (slashedParticipant == proofs[i].participant) {
                 _delegatecall(
@@ -27,6 +32,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 addOnChainSlashedParticipant(dispute.input.channelId, msg.sender);
             }
         }
+    }
+
+    function validateTimeoutCalldataPostedProof(TimeoutCalldataPosted memory proof, Dispute memory dispute)
+        public
+        returns (bool)
+    {
+        return _validateTimeoutCalldataPostedProof(proof, dispute);
     }
 
     function _getHandle(DisputeFraudProofType proofType)
@@ -67,6 +79,12 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeInboundHashNotInChain) {
             return _handleDisputeInboundHashNotInChain;
         }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBlockStructure) {
+            return _handleDisputeInvalidBlockStructure;
+        }
+        if (proofType == DisputeFraudProofType.DisputeBlockAuthorNotParticipant) {
+            return _handleDisputeBlockAuthorNotParticipant;
+        }
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -76,6 +94,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
     function _invalid() internal pure returns (address) {
         return address(0);
+    }
+
+    function _timeoutDeadline(uint256 previousTimestamp, bool hasBlock)
+        internal
+        view
+        returns (bool ok, uint256 deadline)
+    {
+        uint256 firstBlockGrace = hasBlock ? 0 : getEvidenceTime();
+        return
+            Math.tryAdd(previousTimestamp, firstBlockGrace + getP2pTime() + getAgreementTime() + getChainFallbackTime());
     }
 
     function _handleInvalidDisputeFraudProofType(bytes memory, Dispute memory) internal pure returns (address) {
@@ -97,6 +125,66 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         return _isDisputeInboundHashValid(dispute) ? _invalid() : _valid(dispute.input.disputer);
+    }
+
+    function _handleDisputeInvalidBlockStructure(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        DisputeInvalidBlockStructure memory proof = abi.decode(encodedFraudProof, (DisputeInvalidBlockStructure));
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress,
+            abi.encodeCall(
+                StateProofFacet.isInvalidBlockStructureInStateProof,
+                (dispute.input.stateProof, proof.blockIndexInUnfinalizedPartOfStateProof)
+            )
+        );
+        if (abi.decode(result, (bool))) return _valid(dispute.input.disputer);
+        return _invalid();
+    }
+
+    function _handleDisputeBlockAuthorNotParticipant(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        view
+        returns (address)
+    {
+        DisputeBlockAuthorNotParticipant memory proof =
+            abi.decode(encodedFraudProof, (DisputeBlockAuthorNotParticipant));
+        BlockConfirmation[] memory blockConfirmations =
+            _getUnfinalizedBlockConfirmationsFromStateProof(dispute.input.stateProof);
+        if (proof.blockIndexInUnfinalizedPartOfStateProof >= blockConfirmations.length) return _invalid();
+
+        SignedBlock memory signedBlock = blockConfirmations[proof.blockIndexInUnfinalizedPartOfStateProof].signedBlock;
+        (bool decoded, Block memory invalidBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(signedBlock.encodedBlock);
+        if (!decoded || dispute.input.channelId != invalidBlock.transaction.header.channelId) return _invalid();
+
+        (address signer, bool signatureValid) =
+            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(signedBlock.encodedBlock, signedBlock.signature);
+        if (!signatureValid || signer != invalidBlock.transaction.header.participant) return _invalid();
+        if (invalidBlock.stateSnapshotHash != keccak256(abi.encode(proof.resultingStateSnapshot))) return _invalid();
+
+        if (invalidBlock.transaction.header.transactionCnt == 0) {
+            if (invalidBlock.previousBlockHash != keccak256(abi.encode(proof.previousStateSnapshot))) return _invalid();
+        } else {
+            (bool previousDecoded, Block memory previousBlock) =
+                UtilityFacet(utilityFacetAddress).tryDecodeBlock(proof.previousBlock.encodedBlock);
+            if (!previousDecoded) return _invalid();
+            if (invalidBlock.previousBlockHash != keccak256(proof.previousBlock.encodedBlock)) return _invalid();
+            if (previousBlock.stateSnapshotHash != keccak256(abi.encode(proof.previousStateSnapshot))) {
+                return _invalid();
+            }
+        }
+
+        if (
+            UtilityFacet(utilityFacetAddress).isAddressInArray(
+                proof.previousStateSnapshot.snapshotData.participants, signer
+            )
+                || UtilityFacet(utilityFacetAddress).isAddressInArray(
+                    proof.resultingStateSnapshot.snapshotData.participants, signer
+                )
+        ) return _invalid();
+        return _valid(dispute.input.disputer);
     }
 
     function _handleDisputeNotLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -417,8 +505,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 }
             }
         }
-        (bool ok, uint256 minValidTimestamp) =
-            Math.tryAdd(previousTimestamp, getP2pTime() + getAgreementTime() + getChainFallbackTime());
+        (bool ok, uint256 minValidTimestamp) = _timeoutDeadline(previousTimestamp, hasBlock);
         if (!ok || timeoutTimestamp < minValidTimestamp) {
             return _valid(dispute.input.disputer);
         }
@@ -430,21 +517,37 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         TimeoutCalldataPosted memory timeoutCalldataPostedProof = abi.decode(encodedFraudProof, (TimeoutCalldataPosted));
+        if (_validateTimeoutCalldataPostedProof(timeoutCalldataPostedProof, dispute)) {
+            return _valid(dispute.input.disputer);
+        }
+        return _invalid();
+    }
+
+    function _validateTimeoutCalldataPostedProof(
+        TimeoutCalldataPosted memory timeoutCalldataPostedProof,
+        Dispute memory dispute
+    ) internal returns (bool) {
         SignedBlock memory postedBlock = timeoutCalldataPostedProof.postedBlock;
         Block memory _block = abi.decode(postedBlock.encodedBlock, (Block));
         StateSnapshot memory latestStateSnapshot = timeoutCalldataPostedProof.latestStateSnapshot;
 
         // Check channelId
-        if (!_areDisputeAndBlockSameChannel(dispute, _block)) return _invalid();
+        if (!_areDisputeAndBlockSameChannel(dispute, _block)) {
+            return false;
+        }
 
         // Check forkId
-        if (!_areDisputeAndBlockSameFork(dispute, _block)) return _invalid();
+        if (!_areDisputeAndBlockSameFork(dispute, _block)) return false;
 
         // Check timeout == postedBlock
-        if (dispute.input.timeout.blockHeight != _getBlockHeight(_block)) return _invalid();
+        if (dispute.input.timeout.blockHeight != _getBlockHeight(_block)) {
+            return false;
+        }
 
         // Check timeout participant == block author
-        if (dispute.input.timeout.participant != _getBlockAuthor(_block)) return _invalid();
+        if (dispute.input.timeout.participant != _getBlockAuthor(_block)) {
+            return false;
+        }
 
         // Check block calldata posted
         (bool isFound, bytes32 commitment) = getBlockCallDataCommitment(
@@ -453,9 +556,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             dispute.input.timeout.blockHeight,
             dispute.input.timeout.participant
         );
-        if (!isFound) return _invalid();
+        if (!isFound) return false;
         bytes32 _commitment = keccak256(abi.encode(postedBlock, timeoutCalldataPostedProof.onChainTimestamp));
-        if (commitment != _commitment) return _invalid();
+        if (commitment != _commitment) return false;
 
         // get previousTimestamp
         (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
@@ -467,7 +570,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                     dispute.input.forkId, timeoutCalldataPostedProof.genesisStateSnapshotData
                 )
             ) {
-                return _invalid();
+                return false;
             }
             (bool hasGenesis, uint256 genesisTimestamp) = getGenesisTimestamp(
                 dispute.input.channelId,
@@ -498,7 +601,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                         timeoutCalldataPostedProof.previousBlockOnChainTimestamp
                     )
                 );
-                if (previousBlockCommitment != _previousBlockCommitment) return _invalid();
+                if (previousBlockCommitment != _previousBlockCommitment) {
+                    return false;
+                }
                 if (
                     keccak256(abi.encode(latestBlock))
                         == keccak256(timeoutCalldataPostedProof.previousBlockcalldata.encodedBlock)
@@ -511,10 +616,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             }
         }
         //TODO think >= or >
-        (bool ok, uint256 maxValidTimestamp) =
-            Math.tryAdd(previousTimestamp, getP2pTime() + getAgreementTime() + getChainFallbackTime());
+        (bool ok, uint256 maxValidTimestamp) = _timeoutDeadline(previousTimestamp, hasBlock);
         if (ok && timeoutCalldataPostedProof.onChainTimestamp > maxValidTimestamp) {
-            return _invalid();
+            return false;
         }
         // make sure we can do the STF - it's a valid block
         bool isSuccess;
@@ -525,7 +629,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             dispute.input.channelId, timeoutCalldataPostedProof.latestStateStateMachineState, _block.transaction
         );
         if (!isSuccess) {
-            return _invalid();
+            return false;
         }
 
         Balance memory updatedTotalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
@@ -549,7 +653,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         }
 
         SnapshotData memory newSnapshotData = SnapshotData({
-            originForkId: latestStateSnapshot.forkId,
+            originForkId: latestStateSnapshot.snapshotData.originForkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
             participants: getStateMachineParticipants(encodedModifiedState),
             latestInboundMessageBlockHash: latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
@@ -568,9 +672,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         });
 
         if (_block.stateSnapshotHash != keccak256(abi.encode(recomputedSnapshot))) {
-            return _invalid();
+            return false;
         }
-        return _valid(dispute.input.disputer);
+        return true;
     }
 
     function _handleDisputeInvalidBlockInStateProofApplyFraudProof(

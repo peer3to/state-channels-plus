@@ -7,7 +7,8 @@ import {
     StateTransitionService,
     WebRTCSetupService,
     SpectateService,
-    IsForkDisputedService
+    IsForkDisputedService,
+    JoinChannelService
 } from "./services";
 
 class MainRpcService {
@@ -22,6 +23,7 @@ class MainRpcService {
     stateTransitionService: StateTransitionService;
     spectateService: SpectateService;
     isForkDisputedService: IsForkDisputedService;
+    joinChannelService: JoinChannelService;
 
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -32,6 +34,7 @@ class MainRpcService {
         );
         this.spectateService = new SpectateService(this.p2pManager);
         this.isForkDisputedService = new IsForkDisputedService(this.p2pManager);
+        this.joinChannelService = new JoinChannelService(this.p2pManager);
         return this.self;
     }
 }

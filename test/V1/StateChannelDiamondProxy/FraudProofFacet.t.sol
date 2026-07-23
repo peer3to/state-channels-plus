@@ -88,8 +88,33 @@ contract FraudProofFacetTest is DiamondHarness {
     // honest on-time block (0..p2pTime skew) can never be slashed
     function testFuzz_hasInvalidTimestamp_honestBlockNeverFraud(uint256 prev, uint256 skew) public {
         prev = bound(prev, 1e6, 1e30);
-        skew = bound(skew, 0, P2P_TIME);
+        skew = bound(skew, 0, diamond.getEvidenceTime() + P2P_TIME);
         assertFalse(_isFraud(prev + skew, prev), "honest on-time block flagged as fraud");
+    }
+
+    function test_hasInvalidTimestamp_firstBlockGraceBoundary() public {
+        uint256 prev = 1e6;
+        uint256 maxValidTimestamp = prev + diamond.getEvidenceTime() + P2P_TIME;
+
+        assertFalse(_isFraud(maxValidTimestamp, prev), "first-block grace boundary flagged as fraud");
+        assertTrue(_isFraud(maxValidTimestamp + 1, prev), "timestamp beyond first-block grace accepted");
+    }
+
+    function test_hasInvalidTimestamp_laterBlockHasNoFirstBlockGrace() public {
+        uint256 prev = 1e6;
+        SignedBlock memory previousBlock = _makeSignedBlock(AUTHOR_PK, CHANNEL_ID, FORK_ID, 0, prev, bytes32(0));
+        bytes32 previousHash = keccak256(previousBlock.encodedBlock);
+
+        InvalidTimestampProof memory boundaryProof;
+        boundaryProof.invalidBlock = _makeSignedBlock(AUTHOR_PK, CHANNEL_ID, FORK_ID, 1, prev + P2P_TIME, previousHash);
+        boundaryProof.previousBlock = previousBlock;
+        assertFalse(diamond.hasInvalidTimestamp(boundaryProof), "later-block p2p boundary flagged as fraud");
+
+        InvalidTimestampProof memory beyondProof;
+        beyondProof.invalidBlock =
+            _makeSignedBlock(AUTHOR_PK, CHANNEL_ID, FORK_ID, 1, prev + P2P_TIME + 1, previousHash);
+        beyondProof.previousBlock = previousBlock;
+        assertTrue(diamond.hasInvalidTimestamp(beyondProof), "later block incorrectly received first-block grace");
     }
 
     // forged signature must be inert regardless of timestamps

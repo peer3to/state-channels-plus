@@ -16,6 +16,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
 
         const leaverIndex = 1;
         const leaverAddress = h.getPeer(leaverIndex).address;
+        const disputedForkId = h.activeForkId!;
 
         // forceExit yields a valid self-removal dispute; post untampered.
         await h
@@ -29,11 +30,12 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         ];
 
         await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
+            forkId: disputedForkId,
             markMalicious: false
         });
 
         const remainingPeerIndices = h
-            .getPeersExcludingMaliciousAndLeavers()
+            .getActiveHonestPeers()
             .map((p) => p.index);
 
         // One dispute commits on-chain.
@@ -50,13 +52,14 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         );
 
         await h.dispute.resolveDisputeWait({
+            forkId: disputedForkId,
             assertMaliciousRemoved: false,
             honestPeerIndices: remainingPeerIndices
         });
 
         await h.assert.sync.participantCount({ expectedCount: 2 });
 
-        for (const peer of h.getPeersExcludingMaliciousAndLeavers()) {
+        for (const peer of h.getActiveHonestPeers()) {
             const participants = await h
                 .control(peer)
                 .query.getParticipants()
@@ -73,6 +76,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         await h.scenario.preDisputeSetup({
             timeConfig: { evidenceTime: 6 }
         });
+        const forkId = h.activeForkId!;
 
         // Tamper helper flipSelfRemovalWithoutOutputRecompute flips
         // selfRemoval=!selfRemoval and zeroes timeout/onChainSlashes, but does
@@ -91,6 +95,9 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
                 DisputeFraudProofType.DisputeInvalidOutputState,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait({ forkSettleTimeoutMs: 15000 });
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            forkSettleTimeoutMs: 15000
+        });
     });
 });

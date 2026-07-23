@@ -4,6 +4,7 @@ import { Status } from "@/types";
 import { Block } from "@/models";
 import { Codec, Type } from "@/utils";
 import type { Address } from "@/types/types";
+import assert from "node:assert/strict";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)
@@ -108,21 +109,20 @@ describe("E2E: Participant Lifecycle", function () {
             });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
-            const confirmation = await h.join.buildJoinChannelConfirmation({
+            const prepared = await h.join.buildJoinChannelConfirmation({
                 joiner: spectator,
-                channelId: h.channelId,
-                existingParticipantSigners: [
-                    h.peers[0].signer,
-                    h.peers[1].signer
-                ]
+                channelId: h.channelId
             });
 
             // Fire joinChannel WITHOUT awaiting — the synchronous portion of
             // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
             // before the first `await`, so the promotion is observable
             // immediately after the call starts.
-            const joinPromise =
-                spectator.p2pInstance.p2pSigner.joinChannel(confirmation);
+            const joinPromise = spectator.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
 
             // Status flips to PENDING_PARTICIPANT host-side on broadcast (the
             // join RPC sets it before the tx is mined); read it back over the port.
@@ -156,6 +156,57 @@ describe("E2E: Participant Lifecycle", function () {
                 Status.PARTICIPATING,
                 "Joiner should be PARTICIPATING after the first block that includes them"
             );
+        });
+
+        it("preserves a landed pending join when the same confirmation is retried", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2);
+            const spectator = await h.join.addSpectatorWait();
+            await h.assert.sync.peersInSyncWait();
+            const prepared = await h.join.buildJoinChannelConfirmation({
+                joiner: spectator,
+                channelId: h.channelId
+            });
+
+            await spectator.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            await h.execOnHost(
+                h.getPeer(spectator.index),
+                async (sm, args) => sm.setStatus(args.status),
+                { status: Status.SYNCED }
+            );
+
+            await assert.rejects(
+                spectator.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                ),
+                /ErrorJoinChannelParticipantAlreadyExists/
+            );
+            const retryState = await h.execOnHost(
+                h.getPeer(spectator.index),
+                async (sm) => ({
+                    status: sm.getStatus(),
+                    joinSubmissionHeight:
+                        sm.storage.forceJoin.getJoinSubmissionBlockHeight()
+                }),
+                {}
+            );
+            expect(retryState.status).to.equal(Status.PENDING_PARTICIPANT);
+            expect(retryState.joinSubmissionHeight).to.not.equal(undefined);
+
+            await h.assert.storage.honestPeersObserveInboundMessageWait();
+            await h.transition.advanceState({ count: 1 });
+            expect(
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PARTICIPATING);
         });
     });
 });

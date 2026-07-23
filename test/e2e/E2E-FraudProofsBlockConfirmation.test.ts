@@ -84,8 +84,7 @@ describe("E2E: Block Fraud Proofs", function () {
                 .request()
         ).to.be.null;
 
-        // Posts the block's calldata on-chain via the author's signer (the SCM
-        // contract + signer are client-side, so this needs no host round-trip)
+        // Posts the block's calldata on-chain via the author's host-backed SCM
         // and returns the mined block's timestamp — what an event (re)read
         // would deliver as onChainTimestamp.
         const postBlockCalldata = async (block: BlockBundle) => {
@@ -95,16 +94,13 @@ describe("E2E: Block Fraud Proofs", function () {
             );
             expect(author).to.not.be.undefined;
 
-            const tx = await h.channelManager
-                .connect(author!.signer)
-                .postBlockCalldata(
+            const tx =
+                await author!.p2pInstance.stateChannelManagerContract.postBlockCalldata(
                     Codec.decode(block.encodedSignedBlock, Type.SignedBlock),
                     Clock.getTimeInSeconds() + 1000
                 );
             const receipt = await tx.wait();
-            const minedBlock = await author!.signer.provider!.getBlock(
-                receipt!.blockNumber
-            );
+            const minedBlock = await h.provider.getBlock(receipt!.blockNumber);
             return Number(minedBlock!.timestamp);
         };
 
@@ -402,56 +398,60 @@ describe("E2E: Block Fraud Proofs", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
         const maliciousPeerIndex = 1;
+        const forkId = h.activeForkId!;
         await h.byzantine.submitDoubleSignBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockDoubleSign,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("wrong genesis → WrongGenesis", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a competing block at height 0 with a wrong previousBlockHash.
         const maliciousPeerIndex = 2;
         await h.byzantine.submitWrongGenesisBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.WrongGenesis,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("unexpected next leader → BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);
+        const forkId = h.activeForkId!;
 
         const maliciousPeerIndex = 1; // NOT the expected next leader
         await h.byzantine.submitUnexpectedNextLeaderBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("invalid timestamp → InvalidTimestamp", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block with a timestamp before the previous block's
         // timestamp → objectiveInvalidTimestampDetected → InvalidTimestamp.
@@ -459,18 +459,19 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.byzantine.submitInvalidTimestampBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.InvalidTimestamp,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("broken inbound chain → BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block that includes a messageBlock whose
         // previousBlockHash does not chain from the stored inbound state
@@ -480,18 +481,19 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.byzantine.submitBrokenInboundChainBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("forged inbound message → ForgedInboundMessageBlock", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block that contains a fabricated inbound message
         // block that was never actually sent by any peer
@@ -501,18 +503,19 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.byzantine.submitForgedInboundMessageBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.ForgedInboundMessageBlock,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("applyTransaction failure → BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block whose transaction body is malformed data that
         // the contract rejects; applyTransaction returns success=false
@@ -521,18 +524,19 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.byzantine.submitInvalidTransactionDataBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     it("stateSnapshotHash mismatch → BlockInvalidStateTransition", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
+        const forkId = h.activeForkId!;
 
         // Peer 2 submits a block with a valid transaction but a wrong
         // stateSnapshotHash (ZeroHash).
@@ -543,13 +547,29 @@ describe("E2E: Block Fraud Proofs", function () {
         const honestSumsBefore = await Promise.all(
             honestPeers.map((p) => p.contractInstance.getSum())
         );
-        await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
+        const invalidBlock =
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        h.assert.storage.honestPeersStoredFraudProof({
+        await h.assert.storage.honestPeersStoredFraudProof({
             fraudProofType: FraudProofType.BlockInvalidStateTransition,
             maliciousPeerIndex
         });
+
+        // Fraud-proof persistence happens inside validation, before the
+        // onBlockConfirmation finally restores the VM. Wait for the processed
+        // hook, which is emitted after that restoration, before reading state.
+        await Promise.all(
+            honestPeers.map((peer) =>
+                h.event.waitForBlockConfirmationProcessed({
+                    peerIndex: peer.index,
+                    blockHash: invalidBlock.hash,
+                    timeoutMs: 10000
+                })
+            )
+        );
 
         // The block's add() executed on honest VMs before the snapshot-hash
         // check failed; the abort must have rolled the state back.
@@ -562,7 +582,7 @@ describe("E2E: Block Fraud Proofs", function () {
 
         await h.assert.storage.storedDisputeConfirmationsWait();
 
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 });

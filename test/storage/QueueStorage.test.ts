@@ -6,7 +6,7 @@ import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ForkId, BlockHeight } from "@/types/types";
+import { ForkId, BlockHeight, Hash } from "@/types/types";
 import * as factory from "../factory";
 import { Block } from "@/models";
 import Storage from "@/storage";
@@ -146,6 +146,58 @@ describe("QueueStorage", () => {
             expect(dequeued[0].block.onChainTimestamp).to.equal(
                 onChainTimestamp
             );
+        });
+
+        it("bounds attribution and retains an early-tracked source under a later junk flood", () => {
+            // An honest supplier is tracked first, then a byzantine peer floods
+            // the same hash from many distinct addresses.
+            const honest = factory.randomAddress();
+            const hash = storage.queueBlock(mockBlock, {
+                senderAddress: honest
+            });
+            for (let i = 0; i < 300; i++) {
+                storage.queueBlock(mockBlock, {
+                    senderAddress: factory.randomAddress()
+                });
+            }
+
+            const entry = storage.getQueuedEntry(hash)!;
+            // Bounded retention: the maps can't grow past the structural cap.
+            expect(entry.sourcePeers.size).to.be.at.most(128);
+            for (const peers of entry.signatureSources.values()) {
+                expect(peers.size).to.be.at.most(128);
+            }
+            // Overflow is a marker, not a validity decision.
+            expect(entry.overflowedSources).to.equal(true);
+            // The early honest source is never evicted by later junk...
+            expect(entry.sourcePeers.has(honest)).to.equal(true);
+            // ...and the block itself is still queued (never invalidated).
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("junk-first: a flood that fills the cap first still lets a later valid copy process", () => {
+            // Byzantine peer floods the hash to the cap BEFORE any honest copy.
+            let hash!: Hash;
+            for (let i = 0; i < 300; i++) {
+                hash = storage.queueBlock(mockBlock, {
+                    senderAddress: factory.randomAddress()
+                });
+            }
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.overflowedSources).to.equal(true);
+            expect(entry.sourcePeers.size).to.be.at.most(128);
+
+            // A valid copy now arrives. The block must NOT be invalidated by the
+            // prior overflow - it stays queued and dequeueable. (Known
+            // limitation of the structural-only cap: the late source may not be
+            // retained once the cap is full; participant-aware attribution
+            // selection is a documented follow-up, not shipped here.)
+            const honest = factory.randomAddress();
+            storage.queueBlock(mockBlock, { senderAddress: honest });
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+            const dequeued = storage.tryDequeueAt(mockForkId, mockHeight);
+            expect(dequeued).to.have.lengthOf(1);
+            expect(dequeued[0].block.hash).to.equal(mockBlock.hash);
         });
 
         it("should overwrite on-chain timestamp when queueing same block again", () => {

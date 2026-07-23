@@ -10,8 +10,9 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
         it("stateProof.signedBlocks[-1].header.channelId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
                 await d.rewriteLastSignedBlockInDispute(dispute, (bs) =>
@@ -36,14 +37,15 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                     DisputeFraudProofType.DisputeStateProofHeaderMismatch,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("stateProof.signedBlocks[-1].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
                 await d.rewriteLastSignedBlockInDispute(dispute, (bs) =>
@@ -68,7 +70,44 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                     DisputeFraudProofType.DisputeStateProofHeaderMismatch,
                 timeoutMs: 10000
             });
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
+        });
+
+        it("stateProof.signedBlocks[0].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
+            // The FIRST signed block (height 0) on a wrong fork must be caught by
+            // the Solidity header-mismatch check and kill the dispute BEFORE the
+            // pipeline runs - so the dispute-strategy wrong-genesis path is only
+            // ever reached for a block[0] that is genuinely on the disputed fork.
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
+
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                const d = sm.p2pManager.localRpc.dispute;
+                d.expectSignedBlocksOnlyStateProof(dispute.input.stateProof);
+                await d.rewriteSignedBlockAtIndex(dispute, 0, (bs) =>
+                    d.blockStructWithTransactionHeader(bs, {
+                        forkId: d.randomHash()
+                    })
+                );
+            });
+
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: false
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+                mode: "atLeast"
+            });
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
+                timeoutMs: 10000
+            });
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -76,8 +115,9 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
         it("stateProof.milestones[-1].blockConfirmations[-1].header.channelId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 await d.rewriteLastMilestoneSignedBlockInDispute(
                     dispute,
@@ -104,6 +144,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 syntheticOnChainParticipants: 1
             });
         });
@@ -111,8 +152,9 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
         it("stateProof.milestones[-1].blockConfirmations[-1].header.forkId = random → DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
+            const forkId = h.activeForkId!;
 
-            h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+            await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const d = sm.p2pManager.localRpc.dispute;
                 await d.rewriteLastMilestoneSignedBlockInDispute(
                     dispute,
@@ -139,6 +181,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 timeoutMs: 10000
             });
             await h.dispute.resolveDisputeWait({
+                forkId,
                 syntheticOnChainParticipants: 1
             });
         });
@@ -161,7 +204,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 await h.scenario.preDisputeSetupDisconnectedPeer();
                 const originalForkId = h.context.originalForkId!;
 
-                h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                     const d = sm.p2pManager.localRpc.dispute;
                     d.expectSignedBlocksOnlyStateProof(
                         dispute.input.stateProof
@@ -181,8 +224,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
 
                 await h.assert.dispute.committedWait({
                     peersIndices: h.getHonestPeers().map((p) => p.index),
-                    expectedCount: 1,
-                    timeoutMs: 10000
+                    expectedCount: 1
                 });
 
                 await h.event.waitWhileEventCountsStayAtMost(
@@ -207,7 +249,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
                 await h.scenario.preDisputeSetupCalldataPath();
                 const originalForkId = h.context.originalForkId!;
 
-                h.tamper.stubConstructDispute(3, async (dispute, sm) => {
+                await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                     const d = sm.p2pManager.localRpc.dispute;
                     await d.rewriteUniformForkIdInDispute(
                         dispute,
@@ -224,8 +266,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
 
                 await h.assert.dispute.committedWait({
                     peersIndices: h.getHonestPeers().map((p) => p.index),
-                    expectedCount: 1,
-                    timeoutMs: 10000
+                    expectedCount: 1
                 });
 
                 await h.event.waitWhileEventCountsStayAtMost(

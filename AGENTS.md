@@ -14,6 +14,42 @@
 
 These are project rules to follow (and persist any future "remember this" instructions here).
 
+### PR reviews (AI agents)
+
+When reviewing a PR, verifying adherence to **all** guidelines in this file
+_and_ `test/AGENTS.md` (for anything under `test/`) is part of the review —
+report violations as findings alongside correctness issues. This includes the
+testing-changes rule above (unit + e2e in the same pass), the strategy-pattern
+rules, the type-safety rules, and the test-harness rules (no mocks, fixtures
+trigger src code).
+
+### Canonical test command and parallel run logs
+
+`yarn test:parallel` is the canonical full test gate and runs all Mocha tests;
+pass `--e2e-only` to limit discovery to `test/e2e`. The legacy in-process
+`yarn test` command is only for rare focused compatibility checks. The parallel
+runner writes each run to a fresh `./logs/run-N/` (N
+auto-increments) and never touches earlier `run-*` dirs — error logs persist
+across runs for comparison (`TEST_FAILURES.md` workflow). Only the current
+run's dir is cleared/cleaned. An explicit `--logDir <dir>` is used (and
+cleared) as-is; dirs outside `./logs` additionally need
+`--allow-logdir-purge`. Prune old `run-*` dirs manually when done comparing.
+
+### Test-chain RPC mutations
+
+- **Never call node-wide test RPC methods from a test that may share its node or
+  slot with another test.** This includes `evm_increaseTime`, `evm_mine`,
+  `evm_setNextBlockTimestamp`, snapshot/revert, automine/interval-mining changes,
+  `hardhat_mine`, `hardhat_reset`, impersonation, balance mutation, and similar
+  endpoints. They mutate global node state and can corrupt unrelated concurrent
+  tests.
+- Such methods are allowed only when the test owns a provably isolated node for
+  its entire lifetime. Do not infer isolation from the current command or from
+  tests usually running serially; verify it from the runner/provider setup.
+- Prefer exercising behavior through normal transactions and the harness. If an
+  isolated-node mutation is unavoidable, keep it in an explicitly isolated
+  test runner and restore reversible settings in `finally`.
+
 ### Testing changes to `src/`
 
 Every `src/` change ships with tests in the same pass — both kinds:
@@ -73,6 +109,13 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
   sync) enter via `onBlockConfirmationStruct`, which wraps into a sourceless
   entry.
 
+### Class layout
+
+- **All fields at the top, then all methods** — a class is always `{ fields,
+methods }`. Never interleave a field declaration between methods. When adding a
+  new field, put it with the other fields at the top of the class (keep any
+  explanatory comment with it), not next to the method that happens to use it.
+
 ### Comments
 
 - Keep comments simple and to the point. No long essays.
@@ -82,6 +125,21 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
   comments. If a comment genuinely needs to change, call it out rather than
   dropping it silently; flag stale commented-out dead code instead of removing
   it without mention.
+
+### Logging metadata
+
+- Reusable log-metadata extraction belongs in `LoggerUtils`, alongside the
+  existing block, dispute, transport, RPC, and contract-call helpers. Call
+  sites should delegate to those helpers instead of assembling selectors,
+  addresses, byte lengths, or other structured log metadata ad hoc.
+
+### Reuse existing code
+
+- Search for an existing implementation before adding logic. When the same
+  operation already exists, reuse it or extract one shared implementation;
+  never copy-paste the behavior into another class or service.
+- Keep one owner for each operation. Callers should delegate to that owner
+  instead of maintaining parallel implementations that can drift.
 
 ### Solidity validators shared with the off-chain TS pipeline
 
@@ -121,6 +179,12 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
 
 ### Type safety
 
+- **Primitive collection types need domain meaning.** Plain `string`, `number`,
+  `boolean`, and similar generic primitives are usually not descriptive enough
+  as `Map` keys/values or `Set` members. Prefer a descriptive alias such as
+  `EventKey`, `ChannelKey`, or `BlockNumber`. A primitive may be used directly
+  only when a concise comment immediately above the collection explains
+  exactly what its keys and values represent.
 - When mirroring another type's signatures (e.g. event listeners that mirror
   handler methods), derive them with mapped/`infer` types so they stay in sync,
   rather than hand-restating loosely-typed signatures.
@@ -168,4 +232,4 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
   Keep it simple; add a named type later only if it actually earns reuse. (And
   don't reach for `Awaited<ReturnType<…>>`-style gymnastics to avoid a name —
   that's worse than the type it replaces; it's for generics, not one-offs.)
-- Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`.
+- Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`. Exception: `scripts/` CLIs (test runners, infra tooling) write their user-facing output with `console.*` by design — the rule governs `src/` and harness code whose logs must ship through the pipeline.

@@ -173,7 +173,7 @@ describe("E2E: Spectate Service", function () {
                   )
                 : null;
 
-            const encodedSyncPayload = await h
+            const syncResult = await h
                 .control(sourcePeer)
                 .spectate.generateSyncPayload(
                     h.channelId!,
@@ -181,9 +181,9 @@ describe("E2E: Spectate Service", function () {
                     blockHeight - 1
                 )
                 .request();
-            expect(encodedSyncPayload).to.not.be.null;
+            expect(syncResult).to.not.be.null;
             const syncPayload = Codec.decode(
-                encodedSyncPayload!,
+                syncResult!.encodedSyncPayload,
                 Type.SyncPayload
             );
             const latestFinalizedSnapshot =
@@ -259,7 +259,7 @@ describe("E2E: Spectate Service", function () {
                     blockHeight,
                     blockAuthor: blockInfo!.author,
                     blockConfirmation: blockConfirmation!,
-                    encodedSyncPayload: encodedSyncPayload!
+                    encodedSyncPayload: syncResult!.encodedSyncPayload
                 }
             );
 
@@ -309,7 +309,7 @@ describe("E2E: Spectate Service", function () {
             expect(localLatestHeight).to.be.greaterThan(0);
 
             const sourcePeer = await h.peerWithHighestBlock(forkId!);
-            const encodedSyncPayload = await h
+            const syncResult = await h
                 .control(h.getPeer(sourcePeer.index))
                 .spectate.generateSyncPayload(
                     h.channelId!,
@@ -317,7 +317,7 @@ describe("E2E: Spectate Service", function () {
                     localLatestHeight - 1
                 )
                 .request();
-            expect(encodedSyncPayload).to.not.be.null;
+            expect(syncResult).to.not.be.null;
 
             await h
                 .control(h.getPeer(spectator.index))
@@ -327,7 +327,7 @@ describe("E2E: Spectate Service", function () {
             try {
                 const { shouldAbort } = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(encodedSyncPayload!)
+                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
                     .request();
 
                 const didPersistLatestState = await h
@@ -406,7 +406,7 @@ describe("E2E: Spectate Service", function () {
                     .transaction.header.transactionCnt
             );
 
-            const encodedSyncPayload = await h
+            const syncResult = await h
                 .control(h.getPeer(sourcePeer.index))
                 .spectate.generateSyncPayload(
                     h.channelId!,
@@ -414,9 +414,9 @@ describe("E2E: Spectate Service", function () {
                     sourceLatestHeight
                 )
                 .request();
-            expect(encodedSyncPayload).to.not.be.null;
+            expect(syncResult).to.not.be.null;
             const syncPayload = Codec.decode(
-                encodedSyncPayload!,
+                syncResult!.encodedSyncPayload,
                 Type.SyncPayload
             );
             expect(syncPayload.stateProof.milestones.length).to.be.greaterThan(
@@ -495,7 +495,7 @@ describe("E2E: Spectate Service", function () {
             try {
                 const { shouldAbort } = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(encodedSyncPayload!)
+                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
                     .request();
 
                 const didPersistLatestState = await h
@@ -548,8 +548,16 @@ describe("E2E: Spectate Service", function () {
             await h.transition.advanceState({ count: 5 });
             await h.assert.sync.peersInSyncWait();
 
+            // Keep this scenario about a bad transition from the valid writer;
+            // participant order differs between parallel account allocations.
+            const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
+                .index;
+            const honestPeerIndices = h.peers
+                .map((peer) => peer.index)
+                .filter((peerIndex) => peerIndex !== maliciousPeerIndex);
             await h.scenario.disputeWithReduction({
-                maliciousPeerIndex: 2,
+                maliciousPeerIndex,
+                honestPeerIndices,
                 forkSettleTimeoutMs: 15000,
                 disputesCommittedTimeoutMs: 10000
             });
@@ -560,24 +568,26 @@ describe("E2E: Spectate Service", function () {
                 (c) => c.add(2),
                 (c) => c.add(2)
             ]);
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3, 4] });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: honestPeerIndices
+            });
 
             await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
 
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
 
             await h.assert.sync.peersInSyncWait({
-                peerIndices: [0, 1, 3, 4, 5]
+                peerIndices: honestPeerIndices.concat(5)
             });
             await h.assert.sync.participantCount({
                 expectedCount: 4,
@@ -613,17 +623,19 @@ describe("E2E: Spectate Service", function () {
 
             const maliciousPeerIndex = 0;
             const honestPeerIndices = [1, 2, 3];
+            const forkId = h.activeForkId!;
 
             h.event.resetEventSpies();
             await h.byzantine.submitInvalidStateTransitionBlock(
                 maliciousPeerIndex
             );
-            await h.assert.dispute.initiatedAndCommitedWait({
-                expectedCount: 1,
-                peersIndices: honestPeerIndices
-            });
+            await h.event.waitUntilPeerStatus(4, Status.OPENED);
 
+            // initiatedAndCommitedWait is flaky when it expects multiple peer to initiate and commit
+            // Why? Because peers race and if they commit at the same it is ok
+            // If 1 peer commits first and others audit -> it's possible that others hit hasMoreEvidence=false so they don't submit
             await h.dispute.resolveDisputeWait({
+                forkId,
                 honestPeerIndices: honestPeerIndices
             });
 
@@ -690,6 +702,7 @@ describe("E2E: Spectate Service", function () {
 
             const maliciousPeerIndex = 0;
             const honestPeerIndices = [1, joiner.index];
+            const forkId = h.activeForkId!;
 
             await h.byzantine.submitInvalidStateTransitionBlock(
                 maliciousPeerIndex
@@ -700,6 +713,7 @@ describe("E2E: Spectate Service", function () {
             });
 
             const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId,
                 honestPeerIndices,
                 forkSettleTimeoutMs: 15000
             });
@@ -744,7 +758,7 @@ describe("E2E: Spectate Service", function () {
 
     describe("Concurrent promotion", function () {
         const concurrentTimeConfig = {
-            p2pTime: 2,
+            p2pTime: 6, // 2s too low for joinChannelWait
             agreementTime: 4,
             chainFallbackTime: 4,
             evidenceTime: 6
@@ -760,12 +774,7 @@ describe("E2E: Spectate Service", function () {
             const joinerB = await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait();
 
-            await h.join.joinChannelWait({
-                joiner: joinerA,
-                existingParticipantSigners: h.peers
-                    .slice(0, 3)
-                    .map((p) => p.signer)
-            });
+            await h.join.joinChannelWait({ joiner: joinerA });
             await h.join.forceInboundJoinObserveDetached({
                 participant: joinerB.address
             });
@@ -810,12 +819,9 @@ describe("E2E: Spectate Service", function () {
             await h.assert.sync.peersInSyncWait();
 
             // joinerA pre-signs its confirmation while pending is empty.
-            const confirmation = await h.join.buildJoinChannelConfirmation({
+            const prepared = await h.join.buildJoinChannelConfirmation({
                 joiner: joinerA,
-                channelId: h.channelId,
-                existingParticipantSigners: h.peers
-                    .slice(0, 3)
-                    .map((p) => p.signer)
+                channelId: h.channelId
             });
             // forceInboundJoin lands first → joinerB enters the pending set →
             // join threshold becomes {p0, p1, p2, joinerB}; joinerA's pre-signed
@@ -825,7 +831,11 @@ describe("E2E: Spectate Service", function () {
             });
 
             try {
-                await joinerA.p2pInstance.p2pSigner.joinChannel(confirmation);
+                await joinerA.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
                 expect.fail(
                     "expected joinChannel to revert: pending set changed between confirmation build and submission"
                 );
@@ -872,7 +882,7 @@ describe("E2E: Spectate Service", function () {
                     .request()
             ).to.equal(Status.SYNCED);
 
-            // forceInboundJoin appends inbound for the spectator. Status stays SYNCED.
+            // The compatibility helper submits through the spectator's StateManager.
             await h.join.forceInboundJoinWait({
                 participant: spectator.address
             });
@@ -881,7 +891,7 @@ describe("E2E: Spectate Service", function () {
                     .control(h.getPeer(spectator.index))
                     .query.getStatus()
                     .request()
-            ).to.equal(Status.SYNCED);
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             const pendingBefore = await h.channelManager.getPendingParticipants(
                 h.channelId
@@ -894,6 +904,7 @@ describe("E2E: Spectate Service", function () {
             // block consumes the spectator's inbound. agreementTime=4s gives a
             // window where no peer has posted a block yet.
             const leaverIndex = 0;
+            const originalForkId = h.activeForkId!;
             await h
                 .control(h.getPeer(leaverIndex))
                 .dispute.setForceExit(true)
@@ -907,21 +918,21 @@ describe("E2E: Spectate Service", function () {
             });
 
             const remainingPeerIndices = h
-                .getPeersExcludingMaliciousAndLeavers()
+                .getActiveHonestPeers()
                 .map((p) => p.index);
             await h.assert.dispute.committedWait({
                 peersIndices: remainingPeerIndices,
                 expectedCount: 1
             });
 
-            const originalForkId = h.activeForkId!;
             await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
                 forkSettleTimeoutMs: 15000,
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false
             });
 
-            await h.assert.snapshot.onChainSnapshotChangedWait({
+            await h.assert.snapshot.localSnapshotsChangedWait({
                 previousForkId: originalForkId,
                 timeoutMs: 15000
             });
@@ -987,24 +998,21 @@ describe("E2E: Spectate Service", function () {
             const restore = await h.rpcStub.stubCountSpectateRequests(1);
 
             const peer1Address = h.getPeer(1).address;
-            // Fire two sync() calls for the same peer back-to-back on peer 0's
-            // host. `sync()` marks `inFlightByPeerAddress` synchronously before
-            // sending, so the second call must be dropped before it hits the wire.
-            await h.execOnHost(
-                h.getPeer(0),
-                (sm, args) => {
-                    const channelId = sm.channelId;
-                    sm.p2pManager.localRpc.spectateService.sync(
-                        args.peer1Address,
-                        channelId
-                    );
-                    sm.p2pManager.localRpc.spectateService.sync(
-                        args.peer1Address,
-                        channelId
-                    );
-                },
-                { peer1Address }
-            );
+            // Fire two concurrent startSync calls for the same peer on peer 0.
+            // `sync()` marks `inFlightByPeerAddress` synchronously before its
+            // background request completes (a full spectate RTT), so the second
+            // must be dropped before it hits the wire. Both control round-trips
+            // land well inside that window.
+            await Promise.all([
+                h
+                    .control(h.getPeer(0))
+                    .spectate.startSync(peer1Address)
+                    .request(),
+                h
+                    .control(h.getPeer(0))
+                    .spectate.startSync(peer1Address)
+                    .request()
+            ]);
 
             // Wait for the single request to land, then assert it stayed at one
             // (the deduped second call never produced a second request).
@@ -1019,5 +1027,115 @@ describe("E2E: Spectate Service", function () {
 
             await restore();
         });
+    });
+
+    describe("Unprovable sync target mutually blacklists both peers", function () {
+        it("an above-latest target can't be proven, so requester and responder blacklist each other", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 2);
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+
+            const requester = h.getPeer(0);
+            const responder = h.getPeer(1);
+            const forkId = h.activeForkId!;
+
+            // Ask for a height far above anything the responder can prove. p2p
+            // sync is mutual-cooperation: an unprovable request is a cooperation
+            // failure, so the responder cuts the requester (and never serves a
+            // downgraded latest-height proof), and the failed request cuts the
+            // responder in turn.
+            await h
+                .control(requester)
+                .spectate.startSync(responder.address, forkId, 9999)
+                .request();
+
+            await waitFor(
+                async () =>
+                    await h
+                        .control(responder)
+                        .query.isBlacklisted(requester.address)
+                        .request(),
+                10000
+            );
+            await waitFor(
+                async () =>
+                    await h
+                        .control(requester)
+                        .query.isBlacklisted(responder.address)
+                        .request(),
+                10000
+            );
+        });
+    });
+
+    describe("Exact-target sync payload generation", function () {
+        // A targeted sync request pins the proof to the exact (fork, height):
+        // `generateSyncPayload(F, h)` must prove height `h`, even when the
+        // responder is locally ahead. Height 0 is the regression for the
+        // `_blockHeight ?? latestBlockHeight` fix: 0 is falsy, so pre-fix the
+        // `||` proved the responder's *latest* height instead of the pinned 0.
+        // Height 1 is the truthy-height control that already worked.
+        // Driven host-side against the real `generateSyncPayload` so the pin is
+        // asserted deterministically at its source (the full sync pipeline
+        // normalizes an over-proved height, so it can't distinguish the fix).
+        for (const requestedHeight of [0, 1]) {
+            it(`pins the sync payload to requested height ${requestedHeight} while ahead`, async function () {
+                this.timeout(90000);
+
+                const h = TestSession.getHarness();
+                await h.lifecycle.start(2, 0, {
+                    timeConfig: {
+                        p2pTime: 5,
+                        agreementTime: 10,
+                        chainFallbackTime: 2,
+                        evidenceTime: 10
+                    }
+                });
+
+                // Advance so the responder is finalized well beyond the target.
+                await h.transition.advanceState({
+                    count: 3,
+                    waitForFinalization: true
+                });
+
+                const responder = h.getPeer(0);
+                const forkId = h.activeForkId!;
+
+                // The responder is locally ahead of the requested target.
+                const responderLatest = await h
+                    .control(responder)
+                    .query.getLatestBlockBundle(forkId)
+                    .request();
+                expect(responderLatest).to.not.equal(null);
+                expect(responderLatest!.height).to.be.greaterThan(
+                    requestedHeight
+                );
+
+                const syncResult = await h
+                    .control(responder)
+                    .spectate.generateSyncPayload(
+                        h.channelId!,
+                        forkId,
+                        requestedHeight
+                    )
+                    .request();
+                expect(syncResult).to.not.equal(null);
+                const syncPayload = Codec.decode(
+                    syncResult!.encodedSyncPayload,
+                    Type.SyncPayload
+                );
+
+                // The proof is pinned to exactly the requested height, not the
+                // responder's latest. Pre-fix (height 0 -> `||` -> latest) this
+                // is the responder's tip and the assertion fails.
+                const latestFinalizedSnapshot =
+                    syncPayload.milestoneSnapshots.at(-1) ??
+                    syncPayload.latestForkGenesisSnapshot;
+                expect(Number(latestFinalizedSnapshot.blockHeight)).to.equal(
+                    requestedHeight,
+                    "sync payload must prove exactly the requested height"
+                );
+            });
+        }
     });
 });

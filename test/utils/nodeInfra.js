@@ -80,7 +80,8 @@ function pipeLogs(child, logPath) {
 async function startHardhatNode({
     port,
     logPath,
-    label = "hardhat node"
+    label = "hardhat node",
+    env = {}
 } = {}) {
     const nodePort = port ?? (await getFreePort());
     const proc = spawn(
@@ -95,7 +96,7 @@ async function startHardhatNode({
         ],
         {
             cwd: REPO_ROOT,
-            env: { ...process.env },
+            env: { ...process.env, ...env },
             stdio: ["ignore", "pipe", "pipe"]
         }
     );
@@ -290,7 +291,8 @@ async function provisionSlots(slotCount, logDir) {
         const node = await startHardhatNode({
             port,
             logPath: infraPath(`hardhat-node-slot${id}.log`),
-            label: `slot ${id} hardhat node`
+            label: `slot ${id} hardhat node`,
+            env: { E2E_INTERVAL_MINING: "1" }
         });
         node.label = `slot ${id} hardhat node`;
         infra.nodes.push(node);

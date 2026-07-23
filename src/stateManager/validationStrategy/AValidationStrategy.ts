@@ -1,10 +1,15 @@
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import { BlockValidationResult, Signature } from "@/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+
+export type ParticipantSnapshots = {
+    previous: StateSnapshot;
+    resulting: StateSnapshot;
+};
 
 export default abstract class AValidationStrategy {
     public get name(): string {
@@ -36,7 +41,8 @@ export default abstract class AValidationStrategy {
      */
     public abstract notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
-        unexpectedSignatures: Set<Signature>
+        unexpectedSignatures: Set<Signature>,
+        participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult>;
 
     public abstract noNewSignaturesOnExistingBlock(
@@ -48,7 +54,7 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockAuthorIsNotParticipant(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract doubleSignDetected(
@@ -65,12 +71,18 @@ export default abstract class AValidationStrategy {
         messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult>;
 
+    /**
+     * A height-0 block that doesn't link to the fork's genesis snapshot.
+     * Takes the entry (not just the block) so strategies can attribute the
+     * block to its source peers when the genesis snapshot is missing
+     * entirely — that case can't produce a fraud proof.
+     */
     public abstract wrongGenesisDetected(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract conflictingButNotLinkedBlockDetected(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract blockForkIsDisputed(
@@ -82,7 +94,7 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotLinkedAndIsNotFirstBlock(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract objectiveInvalidTimestampDetected(

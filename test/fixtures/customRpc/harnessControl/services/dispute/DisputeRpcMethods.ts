@@ -3,7 +3,6 @@ import { ZeroAddress } from "ethers";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import Clock from "@/Clock";
-import StateSnapshot from "@/models/StateSnapshot";
 import { Codec, Type } from "@/utils";
 import type { ForkId } from "@/types/types";
 import type {
@@ -36,6 +35,34 @@ export class DisputeRpcMethods extends ARpcMethods {
         private readonly service: DisputeService
     ) {
         super(transport, service.p2pManager);
+    }
+
+    /** Start the real fork-scoped reduction without awaiting its shared result. */
+    public startReduction(forkId: ForkId): boolean {
+        void this.service.sm.reductionManager.tryReduce(forkId);
+        return true;
+    }
+
+    /** Await the real fork-scoped reduction completion. */
+    public async awaitReduction(forkId: ForkId): Promise<ForkId | null> {
+        return (
+            (await this.service.sm.reductionManager.tryReduce(forkId))
+                ?.reducedForkId ?? null
+        );
+    }
+
+    /** Recover missed committed-dispute logs through the production query path. */
+    public recoverCommittedDisputes(forkId: ForkId): Promise<number> {
+        return this.service.recoverCommittedDisputes(forkId);
+    }
+
+    public probeReductionScheduleIsolation(
+        forkId: ForkId,
+        triggerTimestamp: number
+    ): boolean {
+        this.service.sm.reductionManager.schedule(forkId, triggerTimestamp);
+        this.service.sm.reductionManager.schedule(forkId, triggerTimestamp);
+        return this.service.sm.reductionManager.hasOperation(forkId);
     }
 
     /**
@@ -175,47 +202,6 @@ export class DisputeRpcMethods extends ARpcMethods {
             previousBlockProducerPostedCalldata: false,
             participantSignatureOnPreviousBlock: "0x"
         });
-        return true;
-    }
-
-    /**
-     * Corrupt the head snapshot's `totalDeposits` (amount + 1) and re-store it
-     * under the original hash — breaks the balance invariant.
-     */
-    public corruptSnapshotBalanceInvariant(forkId: ForkId): boolean {
-        const storage = this.service.storage;
-        const latestBlock = storage.blocks.getLatestBlock(forkId);
-        if (!latestBlock) {
-            throw new Error(
-                `corruptSnapshotBalanceInvariant: no latest block for ${forkId}`
-            );
-        }
-        const originalSnapshot = storage.stateSnapshots.getStateSnapshotByHash(
-            latestBlock.stateSnapshotHash
-        );
-        if (!originalSnapshot) {
-            throw new Error(
-                `corruptSnapshotBalanceInvariant: no snapshot for ${latestBlock.stateSnapshotHash}`
-            );
-        }
-        const struct = originalSnapshot.toStruct();
-        const corrupted = {
-            ...struct,
-            snapshotData: {
-                ...struct.snapshotData,
-                totalDeposits: {
-                    ...struct.snapshotData.totalDeposits,
-                    amount:
-                        BigInt(struct.snapshotData.totalDeposits.amount) + 1n
-                }
-            }
-        };
-        storage.stateSnapshots.storeStateSnapshot(
-            StateSnapshot.from(corrupted),
-            {
-                hash: originalSnapshot.hash
-            }
-        );
         return true;
     }
 }

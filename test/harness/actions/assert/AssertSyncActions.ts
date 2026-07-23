@@ -200,16 +200,16 @@ export class AssertSyncActions<
             try {
                 await this.onChainSnapshotAndPeersSameFork();
                 return true;
-            } catch (error) {
+            } catch {
                 return false;
             }
         };
         await this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: options?.timeoutMs,
-            timeoutMessageFn: () => {
+            timeoutMessageFn: async () => {
                 let errorMsg = "";
                 try {
-                    this.onChainSnapshotAndPeersSameFork();
+                    await this.onChainSnapshotAndPeersSameFork();
                 } catch (error) {
                     errorMsg += ` - ${error instanceof Error ? error.message : String(error)}`;
                 }
@@ -235,9 +235,7 @@ export class AssertSyncActions<
     }
 
     async onlyHonestPeersInSync(): Promise<void> {
-        const indices = this.harness
-            .getPeersExcludingMaliciousAndLeavers()
-            .map((p) => p.index);
+        const indices = this.harness.getActiveHonestPeers().map((p) => p.index);
         if (!indices || indices.length === 0) {
             throw new Error("No peers for transition sync barrier");
         }

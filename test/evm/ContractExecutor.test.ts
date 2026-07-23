@@ -226,7 +226,7 @@ describe("ContractExecutor", function () {
         expect(getUnderlyingDbSize()).to.be.greaterThan(dbSizeBefore);
     });
 
-    it("should let simulations complete while a canonical call holds the mutex", async function () {
+    it("should make simulations wait while a canonical call holds the mutex", async function () {
         const evmWithPatchedRunCall = evm as EVM & {
             runCall: (...args: any[]) => ReturnType<EVM["runCall"]>;
         };
@@ -260,32 +260,25 @@ describe("ContractExecutor", function () {
 
         const canonicalCall = executeContractCall(setValueData);
         await canonicalCallStartedPromise;
+        let simulationCompleted = false;
+        const simulation = simulateContractCall(getValueData).then((result) => {
+            simulationCompleted = true;
+            return result;
+        });
 
         try {
-            const result = await Promise.race([
-                simulateContractCall(getValueData),
-                new Promise<never>((_, reject) =>
-                    setTimeout(
-                        () =>
-                            reject(
-                                new Error(
-                                    "simulation waited for the canonical mutex"
-                                )
-                            ),
-                        100
-                    )
-                )
-            ]);
-
-            expect(result.returnValue).to.not.be.undefined;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(simulationCompleted).to.equal(false);
         } finally {
             releaseCanonicalCall();
             await canonicalCall;
             evmWithPatchedRunCall.runCall = originalRunCall;
         }
+
+        expect((await simulation).returnValue).to.not.be.undefined;
     });
 
-    it("should simulate from the last stable state while a canonical call is still held", async function () {
+    it("should simulate from the committed state after a canonical call releases", async function () {
         const getValueFunction =
             SimpleNumberStorage.interface.getFunction("getValue");
         const getValueData =
@@ -323,25 +316,22 @@ describe("ContractExecutor", function () {
 
         const canonicalCall = executeContractCall(setNextValueData);
         await canonicalLiveStateUpdated;
+        let simulationCompleted = false;
+        const simulation = simulateContractCall(getValueData).then((result) => {
+            simulationCompleted = true;
+            return result;
+        });
 
         try {
-            const resultWhileCanonicalHeld =
-                await simulateContractCall(getValueData);
-            const valueWhileCanonicalHeld =
-                ethers.AbiCoder.defaultAbiCoder().decode(
-                    ["uint256"],
-                    ethers.hexlify(resultWhileCanonicalHeld.returnValue)
-                )[0];
-
-            expect(valueWhileCanonicalHeld).to.equal(initialValue);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(simulationCompleted).to.equal(false);
         } finally {
             releaseCanonicalCall();
             await canonicalCall;
             evmWithPatchedRunCall.runCall = originalRunCall;
         }
 
-        const resultAfterCanonicalRelease =
-            await simulateContractCall(getValueData);
+        const resultAfterCanonicalRelease = await simulation;
         const valueAfterCanonicalRelease =
             ethers.AbiCoder.defaultAbiCoder().decode(
                 ["uint256"],
@@ -351,33 +341,24 @@ describe("ContractExecutor", function () {
         expect(valueAfterCanonicalRelease).to.equal(nextValue);
     });
 
-    it("should run detached simulations concurrently", async function () {
-        const simulationBaseEvm = (contractExecutor as any)
-            .simulationBaseEvm as EVM & {
-            shallowCopy: () => EVM;
+    it("should serialize detached simulations", async function () {
+        const evmWithPatchedRunCall = evm as EVM & {
+            runCall: (...args: any[]) => ReturnType<EVM["runCall"]>;
         };
-        const originalShallowCopy =
-            simulationBaseEvm.shallowCopy.bind(simulationBaseEvm);
+        const originalRunCall = evmWithPatchedRunCall.runCall.bind(evm);
         let activeRunCalls = 0;
         let maxActiveRunCalls = 0;
 
-        simulationBaseEvm.shallowCopy = () => {
-            const copy = originalShallowCopy() as EVM & {
-                runCall: (...args: any[]) => ReturnType<EVM["runCall"]>;
-            };
-            const originalRunCall = copy.runCall.bind(copy);
-            copy.runCall = async (...args: any[]) => {
-                activeRunCalls += 1;
-                maxActiveRunCalls = Math.max(maxActiveRunCalls, activeRunCalls);
+        evmWithPatchedRunCall.runCall = async (...args: any[]) => {
+            activeRunCalls += 1;
+            maxActiveRunCalls = Math.max(maxActiveRunCalls, activeRunCalls);
 
-                try {
-                    await new Promise((resolve) => setTimeout(resolve, 5));
-                    return await originalRunCall(...args);
-                } finally {
-                    activeRunCalls -= 1;
-                }
-            };
-            return copy;
+            try {
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                return await originalRunCall(...args);
+            } finally {
+                activeRunCalls -= 1;
+            }
         };
 
         const getValueFunction =
@@ -392,13 +373,13 @@ describe("ContractExecutor", function () {
                 )
             );
         } finally {
-            simulationBaseEvm.shallowCopy = originalShallowCopy;
+            evmWithPatchedRunCall.runCall = originalRunCall;
         }
 
-        expect(maxActiveRunCalls).to.be.greaterThan(1);
+        expect(maxActiveRunCalls).to.equal(1);
     });
 
-    it("should run many detached canonical increments and increment simulations without corrupting state", async function () {
+    it("should serialize many detached canonical increments and simulations without corrupting state", async function () {
         const setValueFunction =
             SimpleNumberStorage.interface.getFunction("setValue");
         const incrementFunction =
@@ -442,167 +423,25 @@ describe("ContractExecutor", function () {
             )[0];
         expect(simulatedIncrementValue).to.equal(initialValue + 1n);
 
-        const evmWithPatchedRunCall = evm as EVM & {
-            runCall: (...args: any[]) => ReturnType<EVM["runCall"]>;
-            shallowCopy: () => EVM;
-        };
-        const originalCanonicalRunCall =
-            evmWithPatchedRunCall.runCall.bind(evm);
-        const originalCanonicalShallowCopy =
-            evmWithPatchedRunCall.shallowCopy.bind(evm);
-
-        let activeCanonicalRunCalls = 0;
-        let activeSimulationRunCalls = 0;
-        let maxActiveCanonicalRunCalls = 0;
-        let maxActiveSimulationRunCalls = 0;
-        let didOverlapCanonicalAndSimulation = false;
-        let didStartFirstCanonicalRunCall = false;
-        let completedCanonicalIncrements = 0;
-        let resolveFirstCanonicalRunCall!: () => void;
-        const expectedCanonicalIncrementsForSimulations: number[] = [];
-        const observedCanonicalIncrementsForSimulations = new Set<number>();
-        const patchedSimulationBases: {
-            evm: EVM & { shallowCopy: () => EVM };
-            shallowCopy: () => EVM;
-        }[] = [];
-        const firstCanonicalRunCallStarted = new Promise<void>((resolve) => {
-            resolveFirstCanonicalRunCall = resolve;
-        });
-
-        const updateOverlap = () => {
-            didOverlapCanonicalAndSimulation ||=
-                activeCanonicalRunCalls > 0 && activeSimulationRunCalls > 0;
-        };
-
-        const wrapSimulationBase = (
-            base: EVM & { shallowCopy: () => EVM },
-            completedCanonicalIncrementsForBase: number
-        ) => {
-            const originalSimulationShallowCopy = base.shallowCopy.bind(base);
-            patchedSimulationBases.push({
-                evm: base,
-                shallowCopy: originalSimulationShallowCopy
-            });
-
-            base.shallowCopy = () => {
-                expectedCanonicalIncrementsForSimulations.push(
-                    completedCanonicalIncrementsForBase
-                );
-                const copy = originalSimulationShallowCopy() as EVM & {
-                    runCall: (...args: any[]) => ReturnType<EVM["runCall"]>;
-                };
-                const originalSimulationRunCall = copy.runCall.bind(copy);
-                copy.runCall = async (...args: any[]) => {
-                    activeSimulationRunCalls += 1;
-                    maxActiveSimulationRunCalls = Math.max(
-                        maxActiveSimulationRunCalls,
-                        activeSimulationRunCalls
-                    );
-                    updateOverlap();
-
-                    try {
-                        await new Promise((resolve) => setTimeout(resolve, 10));
-                        return await originalSimulationRunCall(...args);
-                    } finally {
-                        activeSimulationRunCalls -= 1;
-                    }
-                };
-                return copy;
-            };
-
-            return base;
-        };
-
-        evmWithPatchedRunCall.runCall = async (...args: any[]) => {
-            activeCanonicalRunCalls += 1;
-            maxActiveCanonicalRunCalls = Math.max(
-                maxActiveCanonicalRunCalls,
-                activeCanonicalRunCalls
-            );
-            updateOverlap();
-
-            if (!didStartFirstCanonicalRunCall) {
-                didStartFirstCanonicalRunCall = true;
-                resolveFirstCanonicalRunCall();
-            }
-
-            try {
-                await new Promise((resolve) => setTimeout(resolve, 10));
-                return await originalCanonicalRunCall(...args);
-            } finally {
-                activeCanonicalRunCalls -= 1;
-            }
-        };
-
-        evmWithPatchedRunCall.shallowCopy = () => {
-            completedCanonicalIncrements += 1;
-            return wrapSimulationBase(
-                originalCanonicalShallowCopy() as EVM & {
-                    shallowCopy: () => EVM;
-                },
-                completedCanonicalIncrements
-            );
-        };
-
-        wrapSimulationBase(
-            (contractExecutor as any).simulationBaseEvm as EVM & {
-                shallowCopy: () => EVM;
-            },
-            completedCanonicalIncrements
+        const canonicalWrites = Array.from(
+            { length: canonicalIncrementCount },
+            () => executeContractCall(incrementData)
         );
+        const simulatedWrites = Array.from(
+            { length: simulationIncrementCount },
+            () => simulateContractCall(incrementData)
+        );
+        const [, simulatedResults] = await Promise.all([
+            Promise.all(canonicalWrites),
+            Promise.all(simulatedWrites)
+        ]);
 
-        const runSimulatedIncrement = async () => {
-            const expectedIndex =
-                expectedCanonicalIncrementsForSimulations.length;
-            const result = await simulateContractCall(incrementData);
+        for (const result of simulatedResults) {
             const value = ethers.AbiCoder.defaultAbiCoder().decode(
                 ["uint256"],
                 ethers.hexlify(result.returnValue)
             )[0];
-            const expectedCanonicalIncrements =
-                expectedCanonicalIncrementsForSimulations[expectedIndex];
-            observedCanonicalIncrementsForSimulations.add(
-                expectedCanonicalIncrements
-            );
-
-            expect(value).to.equal(
-                initialValue + BigInt(expectedCanonicalIncrements) + 1n
-            );
-        };
-
-        const firstCanonicalWrite = executeContractCall(incrementData);
-        await firstCanonicalRunCallStarted;
-
-        try {
-            const canonicalWrites = Array.from(
-                { length: canonicalIncrementCount - 1 },
-                () => executeContractCall(incrementData)
-            );
-            const allCanonicalWrites = [
-                firstCanonicalWrite,
-                ...canonicalWrites
-            ];
-            const simulatedWrites = Array.from({ length: 10 }, () =>
-                runSimulatedIncrement()
-            );
-
-            await allCanonicalWrites[4];
-            simulatedWrites.push(
-                ...Array.from({ length: 15 }, () => runSimulatedIncrement())
-            );
-
-            await allCanonicalWrites[14];
-            simulatedWrites.push(
-                ...Array.from({ length: 15 }, () => runSimulatedIncrement())
-            );
-
-            await Promise.all([...allCanonicalWrites, ...simulatedWrites]);
-        } finally {
-            evmWithPatchedRunCall.runCall = originalCanonicalRunCall;
-            evmWithPatchedRunCall.shallowCopy = originalCanonicalShallowCopy;
-            for (const patched of patchedSimulationBases) {
-                patched.evm.shallowCopy = patched.shallowCopy;
-            }
+            expect(value).to.equal(expectedFinalValue + 1n);
         }
 
         const finalResult = await executeContractCall(getValueData);
@@ -611,16 +450,6 @@ describe("ContractExecutor", function () {
             ethers.hexlify(finalResult.returnValue)
         )[0];
 
-        expect(maxActiveCanonicalRunCalls).to.equal(1);
-        expect(maxActiveSimulationRunCalls).to.be.greaterThan(1);
-        expect(didOverlapCanonicalAndSimulation).to.equal(true);
-        expect(completedCanonicalIncrements).to.equal(canonicalIncrementCount);
-        expect(
-            observedCanonicalIncrementsForSimulations.size
-        ).to.be.greaterThan(1);
-        expect(expectedCanonicalIncrementsForSimulations).to.have.length(
-            simulationIncrementCount
-        );
         expect(finalValue).to.equal(expectedFinalValue);
         expect(finalValue).to.not.equal(
             initialValue +

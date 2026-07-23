@@ -1,9 +1,16 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { EventSpies } from "../core/types";
-import { Logger } from "@/utils";
+import Clock from "@/Clock";
+import { Logger, sleep } from "@/utils";
 import { Status } from "@/types";
 import { Hash } from "@/types/types";
+import {
+    evidencePeriodWaitMs,
+    participantTimeoutWaitMs,
+    protocolEventTimeoutMs,
+    resolveTestTimeConfig
+} from "../core/testTimeConfig";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -110,11 +117,48 @@ export class EventActions<
         });
     }
 
+    async waitUntilTimestamp(timestamp: number): Promise<void> {
+        const remainingSeconds = timestamp - Clock.getTimeInSeconds();
+        if (remainingSeconds > 0) {
+            await sleep(remainingSeconds * 1000);
+        }
+    }
+
+    protocolEventTimeoutMs(
+        blockHeight: number,
+        settlementMarginSeconds?: number
+    ): number {
+        return protocolEventTimeoutMs(
+            resolveTestTimeConfig(this.harness.options.timeConfig),
+            blockHeight,
+            settlementMarginSeconds
+        );
+    }
+
+    participantTimeoutWaitMs(
+        blockHeight: number,
+        settlementMarginSeconds?: number
+    ): number {
+        return participantTimeoutWaitMs(
+            resolveTestTimeConfig(this.harness.options.timeConfig),
+            blockHeight,
+            settlementMarginSeconds
+        );
+    }
+
+    evidencePeriodWaitMs(settlementMarginSeconds?: number): number {
+        return evidencePeriodWaitMs(
+            resolveTestTimeConfig(this.harness.options.timeConfig),
+            settlementMarginSeconds
+        );
+    }
+
     async waitUntilEventOccurs(
         eventName: keyof EventSpies,
-        timeoutMs: number = 5000,
+        timeoutMs?: number,
         peerIndices?: number[]
     ): Promise<void> {
+        const waitTimeoutMs = timeoutMs ?? this.protocolEventTimeoutMs(1);
         const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         const condition = () => {
             return peers.every(
@@ -123,8 +167,8 @@ export class EventActions<
         };
 
         await this.harness.eventCountsBarrier.waitFor(condition, {
-            timeoutMs,
-            timeoutMessage: `Event ${String(eventName)} did not occur within ${timeoutMs}ms`
+            timeoutMs: waitTimeoutMs,
+            timeoutMessage: `Event ${String(eventName)} did not occur within ${waitTimeoutMs}ms`
         });
     }
 
@@ -138,7 +182,7 @@ export class EventActions<
             peerIndex,
             blockHash,
             keepConnection,
-            timeoutMs = 5000
+            timeoutMs = this.protocolEventTimeoutMs(1)
         } = options;
         const peer = this.harness.getPeer(peerIndex);
 
@@ -206,7 +250,7 @@ export class EventActions<
         await this.waitForEventCounts(
             eventName,
             expectedCounts,
-            options?.timeoutMs,
+            options?.timeoutMs ?? this.protocolEventTimeoutMs(0),
             { mode: options?.mode }
         );
     }
@@ -225,7 +269,7 @@ export class EventActions<
         await this.waitForEventCounts(
             eventName,
             expectedCounts,
-            options?.timeoutMs,
+            options?.timeoutMs ?? this.protocolEventTimeoutMs(0),
             { mode: options?.mode }
         );
     }
@@ -235,7 +279,7 @@ export class EventActions<
         minCount: number,
         options?: { timeoutMs?: number }
     ): Promise<void> {
-        const { timeoutMs = 10000 } = options || {};
+        const timeoutMs = options?.timeoutMs ?? this.protocolEventTimeoutMs(0);
         const condition = () => {
             const count = this.getEventCallCount(
                 peerIndex,
@@ -254,7 +298,7 @@ export class EventActions<
         peerIndices: number[],
         options?: { timeoutMs?: number }
     ): Promise<void> {
-        const { timeoutMs = 10000 } = options || {};
+        const timeoutMs = options?.timeoutMs ?? this.protocolEventTimeoutMs(0);
         const condition = () => {
             for (const peerIndex of peerIndices) {
                 if (
@@ -279,12 +323,12 @@ export class EventActions<
     ): Promise<void> {
         const maxCount = options.maxCount ?? 0;
         const { durationMs } = options;
-        const endAt = Date.now() + durationMs;
+        let durationElapsed = false;
 
-        const deadlineTimer = setTimeout(
-            () => void this.harness.eventCountsBarrier.signal(),
-            durationMs
-        );
+        const deadlineTimer = setTimeout(() => {
+            durationElapsed = true;
+            void this.harness.eventCountsBarrier.signal();
+        }, durationMs);
 
         try {
             await this.harness.eventCountsBarrier.waitFor(
@@ -297,7 +341,7 @@ export class EventActions<
                             );
                         }
                     }
-                    return Date.now() >= endAt;
+                    return durationElapsed;
                 },
                 {
                     timeoutMs: durationMs + 500,

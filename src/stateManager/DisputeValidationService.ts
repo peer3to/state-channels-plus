@@ -101,6 +101,22 @@ export default class DisputeValidationService {
             return false;
         }
 
+        const invalidStructureResult =
+            await this.diamondStateMachine.localDiamondContract.findFirstInvalidBlockStructureInStateProof.staticCall(
+                dispute.input.stateProof
+            );
+        if (invalidStructureResult.found) {
+            this.logger.warn("Auditing: invalid state-proof block structure", {
+                dispute: LoggerUtils.getDisputeMetadata(dispute),
+                blockIndex: invalidStructureResult.blockIndex
+            });
+            this.disputeFraudProofService.createDisputeInvalidBlockStructure(
+                dispute,
+                Number(invalidStructureResult.blockIndex)
+            );
+            return false;
+        }
+
         if (dispute.postedAuditingData) {
             if (!onChainDisputeAuditingData) {
                 throw new Error(
@@ -124,9 +140,10 @@ export default class DisputeValidationService {
                 return false;
             }
 
-            this.persistDisputeAuditingDataForPipeline(
+            this.persistDisputeDataWithoutAudit(
                 dispute,
-                onChainDisputeAuditingData
+                onChainDisputeAuditingData,
+                { includeUnfinalizedBlocks: false }
             );
         } else {
             const milestoneFinalityResult =
@@ -138,35 +155,6 @@ export default class DisputeValidationService {
                     dispute
                 );
                 return false;
-            }
-
-            if (dispute.input.stateProof.signedBlocks.length > 0) {
-                const isLinked =
-                    await this.stateChannelManagerContract.areSignedBlocksLinkedAndVerified.staticCall(
-                        dispute.input.stateProof.signedBlocks
-                    );
-                if (!isLinked) {
-                    const { auditingData } =
-                        this.disputeManager.getAuditingData(
-                            dispute.input.forkId,
-                            dispute.input.stateProof,
-                            {
-                                disputeLatestInboundMessageBlockHash:
-                                    dispute.input.latestInboundMessageBlockHash
-                            }
-                        );
-                    this.logger.warn(
-                        "Auditing: signedBlocks not linked/verified -> invalid state proof",
-                        {
-                            dispute: LoggerUtils.getDisputeMetadata(dispute)
-                        }
-                    );
-                    this.disputeFraudProofService.createDisputeInvalidStateProof(
-                        dispute,
-                        auditingData
-                    );
-                    return false;
-                }
             }
 
             const isLastMilestoneInStorage =
@@ -218,12 +206,18 @@ export default class DisputeValidationService {
                 this.storage,
                 dispute,
                 index,
+                this.diamondStateMachine.localDiamondContract,
                 this.logger
             );
             const isOk = await this.stateManager.onBlockConfirmationStruct(bc, {
                 validationStrategy: disputeStrategy
             });
             if (!isOk) {
+                if (!this.hasStoredDisputeFraudProof(dispute)) {
+                    throw new Error(
+                        "Dispute replay returned false without a stored dispute fraud proof"
+                    );
+                }
                 this.logger.warn(
                     "RUNNING StateProof blocks - aborting pipeline -> killing dispute",
                     {
@@ -462,7 +456,9 @@ export default class DisputeValidationService {
             if (
                 timeoutTimestamp <
                 previousTimestamp +
-                    this.stateManager.getTimeoutWaitTimeSeconds()
+                    this.stateManager.getTimeoutWaitTimeSeconds(
+                        Number(dispute.input.timeout.blockHeight)
+                    )
             ) {
                 this.disputeFraudProofService.createTimeoutTooEarly(
                     dispute,
@@ -486,7 +482,6 @@ export default class DisputeValidationService {
             }
             // [check] isPostedOnChain
             if (block?.onChainTimestamp) {
-                // TODO - race condtion
                 const previousBlockCalldata = previousBlockOrSnapshot?.block
                     ? this.storage.blockCalldata.getBlockCalldata(
                           previousBlockOrSnapshot.block.forkId,
@@ -494,17 +489,37 @@ export default class DisputeValidationService {
                           previousBlockOrSnapshot.block.author
                       )
                     : undefined;
-                this.disputeFraudProofService.createTimeoutCalldataPosted(
-                    dispute,
-                    disputeAuditingData.genesisStateSnapshotData,
-                    disputeAuditingData.latestStateSnapshot,
-                    latestStateMachineState,
-                    block.signedBlock,
-                    block.onChainTimestamp,
-                    previousBlockCalldata?.onChainTimestamp || 0,
-                    previousBlockCalldata?.signedBlock || block.signedBlock // block.signedBlock if set won't be used it should be fill(0, sizeof(SignedBlockStruct))
+                const proof =
+                    this.disputeFraudProofService.buildTimeoutCalldataPosted(
+                        disputeAuditingData.genesisStateSnapshotData,
+                        disputeAuditingData.latestStateSnapshot,
+                        latestStateMachineState,
+                        block.signedBlock,
+                        block.onChainTimestamp,
+                        previousBlockCalldata?.onChainTimestamp || 0,
+                        previousBlockCalldata?.signedBlock || block.signedBlock // block.signedBlock if set won't be used it should be fill(0, sizeof(SignedBlockStruct))
+                    );
+                // The contract owns every predicate used by the apply handler.
+                // Preflight the exact proof so an auditor never submits an
+                // invalid proof and gets itself slashed.
+                const isValid =
+                    await this.stateChannelManagerContract.validateTimeoutCalldataPostedProof.staticCall(
+                        proof,
+                        dispute
+                    );
+                if (isValid) {
+                    this.disputeFraudProofService.storeTimeoutCalldataPosted(
+                        dispute,
+                        proof
+                    );
+                    return false;
+                }
+                this.logger.warn(
+                    "TimeoutCalldataPosted proof is not valid on-chain; continuing dispute audit",
+                    {
+                        dispute: LoggerUtils.getDisputeMetadata(dispute)
+                    }
                 );
-                return false;
             }
         }
 
@@ -837,47 +852,71 @@ export default class DisputeValidationService {
         }
     }
 
-    private persistDisputeAuditingDataForPipeline(
+    public persistDisputeDataWithoutAudit(
         dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct
+        disputeAuditingData: DisputeAuditingDataStruct | undefined,
+        options: { includeUnfinalizedBlocks: boolean }
     ): void {
-        for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
-            this.storage.stateSnapshots.storeStateSnapshot(
-                StateSnapshot.from(milestoneSnapshot)
-            );
-        }
+        if (disputeAuditingData) {
+            if (options.includeUnfinalizedBlocks) {
+                this.storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(disputeAuditingData.latestStateSnapshot)
+                );
+            }
+            for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
+                this.storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(milestoneSnapshot)
+                );
+            }
 
-        const latestFinalizedSnapshot =
-            this.agreementManager.getLatestFinalizedSnapshot(
-                dispute.input.stateProof,
-                dispute.input.forkId
-            );
+            const latestFinalizedSnapshot =
+                this.agreementManager.getLatestFinalizedSnapshot(
+                    dispute.input.stateProof,
+                    dispute.input.forkId
+                );
 
-        if (disputeAuditingData.latestFinalizedStateStateMachineState !== "") {
-            this.storage.stateMachineStates.storeStateMachineState(
-                disputeAuditingData.latestFinalizedStateStateMachineState,
-                {
-                    hash: latestFinalizedSnapshot.stateMachineStateHash
-                }
-            );
-        }
+            if (
+                disputeAuditingData.latestFinalizedStateStateMachineState !== ""
+            ) {
+                this.storage.stateMachineStates.storeStateMachineState(
+                    disputeAuditingData.latestFinalizedStateStateMachineState,
+                    {
+                        hash: latestFinalizedSnapshot.stateMachineStateHash
+                    }
+                );
+            }
 
-        for (const messageBlock of disputeAuditingData.inboundMessageBlocks) {
-            this.storage.inboundMessages.store(messageBlock, {
-                justPersist: true
-            });
-        }
+            for (const messageBlock of disputeAuditingData.inboundMessageBlocks) {
+                this.storage.inboundMessages.store(messageBlock, {
+                    justPersist: true
+                });
+            }
 
-        for (const messageBlock of disputeAuditingData.outboundMessageBlocks) {
-            this.storage.outboundMessages.store(messageBlock, {
-                justPersist: true
-            });
+            for (const messageBlock of disputeAuditingData.outboundMessageBlocks) {
+                this.storage.outboundMessages.store(messageBlock, {
+                    justPersist: true
+                });
+            }
         }
 
         for (const milestone of dispute.input.stateProof.milestones) {
-            const blockConfirmation = milestone.blockConfirmations.at(0);
-            if (!blockConfirmation) continue;
-            const block = Block.fromBlockConfirmation(blockConfirmation);
+            const blockConfirmations = options.includeUnfinalizedBlocks
+                ? milestone.blockConfirmations
+                : milestone.blockConfirmations.slice(0, 1);
+            for (const blockConfirmation of blockConfirmations) {
+                const block = Block.tryFromBlockConfirmation(blockConfirmation);
+                if (!block) continue;
+                this.storage.blocks.storeBlock(block, {
+                    hash: block.hash,
+                    coordinates: block.coordinates,
+                    justPersist: true
+                });
+            }
+        }
+        if (!options.includeUnfinalizedBlocks) return;
+        for (const signedBlock of dispute.input.stateProof.signedBlocks) {
+            const block = Block.tryFromSignedBlock(signedBlock);
+            if (!block) continue;
             this.storage.blocks.storeBlock(block, {
                 hash: block.hash,
                 coordinates: block.coordinates,

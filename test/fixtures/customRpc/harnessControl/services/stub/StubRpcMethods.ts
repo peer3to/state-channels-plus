@@ -8,8 +8,20 @@ import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcM
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
-import type { Hash, Timestamp } from "@/types/types";
+import type { StateSnapshot } from "@/models";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { id } from "ethers";
+import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type {
+    EventSyncFailureProbe,
+    PausedReductionStatus,
+    ReductionSimulationErrorName,
+    ConcurrentCalldataRecoveryProbe,
+    CleanCommittedDivergenceProbe,
+    DisputeStrategyResultMatrix,
+    MissingParticipantSnapshotsProbe
+} from "./StubService";
 import type { StubService } from "./StubService";
 
 /**
@@ -80,16 +92,23 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    /** Make this peer report no pending inbound message inclusion. */
+    /** Make authored blocks omit pending inbound messages. */
     public stubPendingInboundInclusion(): boolean {
-        const inbound = this.service.sm.storage.inboundMessages;
+        // This is deliberately scoped to block assembly. Stubbing the inbound
+        // storage head also corrupts disputes constructed while the stub is
+        // active.
+        const sm = this.service.sm as unknown as {
+            getPendingInboundMessageBlocks: (
+                previousStateSnapshot: StateSnapshot
+            ) => MessageBlockStruct[];
+        };
         if (!this.service.stubOriginals.has("pendingInboundInclusion")) {
             this.service.stubOriginals.set(
                 "pendingInboundInclusion",
-                inbound.getLatestBlockHash
+                sm.getPendingInboundMessageBlocks
             );
         }
-        inbound.getLatestBlockHash = () => undefined;
+        sm.getPendingInboundMessageBlocks = () => [];
         return true;
     }
 
@@ -98,9 +117,10 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             "pendingInboundInclusion"
         );
         if (original === undefined) return false;
-        const inbound = this.service.sm.storage.inboundMessages;
-        inbound.getLatestBlockHash =
-            original as typeof inbound.getLatestBlockHash;
+        const sm = this.service.sm as unknown as {
+            getPendingInboundMessageBlocks: unknown;
+        };
+        sm.getPendingInboundMessageBlocks = original;
         this.service.stubOriginals.delete("pendingInboundInclusion");
         return true;
     }
@@ -173,22 +193,23 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     /** Suppress this peer's snapshot posting (stays dispute-eligible on-chain). */
     public stubPostStateSnapshot(): boolean {
-        const sm = this.service.sm;
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
         if (!this.service.stubOriginals.has("postStateSnapshot")) {
             this.service.stubOriginals.set(
                 "postStateSnapshot",
-                sm.postStateSnapshot
+                snapshotUpdateService.postStateSnapshot
             );
         }
-        sm.postStateSnapshot = async () => undefined;
+        snapshotUpdateService.postStateSnapshot = async () => undefined;
         return true;
     }
 
     public restorePostStateSnapshot(): boolean {
         const original = this.service.stubOriginals.get("postStateSnapshot");
         if (original === undefined) return false;
-        const sm = this.service.sm;
-        sm.postStateSnapshot = original as typeof sm.postStateSnapshot;
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        snapshotUpdateService.postStateSnapshot =
+            original as typeof snapshotUpdateService.postStateSnapshot;
         this.service.stubOriginals.delete("postStateSnapshot");
         return true;
     }
@@ -564,6 +585,530 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         service.createRPCMethods = original as typeof service.createRPCMethods;
         this.service.stubOriginals.delete("initHandshakeCreateRpcMethods");
         return true;
+    }
+
+    // Reduction-race staging (hold / release / record).
+    // Staging for tests that must outrun a peer's own fork transition: hold
+    // all three reduction entry points (the reduction-* timers, the
+    // StateSnapshotUpdated handler, and the DisputeReducedResultCommitted
+    // handler — the latter reduces on the spot once the challenge period has
+    // expired), then release/replay once the race is staged.
+
+    /** Capture `reduction-*` timer tasks instead of scheduling them. */
+    public stubHoldReductionTasks(): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        if (!this.service.stubOriginals.has("reductionTasks")) {
+            this.service.stubOriginals.set(
+                "reductionTasks",
+                timeoutManager.scheduleTask.bind(timeoutManager)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "reductionTasks"
+        ) as typeof timeoutManager.scheduleTask;
+        timeoutManager.scheduleTask = (task, delayMs, taskName = "unnamed") => {
+            if (taskName.startsWith("reduction-")) {
+                this.service.heldReductionTasks.push({ taskName, task });
+                return {} as ReturnType<typeof setTimeout>;
+            }
+            return original(task, delayMs, taskName);
+        };
+        return true;
+    }
+
+    /** Restore scheduling; optionally run the held tasks (fire-and-forget). */
+    public restoreReductionTasks(runHeld: boolean): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        const original = this.service.stubOriginals.get("reductionTasks");
+        if (original === undefined) return false;
+        timeoutManager.scheduleTask =
+            original as typeof timeoutManager.scheduleTask;
+        this.service.stubOriginals.delete("reductionTasks");
+        const held = this.service.heldReductionTasks.splice(0);
+        if (runHeld) for (const { task } of held) void task();
+        return true;
+    }
+
+    public getHeldReductionTaskCount(): number {
+        return this.service.heldReductionTasks.length;
+    }
+
+    public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
+        return this.service.probeRejectedEventSyncLog();
+    }
+
+    public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
+        return this.service.probeConcurrentCalldataRecovery();
+    }
+
+    public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
+        return this.service.probeDisputeStrategyResultMatrix();
+    }
+
+    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
+        return this.service.probeCleanCommittedDivergence();
+    }
+
+    public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
+        return this.service.probeMissingParticipantSnapshots();
+    }
+
+    /** Pause a real reduction once it enters its kill-period lookup. */
+    public stubPauseReductionAtKillPeriod(forkId: ForkId): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        const contract = this.service.sm.stateChannelManagerContract;
+
+        if (!this.service.stubOriginals.has("pausedReduction")) {
+            this.service.stubOriginals.set(
+                "pausedReduction",
+                reductionManager.tryReduce.bind(reductionManager)
+            );
+        }
+        if (!this.service.stubOriginals.has("pausedReductionKillPeriod")) {
+            this.service.stubOriginals.set(
+                "pausedReductionKillPeriod",
+                contract.isKillPeriodExpired.bind(contract)
+            );
+        }
+
+        const prior = this.service.pausedReduction;
+        if (prior && prior.entered && !prior.settled) prior.release?.();
+
+        this.service.pausedReduction = {
+            targetForkId: forkId,
+            entered: false,
+            released: false,
+            settled: false,
+            inside: false
+        };
+
+        const originalReduce = this.service.stubOriginals.get(
+            "pausedReduction"
+        ) as typeof reductionManager.tryReduce;
+        const originalKillPeriod = this.service.stubOriginals.get(
+            "pausedReductionKillPeriod"
+        ) as typeof contract.isKillPeriodExpired;
+
+        reductionManager.tryReduce = ((requestedForkId: ForkId) => {
+            const state = this.service.pausedReduction;
+            if (!state || requestedForkId !== state.targetForkId) {
+                return originalReduce(requestedForkId);
+            }
+
+            state.inside = true;
+            const promise = originalReduce(requestedForkId).finally(() => {
+                state.inside = false;
+            });
+            state.promise = promise;
+            void promise.then(
+                () => {
+                    state.settled = true;
+                },
+                (error: unknown) => {
+                    state.settled = true;
+                    state.error =
+                        error instanceof Error ? error.message : String(error);
+                }
+            );
+            return promise;
+        }) as typeof reductionManager.tryReduce;
+
+        contract.isKillPeriodExpired = (async (channelId, requestedForkId) => {
+            const state = this.service.pausedReduction;
+            if (
+                state &&
+                state.inside &&
+                !state.entered &&
+                !state.released &&
+                requestedForkId === state.targetForkId
+            ) {
+                state.entered = true;
+                await new Promise<void>((resolve) => {
+                    state.release = resolve;
+                });
+            }
+            return originalKillPeriod(channelId, requestedForkId);
+        }) as typeof contract.isKillPeriodExpired;
+        return true;
+    }
+
+    public releasePausedReduction(): boolean {
+        const state = this.service.pausedReduction;
+        if (!state) return false;
+        state.released = true;
+        state.release?.();
+        return true;
+    }
+
+    public getPausedReductionStatus(): PausedReductionStatus {
+        const state = this.service.pausedReduction;
+        const status: PausedReductionStatus = {
+            entered: state?.entered ?? false,
+            released: state?.released ?? false,
+            settled: state?.settled ?? false
+        };
+        if (state?.error !== undefined) status.error = state.error;
+        return status;
+    }
+
+    public restorePausedReduction(): boolean {
+        this.releasePausedReduction();
+        const reductionManager = this.service.sm.reductionManager;
+        const contract = this.service.sm.stateChannelManagerContract;
+        let restored = false;
+
+        const originalReduce =
+            this.service.stubOriginals.get("pausedReduction");
+        if (originalReduce !== undefined) {
+            reductionManager.tryReduce =
+                originalReduce as typeof reductionManager.tryReduce;
+            this.service.stubOriginals.delete("pausedReduction");
+            restored = true;
+        }
+
+        const originalKillPeriod = this.service.stubOriginals.get(
+            "pausedReductionKillPeriod"
+        );
+        if (originalKillPeriod !== undefined) {
+            contract.isKillPeriodExpired =
+                originalKillPeriod as typeof contract.isKillPeriodExpired;
+            this.service.stubOriginals.delete("pausedReductionKillPeriod");
+            restored = true;
+        }
+
+        this.service.pausedReduction = undefined;
+        return restored;
+    }
+    /** Hold StateSnapshotUpdated events instead of handling them. */
+    public stubHoldSnapshotUpdatedEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("snapshotUpdatedEvents")) {
+            this.service.stubOriginals.set(
+                "snapshotUpdatedEvents",
+                eventHandler.onStateSnapshotUpdated.bind(eventHandler)
+            );
+        }
+        eventHandler.onStateSnapshotUpdated = (async (...args: unknown[]) => {
+            this.service.heldSnapshotUpdatedArgs.push(args);
+        }) as typeof eventHandler.onStateSnapshotUpdated;
+        return true;
+    }
+
+    /** Restore the handler; optionally replay the held events through it. */
+    public restoreSnapshotUpdatedEvents(replay: boolean): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        const original = this.service.stubOriginals.get(
+            "snapshotUpdatedEvents"
+        );
+        if (original === undefined) return false;
+        const restored = original as typeof eventHandler.onStateSnapshotUpdated;
+        eventHandler.onStateSnapshotUpdated = restored;
+        this.service.stubOriginals.delete("snapshotUpdatedEvents");
+        const held = this.service.heldSnapshotUpdatedArgs.splice(0);
+        if (replay) {
+            for (const args of held) {
+                void (restored as (...a: unknown[]) => Promise<void>)(...args);
+            }
+        }
+        return true;
+    }
+
+    public getHeldSnapshotUpdatedCount(): number {
+        return this.service.heldSnapshotUpdatedArgs.length;
+    }
+
+    /** Drop subscribed dispute logs before the scheduler records their key. */
+    public stubHoldDisputeCommittedEvents(passFirst = true): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        this.service.passFirstDisputeCommittedEvent = passFirst;
+        if (!this.service.stubOriginals.has("disputeCommittedEvents")) {
+            this.service.stubOriginals.set(
+                "disputeCommittedEvents",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "disputeCommittedEvents"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.service.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (
+                parsed?.name === "DisputeCommitted" ||
+                parsed?.name === "DisputeCommittedWithAuditingData"
+            ) {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                if (
+                    this.service.passFirstDisputeCommittedEvent &&
+                    this.service.passedDisputeCommittedEventKeys.size === 0
+                ) {
+                    // Let the dispute under validation arrive, then model a
+                    // missed subscription delivery for replacement evidence.
+                    this.service.passedDisputeCommittedEventKeys.add(eventKey);
+                    return original(...args);
+                }
+                const wasAlreadyDropped =
+                    this.service.heldDisputeCommittedArgs.some(
+                        ([heldKey]) => heldKey === eventKey
+                    );
+                if (!wasAlreadyDropped) {
+                    // Lose the subscribed delivery once. A later explicit
+                    // query of the same log must reach the real scheduler so
+                    // this stub accurately models missed subscription data.
+                    this.service.heldDisputeCommittedArgs.push([eventKey]);
+                    return;
+                }
+            }
+            return original(...args);
+        };
+        return true;
+    }
+
+    /** Restore scheduling. Dropped subscription payloads are recovered by query. */
+    public restoreDisputeCommittedEvents(replay: boolean): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        const original = this.service.stubOriginals.get(
+            "disputeCommittedEvents"
+        );
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.service.stubOriginals.delete("disputeCommittedEvents");
+        this.service.heldDisputeCommittedArgs.splice(0);
+        this.service.passedDisputeCommittedEventKeys.clear();
+        this.service.passFirstDisputeCommittedEvent = true;
+        void replay;
+        return true;
+    }
+
+    public getHeldDisputeCommittedCount(): number {
+        return this.service.heldDisputeCommittedArgs.length;
+    }
+
+    /** Reserve this participant as a later evidence author. */
+    public stubSuppressDisputeInitiation(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        if (!this.service.stubOriginals.has("disputeInitiation")) {
+            this.service.stubOriginals.set(
+                "disputeInitiation",
+                disputeManager.dispute.bind(disputeManager)
+            );
+        }
+        disputeManager.dispute =
+            (async () => {}) as typeof disputeManager.dispute;
+        return true;
+    }
+
+    public restoreDisputeInitiation(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        const original = this.service.stubOriginals.get("disputeInitiation");
+        if (original === undefined) return false;
+        disputeManager.dispute = original as typeof disputeManager.dispute;
+        this.service.stubOriginals.delete("disputeInitiation");
+        return true;
+    }
+
+    /** Fail the next final-dispute output preparation, then restore immediately. */
+    public stubFailNextFinalDisputePreparation(): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        if (!this.service.stubOriginals.has("finalDisputePreparation")) {
+            this.service.stubOriginals.set(
+                "finalDisputePreparation",
+                agreementManager.getLatestSnapshotFromStateProof.bind(
+                    agreementManager
+                )
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "finalDisputePreparation"
+        ) as typeof agreementManager.getLatestSnapshotFromStateProof;
+        agreementManager.getLatestSnapshotFromStateProof = ((...args) => {
+            agreementManager.getLatestSnapshotFromStateProof = original;
+            this.service.stubOriginals.delete("finalDisputePreparation");
+            void args;
+            throw new Error("Forced final-dispute output preparation failure");
+        }) as typeof agreementManager.getLatestSnapshotFromStateProof;
+        return true;
+    }
+
+    public restoreFinalDisputePreparation(): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        const original = this.service.stubOriginals.get(
+            "finalDisputePreparation"
+        );
+        if (original === undefined) return false;
+        agreementManager.getLatestSnapshotFromStateProof =
+            original as typeof agreementManager.getLatestSnapshotFromStateProof;
+        this.service.stubOriginals.delete("finalDisputePreparation");
+        return true;
+    }
+
+    /** Hold DisputeReducedResultCommitted events instead of handling them. */
+    public stubHoldReducedCommitEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("reducedCommitEvents")) {
+            this.service.stubOriginals.set(
+                "reducedCommitEvents",
+                eventHandler.onDisputeReducedResultCommitted.bind(eventHandler)
+            );
+        }
+        eventHandler.onDisputeReducedResultCommitted = (async (
+            ...args: unknown[]
+        ) => {
+            this.service.heldReducedCommitArgs.push(args);
+        }) as typeof eventHandler.onDisputeReducedResultCommitted;
+        return true;
+    }
+
+    public restoreReducedCommitEvents(replay: boolean): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        const original = this.service.stubOriginals.get("reducedCommitEvents");
+        if (original === undefined) return false;
+        const restored =
+            original as typeof eventHandler.onDisputeReducedResultCommitted;
+        eventHandler.onDisputeReducedResultCommitted = restored;
+        this.service.stubOriginals.delete("reducedCommitEvents");
+        const held = this.service.heldReducedCommitArgs.splice(0);
+        if (replay) {
+            for (const args of held) {
+                void (restored as (...a: unknown[]) => Promise<void>)(...args);
+            }
+        }
+        return true;
+    }
+
+    /** `ReductionManager.tryReduce` counts calls and resolves as a no-op. */
+    public stubReduceNoop(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        if (!this.service.stubOriginals.has("reduce")) {
+            this.service.stubOriginals.set(
+                "reduce",
+                reductionManager.tryReduce.bind(reductionManager)
+            );
+        }
+        this.service.reduceCallCount = 0;
+        reductionManager.tryReduce = (async () => {
+            this.service.reduceCallCount += 1;
+            return undefined;
+        }) as typeof reductionManager.tryReduce;
+        return true;
+    }
+
+    /** `ReductionManager.tryReduce` counts calls and forwards to the real method. */
+    public stubRecordReduce(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        if (!this.service.stubOriginals.has("reduce")) {
+            this.service.stubOriginals.set(
+                "reduce",
+                reductionManager.tryReduce.bind(reductionManager)
+            );
+        }
+        this.service.reduceCallCount = 0;
+        const original = this.service.stubOriginals.get(
+            "reduce"
+        ) as typeof reductionManager.tryReduce;
+        reductionManager.tryReduce = ((forkId) => {
+            this.service.reduceCallCount += 1;
+            return original(forkId);
+        }) as typeof reductionManager.tryReduce;
+        return true;
+    }
+
+    public restoreReduce(): boolean {
+        const reductionManager = this.service.sm.reductionManager;
+        const original = this.service.stubOriginals.get("reduce");
+        if (original === undefined) return false;
+        reductionManager.tryReduce =
+            original as typeof reductionManager.tryReduce;
+        this.service.stubOriginals.delete("reduce");
+        return true;
+    }
+
+    public getReduceCallCount(): number {
+        return this.service.reduceCallCount;
+    }
+
+    /** Make the next reduction simulation fail with a selected contract error. */
+    public stubNextReductionSimulationError(
+        errorName: ReductionSimulationErrorName
+    ): boolean {
+        const contract = this.service.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.call) {
+            throw new Error(
+                "Reduction simulation runner does not support call"
+            );
+        }
+        if (!this.service.stubOriginals.has("reductionSimulation")) {
+            this.service.stubOriginals.set(
+                "reductionSimulation",
+                runner.call.bind(runner)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "reductionSimulation"
+        ) as NonNullable<typeof runner.call>;
+        const multicallSelector =
+            contract.interface.getFunction("multicall")!.selector;
+        runner.call = async (transaction) => {
+            if (!String(transaction.data).startsWith(multicallSelector)) {
+                return await original(transaction);
+            }
+            runner.call = original;
+            this.service.stubOriginals.delete("reductionSimulation");
+            throw { data: id(`${errorName}()`).slice(0, 10) };
+        };
+        return true;
+    }
+
+    public restoreReductionSimulation(): boolean {
+        const contract = this.service.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.call) return false;
+        const original = this.service.stubOriginals.get("reductionSimulation");
+        if (original === undefined) return false;
+        runner.call = original as NonNullable<typeof runner.call>;
+        this.service.stubOriginals.delete("reductionSimulation");
+        return true;
+    }
+
+    /**
+     * Count `spectateService.sync` requests; `forward` keeps the real sync
+     * running (record-only otherwise — the punishment path stays quiet).
+     */
+    public stubRecordSpectateSync(forward: boolean): boolean {
+        const spectate = this.p2pManager.localRpc.spectateService;
+        if (!this.service.stubOriginals.has("spectateSync")) {
+            this.service.stubOriginals.set(
+                "spectateSync",
+                spectate.sync.bind(spectate)
+            );
+        }
+        this.service.spectateSyncCallCount = 0;
+        const original = this.service.stubOriginals.get(
+            "spectateSync"
+        ) as typeof spectate.sync;
+        spectate.sync = ((...args: Parameters<typeof spectate.sync>) => {
+            this.service.spectateSyncCallCount += 1;
+            if (forward) return original(...args);
+        }) as typeof spectate.sync;
+        return true;
+    }
+
+    public restoreSpectateSync(): boolean {
+        const spectate = this.p2pManager.localRpc.spectateService;
+        const original = this.service.stubOriginals.get("spectateSync");
+        if (original === undefined) return false;
+        spectate.sync = original as typeof spectate.sync;
+        this.service.stubOriginals.delete("spectateSync");
+        return true;
+    }
+
+    public getSpectateSyncCallCount(): number {
+        return this.service.spectateSyncCallCount;
     }
 }
 

@@ -69,6 +69,10 @@ export class QueryRpcMethods extends ARpcMethods {
         ).map((a) => String(a));
     }
 
+    public async getOnChainParticipantUnion(): Promise<string[]> {
+        return (await this.service.sm.getOnChainParticipantUnion()).map(String);
+    }
+
     public async getNextToWrite(): Promise<string> {
         return String(
             await this.service.sm.diamondStateMachine.getNextToWrite()
@@ -374,6 +378,21 @@ export class QueryRpcMethods extends ARpcMethods {
             this.service.storage.stateSnapshots.getGenesisSnapshotByForkId(
                 forkId
             )?.hash ?? null
+        );
+    }
+
+    public getGenesisSnapshotTimestamp(forkId: ForkId): number | null {
+        return (
+            this.service.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
+            )?.timestamp ?? null
+        );
+    }
+
+    public getCompletedReductionForkId(forkId: ForkId): ForkId | null {
+        return (
+            this.service.sm.reductionManager.getCompletedReduction(forkId)
+                ?.reducedForkId ?? null
         );
     }
 

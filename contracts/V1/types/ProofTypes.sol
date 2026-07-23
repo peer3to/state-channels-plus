@@ -58,5 +58,7 @@ enum DisputeFraudProofType {
     DisputeLastMilestoneNotFinalAndNoAuditingData,
     InvalidDisputeReason,
     DisputeStateProofHeaderMismatch,
-    DisputeInboundHashNotInChain
+    DisputeInboundHashNotInChain,
+    DisputeInvalidBlockStructure,
+    DisputeBlockAuthorNotParticipant
 }

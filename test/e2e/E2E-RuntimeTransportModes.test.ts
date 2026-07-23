@@ -15,9 +15,9 @@ import {
     StateChannelManagerProxy__factory
 } from "@typechain-types";
 import { ContractFactory } from "ethers";
+import { startHardhatNode, type NodeHandle } from "@test/utils/nodeInfra";
 
-const HARDHAT_NODE_URL =
-    process.env.HARDHAT_NODE_URL ?? "http://127.0.0.1:18545";
+let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 const DEFAULT_HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
 
@@ -37,9 +37,11 @@ async function waitForNode(url: string): Promise<void> {
 async function setupP2pInstance(options: {
     runSdkInThread: boolean;
     vmDedicatedThread: boolean;
+    generateSigner?: boolean;
 }) {
-    const { runSdkInThread, vmDedicatedThread } = options;
-    const provider = new ethers.JsonRpcProvider(HARDHAT_NODE_URL);
+    const { runSdkInThread, vmDedicatedThread, generateSigner } = options;
+    if (!hardhatNodeUrl) throw new Error("Hardhat node URL is not initialized");
+    const provider = new ethers.JsonRpcProvider(hardhatNodeUrl);
     const deployerWallet = ethers.HDNodeWallet.fromPhrase(
         DEFAULT_HARDHAT_MNEMONIC,
         undefined,
@@ -92,7 +94,6 @@ async function setupP2pInstance(options: {
     };
 
     return EvmStateMachine.p2pSetup(
-        runtimeSigner,
         StateChannelManagerProxy__factory.connect(
             scmDeployment.address,
             runtimeSigner
@@ -101,19 +102,30 @@ async function setupP2pInstance(options: {
         deployStateMachine,
         {
             config: {
-                PROVIDER_URL: HARDHAT_NODE_URL,
+                PROVIDER_URL: hardhatNodeUrl,
                 RUN_SDK_IN_THREAD: runSdkInThread,
                 VM_DEDICATED_THREAD: vmDedicatedThread
             },
-            signerSecret: runSdkInThread ? runtimeWallet.privateKey : undefined
+            signerSecret: generateSigner ? undefined : runtimeWallet.privateKey
         }
     );
 }
 
 describe("E2E: p2pSetup runtime modes", function () {
+    let nodeHandle: NodeHandle | undefined;
+
     before(async function () {
         this.timeout(60_000);
-        await waitForNode(HARDHAT_NODE_URL);
+        if (hardhatNodeUrl) {
+            await waitForNode(hardhatNodeUrl);
+        } else {
+            nodeHandle = await startHardhatNode();
+            hardhatNodeUrl = nodeHandle.url;
+        }
+    });
+
+    after(function () {
+        nodeHandle?.stop();
     });
 
     const threadCombinations = [
@@ -133,8 +145,16 @@ describe("E2E: p2pSetup runtime modes", function () {
             const p2pInstance = await setupP2pInstance(combo);
 
             try {
-                const signerAddress = await p2pInstance.p2pSigner.getAddress();
+                const signerAddress =
+                    await p2pInstance.chainSigner.getAddress();
                 expect(signerAddress).to.match(/^0x[0-9a-fA-F]{40}$/);
+                expect(await p2pInstance.p2pSigner.getAddress()).to.equal(
+                    signerAddress
+                );
+
+                const times =
+                    await p2pInstance.stateChannelManagerContract.getAllTimes();
+                expect(times.length).to.equal(4);
 
                 const initialState =
                     await p2pInstance.p2pContractInstance.getState();
@@ -143,9 +163,150 @@ describe("E2E: p2pSetup runtime modes", function () {
                 const participants =
                     await p2pInstance.p2pContractInstance.getParticipants();
                 expect(participants).to.be.an("array");
+
+                let resolveError: unknown;
+                try {
+                    await p2pInstance.chainSigner.resolveName(
+                        "runtime.peer3.eth"
+                    );
+                } catch (error) {
+                    resolveError = error;
+                }
+                expect(resolveError).to.be.instanceOf(Error);
+                expect(
+                    (resolveError as Error & { code?: string }).code
+                ).to.equal("UNSUPPORTED_OPERATION");
+                expect(
+                    await p2pInstance.chainSigner.call({ to: signerAddress })
+                ).to.equal("0x");
+                expect(
+                    await p2pInstance.chainSigner.estimateGas({
+                        to: signerAddress,
+                        value: 1n
+                    })
+                ).to.be.greaterThanOrEqual(21_000n);
+
+                const populatedCall =
+                    await p2pInstance.chainSigner.populateCall({
+                        to: signerAddress,
+                        value: 1n
+                    });
+                expect(populatedCall.to).to.equal(signerAddress);
+                expect(populatedCall.value).to.equal(1n);
+
+                const populatedTransaction =
+                    await p2pInstance.chainSigner.populateTransaction({
+                        to: signerAddress,
+                        value: 1n
+                    });
+                const signedTransaction =
+                    await p2pInstance.chainSigner.signTransaction(
+                        populatedTransaction
+                    );
+                expect(
+                    ethers.Transaction.from(signedTransaction).from
+                ).to.equal(signerAddress);
+                const message = "host-owned-chain-signer";
+                expect(
+                    ethers.verifyMessage(
+                        message,
+                        await p2pInstance.chainSigner.signMessage(message)
+                    )
+                ).to.equal(signerAddress);
+                const messageBytes = ethers.getBytes("0x1234");
+                expect(
+                    ethers.verifyMessage(
+                        messageBytes,
+                        await p2pInstance.chainSigner.signMessage(messageBytes)
+                    )
+                ).to.equal(signerAddress);
+
+                const domain = {
+                    name: "Peer3 runtime signer",
+                    version: "1"
+                };
+                const types = {
+                    RuntimeMessage: [{ name: "value", type: "uint256" }]
+                };
+                const value = { value: 7n };
+                expect(
+                    ethers.verifyTypedData(
+                        domain,
+                        types,
+                        value,
+                        await p2pInstance.chainSigner.signTypedData(
+                            domain,
+                            types,
+                            value
+                        )
+                    )
+                ).to.equal(signerAddress);
+
+                let signerError: unknown;
+                try {
+                    await p2pInstance.chainSigner.sendTransaction({
+                        from: ethers.ZeroAddress,
+                        to: signerAddress,
+                        value: 1n
+                    });
+                } catch (error) {
+                    signerError = error;
+                }
+                expect(signerError).to.be.instanceOf(Error);
+                expect(
+                    (signerError as Error & { code?: string }).code
+                ).to.equal("INVALID_ARGUMENT");
+                expect(
+                    (signerError as Error & { shortMessage?: string })
+                        .shortMessage
+                ).to.include("transaction from mismatch");
+
+                const beforeNonce =
+                    await p2pInstance.chainSigner.getNonce("pending");
+                const responses = await Promise.all([
+                    p2pInstance.chainSigner.sendTransaction({
+                        to: signerAddress,
+                        value: 1n
+                    }),
+                    p2pInstance.chainSigner.sendTransaction({
+                        to: signerAddress,
+                        value: 2n
+                    })
+                ]);
+                const receipts = await Promise.all(
+                    responses.map((response) => response.wait())
+                );
+                expect(
+                    responses.map((response) => response.nonce)
+                ).to.deep.equal([beforeNonce, beforeNonce + 1]);
+                expect(
+                    responses.map((response) => response.value)
+                ).to.deep.equal([1n, 2n]);
+                expect(
+                    receipts.every((receipt) => receipt?.status === 1)
+                ).to.equal(true);
             } finally {
                 await p2pInstance.dispose();
             }
         });
     }
+
+    it("generates a host-owned signer when no secret is supplied", async function () {
+        this.timeout(90_000);
+        const p2pInstance = await setupP2pInstance({
+            runSdkInThread: false,
+            vmDedicatedThread: false,
+            generateSigner: true
+        });
+        try {
+            expect(await p2pInstance.chainSigner.getAddress()).to.match(
+                /^0x[0-9a-fA-F]{40}$/
+            );
+            expect(
+                await p2pInstance.stateChannelManagerContract.getAllTimes()
+            ).to.have.length(4);
+        } finally {
+            await p2pInstance.dispose();
+        }
+    });
 });

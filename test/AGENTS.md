@@ -138,13 +138,56 @@ Don't add `as unknown as` at call sites to reach control services — route thro
   and be exercised directly — but still with real domain objects built via
   `test/factory.ts` and real identities via ethers wallets, never placeholder
   data that couldn't decode/verify in production.
+- **Record-only host probes are the one sanctioned stub shape.** When a real
+  side effect would derail the live session (e.g. `disputeManager.dispute`
+  posting an on-chain dispute against an honest block mid-test), a host-side
+  patch may _record_ the call instead of forwarding it — record, never
+  reimplement, restore in the same block. The logic under test must still be
+  the real code path; the recorded call proves the boundary was reached, and
+  the real side effect must have its own coverage on an e2e path where it can
+  run for real.
+- **Test files contain tests, not helpers.** Any staging used (or usable) by
+  more than one test lives in the harness where other tests can discover it:
+  host-side manipulations as concrete `stubX`/`restoreX` pairs on the `stub`
+  control service (holds, records, fault injection), client-side combos on
+  `rpcStub` actions, adversarial payload crafting on `byzantine`. Existing
+  examples: `stub.stubHoldReductionTasks` / `rpcStub.holdReductionRace`,
+  `rpcStub.recordSpectateSync`, `byzantine.craftBogusForkBlockZero`. Inline
+  `execOnHost` staging is acceptable only for genuinely single-use, bespoke
+  instrumentation inside one test.
+- **No per-test restore hooks.** Each test starts a fresh session and teardown
+  discards the peers, so patched host internals die with them — don't add
+  `afterEach` cleanup for host patches. Release staged holds mid-test via the
+  teardown the stub action returned; the one thing that must not be left
+  behind is a _paused in-flight call_ (release its resolver before the test
+  ends).
+
+## Chai comparators and contract-bearing objects
+
+`hardhat-chai-matchers` overwrites `.equal`/`.gt`/… and probes **both operands**
+with ethers `getAddress`. A failed probe constructs an `INVALID_ARGUMENT` error
+whose info embeds the whole operand, and ethers stringifies it **recursively** —
+on a graph containing ethers Contract proxies (a `TestPeer`, `p2pInstance`,
+`contractInstance`, …) every unknown key spawns another error: thousands of
+`makeError`s, a multi-second main-thread stall, and a watchdog kill (shows up as
+a "starved" test). Never pass peers/contracts/rich harness objects through an
+overwritten comparator — assert on a scalar projection (`peer.index`, a hash) or
+use a non-overwritten form (`expect(x, "msg").to.not.be.undefined`). Found via
+cpu-profile on the wrong-fork dispute tests (2026-07-06); the starvation counter
+in the parallel summary is the detector.
 
 ## Running tests
 
 - Typecheck: `yarn tsc --noEmit -p tsconfig.json` (the `TestPeer`/control surface
   is fully typed — a removed/renamed field is a compile error, your free
   checklist).
-- Unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
+- Canonical full gate: `yarn test:parallel`. Add `--e2e-only` to run only E2E
+  tests, or `--grep <regexp>` for the narrowest relevant task.
+- Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
 - E2E in worker mode: `yarn test:e2e:worker` (per-file process isolation +
   internal X/N progress; needs the hardhat node — `yarn infra:hardhat-node`).
+- Parallel runner: `yarn test:parallel` — each run logs to a fresh
+  `./logs/run-N/`; earlier run dirs (and their `error_*` logs) are retained
+  for cross-run comparison. Only the current run's dir is cleared. See root
+  `AGENTS.md` ("Canonical test command and parallel run logs").
 - Narrow first: run the single `*.test.ts` you touched before the suite.

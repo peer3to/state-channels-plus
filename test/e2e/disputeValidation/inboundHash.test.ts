@@ -11,8 +11,9 @@ describe("E2E: dispute validation / inboundHash", function () {
     it("dispute.input.latestInboundMessageBlockHash = random (not on-chain) → DisputeInboundHashNotInChain", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
+        const forkId = h.activeForkId!;
 
-        h.tamper.stubConstructDispute(0, (dispute, sm) => {
+        await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash =
                 sm.p2pManager.localRpc.dispute.randomHash() as Hash;
         });
@@ -32,14 +33,15 @@ describe("E2E: dispute validation / inboundHash", function () {
                 DisputeFraudProofType.DisputeInboundHashNotInChain,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 
     it("dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight > 0 → DisputeInboundHashNotInChain", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
+        const forkId = h.activeForkId!;
 
-        h.tamper.stubConstructDispute(0, (dispute, sm) => {
+        await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash = sm.p2pManager.localRpc
                 .dispute.zeroHash as Hash;
             dispute.input.lastInboundMessageBlockHeight = 999999n;
@@ -60,6 +62,6 @@ describe("E2E: dispute validation / inboundHash", function () {
                 DisputeFraudProofType.DisputeInboundHashNotInChain,
             timeoutMs: 10000
         });
-        await h.dispute.resolveDisputeWait();
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 });

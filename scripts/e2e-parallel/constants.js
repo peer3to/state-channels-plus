@@ -22,7 +22,7 @@ const DEFAULT_STREAM_CHILD_OUTPUT = false;
 // Warm slots (node + discovery + deploy-cache) pre-provisioned before
 // scheduling and assigned round-robin to tests. --slots overrides; --slots 0
 // means no pool (every test self-provisions its own in-process slot).
-const DEFAULT_SLOTS = 4;
+const DEFAULT_SLOTS = 1;
 
 // ---------------------------------------------------------------------------
 // Scheduler (load + memory gated, no cost model)

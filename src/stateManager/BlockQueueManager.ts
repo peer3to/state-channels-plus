@@ -1,7 +1,14 @@
 import { Block } from "@/models";
 import { BlockValidationResult, TimeConfig } from "@/types";
-import { Address, ForkId, Hash, Signature, Timestamp } from "@/types/types";
-import { Logger } from "@/utils";
+import {
+    Address,
+    ChannelId,
+    ForkId,
+    Hash,
+    Signature,
+    Timestamp
+} from "@/types/types";
+import { DetachedPromises, Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
@@ -22,6 +29,17 @@ export default class BlockQueueManager {
     private readonly timeoutHandles: Map<Hash, ReturnType<typeof setTimeout>> =
         new Map();
     private readonly logger: Logger;
+
+    // Fork-recovery gate. A mismatched block may just mean we're late to reduce
+    // our own disputed current fork. Reducing takes the StateManager mutex, so
+    // it MUST run detached (ingest can be under that mutex via the dispute
+    // pipeline re-ingest paths) - awaiting it inline would deadlock. The gate
+    // coalesces a junk-fork flood into one in-flight task per fork and suppresses
+    // re-scheduling until the kill period end. Both maps are keyed by the fork
+    // being reduced and cleared on transition (`onForkTransition`).
+    private readonly recoveryScheduledForFork: Set<ForkId> = new Set();
+    private readonly recoverySuppressedUntil: Map<ForkId, Timestamp> =
+        new Map();
 
     constructor(
         private readonly stateManager: StateManager,
@@ -112,6 +130,20 @@ export default class BlockQueueManager {
                 return true;
             }
 
+            if (block.forkId !== this.stateManager.forkId) {
+                await this.maybeScheduleForkRecovery(block.channelId);
+                this.logger.warn(
+                    "ingestBlockConfirmation - block on non-current fork queued",
+                    {
+                        expectedForkId: String(this.stateManager.forkId),
+                        block: LoggerUtils.getBlockMetadata(
+                            block,
+                            this.stateManager.storage
+                        )
+                    }
+                );
+            }
+
             const hash = this.stateManager.storage.queues.queueBlock(block, {
                 senderAddress: options?.senderAddress
             });
@@ -125,8 +157,92 @@ export default class BlockQueueManager {
         }
     }
 
+    public onForkTransition(): void {
+        this.recoveryScheduledForFork.clear();
+        this.recoverySuppressedUntil.clear();
+    }
+
+    /**
+     * Consult the kill-period cache BEFORE scheduling (avoid task-queue pressure
+     * under a junk flood), then hand off to the coalescing gate. Awaited from
+     * ingest, but only cheap mirror/cache reads - never the reduction itself.
+     */
+    private async maybeScheduleForkRecovery(
+        channelId: ChannelId
+    ): Promise<void> {
+        const currentForkId = this.stateManager.forkId;
+        if (!(await this.stateManager.isForkDisputed(currentForkId, channelId)))
+            return;
+        const { isExpired, killPeriodEnd } =
+            await this.stateManager.reductionManager.isKillPeriodExpiredCached(
+                currentForkId
+            );
+        if (!isExpired) {
+            this.recoverySuppressedUntil.set(currentForkId, killPeriodEnd);
+            return;
+        }
+        this.scheduleForkRecovery(currentForkId);
+    }
+
+    private scheduleForkRecovery(forkId: ForkId): void {
+        if (this.recoveryScheduledForFork.has(forkId)) return; // coalesce
+        const suppressedUntil = this.recoverySuppressedUntil.get(forkId);
+        if (
+            suppressedUntil !== undefined &&
+            Clock.getTimeInSeconds() < suppressedUntil
+        ) {
+            return;
+        }
+        this.recoveryScheduledForFork.add(forkId);
+        this.timeoutManager.scheduleTask(
+            () => {
+                DetachedPromises.collect(this.runForkRecovery(forkId));
+            },
+            0,
+            `BlockQueueManager.runForkRecovery - fork ${forkId}`
+        );
+    }
+
+    private async runForkRecovery(forkId: ForkId): Promise<void> {
+        try {
+            // Re-check at RUN time, not just schedule time: a transition may have
+            // landed, or the fork may no longer be disputed.
+            if (forkId !== this.stateManager.forkId) return;
+            if (
+                !(await this.stateManager.isForkDisputed(
+                    forkId,
+                    this.stateManager.channelId
+                ))
+            ) {
+                return;
+            }
+            const { isExpired, killPeriodEnd } =
+                await this.stateManager.reductionManager.isKillPeriodExpiredCached(
+                    forkId
+                );
+            if (!isExpired) {
+                this.recoverySuppressedUntil.set(forkId, killPeriodEnd);
+                return;
+            }
+            // Idempotent single-flight: on success `setGenesisState` transitions
+            // the fork and the post-transition drain picks up queued blocks.
+            await this.stateManager.reductionManager.tryReduce(forkId);
+        } catch (error) {
+            this.logger.error("runForkRecovery - local reduction failed", {
+                forkId: String(forkId),
+                error: error instanceof Error ? error.message : String(error)
+            });
+            throw error;
+        } finally {
+            this.recoveryScheduledForFork.delete(forkId);
+        }
+    }
+
     public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
         const activeForkId = forkId ?? this.stateManager.forkId;
+        // A scheduled forkId is not authority - a fork transition may have
+        // landed since; the entries drain via the post-transition call.
+        if (activeForkId !== this.stateManager.forkId) return;
         const maxHeight =
             this.stateManager.storage.blocks.getNextBlockHeight(activeForkId);
 
@@ -189,6 +305,40 @@ export default class BlockQueueManager {
             return;
         }
 
+        if (entry.block.forkId !== this.stateManager.forkId) {
+            if (await this.stateManager.isKnownStaleFork(entry.block.forkId)) {
+                // A known-past fork (disputed, or one we hold a genesis snapshot
+                // for): we are ahead, and a sync request would blacklist honest
+                // stragglers. Drop silently.
+                this.logger.verbose(
+                    "queueTimeout - dropping entry from a known stale fork",
+                    {
+                        expectedForkId: String(this.stateManager.forkId),
+                        block: LoggerUtils.getBlockMetadata(
+                            entry.block,
+                            this.stateManager.storage
+                        )
+                    }
+                );
+                return;
+            }
+            // Unknown fork (not disputed, no local genesis for it): ask the
+            // suppliers to prove it once; a failed sync punishes them. This is
+            // the sole sync-probe site now that arrival-time sync is gone.
+            this.logger.verbose(
+                "queueTimeout - unknown fork, requesting sync from suppliers",
+                {
+                    expectedForkId: String(this.stateManager.forkId),
+                    block: LoggerUtils.getBlockMetadata(
+                        entry.block,
+                        this.stateManager.storage
+                    )
+                }
+            );
+            this.requestSync(entry);
+            return;
+        }
+
         const nextHeight = this.stateManager.storage.blocks.getNextBlockHeight(
             entry.block.forkId
         );
@@ -241,6 +391,12 @@ export default class BlockQueueManager {
         }
     }
 
+    private disconnectEntrySources(entry: QueuedBlockEntry): void {
+        this.stateManager.p2pManager.disconnectAndBlacklistPeers(
+            entry.sourcePeers
+        );
+    }
+
     public scheduleStoredBlockConfirmationMerge(
         entry: QueuedBlockEntry,
         strategy: AValidationStrategy
@@ -252,30 +408,76 @@ export default class BlockQueueManager {
         );
     }
 
-    private scheduleQueueTimeout(blockHash: Hash): void {
+    /**
+     * (Re)schedule the queue timeout for the REMAINDER of the entry's fixed
+     * lifetime (`firstSeenAt + agreementTime`) - duplicate copies and
+     * restores must not extend it. Returns whether a timeout was scheduled;
+     * on false any pre-existing handle is left untouched, so a near-deadline
+     * duplicate can't strand the entry by cancelling its only timeout.
+     */
+    private scheduleQueueTimeout(blockHash: Hash): boolean {
         const entry =
             this.stateManager.storage.queues.getQueuedEntry(blockHash);
-        if (!entry) return;
+        if (!entry) return false;
 
         const now = Clock.getTimeInSeconds();
-        const alreadyScheduled = this.timeoutHandles.has(blockHash);
-        const canReschedule =
-            now - entry.firstSeenAt <= this.timeConfig.agreementTime;
+        const remainingSeconds =
+            this.timeConfig.agreementTime - (now - entry.firstSeenAt);
 
-        if (!canReschedule) return;
+        if (remainingSeconds <= 0) return false;
 
-        if (alreadyScheduled) this.cancelQueueTimeout(blockHash);
+        if (this.timeoutHandles.has(blockHash)) {
+            this.cancelQueueTimeout(blockHash);
+        }
 
-        const delayMs = this.timeConfig.agreementTime * 1000;
         const timeout = this.timeoutManager.scheduleTask(
             () => this.queueTimeout(blockHash),
-            delayMs,
+            remainingSeconds * 1000,
             `BlockQueueManager.queueTimeout - fork ${entry.block.forkId} - block ${entry.block.height}`
         );
         this.timeoutHandles.set(blockHash, timeout);
+        return true;
+    }
+
+    /**
+     * The ONLY sanctioned way to put a dequeued entry back. Strategy hooks reach
+     * this while `onBlockConfirmation` holds the StateManager mutex, so all work
+     * here is either synchronous storage mutation or a scheduled task - never an
+     * inline timeout (that would re-enter validation on the wrong stack).
+     *
+     * - If the block became stored while it was out of the queue, merge the
+     *   stored confirmation instead of waiting out the timeout, under the
+     *   caller's `strategy` (falling back to the active one).
+     * - Otherwise restore + (re)arm the remaining-window timeout; if the window
+     *   already elapsed, run the timeout logic as an immediate task.
+     */
+    public restoreQueuedEntry(
+        entry: QueuedBlockEntry,
+        strategy?: AValidationStrategy
+    ): void {
+        if (this.isBlockStored(entry.block)) {
+            this.scheduleStoredBlockConfirmationMerge(
+                entry,
+                strategy ?? this.stateManager.getActiveValidationStrategy()
+            );
+            return;
+        }
+
+        this.stateManager.storage.queues.restoreEntry(entry);
+        const hash = entry.block.hash;
+
+        if (this.scheduleQueueTimeout(hash)) return;
+
+        // Deadline already crossed while dequeued: evict via a task, not inline.
+        this.timeoutManager.scheduleTask(
+            () => this.queueTimeout(hash),
+            0,
+            `BlockQueueManager.queueTimeout (restore past deadline) - ${hash}`
+        );
     }
 
     private scheduleQueueExecution(forkId: ForkId): void {
+        if (forkId !== this.stateManager.forkId) return;
         this.timeoutManager.scheduleTask(
             () => this.tryExecuteFromQueue(forkId),
             0,
@@ -306,11 +508,7 @@ export default class BlockQueueManager {
             await strategy.interpretFinalValidationResult(validationResult);
 
         if (!shouldKeepConnection) {
-            for (const peer of entry.sourcePeers) {
-                this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peer
-                );
-            }
+            this.disconnectEntrySources(entry);
         }
         P2pEventHooksUtils.notifyBlockConfirmationProcessed({
             blockHash: entry.block.hash,
@@ -328,6 +526,10 @@ export default class BlockQueueManager {
             return;
         }
 
+        // The pipeline handles a fork that moved out from under this entry (as a
+        // side effect: it restores the entry for a timeout sync, or drops it if
+        // we've moved past it) - see `onBlockConfirmation`. A `false` here is a
+        // genuine validation failure on the current fork.
         const shouldKeepConnection =
             await this.stateManager.onBlockConfirmation(entry);
 

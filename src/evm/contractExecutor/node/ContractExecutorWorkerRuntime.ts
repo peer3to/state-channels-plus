@@ -44,6 +44,7 @@ export function createContractExecutorWorker(
         execArgv,
         resourceLimits: resolveWorkerResourceLimits("vm")
     });
+    let terminating = false;
     instrumentWorkerStartup(
         worker,
         "vm",
@@ -54,9 +55,15 @@ export function createContractExecutorWorker(
     worker.on("message", onMessage);
     worker.on("error", onError);
     worker.on("exit", (code: number) => {
-        if (code !== 0) {
+        if (!terminating && code !== 0) {
             onError(new Error(`Contract executor worker exited with ${code}`));
         }
     });
-    return worker;
+    return {
+        postMessage: (message) => worker.postMessage(message),
+        terminate: () => {
+            terminating = true;
+            return worker.terminate();
+        }
+    };
 }

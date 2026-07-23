@@ -43,6 +43,7 @@ describe("E2E: State Transitions", function () {
             await h.assert.sync.peersInSyncWait();
 
             const maliciousPeerIndex = 2;
+            const forkId = h.activeForkId!;
 
             await h.dispute.createInvalidStateTransitionDispute(
                 maliciousPeerIndex,
@@ -51,7 +52,7 @@ describe("E2E: State Transitions", function () {
                 }
             );
             await h.assert.dispute.initiatedAndCommitedWait();
-            await h.dispute.resolveDisputeWait();
+            await h.dispute.resolveDisputeWait({ forkId });
             await h.transition.advanceState({ count: 3 });
 
             await h.assert.sync.onlyHonestPeersInSync();
