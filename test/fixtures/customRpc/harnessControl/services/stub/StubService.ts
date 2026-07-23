@@ -46,7 +46,8 @@ export type StubKey =
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
     | "RaceConditionBlockHeightTooOld"
-    | "RaceConditionReductionExpectationDoesntMatch";
+    | "RaceConditionReductionExpectationDoesntMatch"
+    | "ErrorDisputeInboundMessageBlocksInvalid";
 
 export type PausedReductionStatus = {
     entered: boolean;

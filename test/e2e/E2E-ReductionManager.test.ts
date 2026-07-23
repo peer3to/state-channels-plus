@@ -109,6 +109,58 @@ describe("E2E: ReductionManager", function () {
                     .request()
             ).to.equal(null);
         });
+
+        it("ErrorDisputeInboundMessageBlocksInvalid swallows when another reducer already committed", async function () {
+            // beforeEach already holds reduction timers. Also hold snapshot /
+            // reduced-commit handlers on the target so the winner's commit
+            // cannot complete the target via event-driven tryReduce first.
+            const race = await h.rpcStub.holdReductionRace(targetPeerIndex);
+
+            // Another peer must commit first so classifyReductionRace's
+            // getReducedResult gate passes (non-ZeroHash reducedForkId).
+            const winnerIndex = 1;
+            await h
+                .control(h.getPeer(winnerIndex))
+                .stub.restoreReductionTasks(true)
+                .request();
+            await h.assert.dispute.reductionCompletedWait({
+                sourceForkId,
+                peerIndices: [winnerIndex]
+            });
+            // Local install can finish before the detached on-chain submit;
+            // await the winner observing its own reduced-result commit
+            // (event-driven, not a ground-truth poll).
+            await h.event.waitForPeers(
+                "onDisputeReducedResultCommitted",
+                [winnerIndex],
+                1,
+                { timeoutMs: 20000, mode: "atLeast" }
+            );
+
+            await h
+                .control(h.getPeer(targetPeerIndex))
+                .stub.stubNextReductionSimulationError(
+                    "ErrorDisputeInboundMessageBlocksInvalid"
+                )
+                .request();
+            await race.release({
+                runHeldTasks: true,
+                replayEvents: false
+            });
+            await h.assert.dispute.reductionCompletedWait({
+                sourceForkId,
+                peerIndices: [targetPeerIndex]
+            });
+            expect(
+                await h
+                    .control(h.getPeer(targetPeerIndex))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PARTICIPATING);
+            const hostErrors = await h.quiesceHosts();
+            expect(hostErrors).to.deep.equal([]);
+            expect(TestSession.getFirstDetachedError()).to.equal(undefined);
+        });
     });
 
     it("an empty dispute set posts replacement evidence and resumes the same reduction", async function () {

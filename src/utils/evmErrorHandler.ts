@@ -30,7 +30,8 @@ export type RaceConditionErrorName =
     | "ErrorCantParticipateInDispute"
     | "ErrorDisputePostedAuditingDataMismatch"
     | "ErrorDisputeChallengePeriodExpired"
-    | "ErrorDisputeCommitmentNotAvailable";
+    | "ErrorDisputeCommitmentNotAvailable"
+    | "ErrorDisputeInboundMessageBlocksInvalid";
 
 export type RaceConditionErrorHandlers = Partial<
     Record<RaceConditionErrorName, (error: CustomEvmError) => void>

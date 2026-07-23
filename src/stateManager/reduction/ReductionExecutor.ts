@@ -35,7 +35,12 @@ type ReductionSubmissionStatus = "submit" | "already-reduced" | "superseded";
 const REDUCTION_RACE_ERRORS = [
     "RaceConditionDisputeAlreadyReduced",
     "RaceConditionBlockHeightTooOld",
-    "RaceConditionReductionExpectationDoesntMatch"
+    "RaceConditionReductionExpectationDoesntMatch",
+    // Not a race per se: the losing peer's own reduce inputs went stale, so its
+    // reduceAndFinalize reverts the calldata-pure inbound-block check. Classified
+    // here so classifyReductionRace can gate it (swallow vs discard) instead of
+    // letting it escape the detached reduction path as an unhandled rejection.
+    "ErrorDisputeInboundMessageBlocksInvalid"
 ] as const satisfies readonly RaceConditionErrorName[];
 type ReductionRaceErrorName = (typeof REDUCTION_RACE_ERRORS)[number];
 
@@ -200,6 +205,7 @@ export default class ReductionExecutor {
         const submission = await this.prepareSubmission(candidate);
         const submissionStatus = await this.simulateSubmission(
             forkId,
+            candidate.reducedForkId,
             disputes,
             submission
         );
@@ -233,7 +239,12 @@ export default class ReductionExecutor {
                 }
             );
         if (installed && submissionStatus === "submit") {
-            this.submitDetached(forkId, disputes, submission);
+            this.submitDetached(
+                forkId,
+                candidate.reducedForkId,
+                disputes,
+                submission
+            );
         }
     }
 
@@ -318,6 +329,7 @@ export default class ReductionExecutor {
 
     private async simulateSubmission(
         forkId: ForkId,
+        candidateForkId: ForkId,
         disputes: DisputeStruct[],
         submission: { calldata: string[] }
     ): Promise<ReductionSubmissionStatus> {
@@ -332,6 +344,7 @@ export default class ReductionExecutor {
             const status = await this.classifyReductionRace(
                 custom?.name,
                 forkId,
+                candidateForkId,
                 disputes
             );
             if (status) return status;
@@ -341,6 +354,7 @@ export default class ReductionExecutor {
 
     private submitDetached(
         forkId: ForkId,
+        candidateForkId: ForkId,
         disputes: DisputeStruct[],
         submission: { calldata: string[] }
     ): void {
@@ -379,6 +393,7 @@ export default class ReductionExecutor {
                     const status = await this.classifyReductionRace(
                         raceErrorName,
                         forkId,
+                        candidateForkId,
                         disputes
                     );
                     if (status) return;
@@ -391,6 +406,7 @@ export default class ReductionExecutor {
     private async classifyReductionRace(
         errorName: string | undefined,
         forkId: ForkId,
+        candidateForkId: ForkId,
         disputes: DisputeStruct[]
     ): Promise<ReductionSubmissionStatus | undefined> {
         if (!isReductionRaceErrorName(errorName)) return undefined;
@@ -410,6 +426,43 @@ export default class ReductionExecutor {
                 this.stateManager.channelId,
                 forkId
             );
+
+        // ErrorDisputeInboundMessageBlocksInvalid is a pure check over THIS
+        // peer's own calldata (its reduce-derived output doesn't chain from its
+        // local snapshot), so it means our local reduction diverged from chain
+        // — not merely that another reducer won. Compare the committed result to
+        // our own candidate: only when they match did we simply lose the race
+        // with a correct candidate (safe to install and converge). Otherwise the
+        // candidate is divergent (or nothing is committed yet) — discard it
+        // rather than install a value that would later trip the reduced-result
+        // mismatch -> abort — but never rethrow into the detached path either.
+        if (errorName === "ErrorDisputeInboundMessageBlocksInvalid") {
+            if (
+                String(reducedResult.reducedForkId) === String(candidateForkId)
+            ) {
+                this.logger.info(
+                    "Ordinary reduction superseded by another reducer",
+                    {
+                        forkId,
+                        reducedForkId: reducedResult.reducedForkId,
+                        reducer: reducedResult.reducer
+                    }
+                );
+                return "already-reduced";
+            }
+            // Logged at warn so a genuine, persistent local divergence stays
+            // diagnosable instead of vanishing as a benign race.
+            this.logger.warn(
+                "Reduction inbound-blocks invalid; local candidate diverged from chain - discarding",
+                {
+                    forkId,
+                    candidateForkId,
+                    committedForkId: reducedResult.reducedForkId
+                }
+            );
+            return "superseded";
+        }
+
         const finalDispute = disputes.find(
             (dispute) =>
                 String(dispute.outputSnapshotDataHash) ===
