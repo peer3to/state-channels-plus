@@ -1,14 +1,15 @@
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
-import { id, Log } from "ethers";
+import { ethers, id, Log } from "ethers";
 import { DetachedPromises } from "@/utils";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
+import * as factory from "@test/factory";
+import type { Address, ChannelId, ForkId, Hash } from "@/types/types";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
@@ -89,6 +90,26 @@ export type MissingParticipantSnapshotsProbe = {
     earlyAuthorResult: string;
     signatureUnionResult: string;
     proofStored: boolean;
+};
+
+export type BlockAuthorParticipantProbe = {
+    /** author already in the previous snapshot -> participant */
+    previousSnapshotMember: string;
+    /** author absent from the previous snapshot but present in a resulting
+     *  snapshot whose (forkId, height) match the block's own coordinates ->
+     *  participant */
+    matchingResultingSnapshotMember: string;
+    /** author absent from the previous snapshot; the named resulting snapshot
+     *  exists but belongs to a different height (a stale/ex-member snapshot)
+     *  -> not a participant */
+    staleResultingSnapshotMember: string;
+    /** no locally-anchored previous snapshot for the block's coordinates ->
+     *  falls back to the on-chain participant set; author is a real
+     *  on-chain participant -> participant */
+    noLocalAnchorKnownParticipant: string;
+    /** same on-chain fallback, author is an unrelated address -> not a
+     *  participant */
+    noLocalAnchorUnknownAddress: string;
 };
 
 /**
@@ -395,6 +416,148 @@ export class StubService extends ARpcService<
                 this.sm.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
                     dispute
                 ) !== undefined
+        };
+    }
+
+    public async probeBlockAuthorParticipant(): Promise<BlockAuthorParticipantProbe> {
+        const validationService = this.sm.validationService as unknown as {
+            isBlockAuthorParticipant: (
+                block: Block,
+                channelId: ChannelId
+            ) => Promise<boolean>;
+        };
+
+        const forkId = this.sm.forkId;
+        const channelId = this.sm.channelId;
+        const latestBlock = this.sm.storage.blocks.getLatestBlock(forkId);
+        if (!latestBlock) throw new Error("Expected a latest block");
+
+        const previousSnapshot =
+            this.sm.storage.stateSnapshots.getStateSnapshotByHash(
+                latestBlock.stateSnapshotHash
+            );
+        if (!previousSnapshot) {
+            throw new Error("Expected the latest block's snapshot");
+        }
+        const knownParticipant = previousSnapshot.snapshotData
+            .participants[0] as Address;
+        const outsider = ethers.Wallet.createRandom().address as Address;
+        const nextHeight = latestBlock.height + 1;
+
+        const buildSnapshot = (
+            participants: Address[],
+            height: number,
+            snapshotForkId: ForkId
+        ) =>
+            StateSnapshot.from({
+                forkId: snapshotForkId,
+                blockHeight: BigInt(height),
+                timestamp: 0n,
+                snapshotData: {
+                    originForkId: ethers.ZeroHash,
+                    stateMachineStateHash: ethers.ZeroHash,
+                    participants,
+                    latestInboundMessageBlockHash: ethers.ZeroHash,
+                    latestInboundMessageBlockHeight: 0n,
+                    latestOutboundMessageBlockHash: ethers.ZeroHash,
+                    latestOutboundMessageBlockHeight: 0n,
+                    totalDeposits: { amount: 0n, data: "0x" },
+                    totalWithdrawals: { amount: 0n, data: "0x" }
+                }
+            });
+
+        const buildBlock = (
+            participant: Address,
+            stateSnapshotHash: Hash,
+            overrides?: { forkId?: ForkId; height?: number }
+        ) => {
+            const blockStruct = {
+                ...factory.blockStructWithTransactionHeader(
+                    latestBlock.blockStruct,
+                    {
+                        participant,
+                        transactionCnt: overrides?.height ?? nextHeight,
+                        forkId: overrides?.forkId ?? forkId
+                    }
+                ),
+                previousBlockHash: latestBlock.hash,
+                stateSnapshotHash
+            };
+            return Block.fromBlockStruct(blockStruct, this.sm.signer);
+        };
+
+        // author already a participant in the (real) previous snapshot
+        const previousMemberBlock = await buildBlock(
+            knownParticipant,
+            latestBlock.stateSnapshotHash
+        );
+        const previousSnapshotMember = String(
+            await validationService.isBlockAuthorParticipant(
+                previousMemberBlock,
+                channelId
+            )
+        );
+
+        // author absent from the previous snapshot, but present in a
+        // resulting snapshot bound to this block's own coordinates
+        const matchingSnapshot = buildSnapshot([outsider], nextHeight, forkId);
+        this.sm.storage.stateSnapshots.storeStateSnapshot(matchingSnapshot);
+        const matchingBlock = await buildBlock(outsider, matchingSnapshot.hash);
+        const matchingResultingSnapshotMember = String(
+            await validationService.isBlockAuthorParticipant(
+                matchingBlock,
+                channelId
+            )
+        );
+
+        // same outsider, but the named snapshot belongs to a different
+        // height - an ex-member's stale snapshot
+        const staleSnapshot = buildSnapshot(
+            [outsider],
+            nextHeight + 100,
+            forkId
+        );
+        this.sm.storage.stateSnapshots.storeStateSnapshot(staleSnapshot);
+        const staleBlock = await buildBlock(outsider, staleSnapshot.hash);
+        const staleResultingSnapshotMember = String(
+            await validationService.isBlockAuthorParticipant(
+                staleBlock,
+                channelId
+            )
+        );
+
+        // no locally-anchored previous snapshot for the block's coordinates
+        // -> falls back to the on-chain participant set
+        const unknownForkId = id("probeBlockAuthorParticipant-unknown-fork");
+        const knownParticipantFallbackBlock = await buildBlock(
+            knownParticipant,
+            ethers.ZeroHash,
+            { forkId: unknownForkId, height: 1 }
+        );
+        const noLocalAnchorKnownParticipant = String(
+            await validationService.isBlockAuthorParticipant(
+                knownParticipantFallbackBlock,
+                channelId
+            )
+        );
+        const outsiderFallbackBlock = await buildBlock(
+            outsider,
+            ethers.ZeroHash,
+            { forkId: unknownForkId, height: 1 }
+        );
+        const noLocalAnchorUnknownAddress = String(
+            await validationService.isBlockAuthorParticipant(
+                outsiderFallbackBlock,
+                channelId
+            )
+        );
+
+        return {
+            previousSnapshotMember,
+            matchingResultingSnapshotMember,
+            staleResultingSnapshotMember,
+            noLocalAnchorKnownParticipant,
+            noLocalAnchorUnknownAddress
         };
     }
 

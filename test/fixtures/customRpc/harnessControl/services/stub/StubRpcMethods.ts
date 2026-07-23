@@ -20,7 +20,8 @@ import type {
     ConcurrentCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
     DisputeStrategyResultMatrix,
-    MissingParticipantSnapshotsProbe
+    MissingParticipantSnapshotsProbe,
+    BlockAuthorParticipantProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
 
@@ -651,6 +652,10 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
         return this.service.probeMissingParticipantSnapshots();
+    }
+
+    public async probeBlockAuthorParticipant(): Promise<BlockAuthorParticipantProbe> {
+        return this.service.probeBlockAuthorParticipant();
     }
 
     /** Pause a real reduction once it enters its kill-period lookup. */
