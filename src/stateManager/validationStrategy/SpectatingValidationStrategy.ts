@@ -57,15 +57,10 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
                 return true;
         }
     }
-    // Two classes of deviation, split by who caused it. A non-participant fault
-    // (unauthenticated junk, outsider author, wrong channel, stray signatures)
-    // is dropped + blacklisted while we keep spectating - author membership is
-    // checked before any linkage/timestamp check, so a non-participant only ever
-    // reaches these DISCONNECT hooks and must never be able to take us offline.
-    // A *provable* fraud by an actual channel participant (double-sign, invalid
-    // transition, wrong genesis, forged inbound, invalid timestamp) is the
-    // opposite: a peer in the channel lied to us, so we abort() - stop following
-    // the feed and lose interest in joining a channel with a proven liar.
+    // Deviations split by whether the fault is provable, not by who caused it.
+    // No fraud proof possible (junk, outsider author, wrong channel, stray
+    // signatures, malformed linkage, missing genesis) -> drop the sender and keep
+    // spectating. Provable fraud by a participant -> abort() and stop following.
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
@@ -124,11 +119,14 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.BROADCAST;
     }
     public async blockAuthorIsNotParticipant(
-        _block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // Non-participant author: authentication passed (they signed with their
         // own key) but they are not in the channel. Drop + blacklist the sender,
         // keep spectating - this is the DoS vector, never an abort.
+        const culprits = new Set(entry.sourcePeers);
+        culprits.add(entry.block.author);
+        this.p2pManager.disconnectAndBlacklistPeers(culprits);
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
@@ -146,8 +144,22 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
-        _entry: QueuedBlockEntry
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
+        if (
+            !this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                block.forkId
+            )
+        ) {
+            // No genesis snapshot means no fraud proof to build - nothing is
+            // proven against a participant, so cut the suppliers and the author
+            // and keep spectating rather than abort.
+            const culprits = new Set(entry.sourcePeers);
+            culprits.add(block.author);
+            this.p2pManager.disconnectAndBlacklistPeers(culprits);
+            return BlockValidationResult.DISCONNECT;
+        }
         this.abort();
         return BlockValidationResult.DISPUTE;
     }

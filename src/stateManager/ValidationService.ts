@@ -87,7 +87,7 @@ export default class ValidationService {
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
-            return await strategy.blockAuthorIsNotParticipant(block);
+            return await strategy.blockAuthorIsNotParticipant(entry);
         }
 
         // Check conflicting block

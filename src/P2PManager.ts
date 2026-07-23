@@ -308,6 +308,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.disconnectConnection(transport);
     }
 
+    public disconnectAndBlacklistPeers(peers: Iterable<Address>) {
+        for (const peer of peers) {
+            this.disconnectAndBlacklistPeerByEvmAddress(peer);
+        }
+    }
+
     public isBlacklisted(evmAddress: Address): boolean {
         return (
             this.profileManager.getProfileByEvmAddress(evmAddress)

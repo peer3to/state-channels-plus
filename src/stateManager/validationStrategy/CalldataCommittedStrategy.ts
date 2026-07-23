@@ -70,7 +70,7 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async blockAuthorIsNotParticipant(
-        _block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         throw new Error(
             "CalldataCommittedStrategy - blockAuthorIsNotParticipant should not be collected"

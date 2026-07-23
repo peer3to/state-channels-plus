@@ -379,11 +379,12 @@ export class StubService extends ARpcService<
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
         );
+        const entry = this.sm.storage.queues.createEntry(block);
         const earlyAuthorResult =
-            await strategy.blockAuthorIsNotParticipant(block);
+            await strategy.blockAuthorIsNotParticipant(entry);
         const signatureUnionResult =
             await strategy.notAllSingersAreParticipants(
-                this.sm.storage.queues.createEntry(block),
+                entry,
                 new Set([block.originalSignature])
             );
         return {

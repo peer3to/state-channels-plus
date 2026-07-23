@@ -169,8 +169,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DUPLICATE;
     }
     public async blockAuthorIsNotParticipant(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
         const previousStateSnapshot = this.storage.getPreviousStateSnapshot(
             block.coordinates
         );

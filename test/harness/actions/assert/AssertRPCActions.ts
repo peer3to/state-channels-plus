@@ -11,13 +11,11 @@ export class AssertRPCActions<
     constructor(private readonly harness: PeerTestHarness<TCustomRpc>) {}
 
     // The observer blacklists and disconnects the target (a byzantine sender it
-    // rejected) without going offline. Snapshots the observer's status first,
-    // then asserts it still holds after the drop; pass `expectedStatus` to
-    // assert a different status instead of no-change.
+    // rejected) without going offline
     async peerBlacklistedAndDisconnected(options: {
         observer: TestPeer<TCustomRpc>;
         target: TestPeer<TCustomRpc>;
-        expectedStatus?: Status;
+        expectedStatus: Status;
         timeoutMs?: number;
     }): Promise<void> {
         const {
@@ -26,12 +24,6 @@ export class AssertRPCActions<
             expectedStatus,
             timeoutMs = this.harness.event.protocolEventTimeoutMs(1)
         } = options;
-
-        // defaults to the status the observer holds right now - assert the drop
-        // leaves it there
-        const requiredStatus =
-            expectedStatus ??
-            (await this.harness.control(observer).query.getStatus().request());
 
         await this.harness.disconnectionBarrier.waitFor(
             async () =>
@@ -54,7 +46,7 @@ export class AssertRPCActions<
         expect(
             await this.harness.control(observer).query.getStatus().request(),
             `peer ${observer.index} status changed while dropping peer ${target.index}`
-        ).to.equal(requiredStatus);
+        ).to.equal(expectedStatus);
     }
 
     async peerDisconnectedFrom(options: {

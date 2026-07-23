@@ -392,11 +392,9 @@ export default class BlockQueueManager {
     }
 
     private disconnectEntrySources(entry: QueuedBlockEntry): void {
-        for (const peer of entry.sourcePeers) {
-            this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                peer
-            );
-        }
+        this.stateManager.p2pManager.disconnectAndBlacklistPeers(
+            entry.sourcePeers
+        );
     }
 
     public scheduleStoredBlockConfirmationMerge(
@@ -546,7 +544,6 @@ export default class BlockQueueManager {
                     sourcePeers: Array.from(entry.sourcePeers)
                 }
             );
-            this.disconnectEntrySources(entry);
         }
     }
 

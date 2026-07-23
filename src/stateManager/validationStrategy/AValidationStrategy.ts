@@ -54,7 +54,7 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockAuthorIsNotParticipant(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract doubleSignDetected(
