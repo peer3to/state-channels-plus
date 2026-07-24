@@ -400,9 +400,13 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     private async doResumeFromBackground(
         channelId: ChannelId
     ): Promise<ResumeResult> {
+        // Budget from the steady-state timeout window (height >= 1). The
+        // height-0 evidence grace is deliberately excluded: storage isn't
+        // hydrated yet so the in-memory height can't be trusted, and the
+        // shorter window is the conservative side for the budget cap.
         const deadline =
             Date.now() +
-            this.stateManager.getTimeoutWaitTimeSeconds() *
+            this.stateManager.getTimeoutWaitTimeSeconds(1) *
                 1000 *
                 RESUME_BUDGET_FRACTION;
 
