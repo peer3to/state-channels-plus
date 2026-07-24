@@ -1137,5 +1137,146 @@ describe("E2E: Spectate Service", function () {
                 );
             });
         }
+        it("pins the sync payload to the exact leave-block height while the responder is ahead", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 1, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 10,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const forkId = h.activeForkId!;
+            const leaverIndex = await h.transition.participantLeaveWait({
+                waitForFinalization: true
+            });
+            const remainingPeerIndices = h.peers
+                .map((peer) => peer.index)
+                .filter((peerIndex) => peerIndex !== leaverIndex);
+            const responder = h.getPeer(remainingPeerIndices[0]);
+
+            // the leave's own height, before any further confirming blocks land
+            const leaveBlockInfo = await h
+                .control(responder)
+                .query.getLatestBlockInfo(forkId)
+                .request();
+            expect(leaveBlockInfo).to.not.equal(null);
+            const leaveHeight = Number(
+                Codec.decode(leaveBlockInfo!.encodedBlock, Type.Block)
+                    .transaction.header.transactionCnt
+            );
+
+            // confirming blocks land above the leave, so the responder is
+            // locally ahead of the requested height
+            await h.transition.advanceState({
+                count: 3,
+                waitForPeers: remainingPeerIndices,
+                waitForFinalization: true
+            });
+
+            const syncResult = await h
+                .control(responder)
+                .spectate.generateSyncPayload(h.channelId!, forkId, leaveHeight)
+                .request();
+            expect(syncResult).to.not.equal(null);
+            const syncPayload = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+
+            // no milestone may reach into a block above the requested height,
+            // even though later confirming blocks exist on the responder
+            const milestoneHeights = syncPayload.stateProof.milestones.flatMap(
+                (milestone) =>
+                    milestone.blockConfirmations.map((confirmation) =>
+                        Number(
+                            Codec.decode(
+                                confirmation.signedBlock.encodedBlock,
+                                Type.Block
+                            ).transaction.header.transactionCnt
+                        )
+                    )
+            );
+            expect(
+                milestoneHeights.every((height) => height <= leaveHeight),
+                "sync payload milestones must never exceed the requested height"
+            ).to.equal(true);
+        });
+    });
+
+    describe("Spectator sync recovers a dispute missing from the responder's storage", function () {
+        it("suppressed dispute event on the responder → spectator still accepts the recovered sync payload", async function () {
+            const h = TestSession.getHarness();
+            const responderIndex = 0;
+            const maliciousPeerIndex = 2;
+
+            await h.lifecycle.start(4, 1);
+            const forkId = h.activeForkId!;
+            const spectator = await h.join.addSpectatorWait();
+
+            const race = await h.rpcStub.holdReductionRace(responderIndex);
+
+            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+                responderIndex,
+                { passFirst: true }
+            );
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            // exclude the spectator - it isn't a participant and never disputes
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [responderIndex, 1, 3]
+            });
+            // exclude the responder - its own onDisputeCommitted delivery is
+            // deliberately held back except for the first event
+            await h.assert.dispute.committedWait({ peersIndices: [1, 3] });
+
+            const responder = h.getPeer(responderIndex);
+            const responderLatestBlock = await h
+                .control(responder)
+                .query.getLatestBlockInfo(forkId)
+                .request();
+            expect(responderLatestBlock).to.not.equal(null);
+            const responderLatestHeight = Number(
+                Codec.decode(responderLatestBlock!.encodedBlock, Type.Block)
+                    .transaction.header.transactionCnt
+            );
+
+            let threw = "";
+            let syncResult: { encodedSyncPayload: string } | null = null;
+            try {
+                syncResult = await h
+                    .control(responder)
+                    .spectate.generateSyncPayload(
+                        h.channelId!,
+                        forkId,
+                        responderLatestHeight
+                    )
+                    .request();
+            } catch (e) {
+                threw = e instanceof Error ? e.message : String(e);
+            }
+            expect(
+                threw,
+                "generateSyncPayload must recover, not throw"
+            ).to.equal("");
+
+            if (syncResult) {
+                const { shouldAbort } = await h
+                    .control(spectator)
+                    .spectate.persistSyncPayload(syncResult.encodedSyncPayload)
+                    .request();
+                expect(
+                    shouldAbort,
+                    "the spectator must accept the recovered sync payload"
+                ).to.equal(false);
+            }
+
+            await race.release({ replayEvents: false, runHeldTasks: false });
+            await restoreEvents(false);
+        });
     });
 });

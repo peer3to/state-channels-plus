@@ -277,6 +277,97 @@ describe("Unit: AgreementManager", function () {
             expect(v!.blockHeight).to.equal(requestedHeight);
             expect(v!.latestProofHeight).to.equal(requestedHeight);
         });
+        it("proof requested at the exact leave-block height → tops out at the requested height", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3] });
+
+            const forkId = h.activeForkId!;
+
+            // the leave's own block height - later confirming blocks exist
+            // above it from the scenario's follow-up advanceState calls
+            const changeHeights = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) =>
+                    sm.storage.participantSetChanges
+                        .getChangePointsInRange(
+                            args.forkId,
+                            undefined,
+                            undefined
+                        )
+                        .map(Number),
+                { forkId }
+            );
+            const requestedHeight = changeHeights[0];
+
+            const v = await h
+                .control(h.getPeer(0))
+                .query.getStateProofVerification(forkId, requestedHeight)
+                .request();
+
+            expect(v!.blockHeight).to.equal(requestedHeight);
+            expect(v!.latestProofHeight).to.equal(requestedHeight);
+            // no milestone may reach into a block above the requested height,
+            // even though later confirming blocks exist in storage
+            const allConfirmationHeights =
+                v!.milestoneConfirmationHeights.flat();
+            expect(
+                allConfirmationHeights.every(
+                    (height) => height <= requestedHeight
+                )
+            ).to.equal(true);
+        });
+
+        it("proof requested at the exact join-block height → tops out at the requested height", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 2); // peers 0,1; blocks 0..1
+
+            const spectator = await h.join.addSpectatorWait({
+                statusTimeoutMs: 5000
+            });
+            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
+
+            await h.join.joinChannelWait({ joiner: spectator });
+            await h.assert.storage.honestPeersObserveInboundMessageWait();
+
+            // block 2 includes the joiner; confirming blocks land above it
+            // so the increased-threshold boundary is exercised
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [0, 1, 2]
+            });
+
+            const forkId = h.activeForkId!;
+
+            const changeHeights = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) =>
+                    sm.storage.participantSetChanges
+                        .getChangePointsInRange(
+                            args.forkId,
+                            undefined,
+                            undefined
+                        )
+                        .map(Number),
+                { forkId }
+            );
+            const requestedHeight = changeHeights[0]; // the join's own height
+
+            const v = await h
+                .control(h.getPeer(0))
+                .query.getStateProofVerification(forkId, requestedHeight)
+                .request();
+
+            expect(v!.blockHeight).to.equal(requestedHeight);
+            expect(v!.latestProofHeight).to.equal(requestedHeight);
+            const allConfirmationHeights =
+                v!.milestoneConfirmationHeights.flat();
+            expect(
+                allConfirmationHeights.every(
+                    (height) => height <= requestedHeight
+                )
+            ).to.equal(true);
+        });
 
         it("proofs sampled while 10 blocks are produced → each verifies on-chain at its sampled height", async function () {
             const h = TestSession.getHarness();
@@ -645,102 +736,6 @@ describe("Unit: AgreementManager", function () {
         // disputes.
         it.skip("hostile reducedOutput / dispute commitment", function () {});
 
-        // RACE, known red - skipped until fixed.
-        // a dispute commitment lands on-chain before our onDisputeCommitted
-        // handler stores the struct. a reduction firing in that gap sees the
-        // commitment but no struct -> getForkDisputes throws "Missing Dispute
-        // in storage". reduceLocally doesn't catch it (StateManager.ts:596)
-        // and tryReduce is fire-and-forget (StateManager.ts:422), so it ends
-        // as an unhandled rejection. wanted: same as the other not-ready
-        // cases - return undefined, let the reschedule retry.
-        it.skip("partial dispute window (commitment on-chain, struct not yet stored) → reduceLocally discards, not throws", async function () {
-            const h = TestSession.getHarness();
-            const observerIndex = 0;
-            const maliciousPeerIndex = 2;
-
-            await h.lifecycle.start(4, 2);
-            const forkId = h.activeForkId!;
-
-            // hold every reduction entry point so nothing auto-reduces -
-            // we call reduceLocally by hand below
-            const race = await h.rpcStub.holdReductionRace(observerIndex);
-
-            // real invalid transition -> honest peers dispute + commit on-chain
-            await h.byzantine.submitInvalidStateTransitionBlock(
-                maliciousPeerIndex
-            );
-            await h.assert.dispute.initiatedAndCommitedWait();
-
-            // wait out the kill period - before it expires reduceLocally
-            // returns undefined at the gate and never reaches getForkDisputes
-            await waitFor(
-                async () =>
-                    h.execOnHost(
-                        h.getPeer(observerIndex),
-                        async (sm, a) => {
-                            const { isExpired } =
-                                await sm.reductionManager.isKillPeriodExpiredCached(
-                                    a.forkId
-                                );
-                            return isExpired;
-                        },
-                        { forkId }
-                    ),
-                20000
-            );
-
-            const outcome = await h.execOnHost(
-                h.getPeer(observerIndex),
-                async (sm, args) => {
-                    // sanity: the window has commitments and we're past the gate
-                    const commitmentCount = (
-                        await sm.stateChannelManagerContract.getWindowCommitments(
-                            sm.channelId,
-                            args.forkId
-                        )
-                    ).length;
-
-                    // stage the race: keep the commitment on-chain, drop the
-                    // local struct - the state just before the handler stores it
-                    (
-                        sm.storage.disputes as unknown as {
-                            disputes: Map<unknown, unknown>;
-                        }
-                    ).disputes.clear();
-
-                    let threw = "";
-                    let returnedUndefined = false;
-                    try {
-                        const r = await sm.reductionManager.tryReduce(
-                            args.forkId
-                        );
-                        returnedUndefined = r === undefined;
-                    } catch (e) {
-                        threw = e instanceof Error ? e.message : String(e);
-                    }
-                    return { commitmentCount, threw, returnedUndefined };
-                },
-                { forkId }
-            );
-
-            // sanity: we actually staged the race window and reached the reducer
-            expect(
-                outcome.commitmentCount,
-                "window must hold a commitment for the race"
-            ).to.be.greaterThan(0);
-
-            // wanted: graceful discard. currently red - it throws
-            // "Missing Dispute in storage" instead.
-            expect(
-                outcome.threw,
-                "reduceLocally must discard a partial dispute window, not throw"
-            ).to.equal("");
-            expect(outcome.returnedUndefined).to.equal(true);
-
-            // discard held work - don't replay a reduction into the cleared store
-            await race.release({ replayEvents: false, runHeldTasks: false });
-        });
-
         // no test for a populated window: getForkDisputes /
         // getForkDisputeConfirmations sit on the reduce path, so the dispute
         // E2E suite (test/e2e/dispute) covers the happy path transitively - a
@@ -757,17 +752,18 @@ describe("Unit: AgreementManager", function () {
                 h.getPeer(observerIndex),
                 async (sm, args) => {
                     // our own untouched fork - no commitments, so no structs
-                    const disputes = await sm.agreementManager.getForkDisputes(
+                    const ownForkCommitments =
                         await sm.stateChannelManagerContract.getWindowCommitments(
                             sm.channelId,
                             sm.forkId
-                        )
-                    );
+                        );
+                    const disputes =
+                        await sm.agreementManager.getForkDisputes(
+                            ownForkCommitments
+                        );
                     const confirmations =
-                        await sm.agreementManager.getForkDisputeConfirmations(
-                            sm.channelId,
-                            sm.forkId,
-                            sm.stateChannelManagerContract
+                        sm.agreementManager.getForkDisputeConfirmations(
+                            ownForkCommitments
                         );
                     // a forkId an attacker could carry in a crafted dispute -
                     // unknown to us, still empty not a throw

@@ -492,11 +492,23 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         while (isDisputed) {
             // Collect disputes for this dispute window
             // Collect all disputes for this dispute window
-            const currentWindowDisputeConfirmations =
-                await this.p2pManager.stateManager.agreementManager.getForkDisputeConfirmations(
+            const currentWindowCommitments =
+                await diamondStateMachine.localDiamondContract.getWindowCommitments(
                     channelId,
-                    currentForkId,
-                    diamondStateMachine.localDiamondContract
+                    currentForkId
+                );
+            // A commitment can land on-chain before its dispute event is
+            // processed locally; recover it before reading storage so a
+            // still-pending event doesn't abort the sync (same recovery
+            // owner reduction uses).
+            await this.p2pManager.stateManager.eventSyncService.ensureDisputesProcessed(
+                channelId,
+                currentForkId,
+                currentWindowCommitments
+            );
+            const currentWindowDisputeConfirmations =
+                this.p2pManager.stateManager.agreementManager.getForkDisputeConfirmations(
+                    currentWindowCommitments
                 );
 
             const currentWindowDisputesHashes =
