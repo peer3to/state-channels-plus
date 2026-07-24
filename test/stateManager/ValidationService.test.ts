@@ -26,6 +26,10 @@ describe("ValidationService - isBlockAuthorParticipant", function () {
             "author in a resulting snapshot from a different height must not count"
         ).to.equal("false");
         expect(
+            probe.wrongForkResultingSnapshotMember,
+            "author in a resulting snapshot from a different fork at the same height must not count"
+        ).to.equal("false");
+        expect(
             probe.noLocalAnchorKnownParticipant,
             "with no local anchor, a real on-chain participant falls back to the on-chain union"
         ).to.equal("true");

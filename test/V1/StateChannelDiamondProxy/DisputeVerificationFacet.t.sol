@@ -374,6 +374,28 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
     }
 
+    function test_disputeBlockAuthorNotParticipant_authorInWrongForkResultingSnapshot_valid() public {
+        // The author is in the block's declared resulting snapshot, and the
+        // height matches, but the snapshot's forkId does not (a departed
+        // member naming a stale snapshot from a different fork at the same
+        // height). The coordinate binding must not count it, so the author is
+        // not a participant and the proof is valid - matching the off-chain
+        // author gate so an honest auditor is never slashed.
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
+            _disputeBlockAuthorNotParticipantProof();
+
+        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
+        // stale: the resulting snapshot belongs to a different fork, not this block's
+        proof.resultingStateSnapshot.forkId = keccak256("other-fork");
+        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
+        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
+        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
+        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+    }
+
     function test_blockInvalidStateTransition_wrongTurnWithCorrectSnapshot_slashesSigner() public {
         address[] memory participants = new address[](2);
         participants[0] = vm.addr(1);

@@ -103,6 +103,10 @@ export type BlockAuthorParticipantProbe = {
      *  exists but belongs to a different height (a stale/ex-member snapshot)
      *  -> not a participant */
     staleResultingSnapshotMember: string;
+    /** author absent from the previous snapshot; the named resulting snapshot
+     *  exists and matches the block's height but belongs to a different fork
+     *  (a stale/ex-member snapshot) -> not a participant */
+    wrongForkResultingSnapshotMember: string;
     /** no locally-anchored previous snapshot for the block's coordinates ->
      *  falls back to the on-chain participant set; author is a real
      *  on-chain participant -> participant */
@@ -526,6 +530,26 @@ export class StubService extends ARpcService<
             )
         );
 
+        // same outsider, but the named snapshot belongs to a different fork
+        // at the same height - an ex-member's stale snapshot
+        const wrongForkId = id("probeBlockAuthorParticipant-wrong-fork");
+        const wrongForkSnapshot = buildSnapshot(
+            [outsider],
+            nextHeight,
+            wrongForkId
+        );
+        this.sm.storage.stateSnapshots.storeStateSnapshot(wrongForkSnapshot);
+        const wrongForkBlock = await buildBlock(
+            outsider,
+            wrongForkSnapshot.hash
+        );
+        const wrongForkResultingSnapshotMember = String(
+            await validationService.isBlockAuthorParticipant(
+                wrongForkBlock,
+                channelId
+            )
+        );
+
         // no locally-anchored previous snapshot for the block's coordinates
         // -> falls back to the on-chain participant set
         const unknownForkId = id("probeBlockAuthorParticipant-unknown-fork");
@@ -556,6 +580,7 @@ export class StubService extends ARpcService<
             previousSnapshotMember,
             matchingResultingSnapshotMember,
             staleResultingSnapshotMember,
+            wrongForkResultingSnapshotMember,
             noLocalAnchorKnownParticipant,
             noLocalAnchorUnknownAddress
         };
