@@ -8,6 +8,7 @@ import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/GeneralUtils.sol";
+import "./utils/BlockUtils.sol";
 import "./UtilityFacet.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
