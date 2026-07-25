@@ -154,6 +154,52 @@ describe("E2E: ReductionManager", function () {
             expect(hostErrors).to.deep.equal([]);
             expect(TestSession.getFirstDetachedError()).to.equal(undefined);
         });
+
+        it("ErrorDisputeInboundMessageBlocksInvalid with nothing committed discards the candidate and retries", async function () {
+            // No winner is released, so getReducedResult stays ZeroHash and the
+            // candidate is classified stale rather than superseded — the branch
+            // that declines to install. Nothing else would settle this fork, so
+            // the reduction only finishes if the discard reschedules.
+            const stopRecordingReduce =
+                await h.rpcStub.recordReduce(targetPeerIndex);
+            try {
+                await h.rpcStub.releaseReductionWithSimulationError(
+                    targetPeerIndex,
+                    "ErrorDisputeInboundMessageBlocksInvalid"
+                );
+
+                // The retry waits a chainFallbackTime, so nothing can be
+                // installed yet whether or not the first attempt has landed.
+                expect(
+                    await h
+                        .control(h.getPeer(targetPeerIndex))
+                        .query.getCompletedReductionForkId(sourceForkId)
+                        .request()
+                ).to.equal(null);
+
+                // The injected error is one-shot: the rescheduled attempt
+                // recomputes against the real chain and completes.
+                await h.assert.dispute.reductionCompletedWait({
+                    sourceForkId,
+                    peerIndices: [targetPeerIndex]
+                });
+                expect(
+                    await h.rpcStub.reduceCallCount(targetPeerIndex)
+                ).to.be.greaterThan(1);
+            } finally {
+                await stopRecordingReduce();
+            }
+
+            expect(
+                await h
+                    .control(h.getPeer(targetPeerIndex))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PARTICIPATING);
+            const hostErrors = await h.quiesceHosts();
+            expect(hostErrors).to.deep.equal([]);
+            expect(TestSession.getFirstDetachedError()).to.equal(undefined);
+        });
     });
 
     it("an empty dispute set posts replacement evidence and resumes the same reduction", async function () {
