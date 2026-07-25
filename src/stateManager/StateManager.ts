@@ -836,6 +836,14 @@ class StateManager<
             });
         }
 
+        // Durability barrier: this stored-merge re-gossip runs as a detached
+        // macrotask holding no mutex, so the flush must be awaited at THIS
+        // write-site before the merged signatures are re-broadcast (slashing
+        // vector). If it never resolves the broadcast simply never fires
+        // (withhold) — teardown comes from the engine's onFatal watchdog, not
+        // from an await throwing here.
+        await this.storage.awaitDurable();
+
         if (!(strategy instanceof DisputeValidationStrategy)) {
             this.p2pManager.remoteRpc.stateTransitionService
                 .onBlockConfirmation(block.blockConfirmationStruct)
@@ -2335,6 +2343,11 @@ class StateManager<
                 block.height
             );
         }
+
+        // Durability barrier: block gossip until every storage write in this
+        // mutex section is durable, so we never release a signature before the
+        // just-signed state can survive a crash (slashing vector).
+        await this.storage.awaitDurable();
 
         // step 7 - gossip after local persistence, so echoed confirmations are
         // recognized as duplicates/signature updates instead of being replayed.
