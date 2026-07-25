@@ -58,46 +58,35 @@ describe("Unit: ReductionExecutor", function () {
             const winnerIndex = disputers[0];
             const loserIndices = disputers.slice(1);
 
-            // Winner reduces for real and commits on-chain first.
-            await races.get(winnerIndex)!.release({
-                runHeldTasks: true,
-                replayEvents: true
-            });
-            races.delete(winnerIndex);
-            await h.assert.dispute.reductionCompletedWait({
+            // Winner reduces and commits first, then each remaining honest peer
+            // is forced through the inbound-blocks error on simulateSubmission;
+            // the fix must confirm getReducedResult and swallow with zero
+            // unhandled rejections.
+            await h.rpcStub.loseReductionRaceWithSimulationError({
                 sourceForkId,
-                peerIndices: [winnerIndex]
+                winnerIndex,
+                errorName: "ErrorDisputeInboundMessageBlocksInvalid",
+                releaseWinner: async () => {
+                    await races.get(winnerIndex)!.release({
+                        runHeldTasks: true,
+                        replayEvents: true
+                    });
+                    races.delete(winnerIndex);
+                },
+                losers: loserIndices.map((loserIndex) => ({
+                    index: loserIndex,
+                    release: async () => {
+                        await races.get(loserIndex)!.release({
+                            runHeldTasks: true,
+                            // Drive tryReduce via the held timer, not snapshot
+                            // replay (which could complete without hitting the
+                            // injected error).
+                            replayEvents: false
+                        });
+                        races.delete(loserIndex);
+                    }
+                }))
             });
-
-            // Local completion can race ahead of the detached on-chain submit;
-            // the loser's swallow gate needs the commit visible. Await the
-            // winner observing its own reduced-result commit (event-driven, not
-            // a ground-truth poll).
-            await h.event.waitForPeers(
-                "onDisputeReducedResultCommitted",
-                [winnerIndex],
-                1,
-                { timeoutMs: 20000, mode: "atLeast" }
-            );
-
-            // Force each remaining honest peer through the inbound-blocks race
-            // error on simulateSubmission; the fix must confirm getReducedResult
-            // and swallow with zero unhandled rejections.
-            for (const loserIndex of loserIndices) {
-                await h
-                    .control(h.getPeer(loserIndex))
-                    .stub.stubNextReductionSimulationError(
-                        "ErrorDisputeInboundMessageBlocksInvalid"
-                    )
-                    .request();
-                await races.get(loserIndex)!.release({
-                    runHeldTasks: true,
-                    // Drive tryReduce via the held timer, not snapshot replay
-                    // (which could complete without hitting the injected error).
-                    replayEvents: false
-                });
-                races.delete(loserIndex);
-            }
 
             // Dark writer was held too; release without replaying so teardown
             // is clean (they are not expected to settle the fork).

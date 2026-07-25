@@ -1,4 +1,5 @@
 import { Logger } from "@/utils";
+import type { ForkId } from "@/types/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { ReductionSimulationErrorName } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
@@ -293,6 +294,50 @@ export class RpcStubActions<
         const stub = this.harness.control(this.harness.getPeer(peerIndex)).stub;
         await stub.stubNextReductionSimulationError(errorName).request();
         await stub.restoreReductionTasks(true).request();
+    }
+
+    /**
+     * Stage a lost reduction race: release the winner so it reduces and commits
+     * on-chain, wait until it observes its own commit (the losers'
+     * classification gate reads that committed result), then drive each loser
+     * into `errorName` on its next reduction submission.
+     *
+     * Callers pass their own release callbacks because tests hold their peers
+     * differently — a bare `stubHoldReductionTasks` on one side, a full
+     * `holdReductionRace` handle on the other.
+     */
+    async loseReductionRaceWithSimulationError(options: {
+        sourceForkId: ForkId;
+        winnerIndex: number;
+        releaseWinner: () => Promise<void>;
+        losers: { index: number; release: () => Promise<void> }[];
+        errorName: ReductionSimulationErrorName;
+        timeoutMs?: number;
+    }): Promise<void> {
+        await options.releaseWinner();
+        await this.harness.assert.dispute.reductionCompletedWait({
+            sourceForkId: options.sourceForkId,
+            peerIndices: [options.winnerIndex]
+        });
+        // Local install can finish before the detached on-chain submit, so wait
+        // on the winner observing its own commit rather than polling ground
+        // truth.
+        await this.harness.event.waitForPeers(
+            "onDisputeReducedResultCommitted",
+            [options.winnerIndex],
+            1,
+            { timeoutMs: options.timeoutMs ?? 20000, mode: "atLeast" }
+        );
+        for (const loser of options.losers) {
+            this.logger.debug(
+                `Reduction race won by peer ${options.winnerIndex}; forcing ${options.errorName} on peer ${loser.index}`
+            );
+            await this.harness
+                .control(this.harness.getPeer(loser.index))
+                .stub.stubNextReductionSimulationError(options.errorName)
+                .request();
+            await loser.release();
+        }
     }
 
     /**

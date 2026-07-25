@@ -119,33 +119,26 @@ describe("E2E: ReductionManager", function () {
             // Another peer must commit first so classifyReductionRace's
             // getReducedResult gate passes (non-ZeroHash reducedForkId).
             const winnerIndex = 1;
-            await h
-                .control(h.getPeer(winnerIndex))
-                .stub.restoreReductionTasks(true)
-                .request();
-            await h.assert.dispute.reductionCompletedWait({
+            await h.rpcStub.loseReductionRaceWithSimulationError({
                 sourceForkId,
-                peerIndices: [winnerIndex]
-            });
-            // Local install can finish before the detached on-chain submit;
-            // await the winner observing its own reduced-result commit
-            // (event-driven, not a ground-truth poll).
-            await h.event.waitForPeers(
-                "onDisputeReducedResultCommitted",
-                [winnerIndex],
-                1,
-                { timeoutMs: 20000, mode: "atLeast" }
-            );
-
-            await h
-                .control(h.getPeer(targetPeerIndex))
-                .stub.stubNextReductionSimulationError(
-                    "ErrorDisputeInboundMessageBlocksInvalid"
-                )
-                .request();
-            await race.release({
-                runHeldTasks: true,
-                replayEvents: false
+                winnerIndex,
+                errorName: "ErrorDisputeInboundMessageBlocksInvalid",
+                releaseWinner: async () => {
+                    await h
+                        .control(h.getPeer(winnerIndex))
+                        .stub.restoreReductionTasks(true)
+                        .request();
+                },
+                losers: [
+                    {
+                        index: targetPeerIndex,
+                        release: () =>
+                            race.release({
+                                runHeldTasks: true,
+                                replayEvents: false
+                            })
+                    }
+                ]
             });
             await h.assert.dispute.reductionCompletedWait({
                 sourceForkId,
