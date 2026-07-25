@@ -31,7 +31,14 @@ type LocalReductionCandidate = ReductionComputation & {
 };
 
 type ReductionCacheKey = string;
-type ReductionSubmissionStatus = "submit" | "already-reduced" | "superseded";
+type ReductionSubmissionStatus =
+    | "submit"
+    | "already-reduced"
+    | "superseded"
+    // Our own candidate went stale against the chain. Unlike "superseded" (a
+    // final dispute won and drives the fork itself) nothing else will settle
+    // this fork, so the attempt must be retried against the moved head.
+    | "stale-candidate";
 // Which call site classified the revert. "simulation" still owns the decision
 // to install; "detached" already installed the candidate before submitting.
 type ReductionSubmissionPath = "simulation" | "detached";
@@ -54,10 +61,20 @@ function isReductionRaceErrorName(
 }
 
 export default class ReductionExecutor {
+    // A stale candidate is retried against the moved chain head, but a
+    // divergence that survives this many recomputes is not transient — stop
+    // retrying and let the attempt fail loudly instead of looping in silence.
+    private static readonly MAX_STALE_CANDIDATE_RETRIES = 3;
     // Every ordinary trigger enters through tryReduce, including timers and
     // reschedules. Serialize the attempt itself, then release this mutex before
     // callers resume waiting on ReductionManager's shared completion promise.
     private readonly attemptMutex: Mutex;
+    // Consecutive stale-candidate discards per (channel, fork). Cleared once the
+    // fork's reduction installs, so only an unbroken run counts.
+    private readonly staleCandidateRetries = new Map<
+        ReductionCacheKey,
+        number
+    >();
     // Memoized `isKillPeriodExpired` per (channel, fork). A junk-fork flood then
     // costs O(1) chain reads per window instead of one per block: a "not expired
     // until killPeriodEnd" answer is reused until that time; an "expired" answer
@@ -80,6 +97,7 @@ export default class ReductionExecutor {
     }
 
     public dispose(): void {
+        this.staleCandidateRetries.clear();
         this.killPeriodExpiryCache.clear();
     }
 
@@ -108,7 +126,7 @@ export default class ReductionExecutor {
     public async isKillPeriodExpiredCached(
         forkId: ForkId
     ): Promise<KillPeriodObservation> {
-        const key = `${this.stateManager.channelId}:${forkId}`;
+        const key = this.getReductionCacheKey(forkId);
         const cached = this.killPeriodExpiryCache.get(key);
         if (
             cached &&
@@ -179,7 +197,7 @@ export default class ReductionExecutor {
             killPeriodEnd: Number(freshExpiry.killPeriodEnd)
         };
         this.killPeriodExpiryCache.set(
-            `${this.stateManager.channelId}:${forkId}`,
+            this.getReductionCacheKey(forkId),
             freshObservation
         );
         if (!freshObservation.windowExists) return;
@@ -212,8 +230,19 @@ export default class ReductionExecutor {
             disputes,
             submission
         );
+        if (submissionStatus === "stale-candidate") {
+            // Nothing was installed and no other actor settles this fork, so
+            // leaving now would strand the completion promise. The cause is the
+            // chain moving under us, so recompute against the new head after
+            // letting it settle. A divergence that outlives the retries is a
+            // real local fault: rethrow so the completion fails and aborts
+            // rather than looping forever.
+            this.retryStaleCandidate(forkId, candidate.reducedForkId);
+            return;
+        }
         if (submissionStatus === "superseded") return;
 
+        this.staleCandidateRetries.delete(this.getReductionCacheKey(forkId));
         await this.complete(
             forkId,
             candidate,
@@ -484,7 +513,7 @@ export default class ReductionExecutor {
                     path
                 }
             );
-            return "superseded";
+            return "stale-candidate";
         }
 
         const finalDispute = disputes.find(
@@ -500,5 +529,39 @@ export default class ReductionExecutor {
             disputer: finalDispute.input.disputer
         });
         return "superseded";
+    }
+
+    // Reschedule a recompute against the moved chain head, waiting for the write
+    // that moved it to settle. Throws once the run of consecutive discards is
+    // exhausted so ReductionManager fails the completion and aborts.
+    private retryStaleCandidate(forkId: ForkId, candidateForkId: ForkId): void {
+        const key = this.getReductionCacheKey(forkId);
+        const attempt = (this.staleCandidateRetries.get(key) ?? 0) + 1;
+        if (attempt > ReductionExecutor.MAX_STALE_CANDIDATE_RETRIES) {
+            this.staleCandidateRetries.delete(key);
+            throw new Error(
+                `Reduction candidate ${candidateForkId} for fork ${forkId} stayed stale across ${ReductionExecutor.MAX_STALE_CANDIDATE_RETRIES} recomputes`
+            );
+        }
+        this.staleCandidateRetries.set(key, attempt);
+        const delay = Math.max(
+            1,
+            this.stateManager.timeConfig.chainFallbackTime
+        );
+        this.logger.info("Rescheduling reduction after a stale candidate", {
+            forkId,
+            candidateForkId,
+            attempt,
+            delay
+        });
+        this.stateManager.reductionManager.schedule(
+            forkId,
+            Clock.getTimeInSeconds() + delay,
+            true
+        );
+    }
+
+    private getReductionCacheKey(forkId: ForkId): ReductionCacheKey {
+        return `${this.stateManager.channelId}:${forkId}`;
     }
 }
