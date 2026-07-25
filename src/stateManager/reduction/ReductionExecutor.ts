@@ -36,10 +36,10 @@ const REDUCTION_RACE_ERRORS = [
     "RaceConditionDisputeAlreadyReduced",
     "RaceConditionBlockHeightTooOld",
     "RaceConditionReductionExpectationDoesntMatch",
-    // Not a race per se: the losing peer's own reduce inputs went stale, so its
-    // reduceAndFinalize reverts the calldata-pure inbound-block check. Classified
-    // here so classifyReductionRace can gate it (swallow vs discard) instead of
-    // letting it escape the detached reduction path as an unhandled rejection.
+    // Not a race per se: our reduce inputs went stale against the chain, so
+    // reduceAndFinalize reverts the inbound-block check. Classified here so
+    // classifyReductionRace can gate it (swallow vs discard) instead of letting
+    // it escape the detached reduction path as an unhandled rejection.
     "ErrorDisputeInboundMessageBlocksInvalid"
 ] as const satisfies readonly RaceConditionErrorName[];
 type ReductionRaceErrorName = (typeof REDUCTION_RACE_ERRORS)[number];
@@ -427,15 +427,23 @@ export default class ReductionExecutor {
                 forkId
             );
 
-        // ErrorDisputeInboundMessageBlocksInvalid is a pure check over THIS
-        // peer's own calldata (its reduce-derived output doesn't chain from its
-        // local snapshot), so it means our local reduction diverged from chain
-        // — not merely that another reducer won. Compare the committed result to
-        // our own candidate: only when they match did we simply lose the race
-        // with a correct candidate (safe to install and converge). Otherwise the
-        // candidate is divergent (or nothing is committed yet) — discard it
-        // rather than install a value that would later trip the reduced-result
-        // mismatch -> abort — but never rethrow into the detached path either.
+        // ErrorDisputeInboundMessageBlocksInvalid compares our submitted
+        // inboundMessageBlocks against the target hash reduce() derives live
+        // from chain storage: the channel's inbound head walked back to the
+        // dispute-window expiry (lastEvidenceSubmissionTimestamp +
+        // evidenceTime). _verifyInboundMessageBlocks itself is pure, but that
+        // target is not — the expiry moves whenever late evidence lands. So the
+        // usual cause is the chain moving between compute() and this submission,
+        // and a recompute against the new head converges.
+        //
+        // reduceAndFinalize only reaches this check while nothing is committed
+        // (a committed result short-circuits earlier), so the committed value we
+        // read back is non-zero only when another reducer won inside this
+        // window. Matching our candidate means we merely lost the race with a
+        // correct candidate — safe to install and converge. Otherwise the
+        // candidate is stale (or nothing is committed yet): discard it rather
+        // than install a value that would later trip the reduced-result mismatch
+        // -> abort — but never rethrow into the detached path either.
         if (errorName === "ErrorDisputeInboundMessageBlocksInvalid") {
             if (
                 String(reducedResult.reducedForkId) === String(candidateForkId)
