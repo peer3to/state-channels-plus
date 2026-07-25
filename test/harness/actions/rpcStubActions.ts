@@ -297,6 +297,20 @@ export class RpcStubActions<
     }
 
     /**
+     * Like `releaseReductionWithSimulationError`, but the revert lands on the
+     * real submit rather than the staticCall — `complete()` has already
+     * installed the candidate by then.
+     */
+    async releaseReductionWithSubmitError(
+        peerIndex: number,
+        errorName: ReductionSimulationErrorName
+    ): Promise<void> {
+        const stub = this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await stub.stubNextReductionSubmitError(errorName).request();
+        await stub.restoreReductionTasks(true).request();
+    }
+
+    /**
      * Stage a lost reduction race: release the winner so it reduces and commits
      * on-chain, wait until it observes its own commit (the losers'
      * classification gate reads that committed result), then drive each loser

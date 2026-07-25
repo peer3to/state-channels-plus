@@ -38,6 +38,7 @@ export type StubKey =
     | "reducedCommitEvents"
     | "reduce"
     | "reductionSimulation"
+    | "reductionSubmit"
     | "finalDisputePreparation"
     | "spectateSync"
     | "pausedReduction"

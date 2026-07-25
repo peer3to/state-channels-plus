@@ -1120,6 +1120,57 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
+     * Make the next reduction submit transaction fail with a selected contract
+     * error. Sibling of stubNextReductionSimulationError: this one faults the
+     * real send, so the revert lands in submitDetached's catch instead of the
+     * staticCall — the path where the candidate is already installed.
+     */
+    public stubNextReductionSubmitError(
+        errorName: ReductionSimulationErrorName
+    ): boolean {
+        const contract = this.service.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.sendTransaction) {
+            throw new Error(
+                "Reduction submit runner does not support sendTransaction"
+            );
+        }
+        if (!this.service.stubOriginals.has("reductionSubmit")) {
+            this.service.stubOriginals.set(
+                "reductionSubmit",
+                runner.sendTransaction.bind(runner)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "reductionSubmit"
+        ) as NonNullable<typeof runner.sendTransaction>;
+        const multicallSelector =
+            contract.interface.getFunction("multicall")!.selector;
+        runner.sendTransaction = async (transaction) => {
+            if (!String(transaction.data).startsWith(multicallSelector)) {
+                return await original(transaction);
+            }
+            runner.sendTransaction = original;
+            this.service.stubOriginals.delete("reductionSubmit");
+            throw { data: id(`${errorName}()`).slice(0, 10) };
+        };
+        return true;
+    }
+
+    public restoreReductionSubmit(): boolean {
+        const contract = this.service.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.sendTransaction) return false;
+        const original = this.service.stubOriginals.get("reductionSubmit");
+        if (original === undefined) return false;
+        runner.sendTransaction = original as NonNullable<
+            typeof runner.sendTransaction
+        >;
+        this.service.stubOriginals.delete("reductionSubmit");
+        return true;
+    }
+
+    /**
      * Count `spectateService.sync` requests; `forward` keeps the real sync
      * running (record-only otherwise — the punishment path stays quiet).
      */

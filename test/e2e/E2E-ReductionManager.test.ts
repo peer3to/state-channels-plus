@@ -200,6 +200,31 @@ describe("E2E: ReductionManager", function () {
             expect(hostErrors).to.deep.equal([]);
             expect(TestSession.getFirstDetachedError()).to.equal(undefined);
         });
+
+        it("ErrorDisputeInboundMessageBlocksInvalid on the detached submit is swallowed with the candidate already installed", async function () {
+            // The staticCall passes, so complete() installs the candidate and
+            // only then does submitDetached fault. That is the call site the
+            // simulation stub cannot reach: the revert must be classified and
+            // swallowed instead of escaping as an unhandled rejection.
+            await h.rpcStub.releaseReductionWithSubmitError(
+                targetPeerIndex,
+                "ErrorDisputeInboundMessageBlocksInvalid"
+            );
+
+            await h.assert.dispute.reductionCompletedWait({
+                sourceForkId,
+                peerIndices: [targetPeerIndex]
+            });
+            expect(
+                await h
+                    .control(h.getPeer(targetPeerIndex))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PARTICIPATING);
+            const hostErrors = await h.quiesceHosts();
+            expect(hostErrors).to.deep.equal([]);
+            expect(TestSession.getFirstDetachedError()).to.equal(undefined);
+        });
     });
 
     it("an empty dispute set posts replacement evidence and resumes the same reduction", async function () {
