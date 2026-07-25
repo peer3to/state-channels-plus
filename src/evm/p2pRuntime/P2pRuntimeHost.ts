@@ -9,8 +9,9 @@ import StateManager from "@/stateManager/StateManager";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import Clock from "@/Clock";
 import Storage from "@/storage";
+import { createPersistencePort } from "@platform/persistence";
 import { TimeConfig } from "@/types";
-import type { ForkId, Hash } from "@/types/types";
+import type { ChannelId, ForkId, Hash } from "@/types/types";
 import {
     createLogger,
     Codec,
@@ -78,6 +79,7 @@ export interface HostContext {
 interface RuntimeHostState {
     stateManager: StateManager;
     evmDiamondStateMachine: EvmDiamondStateMachine;
+    storage: Storage;
 }
 
 /**
@@ -236,7 +238,18 @@ export async function startP2pRuntimeHost<
                 );
             }
             if (runtimeHandle) {
-                await runtimeHandle.stateManager.dispose();
+                // Dispose both even if one rejects: a stateManager.dispose()
+                // throw must not skip storage.dispose(), which clears the
+                // persistence engine's watchdog + retry timers (a leaked
+                // watchdog can otherwise fire a spurious post-teardown onFatal).
+                const disposals = await Promise.allSettled([
+                    runtimeHandle.stateManager.dispose(),
+                    runtimeHandle.storage.dispose()
+                ]);
+                const firstRejection = disposals.find(
+                    (result) => result.status === "rejected"
+                ) as PromiseRejectedResult | undefined;
+                if (firstRejection) throw firstRejection.reason;
             } else {
                 await contractExecutor?.dispose();
                 logger?.stopPerformanceMonitoring();
@@ -339,7 +352,53 @@ export async function startP2pRuntimeHost<
                     disputeExecutionGasLimit
                 );
 
-            const storage = new Storage();
+            // Steady-state block cadence window (seconds -> ms); the engine's
+            // watchdog fires onFatal at livenessDeadlineFraction (default 0.5)
+            // of it. Matches StateManager.getTimeoutWaitTimeSeconds(h>=1).
+            const timeoutWindowMs =
+                (timeConfig.p2pTime +
+                    timeConfig.agreementTime +
+                    timeConfig.chainFallbackTime) *
+                1000;
+
+            // Default in-memory port: the real durable @platform/persistence
+            // port is late-bound per channel (attach+hydrate) once the channelId
+            // is known - see ensurePersistenceForChannel. A runtime that never
+            // binds a channel therefore behaves exactly as before.
+            const storage = new Storage({
+                // Terminal fail-stop for the sign-before-durable slashing vector:
+                // the durability watchdog gave up. Reuse the existing hostError
+                // teardown channel (mirrors the startup catch path) and tear this
+                // runtime down. The watchdog is the only reliable teardown for a
+                // detached commit failure (a rejected await there is an unhandled
+                // rejection, not a teardown).
+                onFatal: (err) => {
+                    try {
+                        port.post({
+                            type: "hostError",
+                            error: serializeError(err)
+                        });
+                    } catch (postError) {
+                        logger!.error(
+                            "Fatal durability error delivery failed",
+                            { postError }
+                        );
+                    }
+                    void disposeRuntime().catch((disposeError) => {
+                        logger!.error(
+                            "Runtime dispose after fatal durability error failed",
+                            { disposeError }
+                        );
+                    });
+                },
+                // Loud durability-degraded signal (commit failing / recovered).
+                notify: (state) =>
+                    logger!.warn("Persistence durability state changed", {
+                        degraded: state.degraded,
+                        error: state.err
+                    }),
+                timeoutWindowMs
+            });
 
             const stateManager = new StateManager<
                 TCustomRpc,
@@ -386,7 +445,7 @@ export async function startP2pRuntimeHost<
                     );
             }
 
-            runtimeHandle = { stateManager, evmDiamondStateMachine };
+            runtimeHandle = { stateManager, evmDiamondStateMachine, storage };
             // A bridge-setup failure must not deadlock `ready`; WebRTC is optional.
             try {
                 bridgeWorkerPort = await bubbleWebRTCBridgePortIfNeeded(port);
@@ -399,6 +458,70 @@ export async function startP2pRuntimeHost<
                 );
             }
             port.post({ type: "ready" });
+        };
+
+        // Lazy per-channel persistence bind. channelId does not exist at
+        // buildRuntime (it is assigned on-chain and only reaches the host via
+        // the connectToChannel/setChannelId requests), so the real durable port
+        // is attached here, the moment the channelId is known, and hydrate is
+        // awaited BEFORE the p2pSigner delegate runs - i.e. before the transport
+        // topic join AND before stateManager.setChannelId wires the event
+        // listener that can start writing durable state from on-chain events.
+        // This is the crash-consistency guarantee: durable-and-hydrated before
+        // any channel traffic.
+        //
+        // Idempotent and exactly-once per channelId: connectToChannel internally
+        // calls setChannelId, and a client may call both, so the memoized
+        // bindPromise makes attach+clear-shadows happen once and short-circuits
+        // repeats (a second hydrate would be safe - merge-not-clear - but a
+        // second attach would swap in a fresh empty port). One worker serves one
+        // channel; a different channelId here is a contract violation.
+        let boundChannelId: ChannelId | undefined;
+        let bindPromise: Promise<void> | undefined;
+        let persistenceChainId: bigint | undefined;
+        const ensurePersistenceForChannel = (
+            channelId: ChannelId
+        ): Promise<void> => {
+            if (boundChannelId !== undefined) {
+                if (boundChannelId !== channelId) {
+                    // Fail-stop: one worker serves one channel. Binding channel
+                    // B onto channel A's already-attached durable namespace is a
+                    // cross-channel isolation violation - throw so the handler's
+                    // error path returns to the client and no p2pSigner delegate
+                    // wires channel B's traffic.
+                    logger!.error(
+                        "Persistence already bound to a different channel; refusing to re-bind",
+                        { boundChannelId, channelId }
+                    );
+                    throw new Error(
+                        `Persistence already bound to channel ${String(boundChannelId)}; refusing to bind ${String(channelId)} on the same worker`
+                    );
+                }
+                return bindPromise ?? Promise.resolve();
+            }
+            boundChannelId = channelId;
+            bindPromise = (async () => {
+                try {
+                    if (persistenceChainId === undefined) {
+                        persistenceChainId = (
+                            await signer.provider!.getNetwork()
+                        ).chainId;
+                    }
+                    const namespaceRoot = `${persistenceChainId}:${channelId}`;
+                    runtimeHandle!.storage.attachPersistence(
+                        createPersistencePort({ namespaceRoot })
+                    );
+                    await runtimeHandle!.storage.hydrate();
+                } catch (err) {
+                    // Fail closed but not wedged: a failed bind (getNetwork /
+                    // hydrate) resets the guard so a client resend can retry
+                    // rather than being permanently blocked on a dead promise.
+                    boundChannelId = undefined;
+                    bindPromise = undefined;
+                    throw err;
+                }
+            })();
+            return bindPromise;
         };
 
         const handleRequest = async (
@@ -491,6 +614,9 @@ export async function startP2pRuntimeHost<
                     case "connectToChannel":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
+                        // Attach durable port + hydrate BEFORE the transport
+                        // join inside p2pSigner.connectToChannel.
+                        await ensurePersistenceForChannel(request.channelId);
                         await runtimeHandle.stateManager.p2pManager.p2pSigner.connectToChannel(
                             request.channelId
                         );
@@ -542,6 +668,9 @@ export async function startP2pRuntimeHost<
                     case "setChannelId":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
+                        // Attach durable port + hydrate BEFORE setChannelId
+                        // wires the event listener that can write durable state.
+                        await ensurePersistenceForChannel(request.channelId);
                         await runtimeHandle.stateManager.p2pManager.p2pSigner.setChannelId(
                             request.channelId
                         );
