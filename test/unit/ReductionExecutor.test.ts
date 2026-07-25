@@ -2,9 +2,12 @@ import { expect } from "chai";
 
 import { MathTestSession as TestSession, sleep } from "@test/harness";
 
-describe("Unit: DisputeManager", function () {
-    describe("dispute", function () {
-        // Ported from origin/unit-test-dispute-manager (was it.skip / ~10% flaky).
+describe("Unit: ReductionExecutor", function () {
+    describe("classifyReductionRace", function () {
+        // Scenario ported from origin/unit-test-dispute-manager (was it.skip /
+        // ~10% flaky). It lives here, not in the DisputeManager suite that owns
+        // the same staging, because the subject is the reduction submission
+        // classification rather than dispute construction.
         // Forces the losing-peer ErrorDisputeInboundMessageBlocksInvalid path
         // after another reducer has already committed, so the swallow is
         // deterministic rather than left to a natural race.
