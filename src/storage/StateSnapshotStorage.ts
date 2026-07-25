@@ -18,6 +18,19 @@ export class StateSnapshotStorage {
     }
 
     // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /**
+     * The persistence engine's view of this store's PRIMARY map.
+     * genesisSnapshotByForkId is derived (same instances) and rebuilt on
+     * replay via storeStateSnapshot.
+     */
+    *persistableEntries(): Iterable<[StateSnapshotHash, StateSnapshot]> {
+        yield* this.snapshotsByHash;
+    }
+
+    // ====================================
     // CREATE
     // ====================================
 

@@ -12,6 +12,19 @@ export class FraudProofStorage {
     constructor() {}
 
     // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /**
+     * The persistence engine's view of this store's PRIMARY map.
+     * participantToProofs is derived and rebuilt on replay via
+     * storeFraudProof.
+     */
+    *persistableEntries(): Iterable<[Hash, FraudProofStruct]> {
+        yield* this.fraudProofs;
+    }
+
+    // ====================================
     // CREATE
     // ====================================
 

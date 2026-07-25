@@ -1,9 +1,5 @@
-import { ethers } from "ethers";
 import { Hash, ForkId, BlockHeight, Signature, Timestamp } from "@/types/types";
 import { Block, BlockCoordinates } from "@/models";
-import { Codec, Type } from "@/utils/Codec";
-import { IStoragePersistence } from "./persistence/IStoragePersistence";
-import { InMemoryPersistence } from "./persistence/InMemoryPersistence";
 
 type CoordinateKey = string;
 type StoreOptions = {
@@ -27,15 +23,16 @@ export class BlockStorage {
     // NEW: Track highest height for each forkId
     private forkIdToMaxHeightMap: Map<ForkId, BlockHeight>;
 
-    private readonly persistence: IStoragePersistence;
-    private static readonly persistenceAbiCoder =
-        ethers.AbiCoder.defaultAbiCoder();
+    // Memory-only: hashes stored with { justPersist: true }. These live in the
+    // read maps but are excluded from persistableEntries() so the durability
+    // engine never diffs, persists or replays them (see storeBlock comment).
+    private justPersistHashes: Set<Hash>;
 
-    constructor(persistence: IStoragePersistence = new InMemoryPersistence()) {
+    constructor() {
         this.hashToBlockMap = new Map();
         this.coordinatesToBlockMap = new Map();
         this.forkIdToMaxHeightMap = new Map();
-        this.persistence = persistence;
+        this.justPersistHashes = new Set();
     }
 
     // ====================================
@@ -43,78 +40,16 @@ export class BlockStorage {
     // ====================================
 
     /**
-     * Rebuild the in-memory maps from the persistence port. Order-independent
-     * and tolerant of corrupt/truncated entries (e.g. a crash mid-write) -
-     * those are skipped via the error hook rather than throwing. forkIdToMaxHeightMap
-     * is never persisted directly; it is rebuilt here from the loaded blocks.
+     * The persistence engine's view of this store's PRIMARY map: every hash ->
+     * block EXCEPT justPersist entries. Excluding them keeps justPersist
+     * milestones out of the durable diff so they are never persisted or
+     * replayed (see the justPersist comment in _storeBlockWithOptions).
      */
-    async hydrate(): Promise<void> {
-        this.hashToBlockMap.clear();
-        this.coordinatesToBlockMap.clear();
-        this.forkIdToMaxHeightMap.clear();
-
-        for await (const { encodedBlock } of this.persistence.loadAll()) {
-            try {
-                const block = this.decodeForPersistence(encodedBlock);
-                // Already persisted - skip write-through, but do rebuild maxHeight.
-                this._storeBlockWithOptions(block, undefined, false);
-            } catch (err) {
-                this.persistence.onError?.(err);
+    *persistableEntries(): Iterable<[Hash, Block]> {
+        for (const [hash, block] of this.hashToBlockMap) {
+            if (!this.justPersistHashes.has(hash)) {
+                yield [hash, block];
             }
-        }
-    }
-
-    /**
-     * Pack the block's full mutable state (signatures + onChainTimestamp) into a
-     * single encoded blob. The block's own struct is Codec-encoded; the outer
-     * wrapper (signature/confirmations/timestamp) uses the same ABI-encoding
-     * mechanism rather than structuredClone (BytesLike/bigint don't survive that).
-     */
-    private encodeForPersistence(block: Block): string {
-        const encodedConfirmation = Codec.encode(
-            block.blockConfirmationStruct,
-            Type.BlockConfirmation
-        );
-        return BlockStorage.persistenceAbiCoder.encode(
-            ["bytes", "uint256"],
-            [encodedConfirmation, block.onChainTimestamp ?? 0]
-        );
-    }
-
-    private decodeForPersistence(encodedBlock: string): Block {
-        const [encodedConfirmation, onChainTimestampRaw] =
-            BlockStorage.persistenceAbiCoder.decode(
-                ["bytes", "uint256"],
-                encodedBlock
-            );
-        const blockConfirmation = Codec.decode(
-            encodedConfirmation,
-            Type.BlockConfirmation
-        );
-        const onChainTimestamp =
-            onChainTimestampRaw === 0n
-                ? undefined
-                : Number(onChainTimestampRaw);
-        return Block.fromBlockConfirmation(blockConfirmation, onChainTimestamp);
-    }
-
-    private writeThroughPersistBlock(block: Block): void {
-        try {
-            this.persistence.persistBlock(this.encodeForPersistence(block), {
-                hash: block.hash,
-                forkId: block.forkId,
-                height: block.height
-            });
-        } catch (err) {
-            this.persistence.onError?.(err);
-        }
-    }
-
-    private writeThroughDeleteBlock(hash: Hash): void {
-        try {
-            this.persistence.deleteBlock({ hash });
-        } catch (err) {
-            this.persistence.onError?.(err);
         }
     }
 
@@ -198,7 +133,6 @@ export class BlockStorage {
         if (!block) return undefined;
 
         block.expandSignatures([signature]);
-        this.writeThroughPersistBlock(block);
         return block;
     }
 
@@ -235,7 +169,6 @@ export class BlockStorage {
             block = this.hashToBlockMap.get(hashOrForkId as Hash);
             if (block) {
                 block.onChainTimestamp = timestampOrHeight as Timestamp;
-                this.writeThroughPersistBlock(block);
                 return true;
             }
             return false;
@@ -248,7 +181,6 @@ export class BlockStorage {
         block = this.coordinatesToBlockMap.get(coordinateKey);
         if (block) {
             block.onChainTimestamp = timestamp;
-            this.writeThroughPersistBlock(block);
             return true;
         }
         return false;
@@ -282,6 +214,7 @@ export class BlockStorage {
 
             this.hashToBlockMap.delete(hashOrForkId as Hash);
             this.coordinatesToBlockMap.delete(coordinateKey);
+            this.justPersistHashes.delete(block.hash);
 
             const blockHeight = block.height;
             if (blockHeight === this.forkIdToMaxHeightMap.get(block.forkId)) {
@@ -291,7 +224,6 @@ export class BlockStorage {
                 );
             }
 
-            this.writeThroughDeleteBlock(block.hash);
             return true;
         }
 
@@ -309,12 +241,12 @@ export class BlockStorage {
 
         this.coordinatesToBlockMap.delete(coordinateKey);
         this.hashToBlockMap.delete(blockHash);
+        this.justPersistHashes.delete(blockHash);
 
         if (height === this.forkIdToMaxHeightMap.get(forkId)) {
             this.forkIdToMaxHeightMap.set(forkId, Math.max(0, height - 1));
         }
 
-        this.writeThroughDeleteBlock(blockHash);
         return true;
     }
 
@@ -382,8 +314,7 @@ export class BlockStorage {
 
     private _storeBlockWithOptions(
         block: Block,
-        options?: StoreOptions,
-        persist: boolean = true
+        options?: StoreOptions
     ): Hash | undefined {
         // Determine hash - use provided or compute
         const blockHash = options?.hash ?? block.hash;
@@ -410,10 +341,9 @@ export class BlockStorage {
             // of the persisted blob, so hydrate() would replay them with
             // options: undefined and incorrectly advance forkIdToMaxHeightMap
             // on restart. These milestones are re-derived from the state
-            // proof on the next replay instead.
-            if (persist && !options?.justPersist) {
-                this.writeThroughPersistBlock(block);
-            }
+            // proof on the next replay instead. persistableEntries() excludes
+            // the tracked hashes so the engine never diffs them.
+            this._trackJustPersist(blockHash, options?.justPersist);
             return blockHash;
         }
 
@@ -428,11 +358,21 @@ export class BlockStorage {
             existingBlock.onChainTimestamp = block.onChainTimestamp;
         }
 
-        if (persist && !options?.justPersist) {
-            this.writeThroughPersistBlock(existingBlock);
-        }
+        this._trackJustPersist(blockHash, options?.justPersist);
         // Return the hash (same object in both maps)
         return blockHash;
+    }
+
+    /**
+     * Record (or clear) a hash's justPersist status. A hash later re-stored
+     * without justPersist becomes persistable again.
+     */
+    private _trackJustPersist(hash: Hash, justPersist?: boolean): void {
+        if (justPersist) {
+            this.justPersistHashes.add(hash);
+        } else {
+            this.justPersistHashes.delete(hash);
+        }
     }
 
     private _updateMaxHeight(forkId: ForkId, height: BlockHeight): void {

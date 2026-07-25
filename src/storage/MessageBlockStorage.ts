@@ -18,8 +18,33 @@ export class MessageBlockStorage {
     private latestBlockHash?: Hash;
     private latestBlockHeight?: BlockHeight;
 
+    // Memory-only: hashes stored with { justPersist: true } (e.g. dispute
+    // -auditing message blocks from a foreign fork). These live in the read
+    // map but are excluded from persistableEntries() so the durability engine
+    // never diffs, persists or replays them - replaying one without the flag
+    // would run the latest-pointer running-max and move it past the node's
+    // real latest block (see store()'s justPersist comment).
+    private justPersistHashes: Set<Hash>;
+
     constructor() {
         this.blockMap = new Map();
+        this.justPersistHashes = new Set();
+    }
+
+    // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /**
+     * The persistence engine's view of this store's PRIMARY map: every hash ->
+     * message block EXCEPT justPersist entries.
+     */
+    *persistableEntries(): Iterable<[Hash, MessageBlockStruct]> {
+        for (const [blockHash, messageBlock] of this.blockMap) {
+            if (!this.justPersistHashes.has(blockHash)) {
+                yield [blockHash, messageBlock];
+            }
+        }
     }
 
     // ====================================
@@ -37,7 +62,13 @@ export class MessageBlockStorage {
             this.blockMap.set(blockHash, messageBlock);
         }
 
-        if (options?.justPersist) return blockHash;
+        if (options?.justPersist) {
+            this.justPersistHashes.add(blockHash);
+            return blockHash;
+        }
+
+        // A hash later re-stored without justPersist becomes persistable.
+        this.justPersistHashes.delete(blockHash);
 
         if (
             this.latestBlockHeight === undefined ||

@@ -13,6 +13,15 @@ export class StateMachineStateStorage {
     }
 
     // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /** The persistence engine's view of this store's PRIMARY map. */
+    *persistableEntries(): Iterable<[Hash, Bytes]> {
+        yield* this.statesByHash;
+    }
+
+    // ====================================
     // CREATE
     // ====================================
 

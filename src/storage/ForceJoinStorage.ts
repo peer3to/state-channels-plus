@@ -14,4 +14,16 @@ export class ForceJoinStorage {
     clear(): void {
         this.joinSubmissionBlockHeight = undefined;
     }
+
+    // ====================================
+    // PERSISTENCE (singletonSchema accessor)
+    // ====================================
+
+    getValue(): BlockHeight | undefined {
+        return this.joinSubmissionBlockHeight;
+    }
+
+    setValue(value: BlockHeight): void {
+        this.joinSubmissionBlockHeight = value;
+    }
 }
