@@ -32,6 +32,9 @@ type LocalReductionCandidate = ReductionComputation & {
 
 type ReductionCacheKey = string;
 type ReductionSubmissionStatus = "submit" | "already-reduced" | "superseded";
+// Which call site classified the revert. "simulation" still owns the decision
+// to install; "detached" already installed the candidate before submitting.
+type ReductionSubmissionPath = "simulation" | "detached";
 const REDUCTION_RACE_ERRORS = [
     "RaceConditionDisputeAlreadyReduced",
     "RaceConditionBlockHeightTooOld",
@@ -345,7 +348,8 @@ export default class ReductionExecutor {
                 custom?.name,
                 forkId,
                 candidateForkId,
-                disputes
+                disputes,
+                "simulation"
             );
             if (status) return status;
             throw custom ?? error;
@@ -394,7 +398,8 @@ export default class ReductionExecutor {
                         raceErrorName,
                         forkId,
                         candidateForkId,
-                        disputes
+                        disputes,
+                        "detached"
                     );
                     if (status) return;
                 }
@@ -407,7 +412,8 @@ export default class ReductionExecutor {
         errorName: string | undefined,
         forkId: ForkId,
         candidateForkId: ForkId,
-        disputes: DisputeStruct[]
+        disputes: DisputeStruct[],
+        path: ReductionSubmissionPath
     ): Promise<ReductionSubmissionStatus | undefined> {
         if (!isReductionRaceErrorName(errorName)) return undefined;
         if (
@@ -444,6 +450,13 @@ export default class ReductionExecutor {
         // candidate is stale (or nothing is committed yet): discard it rather
         // than install a value that would later trip the reduced-result mismatch
         // -> abort — but never rethrow into the detached path either.
+        //
+        // "Discard without installing" only holds on the simulation path.
+        // complete() installs the candidate before submitDetached runs, so on
+        // the detached path the stale genesis is already installed and the
+        // discard degrades to swallow-and-eventual-abort (the reduced-result
+        // mismatch in completeWithGenesis). Logged distinctly so the two are
+        // told apart.
         if (errorName === "ErrorDisputeInboundMessageBlocksInvalid") {
             if (
                 String(reducedResult.reducedForkId) === String(candidateForkId)
@@ -461,11 +474,14 @@ export default class ReductionExecutor {
             // Logged at warn so a genuine, persistent local divergence stays
             // diagnosable instead of vanishing as a benign race.
             this.logger.warn(
-                "Reduction inbound-blocks invalid; local candidate diverged from chain - discarding",
+                path === "detached"
+                    ? "Reduction inbound-blocks invalid after submit; stale candidate already installed"
+                    : "Reduction inbound-blocks invalid; local candidate diverged from chain - discarding",
                 {
                     forkId,
                     candidateForkId,
-                    committedForkId: reducedResult.reducedForkId
+                    committedForkId: reducedResult.reducedForkId,
+                    path
                 }
             );
             return "superseded";
