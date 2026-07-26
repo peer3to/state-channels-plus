@@ -2,7 +2,6 @@ pragma solidity ^0.8.8;
 
 import "../../types/DisputeTypes.sol";
 import "../Errors.sol";
-import "./BlockUtils.sol";
 
 function _delegatecall(address target, bytes memory data) returns (bytes memory) {
     (bool success, bytes memory result) = target.delegatecall(data);

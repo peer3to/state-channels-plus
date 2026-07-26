@@ -196,4 +196,131 @@ describe("E2E: spectating strategy junk-block handling", function () {
             expectedStatus: Status.SYNCED
         });
     });
+
+    // A participant that has LEFT is still connected. Snapshots are keyed by hash
+    // and never pruned, so the ex-member authors a block naming a snapshot from
+    // while it was still a member; without the coordinate binding the author gate
+    // unions that stale snapshot and re-admits it, the block reaches the leader
+    // check, and the spectator aborts as if a participant misbehaved. An ex-member
+    // is a non-participant: drop it, never abort.
+    it("cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        // victim spectates and stores the pre-leave snapshots (still listing the
+        // leaver as a participant)
+        const victim = await h.join.addSpectatorWait();
+        await h.transition.advanceState({ count: 2 });
+
+        const staleHeight = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+
+        const leaverIndex = await h.transition.participantLeaveWait();
+        const leaver = h.getPeer(leaverIndex);
+
+        // move past the leave so the current previous snapshot excludes them
+        await h.transition.advanceState({ count: 2 });
+
+        const participants = await h
+            .control(h.getPeer(0))
+            .query.getParticipants()
+            .request();
+        expect(
+            participants.map((p) => p.toLowerCase()),
+            "leaver should be out of the current participant set"
+        ).to.not.include(leaver.address.toLowerCase());
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftStaleMembershipBlockConfirmation(
+                0,
+                forkId,
+                leaver.signer,
+                staleHeight!
+            );
+        await h
+            .control(leaver)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: leaver,
+            expectedStatus: Status.SYNCED
+        });
+    });
+});
+
+describe("E2E: active-participant stale-membership handling", function () {
+    it("cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 0, { timeConfig: LIVE_FORK_TIME });
+        const forkId = h.activeForkId!;
+
+        // build the pre-leave snapshot the ex-member will name
+        await h.transition.advanceState({ count: 2 });
+        const staleHeight = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+
+        // a participant leaves; move past the leave so the current previous
+        // snapshot excludes them
+        const leaverIndex = await h.transition.participantLeaveWait();
+        const leaver = h.getPeer(leaverIndex);
+        await h.transition.advanceState({ count: 2 });
+
+        // victim = an active participant that is not the leaver; read the craft
+        // source from it too so the crafted block links to the live head (the
+        // departed leaver may no longer track it)
+        const victim = h
+            .getActiveHonestPeers()
+            .find((p) => p.index !== leaverIndex)!;
+        expect(
+            await h.control(victim).query.getStatus().request(),
+            "victim is an active participant"
+        ).to.equal(Status.PARTICIPATING);
+
+        const participants = await h
+            .control(victim)
+            .query.getParticipants()
+            .request();
+        expect(
+            participants.map((p) => p.toLowerCase()),
+            "leaver should be out of the current participant set"
+        ).to.not.include(leaver.address.toLowerCase());
+
+        // clean dispute-event baseline before the attack
+        h.event.resetEventSpies();
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftStaleMembershipBlockConfirmation(
+                victim.index,
+                forkId,
+                leaver.signer,
+                staleHeight!
+            );
+        await h
+            .control(leaver)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        // leaver (author == sender) is cut, victim keeps participating
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: leaver,
+            expectedStatus: Status.PARTICIPATING
+        });
+        // no false dispute against the honest fork, everyone still in sync
+        h.assert.dispute.noDisputes();
+        await h.assert.sync.onlyHonestPeersInSync();
+    });
 });

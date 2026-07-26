@@ -8,6 +8,7 @@ import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/GeneralUtils.sol";
+import "./utils/BlockUtils.sol";
 import "./UtilityFacet.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -176,14 +177,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             }
         }
 
-        if (
-            UtilityFacet(utilityFacetAddress).isAddressInArray(
-                proof.previousStateSnapshot.snapshotData.participants, signer
-            )
-                || UtilityFacet(utilityFacetAddress).isAddressInArray(
-                    proof.resultingStateSnapshot.snapshotData.participants, signer
-                )
-        ) return _invalid();
+        if (_isBlockAuthorParticipant(invalidBlock, proof.previousStateSnapshot, proof.resultingStateSnapshot)) {
+            return _invalid();
+        }
         return _valid(dispute.input.disputer);
     }
 
