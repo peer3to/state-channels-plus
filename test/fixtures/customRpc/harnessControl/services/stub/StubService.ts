@@ -53,6 +53,8 @@ export type StaleRetryProbe = {
     notBefore: Timestamp | null;
     tracked: boolean;
 };
+/** Shape of the executor's private retry entry, as seen by the probe. */
+type StaleCandidateRetryView = { attempts: number; notBefore: Timestamp };
 type RunnerFaultFn = (transaction: TransactionRequest) => Promise<unknown>;
 type FaultableRunner = Record<RunnerFaultMethod, RunnerFaultFn | undefined>;
 
@@ -224,15 +226,16 @@ export class StubService extends ARpcService<
         const executor = (
             this.sm.reductionManager as unknown as {
                 reductionExecutor: {
-                    staleCandidateRetries: Map<
-                        string,
-                        { attempts: number; notBefore: number }
-                    >;
+                    staleCandidateRetries: Map<string, StaleCandidateRetryView>;
+                    // Reached rather than re-derived: a probe that rebuilt the
+                    // key format would silently read nothing if the executor
+                    // changed it, and the assertions would pass vacuously.
+                    getReductionCacheKey(forkId: ForkId): string;
                 };
             }
         ).reductionExecutor;
         const entry = executor.staleCandidateRetries.get(
-            `${this.sm.channelId}:${forkId}`
+            executor.getReductionCacheKey(forkId)
         );
         return {
             attempts: entry?.attempts ?? 0,
