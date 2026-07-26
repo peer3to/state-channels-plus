@@ -159,6 +159,13 @@ class HolepunchRelay {
             excludedCount: this.excludedRelayers.size,
             total: this.relayerUrls.length
         });
+        // Branch immediately so a pool-exhausting failure schedules only the
+        // exhaustion backoff, never the failover jitter as well - one timer
+        // owner per failure, not two stacked delays.
+        if (this.isRelayerPoolExhausted()) {
+            this.scheduleRetryAfterExhaustion();
+            return;
+        }
         // Randomized delay so many clients failing over off the same
         // relayer at once don't all hit the next relayer simultaneously.
         const delayMs = Math.random() * FAILOVER_JITTER_MAX_MS;

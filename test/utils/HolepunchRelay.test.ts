@@ -215,13 +215,19 @@ describe("HolepunchRelay", function () {
             "wss://relay-b.example",
             "wss://relay-c.example"
         ];
-        const setTimeoutSpy = sinon.spy(global, "setTimeout");
         const delays: number[] = [];
 
         // Simulate several independent clients failing over off one relayer
         // at essentially the same instant (a reconnect storm), and capture
-        // the randomized retry delay each one schedules.
+        // the randomized retry delay each one schedules. Give each client
+        // its own fake-timer clock, spy, and instance list - otherwise a
+        // timer left pending by an earlier "client" can fire during a later
+        // one's clock.tick() and get mistaken for that client's own retry.
         for (let i = 0; i < 8; i++) {
+            clock.restore();
+            clock = sinon.useFakeTimers();
+            const setTimeoutSpy = sinon.spy(global, "setTimeout");
+            FakeWebSocket.instances = [];
             HolepunchRelay.init(relayerUrls, () => undefined, createLogger());
             const ws =
                 FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
@@ -243,12 +249,19 @@ describe("HolepunchRelay", function () {
 
     it("applies full jitter (not a deterministic mark) to the exhaustion backoff", () => {
         const relayerUrls = ["wss://relay-a.example", "wss://relay-b.example"];
-        const setTimeoutSpy = sinon.spy(global, "setTimeout");
         const delays: number[] = [];
 
         // Simulate several independent clients that all exhaust the full
         // relayer pool at the same moment (e.g. a shared relayer outage).
+        // Give each client its own fake-timer clock, spy, and instance list
+        // - otherwise a timer left pending by an earlier "client" can fire
+        // during a later one's clock.tick() and get mistaken for that
+        // client's own retry (inflating its captured delay).
         for (let i = 0; i < 8; i++) {
+            clock.restore();
+            clock = sinon.useFakeTimers();
+            const setTimeoutSpy = sinon.spy(global, "setTimeout");
+            FakeWebSocket.instances = [];
             HolepunchRelay.init(relayerUrls, () => undefined, createLogger());
             // Fail the first relayer, then advance past its (jittered)
             // failover retry so the client actually reconnects to the
