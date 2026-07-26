@@ -10,7 +10,7 @@ import { BlockValidationResult } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 import * as factory from "@test/factory";
 import { recordValidationBoundary } from "./RecordingValidationStrategy";
-import type { Address, ForkId, Hash } from "@/types/types";
+import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
@@ -46,6 +46,13 @@ export type StubKey =
 
 /** Runner methods a one-shot multicall fault can be installed on. */
 export type RunnerFaultMethod = "call" | "sendTransaction";
+
+/** Executor stale-candidate retry budget for one fork. */
+export type StaleRetryProbe = {
+    attempts: number;
+    notBefore: Timestamp | null;
+    tracked: boolean;
+};
 type RunnerFaultFn = (transaction: TransactionRequest) => Promise<unknown>;
 type FaultableRunner = Record<RunnerFaultMethod, RunnerFaultFn | undefined>;
 
@@ -162,20 +169,21 @@ export class StubService extends ARpcService<
     }
 
     /**
-     * One-shot fault on the contract runner's `multicall` path — `call` for a
-     * simulation, `sendTransaction` for a real submit. Forwards everything that
-     * is not a multicall, then restores itself and throws the encoded custom
-     * error on the first matching invocation. Both reduction injectors share
-     * this so their matching and restoration cannot drift apart.
+     * Fault the contract runner's `multicall` path — `call` for a simulation,
+     * `sendTransaction` for a real submit. Forwards everything that is not a
+     * multicall, throws the encoded custom error on the next `times` matching
+     * invocations, then restores itself. Both reduction injectors share this so
+     * their matching and restoration cannot drift apart.
      *
      * Monkey-patching the runner is exactly the untyped-internal case casts are
      * for: the two methods have different return types, so the patch is written
      * once against a structural view and cast back on install/restore.
      */
-    public installOneShotMulticallFault(options: {
+    public installMulticallFault(options: {
         stubKey: StubKey;
         method: RunnerFaultMethod;
         errorName: string;
+        times?: number;
     }): boolean {
         const contract = this.sm.stateChannelManagerContract;
         const selector = contract.interface.getFunction("multicall")!.selector;
@@ -192,15 +200,45 @@ export class StubService extends ARpcService<
         const forward = this.stubOriginals.get(
             options.stubKey
         ) as RunnerFaultFn;
+        let remaining = options.times ?? 1;
         runner[options.method] = async (transaction) => {
             if (!String(transaction.data).startsWith(selector)) {
                 return await forward(transaction);
             }
-            runner[options.method] = forward;
-            this.stubOriginals.delete(options.stubKey);
+            remaining -= 1;
+            if (remaining <= 0) {
+                runner[options.method] = forward;
+                this.stubOriginals.delete(options.stubKey);
+            }
             throw { data: id(`${options.errorName}()`).slice(0, 10) };
         };
         return true;
+    }
+
+    /**
+     * Read the executor's stale-candidate retry budget for a fork. The map is a
+     * private implementation detail, so this is a deliberate cast to a private
+     * internal rather than a public surface.
+     */
+    public getStaleRetryState(forkId: ForkId): StaleRetryProbe {
+        const executor = (
+            this.sm.reductionManager as unknown as {
+                reductionExecutor: {
+                    staleCandidateRetries: Map<
+                        string,
+                        { attempts: number; notBefore: number }
+                    >;
+                };
+            }
+        ).reductionExecutor;
+        const entry = executor.staleCandidateRetries.get(
+            `${this.sm.channelId}:${forkId}`
+        );
+        return {
+            attempts: entry?.attempts ?? 0,
+            notBefore: entry?.notBefore ?? null,
+            tracked: entry !== undefined
+        };
     }
 
     /** Reinstall the original runner method saved by a one-shot fault. */

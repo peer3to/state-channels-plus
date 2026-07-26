@@ -20,7 +20,8 @@ import type {
     ConcurrentCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
     DisputeStrategyResultMatrix,
-    MissingParticipantSnapshotsProbe
+    MissingParticipantSnapshotsProbe,
+    StaleRetryProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
 
@@ -1075,15 +1076,25 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.reduceCallCount;
     }
 
-    /** Make the next reduction simulation fail with a selected contract error. */
+    /**
+     * Make the next `times` reduction simulations fail with a selected contract
+     * error (default one), so a whole retry run can be staged.
+     */
     public stubNextReductionSimulationError(
-        errorName: ReductionSimulationErrorName
+        errorName: ReductionSimulationErrorName,
+        times?: number
     ): boolean {
-        return this.service.installOneShotMulticallFault({
+        return this.service.installMulticallFault({
             stubKey: "reductionSimulation",
             method: "call",
-            errorName
+            errorName,
+            times
         });
+    }
+
+    /** Executor stale-candidate retry budget for a fork. */
+    public getStaleRetryState(forkId: ForkId): StaleRetryProbe {
+        return this.service.getStaleRetryState(forkId);
     }
 
     public restoreReductionSimulation(): boolean {
@@ -1102,7 +1113,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public stubNextReductionSubmitError(
         errorName: ReductionSimulationErrorName
     ): boolean {
-        return this.service.installOneShotMulticallFault({
+        return this.service.installMulticallFault({
             stubKey: "reductionSubmit",
             method: "sendTransaction",
             errorName

@@ -201,6 +201,116 @@ describe("E2E: ReductionManager", function () {
             expect(TestSession.getFirstDetachedError()).to.equal(undefined);
         });
 
+        it("a stale candidate that survives every retry aborts instead of looping", async function () {
+            // MAX_STALE_CANDIDATE_RETRIES is 3, so four consecutive stale
+            // simulations must exhaust the budget: three reschedules, then the
+            // fourth attempt fails the completion.
+            const targetPeer = h.getPeer(targetPeerIndex);
+            await h
+                .control(targetPeer)
+                .stub.stubNextReductionSimulationError(
+                    "ErrorDisputeInboundMessageBlocksInvalid",
+                    4
+                )
+                .request();
+            await h
+                .control(targetPeer)
+                .stub.restoreReductionTasks(true)
+                .request();
+
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(targetPeer)
+                        .query.getStatus()
+                        .request()) === Status.OPENED,
+                h.event.protocolEventTimeoutMs(0),
+                50
+            );
+            expect(
+                await h
+                    .control(targetPeer)
+                    .query.getCompletedReductionForkId(sourceForkId)
+                    .request()
+            ).to.equal(null);
+            // The budget is released once exhausted, not left pinned at the cap.
+            expect(
+                (
+                    await h
+                        .control(targetPeer)
+                        .stub.getStaleRetryState(sourceForkId)
+                        .request()
+                ).tracked
+            ).to.equal(false);
+            await TestSession.expectFirstDetachedError({
+                includes: "stayed stale across",
+                timeoutMs: 5000
+            });
+        });
+
+        it("a stale candidate holds its backoff against concurrently queued triggers", async function () {
+            // Every trigger funnels into the same executor mutex. Without the
+            // retry deadline the callers queued behind the first stale attempt
+            // would each burn one of the three attempts immediately. Two faults
+            // keep the run inside the budget, so this test observes the backoff
+            // rather than the exhaustion covered above.
+            const targetPeer = h.getPeer(targetPeerIndex);
+            await h
+                .control(targetPeer)
+                .stub.stubNextReductionSimulationError(
+                    "ErrorDisputeInboundMessageBlocksInvalid",
+                    2
+                )
+                .request();
+            await h
+                .control(targetPeer)
+                .stub.restoreReductionTasks(true)
+                .request();
+
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(targetPeer)
+                            .stub.getStaleRetryState(sourceForkId)
+                            .request()
+                    ).attempts >= 1,
+                h.event.protocolEventTimeoutMs(0),
+                25
+            );
+
+            // Fire real triggers inside the backoff window; each enters the same
+            // executor mutex, so without the deadline they would each spend an
+            // attempt against chain state that has not moved.
+            const beforeBurst = await h
+                .control(targetPeer)
+                .stub.getStaleRetryState(sourceForkId)
+                .request();
+            await Promise.all(
+                [0, 1, 2].map(() =>
+                    h
+                        .control(targetPeer)
+                        .dispute.startReduction(sourceForkId)
+                        .request()
+                )
+            );
+            const afterBurst = await h
+                .control(targetPeer)
+                .stub.getStaleRetryState(sourceForkId)
+                .request();
+            // The scheduled retry can legitimately land during the burst, so
+            // allow one increment — three would mean the burst was charged.
+            expect(afterBurst.attempts).to.be.at.most(beforeBurst.attempts + 1);
+
+            // The run stays inside the budget and the reduction still lands.
+            await h.assert.dispute.reductionCompletedWait({
+                sourceForkId,
+                peerIndices: [targetPeerIndex]
+            });
+            const hostErrors = await h.quiesceHosts();
+            expect(hostErrors).to.deep.equal([]);
+        });
+
         it("ErrorDisputeInboundMessageBlocksInvalid on the detached submit aborts the uncommitted candidate", async function () {
             // The staticCall passes, so complete() installs the candidate and
             // settles the completion before submitDetached faults. Nothing can
