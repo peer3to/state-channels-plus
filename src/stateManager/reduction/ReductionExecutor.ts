@@ -172,7 +172,16 @@ export default class ReductionExecutor {
     }
 
     private async tryReduceLocked(forkId: ForkId): Promise<void> {
-        if (forkId !== this.stateManager.forkId) return;
+        // The fork moved on, so this fork's reduction is settled one way or
+        // another and its retry budget is dead state — drop it here, the one
+        // place every trigger passes through, rather than leaking it until
+        // dispose().
+        if (forkId !== this.stateManager.forkId) {
+            this.staleCandidateRetries.delete(
+                this.getReductionCacheKey(forkId)
+            );
+            return;
+        }
 
         // A stale-candidate retry is already scheduled and its backoff has not
         // elapsed. Callers that were queued behind the mutex stand down rather
