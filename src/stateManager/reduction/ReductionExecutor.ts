@@ -31,6 +31,10 @@ type LocalReductionCandidate = ReductionComputation & {
 };
 
 type ReductionCacheKey = string;
+type StaleCandidateRetry = {
+    attempts: number;
+    notBefore: Timestamp;
+};
 type ReductionSubmissionStatus =
     | "submit"
     | "already-reduced"
@@ -69,11 +73,14 @@ export default class ReductionExecutor {
     // reschedules. Serialize the attempt itself, then release this mutex before
     // callers resume waiting on ReductionManager's shared completion promise.
     private readonly attemptMutex: Mutex;
-    // Consecutive stale-candidate discards per (channel, fork). Cleared once the
-    // fork's reduction installs, so only an unbroken run counts.
+    // Consecutive stale-candidate discards per (channel, fork), with the time
+    // the scheduled retry is due. Callers already queued on the mutex would
+    // otherwise each burn an attempt the moment the first one reschedules, so
+    // they stand down until `notBefore`. Cleared once the fork's reduction
+    // installs, so only an unbroken run counts.
     private readonly staleCandidateRetries = new Map<
         ReductionCacheKey,
-        number
+        StaleCandidateRetry
     >();
     // Memoized `isKillPeriodExpired` per (channel, fork). A junk-fork flood then
     // costs O(1) chain reads per window instead of one per block: a "not expired
@@ -166,6 +173,21 @@ export default class ReductionExecutor {
 
     private async tryReduceLocked(forkId: ForkId): Promise<void> {
         if (forkId !== this.stateManager.forkId) return;
+
+        // A stale-candidate retry is already scheduled and its backoff has not
+        // elapsed. Callers that were queued behind the mutex stand down rather
+        // than spending the remaining attempts on the same unmoved chain state.
+        const pendingRetry = this.staleCandidateRetries.get(
+            this.getReductionCacheKey(forkId)
+        );
+        if (pendingRetry && Clock.getTimeInSeconds() < pendingRetry.notBefore) {
+            this.logger.debug("Reduction retry not due yet; standing down", {
+                forkId,
+                attempts: pendingRetry.attempts,
+                notBefore: pendingRetry.notBefore
+            });
+            return;
+        }
 
         const { windowExists, isExpired, killPeriodEnd } =
             await this.isKillPeriodExpiredCached(forkId);
@@ -533,29 +555,27 @@ export default class ReductionExecutor {
     // exhausted so ReductionManager fails the completion and aborts.
     private retryStaleCandidate(forkId: ForkId, candidateForkId: ForkId): void {
         const key = this.getReductionCacheKey(forkId);
-        const attempt = (this.staleCandidateRetries.get(key) ?? 0) + 1;
-        if (attempt > ReductionExecutor.MAX_STALE_CANDIDATE_RETRIES) {
+        const attempts =
+            (this.staleCandidateRetries.get(key)?.attempts ?? 0) + 1;
+        if (attempts > ReductionExecutor.MAX_STALE_CANDIDATE_RETRIES) {
             this.staleCandidateRetries.delete(key);
             throw new Error(
                 `Reduction candidate ${candidateForkId} for fork ${forkId} stayed stale across ${ReductionExecutor.MAX_STALE_CANDIDATE_RETRIES} recomputes`
             );
         }
-        this.staleCandidateRetries.set(key, attempt);
         const delay = Math.max(
             1,
             this.stateManager.timeConfig.chainFallbackTime
         );
+        const notBefore = Clock.getTimeInSeconds() + delay;
+        this.staleCandidateRetries.set(key, { attempts, notBefore });
         this.logger.info("Rescheduling reduction after a stale candidate", {
             forkId,
             candidateForkId,
-            attempt,
+            attempts,
             delay
         });
-        this.stateManager.reductionManager.schedule(
-            forkId,
-            Clock.getTimeInSeconds() + delay,
-            true
-        );
+        this.stateManager.reductionManager.schedule(forkId, notBefore, true);
     }
 
     private getReductionCacheKey(forkId: ForkId): ReductionCacheKey {
