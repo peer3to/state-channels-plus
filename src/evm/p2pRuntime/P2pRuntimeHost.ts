@@ -17,6 +17,7 @@ import {
     Codec,
     DebugProxy,
     DetachedPromises,
+    getChecksumAddress,
     getErrorPeerAddress,
     Type
 } from "@/utils";
@@ -54,6 +55,14 @@ import type {
     SerializedError,
     SetupPayload
 } from "./types";
+
+/**
+ * Background flush tick for non-barrier persistence writes (FR3) - fixed
+ * rather than derived from the channel's timeout window, since it only needs
+ * to be "frequent enough that force-join/force-exit/timeout/fraud-proof
+ * state doesn't sit memory-only for long," not tied to block cadence.
+ */
+const PERSISTENCE_FLUSH_INTERVAL_MS = 5000;
 
 /**
  * Fully resolved, live context required to build the runtime graph. In inline
@@ -397,6 +406,23 @@ export async function startP2pRuntimeHost<
                         degraded: state.degraded,
                         error: state.err
                     }),
+                // Per-record hydrate decode/replay failure. Not by itself
+                // fatal (a corrupt trailing record is expected, recoverable
+                // crash-truncation - see BlockStorage.checkHeightContiguity),
+                // but always worth surfacing to the log pipeline.
+                onError: (err) =>
+                    logger!.error("Persistence hydration record error", {
+                        err
+                    }),
+                // Background flush trigger for state that never passes a
+                // signature-release barrier (timeout/force-join/force-exit/
+                // fraud-proof writes) - otherwise nothing durable happens to
+                // them between one awaitDurable() and the next (FR3). Unset
+                // when persistence is disabled (OO2) - see
+                // ensurePersistenceForChannel's early return.
+                flushIntervalMs: config.PERSISTENCE_ENABLED
+                    ? PERSISTENCE_FLUSH_INTERVAL_MS
+                    : undefined,
                 timeoutWindowMs
             });
 
@@ -482,6 +508,11 @@ export async function startP2pRuntimeHost<
         const ensurePersistenceForChannel = (
             channelId: ChannelId
         ): Promise<void> => {
+            // OO2 kill-switch: disabled reverts the channel's runtime to
+            // exactly the pre-persistence behavior - default in-memory
+            // Storage, no attach, no hydrate. A code-free rollback if a real
+            // backend (be-04/be-05) misbehaves in production.
+            if (!config.PERSISTENCE_ENABLED) return Promise.resolve();
             if (boundChannelId !== undefined) {
                 if (boundChannelId !== channelId) {
                     // Fail-stop: one worker serves one channel. Binding channel
@@ -507,7 +538,14 @@ export async function startP2pRuntimeHost<
                             await signer.provider!.getNetwork()
                         ).chainId;
                     }
-                    const namespaceRoot = `${persistenceChainId}:${channelId}`;
+                    // Signer-scoped: force-join/force-exit/some recovery state
+                    // is per-signer, and two tabs/accounts sharing a bare
+                    // chainId:channelId namespace would otherwise silently
+                    // race the same durable store (a double-sign footgun).
+                    // A real single-writer lease across tabs/processes needs
+                    // a real shared backend to lock (be-04/be-05); today's
+                    // in-memory stub has no cross-worker sharing to race.
+                    const namespaceRoot = `${persistenceChainId}:${channelId}:${getChecksumAddress(signerAddress)}`;
                     runtimeHandle!.storage.attachPersistence(
                         createPersistencePort({ namespaceRoot })
                     );

@@ -33,11 +33,14 @@ function decodeFraudProof(encodedFraudProof: string): FraudProofStruct {
  * - a missed field here means the off-chain pipeline builds a proof the
  * on-chain apply handler rejects.
  *
- * Fraud proofs are content-addressed (proofHash = hash(encodedProof)) and
- * first-write (storeFraudProof never merges), so `changeKey` recomputes the
- * same hash: immutable-after-store, the key is a sufficient fingerprint.
- * Replay routes through storeFraudProof, which rebuilds the derived
- * participantToProofs index.
+ * The map key (proofHash = hash(encodedProof)) only fingerprints the inner
+ * proof, not the outer {proofType, participant} envelope - storeFraudProof
+ * overwrites the same key if the same encodedProof is re-stored under a
+ * different proofType/participant. changeKey must therefore hash the FULL
+ * encoded envelope, not just encodedProof, or an outer-field-only change is
+ * invisible to the flush diff and never gets persisted. Replay routes
+ * through storeFraudProof, which rebuilds the derived participantToProofs
+ * index.
  */
 export function fraudProofsSchema(
     raw: FraudProofStorage
@@ -51,12 +54,13 @@ export function fraudProofsSchema(
             }
         },
 
-        changeKey: (fraudProof) => hash(fraudProof.encodedProof),
+        changeKey: (fraudProof) => hash(encodeFraudProof(fraudProof)),
 
         encode: encodeFraudProof,
 
         decode: decodeFraudProof,
 
+        // No key override: storeFraudProof always keys by hash(encodedProof).
         replay: (encodedFraudProof) => {
             raw.storeFraudProof(decodeFraudProof(encodedFraudProof));
         }

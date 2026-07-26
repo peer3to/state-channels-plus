@@ -825,7 +825,19 @@ class StateManager<
             }
         }
 
-        this.storage.blocks.storeBlock(block);
+        // Store + durability-barrier + broadcast policy is strategy-owned
+        // (see AGENTS.md "Block-validation deviations go through the
+        // strategy"): BlockValidationStrategy awaits a barrier before
+        // broadcasting (this signer's own signature is at risk),
+        // DisputeValidationStrategy stores and returns DUPLICATE with no
+        // broadcast (replay is read-only/crash-consistent),
+        // SpectatingValidationStrategy broadcasts with no barrier (no own
+        // signature at risk), CalldataCommittedStrategy throws (impossible
+        // here). The call site only computes inputs and interprets the
+        // result — it never re-implements a strategy's policy inline.
+        const validationResult =
+            await strategy.goodNewSignaturesOnExistingBlock(block);
+
         const persisted = this.storage.blocks.getBlock(block.hash);
         if (persisted) {
             P2pEventHooksUtils.maybeNotifyBlockFinalized({
@@ -836,22 +848,7 @@ class StateManager<
             });
         }
 
-        // Durability barrier: this stored-merge re-gossip runs as a detached
-        // macrotask holding no mutex, so the flush must be awaited at THIS
-        // write-site before the merged signatures are re-broadcast (slashing
-        // vector). If it never resolves the broadcast simply never fires
-        // (withhold) — teardown comes from the engine's onFatal watchdog, not
-        // from an await throwing here.
-        await this.storage.awaitDurable();
-
-        if (!(strategy instanceof DisputeValidationStrategy)) {
-            this.p2pManager.remoteRpc.stateTransitionService
-                .onBlockConfirmation(block.blockConfirmationStruct)
-                .broadcast();
-            return BlockValidationResult.BROADCAST;
-        }
-
-        return BlockValidationResult.DUPLICATE;
+        return validationResult;
     }
 
     /**

@@ -148,7 +148,7 @@ export class PersistenceEngine {
                             const decoded = schema.decode(record.encoded);
                             shadow.set(record.key, schema.changeKey(decoded));
                         }
-                        schema.replay(record.encoded);
+                        schema.replay(record.encoded, record.key);
                     } catch (err) {
                         this.onError?.(err);
                     }
@@ -196,16 +196,21 @@ export class PersistenceEngine {
     }
 
     /**
-     * Teardown: stop every timer, mark terminal, and close the port. Wired into
-     * host teardown by P2pRuntimeHost. Idempotent.
+     * Teardown: stop every timer, DRAIN (enqueue+await one final flush so any
+     * in-flight or dirty non-barrier state commits before the port closes -
+     * RO1/FR3), then mark terminal and close the port. `fatal` must stay
+     * false until the drain completes - runFlush()'s terminal guard would
+     * otherwise skip this very flush. Wired into host teardown by
+     * P2pRuntimeHost. Idempotent.
      */
     async dispose(): Promise<void> {
         if (this.disposed) return;
         this.disposed = true;
-        this.fatal = true;
         this.clearInterval();
         this.clearRetry();
         this.clearWatchdog();
+        await this.enqueue(() => this.runFlush());
+        this.fatal = true;
         await this.port.close?.();
     }
 
@@ -235,9 +240,56 @@ export class PersistenceEngine {
             // awaitDurable() forever.
             const ops: NamespacedOp[] = [];
             const shadowUpdates: ShadowUpdate[] = [];
+            const dirtyKeyClears: {
+                schema: PersistenceSchema<unknown>;
+                keys: string[];
+            }[] = [];
 
             for (const [id, schema] of this.schemas) {
                 const shadow = this.shadowFor(id);
+
+                if (
+                    schema.peekDirtyKeys &&
+                    schema.clearDirtyKeys &&
+                    schema.getEntry
+                ) {
+                    // Bounded diff (PO1): only re-check keys touched since the
+                    // last successful flush, not the whole retained history.
+                    const dirtyKeys = Array.from(schema.peekDirtyKeys());
+                    for (const key of dirtyKeys) {
+                        const value = schema.getEntry(key);
+                        if (value === undefined) {
+                            if (shadow.has(key)) {
+                                ops.push({ namespace: id, type: "del", key });
+                                shadowUpdates.push({ op: "del", id, key });
+                            }
+                            continue;
+                        }
+                        const changeKey = schema.changeKey(value);
+                        if (shadow.get(key) !== changeKey) {
+                            ops.push({
+                                namespace: id,
+                                type: "put",
+                                key,
+                                encoded: schema.encode(value)
+                            });
+                            shadowUpdates.push({
+                                op: "set",
+                                id,
+                                key,
+                                changeKey
+                            });
+                        }
+                    }
+                    if (dirtyKeys.length > 0) {
+                        dirtyKeyClears.push({ schema, keys: dirtyKeys });
+                    }
+                    continue;
+                }
+
+                // Full-scan fallback: the safe default for any schema that
+                // doesn't opt into bounded diffing - still catches a
+                // mutation however it happened.
                 const seen = new Set<string>();
                 for (const [key, value] of schema.entries()) {
                     seen.add(key);
@@ -263,8 +315,13 @@ export class PersistenceEngine {
             }
 
             if (ops.length > 0) await this.port.commit(ops);
-            // ONLY on commit success advance the shadow + generation.
+            // ONLY on commit success advance the shadow + generation + clear
+            // exactly the dirty keys this attempt diffed (anything mutated
+            // again since the peek stays dirty for the next flush).
             this.applyShadowUpdates(shadowUpdates);
+            for (const { schema, keys } of dirtyKeyClears) {
+                schema.clearDirtyKeys!(keys);
+            }
             if (startedGen > this.committedGen) this.committedGen = startedGen;
             this.onCommitSuccess();
             this.resolveWaiters();

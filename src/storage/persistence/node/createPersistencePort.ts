@@ -2,21 +2,26 @@ import { InMemoryPersistencePort } from "../InMemoryPersistencePort";
 import { PersistencePort } from "../PersistencePort";
 
 /**
- * Node `@platform/persistence` port factory.
- *
- * Stub until the real fs-backed KV port lands (be-05); returns the in-memory
- * port for now. `namespaceRoot` (`${chainId}:${channelId}`) is the per-channel
- * store scope: the real node port will key its directory/database by it, and
- * the in-memory stub records it on the returned port so the same
- * namespace-scoping contract holds today (and is observable by the host wiring
- * tests). The backend otherwise ignores it until be-05.
+ * Stub node port until the real fs-backed KV port lands (be-05). Carries a
+ * typed `namespaceRoot` (rather than bolting one on via a cast) so the
+ * namespace-scoping contract is observable by the host wiring tests today;
+ * the real port will key its directory/database by it.
+ */
+class NodePersistencePortStub extends InMemoryPersistencePort {
+    readonly namespaceRoot: string;
+
+    constructor(namespaceRoot: string) {
+        super();
+        this.namespaceRoot = namespaceRoot;
+    }
+}
+
+/**
+ * Node `@platform/persistence` port factory. Stub until be-05 lands; returns
+ * an in-memory-backed port for now.
  */
 export function createPersistencePort(opts: {
     namespaceRoot: string;
 }): PersistencePort {
-    const port = new InMemoryPersistencePort();
-    (
-        port as InMemoryPersistencePort & { namespaceRoot: string }
-    ).namespaceRoot = opts.namespaceRoot;
-    return port;
+    return new NodePersistencePortStub(opts.namespaceRoot);
 }

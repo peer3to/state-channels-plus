@@ -1,9 +1,18 @@
+import { ethers } from "ethers";
 import { PersistenceSchema } from "../PersistenceSchema";
 
 /** Duck-typed single-slot store surface (ForceExitStorage, ForceJoinStorage). */
 export interface SingletonStore<S> {
     getValue(): S | undefined;
     setValue(value: S): void;
+}
+
+function encodeValue<S>(value: S): string {
+    return ethers.hexlify(ethers.toUtf8Bytes(JSON.stringify(value)));
+}
+
+function decodeValue<S>(encodedValue: string): S {
+    return JSON.parse(ethers.toUtf8String(ethers.getBytes(encodedValue))) as S;
 }
 
 /**
@@ -13,11 +22,9 @@ export interface SingletonStore<S> {
  * a clear()/unset the same way deleteBlock does for a map-based store.
  */
 export function singletonSchema<S>(
-    raw: unknown,
+    store: SingletonStore<S>,
     id: string
 ): PersistenceSchema<S> {
-    const store = raw as SingletonStore<S>;
-
     return {
         id,
 
@@ -34,12 +41,12 @@ export function singletonSchema<S>(
         // intended backstop (see Codec's no-bigint-toJSON-shim rule).
         changeKey: (value) => JSON.stringify(value),
 
-        encode: (value) => JSON.stringify(value),
+        encode: encodeValue,
 
-        decode: (encodedValue) => JSON.parse(encodedValue) as S,
+        decode: decodeValue,
 
         replay: (encodedValue) => {
-            store.setValue(JSON.parse(encodedValue) as S);
+            store.setValue(decodeValue(encodedValue));
         }
     };
 }

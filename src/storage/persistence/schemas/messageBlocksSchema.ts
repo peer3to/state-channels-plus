@@ -1,5 +1,6 @@
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, hash, Type } from "@/utils";
+import { Hash } from "@/types/types";
 import { MessageBlockStorage } from "../../MessageBlockStorage";
 import { PersistenceSchema } from "../PersistenceSchema";
 
@@ -8,11 +9,12 @@ import { PersistenceSchema } from "../PersistenceSchema";
  * `id`s) for the twin inbound/outbound MessageBlockStorage instances - the
  * injected `id` namespaces them at the port so they never collide.
  *
- * Blocks are content-addressed (blockHash = hash(Codec.encode(...))), so
- * `changeKey` recomputes the same hash: immutable-after-store, the key is a
- * sufficient fingerprint. Replay routes through `store()`, which recomputes
- * the same hash from content and re-runs the running-max latest-pointer
- * update - no need to thread the map key through separately.
+ * Blocks are usually content-addressed (blockHash = hash(Codec.encode(...))),
+ * so `changeKey` recomputes the same hash: immutable-after-store, the key is
+ * a sufficient fingerprint. Replay routes through `store()`, pinned to the
+ * key AS PERSISTED - a caller may have stored this block under an explicit
+ * hash override (see `store()`'s `options.hash`) that diverges from the
+ * content-derived hash `store()` would otherwise recompute.
  */
 export function messageBlocksSchema(
     raw: MessageBlockStorage,
@@ -41,8 +43,8 @@ export function messageBlocksSchema(
 
         // Route through the REAL mutator so replay rebuilds
         // latestBlockHash/latestBlockHeight via the same running-max logic.
-        replay: (encodedMessageBlock) => {
-            raw.store(decode(encodedMessageBlock));
+        replay: (encodedMessageBlock, key) => {
+            raw.store(decode(encodedMessageBlock), { hash: key as Hash });
         }
     };
 }

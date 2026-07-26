@@ -24,8 +24,11 @@ export interface PersistencePort {
     /**
      * Opaque-clone marker (see {@link OPAQUE_CLONE}). Ports must never be
      * deep-cloned - DeepCopyProxy passes a marked port through by reference.
+     * Required (not optional) so a new implementation fails to compile until
+     * it sets the marker, rather than silently cloning at the Storage proxy
+     * boundary once a live-handle backend lands.
      */
-    readonly [OPAQUE_CLONE]?: true;
+    readonly [OPAQUE_CLONE]: true;
     /** Applies all ops as one durable transaction. */
     commit(ops: NamespacedOp[]): Promise<void>;
     /** Namespace-scoped read of all records. */

@@ -158,6 +158,50 @@ describe("Persistence schemas + PersistenceEngine", () => {
             expect(reader.rawInbound.getMessageBlock(auditingHash)).to.be
                 .undefined;
         });
+
+        it("re-storing an already-durable message block as justPersist does not delete it from the durable store", async () => {
+            const port = new InMemoryPersistencePort();
+            const writer = makeMessageStores(port);
+
+            const durableBlock = messageBlock({ blockHeight: 10n });
+            const durableHash = writer.rawInbound.store(durableBlock);
+            await writer.engine.awaitDurable();
+
+            // Dispute replay re-stores the same hash as justPersist - a merge
+            // must never demote an already-durable record.
+            writer.rawInbound.store(durableBlock, {
+                hash: durableHash,
+                justPersist: true
+            });
+
+            const persistableHashes = Array.from(
+                writer.rawInbound.persistableEntries()
+            ).map(([blockHash]) => blockHash);
+            expect(persistableHashes).to.include(durableHash);
+
+            await writer.engine.awaitDurable();
+
+            const reader = makeMessageStores(port);
+            await reader.engine.hydrateAll();
+            expect(reader.rawInbound.getMessageBlock(durableHash)).to.not.be
+                .undefined;
+        });
+
+        it("replays under a caller-supplied hash override that diverges from the content-derived hash", async () => {
+            const port = new InMemoryPersistencePort();
+            const writer = makeMessageStores(port);
+
+            const block = messageBlock({ blockHeight: 3n });
+            const overrideHash = factory.hash();
+            writer.rawInbound.store(block, { hash: overrideHash });
+            await writer.engine.awaitDurable();
+
+            const reader = makeMessageStores(port);
+            await reader.engine.hydrateAll();
+
+            expect(reader.rawInbound.getMessageBlock(overrideHash)).to.not.be
+                .undefined;
+        });
     });
 
     describe("stateSnapshotSchema", () => {
@@ -194,6 +238,22 @@ describe("Persistence schemas + PersistenceEngine", () => {
             expect(hydratedGenesis?.hash).to.equal(genesis.hash);
             expect(hydratedGenesis?.isGenesis).to.be.true;
         });
+
+        it("replays under a caller-supplied hash override that diverges from the content-derived hash", async () => {
+            const port = new InMemoryPersistencePort();
+            const writer = makeStore(port);
+
+            const snapshot = factory.stateSnapshot();
+            const overrideHash = factory.hash();
+            writer.raw.storeStateSnapshot(snapshot, { hash: overrideHash });
+            await writer.engine.awaitDurable();
+
+            const reader = makeStore(port);
+            await reader.engine.hydrateAll();
+
+            const hydrated = reader.raw.getStateSnapshotByHash(overrideHash);
+            expect(hydrated?.hash).to.equal(snapshot.hash);
+        });
     });
 
     describe("stateMachineStateSchema", () => {
@@ -216,6 +276,23 @@ describe("Persistence schemas + PersistenceEngine", () => {
             await reader.engine.hydrateAll();
 
             expect(reader.raw.getStateMachineState(hash)).to.equal(bytes);
+        });
+
+        it("replays under a caller-supplied hash override that diverges from the content-derived hash", async () => {
+            const port = new InMemoryPersistencePort();
+            const writer = makeStore(port);
+
+            const bytes = ethers.hexlify(ethers.randomBytes(64));
+            const overrideHash = factory.hash();
+            writer.raw.storeStateMachineState(bytes, { hash: overrideHash });
+            await writer.engine.awaitDurable();
+
+            const reader = makeStore(port);
+            await reader.engine.hydrateAll();
+
+            expect(reader.raw.getStateMachineState(overrideHash)).to.equal(
+                bytes
+            );
         });
     });
 
@@ -331,6 +408,41 @@ describe("Persistence schemas + PersistenceEngine", () => {
             expect(hydratedByParticipant?.encodedProof).to.equal(
                 proof.encodedProof
             );
+        });
+
+        it("re-storing the same encodedProof under a different participant/proofType is persisted (changeKey covers the full envelope)", async () => {
+            const port = new InMemoryPersistencePort();
+            const writer = makeStore(port);
+
+            const encodedProof = ethers.hexlify(ethers.randomBytes(32));
+            const participantA = ethers.Wallet.createRandom().address;
+            const proofHash = writer.raw.storeFraudProof(
+                fraudProof({
+                    participant: participantA,
+                    proofType: 1n,
+                    encodedProof
+                })
+            );
+            await writer.engine.awaitDurable();
+
+            // Same encodedProof (same map key) but a different outer
+            // envelope - must still be picked up by the next flush.
+            const participantB = ethers.Wallet.createRandom().address;
+            writer.raw.storeFraudProof(
+                fraudProof({
+                    participant: participantB,
+                    proofType: 2n,
+                    encodedProof
+                })
+            );
+            await writer.engine.awaitDurable();
+
+            const reader = makeStore(port);
+            await reader.engine.hydrateAll();
+
+            const hydrated = reader.raw.getFraudProofByHash(proofHash);
+            expect(hydrated?.participant).to.equal(participantB);
+            expect(hydrated?.proofType).to.equal(2n);
         });
     });
 });

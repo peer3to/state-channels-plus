@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { Block } from "@/models";
 import { Codec, Type } from "@/utils/Codec";
+import { Hash } from "@/types/types";
 import { BlockStorage } from "../../BlockStorage";
 import { PersistenceSchema } from "../PersistenceSchema";
 
@@ -36,15 +37,27 @@ function decodeBlock(encodedBlock: string): Block {
 }
 
 /**
- * Durability schema for the dispute-read block store. The engine content-diffs
- * `entries()` (the store's primary map minus justPersist milestones) and
- * fingerprints each block with `changeKey`.
+ * Durability schema for the dispute-read block store.
+ *
+ * PO1: opts into bounded diffing (peekDirtyKeys/clearDirtyKeys/getEntry) since
+ * this store's retained history keeps growing for the life of a channel and
+ * every signed block re-triggers a flush - a full entries() scan would cost
+ * O(retained history) on every gossip. `entries()` stays as the full-scan
+ * fallback (used by nothing today, kept for interface conformance / a schema
+ * consumer that doesn't want bounded diffing).
  *
  * `changeKey` hashes the signature-set CONTENT (sorted join), never its size:
  * Block.removeConfirmationSignatures shrinks the set, so a size-invariant
  * membership change (strip X, add C) must still produce a different key.
  */
 export function blocksSchema(raw: BlockStorage): PersistenceSchema<Block> {
+    const changeKey = (block: Block) => {
+        const sigSetHash = Array.from(block.confirmationSignatures)
+            .sort()
+            .join(",");
+        return `${block.hash}:${sigSetHash}:${block.onChainTimestamp ?? 0}`;
+    };
+
     return {
         id: "blocks",
 
@@ -56,21 +69,25 @@ export function blocksSchema(raw: BlockStorage): PersistenceSchema<Block> {
             }
         },
 
-        changeKey: (block) => {
-            const sigSetHash = Array.from(block.confirmationSignatures)
-                .sort()
-                .join(",");
-            return `${block.hash}:${sigSetHash}:${block.onChainTimestamp ?? 0}`;
-        },
+        changeKey,
 
         encode: encodeBlock,
 
         decode: decodeBlock,
 
         // Route through the REAL mutator so a replayed record merges over live
-        // memory (signature union) instead of clobbering it.
-        replay: (encodedBlock) => {
-            raw.storeBlock(decodeBlock(encodedBlock));
-        }
+        // memory (signature union) instead of clobbering it. Pin the hash to
+        // the key AS PERSISTED - a caller may have stored this block under an
+        // explicit hash override that diverges from the content-derived hash
+        // the mutator would otherwise recompute.
+        replay: (encodedBlock, key) => {
+            raw.storeBlock(decodeBlock(encodedBlock), { hash: key as Hash });
+        },
+
+        peekDirtyKeys: () => raw.peekDirtyHashes() as ReadonlySet<string>,
+
+        clearDirtyKeys: (keys) => raw.clearDirtyHashes(keys as Iterable<Hash>),
+
+        getEntry: (key) => raw.getPersistableEntry(key as Hash)
     };
 }

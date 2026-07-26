@@ -27,8 +27,16 @@ export interface PersistenceSchema<V> {
     /** Serialize to hex (`encoded*`). */
     encode(value: V): string;
 
-    /** Decode + route through the store's REAL mutator (merges over live memory). */
-    replay(encodedValue: string): void;
+    /**
+     * Decode + route through the store's REAL mutator (merges over live
+     * memory). `key` is the durable record's own map key (from `entries()`),
+     * passed through so a schema whose store accepts a key/hash override can
+     * pin replay to the key AS PERSISTED rather than trusting the mutator to
+     * re-derive an identical key from content - the two can diverge when a
+     * caller stored under an explicit override (see stateSnapshotSchema /
+     * stateMachineStateSchema / messageBlocksSchema / blocksSchema).
+     */
+    replay(encodedValue: string, key: string): void;
 
     /**
      * Decode an encoded record to its value WITHOUT merging into live memory.
@@ -41,4 +49,31 @@ export interface PersistenceSchema<V> {
 
     /** be-07 pruning policy. */
     pruneKeep?(key: string, watermark: PruneWatermark): boolean;
+
+    /**
+     * Bounded-diff opt-in (PO1): peek keys mutated since the last
+     * successfully-committed flush, WITHOUT clearing them (retry-safe - a
+     * failed commit must re-diff the same keys next attempt). When present
+     * (with `clearDirtyKeys` and `getEntry`), a flush only re-diffs these
+     * keys instead of a full `entries()` scan, bounding barrier cost as
+     * retained history grows. Optional: a schema without this always gets
+     * the full-scan fallback (the safe default - still catches a mutation
+     * however it happened, including one that bypassed dirty-marking).
+     */
+    peekDirtyKeys?(): Iterable<string>;
+
+    /**
+     * Clears exactly these keys from the dirty set - called ONLY after
+     * their diff was durably committed. Any key mutated again after the
+     * peek (but before this call) must stay dirty for the next flush.
+     */
+    clearDirtyKeys?(keys: Iterable<string>): void;
+
+    /**
+     * Random-access lookup for one key's CURRENT value (or undefined if
+     * deleted/absent), applying the exact same filtering as `entries()`
+     * (e.g. excluding justPersist hashes). Required alongside
+     * `peekDirtyKeys`/`clearDirtyKeys`.
+     */
+    getEntry?(key: string): V | undefined;
 }

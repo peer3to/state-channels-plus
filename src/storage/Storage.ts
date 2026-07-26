@@ -23,6 +23,7 @@ import {
     DurabilityState,
     PersistenceEngine
 } from "./persistence/PersistenceEngine";
+import { HydrationIntegrityError } from "./persistence/HydrationIntegrityError";
 import { blocksSchema } from "./persistence/schemas/blocksSchema";
 import { messageBlocksSchema } from "./persistence/schemas/messageBlocksSchema";
 import { stateSnapshotSchema } from "./persistence/schemas/stateSnapshotSchema";
@@ -30,6 +31,14 @@ import { stateMachineStateSchema } from "./persistence/schemas/stateMachineState
 import { timeoutSchema } from "./persistence/schemas/timeoutSchema";
 import { singletonSchema } from "./persistence/schemas/singletonSchema";
 import { fraudProofsSchema } from "./persistence/schemas/fraudProofsSchema";
+import { participantSetChangeSchema } from "./persistence/schemas/participantSetChangeSchema";
+import {
+    disputeSchema,
+    disputedForkSchema
+} from "./persistence/schemas/disputeSchema";
+import { disputeFraudProofSchema } from "./persistence/schemas/disputeFraudProofSchema";
+import { blockCalldataSchema } from "./persistence/schemas/blockCalldataSchema";
+import { eventSyncSchema } from "./persistence/schemas/eventSyncSchema";
 
 /**
  * Durability wiring for Storage. Consumed by the StateManager durability barriers and the P2pRuntimeHost
@@ -47,6 +56,14 @@ export type StorageOptions = {
     timeoutWindowMs?: number;
     /** default 0.5 */
     livenessDeadlineFraction?: number;
+    /**
+     * Background flush tick (ms) for state that never passes an
+     * awaitDurable() release barrier (timeout/force-join/force-exit/
+     * fraud-proof writes). Undefined disables the background timer -
+     * dispose() still flushes once on teardown, but nothing durable happens
+     * in between.
+     */
+    flushIntervalMs?: number;
 };
 
 export class Storage {
@@ -67,6 +84,7 @@ export class Storage {
     public readonly eventSync: EventSyncStorage;
 
     private readonly engine: PersistenceEngine;
+    private readonly rawBlocks: BlockStorage;
 
     constructor(opts: StorageOptions = {}) {
         this.engine = new PersistenceEngine({
@@ -80,15 +98,18 @@ export class Storage {
                           timeoutWindowMs: opts.timeoutWindowMs,
                           deadlineFraction: opts.livenessDeadlineFraction
                       }
-                    : undefined
+                    : undefined,
+            flushIntervalMs: opts.flushIntervalMs
         });
 
         // The engine must hold the RAW store, not the deepCopyProxy: the proxy
         // clones method args/results, which would corrupt the diff. The public
         // handle stays proxied; the schema closure operates on `raw` directly.
-        const rawBlocks = new BlockStorage();
-        this.blocks = deepCopyProxy(rawBlocks);
-        this.engine.register(blocksSchema(rawBlocks));
+        // Kept as a field (not a local) so hydrate() can run the post-hydrate
+        // height-contiguity check directly against it.
+        this.rawBlocks = new BlockStorage();
+        this.blocks = deepCopyProxy(this.rawBlocks);
+        this.engine.register(blocksSchema(this.rawBlocks));
 
         const rawInboundMessages = new MessageBlockStorage();
         this.inboundMessages = deepCopyProxy(rawInboundMessages);
@@ -126,17 +147,33 @@ export class Storage {
         this.fraudProofs = deepCopyProxy(rawFraudProofs);
         this.engine.register(fraudProofsSchema(rawFraudProofs));
 
-        // Not yet migrated to a schema (be-06); these sit in the reflection
-        // test's PENDING_SCHEMA allowlist. `queues` is a permanent opt-out
-        // (transient CRDT reassembly buffer).
-        this.participantSetChanges = deepCopyProxy(
-            new ParticipantSetChangeStorage()
+        // `queues` is a permanent opt-out (transient CRDT reassembly buffer) -
+        // sits in the reflection test's OPT_OUT allowlist, never a schema.
+        const rawParticipantSetChanges = new ParticipantSetChangeStorage();
+        this.participantSetChanges = deepCopyProxy(rawParticipantSetChanges);
+        this.engine.register(
+            participantSetChangeSchema(rawParticipantSetChanges)
         );
+
         this.queues = deepCopyProxy(new QueueStorage());
-        this.disputes = deepCopyProxy(new DisputeStorage());
-        this.disputeFraudProofs = deepCopyProxy(new DisputeFraudProofStorage());
-        this.blockCalldata = deepCopyProxy(new BlockCalldataStorage());
-        this.eventSync = deepCopyProxy(new EventSyncStorage());
+
+        const rawDisputes = new DisputeStorage();
+        this.disputes = deepCopyProxy(rawDisputes);
+        this.engine.register(disputeSchema(rawDisputes));
+        this.engine.register(disputedForkSchema(rawDisputes));
+
+        const rawDisputeFraudProofs = new DisputeFraudProofStorage();
+        this.disputeFraudProofs = deepCopyProxy(rawDisputeFraudProofs);
+        this.engine.register(disputeFraudProofSchema(rawDisputeFraudProofs));
+
+        const rawBlockCalldata = new BlockCalldataStorage();
+        this.blockCalldata = deepCopyProxy(rawBlockCalldata);
+        this.engine.register(blockCalldataSchema(rawBlockCalldata));
+
+        const rawEventSync = new EventSyncStorage();
+        this.eventSync = deepCopyProxy(rawEventSync);
+        this.engine.register(eventSyncSchema(rawEventSync));
+
         return deepCopyProxy(this);
     }
 
@@ -155,9 +192,18 @@ export class Storage {
         this.engine.attachPort(port);
     }
 
-    /** Repopulate the persisted sub-stores from the durable port. */
+    /**
+     * Repopulate the persisted sub-stores from the durable port. Fail-closed:
+     * throws HydrationIntegrityError if replay left a non-trailing block
+     * height gap (see BlockStorage.checkHeightContiguity) rather than
+     * silently trusting a tip that sits past a real hole.
+     */
     async hydrate(): Promise<void> {
         await this.engine.hydrateAll();
+        const violations = this.rawBlocks.checkHeightContiguity();
+        if (violations.length > 0) {
+            throw new HydrationIntegrityError(violations);
+        }
     }
 
     /** Resolve once all in-memory mutations up to now are durably committed. */

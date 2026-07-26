@@ -58,12 +58,20 @@ export class MessageBlockStorage {
 
         const blockHeight = this.normalizeBlockHeight(messageBlock.blockHeight);
 
-        if (!this.blockMap.has(blockHash)) {
+        const isNewEntry = !this.blockMap.has(blockHash);
+        if (isNewEntry) {
             this.blockMap.set(blockHash, messageBlock);
         }
 
         if (options?.justPersist) {
-            this.justPersistHashes.add(blockHash);
+            // Only a brand-new entry can be marked justPersist. Re-storing an
+            // already-durable hash with justPersist:true (e.g. a dispute
+            // replay) must not demote it - the durable record would otherwise
+            // vanish from persistableEntries() and get deleted on the next
+            // flush.
+            if (isNewEntry) {
+                this.justPersistHashes.add(blockHash);
+            }
             return blockHash;
         }
 

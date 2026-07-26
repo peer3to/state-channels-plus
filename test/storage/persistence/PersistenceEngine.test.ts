@@ -53,6 +53,7 @@ const noop = () => undefined;
 class GatedPort extends InMemoryPersistencePort {
     readonly commits: NamespacedOp[][] = [];
     gated = false;
+    closeCount = 0;
     private readonly gates: Array<() => void> = [];
 
     async commit(ops: NamespacedOp[]): Promise<void> {
@@ -62,8 +63,6 @@ class GatedPort extends InMemoryPersistencePort {
         }
         await super.commit(ops);
     }
-
-    closeCount = 0;
 
     get commitCount(): number {
         return this.commits.length;
@@ -443,7 +442,7 @@ describe("PersistenceEngine", function () {
         ).to.equal(false);
     });
 
-    it("a flush enqueued before dispose does not commit into the closed port", async function () {
+    it("dispose drains the in-flight commit before closing the port (no close/commit race)", async function () {
         const port = new GatedPort();
         port.gated = true;
         const map = new Map<string, SigValue>();
@@ -456,23 +455,41 @@ describe("PersistenceEngine", function () {
         const barrierA = engine.awaitDurable();
         await waitUntil(() => port.commitCount === 1);
 
-        // Flush B is enqueued behind A; its snapshot is not yet taken.
-        map.set("k2", { key: "k2", sigs: ["b"] });
-        void engine.awaitDurable(); // stays pending past dispose - never rejects
-
-        // dispose() marks terminal and closes the port while A is in flight.
+        // dispose() must not close the port while A's commit is still
+        // in flight - it drains (awaits the queue) before closing (RO1).
         const disposed = engine.dispose();
+        await delay(20);
+        expect(
+            port.closeCount,
+            "must not close while a commit is in flight"
+        ).to.equal(0);
+
         port.releaseNext(); // let A finish
         await disposed;
         await barrierA;
-        await delay(20);
 
-        // B's runFlush hit the terminal guard: no commit landed after close.
         expect(port.commitCount).to.equal(1);
         expect(port.closeCount).to.equal(1);
 
         // Double dispose is idempotent.
         await engine.dispose();
+        expect(port.closeCount).to.equal(1);
+    });
+
+    it("dispose flushes dirty non-barrier state before closing (drain-on-shutdown)", async function () {
+        const port = new GatedPort();
+        const map = new Map<string, SigValue>();
+        // Dirty state that never went through an explicit awaitDurable() or
+        // the background flush interval.
+        map.set("k1", { key: "k1", sigs: ["a"] });
+
+        const engine = new PersistenceEngine({ port, onFatal: noop });
+        engine.register(sigSchema("s", map));
+
+        expect(port.commitCount).to.equal(0);
+        await engine.dispose();
+
+        expect(port.commitCount).to.equal(1);
         expect(port.closeCount).to.equal(1);
     });
 

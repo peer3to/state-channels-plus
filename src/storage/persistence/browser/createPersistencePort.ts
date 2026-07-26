@@ -2,21 +2,26 @@ import { InMemoryPersistencePort } from "../InMemoryPersistencePort";
 import { PersistencePort } from "../PersistencePort";
 
 /**
- * Browser `@platform/persistence` port factory.
- *
- * Stub until the real IndexedDB port lands (be-04); returns the in-memory port
- * for now. `namespaceRoot` (`${chainId}:${channelId}`) is the per-channel store
- * scope: the real browser port will key its IndexedDB database by it, and the
- * in-memory stub records it on the returned port so the same namespace-scoping
- * contract holds today (and is observable by the host wiring tests). The
- * backend otherwise ignores it until be-04.
+ * Stub browser port until the real IndexedDB port lands (be-04). Carries a
+ * typed `namespaceRoot` (rather than bolting one on via a cast) so the
+ * namespace-scoping contract is observable by the host wiring tests today;
+ * the real port will key its IndexedDB database by it.
+ */
+class BrowserPersistencePortStub extends InMemoryPersistencePort {
+    readonly namespaceRoot: string;
+
+    constructor(namespaceRoot: string) {
+        super();
+        this.namespaceRoot = namespaceRoot;
+    }
+}
+
+/**
+ * Browser `@platform/persistence` port factory. Stub until be-04 lands;
+ * returns an in-memory-backed port for now.
  */
 export function createPersistencePort(opts: {
     namespaceRoot: string;
 }): PersistencePort {
-    const port = new InMemoryPersistencePort();
-    (
-        port as InMemoryPersistencePort & { namespaceRoot: string }
-    ).namespaceRoot = opts.namespaceRoot;
-    return port;
+    return new BrowserPersistencePortStub(opts.namespaceRoot);
 }

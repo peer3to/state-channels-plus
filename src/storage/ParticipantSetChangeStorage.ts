@@ -8,6 +8,15 @@ export class ParticipantSetChangeStorage {
     }
 
     // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /** The persistence engine's view of this store's PRIMARY map. */
+    *persistableEntries(): Iterable<[ForkId, Set<BlockHeight>]> {
+        yield* this.map;
+    }
+
+    // ====================================
     // CREATE
     // ====================================
 

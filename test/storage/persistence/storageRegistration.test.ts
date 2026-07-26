@@ -4,39 +4,44 @@ import { describe, it } from "mocha";
 import Storage from "@/storage";
 import { PersistenceEngine } from "@/storage/persistence/PersistenceEngine";
 
-// Store field -> the schema id it must be registered under.
-const STORE_FIELD_SCHEMA_IDS: Record<string, string> = {
-    blocks: "blocks",
-    inboundMessages: "inboundMessages",
-    outboundMessages: "outboundMessages",
-    stateSnapshots: "stateSnapshots",
-    stateMachineStates: "stateMachineStates",
-    timeout: "timeout",
-    forceExit: "forceExit",
-    forceJoin: "forceJoin",
-    fraudProofs: "fraudProofs"
+// Store field -> the schema id(s) it must be registered under. `disputes`
+// covers two independent maps on the same DisputeStorage instance
+// (disputes + disputedForks), so it maps to two ids.
+const STORE_FIELD_SCHEMA_IDS: Record<string, string[]> = {
+    blocks: ["blocks"],
+    inboundMessages: ["inboundMessages"],
+    outboundMessages: ["outboundMessages"],
+    stateSnapshots: ["stateSnapshots"],
+    stateMachineStates: ["stateMachineStates"],
+    timeout: ["timeout"],
+    forceExit: ["forceExit"],
+    forceJoin: ["forceJoin"],
+    fraudProofs: ["fraudProofs"],
+    participantSetChanges: ["participantSetChanges"],
+    disputes: ["disputes", "disputedForks"],
+    disputeFraudProofs: ["disputeFraudProofs"],
+    blockCalldata: ["blockCalldata"],
+    eventSync: ["eventSync"]
 };
 
 // Permanent opt-out: QueueStorage is a transient CRDT reassembly buffer.
 // Persisting it would mislead flood-detection after a restart.
 const OPT_OUT = ["queues"];
 
-// Stores still awaiting a schema (be-06). This list shrinks as later slices
-// land; a store leaving it must gain a registered schema.
-const PENDING_SCHEMA = [
-    "participantSetChanges",
-    "disputes",
-    "disputeFraudProofs",
-    "blockCalldata",
-    "eventSync"
-];
+// Stores still awaiting a schema. This list shrinks as later slices land; a
+// store leaving it must gain a registered schema.
+const PENDING_SCHEMA: string[] = [];
 
-// Non-store infrastructure fields on Storage (not sub-stores).
-const INFRASTRUCTURE = ["engine"];
+// Non-store infrastructure fields on Storage (not sub-stores). `rawBlocks` is
+// the same underlying store as `blocks` (kept unproxied for the
+// post-hydrate height-contiguity check), not a distinct sub-store.
+const INFRASTRUCTURE = ["engine", "rawBlocks"];
 
 function classify(field: string, registeredIds: ReadonlySet<string>): boolean {
-    const schemaId = STORE_FIELD_SCHEMA_IDS[field];
-    const isRegistered = schemaId !== undefined && registeredIds.has(schemaId);
+    const schemaIds = STORE_FIELD_SCHEMA_IDS[field];
+    const isRegistered =
+        schemaIds !== undefined &&
+        schemaIds.every((id) => registeredIds.has(id));
     const isAllowlisted =
         OPT_OUT.includes(field) || PENDING_SCHEMA.includes(field);
     return isRegistered || isAllowlisted;
@@ -80,7 +85,13 @@ describe("Storage persistence registration", () => {
                 "timeout",
                 "forceExit",
                 "forceJoin",
-                "fraudProofs"
+                "fraudProofs",
+                "participantSetChanges",
+                "disputes",
+                "disputedForks",
+                "disputeFraudProofs",
+                "blockCalldata",
+                "eventSync"
             ].sort()
         );
     });

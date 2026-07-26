@@ -4,6 +4,7 @@ import * as factory from "@test/factory";
 import Storage from "@/storage";
 import {
     NamespacedOp,
+    OPAQUE_CLONE,
     PersistencePort,
     PersistRecord
 } from "@/storage/persistence/PersistencePort";
@@ -68,6 +69,8 @@ function releasePendingBarrier(sm: {
 
 /** A port whose commit never succeeds, so awaitDurable() stays pending. */
 class FaultyPersistencePort implements PersistencePort {
+    readonly [OPAQUE_CLONE] = true as const;
+
     commit(_ops: NamespacedOp[]): Promise<void> {
         return Promise.reject(new Error("injected commit failure"));
     }
@@ -159,11 +162,13 @@ describe("E2E: durability barrier (sign-before-durable)", function () {
         expect(receiverHeightAfter).to.equal(receiverHeightBefore + 1);
 
         // ---- path-C (stored-merge re-gossip) broadcast is withheld ----
-        // The LIVE "new signatures on an already-stored block" re-gossip runs
-        // inline in StateManager.tryMergeStoredBlockConfirmation, reached via
-        // the real scheduling entry point
+        // The LIVE "new signatures on an already-stored block" re-gossip is
+        // reached via the real scheduling entry point
         // BlockQueueManager.scheduleStoredBlockConfirmationMerge — a detached
-        // macrotask holding no mutex. We synthesize the new-signature condition
+        // macrotask holding no mutex — which delegates to
+        // StateManager.tryMergeStoredBlockConfirmation, which in turn calls
+        // strategy.goodNewSignaturesOnExistingBlock (the strategy owns the
+        // barrier + broadcast policy). We synthesize the new-signature condition
         // by stripping the confirmation signatures off a stored, co-signed block
         // and feeding the full confirmation back through that scheduler, then
         // assert the merged re-gossip is withheld while the barrier is pending,
@@ -243,7 +248,9 @@ describe("E2E: durability barrier (sign-before-durable)", function () {
                 try {
                     // Real scheduling entry point -> detached macrotask ->
                     // handleStoredBlockConfirmationMerge ->
-                    // tryMergeStoredBlockConfirmation -> storeBlock -> barrier.
+                    // tryMergeStoredBlockConfirmation ->
+                    // strategy.goodNewSignaturesOnExistingBlock -> storeBlock ->
+                    // barrier.
                     sm.blockQueueManager.scheduleStoredBlockConfirmationMerge(
                         entry,
                         sm.getActiveValidationStrategy()

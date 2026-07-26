@@ -2,9 +2,11 @@ import { expect } from "chai";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
 import * as factory from "@test/factory";
 import Storage from "@/storage";
+import { getChecksumAddress } from "@/utils";
 import { InMemoryPersistencePort } from "@/storage/persistence/InMemoryPersistencePort";
 import {
     NamespacedOp,
+    OPAQUE_CLONE,
     PersistencePort,
     PersistRecord
 } from "@/storage/persistence/PersistencePort";
@@ -16,7 +18,7 @@ import {
  * buildRuntime): the host constructs Storage on the default in-memory port with
  * no hydrate, then — in the connectToChannel / setChannelId handlers, once the
  * channelId is known — attaches the real `@platform/persistence` port for
- * `namespaceRoot=${chainId}:${channelId}` and awaits hydrate STRICTLY BEFORE the
+ * `namespaceRoot=${chainId}:${channelId}:${signerAddress}` and awaits hydrate STRICTLY BEFORE the
  * transport/topic join. That ordering is the crash-consistency guarantee, and
  * the durability watchdog's `onFatal` is the terminal fail-stop for the
  * sign-before-durable slashing vector.
@@ -34,6 +36,8 @@ import {
 /** A port whose commit never succeeds, so the barrier stays pending and the
  * engine degrades (arming the retry + watchdog timers). */
 class FaultyPersistencePort implements PersistencePort {
+    readonly [OPAQUE_CLONE] = true as const;
+
     commit(_ops: NamespacedOp[]): Promise<void> {
         return Promise.reject(new Error("injected commit failure"));
     }
@@ -78,6 +82,59 @@ describe("E2E: runtime persistence wiring", function () {
         expect(
             restarted.blocks.getBlock(blockHash),
             "late-bound port + hydrate restores the durable block"
+        ).to.not.be.undefined;
+        await restarted.dispose();
+    });
+
+    it("hydrate restores durable state from a genuinely NEW port instance reconstructed from serialized records (true close/reopen, not a shared live reference)", async function () {
+        const originalPort = new InMemoryPersistencePort();
+        const writer = new Storage({ port: originalPort });
+        const block = factory.block();
+        const blockHash = block.hash;
+        writer.blocks.storeBlock(block);
+        await writer.awaitDurable();
+
+        // Serialize every namespace's records out of the ORIGINAL port - the
+        // same shape a real fs/IndexedDB backend would read back off disk.
+        const registeredIds = (
+            writer as unknown as {
+                engine: { registeredIds(): ReadonlySet<string> };
+            }
+        ).engine.registeredIds();
+        const snapshot: { namespace: string; key: string; encoded: string }[] =
+            [];
+        for (const namespace of registeredIds) {
+            for await (const record of originalPort.load(namespace)) {
+                snapshot.push({
+                    namespace,
+                    key: record.key,
+                    encoded: record.encoded
+                });
+            }
+        }
+        await writer.dispose();
+
+        // A BRAND NEW port instance (not the same object reference) rebuilt
+        // from the serialized records - simulating a real process restart
+        // reopening the backend from disk, not reusing a live JS reference.
+        const reopenedPort = new InMemoryPersistencePort();
+        expect(reopenedPort).to.not.equal(originalPort);
+        await reopenedPort.commit(
+            snapshot.map((r) => ({
+                namespace: r.namespace,
+                type: "put" as const,
+                key: r.key,
+                encoded: r.encoded
+            }))
+        );
+
+        const restarted = new Storage();
+        restarted.attachPersistence(reopenedPort);
+        await restarted.hydrate();
+
+        expect(
+            restarted.blocks.getBlock(blockHash),
+            "hydrate restores durable state from a truly distinct port instance"
         ).to.not.be.undefined;
         await restarted.dispose();
     });
@@ -203,9 +260,11 @@ describe("E2E: runtime persistence wiring", function () {
 
         const chainId = (await h.peers[0].signer.provider!.getNetwork())
             .chainId;
-        const expectedNamespace = `${chainId}:${String(h.channelId)}`;
 
         for (const peer of h.peers) {
+            const signerAddress = await peer.signer.getAddress();
+            const expectedNamespace = `${chainId}:${String(h.channelId)}:${getChecksumAddress(signerAddress)}`;
+
             const rec = await h.execOnHost(peer, (sm) => {
                 const g = globalThis as unknown as {
                     __persistOrder?: Record<
@@ -335,5 +394,61 @@ describe("E2E: runtime persistence wiring", function () {
             setCallsAfter,
             "p2pSigner delegate must not run on a channelId mismatch"
         ).to.equal(setCallsBefore);
+    });
+
+    it("PERSISTENCE_ENABLED=false reverts a channel to exactly the pre-persistence behavior (OO2 kill-switch)", async function () {
+        this.timeout(60000);
+
+        const h = TestSession.getHarness();
+        await h.setup(2, { configOverrides: { PERSISTENCE_ENABLED: false } });
+
+        for (const peer of h.peers) {
+            await h.execOnHost(peer, (sm) => {
+                const g = globalThis as unknown as {
+                    __persistGateEvents?: Record<string, string[]>;
+                };
+                g.__persistGateEvents = g.__persistGateEvents ?? {};
+                const events: string[] = [];
+                g.__persistGateEvents[String(sm.signerAddress)] = events;
+
+                const storage = sm.storage;
+                const origAttach = storage.attachPersistence.bind(storage);
+                storage.attachPersistence = (port) => {
+                    events.push("attach");
+                    return origAttach(port);
+                };
+                const origHydrate = storage.hydrate.bind(storage);
+                storage.hydrate = () => {
+                    events.push("hydrate");
+                    return origHydrate();
+                };
+                return true;
+            });
+        }
+
+        const forkId = await h.lifecycle.openChannel();
+
+        for (const peer of h.peers) {
+            const events = await h.execOnHost(peer, (sm) => {
+                const g = globalThis as unknown as {
+                    __persistGateEvents?: Record<string, string[]>;
+                };
+                return g.__persistGateEvents?.[String(sm.signerAddress)] ?? [];
+            });
+            expect(
+                events,
+                "the durable port is never attached/hydrated when disabled"
+            ).to.deep.equal([]);
+        }
+
+        // Functionally unaffected: the channel still opens and transitions
+        // normally - disabling persistence is not visible to the protocol.
+        await h.transition.advanceState({ count: 1 });
+        const height = await h.execOnHost(
+            h.getPeer(0),
+            (sm, args) => sm.storage.blocks.getLatestBlock(args.forkId)?.height,
+            { forkId }
+        );
+        expect(height).to.equal(0);
     });
 });

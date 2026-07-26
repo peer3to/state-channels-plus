@@ -28,11 +28,17 @@ export class BlockStorage {
     // engine never diffs, persists or replays them (see storeBlock comment).
     private justPersistHashes: Set<Hash>;
 
+    // Memory-only: hashes touched by a mutator since the last successful
+    // flush (PO1 bounded diff). Peeked (not cleared) by the engine at diff
+    // time; cleared only after a successful commit (see peekDirtyHashes).
+    private dirtyHashes: Set<Hash>;
+
     constructor() {
         this.hashToBlockMap = new Map();
         this.coordinatesToBlockMap = new Map();
         this.forkIdToMaxHeightMap = new Map();
         this.justPersistHashes = new Set();
+        this.dirtyHashes = new Set();
     }
 
     // ====================================
@@ -51,6 +57,63 @@ export class BlockStorage {
                 yield [hash, block];
             }
         }
+    }
+
+    /** Single-key equivalent of persistableEntries() - same justPersist exclusion. */
+    getPersistableEntry(hash: Hash): Block | undefined {
+        if (this.justPersistHashes.has(hash)) return undefined;
+        return this.hashToBlockMap.get(hash);
+    }
+
+    /** Peek hashes touched since the last successful flush, without clearing. */
+    peekDirtyHashes(): ReadonlySet<Hash> {
+        return this.dirtyHashes;
+    }
+
+    /** Clears exactly these hashes - called only after their diff committed. */
+    clearDirtyHashes(hashes: Iterable<Hash>): void {
+        for (const hash of hashes) {
+            this.dirtyHashes.delete(hash);
+        }
+    }
+
+    /**
+     * Post-hydrate integrity check: every fork's heights from 0 up to its
+     * recorded max must be present with no gap. A missing TIP (nothing
+     * stored above it) is safe crash-truncation recovery - a record that
+     * fails to decode/replay never reaches storeBlock, so
+     * forkIdToMaxHeightMap never advances past it (see _updateMaxHeight).
+     * A gap with a height ABOVE it present means a non-trailing record
+     * failed to decode/replay while a later one succeeded - unsafe, since
+     * getNextBlockHeight() would otherwise report past a real hole.
+     */
+    checkHeightContiguity(): Array<{
+        forkId: ForkId;
+        missingHeight: BlockHeight;
+        maxHeight: BlockHeight;
+    }> {
+        const violations: Array<{
+            forkId: ForkId;
+            missingHeight: BlockHeight;
+            maxHeight: BlockHeight;
+        }> = [];
+        for (const [forkId, maxHeight] of this.forkIdToMaxHeightMap) {
+            for (let height = 0; height < maxHeight; height++) {
+                const coordinateKey = this.coordinatesToKey({
+                    forkId,
+                    height
+                });
+                if (!this.coordinatesToBlockMap.has(coordinateKey)) {
+                    violations.push({
+                        forkId,
+                        missingHeight: height,
+                        maxHeight
+                    });
+                    break;
+                }
+            }
+        }
+        return violations;
     }
 
     // ====================================
@@ -133,6 +196,7 @@ export class BlockStorage {
         if (!block) return undefined;
 
         block.expandSignatures([signature]);
+        this.dirtyHashes.add(block.hash);
         return block;
     }
 
@@ -169,6 +233,7 @@ export class BlockStorage {
             block = this.hashToBlockMap.get(hashOrForkId as Hash);
             if (block) {
                 block.onChainTimestamp = timestampOrHeight as Timestamp;
+                this.dirtyHashes.add(block.hash);
                 return true;
             }
             return false;
@@ -181,6 +246,7 @@ export class BlockStorage {
         block = this.coordinatesToBlockMap.get(coordinateKey);
         if (block) {
             block.onChainTimestamp = timestamp;
+            this.dirtyHashes.add(block.hash);
             return true;
         }
         return false;
@@ -215,6 +281,7 @@ export class BlockStorage {
             this.hashToBlockMap.delete(hashOrForkId as Hash);
             this.coordinatesToBlockMap.delete(coordinateKey);
             this.justPersistHashes.delete(block.hash);
+            this.dirtyHashes.add(block.hash);
 
             const blockHeight = block.height;
             if (blockHeight === this.forkIdToMaxHeightMap.get(block.forkId)) {
@@ -242,6 +309,7 @@ export class BlockStorage {
         this.coordinatesToBlockMap.delete(coordinateKey);
         this.hashToBlockMap.delete(blockHash);
         this.justPersistHashes.delete(blockHash);
+        this.dirtyHashes.add(blockHash);
 
         if (height === this.forkIdToMaxHeightMap.get(forkId)) {
             this.forkIdToMaxHeightMap.set(forkId, Math.max(0, height - 1));
@@ -344,6 +412,7 @@ export class BlockStorage {
             // proof on the next replay instead. persistableEntries() excludes
             // the tracked hashes so the engine never diffs them.
             this._trackJustPersist(blockHash, options?.justPersist);
+            this.dirtyHashes.add(blockHash);
             return blockHash;
         }
 
@@ -358,7 +427,16 @@ export class BlockStorage {
             existingBlock.onChainTimestamp = block.onChainTimestamp;
         }
 
-        this._trackJustPersist(blockHash, options?.justPersist);
+        // A merge only ever PROMOTES to durable (justPersist -> normal); it
+        // never demotes an already-existing record to justPersist. Demoting
+        // here would mean a dispute replay of an already-durable block (e.g.
+        // persistDisputeDataWithoutAudit re-storing a hash with
+        // justPersist:true) removes it from persistableEntries() and gets
+        // deleted from the durable store on the next flush.
+        if (!options?.justPersist) {
+            this._trackJustPersist(blockHash, false);
+        }
+        this.dirtyHashes.add(blockHash);
         // Return the hash (same object in both maps)
         return blockHash;
     }
