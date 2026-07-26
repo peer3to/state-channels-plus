@@ -3,7 +3,7 @@ import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
-import { ethers, id, Log } from "ethers";
+import { ethers, id, Log, type TransactionRequest } from "ethers";
 import { DetachedPromises } from "@/utils";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
@@ -43,6 +43,11 @@ export type StubKey =
     | "spectateSync"
     | "pausedReduction"
     | "pausedReductionKillPeriod";
+
+/** Runner methods a one-shot multicall fault can be installed on. */
+export type RunnerFaultMethod = "call" | "sendTransaction";
+type RunnerFaultFn = (transaction: TransactionRequest) => Promise<unknown>;
+type FaultableRunner = Record<RunnerFaultMethod, RunnerFaultFn | undefined>;
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -154,6 +159,63 @@ export class StubService extends ARpcService<
 
     get sm() {
         return this.p2pManager.stateManager;
+    }
+
+    /**
+     * One-shot fault on the contract runner's `multicall` path — `call` for a
+     * simulation, `sendTransaction` for a real submit. Forwards everything that
+     * is not a multicall, then restores itself and throws the encoded custom
+     * error on the first matching invocation. Both reduction injectors share
+     * this so their matching and restoration cannot drift apart.
+     *
+     * Monkey-patching the runner is exactly the untyped-internal case casts are
+     * for: the two methods have different return types, so the patch is written
+     * once against a structural view and cast back on install/restore.
+     */
+    public installOneShotMulticallFault(options: {
+        stubKey: StubKey;
+        method: RunnerFaultMethod;
+        errorName: string;
+    }): boolean {
+        const contract = this.sm.stateChannelManagerContract;
+        const selector = contract.interface.getFunction("multicall")!.selector;
+        const runner = contract.runner as FaultableRunner | null;
+        const original = runner?.[options.method];
+        if (!runner || !original) {
+            throw new Error(
+                `Contract runner does not support ${options.method}`
+            );
+        }
+        if (!this.stubOriginals.has(options.stubKey)) {
+            this.stubOriginals.set(options.stubKey, original.bind(runner));
+        }
+        const forward = this.stubOriginals.get(
+            options.stubKey
+        ) as RunnerFaultFn;
+        runner[options.method] = async (transaction) => {
+            if (!String(transaction.data).startsWith(selector)) {
+                return await forward(transaction);
+            }
+            runner[options.method] = forward;
+            this.stubOriginals.delete(options.stubKey);
+            throw { data: id(`${options.errorName}()`).slice(0, 10) };
+        };
+        return true;
+    }
+
+    /** Reinstall the original runner method saved by a one-shot fault. */
+    public restoreMulticallFault(
+        stubKey: StubKey,
+        method: RunnerFaultMethod
+    ): boolean {
+        const runner = this.sm.stateChannelManagerContract
+            .runner as FaultableRunner | null;
+        if (!runner?.[method]) return false;
+        const original = this.stubOriginals.get(stubKey);
+        if (original === undefined) return false;
+        runner[method] = original as RunnerFaultFn;
+        this.stubOriginals.delete(stubKey);
+        return true;
     }
 
     /** Exercise rejected-log retention through the real EventSyncService. */
