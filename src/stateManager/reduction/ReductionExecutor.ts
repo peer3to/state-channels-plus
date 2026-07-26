@@ -430,6 +430,21 @@ export default class ReductionExecutor {
                         disputes,
                         "detached"
                     );
+                    // complete() already installed this candidate and settled
+                    // the completion, and the fork has moved on — so no later
+                    // attempt re-enters the executor for this source fork and
+                    // nothing can reconcile the install. A candidate the chain
+                    // did not commit therefore has to fail closed here.
+                    if (status === "stale-candidate") {
+                        this.logger.error(
+                            "Reduction submit rejected a candidate that is already installed locally - aborting",
+                            { forkId, candidateForkId }
+                        );
+                        this.stateManager.abort();
+                        throw new Error(
+                            `Installed reduction candidate ${candidateForkId} for fork ${forkId} was rejected on submit`
+                        );
+                    }
                     if (status) return;
                 }
                 throw tryDecodeCustomError(error) ?? error;
@@ -462,30 +477,12 @@ export default class ReductionExecutor {
                 forkId
             );
 
-        // ErrorDisputeInboundMessageBlocksInvalid compares our submitted
-        // inboundMessageBlocks against the target hash reduce() derives live
-        // from chain storage: the channel's inbound head walked back to the
-        // dispute-window expiry (lastEvidenceSubmissionTimestamp +
-        // evidenceTime). _verifyInboundMessageBlocks itself is pure, but that
-        // target is not — the expiry moves whenever late evidence lands. So the
-        // usual cause is the chain moving between compute() and this submission,
-        // and a recompute against the new head converges.
-        //
-        // reduceAndFinalize only reaches this check while nothing is committed
-        // (a committed result short-circuits earlier), so the committed value we
-        // read back is non-zero only when another reducer won inside this
-        // window. Matching our candidate means we merely lost the race with a
-        // correct candidate — safe to install and converge. Otherwise the
-        // candidate is stale (or nothing is committed yet): discard it rather
-        // than install a value that would later trip the reduced-result mismatch
-        // -> abort — but never rethrow into the detached path either.
-        //
-        // "Discard without installing" only holds on the simulation path.
-        // complete() installs the candidate before submitDetached runs, so on
-        // the detached path the stale genesis is already installed and the
-        // discard degrades to swallow-and-eventual-abort (the reduced-result
-        // mismatch in completeWithGenesis). Logged distinctly so the two are
-        // told apart.
+        // The revert means our inboundMessageBlocks no longer chain to the
+        // target hash reduce() derives from live chain storage, so our candidate
+        // is stale. Only a committed result equal to our candidate means we
+        // simply lost the race and can converge; anything else is a stale
+        // candidate, and each call site decides its own policy (retry before
+        // installing, fail closed once installed).
         if (errorName === "ErrorDisputeInboundMessageBlocksInvalid") {
             if (
                 String(reducedResult.reducedForkId) === String(candidateForkId)
