@@ -52,8 +52,9 @@ const REDUCTION_RACE_ERRORS = [
     "RaceConditionReductionExpectationDoesntMatch",
     // Not a race per se: our reduce inputs went stale against the chain, so
     // reduceAndFinalize reverts the inbound-block check. Classified here so
-    // classifyReductionRace can gate it (swallow vs discard) instead of letting
-    // it escape the detached reduction path as an unhandled rejection.
+    // classifyReductionRace can tell converging on another reducer's result
+    // from a stale candidate, instead of letting the revert escape the detached
+    // reduction path as an unhandled rejection.
     "ErrorDisputeInboundMessageBlocksInvalid"
 ] as const satisfies readonly RaceConditionErrorName[];
 type ReductionRaceErrorName = (typeof REDUCTION_RACE_ERRORS)[number];
@@ -195,6 +196,15 @@ export default class ReductionExecutor {
                 attempts: pendingRetry.attempts,
                 notBefore: pendingRetry.notBefore
             });
+            // Re-arm rather than trusting the timer that scheduled this retry.
+            // Second-granularity time means the scheduled attempt can itself
+            // arrive a tick early and stand down here; without re-arming, that
+            // attempt would be the last one and the fork would strand.
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                pendingRetry.notBefore,
+                true
+            );
             return;
         }
 
