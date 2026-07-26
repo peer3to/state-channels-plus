@@ -20,8 +20,7 @@ import type {
     ConcurrentCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
     DisputeStrategyResultMatrix,
-    MissingParticipantSnapshotsProbe,
-    BlockAuthorParticipantProbe
+    MissingParticipantSnapshotsProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
 
@@ -654,8 +653,48 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.probeMissingParticipantSnapshots();
     }
 
-    public async probeBlockAuthorParticipant(): Promise<BlockAuthorParticipantProbe> {
-        return this.service.probeBlockAuthorParticipant();
+    public async probeAuthorGatePreviousSnapshotMember(): Promise<string> {
+        return this.service.probeAuthorGatePreviousSnapshotMember();
+    }
+
+    public async probeAuthorGateMatchingResultingSnapshot(): Promise<string> {
+        return this.service.probeAuthorGateMatchingResultingSnapshot();
+    }
+
+    public async probeAuthorGateStaleHeightSnapshot(): Promise<string> {
+        return this.service.probeAuthorGateStaleHeightSnapshot();
+    }
+
+    public async probeAuthorGateWrongForkSnapshot(): Promise<string> {
+        return this.service.probeAuthorGateWrongForkSnapshot();
+    }
+
+    public async probeAuthorGateMatchingSnapshotExcludingAuthor(): Promise<string> {
+        return this.service.probeAuthorGateMatchingSnapshotExcludingAuthor();
+    }
+
+    public async probeAuthorGateMissingSnapshotPreviousMember(): Promise<string> {
+        return this.service.probeAuthorGateMissingSnapshotPreviousMember();
+    }
+
+    public async probeAuthorGateMissingSnapshotOutsider(): Promise<string> {
+        return this.service.probeAuthorGateMissingSnapshotOutsider();
+    }
+
+    public async probeAuthorGateNoAnchorCurrentParticipant(): Promise<string> {
+        return this.service.probeAuthorGateNoAnchorCurrentParticipant();
+    }
+
+    public async probeAuthorGateNoAnchorPendingParticipant(
+        pendingParticipant: string
+    ): Promise<string> {
+        return this.service.probeAuthorGateNoAnchorPendingParticipant(
+            pendingParticipant as Address
+        );
+    }
+
+    public async probeAuthorGateNoAnchorUnknownAddress(): Promise<string> {
+        return this.service.probeAuthorGateNoAnchorUnknownAddress();
     }
 
     /** Pause a real reduction once it enters its kill-period lookup. */
