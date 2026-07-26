@@ -201,29 +201,32 @@ describe("E2E: ReductionManager", function () {
             expect(TestSession.getFirstDetachedError()).to.equal(undefined);
         });
 
-        it("ErrorDisputeInboundMessageBlocksInvalid on the detached submit is swallowed with the candidate already installed", async function () {
+        it("ErrorDisputeInboundMessageBlocksInvalid on the detached submit aborts the uncommitted candidate", async function () {
             // The staticCall passes, so complete() installs the candidate and
-            // only then does submitDetached fault. That is the call site the
-            // simulation stub cannot reach: the revert must be classified and
-            // swallowed instead of escaping as an unhandled rejection.
+            // settles the completion before submitDetached faults. Nothing can
+            // reconcile that install afterwards — the fork has already moved, so
+            // no later attempt re-enters the executor for this source fork. The
+            // peer must therefore fail closed rather than stay live on a
+            // candidate the chain never committed.
+            const targetPeer = h.getPeer(targetPeerIndex);
             await h.rpcStub.releaseReductionWithSubmitError(
                 targetPeerIndex,
                 "ErrorDisputeInboundMessageBlocksInvalid"
             );
 
-            await h.assert.dispute.reductionCompletedWait({
-                sourceForkId,
-                peerIndices: [targetPeerIndex]
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(targetPeer)
+                        .query.getStatus()
+                        .request()) === Status.OPENED,
+                h.event.protocolEventTimeoutMs(0),
+                50
+            );
+            await TestSession.expectFirstDetachedError({
+                includes: "was rejected on submit",
+                timeoutMs: 5000
             });
-            expect(
-                await h
-                    .control(h.getPeer(targetPeerIndex))
-                    .query.getStatus()
-                    .request()
-            ).to.equal(Status.PARTICIPATING);
-            const hostErrors = await h.quiesceHosts();
-            expect(hostErrors).to.deep.equal([]);
-            expect(TestSession.getFirstDetachedError()).to.equal(undefined);
         });
     });
 
