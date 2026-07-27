@@ -7,6 +7,7 @@ import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import * as factory from "@test/factory";
 import type { Address } from "@/types/types";
+import { Status } from "@/types";
 
 // crafted confirmations run through validateBlockConfirmation host-side via
 // stub.runBlockValidation (record-only side effects). asserts input -> result
@@ -33,9 +34,51 @@ describe("Unit: ValidationService", function () {
     });
 
     describe("validateBlockConfirmation → pre-transition guards", function () {
-        // no test: reads sm's OWN forkId; a PARTICIPATING peer is always open, so
-        // ZeroHash is only pre-open (not attacker-deliverable).
-        it.skip("channel not opened → channelNotOpened", function () {});
+        it("connected to the channel but not yet synced → channelNotOpened → NOT_READY, requeued", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+
+            // participants stop serving state, so a joining peer takes the
+            // channelId but never learns a fork -> its forkId stays ZeroHash
+            const restores = await Promise.all(
+                h.peers.map((p) =>
+                    h.rpcStub.recordSpectateSync(p.index, { forward: false })
+                )
+            );
+
+            const { index: spectatorIndex } = await h.join.addSpectator();
+            await h.event.waitUntilPeerStatus(spectatorIndex, Status.OPENED);
+            const spectator = h.getPeer(spectatorIndex);
+
+            const open = await h.execOnHost(spectator, async (sm) =>
+                sm.validationService.isChannelOpen(sm.forkId)
+            );
+            expect(open, "a pre-sync peer holds no fork").to.equal(false);
+
+            // a real block on the real channel - only the local fork is missing
+            const encoded = await factory.buildAndEncodeBlock(
+                h.getPeer(0).signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId: h.activeForkId!,
+                        transactionCnt: 0
+                    }
+                }
+            );
+
+            const r = await h
+                .control(spectator)
+                .stub.runBlockValidation(encoded)
+                .request();
+
+            expect(r.resultName).to.equal("NOT_READY");
+            expect(r.firedHooks).to.include("channelNotOpened");
+            expect(r.restoreQueuedEntryCalled).to.equal(true);
+            expect(r.disputedForkIds).to.deep.equal([]);
+
+            await Promise.all(restores.map((restore) => restore()));
+        });
 
         it("block for a different channel → wrongChannel → DISCONNECT", async function () {
             const h = TestSession.getHarness();
