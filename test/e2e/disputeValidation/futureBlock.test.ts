@@ -9,7 +9,7 @@ import { Codec, Type } from "@/utils";
 // dispute commitment — otherwise the attacker can move state forward unilaterally.
 
 describe("E2E: dispute validation / futureBlock", function () {
-    // TODO(separate-PR): the test BODY passes, but the afterEach hits the known
+    // TODO(#353): the test BODY passes, but the afterEach hits the known
     // product teardown bug `onStateSnapshotUpdated: unknown snapshot while
     // status=4` (EventHandler.apply) — the self-removed peer (status=4) receives
     // an unknown snapshot after resolution. Same class as the deferred

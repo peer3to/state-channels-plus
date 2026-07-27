@@ -526,7 +526,7 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Fork Traversal Spectating", function () {
-        // TODO(separate-PR): product/protocol bug, NOT a harness-conversion issue.
+        // TODO(#351): product/protocol bug, NOT a harness-conversion issue.
         // After the dispute reduction all 4 remaining peers agree on the reduced
         // fork's genesis block (identical hash) but it only collects 3/4
         // signatures, so finalization stalls (`sigs=3/4 union=4`). One
@@ -598,7 +598,7 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Spectators before and after dispute", function () {
-        // TODO(separate-PR): flaky due to the same post-dispute-reduction
+        // TODO(#351): flaky due to the same post-dispute-reduction
         // finalization product bug as the "traverse forks" test — after the
         // dispute the reduced fork's genesis block intermittently collects only
         // N-1 of N signatures (e.g. sigs=2/3), so sync stalls. Passes on some
@@ -850,7 +850,7 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("forceInboundJoin during dispute", function () {
-        // TODO(separate-PR): product bug, NOT a harness-conversion issue. After
+        // TODO(#352, #353): product bug, NOT a harness-conversion issue. After
         // resolving the dispute on the reduced fork the on-chain snapshot never
         // changes within the timeout (same post-dispute-reduction class as the
         // "traverse forks" test above), and teardown then hits a fatal
