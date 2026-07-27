@@ -1,4 +1,5 @@
 import { Logger } from "@/utils";
+import type { ForkId } from "@/types/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { ReductionSimulationErrorName } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
@@ -220,6 +221,63 @@ export class RpcStubActions<
     }
 
     /**
+     * Disarm a peer's pending reduction timers. Call it before a test that
+     * staged reductions ends: an armed timer fires into teardown and leaks its
+     * `tryReduce` into the detached-promise drain.
+     */
+    async cancelScheduledReductions(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.cancelScheduledReductions()
+            .request();
+    }
+
+    async probeConcurrentWindowLoad(
+        peerIndex: number,
+        forkId: ForkId,
+        callerCount: number
+    ) {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.probeConcurrentWindowLoad(forkId, callerCount)
+            .request();
+    }
+
+    async probeRetainedWindowLoad(
+        peerIndex: number,
+        forkId: ForkId,
+        callerCount: number
+    ) {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.probeRetainedWindowLoad(forkId, callerCount)
+            .request();
+    }
+
+    async holdWindowLoad(
+        peerIndex: number,
+        forkId: ForkId
+    ): Promise<{
+        release: () => Promise<{ queryCountAfterRelease: number }>;
+    }> {
+        const peer = this.harness.getPeer(peerIndex);
+        const started = await this.harness
+            .control(peer)
+            .stub.startHeldWindowLoad(forkId)
+            .request();
+        if (!started) {
+            throw new Error("A held window load is already in flight");
+        }
+        return {
+            release: async () =>
+                await this.harness
+                    .control(peer)
+                    .stub.releaseHeldWindowLoad(forkId)
+                    .request()
+        };
+    }
+
+    /**
      * Hold every reduction entry point on a peer — the `reduction-*` timers,
      * the StateSnapshotUpdated handler, and the DisputeReducedResultCommitted
      * handler (which reduces on the spot once the challenge period expires) —
@@ -237,6 +295,13 @@ export class RpcStubActions<
         release: (options?: {
             replayEvents?: boolean;
             runHeldTasks?: boolean;
+            /**
+             * Leave `reduction-*` timer scheduling stubbed out. Use it when the
+             * test is done driving reductions: restoring scheduling lets a
+             * fresh timer arm and fire into teardown, and its `tryReduce` then
+             * hangs the detached-promise drain.
+             */
+            keepTasksHeld?: boolean;
         }) => Promise<void>;
     }> {
         const ctl = () =>
@@ -251,8 +316,16 @@ export class RpcStubActions<
             heldSnapshotEventCount: async () =>
                 await ctl().getHeldSnapshotUpdatedCount().request(),
             release: async (options = {}) => {
-                const { replayEvents = true, runHeldTasks = false } = options;
-                await ctl().restoreReductionTasks(runHeldTasks).request();
+                const {
+                    replayEvents = true,
+                    runHeldTasks = false,
+                    keepTasksHeld = false
+                } = options;
+                if (keepTasksHeld) {
+                    await ctl().dropHeldReductionTasks().request();
+                } else {
+                    await ctl().restoreReductionTasks(runHeldTasks).request();
+                }
                 await ctl().restoreReducedCommitEvents(replayEvents).request();
                 await ctl()
                     .restoreSnapshotUpdatedEvents(replayEvents)

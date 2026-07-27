@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { Codec, Type } from "@/utils";
+import type { BlockHeight } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash, randomAddress } from "../factory";
 import { waitFor } from "@test/utils/waitFor";
@@ -245,6 +246,15 @@ describe("Unit: AgreementManager", function () {
 
             expect(v!.blockHeight).to.equal(requestedHeight);
             expect(v!.latestProofHeight).to.equal(requestedHeight);
+            // latestProofHeight only reads the LAST milestone, so it cannot see
+            // a change-point milestone above the request - the leaves sit above
+            // this height and must not be proven at all
+            expect(
+                v!.milestoneConfirmationHeights
+                    .flat()
+                    .every((height) => height <= requestedHeight),
+                "no milestone may reach a block above the requested height"
+            ).to.equal(true);
         });
 
         it("proof requested below a participant join → tops out at the requested height", async function () {
@@ -276,8 +286,18 @@ describe("Unit: AgreementManager", function () {
 
             expect(v!.blockHeight).to.equal(requestedHeight);
             expect(v!.latestProofHeight).to.equal(requestedHeight);
+            // latestProofHeight only reads the LAST milestone, so it cannot see
+            // a change-point milestone above the request - the join sits above
+            // this height and must not be proven at all
+            expect(
+                v!.milestoneConfirmationHeights
+                    .flat()
+                    .every((height) => height <= requestedHeight),
+                "no milestone may reach a block above the requested height"
+            ).to.equal(true);
         });
-        it("proof requested at the exact leave-block height → tops out at the requested height", async function () {
+
+        it("proof requested at a fully-confirmed leave-block height → reports that height, nothing above", async function () {
             const h = TestSession.getHarness();
             await h.scenario.setupTwoLeaversAcrossMilestones();
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3] });
@@ -286,29 +306,26 @@ describe("Unit: AgreementManager", function () {
 
             // the leave's own block height - later confirming blocks exist
             // above it from the scenario's follow-up advanceState calls
-            const changeHeights = await h.execOnHost(
-                h.getPeer(0),
-                async (sm, args) =>
-                    sm.storage.participantSetChanges
-                        .getChangePointsInRange(
-                            args.forkId,
-                            undefined,
-                            undefined
-                        )
-                        .map(Number),
-                { forkId }
-            );
+            const changeHeights = await h
+                .control(h.getPeer(0))
+                .query.getParticipantChangeHeights(forkId)
+                .request();
             const requestedHeight = changeHeights[0];
 
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(forkId, requestedHeight)
+            const q0 = h.control(h.getPeer(0)).query;
+            const v = await q0
+                .getStateProofVerification(forkId, requestedHeight)
                 .request();
+
+            expect(
+                await q0
+                    .didEveryoneSignBlockAt(forkId, requestedHeight)
+                    .request(),
+                "the leave block must be fully confirmed in this scenario"
+            ).to.equal(true);
 
             expect(v!.blockHeight).to.equal(requestedHeight);
             expect(v!.latestProofHeight).to.equal(requestedHeight);
-            // no milestone may reach into a block above the requested height,
-            // even though later confirming blocks exist in storage
             const allConfirmationHeights =
                 v!.milestoneConfirmationHeights.flat();
             expect(
@@ -316,6 +333,7 @@ describe("Unit: AgreementManager", function () {
                     (height) => height <= requestedHeight
                 )
             ).to.equal(true);
+            expect(v!.verified).to.equal(true);
         });
 
         it("proof requested at the exact join-block height, raised threshold completed only above it → tops out at the requested height", async function () {
@@ -389,18 +407,9 @@ describe("Unit: AgreementManager", function () {
                 keepConnection: true
             });
 
-            const changeHeights = await h.execOnHost(
-                h.getPeer(0),
-                async (sm, args) =>
-                    sm.storage.participantSetChanges
-                        .getChangePointsInRange(
-                            args.forkId,
-                            undefined,
-                            undefined
-                        )
-                        .map(Number),
-                { forkId }
-            );
+            const changeHeights = await q0
+                .getParticipantChangeHeights(forkId)
+                .request();
             const requestedHeight = changeHeights[0]; // the join's own height
 
             // staging sanity: the joiner signed above the join, and the join
@@ -451,7 +460,7 @@ describe("Unit: AgreementManager", function () {
             const forkId = h.activeForkId!;
             const blockCount = 10;
             const failures: string[] = [];
-            const heightsSeen = new Set<number>();
+            const heightsSeen = new Set<BlockHeight>();
 
             // assembles + on-chain-verifies in one host call
             const sample = async () => {

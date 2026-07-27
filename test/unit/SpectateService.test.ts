@@ -110,11 +110,16 @@ describe("Unit: SpectateService", function () {
                             sm.channelId,
                             args.forkId
                         );
+                    const confirmations =
+                        sm.agreementManager.getForkDisputeConfirmations(
+                            commitments
+                        );
                     return {
                         commitmentCount: commitments.length,
                         missingAfterCount: commitments.filter(
                             (c) => !sm.storage.disputes.getDispute(c)
-                        ).length
+                        ).length,
+                        confirmationCount: confirmations.length
                     };
                 },
                 { forkId }
@@ -135,7 +140,16 @@ describe("Unit: SpectateService", function () {
                 "generateSyncPayload must recover every missing dispute before reading confirmations"
             ).to.equal(0);
 
-            await race.release({ replayEvents: false, runHeldTasks: false });
+            expect(
+                recovered.confirmationCount,
+                "every on-chain commitment must resolve to a stored confirmation"
+            ).to.equal(recovered.commitmentCount);
+
+            await race.release({
+                replayEvents: false,
+                runHeldTasks: false,
+                keepTasksHeld: true
+            });
             await restoreEvents(false);
         });
     });
