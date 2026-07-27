@@ -1,7 +1,7 @@
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import type { Address, ForkId } from "@/types/types";
+import type { Address, ForkId, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { id, Log } from "ethers";
@@ -194,6 +194,21 @@ export class StubService extends ARpcService<
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
         );
+    }
+
+    /**
+     * Store on-chain calldata for a block at a chosen timestamp - the state a
+     * real `postBlockCalldata` + recovery leaves behind, without needing the
+     * chain to mine at that exact second.
+     */
+    public stageBlockCalldata(
+        encodedSignedBlock: string,
+        onChainTimestamp: Timestamp
+    ): void {
+        this.sm.storage.blockCalldata.storeBlockCalldata({
+            signedBlock: Codec.decode(encodedSignedBlock, Type.SignedBlock),
+            onChainTimestamp
+        });
     }
 
     /** Exercise rejected-log retention through the real EventSyncService. */

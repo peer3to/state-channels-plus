@@ -4,7 +4,6 @@ import { Codec, Type } from "@/utils";
 import { Block } from "@/models";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
-import { waitFor } from "@test/utils/waitFor";
 import * as factory from "@test/factory";
 import type { Address } from "@/types/types";
 import { Status } from "@/types";
@@ -653,37 +652,10 @@ describe("Unit: ValidationService", function () {
         it("stray confirmation signatures on an otherwise valid block → ignored, still SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
-            const forkId = h.activeForkId!;
-
-            const nextWriter = await h
-                .control(h.getPeer(0))
-                .query.getNextToWrite()
-                .request();
-            const leader = h.peers.find(
-                (p) => p.address.toLowerCase() === nextWriter.toLowerCase()
-            )!;
-            const observer = h.peers.find((p) => p.index !== leader.index)!;
-            const startHeight = await h
-                .control(observer)
-                .query.getNextBlockHeight(forkId)
-                .request();
 
             // real next block, authored off-wire
-            await h.byzantine.stubBroadcast(leader.index);
-            await leader.p2pInstance.p2pContractInstance.add(1);
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(leader)
-                        .query.getNextBlockHeight(forkId)
-                        .request()) ===
-                    startHeight + 1,
-                15000
-            );
-            const authored = await h
-                .control(leader)
-                .query.getBlockByHeight(forkId, startHeight)
-                .request();
+            const { leader, observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
 
             // valid block re-wrapped with an outsider's stray confirmation sig -
             // confirmation sigs are the merge layer's concern, must not flip the verdict
@@ -715,39 +687,10 @@ describe("Unit: ValidationService", function () {
         it("a valid next block from the expected leader → SUCCESS, no dispute", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
-            const forkId = h.activeForkId!;
 
             // real next block kept off-wire, so the observer hasn't stored it
-            const nextWriter = await h
-                .control(h.getPeer(0))
-                .query.getNextToWrite()
-                .request();
-            const leader = h.peers.find(
-                (p) => p.address.toLowerCase() === nextWriter.toLowerCase()
-            )!;
-            const observer = h.peers.find((p) => p.index !== leader.index)!;
-
-            const startHeight = await h
-                .control(observer)
-                .query.getNextBlockHeight(forkId)
-                .request();
-
-            await h.byzantine.stubBroadcast(leader.index);
-            await leader.p2pInstance.p2pContractInstance.add(1);
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(leader)
-                        .query.getNextBlockHeight(forkId)
-                        .request()) ===
-                    startHeight + 1,
-                15000
-            );
-
-            const authored = await h
-                .control(leader)
-                .query.getBlockByHeight(forkId, startHeight)
-                .request();
+            const { leader, observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
 
             const r = await h
                 .control(observer)
@@ -961,38 +904,11 @@ describe("Unit: ValidationService", function () {
         it("a valid linked next block by the leader passes setState + leader check → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
-            const forkId = h.activeForkId!;
 
             // real next block, off-wire. under the dispute strategy it flows
             // through the setState-then-leader branch the block strategy lacks.
-            const nextWriter = await h
-                .control(h.getPeer(0))
-                .query.getNextToWrite()
-                .request();
-            const leader = h.peers.find(
-                (p) => p.address.toLowerCase() === nextWriter.toLowerCase()
-            )!;
-            const observer = h.peers.find((p) => p.index !== leader.index)!;
-            const startHeight = await h
-                .control(observer)
-                .query.getNextBlockHeight(forkId)
-                .request();
-
-            await h.byzantine.stubBroadcast(leader.index);
-            await leader.p2pInstance.p2pContractInstance.add(1);
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(leader)
-                        .query.getNextBlockHeight(forkId)
-                        .request()) ===
-                    startHeight + 1,
-                15000
-            );
-            const authored = await h
-                .control(leader)
-                .query.getBlockByHeight(forkId, startHeight)
-                .request();
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
 
             const r = await h
                 .control(observer)
