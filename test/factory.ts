@@ -415,8 +415,10 @@ export function stateSnapshot(
     };
     const stateSnapshotObj = {
         ...defaultStateSnapshot,
-        snapshotData: snapshotDataObj,
-        ...overrides
+        ...overrides,
+        // after the spread: a partial snapshotData override must not replace
+        // the merged object wholesale
+        snapshotData: snapshotDataObj
     };
 
     return StateSnapshot.from(stateSnapshotObj as StateSnapshotStruct);

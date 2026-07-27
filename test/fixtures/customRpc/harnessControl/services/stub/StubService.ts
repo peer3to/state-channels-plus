@@ -9,7 +9,7 @@ import { Codec, DetachedPromises, Mutex, Type } from "@/utils";
 import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
@@ -201,6 +201,35 @@ export class StubService extends ARpcService<
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
         );
+    }
+
+    /**
+     * Store a block straight into block storage, bypassing validation. Used to
+     * build a dispute-replay chain that is deliberately incomplete: a stored
+     * parent whose snapshot (or whose snapshot's state) is absent.
+     */
+    public storeBlockFixture(encodedBlockConfirmation: string): {
+        hash: string;
+    } {
+        const block = Block.fromBlockConfirmation(
+            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+        );
+        this.sm.storage.blocks.storeBlock(block);
+        return { hash: String(block.hash) };
+    }
+
+    /**
+     * Store a state snapshot straight into snapshot storage, so a fixture
+     * parent can point at a snapshot whose state machine state is missing.
+     */
+    public storeStateSnapshotFixture(encodedSnapshot: string): {
+        hash: string;
+    } {
+        const snapshot = StateSnapshot.from(
+            Codec.decode(encodedSnapshot, Type.StateSnapshot)
+        );
+        this.sm.storage.stateSnapshots.storeStateSnapshot(snapshot);
+        return { hash: String(snapshot.hash) };
     }
 
     /**

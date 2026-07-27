@@ -1181,9 +1181,113 @@ describe("Unit: ValidationService", function () {
     // state-proof blocks). it skips the disputed-fork/future gates and setStates
     // before the leader check. deviation hooks -> disputeValidation/*.
     describe("DisputeValidationStrategy divergences", function () {
-        // no test: the missing previous-snapshot/state THROWS are defensive -
-        // the state proof is verified on-chain first, so the chain is complete.
-        it.skip("missing previous snapshot / state → throws (defensive)", function () {});
+        it("linked parent whose snapshot is missing → rejects with the missing-snapshot error", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            // a parent the peer holds, pointing at a snapshot it does not
+            const parentHeight = 20;
+            const encodedParent = await factory.buildAndEncodeBlock(
+                observer.signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: parentHeight
+                    }
+                }
+            );
+            const { hash: parentHash } = await h
+                .control(observer)
+                .stub.storeBlockFixture(encodedParent)
+                .request();
+
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: parentHeight + 1
+                },
+                previousBlockHash: parentHash
+            });
+
+            const error = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .request()
+                .then(
+                    () => null,
+                    (e: unknown) => String(e)
+                );
+            expect(error).to.match(
+                /Missing previous snapshot for dispute validation strategy/
+            );
+        });
+
+        it("linked parent whose snapshot references a missing state → rejects with the missing-state error", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            // the snapshot resolves (and keeps the author a participant), but
+            // its state machine state does not
+            const snapshot = factory.stateSnapshot({
+                forkId,
+                snapshotData: {
+                    participants: [observer.address as Address]
+                }
+            });
+            const { hash: snapshotHash } = await h
+                .control(observer)
+                .stub.storeStateSnapshotFixture(
+                    Codec.encode(
+                        snapshot.toStruct(),
+                        Type.StateSnapshot
+                    ) as string
+                )
+                .request();
+
+            const parentHeight = 30;
+            const encodedParent = await factory.buildAndEncodeBlock(
+                observer.signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: parentHeight
+                    },
+                    stateSnapshotHash: snapshotHash
+                }
+            );
+            const { hash: parentHash } = await h
+                .control(observer)
+                .stub.storeBlockFixture(encodedParent)
+                .request();
+
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: parentHeight + 1
+                },
+                previousBlockHash: parentHash
+            });
+
+            const error = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .request()
+                .then(
+                    () => null,
+                    (e: unknown) => String(e)
+                );
+            expect(error).to.match(
+                /Missing previous state machine state for dispute validation strategy/
+            );
+        });
 
         // no test: these hooks need a real committed dispute to build fraud-proof
         // evidence against - beyond unit scope, covered in disputeValidation/* e2e.

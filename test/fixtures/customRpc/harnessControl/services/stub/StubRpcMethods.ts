@@ -1164,6 +1164,20 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.spectateSyncCallCount;
     }
 
+    /** Store a block directly into block storage (dispute-replay fixtures). */
+    public storeBlockFixture(encodedBlockConfirmation: string): {
+        hash: string;
+    } {
+        return this.service.storeBlockFixture(encodedBlockConfirmation);
+    }
+
+    /** Store a state snapshot directly into snapshot storage. */
+    public storeStateSnapshotFixture(encodedSnapshot: string): {
+        hash: string;
+    } {
+        return this.service.storeStateSnapshotFixture(encodedSnapshot);
+    }
+
     /** Stage on-chain calldata for a block at a chosen timestamp. */
     public stageBlockCalldata(
         encodedSignedBlock: string,
