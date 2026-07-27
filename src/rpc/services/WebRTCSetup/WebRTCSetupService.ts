@@ -180,7 +180,6 @@ class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
 
     //Ran by the peer who is initiating the connection - this creates the offer
     public async initiateWebRTC(transport: ATransport) {
-        //TODO! - require seccusfull init handshake (also on other methods)
         try {
             this.logger.debug("initiateWebRTC");
             const profileManager = this.p2pManager.profileManager;

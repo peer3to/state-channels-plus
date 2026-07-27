@@ -364,7 +364,7 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.lifecycle.start(initialPeers, initialTransitions, {
             timeConfig
         });
-        // TODO -  try making this task detached, since it requires us to increase p2pTime
+        // TODO - switch to addSpectatorDetached and drop the inflated timeConfig
         const spectator = await this.harness.join.addSpectatorWait();
         await this.harness.assert.sync.peersInSyncWait();
         return { spectator, initialPeers };
