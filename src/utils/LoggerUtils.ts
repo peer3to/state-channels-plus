@@ -32,7 +32,7 @@ import {
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
-import { TimeConfig } from "@/types";
+import { ReduceData, TimeConfig } from "@/types";
 import type Rpc from "@/rpc/Rpc";
 import { ethers } from "ethers";
 
@@ -520,6 +520,26 @@ export class LoggerUtils {
             this.MESSAGE_TYPE_LABELS[messageType] ??
             "UNKNOWN_MESSAGE_TYPE"
         );
+    }
+
+    /**
+     * The three inbound-chain values `_verifyInboundMessageBlocks` compares:
+     * where our submitted snapshot says the chain starts, where `reduce()` said
+     * it ends, and the blocks we supplied to bridge them.
+     */
+    static getReductionInboundMetadata(reduceData: ReduceData) {
+        return {
+            submittedSnapshotInboundHash: String(
+                reduceData.latestStateSnapshot.snapshotData
+                    .latestInboundMessageBlockHash
+            ),
+            computedTargetInboundHash: String(
+                reduceData.reducedOutput.latestInboundMessageBlockHash
+            ),
+            submittedInboundBlocks: reduceData.inboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            )
+        };
     }
 
     static getReducedOutputMetadata(reducedOutput: ReduceOutputStruct) {

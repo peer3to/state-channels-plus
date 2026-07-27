@@ -267,7 +267,7 @@ export default class ReductionExecutor {
         const submission = await this.prepareSubmission(candidate);
         const submissionStatus = await this.simulateSubmission(
             forkId,
-            candidate.reducedForkId,
+            candidate,
             disputes,
             submission
         );
@@ -312,12 +312,7 @@ export default class ReductionExecutor {
                 }
             );
         if (installed && submissionStatus === "submit") {
-            this.submitDetached(
-                forkId,
-                candidate.reducedForkId,
-                disputes,
-                submission
-            );
+            this.submitDetached(forkId, candidate, disputes, submission);
         }
     }
 
@@ -402,7 +397,7 @@ export default class ReductionExecutor {
 
     private async simulateSubmission(
         forkId: ForkId,
-        candidateForkId: ForkId,
+        candidate: LocalReductionCandidate,
         disputes: DisputeStruct[],
         submission: { calldata: string[] }
     ): Promise<ReductionSubmissionStatus> {
@@ -417,7 +412,7 @@ export default class ReductionExecutor {
             const status = await this.classifyReductionRace(
                 custom?.name,
                 forkId,
-                candidateForkId,
+                candidate,
                 disputes,
                 "simulation"
             );
@@ -428,10 +423,11 @@ export default class ReductionExecutor {
 
     private submitDetached(
         forkId: ForkId,
-        candidateForkId: ForkId,
+        candidate: LocalReductionCandidate,
         disputes: DisputeStruct[],
         submission: { calldata: string[] }
     ): void {
+        const candidateForkId = candidate.reducedForkId;
         this.logger.info("Reduction transaction submit", {
             forkId,
             channelId: this.stateManager.channelId
@@ -467,7 +463,7 @@ export default class ReductionExecutor {
                     const status = await this.classifyReductionRace(
                         raceErrorName,
                         forkId,
-                        candidateForkId,
+                        candidate,
                         disputes,
                         "detached"
                     );
@@ -496,10 +492,11 @@ export default class ReductionExecutor {
     private async classifyReductionRace(
         errorName: string | undefined,
         forkId: ForkId,
-        candidateForkId: ForkId,
+        candidate: LocalReductionCandidate,
         disputes: DisputeStruct[],
         path: ReductionSubmissionPath
     ): Promise<ReductionSubmissionStatus | undefined> {
+        const candidateForkId = candidate.reducedForkId;
         if (!isReductionRaceErrorName(errorName)) return undefined;
         if (
             errorName === "RaceConditionDisputeAlreadyReduced" ||
@@ -538,6 +535,16 @@ export default class ReductionExecutor {
                 );
                 return "already-reduced";
             }
+            // Re-derive the target from the chain as it stands now. Equal to the
+            // one we submitted with means our supplied blocks never linked
+            // (local divergence); different means the chain moved under us
+            // between compute and submission (a genuine race). Without this the
+            // two are indistinguishable in the logs.
+            const chainTargetNow = await this.readChainInboundTarget(disputes);
+            const submittedTarget = String(
+                candidate.reduceData.reducedOutput.latestInboundMessageBlockHash
+            );
+
             // Logged at warn so a genuine, persistent local divergence stays
             // diagnosable instead of vanishing as a benign race.
             this.logger.warn(
@@ -548,7 +555,15 @@ export default class ReductionExecutor {
                     forkId,
                     candidateForkId,
                     committedForkId: reducedResult.reducedForkId,
-                    path
+                    reducer: reducedResult.reducer,
+                    path,
+                    inbound: LoggerUtils.getReductionInboundMetadata(
+                        candidate.reduceData
+                    ),
+                    chainTargetNow,
+                    targetMoved:
+                        chainTargetNow !== undefined &&
+                        chainTargetNow !== submittedTarget
                 }
             );
             return "stale-candidate";
@@ -595,6 +610,23 @@ export default class ReductionExecutor {
             delay
         });
         this.stateManager.reductionManager.schedule(forkId, notBefore, true);
+    }
+
+    // Diagnostic-only re-read of reduce()'s inbound target. Reverts are expected
+    // here (the disputes may no longer be the committed set), so a failure is
+    // reported as undefined rather than masking the error being classified.
+    private async readChainInboundTarget(
+        disputes: DisputeStruct[]
+    ): Promise<string | undefined> {
+        try {
+            const reducedOutput =
+                await this.stateManager.stateChannelManagerContract.reduce.staticCall(
+                    disputes
+                );
+            return String(reducedOutput.latestInboundMessageBlockHash);
+        } catch {
+            return undefined;
+        }
     }
 
     private getReductionCacheKey(forkId: ForkId): ReductionCacheKey {
