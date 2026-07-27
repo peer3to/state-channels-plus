@@ -1,11 +1,12 @@
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import type { ForkId } from "@/types/types";
+import type { Address, ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { id, Log } from "ethers";
-import { DetachedPromises } from "@/utils";
+import { Codec, DetachedPromises, Type } from "@/utils";
+import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
 import { Block } from "@/models";
@@ -88,6 +89,22 @@ export type MissingParticipantSnapshotsProbe = {
     earlyAuthorResult: string;
     signatureUnionResult: string;
     proofStored: boolean;
+};
+
+export type BlockValidationProbeOptions = {
+    strategy?: "active" | "dispute";
+    encodedDispute?: string;
+};
+
+export type BlockValidationProbe = {
+    result: number;
+    resultName: string;
+    disputedForkIds: string[];
+    disconnectedAddresses: string[];
+    firedHooks: string[];
+    restoreQueuedEntryCalled: boolean;
+    signerAddress: string;
+    fraudProofType: string | null;
 };
 
 /**
@@ -375,6 +392,128 @@ export class StubService extends ARpcService<
                     dispute
                 ) !== undefined
         };
+    }
+
+    public async runBlockValidation(
+        encodedBlockConfirmation: string,
+        options?: BlockValidationProbeOptions
+    ): Promise<BlockValidationProbe> {
+        const sm = this.sm;
+        const blockConfirmation = Codec.decode(
+            encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        const block = Block.fromBlockConfirmation(blockConfirmation);
+        const entry = sm.storage.queues.createEntry(block);
+        // default: the live block strategy (PARTICIPATING). "dispute" builds a
+        // real DisputeValidationStrategy - as dispute auditing does - so the
+        // dispute-only branches (skip future/disputed gates, setState, the
+        // isLinked !prevBlock edge) are drivable here. the dispute struct is
+        // only referenced when a deviation stores fraud-proof evidence; the
+        // paths driven here don't, so a placeholder dispute is faithful.
+        const strategy =
+            options?.strategy === "dispute"
+                ? new DisputeValidationStrategy(
+                      sm.storage,
+                      options.encodedDispute
+                          ? Codec.decode(options.encodedDispute, Type.Dispute)
+                          : factory.dispute(),
+                      0,
+                      sm.diamondStateMachine.localDiamondContract,
+                      sm.logger
+                  )
+                : sm.getActiveValidationStrategy();
+
+        const disputedForkIds: string[] = [];
+        const disconnectedAddresses: string[] = [];
+        let restoreQueuedEntryCalled = false;
+
+        // record-only: a real dispute posts on-chain against the crafted block,
+        // a real disconnect cuts a live transport, a real restore re-arms a
+        // queue timeout -> all would derail the session. Fraud-proof creation
+        // stays real so the hook is identifiable by the persisted proof type.
+        const disputeManager = (
+            strategy as unknown as {
+                disputeManager?: {
+                    dispute: (forkId: ForkId) => Promise<void>;
+                };
+            }
+        ).disputeManager;
+        const originalDispute = disputeManager?.dispute.bind(disputeManager);
+        if (disputeManager) {
+            disputeManager.dispute = async (forkId: ForkId) => {
+                disputedForkIds.push(String(forkId));
+            };
+        }
+        const p2pManager = this.p2pManager;
+        const originalDisconnect =
+            p2pManager.disconnectAndBlacklistPeerByEvmAddress.bind(p2pManager);
+        p2pManager.disconnectAndBlacklistPeerByEvmAddress = ((
+            address: Address
+        ) => {
+            disconnectedAddresses.push(String(address));
+        }) as typeof p2pManager.disconnectAndBlacklistPeerByEvmAddress;
+        const originalRestore = sm.blockQueueManager.restoreQueuedEntry.bind(
+            sm.blockQueueManager
+        );
+        sm.blockQueueManager.restoreQueuedEntry = (() => {
+            restoreQueuedEntryCalled = true;
+        }) as typeof sm.blockQueueManager.restoreQueuedEntry;
+
+        // record which deviation hook the strategy fired, so a test can pin its
+        // named guard
+        const firedHooks: string[] = [];
+        const instrumentedStrategy = new Proxy(strategy, {
+            get(target, prop) {
+                const value = Reflect.get(target, prop);
+                if (typeof value !== "function") return value;
+                return (...args: unknown[]) =>
+                    Promise.resolve(
+                        (value as (...a: unknown[]) => unknown).apply(
+                            target,
+                            args
+                        )
+                    ).then((resolved) => {
+                        if (
+                            typeof prop === "string" &&
+                            typeof resolved === "number" &&
+                            BlockValidationResult[resolved] !== undefined
+                        ) {
+                            firedHooks.push(prop);
+                        }
+                        return resolved;
+                    });
+            }
+        });
+
+        try {
+            const result = await sm.validationService.validateBlockConfirmation(
+                entry,
+                instrumentedStrategy
+            );
+            const fraudProof =
+                sm.storage.fraudProofs.getFraudProofForParticipant(
+                    block.signerAddress
+                );
+            return {
+                result,
+                resultName:
+                    BlockValidationResult[result] ?? `UNKNOWN(${result})`,
+                disputedForkIds,
+                disconnectedAddresses,
+                firedHooks,
+                restoreQueuedEntryCalled,
+                signerAddress: String(block.signerAddress),
+                fraudProofType: fraudProof ? String(fraudProof.proofType) : null
+            };
+        } finally {
+            if (disputeManager && originalDispute) {
+                disputeManager.dispute = originalDispute;
+            }
+            p2pManager.disconnectAndBlacklistPeerByEvmAddress =
+                originalDisconnect;
+            sm.blockQueueManager.restoreQueuedEntry = originalRestore;
+        }
     }
 
     public createRPCMethods(transport: ATransport): StubRpcMethods {
