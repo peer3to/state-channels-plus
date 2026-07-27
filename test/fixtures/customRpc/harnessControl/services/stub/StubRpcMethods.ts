@@ -1117,8 +1117,9 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public stageBlockCalldata(
         encodedSignedBlock: string,
         onChainTimestamp: Timestamp
-    ): void {
+    ): boolean {
         this.service.stageBlockCalldata(encodedSignedBlock, onChainTimestamp);
+        return true;
     }
 
     public async runBlockValidation(

@@ -424,6 +424,11 @@ export class QueryRpcMethods extends ARpcMethods {
         };
     }
 
+    /** The peer's protocol clock in seconds (chain-adjusted, not wall clock). */
+    public getClockTimeInSeconds(): number {
+        return Clock.getTimeInSeconds();
+    }
+
     /** The peer's local-diamond state snapshot, encoded (`Type.StateSnapshot`). */
     public async getLocalStateSnapshotStruct(): Promise<{
         encodedSnapshot: string;

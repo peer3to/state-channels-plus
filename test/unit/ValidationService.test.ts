@@ -3,7 +3,10 @@ import { ethers } from "ethers";
 import { Codec, Type } from "@/utils";
 import { Block } from "@/models";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
 import * as factory from "@test/factory";
 import type { Address } from "@/types/types";
 import { Status } from "@/types";
@@ -14,6 +17,17 @@ import { Status } from "@/types";
 
 const solProofType = (type: FraudProofType): string =>
     String(toSolidityFraudProofType(type));
+
+// a wide evidence window keeps the height-0 participant timeout clear of the
+// deliberate waits in the timestamp cases
+const TIMESTAMP_TIME_CONFIG = { ...MIN_TEST_TIME_CONFIG, evidenceTime: 20 };
+
+// height 0 gets the evidenceTime grace on top of the ordinary post window
+const HEIGHT_ZERO_POST_WINDOW =
+    TIMESTAMP_TIME_CONFIG.p2pTime +
+    TIMESTAMP_TIME_CONFIG.agreementTime +
+    TIMESTAMP_TIME_CONFIG.chainFallbackTime +
+    TIMESTAMP_TIME_CONFIG.evidenceTime;
 
 describe("Unit: ValidationService", function () {
     describe("isChannelOpen", function () {
@@ -635,13 +649,138 @@ describe("Unit: ValidationService", function () {
         // the parent's calldata on-chain - owned by E2E-FraudProofs / E2E-Timeouts.
         it.skip("parent on-chain, current deferred → NOT_READY", function () {});
 
-        // no test: needs an objectively-valid timestamp that's still
-        // > agreementTime from now -> wall-clock games. exercised e2e under load.
-        it.skip("received outside agreementTime → subjectiveInvalidTimestampDetected → NOT_ENOUGH_TIME", function () {});
+        it("on-chain timestamp exactly at the post deadline → ON_TIME → SUCCESS even outside agreementTime", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { observer, authored, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
 
-        // no test: needs the block's calldata on-chain with a stale timestamp -
-        // owned by E2E-FraudProofs / E2E-Timeouts.
-        it.skip("posted on-chain too late → objectiveInvalidTimestampDetected", function () {});
+            const genesisTimestamp = await h
+                .control(observer)
+                .query.getGenesisSnapshotTimestamp(forkId)
+                .request();
+            const deadline = genesisTimestamp! + HEIGHT_ZERO_POST_WINDOW;
+            await h
+                .control(observer)
+                .stub.stageBlockCalldata(authored.encodedSignedBlock, deadline)
+                .request();
+
+            // leave the subjective window, so only the ON_TIME early return
+            // can still yield SUCCESS
+            const clockGap = await h.event.waitPastAgreementTime(
+                observer.index,
+                authored.timestamp
+            );
+            expect(clockGap).to.be.greaterThan(
+                TIMESTAMP_TIME_CONFIG.agreementTime
+            );
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .request();
+
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.firedHooks).to.deep.equal([]);
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.fraudProofType).to.be.null;
+        });
+
+        it("on-chain timestamp one second past the deadline → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { observer, authored, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+
+            const genesisTimestamp = await h
+                .control(observer)
+                .query.getGenesisSnapshotTimestamp(forkId)
+                .request();
+            const deadline = genesisTimestamp! + HEIGHT_ZERO_POST_WINDOW;
+            await h
+                .control(observer)
+                .stub.stageBlockCalldata(
+                    authored.encodedSignedBlock,
+                    deadline + 1
+                )
+                .request();
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .request();
+
+            expect(r.resultName).to.equal("DISPUTE");
+            expect(r.firedHooks).to.include(
+                "objectiveInvalidTimestampDetected"
+            );
+            expect(r.disputedForkIds).to.deep.equal([forkId]);
+            expect(r.fraudProofType).to.equal(
+                solProofType(FraudProofType.InvalidTimestamp)
+            );
+        });
+
+        it("objectively valid but never posted, received outside agreementTime → subjectiveInvalidTimestampDetected → NOT_ENOUGH_TIME", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+
+            // no calldata staged -> NOT_POSTED, so the subjective clock decides
+            const clockGap = await h.event.waitPastAgreementTime(
+                observer.index,
+                authored.timestamp
+            );
+            expect(clockGap).to.be.greaterThan(
+                TIMESTAMP_TIME_CONFIG.agreementTime
+            );
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .request();
+
+            expect(r.resultName).to.equal("NOT_ENOUGH_TIME");
+            expect(r.firedHooks).to.include(
+                "subjectiveInvalidTimestampDetected"
+            );
+            expect(r.disputedForkIds).to.deep.equal([]);
+        });
+
+        it("the same stale unposted block under the dispute strategy → subjective check skipped → SUCCESS", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+
+            await h.event.waitPastAgreementTime(
+                observer.index,
+                authored.timestamp
+            );
+
+            // the subjective window is active-strategy only - dispute replay
+            // audits old blocks long after they were produced
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(authored.encodedBlockConfirmation, {
+                    strategy: "dispute"
+                })
+                .request();
+
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.firedHooks).to.not.include(
+                "subjectiveInvalidTimestampDetected"
+            );
+            expect(r.disputedForkIds).to.deep.equal([]);
+        });
     });
 
     describe("validateBlockConfirmation → input envelope", function () {

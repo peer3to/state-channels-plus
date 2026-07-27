@@ -124,6 +124,37 @@ export class EventActions<
         }
     }
 
+    /**
+     * Wait until `peerIndex`'s protocol clock is more than `agreementTime` past
+     * `blockTimestamp`, returning the observed gap in seconds. Puts a block
+     * outside the subjective validation window without guessing a sleep.
+     */
+    async waitPastAgreementTime(
+        peerIndex: number,
+        blockTimestamp: number,
+        timeoutMs: number = 30000
+    ): Promise<number> {
+        const agreementTime = resolveTestTimeConfig(
+            this.harness.options.timeConfig
+        ).agreementTime;
+        const deadline = Date.now() + timeoutMs;
+
+        for (;;) {
+            const now = await this.harness
+                .control(this.harness.getPeer(peerIndex))
+                .query.getClockTimeInSeconds()
+                .request();
+            const gap = Math.abs(now - blockTimestamp);
+            if (gap > agreementTime) return gap;
+            if (Date.now() > deadline) {
+                throw new Error(
+                    `Peer ${peerIndex} clock stayed within agreementTime of ${blockTimestamp} (gap ${gap}) after ${timeoutMs}ms`
+                );
+            }
+            await sleep(250);
+        }
+    }
+
     protocolEventTimeoutMs(
         blockHeight: number,
         settlementMarginSeconds?: number

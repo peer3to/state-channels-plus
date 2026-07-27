@@ -80,6 +80,13 @@ export class MathTransitionActions extends TransitionActions<
             .query.getNextBlockHeight(forkId)
             .request();
 
+        // off-wire means off the chain too: without this the leader's
+        // chain-fallback post leaks the block to everyone else after
+        // agreementTime
+        await h
+            .control(leader)
+            .stub.stubSuppressMaybePostBlockOnChain()
+            .request();
         await h.byzantine.stubBroadcast(leader.index);
         await leader.p2pInstance.p2pContractInstance.add(1);
         await waitFor(
