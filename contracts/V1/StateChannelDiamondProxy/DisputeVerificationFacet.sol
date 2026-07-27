@@ -419,15 +419,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
     // =============================== State Proofs Verification  ===============================
 
-    function _isCorrectGenesis(Dispute memory dispute) internal view returns (bool) {
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
-        if (!hasBlock) {
-            //no blocks in state proof - must be genesis
-            return true; // TODO This will be a dispute fraud proof, since the dispute struct doesn't have enough information to deduct this
-        }
-        return _areDisputeAndBlockSameFork(dispute, latestBlock);
-    }
-
     function _verifyDisputeOutboundMessageBlocks(DisputeAuditingData memory disputeAuditingData)
         internal
         view

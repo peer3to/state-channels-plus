@@ -280,7 +280,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     {
         DisputeInvalidStateProof memory proof = abi.decode(encodedFraudProof, (DisputeInvalidStateProof));
 
-        // TODO extract this into its own fraud proof and test it
+        // TODO extract genesis-fork linking, signed-block linking, and latest-state checks into fraud proofs
         if (!dispute.postedAuditingData) {
             // fraud prover supplies the genesis reference -> it must be linked to the fork
             if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, proof.auditingData.genesisStateSnapshotData))

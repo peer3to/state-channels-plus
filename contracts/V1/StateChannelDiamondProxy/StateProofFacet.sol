@@ -246,6 +246,7 @@ contract StateProofFacet is StateChannelCommon {
         address[] memory expectedParticipants,
         MilestoneProof memory milestone
     ) internal view returns (bool isFinal, bytes32 finalizedSnapshotHash) {
+        // TODO - need a gas limit on verifyMilestone and on verifyStateProof, so large proofs that can't be verified won't be spammed
         address[] memory thresholdSet = new address[](expectedParticipants.length);
         uint256 thresholdCount = 0;
         bytes memory previousEncodedBlock;
@@ -292,7 +293,6 @@ contract StateProofFacet is StateChannelCommon {
             }
             bool isParticipant = UtilityFacet(utilityFacetAddress).isAddressInArray(expectedParticipants, adr);
             if (isParticipant) {
-                // TODO - need a gas limit on verifyMilestone and on verifyStateProof, so large proofs that can't be verified won't be spamed
                 thresholdCount =
                     _tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
             }
@@ -307,7 +307,6 @@ contract StateProofFacet is StateChannelCommon {
                 }
                 isParticipant = UtilityFacet(utilityFacetAddress).isAddressInArray(expectedParticipants, adr);
                 if (isParticipant) {
-                    // TODO - need a gas limit on verifyMilestone and on verifyStateProof, so large proofs that can't be verified won't be spamed
                     thresholdCount =
                         _tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
                 }
