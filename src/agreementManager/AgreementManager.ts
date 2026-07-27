@@ -11,7 +11,7 @@ import {
 import Storage, { SortOrder } from "@/storage";
 import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
 import { Block, StateSnapshot, StateProof } from "@/models";
-import { difference, Logger } from "@/utils";
+import { Codec, difference, Logger, Type } from "@/utils";
 import { ZeroHash } from "ethers";
 import { ReduceData } from "@/types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -130,9 +130,14 @@ class AgreementManager {
             blockHeight
         );
 
+        // the ceiling is redundant here - a DESC iterator started at
+        // blockHeight only ever walks down - but it is passed anyway so the
+        // "never above the requested height" contract holds at this call site
+        // on its own, rather than resting on how the iterator was built
         const milestone = this.tryBuildMilestone(
             blockIterator,
-            previousThresholdSnapshot
+            previousThresholdSnapshot,
+            blockHeight
         );
         if (milestone) {
             milestones.push(milestone);
@@ -344,22 +349,16 @@ class AgreementManager {
         });
     }
 
-    public async getForkDisputes(
+    public getForkDisputes(
         disputeCommitments: readonly Hash[]
-    ): Promise<DisputeStruct[]> {
-        // Collect all disputes for this dispute window
-        const currentWindowDisputes: DisputeStruct[] = [];
-        for (const commitment of disputeCommitments) {
-            const dispute = this.storage.disputes.getDispute(commitment);
-            if (!dispute) {
-                throw new Error(
-                    `Missing Dispute in storage for dispute commitment ${commitment}`
-                );
-            }
-
-            currentWindowDisputes.push(dispute);
-        }
-        return currentWindowDisputes;
+    ): DisputeStruct[] {
+        return this.getForkDisputeConfirmations(disputeCommitments).map(
+            (disputeConfirmation) =>
+                Codec.decode(
+                    disputeConfirmation.signedDispute.encodedDispute,
+                    Type.Dispute
+                )
+        );
     }
 
     public async getReduceData(
