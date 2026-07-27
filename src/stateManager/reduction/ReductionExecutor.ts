@@ -79,15 +79,10 @@ export default class ReductionExecutor {
         forkId: ForkId
     ): Promise<DisputeStruct[]> {
         const commitments =
-            await this.stateManager.stateChannelManagerContract.getWindowCommitments(
+            await this.stateManager.eventSyncService.loadSynchronizedWindowCommitments(
                 this.stateManager.channelId,
                 forkId
             );
-        await this.stateManager.eventSyncService.ensureDisputesProcessed(
-            this.stateManager.channelId,
-            forkId,
-            commitments
-        );
         return this.stateManager.agreementManager.getForkDisputes(commitments);
     }
 

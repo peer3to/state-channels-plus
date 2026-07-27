@@ -6,8 +6,9 @@ describe("Unit: SpectateService", function () {
         // a dispute commitment can land on-chain before our
         // onDisputeCommitted handler stores the struct locally.
         // generateSyncPayload used to hit the throwing local lookup
-        // directly and abort the sync; it now recovers via the same
-        // EventSyncService.ensureDisputesProcessed owner reduction uses.
+        // directly and abort the sync; it now loads the window through the
+        // same EventSyncService.loadSynchronizedWindowCommitments owner
+        // reduction uses, which recovers first.
         it("committed dispute missing locally → recovers before generating the payload", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
@@ -47,6 +48,8 @@ describe("Unit: SpectateService", function () {
                             sm.channelId,
                             args.forkId
                         );
+                    // the on-chain window is what generateSyncPayload walks, so
+                    // this is the list its recovery has to close
                     const commitments =
                         await sm.stateChannelManagerContract.getWindowCommitments(
                             sm.channelId,
@@ -64,8 +67,8 @@ describe("Unit: SpectateService", function () {
                 { forkId }
             );
 
-            // sanity: the fork is genuinely disputed and a commitment is
-            // genuinely missing locally
+            // sanity: the fork is genuinely disputed and a commitment of the
+            // window the call walks is genuinely missing from local storage
             expect(
                 staged.isDisputed,
                 "observer must see the fork as disputed"
@@ -98,6 +101,39 @@ describe("Unit: SpectateService", function () {
                 threw,
                 "generateSyncPayload must recover, not throw"
             ).to.equal("");
+
+            const recovered = await h.execOnHost(
+                h.getPeer(observerIndex),
+                async (sm, args) => {
+                    const commitments =
+                        await sm.stateChannelManagerContract.getWindowCommitments(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    return {
+                        commitmentCount: commitments.length,
+                        missingAfterCount: commitments.filter(
+                            (c) => !sm.storage.disputes.getDispute(c)
+                        ).length
+                    };
+                },
+                { forkId }
+            );
+
+            // the recovery really happened: every commitment of the window the
+            // call walked is in storage afterwards. dispute events are still
+            // held and the observer's own reduction is still frozen, so
+            // ensureDisputesProcessed inside generateSyncPayload is the only
+            // thing that could have stored them. without this the call could
+            // return early before ever reaching the recovery and still pass.
+            expect(
+                recovered.commitmentCount,
+                "the window must not shrink across the call"
+            ).to.equal(staged.commitmentCount);
+            expect(
+                recovered.missingAfterCount,
+                "generateSyncPayload must recover every missing dispute before reading confirmations"
+            ).to.equal(0);
 
             await race.release({ replayEvents: false, runHeldTasks: false });
             await restoreEvents(false);

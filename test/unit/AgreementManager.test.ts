@@ -318,7 +318,7 @@ describe("Unit: AgreementManager", function () {
             ).to.equal(true);
         });
 
-        it("proof requested at the exact join-block height → tops out at the requested height", async function () {
+        it("proof requested at the exact join-block height, raised threshold completed only above it → tops out at the requested height", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2); // peers 0,1; blocks 0..1
 
@@ -327,17 +327,67 @@ describe("Unit: AgreementManager", function () {
             });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
+            await h.byzantine.stubBroadcast(spectator.index);
+
             await h.join.joinChannelWait({ joiner: spectator });
             await h.assert.storage.honestPeersObserveInboundMessageWait();
 
-            // block 2 includes the joiner; confirming blocks land above it
-            // so the increased-threshold boundary is exercised
-            await h.transition.advanceState({
-                count: 2,
-                waitForPeers: [0, 1, 2]
-            });
-
             const forkId = h.activeForkId!;
+            const q0 = h.control(h.getPeer(0)).query;
+
+            const joinerAddress = spectator.address;
+            const signedAt = async (height: number) => {
+                const block = await q0
+                    .getBlockByHeight(forkId, height)
+                    .request();
+                return (
+                    block!.author === joinerAddress ||
+                    block!.confirmationSignerAddresses.some(
+                        (address) => address === joinerAddress
+                    )
+                );
+            };
+
+            // take turn up until the joiner's turn
+            for (
+                let attempt = 0;
+                attempt < h.peers.length &&
+                (await q0.getNextToWrite().request()) !== joinerAddress;
+                attempt++
+            ) {
+                await h.transition.advanceState({
+                    count: 1,
+                    waitForPeers: [0, 1, 2]
+                });
+            }
+            expect(
+                await q0.getNextToWrite().request(),
+                "the joiner must be the next writer"
+            ).to.equal(joinerAddress);
+
+            // the joiner authors the next block itself while muted. that block
+            // lives only in its own storage
+            await h
+                .getPeer(spectator.index)
+                .p2pInstance.p2pContractInstance.add(1);
+            const authoredAbove = await h
+                .control(spectator)
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            expect(authoredAbove!.author).to.equal(joinerAddress);
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: 0,
+                blockConfirmation: {
+                    signedBlock: Codec.decode(
+                        authoredAbove!.encodedSignedBlock,
+                        Type.SignedBlock
+                    ),
+                    signatures: []
+                },
+                ingestOptions: { senderAddress: joinerAddress },
+                keepConnection: true
+            });
 
             const changeHeights = await h.execOnHost(
                 h.getPeer(0),
@@ -353,9 +403,28 @@ describe("Unit: AgreementManager", function () {
             );
             const requestedHeight = changeHeights[0]; // the join's own height
 
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(forkId, requestedHeight)
+            // staging sanity: the joiner signed above the join, and the join
+            // block itself is short its signature - so the raised threshold
+            // is completable only above the requested height
+            const tip = Number(await q0.getLatestBlockHeight(forkId).request());
+            expect(tip).to.be.greaterThan(requestedHeight);
+            expect(
+                await signedAt(tip),
+                "the joiner must have signed a block above the join"
+            ).to.equal(true);
+            expect(
+                await signedAt(requestedHeight),
+                "the join block must NOT carry the joiner's signature"
+            ).to.equal(false);
+            expect(
+                await q0
+                    .didEveryoneSignBlockAt(forkId, requestedHeight)
+                    .request(),
+                "the join block must stay partially confirmed"
+            ).to.equal(false);
+
+            const v = await q0
+                .getStateProofVerification(forkId, requestedHeight)
                 .request();
 
             expect(v!.blockHeight).to.equal(requestedHeight);
@@ -367,6 +436,8 @@ describe("Unit: AgreementManager", function () {
                     (height) => height <= requestedHeight
                 )
             ).to.equal(true);
+            // and the bounded proof still satisfies the on-chain verifier
+            expect(v!.verified).to.equal(true);
         });
 
         it("proofs sampled while 10 blocks are produced → each verifies on-chain at its sampled height", async function () {

@@ -492,38 +492,29 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         while (isDisputed) {
             // Collect disputes for this dispute window
             // Collect all disputes for this dispute window
+            // A commitment can land on-chain before its dispute event is
+            // processed locally; recover it before reading storage so a
+            // still-pending event doesn't abort the sync
             const currentWindowCommitments =
-                await diamondStateMachine.localDiamondContract.getWindowCommitments(
+                await stateManager.eventSyncService.loadSynchronizedWindowCommitments(
                     channelId,
                     currentForkId
                 );
-            // A commitment can land on-chain before its dispute event is
-            // processed locally; recover it before reading storage so a
-            // still-pending event doesn't abort the sync (same recovery
-            // owner reduction uses).
-            await this.p2pManager.stateManager.eventSyncService.ensureDisputesProcessed(
-                channelId,
-                currentForkId,
-                currentWindowCommitments
-            );
             const currentWindowDisputeConfirmations =
-                this.p2pManager.stateManager.agreementManager.getForkDisputeConfirmations(
+                agreementManager.getForkDisputeConfirmations(
                     currentWindowCommitments
                 );
 
-            const currentWindowDisputesHashes =
-                currentWindowDisputeConfirmations.map((disputeConfirmation) =>
-                    Codec.decode(
-                        disputeConfirmation.signedDispute.encodedDispute,
-                        Type.Dispute
-                    )
+            const currentWindowDisputes =
+                await agreementManager.getForkDisputes(
+                    currentWindowCommitments
                 );
 
             // After collecting disputes for this window, reduce to get the next fork
             const computation =
                 await stateManager.reductionManager.computeReductionLocally(
                     currentForkId,
-                    currentWindowDisputesHashes
+                    currentWindowDisputes
                 );
             const { reduceData, reducedForkId } = computation;
 

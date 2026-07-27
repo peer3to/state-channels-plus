@@ -239,6 +239,18 @@ export default class EventSyncService {
             return { validationScheduled: false };
         }
     }
+    async loadSynchronizedWindowCommitments(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<readonly Hash[]> {
+        const commitments =
+            await this.stateChannelManagerContract.getWindowCommitments(
+                channelId,
+                forkId
+            );
+        await this.ensureDisputesProcessed(channelId, forkId, commitments);
+        return commitments;
+    }
 
     async ensureDisputesProcessed(
         channelId: ChannelId,

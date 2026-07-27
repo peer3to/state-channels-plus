@@ -509,15 +509,10 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
 
     async recoverCommittedDisputes(forkId: ForkId): Promise<number> {
         const commitments =
-            await this.sm.stateChannelManagerContract.getWindowCommitments(
+            await this.sm.eventSyncService.loadSynchronizedWindowCommitments(
                 this.sm.channelId,
                 forkId
             );
-        await this.sm.eventSyncService.ensureDisputesProcessed(
-            this.sm.channelId,
-            forkId,
-            commitments
-        );
         return commitments.length;
     }
 
