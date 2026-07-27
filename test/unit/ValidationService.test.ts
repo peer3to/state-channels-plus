@@ -1189,6 +1189,97 @@ describe("Unit: ValidationService", function () {
         // evidence against - beyond unit scope, covered in disputeValidation/* e2e.
         it.skip("deviation hooks build dispute evidence (see disputeValidation/*)", function () {});
 
+        it("a block on a disputed fork → blockForkIsDisputed is skipped, validation continues", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const maliciousPeerIndex = 2;
+            await h.lifecycle.start(4, 2, {
+                timeConfig: {
+                    p2pTime: 3,
+                    agreementTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 3
+                }
+            });
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+
+            // hold the observer's reduction so the disputed fork stays current
+            const race = await h.rpcStub.holdReductionRace(observerIndex);
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.initiatedAndCommitedWait();
+
+            const nextHeight = await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: nextHeight
+                }
+            });
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .request();
+
+            // the hook throws on this strategy, so reaching a later guard is
+            // proof the gate was skipped rather than merely quiet
+            expect(r.firedHooks).to.not.include("blockForkIsDisputed");
+            expect(r.firedHooks).to.include(
+                "blockIsNotLinkedAndIsNotFirstBlock"
+            );
+
+            await race.release({ replayEvents: false, runHeldTasks: false });
+        });
+
+        it("a block above the next height → blockIsNotNextAndIsInTheFuture is skipped, validation continues", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const nextHeight = await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            // well beyond what active storage can execute
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: nextHeight + 5
+                }
+            });
+
+            const active = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded)
+                .request();
+            expect(active.firedHooks).to.include(
+                "blockIsNotNextAndIsInTheFuture"
+            );
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .request();
+
+            // dispute replay walks a proof's blocks, so height ordering against
+            // active storage is not its concern
+            expect(r.firedHooks).to.not.include(
+                "blockIsNotNextAndIsInTheFuture"
+            );
+            expect(r.firedHooks).to.include(
+                "blockIsNotLinkedAndIsNotFirstBlock"
+            );
+        });
+
         it("a valid linked next block by the leader passes setState + leader check → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
