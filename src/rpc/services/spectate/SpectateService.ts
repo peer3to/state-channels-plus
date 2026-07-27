@@ -490,15 +490,19 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
 
         while (isDisputed) {
-            // Collect disputes for this dispute window
-            // Collect all disputes for this dispute window
+            // Collect all disputes for this dispute window.
             // A commitment can land on-chain before its dispute event is
             // processed locally; recover it before reading storage so a
-            // still-pending event doesn't abort the sync
+            // still-pending event doesn't abort the sync.
+            // allowRecent: this walk runs once per dispute window per inbound
+            // request, so without it a remote peer turns one message into a
+            // chain read per window on every retry. The retained window is
+            // dropped as soon as a dispute event moves it
             const currentWindowCommitments =
                 await stateManager.eventSyncService.loadSynchronizedWindowCommitments(
                     channelId,
-                    currentForkId
+                    currentForkId,
+                    { allowRecent: true }
                 );
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
