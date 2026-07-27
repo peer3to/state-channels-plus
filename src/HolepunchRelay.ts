@@ -10,6 +10,10 @@ import { Logger } from "@/utils";
 // success), so a fully-down network doesn't tight-loop hammering reconnects.
 const BACKOFF_BASE_MS = 1000;
 const BACKOFF_CAP_MS = 30000;
+// Upper bound for the randomized delay before retrying after a single
+// relayer failure, so many clients failing over at the same instant don't
+// all pile onto the next relayer at once (thundering herd).
+const FAILOVER_JITTER_MAX_MS = 250;
 
 class HolepunchRelay {
     relayerUrls: string[];
@@ -131,14 +135,18 @@ class HolepunchRelay {
     }
 
     private scheduleRetryAfterExhaustion(): void {
-        const delayMs = Math.min(
+        // Full jitter (AWS-style): pick uniformly in [0, cappedBackoff] rather
+        // than retrying at the deterministic cappedBackoff mark, so clients
+        // that exhaust the pool at the same moment don't retry in lockstep.
+        const cappedBackoffMs = Math.min(
             BACKOFF_BASE_MS * 2 ** this.backoffAttempt,
             BACKOFF_CAP_MS
         );
+        const delayMs = Math.random() * cappedBackoffMs;
         this.backoffAttempt++;
         this.logger.warn(
             "All holepunch relayers failed, retrying pool after backoff",
-            { delayMs, relayerUrls: this.relayerUrls }
+            { delayMs, cappedBackoffMs, relayerUrls: this.relayerUrls }
         );
         this.excludedRelayers.clear();
         setTimeout(() => this.connectToRelayer(), delayMs);
@@ -151,7 +159,17 @@ class HolepunchRelay {
             excludedCount: this.excludedRelayers.size,
             total: this.relayerUrls.length
         });
-        this.connectToRelayer();
+        // Branch immediately so a pool-exhausting failure schedules only the
+        // exhaustion backoff, never the failover jitter as well - one timer
+        // owner per failure, not two stacked delays.
+        if (this.isRelayerPoolExhausted()) {
+            this.scheduleRetryAfterExhaustion();
+            return;
+        }
+        // Randomized delay so many clients failing over off the same
+        // relayer at once don't all hit the next relayer simultaneously.
+        const delayMs = Math.random() * FAILOVER_JITTER_MAX_MS;
+        setTimeout(() => this.connectToRelayer(), delayMs);
     }
 }
 
