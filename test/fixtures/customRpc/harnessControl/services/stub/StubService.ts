@@ -5,7 +5,7 @@ import type { Address, ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { id, Log } from "ethers";
-import { Codec, DetachedPromises, Type } from "@/utils";
+import { Codec, DetachedPromises, Mutex, Type } from "@/utils";
 import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
@@ -159,6 +159,12 @@ export class StubService extends ARpcService<
     spectateSyncCallCount = 0;
     /** State for the already-entered old-fork reduction race stub. */
     pausedReduction?: PausedReductionState;
+    /**
+     * Serializes `runBlockValidation`'s record-only patch/restore region. The
+     * patch replaces shared live methods (dispute, disconnect, restore), so two
+     * overlapping probes would restore each other's replacements.
+     */
+    private readonly blockValidationProbeMutex = new Mutex();
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
@@ -399,6 +405,23 @@ export class StubService extends ARpcService<
     }
 
     public async runBlockValidation(
+        encodedBlockConfirmation: string,
+        options?: BlockValidationProbeOptions
+    ): Promise<BlockValidationProbe> {
+        await this.blockValidationProbeMutex.lock({
+            taskName: "stub-run-block-validation"
+        });
+        try {
+            return await this.runBlockValidationLocked(
+                encodedBlockConfirmation,
+                options
+            );
+        } finally {
+            this.blockValidationProbeMutex.unlock();
+        }
+    }
+
+    private async runBlockValidationLocked(
         encodedBlockConfirmation: string,
         options?: BlockValidationProbeOptions
     ): Promise<BlockValidationProbe> {

@@ -855,8 +855,11 @@ describe("Unit: ValidationService", function () {
         });
     });
 
-    describe("validateBlockConfirmation → concurrency", function () {
-        it("a far-future block stays NOT_READY while 10 blocks churn storage underneath", async function () {
+    // the probe replaces shared live methods (dispute/disconnect/restore) while
+    // it runs, so probes never overlap live state advancement - storage is
+    // advanced between probes, never underneath one.
+    describe("validateBlockConfirmation → storage interleaving", function () {
+        it("the same candidate crosses the future→next boundary as storage advances → NOT_READY then DISCONNECT", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 1);
             const observer = h.getPeer(0);
@@ -867,60 +870,104 @@ describe("Unit: ValidationService", function () {
                 .query.getNextBlockHeight(forkId)
                 .request();
 
-            // height far beyond the 10-block workload, so NOT_READY is the only
-            // possible verdict at every sample. validateBlockConfirmation runs
-            // OUTSIDE the mutex, so each sample races the advancing storage.
+            const advanceCount = 2;
+            const candidateHeight = startHeight + advanceCount;
+
+            // participant author, unlinked, two heights ahead of storage
             const encoded = await factory.buildAndEncodeBlock(observer.signer, {
                 header: {
                     channelId: h.channelId,
                     forkId,
-                    transactionCnt: startHeight + 100,
-                    participant: observer.address as Address
-                }
+                    transactionCnt: candidateHeight
+                },
+                previousBlockHash: factory.hash()
             });
 
-            const blockCount = 10;
-            const failures: string[] = [];
-            let samples = 0;
+            // before: the height is unreachable -> deferred, no punishment
+            const beforeAdvance = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded)
+                .request();
 
-            const sample = async () => {
-                const r = await h
-                    .control(observer)
-                    .stub.runBlockValidation(encoded)
-                    .request();
-                samples += 1;
-                // safety invariant: a far-future block is only ever deferred
-                if (r.resultName !== "NOT_READY" || r.disputedForkIds.length) {
-                    failures.push(
-                        `sample ${samples}: ${r.resultName} (disputes=${r.disputedForkIds.length})`
-                    );
-                }
-            };
+            expect(beforeAdvance.resultName).to.equal("NOT_READY");
+            expect(beforeAdvance.restoreQueuedEntryCalled).to.equal(true);
+            expect(beforeAdvance.firedHooks).to.include(
+                "blockIsNotNextAndIsInTheFuture"
+            );
+            expect(beforeAdvance.disputedForkIds).to.deep.equal([]);
+            expect(beforeAdvance.disconnectedAddresses).to.deep.equal([]);
 
-            await sample();
-            let advanceDone = false;
-            const advancing = h.transition
-                .advanceState({ count: blockCount, waitForFinalization: false })
-                .finally(() => {
-                    advanceDone = true;
-                });
-            // sampling lasts as long as the workload; the 50ms only sets density
-            while (!advanceDone) {
-                await sample();
-                await new Promise((res) => setTimeout(res, 50));
-            }
-            await advancing;
-            await sample();
+            // storage advances with no probe in flight
+            await h.transition.advanceState({ count: advanceCount });
 
-            const endHeight = await h
+            const heightAfterAdvance = await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            // the candidate is now exactly the next height, not the future
+            expect(heightAfterAdvance).to.equal(candidateHeight);
+
+            // after: the same bytes are now judged on linkage instead
+            const afterAdvance = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded)
+                .request();
+
+            expect(afterAdvance.resultName).to.equal("DISCONNECT");
+            expect(afterAdvance.firedHooks).to.include(
+                "blockIsNotLinkedAndIsNotFirstBlock"
+            );
+            expect(afterAdvance.firedHooks).to.not.include(
+                "blockIsNotNextAndIsInTheFuture"
+            );
+            // an unlinked block is not slashable - no fork dispute either way
+            expect(afterAdvance.disputedForkIds).to.deep.equal([]);
+
+            await h.assert.sync.peersInSyncWait();
+        });
+
+        it("concurrent probes are serialized → every one gets an uncorrupted patch/restore", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 1);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const startHeight = await h
                 .control(observer)
                 .query.getNextBlockHeight(forkId)
                 .request();
 
-            expect(failures).to.deep.equal([]);
-            // sanity: storage really advanced under the samples
-            expect(endHeight - startHeight).to.equal(blockCount);
-            expect(samples).to.be.greaterThan(2);
+            // far-future height -> NOT_READY is the only reachable verdict, so
+            // any deviation is a probe clobbering another probe's replacements
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: startHeight + 100
+                }
+            });
+
+            const probeCount = 5;
+            const results = await Promise.all(
+                Array.from({ length: probeCount }, () =>
+                    h
+                        .control(observer)
+                        .stub.runBlockValidation(encoded)
+                        .request()
+                )
+            );
+
+            expect(results).to.have.lengthOf(probeCount);
+            for (const r of results) {
+                expect(r.resultName).to.equal("NOT_READY");
+                // the restore replacement was still installed when the hook ran
+                expect(r.restoreQueuedEntryCalled).to.equal(true);
+                expect(r.firedHooks).to.deep.equal([
+                    "blockIsNotNextAndIsInTheFuture"
+                ]);
+                expect(r.disputedForkIds).to.deep.equal([]);
+                expect(r.disconnectedAddresses).to.deep.equal([]);
+            }
 
             await h.assert.sync.peersInSyncWait();
         });
