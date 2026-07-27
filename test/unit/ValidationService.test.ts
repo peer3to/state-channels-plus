@@ -222,6 +222,115 @@ describe("Unit: ValidationService", function () {
         });
     });
 
+    // the local union is read from the previous + resulting snapshots. a block
+    // on a fork we hold no snapshots for leaves it empty -> the contract is the
+    // only source of truth for who may author.
+    describe("getParticipantsUnionOrOnChain → on-chain fallback", function () {
+        it("empty local union, author in the on-chain active set → passes the author guard", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const author = h.getPeer(1);
+
+            const onChainParticipants = await h.channelManager.getParticipants(
+                h.channelId
+            );
+            expect(
+                onChainParticipants.map((a: unknown) =>
+                    String(a).toLowerCase()
+                ),
+                "author must be an on-chain active participant"
+            ).to.include(author.address.toLowerCase());
+
+            // unknown fork -> no previous snapshot, and the random resulting
+            // stateSnapshotHash resolves to nothing -> empty local union
+            const unknownForkId = factory.hash();
+            const localUnion = await h.execOnHost(
+                h.getPeer(0),
+                async (sm, args) =>
+                    sm.storage.getParticipantsUnion({
+                        forkId: args.forkId,
+                        height: 1
+                    }),
+                { forkId: unknownForkId }
+            );
+            expect(
+                localUnion,
+                "local union must be empty so the contract is the only source"
+            ).to.deep.equal([]);
+
+            const encoded = await factory.buildAndEncodeBlock(author.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId: unknownForkId,
+                    transactionCnt: 1
+                }
+            });
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded)
+                .request();
+
+            // the chain accepted the author -> a later guard is what stops it
+            expect(r.firedHooks).to.not.include("blockAuthorIsNotParticipant");
+            expect(r.firedHooks).to.include("blockIsNotNextAndIsInTheFuture");
+            expect(r.resultName).to.equal("NOT_READY");
+            expect(r.disputedForkIds).to.deep.equal([]);
+        });
+
+        it("empty local union, author only in the on-chain pending set → passes the author guard", async function () {
+            const h = TestSession.getHarness();
+            const {
+                joiner,
+                confirmation,
+                expectedSnapshotHash,
+                expectedForkId
+            } = await h.scenario.syncSpectatorAndPrepareJoin();
+
+            await joiner.p2pInstance.p2pSigner.joinChannel(
+                confirmation,
+                expectedSnapshotHash,
+                expectedForkId
+            );
+
+            const [pending, active] = await Promise.all([
+                h.channelManager.getPendingParticipants(h.channelId),
+                h.channelManager.getParticipants(h.channelId)
+            ]);
+            const joinerAddress = joiner.address.toLowerCase();
+            expect(
+                pending.map((a: unknown) => String(a).toLowerCase()),
+                "joiner must be on-chain pending"
+            ).to.include(joinerAddress);
+            expect(
+                active.map((a: unknown) => String(a).toLowerCase()),
+                "joiner must not be an active participant yet"
+            ).to.not.include(joinerAddress);
+
+            const observer = h.getPeer(0);
+            const unknownForkId = factory.hash();
+            const encoded = await factory.buildAndEncodeBlock(joiner.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId: unknownForkId,
+                    transactionCnt: 1
+                }
+            });
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded)
+                .request();
+
+            // pending participants are merged into the on-chain union
+            expect(r.firedHooks).to.not.include("blockAuthorIsNotParticipant");
+            expect(r.firedHooks).to.include("blockIsNotNextAndIsInTheFuture");
+            expect(r.resultName).to.equal("NOT_READY");
+            expect(r.disputedForkIds).to.deep.equal([]);
+        });
+    });
+
     describe("validateBlockConfirmation → checkConflictingBlock", function () {
         it("second block at a taken height by the same author → doubleSignDetected → DISPUTE + DoubleSign proof", async function () {
             const h = TestSession.getHarness();
