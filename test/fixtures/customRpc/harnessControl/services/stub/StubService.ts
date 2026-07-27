@@ -10,11 +10,13 @@ import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
 import { Block } from "@/models";
+import Clock from "@/Clock";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
 type DisputeCommittedEventKey = string;
+type CalldataPostedEventKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
@@ -34,6 +36,7 @@ export type StubKey =
     | "reductionTasks"
     | "snapshotUpdatedEvents"
     | "disputeCommittedEvents"
+    | "calldataPostedEvents"
     | "disputeInitiation"
     | "reducedCommitEvents"
     | "reduce"
@@ -110,6 +113,8 @@ export type BlockValidationProbe = {
     fraudProofType: string | null;
     /** Source attribution the entry carried into validation. */
     sourcePeers: string[];
+    /** How many times validation asked EventSyncService to recover calldata. */
+    calldataRecoveryQueries: number;
 };
 
 /**
@@ -150,6 +155,8 @@ export class StubService extends ARpcService<
     readonly heldDisputeCommittedArgs: unknown[][] = [];
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
+    /** Subscribed calldata-posted logs already dropped once by the stub. */
+    readonly droppedCalldataPostedEventKeys = new Set<CalldataPostedEventKey>();
     /** Whether the dispute-event hold stub should pass its first new log. */
     passFirstDisputeCommittedEvent = true;
     readonly heldReducedCommitArgs: unknown[][] = [];
@@ -209,6 +216,22 @@ export class StubService extends ARpcService<
             signedBlock: Codec.decode(encodedSignedBlock, Type.SignedBlock),
             onChainTimestamp
         });
+    }
+
+    /**
+     * Post a block's calldata on-chain the way the chain-fallback path does.
+     * Returns the chain block number the post landed in.
+     */
+    public async postBlockCalldataOnChain(
+        encodedSignedBlock: string
+    ): Promise<{ blockNumber: number }> {
+        const tx = await this.sm.stateChannelManagerContract.postBlockCalldata(
+            Codec.decode(encodedSignedBlock, Type.SignedBlock),
+            Clock.getTimeInSeconds() + 1000
+        );
+        const receipt = await tx.wait();
+        if (!receipt) throw new Error("postBlockCalldata produced no receipt");
+        return { blockNumber: receipt.blockNumber };
     }
 
     /** Exercise rejected-log retention through the real EventSyncService. */
@@ -501,6 +524,20 @@ export class StubService extends ARpcService<
         sm.blockQueueManager.restoreQueuedEntry = (() => {
             restoreQueuedEntryCalled = true;
         }) as typeof sm.blockQueueManager.restoreQueuedEntry;
+        // count-and-forward: recovery must stay real, the count only proves
+        // validation reached the on-chain lookup
+        let calldataRecoveryQueries = 0;
+        const eventSyncService = sm.eventSyncService;
+        const originalRecover =
+            eventSyncService.tryRecoverBlockCalldataAndScheduleValidation.bind(
+                eventSyncService
+            );
+        eventSyncService.tryRecoverBlockCalldataAndScheduleValidation = ((
+            ...args: Parameters<typeof originalRecover>
+        ) => {
+            calldataRecoveryQueries += 1;
+            return originalRecover(...args);
+        }) as typeof eventSyncService.tryRecoverBlockCalldataAndScheduleValidation;
 
         // record which deviation hook the strategy fired, so a test can pin its
         // named guard
@@ -549,7 +586,8 @@ export class StubService extends ARpcService<
                 fraudProofType: fraudProof
                     ? String(fraudProof.proofType)
                     : null,
-                sourcePeers: [...entry.sourcePeers].map(String)
+                sourcePeers: [...entry.sourcePeers].map(String),
+                calldataRecoveryQueries
             };
         } finally {
             if (disputeManager && originalDispute) {
@@ -558,6 +596,8 @@ export class StubService extends ARpcService<
             p2pManager.disconnectAndBlacklistPeerByEvmAddress =
                 originalDisconnect;
             sm.blockQueueManager.restoreQueuedEntry = originalRestore;
+            eventSyncService.tryRecoverBlockCalldataAndScheduleValidation =
+                originalRecover;
         }
     }
 

@@ -890,6 +890,57 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.heldDisputeCommittedArgs.length;
     }
 
+    /**
+     * Drop subscribed `BlockCalldataPosted` logs before the scheduler records
+     * their key, modelling a missed subscription delivery. A later explicit
+     * recovery query of the same log reaches the real scheduler.
+     */
+    public stubDropSubscribedCalldataEvents(): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        if (!this.service.stubOriginals.has("calldataPostedEvents")) {
+            this.service.stubOriginals.set(
+                "calldataPostedEvents",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "calldataPostedEvents"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.service.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (parsed?.name === "BlockCalldataPosted") {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                if (
+                    !this.service.droppedCalldataPostedEventKeys.has(eventKey)
+                ) {
+                    this.service.droppedCalldataPostedEventKeys.add(eventKey);
+                    return;
+                }
+            }
+            return original(...args);
+        };
+        return true;
+    }
+
+    public restoreDropSubscribedCalldataEvents(): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        const original = this.service.stubOriginals.get("calldataPostedEvents");
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.service.stubOriginals.delete("calldataPostedEvents");
+        this.service.droppedCalldataPostedEventKeys.clear();
+        return true;
+    }
+
+    public getDroppedCalldataPostedCount(): number {
+        return this.service.droppedCalldataPostedEventKeys.size;
+    }
+
     /** Reserve this participant as a later evidence author. */
     public stubSuppressDisputeInitiation(): boolean {
         const disputeManager = this.service.sm.disputeManager;
@@ -1120,6 +1171,13 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     ): boolean {
         this.service.stageBlockCalldata(encodedSignedBlock, onChainTimestamp);
         return true;
+    }
+
+    /** Post a block's calldata on-chain (chain-fallback path). */
+    public async postBlockCalldataOnChain(
+        encodedSignedBlock: string
+    ): Promise<{ blockNumber: number }> {
+        return this.service.postBlockCalldataOnChain(encodedSignedBlock);
     }
 
     public async runBlockValidation(

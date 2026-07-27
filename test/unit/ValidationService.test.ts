@@ -8,6 +8,7 @@ import {
     MIN_TEST_TIME_CONFIG
 } from "@test/harness";
 import * as factory from "@test/factory";
+import { waitFor } from "@test/utils/waitFor";
 import type { Address } from "@/types/types";
 import { Status } from "@/types";
 
@@ -722,6 +723,65 @@ describe("Unit: ValidationService", function () {
             expect(r.fraudProofType).to.equal(
                 solProofType(FraudProofType.InvalidTimestamp)
             );
+        });
+
+        it("no cached timestamp, calldata recoverable on-chain → recovered, persisted, ON_TIME → SUCCESS", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { leader, observer, authored, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+
+            // the observer loses the subscribed posted-calldata delivery, so it
+            // holds no timestamp until validation queries the chain itself
+            await h
+                .control(observer)
+                .stub.stubDropSubscribedCalldataEvents()
+                .request();
+
+            await h
+                .control(leader)
+                .stub.postBlockCalldataOnChain(authored.encodedSignedBlock)
+                .request();
+
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(observer)
+                        .stub.getDroppedCalldataPostedCount()
+                        .request()) > 0,
+                30000
+            );
+
+            const before = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, authored.height)
+                .request();
+            expect(before, "the observer must not hold the block yet").to.be
+                .null;
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .request();
+
+            // no cached timestamp -> validation asked EventSyncService, which
+            // re-queried the log and stored the real on-chain timestamp
+            expect(r.calldataRecoveryQueries).to.be.greaterThan(0);
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.disputedForkIds).to.deep.equal([]);
+
+            const recovered = await h
+                .control(observer)
+                .query.getBlockCalldataTimestamp(
+                    forkId,
+                    authored.height,
+                    authored.author as Address
+                )
+                .request();
+            expect(recovered, "recovered timestamp must be persisted").to.not.be
+                .null;
         });
 
         it("objectively valid but never posted, received outside agreementTime → subjectiveInvalidTimestampDetected → NOT_ENOUGH_TIME", async function () {

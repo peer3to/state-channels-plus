@@ -424,6 +424,21 @@ export class QueryRpcMethods extends ARpcMethods {
         };
     }
 
+    /** On-chain timestamp of the stored calldata for a block, or null. */
+    public getBlockCalldataTimestamp(
+        forkId: ForkId,
+        height: BlockHeight,
+        blockAuthor: Address
+    ): number | null {
+        return (
+            this.service.storage.blockCalldata.getBlockCalldata(
+                forkId,
+                height,
+                blockAuthor
+            )?.onChainTimestamp ?? null
+        );
+    }
+
     /** The peer's protocol clock in seconds (chain-adjusted, not wall clock). */
     public getClockTimeInSeconds(): number {
         return Clock.getTimeInSeconds();
