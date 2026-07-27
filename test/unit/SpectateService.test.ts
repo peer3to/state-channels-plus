@@ -152,5 +152,85 @@ describe("Unit: SpectateService", function () {
             });
             await restoreEvents(false);
         });
+
+        // the sibling above lets the first dispute event through, so the
+        // responder's local EVM flips isForkDisputed on its own. with EVERY
+        // dispute event held the local mirror still says "not disputed" while
+        // the chain says it is - the walk has to take the disputed flag from
+        // the same place it takes the window, or it skips the walk entirely
+        // and proves a fork that is disputed and already reducible on-chain.
+        it("all dispute events suppressed → still declines the disputed fork instead of proving it", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const maliciousPeerIndex = 2;
+
+            await h.lifecycle.start(4, 2);
+            const forkId = h.activeForkId!;
+
+            const race = await h.rpcStub.holdReductionRace(observerIndex);
+
+            // nothing gets through - the observer never learns of any dispute
+            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+                observerIndex,
+                { passFirst: false }
+            );
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.initiatedWait();
+            await h.assert.dispute.committedWait({ peersIndices: [1, 3] });
+
+            const staged = await h.execOnHost(
+                h.getPeer(observerIndex),
+                async (sm, args) => {
+                    // the local mirror is driven by the events we're holding
+                    const localSaysDisputed =
+                        await sm.diamondStateMachine.localDiamondContract.isForkDisputed(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    // the chain is the truth the walk has to follow
+                    const chainSaysDisputed =
+                        await sm.stateChannelManagerContract.isForkDisputed(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    return { localSaysDisputed, chainSaysDisputed };
+                },
+                { forkId }
+            );
+
+            // sanity: this test only means something while the two disagree
+            expect(
+                staged.chainSaysDisputed,
+                "the chain must see the fork as disputed"
+            ).to.equal(true);
+            expect(
+                staged.localSaysDisputed,
+                "the local mirror must still be behind - otherwise the gate under test is never exercised"
+            ).to.equal(false);
+
+            const syncResult = await h
+                .control(h.getPeer(observerIndex))
+                .spectate.generateSyncPayload(h.channelId!, forkId, 0)
+                .request();
+
+            // reading the flag from the chain makes the walk enter the window,
+            // recover it, reduce past this fork, and find it is not the tip it
+            // can prove -> decline. reading it from the local mirror would skip
+            // the loop and hand back a payload proving the disputed fork.
+            expect(
+                syncResult,
+                "a fork the chain says is disputed must never be proved as the tip"
+            ).to.be.null;
+
+            await race.release({
+                replayEvents: false,
+                runHeldTasks: false,
+                keepTasksHeld: true
+            });
+            await restoreEvents(false);
+        });
     });
 });

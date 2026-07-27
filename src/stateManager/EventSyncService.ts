@@ -21,7 +21,6 @@ type EventKey = string;
 type ChannelKey = string;
 type BlockNumber = number;
 type NormalizedDisputeCommitment = string;
-type DisputeWindowKey = string;
 type EventPromise = Promise<void>;
 export type BlockCalldataRecoveryResult = {
     blockCalldata?: BlockCalldata;
@@ -48,13 +47,6 @@ const STATE_CHANNEL_MANAGER_EVENT_NAME_SET =
     new Set<SupportedStateChannelManagerEventName>(
         STATE_CHANNEL_MANAGER_EVENT_NAMES
     );
-/** The only events that can change a fork's on-chain dispute window. */
-const DISPUTE_WINDOW_EVENT_NAME_SET =
-    new Set<SupportedStateChannelManagerEventName>([
-        "DisputeCommitted",
-        "DisputeCommittedWithAuditingData",
-        "DisputeKilled"
-    ]);
 
 export default class EventSyncService {
     /** Calldata recoveries currently querying or scheduling validation. */
@@ -65,26 +57,6 @@ export default class EventSyncService {
     /** Calldata recoveries already completed during this service lifetime. */
     private readonly processedOnChainBlockValidationKeys =
         new Set<OnChainBlockValidationKey>();
-    /** In-flight synchronized window loads, deduped per (channel, fork). */
-    private readonly pendingWindowLoads = new Map<
-        DisputeWindowKey,
-        Promise<readonly Hash[]>
-    >();
-    /**
-     * Completed window loads, reusable by `allowRecent` callers. Dropped the
-     * moment an event that can change a window is dispatched, so an entry is
-     * only ever served while our event feed says nothing has moved.
-     */
-    private readonly retainedWindowLoads = new Map<
-        DisputeWindowKey,
-        readonly Hash[]
-    >();
-    /**
-     * Bumped by every event that moves a window. A load captures it before the
-     * chain read and only retains its result if it still matches, so an event
-     * landing mid-read can't be overwritten by the read it invalidated.
-     */
-    private windowGeneration = 0;
     /** In-flight or retained event work, keyed to deduplicate log delivery. */
     private readonly eventPromises = new Map<EventKey, EventPromise>();
     /** Event block numbers used to prune dedupe entries below the watermark. */
@@ -267,39 +239,30 @@ export default class EventSyncService {
             return { validationScheduled: false };
         }
     }
-    async loadSynchronizedWindowCommitments(
+    /**
+     * Whether the chain says this fork is disputed. The local EVM mirror only
+     * knows the dispute events we have already processed, so a walk that reads
+     * its window from the chain has to take the disputed flag from the chain
+     * too - otherwise an undelivered event leaves the flag false and the walk
+     * never enters the window it would have recovered.
+     */
+    async isForkDisputedOnChain(
         channelId: ChannelId,
-        forkId: ForkId,
-        options?: { allowRecent?: boolean }
-    ): Promise<readonly Hash[]> {
-        const windowKey = this.getDisputeWindowKey(channelId, forkId);
-        if (options?.allowRecent) {
-            const retained = this.retainedWindowLoads.get(windowKey);
-            if (retained) return retained;
-        }
-
-        const pending = this.pendingWindowLoads.get(windowKey);
-        if (pending) return pending;
-
-        const generation = this.windowGeneration;
-        const load = this.loadWindowCommitments(channelId, forkId)
-            .then((commitments) => {
-                // an event moved a window while we were reading, so what we
-                // just read is already stale - hand it to this caller but
-                // don't retain it, or it outlives the clear that invalidated it
-                if (this.windowGeneration === generation) {
-                    this.retainedWindowLoads.set(windowKey, commitments);
-                }
-                return commitments;
-            })
-            .finally(() => {
-                this.pendingWindowLoads.delete(windowKey);
-            });
-        this.pendingWindowLoads.set(windowKey, load);
-        return load;
+        forkId: ForkId
+    ): Promise<boolean> {
+        return this.stateChannelManagerContract.isForkDisputed(
+            channelId,
+            forkId
+        );
     }
 
-    private async loadWindowCommitments(
+    /**
+     * The fork's dispute window as the chain has it, with any commitment whose
+     * event hasn't reached us yet recovered before we return. Single owner for
+     * both the reduce path and spectate requests, so neither reads a window
+     * its local storage can't back.
+     */
+    async loadSynchronizedWindowCommitments(
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<readonly Hash[]> {
@@ -416,10 +379,6 @@ export default class EventSyncService {
             return;
         }
         const eventName = parsed.name;
-        if (DISPUTE_WINDOW_EVENT_NAME_SET.has(eventName)) {
-            this.windowGeneration += 1;
-            this.retainedWindowLoads.clear();
-        }
         // parseLog is invoked directly, outside createEthersResultProxy, so
         // normalize nested Result structs before they reach storage/models.
         const args = convertEthersValue(parsed.args);
@@ -590,13 +549,6 @@ export default class EventSyncService {
 
     private getChannelKey(channelId: ChannelId): ChannelKey {
         return String(channelId).toLowerCase();
-    }
-
-    private getDisputeWindowKey(
-        channelId: ChannelId,
-        forkId: ForkId
-    ): DisputeWindowKey {
-        return `${this.getChannelKey(channelId)}:${String(forkId).toLowerCase()}`;
     }
 
     private isSupportedEventName(

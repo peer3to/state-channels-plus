@@ -1,7 +1,7 @@
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import type { ForkId, Hash } from "@/types/types";
+import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { id, Log } from "ethers";
@@ -77,31 +77,6 @@ export type ConcurrentCalldataRecoveryProbe = {
     retryFound: boolean;
 };
 
-export type ConcurrentWindowLoadProbe = {
-    /** `getWindowCommitments` chain reads across all concurrent callers. */
-    queryCount: number;
-    /** Commitment counts each concurrent caller saw, in call order. */
-    commitmentCounts: number[];
-    /** A later, non-overlapping call must read the chain again. */
-    retryQueryCount: number;
-};
-
-export type RetainedWindowLoadProbe = {
-    /** `getWindowCommitments` chain reads across the sequential loads. */
-    queryCount: number;
-    /** Commitment counts each load saw, in call order. */
-    commitmentCounts: number[];
-};
-
-export type HeldWindowLoadProbe = {
-    /**
-     * Chain reads caused by one `allowRecent` load after the held one settled.
-     * 1 = the held load saw the window move under it and declined to retain
-     * what it read; 0 = it retained a window the invalidation already cleared.
-     */
-    queryCountAfterRelease: number;
-};
-
 export type DisputeStrategyResultMatrix = Record<string, string>;
 
 export type CleanCommittedDivergenceProbe = {
@@ -148,14 +123,6 @@ export class StubService extends ARpcService<
         taskName: string;
         task: () => void | Promise<void>;
     }[] = [];
-    /** In-flight window load parked inside its chain read by the hold stub. */
-    heldWindowLoad?: {
-        load: Promise<readonly Hash[]>;
-        release: () => void;
-        queryCount: () => number;
-        resetQueryCount: () => void;
-        restore: () => void;
-    };
     /** Event arg-tuples captured by the hold-event stubs. */
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
     readonly heldDisputeCommittedArgs: unknown[][] = [];
@@ -309,137 +276,6 @@ export class StubService extends ARpcService<
             };
         } finally {
             contract.getBlockCallDataCommitment = original;
-        }
-    }
-    public async probeRetainedWindowLoad(
-        forkId: ForkId,
-        callerCount: number
-    ): Promise<RetainedWindowLoadProbe> {
-        const contract = this.sm.stateChannelManagerContract;
-        const original = contract.getWindowCommitments;
-        let queryCount = 0;
-        contract.getWindowCommitments = (async (...parameters) => {
-            queryCount += 1;
-            return original(...parameters);
-        }) as typeof contract.getWindowCommitments;
-        try {
-            const commitmentCounts: number[] = [];
-            for (let caller = 0; caller < callerCount; caller++) {
-                const commitments =
-                    await this.sm.eventSyncService.loadSynchronizedWindowCommitments(
-                        this.sm.channelId,
-                        forkId,
-                        { allowRecent: true }
-                    );
-                commitmentCounts.push(commitments.length);
-            }
-            return { queryCount, commitmentCounts };
-        } finally {
-            contract.getWindowCommitments = original;
-        }
-    }
-
-    public startHeldWindowLoad(forkId: ForkId): boolean {
-        if (this.heldWindowLoad) return false;
-        const contract = this.sm.stateChannelManagerContract;
-        const original = contract.getWindowCommitments;
-        let queryCount = 0;
-        let release: (() => void) | undefined;
-        const held = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        contract.getWindowCommitments = (async (...parameters) => {
-            queryCount += 1;
-            await held;
-            return original(...parameters);
-        }) as typeof contract.getWindowCommitments;
-        this.heldWindowLoad = {
-            load: this.sm.eventSyncService.loadSynchronizedWindowCommitments(
-                this.sm.channelId,
-                forkId,
-                { allowRecent: true }
-            ),
-            release: () => release?.(),
-            queryCount: () => queryCount,
-            resetQueryCount: () => {
-                queryCount = 0;
-            },
-            restore: () => {
-                contract.getWindowCommitments = original;
-            }
-        };
-        return true;
-    }
-
-    public async releaseHeldWindowLoad(
-        forkId: ForkId
-    ): Promise<HeldWindowLoadProbe> {
-        const heldWindowLoad = this.heldWindowLoad;
-        if (!heldWindowLoad) {
-            throw new Error("No held window load to release");
-        }
-        try {
-            heldWindowLoad.release();
-            await heldWindowLoad.load;
-            heldWindowLoad.resetQueryCount();
-            await this.sm.eventSyncService.loadSynchronizedWindowCommitments(
-                this.sm.channelId,
-                forkId,
-                { allowRecent: true }
-            );
-            return { queryCountAfterRelease: heldWindowLoad.queryCount() };
-        } finally {
-            heldWindowLoad.restore();
-            this.heldWindowLoad = undefined;
-        }
-    }
-
-    /**
-     * Fire concurrent synchronized-window loads for the same (channel, fork)
-     * and count the chain reads they cause. The window read is held until every
-     * caller has entered, so a missing dedupe shows up as queryCount > 1.
-     */
-    public async probeConcurrentWindowLoad(
-        forkId: ForkId,
-        callerCount: number
-    ): Promise<ConcurrentWindowLoadProbe> {
-        const contract = this.sm.stateChannelManagerContract;
-        const original = contract.getWindowCommitments;
-        let queryCount = 0;
-        let release: (() => void) | undefined;
-        const held = new Promise<void>((resolve) => {
-            release = resolve;
-        });
-        contract.getWindowCommitments = (async (...parameters) => {
-            queryCount += 1;
-            await held;
-            return original(...parameters);
-        }) as typeof contract.getWindowCommitments;
-        try {
-            const loads = Array.from({ length: callerCount }, () =>
-                this.sm.eventSyncService.loadSynchronizedWindowCommitments(
-                    this.sm.channelId,
-                    forkId
-                )
-            );
-            release?.();
-            const results = await Promise.all(loads);
-            const concurrentQueryCount = queryCount;
-
-            // the concurrent batch has settled, so this one cannot share their
-            // in-flight entry and must read the chain on its own
-            queryCount = 0;
-            await this.sm.eventSyncService.loadSynchronizedWindowCommitments(
-                this.sm.channelId,
-                forkId
-            );
-            return {
-                queryCount: concurrentQueryCount,
-                commitmentCounts: results.map((r) => r.length),
-                retryQueryCount: queryCount
-            };
-        } finally {
-            contract.getWindowCommitments = original;
         }
     }
 

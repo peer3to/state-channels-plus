@@ -1,5 +1,4 @@
 import { Logger } from "@/utils";
-import type { ForkId } from "@/types/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { ReductionSimulationErrorName } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
@@ -230,51 +229,6 @@ export class RpcStubActions<
             .control(this.harness.getPeer(peerIndex))
             .stub.cancelScheduledReductions()
             .request();
-    }
-
-    async probeConcurrentWindowLoad(
-        peerIndex: number,
-        forkId: ForkId,
-        callerCount: number
-    ) {
-        return await this.harness
-            .control(this.harness.getPeer(peerIndex))
-            .stub.probeConcurrentWindowLoad(forkId, callerCount)
-            .request();
-    }
-
-    async probeRetainedWindowLoad(
-        peerIndex: number,
-        forkId: ForkId,
-        callerCount: number
-    ) {
-        return await this.harness
-            .control(this.harness.getPeer(peerIndex))
-            .stub.probeRetainedWindowLoad(forkId, callerCount)
-            .request();
-    }
-
-    async holdWindowLoad(
-        peerIndex: number,
-        forkId: ForkId
-    ): Promise<{
-        release: () => Promise<{ queryCountAfterRelease: number }>;
-    }> {
-        const peer = this.harness.getPeer(peerIndex);
-        const started = await this.harness
-            .control(peer)
-            .stub.startHeldWindowLoad(forkId)
-            .request();
-        if (!started) {
-            throw new Error("A held window load is already in flight");
-        }
-        return {
-            release: async () =>
-                await this.harness
-                    .control(peer)
-                    .stub.releaseHeldWindowLoad(forkId)
-                    .request()
-        };
     }
 
     /**

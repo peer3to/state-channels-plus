@@ -259,7 +259,13 @@ describe("Unit: AgreementManager", function () {
 
         it("proof requested below a participant join → tops out at the requested height", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 2); // peers 0,1; blocks 0..1
+            // the join staging runs for seconds between block 1 and block 2 ->
+            // with the default p2pTime block 2's timestamp is clamped back to
+            // block 1 + 2s and receivers reject it (NOT_ENOUGH_TIME), so the
+            // authoring window has to cover the whole join
+            await h.lifecycle.start(2, 2, {
+                timeConfig: { p2pTime: 30, agreementTime: 10 }
+            }); // peers 0,1; blocks 0..1
 
             // a spectator joins -> the set grows to 3 at block 2
             const spectator = await h.join.addSpectatorWait({
@@ -338,7 +344,10 @@ describe("Unit: AgreementManager", function () {
 
         it("proof requested at the exact join-block height, raised threshold completed only above it → tops out at the requested height", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 2); // peers 0,1; blocks 0..1
+            // same join staging as above -> same authoring window
+            await h.lifecycle.start(2, 2, {
+                timeConfig: { p2pTime: 30, agreementTime: 10 }
+            }); // peers 0,1; blocks 0..1
 
             const spectator = await h.join.addSpectatorWait({
                 statusTimeoutMs: 5000

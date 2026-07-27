@@ -483,8 +483,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         const disputeWindows: DisputeWindowVerification[] = [];
         let currentForkId = currentOnChainSnapshot.forkID;
+        // the disputed flag comes from the same owner as the window below. the
+        // local EVM only knows the dispute events we've processed, so reading
+        // it there while reading the window from the chain would skip the walk
+        // entirely for a fork whose events haven't arrived - and serve a proof
+        // for a fork that is disputed and already reduced on-chain
         let isDisputed =
-            await diamondStateMachine.localDiamondContract.isForkDisputed(
+            await stateManager.eventSyncService.isForkDisputedOnChain(
                 channelId,
                 currentForkId
             );
@@ -494,15 +499,10 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             // A commitment can land on-chain before its dispute event is
             // processed locally; recover it before reading storage so a
             // still-pending event doesn't abort the sync.
-            // allowRecent: this walk runs once per dispute window per inbound
-            // request, so without it a remote peer turns one message into a
-            // chain read per window on every retry. The retained window is
-            // dropped as soon as a dispute event moves it
             const currentWindowCommitments =
                 await stateManager.eventSyncService.loadSynchronizedWindowCommitments(
                     channelId,
-                    currentForkId,
-                    { allowRecent: true }
+                    currentForkId
                 );
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
@@ -535,7 +535,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             });
             currentForkId = reducedForkId;
             isDisputed =
-                await diamondStateMachine.localDiamondContract.isForkDisputed(
+                await stateManager.eventSyncService.isForkDisputedOnChain(
                     channelId,
                     currentForkId
                 );

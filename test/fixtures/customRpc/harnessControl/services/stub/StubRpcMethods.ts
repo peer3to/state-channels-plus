@@ -18,9 +18,6 @@ import type {
     PausedReductionStatus,
     ReductionSimulationErrorName,
     ConcurrentCalldataRecoveryProbe,
-    ConcurrentWindowLoadProbe,
-    RetainedWindowLoadProbe,
-    HeldWindowLoadProbe,
     CleanCommittedDivergenceProbe,
     DisputeStrategyResultMatrix,
     MissingParticipantSnapshotsProbe
@@ -635,6 +632,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public getHeldReductionTaskCount(): number {
         return this.service.heldReductionTasks.length;
     }
+
     public dropHeldReductionTasks(): boolean {
         this.service.heldReductionTasks.splice(0);
         return true;
@@ -643,30 +641,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public cancelScheduledReductions(): boolean {
         this.service.sm.reductionManager.cancelScheduledReductions();
         return true;
-    }
-
-    public async probeConcurrentWindowLoad(
-        forkId: ForkId,
-        callerCount: number
-    ): Promise<ConcurrentWindowLoadProbe> {
-        return this.service.probeConcurrentWindowLoad(forkId, callerCount);
-    }
-
-    public async probeRetainedWindowLoad(
-        forkId: ForkId,
-        callerCount: number
-    ): Promise<RetainedWindowLoadProbe> {
-        return this.service.probeRetainedWindowLoad(forkId, callerCount);
-    }
-
-    public startHeldWindowLoad(forkId: ForkId): boolean {
-        return this.service.startHeldWindowLoad(forkId);
-    }
-
-    public async releaseHeldWindowLoad(
-        forkId: ForkId
-    ): Promise<HeldWindowLoadProbe> {
-        return this.service.releaseHeldWindowLoad(forkId);
     }
 
     public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
