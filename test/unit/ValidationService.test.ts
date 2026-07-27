@@ -23,6 +23,14 @@ const solProofType = (type: FraudProofType): string =>
 // deliberate waits in the timestamp cases
 const TIMESTAMP_TIME_CONFIG = { ...MIN_TEST_TIME_CONFIG, evidenceTime: 20 };
 
+// wide enough that the deliberate waits in the parent-recovery cases stay
+// clear of the participant timeout
+const RECOVERY_TIME_CONFIG = {
+    p2pTime: 2,
+    agreementTime: 8,
+    chainFallbackTime: 10,
+    evidenceTime: 20
+};
 // height 0 gets the evidenceTime grace on top of the ordinary post window
 const HEIGHT_ZERO_POST_WINDOW =
     TIMESTAMP_TIME_CONFIG.p2pTime +
@@ -646,9 +654,90 @@ describe("Unit: ValidationService", function () {
             );
         });
 
-        // no test: defer->NOT_READY and the getOnChainPostTiming branches need
-        // the parent's calldata on-chain - owned by E2E-FraudProofs / E2E-Timeouts.
-        it.skip("parent on-chain, current deferred → NOT_READY", function () {});
+        it("previous-block calldata recovered, candidate now valid → recursive pass returns SUCCESS and caches the timestamp", async function () {
+            const h = TestSession.getHarness();
+            const staged = await h.scenario.previousBlockUnsignedByNextWriter({
+                timeConfig: RECOVERY_TIME_CONFIG
+            });
+            const { observer, author, previous, forkId, parentPostTimestamp } =
+                staged;
+
+            // stamped at the parent's real post time: outside the parent's
+            // own-timestamp window, inside the recovered one
+            const candidateTimestamp = parentPostTimestamp;
+            expect(candidateTimestamp).to.be.greaterThan(
+                previous.timestamp + RECOVERY_TIME_CONFIG.p2pTime
+            );
+
+            const encoded = await factory.buildAndEncodeBlock(author.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: previous.height + 1,
+                    timestamp: candidateTimestamp
+                },
+                previousBlockHash: previous.hash
+            });
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded)
+                .request();
+
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.disputedForkIds).to.deep.equal([]);
+            // one recovery for the parent, then the recursive pass looks up the
+            // candidate's own (unposted) calldata
+            expect(r.calldataRecoveryQueries).to.equal(2);
+
+            const cached = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, previous.height)
+                .request();
+            expect(cached!.onChainTimestamp).to.equal(parentPostTimestamp);
+        });
+
+        it("previous-block calldata recovered but the candidate is still invalid → objectiveInvalidTimestampDetected", async function () {
+            const h = TestSession.getHarness();
+            const staged = await h.scenario.previousBlockUnsignedByNextWriter({
+                timeConfig: RECOVERY_TIME_CONFIG
+            });
+            const { observer, author, previous, forkId, parentPostTimestamp } =
+                staged;
+
+            // past the recovered post time's window too, so the better parent
+            // data still can't legalise it
+            const candidateTimestamp =
+                parentPostTimestamp + RECOVERY_TIME_CONFIG.p2pTime + 2;
+            expect(parentPostTimestamp).to.be.greaterThan(previous.timestamp);
+
+            const encoded = await factory.buildAndEncodeBlock(author.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: previous.height + 1,
+                    timestamp: candidateTimestamp
+                },
+                previousBlockHash: previous.hash
+            });
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded)
+                .request();
+
+            expect(r.resultName).to.equal("DISPUTE");
+            expect(r.firedHooks).to.include(
+                "objectiveInvalidTimestampDetected"
+            );
+            expect(r.disputedForkIds).to.deep.equal([forkId]);
+            expect(r.fraudProofType).to.equal(
+                solProofType(FraudProofType.InvalidTimestamp)
+            );
+            // exactly one recheck: the recursive pass sees the parent's cached
+            // timestamp and proves the violation instead of re-querying
+            expect(r.calldataRecoveryQueries).to.equal(1);
+        });
 
         it("on-chain timestamp exactly at the post deadline → ON_TIME → SUCCESS even outside agreementTime", async function () {
             const h = TestSession.getHarness();

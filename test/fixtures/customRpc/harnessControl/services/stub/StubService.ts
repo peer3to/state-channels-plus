@@ -224,14 +224,18 @@ export class StubService extends ARpcService<
      */
     public async postBlockCalldataOnChain(
         encodedSignedBlock: string
-    ): Promise<{ blockNumber: number }> {
+    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
         const tx = await this.sm.stateChannelManagerContract.postBlockCalldata(
             Codec.decode(encodedSignedBlock, Type.SignedBlock),
             Clock.getTimeInSeconds() + 1000
         );
         const receipt = await tx.wait();
         if (!receipt) throw new Error("postBlockCalldata produced no receipt");
-        return { blockNumber: receipt.blockNumber };
+        const chainBlock = await receipt.getBlock();
+        return {
+            blockNumber: receipt.blockNumber,
+            onChainTimestamp: chainBlock.timestamp
+        };
     }
 
     /** Exercise rejected-log retention through the real EventSyncService. */

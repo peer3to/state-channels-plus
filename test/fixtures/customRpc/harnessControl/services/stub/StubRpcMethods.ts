@@ -1176,7 +1176,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     /** Post a block's calldata on-chain (chain-fallback path). */
     public async postBlockCalldataOnChain(
         encodedSignedBlock: string
-    ): Promise<{ blockNumber: number }> {
+    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
         return this.service.postBlockCalldataOnChain(encodedSignedBlock);
     }
 
