@@ -95,6 +95,8 @@ export type MissingParticipantSnapshotsProbe = {
 export type BlockValidationProbeOptions = {
     strategy?: "active" | "dispute";
     encodedDispute?: string;
+    /** Supplier of this copy - drives `sourcePeers`/`signatureSources`. */
+    senderAddress?: Address;
 };
 
 export type BlockValidationProbe = {
@@ -106,6 +108,8 @@ export type BlockValidationProbe = {
     restoreQueuedEntryCalled: boolean;
     signerAddress: string;
     fraudProofType: string | null;
+    /** Source attribution the entry carried into validation. */
+    sourcePeers: string[];
 };
 
 /**
@@ -404,7 +408,11 @@ export class StubService extends ARpcService<
             Type.BlockConfirmation
         );
         const block = Block.fromBlockConfirmation(blockConfirmation);
-        const entry = sm.storage.queues.createEntry(block);
+        // same entry the gossip pipeline builds: a supplied copy carries its
+        // sender into sourcePeers/signatureSources, a sourceless one doesn't
+        const entry = sm.storage.queues.createEntry(block, {
+            senderAddress: options?.senderAddress
+        });
         // default: the live block strategy (PARTICIPATING). "dispute" builds a
         // real DisputeValidationStrategy - as dispute auditing does - so the
         // dispute-only branches (skip future/disputed gates, setState, the
@@ -500,7 +508,10 @@ export class StubService extends ARpcService<
                 firedHooks,
                 restoreQueuedEntryCalled,
                 signerAddress: String(block.signerAddress),
-                fraudProofType: fraudProof ? String(fraudProof.proofType) : null
+                fraudProofType: fraudProof
+                    ? String(fraudProof.proofType)
+                    : null,
+                sourcePeers: [...entry.sourcePeers].map(String)
             };
         } finally {
             if (disputeManager && originalDispute) {

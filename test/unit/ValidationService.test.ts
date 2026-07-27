@@ -144,7 +144,9 @@ describe("Unit: ValidationService", function () {
 
             expect(r.resultName).to.equal("DISCONNECT");
             expect(r.disputedForkIds).to.deep.equal([]);
-            expect(r.firedHooks).to.include("blockIsNotLinkedAndIsNotFirstBlock");
+            expect(r.firedHooks).to.include(
+                "blockIsNotLinkedAndIsNotFirstBlock"
+            );
         });
 
         it("height-0 block not linked to genesis → wrongGenesisDetected → DISPUTE + WrongGenesis proof", async function () {
@@ -687,6 +689,108 @@ describe("Unit: ValidationService", function () {
             expect(r.firedHooks).to.include("blockForkIsDisputed");
 
             await race.release({ replayEvents: false, runHeldTasks: false });
+        });
+
+        it("a disputed-fork block supplied by a peer that acknowledged the dispute → supplier disconnected, DISCONNECT", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const byzantineIndex = 1;
+            const supplierIndex = 2;
+
+            await h.scenario.activeChannelWithDispute({
+                numPeers: 3,
+                numBlocks: 2,
+                byzantinePeer: byzantineIndex
+            });
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+            const supplier = h.getPeer(supplierIndex);
+
+            // real acknowledgment exchange -> the observer records that the
+            // supplier knows the fork is dead
+            await h.rpc.requestDisputeAcknowledgment({
+                peerIndex: observerIndex
+            });
+            await h.assert.rpc.allPeersAcknowledgedDispute({
+                requestingPeer: observerIndex,
+                excludePeers: [byzantineIndex]
+            });
+
+            const nextHeight = await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: nextHeight
+                }
+            });
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded, {
+                    senderAddress: supplier.address as Address
+                })
+                .request();
+
+            expect(r.sourcePeers.map((a) => a.toLowerCase())).to.deep.equal([
+                supplier.address.toLowerCase()
+            ]);
+            expect(r.firedHooks).to.include("blockForkIsDisputed");
+            // every supplier knowingly built on the dead fork -> nothing honest
+            // left to wait for
+            expect(r.resultName).to.equal("DISCONNECT");
+            expect(
+                r.disconnectedAddresses.map((a) => a.toLowerCase())
+            ).to.deep.equal([supplier.address.toLowerCase()]);
+            expect(r.restoreQueuedEntryCalled).to.equal(false);
+        });
+
+        it("a disputed-fork block from a supplier with no acknowledgment on record → requeued, NOT_READY", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const byzantineIndex = 1;
+
+            await h.scenario.activeChannelWithDispute({
+                numPeers: 3,
+                numBlocks: 2,
+                byzantinePeer: byzantineIndex
+            });
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+            // a supplier the observer holds no acknowledgment for - an honest
+            // peer that hasn't seen the dispute yet
+            const unacknowledgedSupplier = factory.randomAddress();
+
+            const nextHeight = await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: nextHeight
+                }
+            });
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded, {
+                    senderAddress: unacknowledgedSupplier
+                })
+                .request();
+
+            expect(r.sourcePeers.map((a) => a.toLowerCase())).to.deep.equal([
+                String(unacknowledgedSupplier).toLowerCase()
+            ]);
+            expect(r.firedHooks).to.include("blockForkIsDisputed");
+            // not provably byzantine -> restored for the timeout sync
+            expect(r.resultName).to.equal("NOT_READY");
+            expect(r.restoreQueuedEntryCalled).to.equal(true);
+            expect(r.disconnectedAddresses).to.deep.equal([]);
         });
     });
 
