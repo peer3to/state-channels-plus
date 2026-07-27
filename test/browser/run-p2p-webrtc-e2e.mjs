@@ -4,6 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
+import holepunchRelayClusterModule from "./holepunchRelayCluster.js";
+
+const { startHolepunchRelayCluster } = holepunchRelayClusterModule;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "../..");
@@ -67,6 +70,10 @@ const platformAliases = {
         projectRoot,
         "src/utils/browser/LocalDiscoveryServer.ts"
     ),
+    "@platform/HolepunchRuntime": path.join(
+        projectRoot,
+        "src/holepunch/browser/HolepunchRuntime.ts"
+    ),
     "@platform/precompileModuleLoader": path.join(
         projectRoot,
         "src/evm/browser/precompileModuleLoader.ts"
@@ -106,11 +113,13 @@ const hardhatProcess = spawn(
 );
 
 let hub;
+let holepunchCluster;
 let server;
 let browser;
 const cleanup = async () => {
     await browser?.close().catch(() => {});
     await server?.close().catch(() => {});
+    await holepunchCluster?.close().catch(() => {});
     await hub?.close().catch(() => {});
     if (hardhatProcess && !hardhatProcess.killed) {
         hardhatProcess.kill("SIGTERM");
@@ -121,6 +130,9 @@ try {
     await waitForHardhat(HARDHAT_URL);
 
     hub = await startLocalDiscoveryRelayHub({ host: "127.0.0.1", port: 0 });
+    holepunchCluster = await startHolepunchRelayCluster({
+        host: "127.0.0.1"
+    });
 
     const [{ createServer }, { chromium }] = await Promise.all([
         loadBrowserTestDependency("vite"),
@@ -172,16 +184,48 @@ try {
         }
     });
     page.on("pageerror", (error) => browserErrors.push(error));
+    await page.exposeFunction(
+        "__controlHolepunchRelays",
+        async ({ action, endpoint }) => {
+            if (action === "start") {
+                await holepunchCluster.start(endpoint);
+                return holepunchCluster.stats();
+            }
+            if (action === "stop") {
+                await holepunchCluster.stop(endpoint);
+                return holepunchCluster.stats();
+            }
+            if (action === "disconnect") {
+                holepunchCluster.disconnectClients(endpoint);
+                return holepunchCluster.stats();
+            }
+            if (action === "stats") {
+                return holepunchCluster.stats();
+            }
+            throw new Error(`Unknown Holepunch relay action '${action}'`);
+        }
+    );
 
     await page.addInitScript(
-        ([injectedProviderUrl, injectedRelayUrl, injectedLogLevel]) => {
+        ([
+            injectedProviderUrl,
+            injectedRelayUrl,
+            injectedHolepunchRelayUrls,
+            injectedLogLevel
+        ]) => {
             globalThis.__P2P_E2E__ = {
                 providerUrl: injectedProviderUrl,
                 relayUrl: injectedRelayUrl,
+                holepunchRelayUrls: injectedHolepunchRelayUrls,
                 logLevel: injectedLogLevel
             };
         },
-        [providerUrl, hub.url, process.env.LOG_LEVEL || "info"]
+        [
+            providerUrl,
+            hub.url,
+            [holepunchCluster.urls.a, holepunchCluster.urls.b],
+            process.env.LOG_LEVEL || "info"
+        ]
     );
 
     page.on("worker", (worker) => {
@@ -217,7 +261,8 @@ try {
         await page.waitForFunction(
             () =>
                 Boolean(globalThis.runP2pWebRTCMainThreadE2E) &&
-                Boolean(globalThis.runP2pWebRTCWorkerBubbleUpE2E),
+                Boolean(globalThis.runP2pWebRTCWorkerBubbleUpE2E) &&
+                Boolean(globalThis.runP2pHolepunchE2E),
             { timeout: 30_000 }
         );
 
@@ -227,10 +272,26 @@ try {
             "runP2pWebRTCMainThreadE2E",
             "p2p WebRTC main-thread e2e"
         );
-        assert.equal(mainThread.bridgePortA, true, "peer A must surface a bridge port");
-        assert.equal(mainThread.bridgePortB, true, "peer B must surface a bridge port");
-        assert.equal(mainThread.connectedAtoB, true, "peer A must connect to peer B");
-        assert.equal(mainThread.connectedBtoA, true, "peer B must connect to peer A");
+        assert.equal(
+            mainThread.bridgePortA,
+            true,
+            "peer A must surface a bridge port"
+        );
+        assert.equal(
+            mainThread.bridgePortB,
+            true,
+            "peer B must surface a bridge port"
+        );
+        assert.equal(
+            mainThread.connectedAtoB,
+            true,
+            "peer A must connect to peer B"
+        );
+        assert.equal(
+            mainThread.connectedBtoA,
+            true,
+            "peer B must connect to peer A"
+        );
         assert.ok(
             mainThread.rtcConnected >= 1,
             `main-thread: expected >=1 main-thread WebRTC connection, got ${mainThread.rtcConnected}`
@@ -246,18 +307,82 @@ try {
             bubbleUp.bridgesInstalled >= 2,
             `bubble-up: expected 2 bubbled-up bridges installed, got ${bubbleUp.bridgesInstalled}`
         );
-        assert.equal(bubbleUp.connectedAtoB, true, "bubble-up: peer A must connect to peer B");
-        assert.equal(bubbleUp.connectedBtoA, true, "bubble-up: peer B must connect to peer A");
+        assert.equal(
+            bubbleUp.connectedAtoB,
+            true,
+            "bubble-up: peer A must connect to peer B"
+        );
+        assert.equal(
+            bubbleUp.connectedBtoA,
+            true,
+            "bubble-up: peer B must connect to peer A"
+        );
         assert.ok(
             bubbleUp.rtcConnected >= 1,
             `bubble-up: expected >=1 main-thread WebRTC connection, got ${bubbleUp.rtcConnected}`
+        );
+
+        const holepunch = await runScenario(
+            "runP2pHolepunchE2E",
+            "p2p Holepunch relay e2e"
+        );
+        assert.equal(
+            holepunch.emptyRelayDialCount,
+            0,
+            "empty relay configuration must not dial"
+        );
+        assert.equal(
+            holepunch.initialTopicAnnounces,
+            2,
+            "content-equal duplicate joins must announce once per peer"
+        );
+        assert.equal(
+            holepunch.initialSum,
+            42,
+            "initial Holepunch RPC must work"
+        );
+        assert.equal(
+            holepunch.initialRequesterMatches,
+            true,
+            "initial Holepunch RPC must preserve the caller address"
+        );
+        assert.equal(holepunch.failoverSum, 11, "failover RPC must work");
+        assert.equal(
+            holepunch.failoverRequesterMatches,
+            true,
+            "failover Holepunch RPC must preserve the caller address"
+        );
+        assert.equal(
+            holepunch.recoverySum,
+            19,
+            "outage recovery RPC must work"
+        );
+        assert.equal(
+            holepunch.recoveryRequesterMatches,
+            true,
+            "recovery Holepunch RPC must preserve the caller address"
+        );
+        assert.equal(
+            holepunch.lateInjectionIgnored,
+            true,
+            "a browser swarm injected after runtime construction must be ignored"
+        );
+        assert.equal(
+            holepunch.postDisposeConnections,
+            1,
+            "only the live peer may reconnect after its partner is disposed"
+        );
+        assert.equal(
+            holepunch.activeConnectionsAfterDispose,
+            0,
+            "all browser-owned relay sockets must close"
         );
 
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
 
         console.log(
             "P2P WebRTC browser e2e passed:",
-            JSON.stringify({ mainThread, bubbleUp })
+            JSON.stringify({ mainThread, bubbleUp, holepunch })
         );
     } catch (error) {
         console.error("P2P WebRTC browser e2e FAILED\n");

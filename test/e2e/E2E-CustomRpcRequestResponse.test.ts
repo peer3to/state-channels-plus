@@ -1,14 +1,6 @@
 import { expect } from "chai";
-import {
-    BytesLike,
-    ContractFactory,
-    NonceManager,
-    Signer,
-    ethers
-} from "ethers";
-import path from "node:path";
+import { BytesLike, NonceManager, ethers } from "ethers";
 
-import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
 import { Codec, LocalDiscoveryServer, SignatureUtils, Type } from "@/utils";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
@@ -22,7 +14,6 @@ import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/Mat
 import { deployFullStack } from "../../scripts/V1/deploy";
 import {
     MathStateMachine,
-    MathStateMachine__factory,
     StateChannelManagerProxy__factory
 } from "@typechain-types";
 import type {
@@ -35,16 +26,12 @@ import {
     type DiscoveryHandle,
     type NodeHandle
 } from "@test/utils/nodeInfra";
+import { createPingPeer } from "@test/fixtures/customRpc/createPingPeer";
 
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 let localDiscoveryRegistryUrl = process.env.LOCAL_DISCOVERY_REGISTRY_URL;
 const DEFAULT_HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
-
-const PING_PONG_MANIFEST = path.resolve(
-    __dirname,
-    "../fixtures/customRpc/PingPongRpcManifest.ts"
-);
 
 type PingPeer = P2pInstance<MathStateMachine, PingPongRpc>;
 
@@ -69,23 +56,6 @@ function walletAt(
         undefined,
         `m/44'/60'/0'/0/${index}`
     ).connect(provider) as ethers.HDNodeWallet;
-}
-
-/** Deploys a fresh local MathStateMachine and returns its address. */
-async function deployLocalStateMachine(signer: Signer): Promise<string> {
-    const factory = new ContractFactory(
-        MathStateMachineArtifact.abi,
-        MathStateMachineArtifact.bytecode,
-        signer
-    );
-    const tx = await signer.sendTransaction(
-        await factory.getDeployTransaction(5_000_000)
-    );
-    const receipt = await tx.wait();
-    if (!receipt?.contractAddress) {
-        throw new Error("No local MathStateMachine contract address created");
-    }
-    return receipt.contractAddress;
 }
 
 describe("E2E: custom RPC request/response over the runtime port", function () {
@@ -159,49 +129,31 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             [peer1Address, new Set<string>()]
         ]);
 
-        const makePeer = async (
-            runtimeWallet: ethers.HDNodeWallet,
-            selfAddress: string
-        ): Promise<PingPeer> => {
-            const runtimeSigner = runtimeWallet;
-            const scm = StateChannelManagerProxy__factory.connect(
-                scmDeployment.address,
-                runtimeSigner
-            );
-            const stateMachineTemplate = MathStateMachine__factory.connect(
-                ethers.ZeroAddress,
-                runtimeSigner
-            );
-
-            const instance = await EvmStateMachine.p2pSetup<
-                MathStateMachine,
-                PingPongRpc
-            >(scm, stateMachineTemplate, deployLocalStateMachine, {
-                signerSecret: runtimeWallet.privateKey,
-                customRpcManifest: { module: PING_PONG_MANIFEST },
-                config: {
-                    PROVIDER_URL: hardhatNodeUrl,
-                    LOCAL_DISCOVERY_REGISTRY_URL: localDiscoveryRegistryUrl,
-                    RUN_SDK_IN_THREAD: false,
-                    VM_DEDICATED_THREAD: false,
-                    DEBUG_LOCAL_TRANSPORT: true
-                }
-            });
-
+        const peer0 = await createPingPeer({
+            runtimeWallet: peer0Wallet,
+            stateChannelManagerAddress: scmDeployment.address,
+            providerUrl: hardhatNodeUrl,
+            discoveryUrl: localDiscoveryRegistryUrl,
             // Track connection completion via a client-side p2p event listener
             // (forwarded over the port from the host).
-            instance.on("onConnection", (address) => {
+            onConnection: (address) => {
                 connectedTo
-                    .get(selfAddress)
+                    .get(peer0Address)
                     ?.add(String(address).toLowerCase());
-            });
-
-            return instance;
-        };
-
-        const peer0 = await makePeer(peer0Wallet, peer0Address);
+            }
+        });
         peers.push(peer0);
-        const peer1 = await makePeer(peer1Wallet, peer1Address);
+        const peer1 = await createPingPeer({
+            runtimeWallet: peer1Wallet,
+            stateChannelManagerAddress: scmDeployment.address,
+            providerUrl: hardhatNodeUrl,
+            discoveryUrl: localDiscoveryRegistryUrl,
+            onConnection: (address) => {
+                connectedTo
+                    .get(peer1Address)
+                    ?.add(String(address).toLowerCase());
+            }
+        });
         peers.push(peer1);
 
         // Open a channel with both participants, driven entirely from the
@@ -291,5 +243,119 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         expect((requestError as Error).message).to.include(
             "intentional-request-failure"
         );
+    });
+
+    it("recovers discovery retries and cancels them during cleanup", async function () {
+        this.timeout(120_000);
+        if (!hardhatNodeUrl) {
+            throw new Error("Hardhat node URL is not initialized");
+        }
+
+        const retryRegistry = await startDiscoveryRegistry({
+            port: 0,
+            label: "failure-enabled discovery",
+            env: {
+                LOCAL_DISCOVERY_FAIL_FIRST_CONNECTIONS: "2"
+            }
+        });
+        let pendingRegistry: DiscoveryHandle | undefined;
+        try {
+            expect(new URL(retryRegistry.url).port).to.not.equal("0");
+            const provider = new ethers.JsonRpcProvider(hardhatNodeUrl);
+            const deployerSigner = new NonceManager(
+                walletAt(slotDeployerIndex(), provider)
+            );
+            const scmDeployment = await deployFullStack(deployerSigner, {
+                stateMachineArtifact: MathStateMachineArtifact as any,
+                consumerFacetArtifact: MathConsumerFacetArtifact as any,
+                stateMachineArgs: [5_000_000],
+                consumerFacetArgs: [],
+                timeConfig: {
+                    p2pTime: 1,
+                    agreementTime: 10,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                },
+                disputeExecutionGasLimit: 1_000_000
+            });
+            const peer0Wallet = walletAt(slotAccountIndex(0), provider);
+            const peer1Wallet = walletAt(slotAccountIndex(1), provider);
+            let peer0Connections = 0;
+            let peer1Connections = 0;
+
+            const peer0 = await createPingPeer({
+                runtimeWallet: peer0Wallet,
+                stateChannelManagerAddress: scmDeployment.address,
+                providerUrl: hardhatNodeUrl,
+                discoveryUrl: retryRegistry.url,
+                onConnection: () => {
+                    peer0Connections++;
+                }
+            });
+            peers.push(peer0);
+            const peer1 = await createPingPeer({
+                runtimeWallet: peer1Wallet,
+                stateChannelManagerAddress: scmDeployment.address,
+                providerUrl: hardhatNodeUrl,
+                discoveryUrl: retryRegistry.url,
+                onConnection: () => {
+                    peer1Connections++;
+                }
+            });
+            peers.push(peer1);
+
+            const channelId = ethers.keccak256(
+                ethers.toUtf8Bytes("local-discovery-retry-lifecycle")
+            );
+            await peer0.hostRpc.network.connectToChannel(channelId).request();
+            await peer1.hostRpc.network.connectToChannel(channelId).request();
+
+            await waitFor(
+                () =>
+                    retryRegistry.getConnectionCount() >= 4 &&
+                    peer0Connections === 1 &&
+                    peer1Connections === 1,
+                20_000
+            );
+            const stableRegistryConnections =
+                retryRegistry.getConnectionCount();
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+            expect(retryRegistry.getConnectionCount()).to.equal(
+                stableRegistryConnections
+            );
+            expect(peer0Connections).to.equal(1);
+            expect(peer1Connections).to.equal(1);
+
+            pendingRegistry = await startDiscoveryRegistry({
+                port: 0,
+                label: "pending-retry discovery",
+                env: {
+                    LOCAL_DISCOVERY_FAIL_FIRST_CONNECTIONS: "100"
+                }
+            });
+            const peer2Wallet = walletAt(slotAccountIndex(2), provider);
+            const peer2 = await createPingPeer({
+                runtimeWallet: peer2Wallet,
+                stateChannelManagerAddress: scmDeployment.address,
+                providerUrl: hardhatNodeUrl,
+                discoveryUrl: pendingRegistry.url
+            });
+            peers.push(peer2);
+            await peer2.hostRpc.network.connectToChannel(channelId).request();
+            await waitFor(
+                () => pendingRegistry?.getConnectionCount() === 1,
+                5000
+            );
+
+            await peer2.hostRpc.network.cleanupLocalDiscovery().sendOne();
+            const countAfterCleanup = pendingRegistry.getConnectionCount();
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+            expect(pendingRegistry.getConnectionCount()).to.equal(
+                countAfterCleanup
+            );
+        } finally {
+            pendingRegistry?.stop();
+            retryRegistry.stop();
+        }
     });
 });

@@ -5,6 +5,7 @@ import { ChannelId } from "@/types/types";
 import type { Logger } from "@/utils";
 import { addressesEqual } from "@/utils/address";
 import { config } from "@/utils/config";
+import { RetryLifecycle, type RetryAttemptToken } from "@/utils/RetryLifecycle";
 
 const MAX_PORT_RETRIES = 20;
 const LOCAL_WS_HOST = "127.0.0.1";
@@ -75,25 +76,20 @@ export class LocalDiscoveryServer {
     private static _peerDiscoveryState: WeakMap<WebSocketServer, Set<number>> =
         new WeakMap();
 
-    /** Retry count per outbound local-port to peer-port connection. */
-    private static _peerRetryCount: Map<PeerConnectionKey, number> = new Map();
+    /** Registry retry lifecycle per peer server. */
+    private static registryRetryLifecycles: Map<
+        WebSocketServer,
+        RetryLifecycle
+    > = new Map();
 
-    /** Discovery and primary peer-dial retries owned by this server. */
-    private static pendingTimers: Set<ReturnType<typeof setTimeout>> =
-        new Set();
+    /** Primary peer-dial retry lifecycle per local-port to peer-port pair. */
+    private static peerRetryLifecycles: Map<PeerConnectionKey, RetryLifecycle> =
+        new Map();
 
     /** Prevent reconnect loops during/after cleanup */
     private static _cleanupRequested: boolean = false;
 
     private constructor() {}
-
-    private static scheduleTimer(callback: () => void, delayMs: number): void {
-        const timer = setTimeout(() => {
-            this.pendingTimers.delete(timer);
-            callback();
-        }, delayMs);
-        this.pendingTimers.add(timer);
-    }
 
     private static getExternalRegistryUrl(): string | undefined {
         const url = config.LOCAL_DISCOVERY_REGISTRY_URL?.trim();
@@ -104,6 +100,7 @@ export class LocalDiscoveryServer {
         url: string;
         purpose: "registry" | "peer";
         connectTimeoutMs?: number;
+        attemptToken: RetryAttemptToken;
         log: Record<string, unknown>;
         onOpen: (ws: WebSocket, openedAtMs: number) => void;
         onMessage?: (ws: WebSocket, message: Buffer) => void;
@@ -118,6 +115,7 @@ export class LocalDiscoveryServer {
             url,
             purpose,
             connectTimeoutMs = WS_CONNECT_TIMEOUT_MS,
+            attemptToken,
             log,
             onOpen,
             onMessage,
@@ -128,7 +126,6 @@ export class LocalDiscoveryServer {
 
         const startMs = Date.now();
         let opened = false;
-        let connectFailureHandled = false;
 
         this.logger.debug("WebSocket dial", {
             ...log,
@@ -139,15 +136,14 @@ export class LocalDiscoveryServer {
 
         const ws = new WebSocket(url);
 
-        const failOnce = (
+        const failAttempt = (
             reason: string,
             details?: Record<string, unknown>
         ) => {
-            if (opened || connectFailureHandled) {
+            if (opened) {
                 return;
             }
-            connectFailureHandled = true;
-            onConnectFailure(reason, details);
+            attemptToken.failOnce(() => onConnectFailure(reason, details));
         };
 
         const connectTimeoutId = setTimeout(() => {
@@ -162,12 +158,17 @@ export class LocalDiscoveryServer {
                 // ignore
             }
 
-            failOnce("timeout", {
+            failAttempt("timeout", {
                 durationMs: Date.now() - startMs
             });
         }, connectTimeoutMs);
 
         ws.on("open", () => {
+            if (!attemptToken.isCurrent() || attemptToken.failed) {
+                clearTimeout(connectTimeoutId);
+                ws.terminate();
+                return;
+            }
             opened = true;
             clearTimeout(connectTimeoutId);
             onOpen(ws, Date.now());
@@ -184,7 +185,7 @@ export class LocalDiscoveryServer {
 
             // If we never opened, treat it as a connect failure.
             if (!opened && !this._cleanupRequested) {
-                failOnce("close", {
+                failAttempt("close", {
                     code,
                     reason: reason?.toString?.() || "",
                     durationMs: Date.now() - startMs
@@ -201,7 +202,7 @@ export class LocalDiscoveryServer {
 
             // ws sometimes emits error without ever opening; treat as connect failure.
             if (!opened && !this._cleanupRequested) {
-                failOnce("error", {
+                failAttempt("error", {
                     message: err?.message,
                     durationMs: Date.now() - startMs
                 });
@@ -640,8 +641,10 @@ export class LocalDiscoveryServer {
         const registryPort = this.discoveryPort;
         const registryUrl =
             externalRegistryUrl ?? `ws://${LOCAL_WS_HOST}:${registryPort}`;
+        const registryLifecycle = new RetryLifecycle();
+        this.registryRetryLifecycles.set(server, registryLifecycle);
 
-        const connectRegistry = (attempt: number) => {
+        const connectRegistry = () => {
             if (this._cleanupRequested) {
                 return;
             }
@@ -658,7 +661,11 @@ export class LocalDiscoveryServer {
                 return;
             }
 
+            const attemptToken = registryLifecycle.beginAttempt();
+            const attempt = attemptToken.attempt;
             if (attempt > REGISTRY_CONNECT_MAX_RETRIES) {
+                registryLifecycle.dispose();
+                this.registryRetryLifecycles.delete(server);
                 this.logger.error(
                     "Discovery registry connect retries exhausted",
                     {
@@ -683,8 +690,11 @@ export class LocalDiscoveryServer {
             const discoveryWs = this.createOutboundWebSocket({
                 url: registryUrl,
                 purpose: "registry",
+                attemptToken,
                 log,
                 onOpen: (ws) => {
+                    registryLifecycle.retireAttempt(attemptToken);
+                    this.registryRetryLifecycles.delete(server);
                     ws.send(
                         JSON.stringify({
                             port,
@@ -749,8 +759,9 @@ export class LocalDiscoveryServer {
                             ...(details ?? {})
                         }
                     );
-                    this.scheduleTimer(
-                        () => connectRegistry(attempt + 1),
+                    registryLifecycle.scheduleRetry(
+                        attemptToken,
+                        connectRegistry,
                         Math.min(100 * attempt, 1000)
                     );
                 }
@@ -759,7 +770,7 @@ export class LocalDiscoveryServer {
             this.activeDiscoveryConnections.add(discoveryWs);
         };
 
-        connectRegistry(1);
+        connectRegistry();
     }
 
     /**
@@ -875,28 +886,39 @@ export class LocalDiscoveryServer {
         myPeerAddress: string,
         myPeerPort: Port
     ): void {
-        if (
-            this._cleanupRequested ||
-            this.isPeerConnected(p2pManager, peerAddress)
-        ) {
+        const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
+
+        if (this._cleanupRequested) {
+            this.retirePeerRetryLifecycle(connectionKey);
             return;
         }
 
-        const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
-        const retryCount = this._peerRetryCount.get(connectionKey) || 0;
+        if (this.isPeerConnected(p2pManager, peerAddress)) {
+            this.retirePeerRetryLifecycle(connectionKey);
+            return;
+        }
 
-        if (retryCount >= MAX_PEER_CONNECT_RETRIES) {
+        let retryLifecycle = this.peerRetryLifecycles.get(connectionKey);
+        if (!retryLifecycle) {
+            retryLifecycle = new RetryLifecycle();
+            this.peerRetryLifecycles.set(connectionKey, retryLifecycle);
+        }
+
+        const attemptToken = retryLifecycle.beginAttempt();
+        const attempt = attemptToken.attempt;
+        if (attempt > MAX_PEER_CONNECT_RETRIES) {
+            retryLifecycle.dispose();
+            this.peerRetryLifecycles.delete(connectionKey);
             this.logger.warn("Max peer connection retries reached", {
                 mode: "peer",
                 peerAddress,
                 peerPort,
                 channelId,
-                attempts: retryCount
+                attempts: attempt - 1
             });
             return;
         }
 
-        const attempt = retryCount + 1;
         const peerUrl = `ws://${LOCAL_WS_HOST}:${peerPort}`;
 
         const log = {
@@ -909,32 +931,25 @@ export class LocalDiscoveryServer {
             attempt
         };
 
-        let retryScheduled = false;
-        let handshakeCompleted = false;
         let transport: LocalTransport | undefined;
         let transportReadyTimeout: ReturnType<typeof setTimeout> | undefined;
 
-        const scheduleRetry = (
+        const scheduleAcceptedRetry = (
             reason: string,
             details?: Record<string, unknown>
         ) => {
-            if (
-                retryScheduled ||
-                handshakeCompleted ||
-                this._cleanupRequested
-            ) {
+            if (this._cleanupRequested) {
                 return;
             }
-            retryScheduled = true;
 
-            this._peerRetryCount.set(connectionKey, attempt);
             this.logger.warn("Peer connection failed; retrying", {
                 ...log,
                 reason,
                 ...(details ?? {})
             });
 
-            this.scheduleTimer(
+            retryLifecycle.scheduleRetry(
+                attemptToken,
                 () =>
                     this.connectToSinglePeer(
                         peerPort,
@@ -947,10 +962,17 @@ export class LocalDiscoveryServer {
                 100 * attempt
             );
         };
+        const failAttempt = (
+            reason: string,
+            details?: Record<string, unknown>
+        ) => {
+            attemptToken.failOnce(() => scheduleAcceptedRetry(reason, details));
+        };
 
         this.createOutboundWebSocket({
             url: peerUrl,
             purpose: "peer",
+            attemptToken,
             log,
             onOpen: (ws) => {
                 ws.send(LOCAL_TRANSPORT_CLIENT_READY_MESSAGE);
@@ -959,7 +981,7 @@ export class LocalDiscoveryServer {
                 transportReadyTimeout = setTimeout(() => {
                     if (transport || this._cleanupRequested) return;
                     ws.close();
-                    scheduleRetry("transport-ready-timeout");
+                    failAttempt("transport-ready-timeout");
                 }, LOCAL_TRANSPORT_READY_TIMEOUT_MS);
             },
             onMessage: (ws, message) => {
@@ -984,14 +1006,14 @@ export class LocalDiscoveryServer {
                     .then((completed) => {
                         if (!completed) {
                             p2pManager.disconnectConnection(lt);
-                            scheduleRetry("handshake-timeout");
+                            failAttempt("handshake-timeout");
                             return;
                         }
 
                         // Socket open only proves transport availability. The
                         // authenticated handshake completes peer discovery.
-                        handshakeCompleted = true;
-                        this._peerRetryCount.delete(connectionKey);
+                        retryLifecycle.retireAttempt(attemptToken);
+                        this.peerRetryLifecycles.delete(connectionKey);
                         this.logger.info("Connected to peer", {
                             ...log
                         });
@@ -1008,7 +1030,7 @@ export class LocalDiscoveryServer {
                     code,
                     reason: reason?.toString?.() || ""
                 });
-                scheduleRetry("closed-before-handshake", {
+                failAttempt("closed-before-handshake", {
                     code,
                     reason: reason?.toString?.() || ""
                 });
@@ -1025,7 +1047,7 @@ export class LocalDiscoveryServer {
                 });
             },
             onConnectFailure: (reason, details) => {
-                scheduleRetry(reason, details);
+                scheduleAcceptedRetry(reason, details);
             }
         });
 
@@ -1033,9 +1055,26 @@ export class LocalDiscoveryServer {
         // If we do open, we keep the ws alive for LocalTransport.
     }
 
+    private static retirePeerRetryLifecycle(
+        connectionKey: PeerConnectionKey
+    ): void {
+        const lifecycle = this.peerRetryLifecycles.get(connectionKey);
+        lifecycle?.dispose();
+        this.peerRetryLifecycles.delete(connectionKey);
+    }
+
     public static async cleanup(): Promise<void> {
         this._cleanupRequested = true;
         const closePromises: Promise<void>[] = [];
+
+        for (const lifecycle of this.registryRetryLifecycles.values()) {
+            lifecycle.dispose();
+        }
+        this.registryRetryLifecycles.clear();
+        for (const lifecycle of this.peerRetryLifecycles.values()) {
+            lifecycle.dispose();
+        }
+        this.peerRetryLifecycles.clear();
 
         // 1. Close all peer servers
         for (const server of this.peerServers) {
@@ -1063,11 +1102,6 @@ export class LocalDiscoveryServer {
         this.activeDiscoveryConnections.forEach((ws) => ws.terminate());
         this.activeDiscoveryConnections.clear();
 
-        for (const timer of this.pendingTimers) {
-            clearTimeout(timer);
-        }
-        this.pendingTimers.clear();
-
         this.logger.debug("Discovery connections terminated", { mode: "peer" });
 
         // 3. Close the central discovery server
@@ -1088,7 +1122,6 @@ export class LocalDiscoveryServer {
         }
 
         // 4. Clear internal state
-        this._peerRetryCount.clear();
         this.registeredPeers = [];
 
         this.logger.debug("LocalDiscovery cleanup complete", {

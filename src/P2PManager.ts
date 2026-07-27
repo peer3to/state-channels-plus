@@ -10,7 +10,7 @@ import MainRpcService from "@/rpc/MainRpcService";
 import { P2pSigner } from "@/evm";
 import { ATransport, LoopbackTransport, TransportType } from "@/transport";
 import ProfileManager from "@/ProfileManager";
-import Holepunch from "@/Holepunch";
+import Holepunch from "@/holepunch/Holepunch";
 import { ethers } from "ethers";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";

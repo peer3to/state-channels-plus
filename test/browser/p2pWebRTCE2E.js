@@ -1,8 +1,11 @@
 import { ethers, NonceManager, ContractFactory } from "ethers";
+import { Buffer } from "buffer";
 
 import { EvmStateMachine } from "@/evm";
 import Clock from "@/Clock";
+import { BrowserHolepunchRuntime } from "@/holepunch/browser/HolepunchRuntime";
 import { installWebRTCMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
+import { createConfig } from "@/utils/config";
 import {
     MathStateMachine__factory,
     StateChannelManagerProxy__factory
@@ -94,10 +97,10 @@ installRTCPeerConnectionSpy();
 function waitFor(predicate, label, timeoutMs = 45_000) {
     const startedAt = Date.now();
     return new Promise((resolve, reject) => {
-        const tick = () => {
+        const tick = async () => {
             let value;
             try {
-                value = predicate();
+                value = await predicate();
             } catch (error) {
                 reject(error);
                 return;
@@ -113,7 +116,7 @@ function waitFor(predicate, label, timeoutMs = 45_000) {
             }
             setTimeout(tick, 50);
         };
-        tick();
+        void tick();
     });
 }
 
@@ -418,5 +421,289 @@ globalThis.runP2pWebRTCWorkerBubbleUpE2E = async () => {
                 // ignore
             }
         }
+    }
+};
+
+async function setupHolepunchPeer(
+    peerWallet,
+    providerUrl,
+    scmAddress,
+    relayerUrls,
+    peerId
+) {
+    const provider = new ethers.JsonRpcProvider(providerUrl);
+    const runtimeSigner = peerWallet.connect(provider);
+    return EvmStateMachine.p2pSetup(
+        StateChannelManagerProxy__factory.connect(scmAddress, runtimeSigner),
+        MathStateMachine__factory.connect(ethers.ZeroAddress, runtimeSigner),
+        deployLocalStateMachine,
+        {
+            peerId,
+            customRpcManifest: {
+                module: new URL(
+                    "../fixtures/customRpc/PingPongRpcManifest.ts",
+                    import.meta.url
+                ).href
+            },
+            config: {
+                PROVIDER_URL: providerUrl,
+                RUN_SDK_IN_THREAD: true,
+                DEBUG_LOCAL_TRANSPORT: false,
+                HOLEPUNCH_RELAYER_URLS: relayerUrls,
+                LOG_LEVEL: globalThis.__P2P_E2E__?.logLevel ?? "info",
+                CRASH_LOG_UPLOAD_ENDPOINT: ""
+            },
+            signerSecret: peerWallet.privateKey
+        }
+    );
+}
+
+async function assertPingPong(sender, recipientAddress, nonce) {
+    await sender.hostRpc.pingService.ping(nonce).sendOne(recipientAddress);
+    await waitFor(async () => {
+        const received = await sender.hostRpc.pingService
+            .getReceivedPongNonces()
+            .request({ timeoutMs: 5000 });
+        return received.includes(nonce);
+    }, `Holepunch pong '${nonce}'`);
+}
+
+async function assertLateBrowserSwarmInjectionIgnored(relayerUrl) {
+    const runtimeUpdates = [];
+    const logger = {
+        child() {
+            return this;
+        },
+        debug() {},
+        info() {},
+        warn() {},
+        error() {}
+    };
+    const p2pManager = { logger, preferredTransport: undefined };
+    const lateInjectedSwarm = {
+        on() {},
+        off() {},
+        join() {},
+        leave() {},
+        destroy() {}
+    };
+
+    createConfig({ HOLEPUNCH_RELAYER_URLS: [relayerUrl] });
+    const runtime = new BrowserHolepunchRuntime(p2pManager, (swarm) =>
+        runtimeUpdates.push(swarm)
+    );
+    globalThis.Hyperswarm = lateInjectedSwarm;
+    try {
+        runtime.start();
+        await waitFor(
+            () => runtimeUpdates.length === 1,
+            "owned browser Holepunch runtime update"
+        );
+        return runtimeUpdates[0] !== lateInjectedSwarm;
+    } finally {
+        delete globalThis.Hyperswarm;
+        await runtime.dispose();
+    }
+}
+
+globalThis.runP2pHolepunchE2E = async () => {
+    const config = globalThis.__P2P_E2E__;
+    if (
+        !config?.providerUrl ||
+        !Array.isArray(config?.holepunchRelayUrls) ||
+        config.holepunchRelayUrls.length !== 2
+    ) {
+        throw new Error(
+            "Missing __P2P_E2E__ Holepunch provider/relay configuration"
+        );
+    }
+    const controlRelays = globalThis.__controlHolepunchRelays;
+    if (typeof controlRelays !== "function") {
+        throw new Error("Missing Holepunch relay control bridge");
+    }
+
+    const { scmAddress, channelId, peerWallets } = await deployStack(
+        config.providerUrl
+    );
+    await controlRelays({ action: "stop", endpoint: "a" });
+    await controlRelays({ action: "stop", endpoint: "b" });
+
+    const beforeEmpty = await controlRelays({ action: "stats" });
+    const emptyPeer = await setupHolepunchPeer(
+        peerWallets[0],
+        config.providerUrl,
+        scmAddress,
+        [],
+        20
+    );
+    try {
+        await emptyPeer.p2pSigner.connectToChannel(channelId);
+    } finally {
+        await emptyPeer.dispose();
+    }
+    const afterEmpty = await controlRelays({ action: "stats" });
+    const emptyRelayDialCount =
+        afterEmpty.endpoints.a.totalConnections +
+        afterEmpty.endpoints.b.totalConnections -
+        beforeEmpty.endpoints.a.totalConnections -
+        beforeEmpty.endpoints.b.totalConnections;
+
+    const peerA = await setupHolepunchPeer(
+        peerWallets[0],
+        config.providerUrl,
+        scmAddress,
+        config.holepunchRelayUrls,
+        30
+    );
+    let peerB;
+    const connectedBy = [new Set(), new Set()];
+    peerA.on("onConnection", (address) => {
+        connectedBy[0].add(String(address).toLowerCase());
+    });
+
+    try {
+        await peerA.p2pSigner.connectToChannel(channelId);
+        await peerA.p2pSigner.connectToChannel(channelId);
+        await controlRelays({ action: "start", endpoint: "a" });
+
+        const topicKey = Buffer.alloc(32).fill(channelId).toString("hex");
+        await waitFor(async () => {
+            const stats = await controlRelays({ action: "stats" });
+            return (
+                stats.endpoints.a.activeConnections === 1 &&
+                stats.topicAnnounceCounts[topicKey] === 1
+            );
+        }, "the queued Holepunch topic to announce once");
+
+        peerB = await setupHolepunchPeer(
+            peerWallets[1],
+            config.providerUrl,
+            scmAddress,
+            config.holepunchRelayUrls,
+            31
+        );
+        peerB.on("onConnection", (address) => {
+            connectedBy[1].add(String(address).toLowerCase());
+        });
+        await peerB.p2pSigner.connectToChannel(channelId);
+        await peerB.p2pSigner.connectToChannel(channelId);
+
+        const addressA = peerWallets[0].address.toLowerCase();
+        const addressB = peerWallets[1].address.toLowerCase();
+        await waitFor(
+            () => connectedBy[0].has(addressB) && connectedBy[1].has(addressA),
+            "two browser peers to connect through Holepunch",
+            45_000
+        );
+        const initialStats = await controlRelays({ action: "stats" });
+        const initialTopicAnnounces =
+            initialStats.topicAnnounceCounts[topicKey] ?? 0;
+
+        const initialResult = await peerA.hostRpc.pingService
+            .sum(20, 22, "holepunch-initial")
+            .request(peerWallets[1].address, { timeoutMs: 5000 });
+        await assertPingPong(
+            peerA,
+            peerWallets[1].address,
+            "holepunch-initial-ping"
+        );
+
+        await controlRelays({ action: "start", endpoint: "b" });
+        await controlRelays({ action: "stop", endpoint: "a" });
+        await waitFor(
+            async () => {
+                const stats = await controlRelays({ action: "stats" });
+                return stats.endpoints.b.totalConnections >= 2;
+            },
+            "both browser peers to fail over to relay B",
+            45_000
+        );
+        const failoverResult = await peerB.hostRpc.pingService
+            .sum(4, 7, "holepunch-failover")
+            .request(peerWallets[0].address, { timeoutMs: 5000 });
+        await assertPingPong(
+            peerB,
+            peerWallets[0].address,
+            "holepunch-failover-ping"
+        );
+
+        await controlRelays({ action: "stop", endpoint: "b" });
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const beforeRecovery = await controlRelays({ action: "stats" });
+        await controlRelays({ action: "start", endpoint: "b" });
+        await waitFor(
+            async () => {
+                const stats = await controlRelays({ action: "stats" });
+                return (
+                    stats.endpoints.b.totalConnections >=
+                    beforeRecovery.endpoints.b.totalConnections + 2
+                );
+            },
+            "both browser peers to recover from a full relay outage",
+            45_000
+        );
+        const recoveryResult = await peerA.hostRpc.pingService
+            .sum(9, 10, "holepunch-recovery")
+            .request(peerWallets[1].address, { timeoutMs: 5000 });
+
+        await controlRelays({ action: "stop", endpoint: "b" });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await peerA.dispose();
+        const beforeSingleRecovery = await controlRelays({ action: "stats" });
+        await controlRelays({ action: "start", endpoint: "b" });
+        await waitFor(
+            async () => {
+                const stats = await controlRelays({ action: "stats" });
+                return (
+                    stats.endpoints.b.totalConnections >=
+                    beforeSingleRecovery.endpoints.b.totalConnections + 1
+                );
+            },
+            "the remaining browser peer to reconnect",
+            45_000
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const afterSingleRecovery = await controlRelays({ action: "stats" });
+        const postDisposeConnections =
+            afterSingleRecovery.endpoints.b.totalConnections -
+            beforeSingleRecovery.endpoints.b.totalConnections;
+
+        await peerB.dispose();
+        await waitFor(async () => {
+            const stats = await controlRelays({ action: "stats" });
+            return (
+                stats.endpoints.a.activeConnections === 0 &&
+                stats.endpoints.b.activeConnections === 0
+            );
+        }, "all browser Holepunch relay sockets to close");
+        const disposedStats = await controlRelays({ action: "stats" });
+        const lateInjectionIgnored =
+            await assertLateBrowserSwarmInjectionIgnored(
+                config.holepunchRelayUrls[1]
+            );
+
+        return {
+            emptyRelayDialCount,
+            initialTopicAnnounces,
+            initialSum: initialResult.sum,
+            initialRequesterMatches:
+                initialResult.requester?.toLowerCase() ===
+                peerWallets[0].address.toLowerCase(),
+            failoverSum: failoverResult.sum,
+            failoverRequesterMatches:
+                failoverResult.requester?.toLowerCase() ===
+                peerWallets[1].address.toLowerCase(),
+            recoverySum: recoveryResult.sum,
+            recoveryRequesterMatches:
+                recoveryResult.requester?.toLowerCase() ===
+                peerWallets[0].address.toLowerCase(),
+            lateInjectionIgnored,
+            postDisposeConnections,
+            activeConnectionsAfterDispose:
+                disposedStats.endpoints.a.activeConnections +
+                disposedStats.endpoints.b.activeConnections
+        };
+    } finally {
+        await Promise.allSettled([peerA.dispose(), peerB?.dispose()]);
     }
 };

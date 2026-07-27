@@ -2,20 +2,24 @@ import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
+import type {
+    HolepunchConnectionSocket,
+    HolepunchPeerInfo
+} from "@/holepunch/HolepunchTypes";
 
 class HolepunchTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH;
-    holepunchSocket: any;
-    holepunchPeerInfo: any;
+    holepunchSocket: HolepunchConnectionSocket;
+    holepunchPeerInfo: HolepunchPeerInfo;
     constructor(
-        holepunchSocket: any,
-        holepunchPeerInfo: any,
+        holepunchSocket: HolepunchConnectionSocket,
+        holepunchPeerInfo: HolepunchPeerInfo,
         p2pManager: P2PManager
     ) {
         super(p2pManager);
         this.holepunchSocket = holepunchSocket;
         this.holepunchPeerInfo = holepunchPeerInfo;
-        this.holepunchSocket.on("data", async (data: any) => {
+        this.holepunchSocket.on("data", (data: Uint8Array) => {
             if (data instanceof Uint8Array) {
                 data = Buffer.from(data);
             }
@@ -36,7 +40,7 @@ class HolepunchTransport extends ATransport {
     _send(serializedRPC: string): void {
         this.holepunchSocket.write(serializedRPC);
     }
-    onMessage(data: any): void {
+    onMessage(data: Uint8Array): void {
         const serializedRPC = data.toString();
         this.p2pManager.onRpc(serializedRPC, this);
     }

@@ -33,9 +33,13 @@ import {
     Timestamp
 } from "@/types/types";
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import {
+    randomHash,
+    blockStructWithTransactionHeader
+} from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeFactoryUtils";
 
-export const hash = (): `0x${string}` =>
-    ethers.hexlify(ethers.randomBytes(32)) as `0x${string}`;
+export const hash = randomHash;
+export { blockStructWithTransactionHeader };
 
 export const randomAddress = (): Address =>
     ethers.Wallet.createRandom().address as Address;
@@ -149,22 +153,6 @@ export function block(
     };
 
     return Block.fromSignedBlock(signedBlockStruct);
-}
-
-/** Copy of `blockStruct` with `transaction.header` shallow-merged with `header`. */
-export function blockStructWithTransactionHeader(
-    bs: BlockStruct,
-    header: Partial<TransactionHeaderStruct>
-): BlockStruct {
-    return {
-        transaction: {
-            header: { ...bs.transaction.header, ...header },
-            body: { ...bs.transaction.body }
-        },
-        stateSnapshotHash: bs.stateSnapshotHash,
-        previousBlockHash: bs.previousBlockHash,
-        messageBlocks: [...bs.messageBlocks]
-    };
 }
 
 /**

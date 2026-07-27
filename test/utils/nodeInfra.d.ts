@@ -14,6 +14,7 @@ export interface DiscoveryHandle {
     child: ChildProcess;
     url: string;
     stop: () => void;
+    getConnectionCount: () => number;
     label?: string;
 }
 

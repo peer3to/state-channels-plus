@@ -62,6 +62,10 @@ export class NetworkRpcMethods extends ARpcMethods {
         this.p2pManager.disconnectConnection(transport);
         return true;
     }
+
+    public async cleanupLocalDiscovery(): Promise<void> {
+        await LocalDiscoveryServer.cleanup();
+    }
 }
 
 export default NetworkRpcMethods;

@@ -6,6 +6,7 @@ export * from "@platform/DeployUtils";
 export * from "@platform/LocalDiscoveryServer";
 export * from "./Mutex";
 export * from "./retry";
+export * from "./RetryLifecycle";
 export * from "./scheduler";
 export * from "./set";
 export * from "./SignatureCollectionMap";

@@ -44,6 +44,10 @@ const server = await createServer({
                 projectRoot,
                 "src/utils/browser/LocalDiscoveryServer.ts"
             ),
+            "@platform/HolepunchRuntime": path.join(
+                projectRoot,
+                "src/holepunch/browser/HolepunchRuntime.ts"
+            ),
             "@platform/precompileModuleLoader": path.join(
                 projectRoot,
                 "src/evm/browser/precompileModuleLoader.ts"
@@ -62,7 +66,8 @@ const server = await createServer({
             ),
             "@": path.join(projectRoot, "src"),
             "@test": path.join(projectRoot, "test"),
-            "@typechain-types": path.join(projectRoot, "typechain-types")
+            "@typechain-types": path.join(projectRoot, "typechain-types"),
+            scripts: path.join(projectRoot, "scripts")
         }
     },
     server: {

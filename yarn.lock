@@ -1131,7 +1131,7 @@
     streamx "^2.11.3"
     timeout-refresh "^2.0.1"
 
-"@hyperswarm/dht@^6.0.1":
+"@hyperswarm/dht@^6.0.0", "@hyperswarm/dht@^6.0.1":
   version "6.5.1"
   resolved "https://registry.yarnpkg.com/@hyperswarm/dht/-/dht-6.5.1.tgz#07e144590f532c2f872e3617117d17f266b2f7a4"
   integrity sha512-TTTOzuwqbmXNwl+b2FXeHCoR2QS1sqxQvqXwv2i54sdEkKmF8f8t4U8PsRGk5PUO3qA6GxlMThvXixg9Fgs4Yw==
@@ -1165,6 +1165,13 @@
     sodium-universal "^4.0.0"
     streamx "^2.14.0"
     timeout-refresh "^2.0.0"
+
+"@hyperswarm/testnet@3.0.0":
+  version "3.0.0"
+  resolved "https://registry.yarnpkg.com/@hyperswarm/testnet/-/testnet-3.0.0.tgz#4f59fd3e3280d790ab3d81f9208583d0ae7d6632"
+  integrity sha512-VuvGAISFcGw+mo1BVn9qUOemgSbVKhLlRUuXyohNgLSt355cE0LfytZ+QLKuRjSrZ8+xJb1GjhoA80d2lxbSZQ==
+  dependencies:
+    "@hyperswarm/dht" "^6.0.0"
 
 "@isaacs/balanced-match@^4.0.1":
   version "4.0.1"

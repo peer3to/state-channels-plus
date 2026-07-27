@@ -22,9 +22,9 @@ import type {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { ConstructDisputeResult } from "@/disputeManager/DisputeManager";
 import {
-    hash as randomHashFactory,
-    blockStructWithTransactionHeader as factoryBlockStructWithHeader
-} from "@test/factory";
+    randomHash,
+    blockStructWithTransactionHeader
+} from "./DisputeFactoryUtils";
 import {
     expectSignedBlocksOnlyStateProof as assertSignedBlocksOnly,
     expectMilestonesOnlyStateProof as assertMilestonesOnly
@@ -79,7 +79,7 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
 
     /** Random 32-byte hash (factory `hash()`). */
     randomHash(): `0x${string}` {
-        return randomHashFactory();
+        return randomHash();
     }
     /** Deterministic keccak hash of `data` (utils `hash()`). */
     hash(data: BytesLike): `0x${string}` {
@@ -95,7 +95,7 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         bs: BlockStruct,
         header: Partial<TransactionHeaderStruct>
     ): BlockStruct {
-        return factoryBlockStructWithHeader(bs, header);
+        return blockStructWithTransactionHeader(bs, header);
     }
     /** ABI-encode a block struct (`Type.Block`). */
     encodeBlock(block: BlockStruct): string {
@@ -155,7 +155,7 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         dispute.input.forkId = forkId;
         const proof = dispute.input.stateProof;
         const setForkId: BlockTransform = (bs) =>
-            factoryBlockStructWithHeader(bs, { forkId });
+            blockStructWithTransactionHeader(bs, { forkId });
 
         for (let i = 0; i < proof.signedBlocks.length; i++) {
             await this.rewriteSignedBlockAtIndex(dispute, i, setForkId);
@@ -216,7 +216,7 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         const outsider = Wallet.createRandom();
         const block = Block.fromSignedBlock(proof.signedBlocks[index]);
         const blockStruct = {
-            ...factoryBlockStructWithHeader(block.blockStruct, {
+            ...blockStructWithTransactionHeader(block.blockStruct, {
                 participant: outsider.address
             }),
             stateSnapshotHash:

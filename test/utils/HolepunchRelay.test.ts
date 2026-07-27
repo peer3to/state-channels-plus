@@ -1,294 +1,286 @@
 import { expect } from "chai";
-import sinon from "sinon";
 
-// hyperswarm / @hyperswarm/dht-relay / @hyperswarm/dht-relay/ws all set up
-// real DHT/network machinery (including their own internal timers) on
-// construction. Stub them out via the require cache, before HolepunchRelay
-// is loaded, so tests exercise only the relayer-pool/backoff logic in
-// HolepunchRelay.ts against a controlled fake WebSocket - not real DHT
-// wiring or unrelated timers that would fight sinon's fake clock.
-class FakeHyperswarm {
-    constructor(_opts?: any) {}
-}
-class FakeDhtNode {
-    constructor(_stream?: any) {}
-}
-class FakeDhtStream {
-    constructor(_isInitiator?: boolean, _socket?: any) {}
-}
-
-function stubModule(specifier: string, fakeExports: any) {
-    const resolved = require.resolve(specifier);
-    require.cache[resolved] = {
-        id: resolved,
-        filename: resolved,
-        loaded: true,
-        exports: fakeExports
-    } as any;
-}
-
-stubModule("hyperswarm", FakeHyperswarm);
-stubModule("@hyperswarm/dht-relay", FakeDhtNode);
-stubModule("@hyperswarm/dht-relay/ws", FakeDhtStream);
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const HolepunchRelay = require("@/HolepunchRelay").default;
-
-// Mirrors HolepunchRelay.ts's FAILOVER_JITTER_MAX_MS (not exported).
-const FAILOVER_JITTER_MAX_MS = 250;
-
-// Minimal fake WebSocket the test drives manually via emitOpen/emitClose/emitError.
-class FakeWebSocket {
-    static instances: FakeWebSocket[] = [];
-
-    url: string;
-    readyState = 0; // CONNECTING
-    binaryType = "arraybuffer";
-
-    onopen: (() => void) | null = null;
-    onclose: (() => void) | null = null;
-    onerror: ((error: any) => void) | null = null;
-    onmessage: ((event: any) => void) | null = null;
-
-    constructor(url: string) {
-        this.url = url;
-        FakeWebSocket.instances.push(this);
-    }
-
-    addEventListener() {}
-    removeEventListener() {}
-    send(_data: any) {}
-    close() {
-        this.readyState = 3; // CLOSED
-    }
-
-    emitOpen() {
-        this.readyState = 1; // OPEN
-        this.onopen?.();
-    }
-
-    emitClose() {
-        this.onclose?.();
-    }
-
-    emitError(error: any = new Error("fake ws error")) {
-        this.onerror?.(error);
-    }
-}
-
-function createLogger() {
-    const logger: any = {
-        child: () => logger,
-        debug: () => undefined,
-        verbose: () => undefined,
-        warn: () => undefined,
-        error: () => undefined,
-        info: () => undefined
-    };
-    return logger;
-}
-
-// Reaches into the singleton to reset it between tests, since
-// HolepunchRelay.init() always assigns HolepunchRelay.instance.
-function resetSingleton() {
-    (HolepunchRelay as any).instance = undefined;
-}
+import { DEFAULT_HOLEPUNCH_RETRY_POLICY_OPTIONS } from "@/holepunch/HolepunchRetryPolicy";
+import { NodeHolepunchRelayConnectionFactory } from "@test/fixtures/holepunch/NodeHolepunchRelayConnectionFactory";
+import { HolepunchRelayTestHarness } from "@test/fixtures/holepunch/HolepunchRelayTestHarness";
+import { waitFor } from "@test/utils/waitFor";
 
 describe("HolepunchRelay", function () {
-    let originalWebSocket: any;
-    let clock: sinon.SinonFakeTimers;
+    let harness: HolepunchRelayTestHarness;
 
-    beforeEach(() => {
-        originalWebSocket = (global as any).WebSocket;
-        (global as any).WebSocket = FakeWebSocket;
-        FakeWebSocket.instances = [];
-        clock = sinon.useFakeTimers();
-        resetSingleton();
+    beforeEach(async function () {
+        this.timeout(10_000);
+        harness = await HolepunchRelayTestHarness.create();
     });
 
-    afterEach(() => {
-        (global as any).WebSocket = originalWebSocket;
-        clock.restore();
-        resetSingleton();
+    afterEach(async function () {
+        this.timeout(10_000);
+        await harness.close();
     });
 
-    it("does not permanently exhaust the relayer pool after more failures than configured relayers", () => {
-        const relayerUrls = ["wss://relay-a.example", "wss://relay-b.example"];
-        let updateCallbackCount = 0;
+    it("keeps an empty relay configuration idle", async function () {
+        const factory = new NodeHolepunchRelayConnectionFactory();
+        const { relay } = harness.createRelay({
+            relayerUrls: [],
+            connectionFactory: factory
+        });
 
-        HolepunchRelay.init(
-            relayerUrls,
-            () => {
-                updateCallbackCount++;
+        relay.start();
+        relay.start();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(factory.createdRelayerUrls).to.deep.equal([]);
+
+        await relay.dispose();
+        relay.start();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(factory.createdRelayerUrls).to.deep.equal([]);
+    });
+
+    it("starts once and cannot restart after disposal", async function () {
+        const factory = new NodeHolepunchRelayConnectionFactory();
+        let updates = 0;
+        const { relay } = harness.createRelay({
+            connectionFactory: factory,
+            onSwarm: () => {
+                updates++;
+            }
+        });
+
+        relay.start();
+        relay.start();
+        await waitFor(() => updates === 1, 3000);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(factory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a
+        ]);
+
+        await relay.dispose();
+        relay.start();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(factory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a
+        ]);
+    });
+
+    it("turns a disconnect sequence into one failover and resets after success", async function () {
+        const factory = new NodeHolepunchRelayConnectionFactory();
+        let updates = 0;
+        const { relay } = harness.createRelay({
+            connectionFactory: factory,
+            onSwarm: () => {
+                updates++;
+            }
+        });
+
+        relay.start();
+        await waitFor(() => updates === 1, 3000);
+        harness.cluster.disconnectClients("a");
+        await waitFor(
+            () =>
+                harness.cluster.stats().endpoints.b.totalConnections === 1 &&
+                updates === 2,
+            3000
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(factory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a,
+            harness.cluster.urls.b
+        ]);
+
+        harness.cluster.disconnectClients("b");
+        await waitFor(
+            () =>
+                harness.cluster.stats().endpoints.a.totalConnections === 2 &&
+                updates === 3,
+            3000
+        );
+        expect(factory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a,
+            harness.cluster.urls.b,
+            harness.cluster.urls.a
+        ]);
+    });
+
+    it("retries the full pool with bounded backoff and recovers", async function () {
+        await harness.cluster.stop("a");
+        await harness.cluster.stop("b");
+        const factory = new NodeHolepunchRelayConnectionFactory();
+        let updates = 0;
+        const { relay } = harness.createRelay({
+            connectionFactory: factory,
+            onSwarm: () => {
+                updates++;
+            }
+        });
+
+        relay.start();
+        await waitFor(() => factory.createdRelayerUrls.length >= 3, 3000);
+        await harness.cluster.start("b");
+        await waitFor(() => updates === 1, 3000);
+
+        expect(factory.createdRelayerUrls.slice(0, 4)).to.deep.equal([
+            harness.cluster.urls.a,
+            harness.cluster.urls.b,
+            harness.cluster.urls.a,
+            harness.cluster.urls.b
+        ]);
+    });
+
+    it("ignores a stale open after its attempt failed", async function () {
+        const factory = new NodeHolepunchRelayConnectionFactory();
+        factory.holdNextResourceOpen();
+        let updates = 0;
+        const { relay } = harness.createRelay({
+            connectionFactory: factory,
+            onSwarm: () => {
+                updates++;
+            }
+        });
+
+        relay.start();
+        await waitFor(
+            () => harness.cluster.stats().endpoints.a.activeConnections === 1,
+            3000
+        );
+        expect(updates).to.equal(0);
+
+        harness.cluster.disconnectClients("a");
+        await waitFor(() => updates === 1, 3000);
+        factory.releaseHeldResourceOpen();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(updates).to.equal(1);
+        expect(factory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a,
+            harness.cluster.urls.b
+        ]);
+    });
+
+    it("continues after the teardown timeout branch", async function () {
+        const factory = new NodeHolepunchRelayConnectionFactory();
+        factory.holdNextResourceDestroy();
+        let updates = 0;
+        const teardownTimeoutMs = 40;
+        const { relay } = harness.createRelay({
+            connectionFactory: factory,
+            policyOptions: {
+                teardownTimeoutMs,
+                random: () => 0
             },
-            createLogger()
-        );
+            onSwarm: () => {
+                updates++;
+            }
+        });
 
-        // Simulate more consecutive failures than there are configured relayers.
-        for (let i = 0; i < 5; i++) {
-            const ws =
-                FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
-            ws.emitClose();
-            // A full-round exhaustion schedules a backoff retry; advance
-            // through the pending timer so the pool keeps retrying.
-            clock.tick(30000);
-        }
+        relay.start();
+        await waitFor(() => updates === 1, 3000);
+        harness.cluster.pauseClientSockets("a");
+        const failedAt = Date.now();
+        harness.cluster.disconnectClients("a");
+        await waitFor(() => updates === 2, 3000);
+        const recoveredAfterMs = Date.now() - failedAt;
+        factory.releaseHeldResourceDestroy();
 
-        // Pre-fix, after relayerUrls.length (2) failures the pool would be
-        // permanently empty and connectToRelayer() would silently no-op -
-        // updateCallback would stop firing forever. Assert it keeps firing.
-        expect(updateCallbackCount).to.be.greaterThan(relayerUrls.length);
-        expect(FakeWebSocket.instances.length).to.be.greaterThan(
-            relayerUrls.length
-        );
+        expect(recoveredAfterMs).to.be.at.least(teardownTimeoutMs);
+        expect(recoveredAfterMs).to.be.lessThan(1000);
+        expect(factory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a,
+            harness.cluster.urls.b
+        ]);
     });
 
-    it("keeps retrying a single configured relayer without locking out", () => {
-        const relayerUrls = ["wss://only-relay.example"];
-        let updateCallbackCount = 0;
+    it("keeps coexisting owners isolated when one is disposed", async function () {
+        const firstFactory = new NodeHolepunchRelayConnectionFactory();
+        const secondFactory = new NodeHolepunchRelayConnectionFactory();
+        let firstUpdates = 0;
+        let secondUpdates = 0;
+        const { relay: first } = harness.createRelay({
+            connectionFactory: firstFactory,
+            onSwarm: () => {
+                firstUpdates++;
+            }
+        });
+        const { relay: second } = harness.createRelay({
+            connectionFactory: secondFactory,
+            onSwarm: () => {
+                secondUpdates++;
+            }
+        });
 
-        HolepunchRelay.init(
-            relayerUrls,
-            () => {
-                updateCallbackCount++;
+        first.start();
+        second.start();
+        await waitFor(
+            () =>
+                firstUpdates === 1 &&
+                secondUpdates === 1 &&
+                harness.cluster.stats().endpoints.a.activeConnections === 2,
+            3000
+        );
+
+        await first.dispose();
+        harness.cluster.disconnectClients("a");
+        await waitFor(() => secondUpdates === 2, 3000);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(firstUpdates).to.equal(1);
+        expect(secondFactory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a,
+            harness.cluster.urls.b
+        ]);
+        expect(firstFactory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a
+        ]);
+    });
+
+    it("cancels a pending retry on disposal", async function () {
+        const factory = new NodeHolepunchRelayConnectionFactory();
+        let updates = 0;
+        let randomCalls = 0;
+        const { relay } = harness.createRelay({
+            connectionFactory: factory,
+            policyOptions: {
+                failoverJitterMaxMs: 100,
+                random: () => (randomCalls++ === 0 ? 0 : 1)
             },
-            createLogger()
-        );
+            onSwarm: () => {
+                updates++;
+            }
+        });
 
-        for (let i = 0; i < 4; i++) {
-            const ws =
-                FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
-            ws.emitError();
-            clock.tick(30000);
-        }
+        relay.start();
+        await waitFor(() => updates === 1, 3000);
+        harness.cluster.disconnectClients("a");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await relay.dispose();
+        await new Promise((resolve) => setTimeout(resolve, 150));
 
-        // Every attempt should target the only configured relayer, and the
-        // pool should never go permanently dark - 1 initial connect + 4 retries.
-        expect(updateCallbackCount).to.equal(5);
-        for (const ws of FakeWebSocket.instances) {
-            expect(ws.url).to.equal(relayerUrls[0]);
-        }
+        expect(factory.createdRelayerUrls).to.deep.equal([
+            harness.cluster.urls.a
+        ]);
+        expect(updates).to.equal(1);
     });
 
-    it("resets exclusion/backoff state on a successful connection", () => {
-        const relayerUrls = ["wss://relay-a.example", "wss://relay-b.example"];
-        let updateCallbackCount = 0;
-
-        HolepunchRelay.init(
-            relayerUrls,
-            () => {
-                updateCallbackCount++;
+    it("recovers from synchronous connection construction failure", async function () {
+        const factory = new NodeHolepunchRelayConnectionFactory();
+        let updates = 0;
+        const { relay } = harness.createRelay({
+            relayerUrls: ["not a websocket URL", harness.cluster.urls.b],
+            connectionFactory: factory,
+            policyOptions: {
+                failoverJitterMaxMs:
+                    DEFAULT_HOLEPUNCH_RETRY_POLICY_OPTIONS.failoverJitterMaxMs,
+                random: () => 0
             },
-            createLogger()
-        );
+            onSwarm: () => {
+                updates++;
+            }
+        });
 
-        // Fail both relayers once (exhausts the round, schedules backoff).
-        // The first failure only schedules the (jittered) failover retry -
-        // advance past it so the second relayer actually connects before
-        // failing it too.
-        FakeWebSocket.instances[0].emitClose();
-        clock.tick(FAILOVER_JITTER_MAX_MS);
-        FakeWebSocket.instances[FakeWebSocket.instances.length - 1].emitClose();
-
-        // The first exhaustion backoff is at most base * 2^0 = 1s; advance
-        // past it so the pool retries and produces a fresh connection to
-        // succeed on.
-        clock.tick(1000);
-        const successWs =
-            FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
-        successWs.emitOpen();
-
-        // After success, a subsequent single failure must not be treated as
-        // a full-round exhaustion (no backoff delay) - the retry only needs
-        // the small failover jitter (well under the 1s exhaustion backoff
-        // floor) to elapse, not a full backoff tick.
-        const countBeforeFailure = updateCallbackCount;
-        successWs.emitClose();
-        clock.tick(FAILOVER_JITTER_MAX_MS);
-
-        expect(updateCallbackCount).to.equal(countBeforeFailure + 1);
-    });
-
-    it("adds a randomized, non-synchronized delay before retrying a single relayer failure", () => {
-        const relayerUrls = [
-            "wss://relay-a.example",
-            "wss://relay-b.example",
-            "wss://relay-c.example"
-        ];
-        const delays: number[] = [];
-
-        // Simulate several independent clients failing over off one relayer
-        // at essentially the same instant (a reconnect storm), and capture
-        // the randomized retry delay each one schedules. Give each client
-        // its own fake-timer clock, spy, and instance list - otherwise a
-        // timer left pending by an earlier "client" can fire during a later
-        // one's clock.tick() and get mistaken for that client's own retry.
-        for (let i = 0; i < 8; i++) {
-            clock.restore();
-            clock = sinon.useFakeTimers();
-            const setTimeoutSpy = sinon.spy(global, "setTimeout");
-            FakeWebSocket.instances = [];
-            HolepunchRelay.init(relayerUrls, () => undefined, createLogger());
-            const ws =
-                FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
-            setTimeoutSpy.resetHistory();
-            ws.emitClose();
-
-            expect(setTimeoutSpy.calledOnce).to.equal(true);
-            const delayMs = setTimeoutSpy.firstCall.args[1] as number;
-            expect(delayMs).to.be.at.least(0);
-            expect(delayMs).to.be.lessThan(FAILOVER_JITTER_MAX_MS);
-            delays.push(delayMs);
-        }
-
-        // Not a thundering herd: delays aren't all identical, and not all
-        // zero (the pre-fix, always-synchronous-retry behavior).
-        expect(new Set(delays).size).to.be.greaterThan(1);
-        expect(delays.some((delayMs) => delayMs > 0)).to.equal(true);
-    });
-
-    it("applies full jitter (not a deterministic mark) to the exhaustion backoff", () => {
-        const relayerUrls = ["wss://relay-a.example", "wss://relay-b.example"];
-        const delays: number[] = [];
-
-        // Simulate several independent clients that all exhaust the full
-        // relayer pool at the same moment (e.g. a shared relayer outage).
-        // Give each client its own fake-timer clock, spy, and instance list
-        // - otherwise a timer left pending by an earlier "client" can fire
-        // during a later one's clock.tick() and get mistaken for that
-        // client's own retry (inflating its captured delay).
-        for (let i = 0; i < 8; i++) {
-            clock.restore();
-            clock = sinon.useFakeTimers();
-            const setTimeoutSpy = sinon.spy(global, "setTimeout");
-            FakeWebSocket.instances = [];
-            HolepunchRelay.init(relayerUrls, () => undefined, createLogger());
-            // Fail the first relayer, then advance past its (jittered)
-            // failover retry so the client actually reconnects to the
-            // second relayer before failing that one too.
-            FakeWebSocket.instances[
-                FakeWebSocket.instances.length - 1
-            ].emitClose();
-            clock.tick(FAILOVER_JITTER_MAX_MS);
-            setTimeoutSpy.resetHistory();
-            FakeWebSocket.instances[
-                FakeWebSocket.instances.length - 1
-            ].emitClose();
-
-            // The second failure exhausts the 2-relayer pool and schedules
-            // the backoff retry - capture that delay.
-            expect(setTimeoutSpy.calledOnce).to.equal(true);
-            const delayMs = setTimeoutSpy.firstCall.args[1] as number;
-            // First exhaustion: cappedBackoffMs = BACKOFF_BASE_MS * 2^0 = 1000.
-            expect(delayMs).to.be.at.least(0);
-            expect(delayMs).to.be.lessThan(1000);
-            delays.push(delayMs);
-        }
-
-        // Full jitter, not the deterministic 1000ms mark every client would
-        // hit pre-fix - delays are spread across the range, not lockstepped.
-        expect(new Set(delays).size).to.be.greaterThan(1);
-        expect(delays.some((delayMs) => delayMs > 0)).to.equal(true);
-        expect(delays.every((delayMs) => delayMs !== 1000)).to.equal(true);
+        relay.start();
+        await waitFor(() => updates === 1, 3000);
+        expect(factory.createdRelayerUrls).to.deep.equal([
+            "not a websocket URL",
+            harness.cluster.urls.b
+        ]);
     });
 });

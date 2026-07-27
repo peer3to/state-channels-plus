@@ -139,15 +139,17 @@ async function startHardhatNode({
 async function startDiscoveryRegistry({
     port,
     logPath,
-    label = "discovery"
+    label = "discovery",
+    env = {}
 } = {}) {
-    const discPort = port ?? (await getFreePort());
+    const discPort = port ?? 0;
     const child = spawn(process.execPath, [DISCOVERY_SCRIPT], {
         cwd: REPO_ROOT,
         env: {
             ...process.env,
             LOCAL_DISCOVERY_HOST: "127.0.0.1",
-            LOCAL_DISCOVERY_PORT: String(discPort)
+            LOCAL_DISCOVERY_PORT: String(discPort),
+            ...env
         },
         stdio: ["ignore", "pipe", "pipe"]
     });
@@ -161,6 +163,7 @@ async function startDiscoveryRegistry({
         const READY_RE = /LocalDiscovery registry listening on (ws:\/\/\S+)/;
         let settled = false;
         let buffer = "";
+        let connectionCount = 0;
         const timer = setTimeout(() => {
             if (!settled) {
                 settled = true;
@@ -170,11 +173,23 @@ async function startDiscoveryRegistry({
         }, 15000);
         child.stdout.on("data", (chunk) => {
             buffer += chunk.toString();
+            const connectionMatches = [
+                ...buffer.matchAll(/LocalDiscovery connections: (\d+)/g)
+            ];
+            const latestConnection = connectionMatches.at(-1);
+            if (latestConnection) {
+                connectionCount = Number(latestConnection[1]);
+            }
             const m = READY_RE.exec(buffer);
             if (m && !settled) {
                 settled = true;
                 clearTimeout(timer);
-                resolve({ child, url: m[1], stop });
+                resolve({
+                    child,
+                    url: m[1],
+                    stop,
+                    getConnectionCount: () => connectionCount
+                });
             }
         });
         child.on("exit", (code) => {

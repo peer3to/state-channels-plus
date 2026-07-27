@@ -4,10 +4,28 @@ const { WebSocketServer } = require("ws");
 
 const host = process.env.LOCAL_DISCOVERY_HOST || "127.0.0.1";
 const port = Number(process.env.LOCAL_DISCOVERY_PORT || 19777);
+const failFirstConnections = Number(
+    process.env.LOCAL_DISCOVERY_FAIL_FIRST_CONNECTIONS || 0
+);
 
 typecheckPort(port);
+typecheckFailureCount(failFirstConnections);
 
-const wss = new WebSocketServer({ host, port });
+let connectionCount = 0;
+const wss = new WebSocketServer({
+    host,
+    port,
+    verifyClient: (_info, done) => {
+        connectionCount++;
+        // eslint-disable-next-line no-console
+        console.log(`LocalDiscovery connections: ${connectionCount}`);
+        if (connectionCount <= failFirstConnections) {
+            done(false, 503, "Injected discovery connection failure");
+            return;
+        }
+        done(true);
+    }
+});
 
 const registrations = new Map();
 
@@ -68,8 +86,14 @@ wss.on("connection", (ws) => {
 });
 
 wss.on("listening", () => {
+    const address = wss.address();
+    if (!address || typeof address === "string") {
+        throw new Error("LocalDiscovery registry address is unavailable");
+    }
     // eslint-disable-next-line no-console
-    console.log(`LocalDiscovery registry listening on ws://${host}:${port}`);
+    console.log(
+        `LocalDiscovery registry listening on ws://${host}:${address.port}`
+    );
 });
 
 wss.on("error", (error) => {
@@ -93,9 +117,17 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 function typecheckPort(value) {
-    if (!Number.isInteger(value) || value <= 0 || value > 65535) {
+    if (!Number.isInteger(value) || value < 0 || value > 65535) {
         throw new Error(
-            "LOCAL_DISCOVERY_PORT must be an integer between 1 and 65535"
+            "LOCAL_DISCOVERY_PORT must be an integer between 0 and 65535"
+        );
+    }
+}
+
+function typecheckFailureCount(value) {
+    if (!Number.isInteger(value) || value < 0) {
+        throw new Error(
+            "LOCAL_DISCOVERY_FAIL_FIRST_CONNECTIONS must be a non-negative integer"
         );
     }
 }
