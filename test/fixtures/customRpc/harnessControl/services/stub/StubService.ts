@@ -95,6 +95,11 @@ export type MissingParticipantSnapshotsProbe = {
     proofStored: boolean;
 };
 
+export type IsDisputedForkProbe = {
+    disputed: boolean;
+    onChainQueries: number;
+};
+
 export type BlockValidationProbeOptions = {
     strategy?: "active" | "dispute";
     encodedDispute?: string;
@@ -201,6 +206,38 @@ export class StubService extends ARpcService<
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
         );
+    }
+
+    /**
+     * Run `isDisputedFork` while counting the local-diamond queries, so a test
+     * can prove which of the two sources decided. `markLocallyDisputed`
+     * records the local marker first, as disputing the fork would.
+     */
+    public async probeIsDisputedFork(
+        forkId: ForkId,
+        markLocallyDisputed: boolean
+    ): Promise<IsDisputedForkProbe> {
+        if (markLocallyDisputed) {
+            this.sm.storage.disputes.storeDisputedFork(forkId, true);
+        }
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        const original = localDiamond.isForkDisputed;
+        let onChainQueries = 0;
+        localDiamond.isForkDisputed = ((
+            ...args: Parameters<typeof original>
+        ) => {
+            onChainQueries += 1;
+            return original(...args);
+        }) as typeof localDiamond.isForkDisputed;
+        try {
+            const disputed = await this.sm.validationService.isDisputedFork(
+                forkId,
+                this.sm.channelId
+            );
+            return { disputed, onChainQueries };
+        } finally {
+            localDiamond.isForkDisputed = original;
+        }
     }
 
     /**

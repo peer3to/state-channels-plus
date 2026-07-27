@@ -22,7 +22,8 @@ import type {
     DisputeStrategyResultMatrix,
     MissingParticipantSnapshotsProbe,
     BlockValidationProbe,
-    BlockValidationProbeOptions
+    BlockValidationProbeOptions,
+    IsDisputedForkProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
 
@@ -1162,6 +1163,14 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public getSpectateSyncCallCount(): number {
         return this.service.spectateSyncCallCount;
+    }
+
+    /** Run isDisputedFork, counting local-diamond queries. */
+    public async probeIsDisputedFork(
+        forkId: ForkId,
+        markLocallyDisputed: boolean
+    ): Promise<IsDisputedForkProbe> {
+        return this.service.probeIsDisputedFork(forkId, markLocallyDisputed);
     }
 
     /** Store a block directly into block storage (dispute-replay fixtures). */

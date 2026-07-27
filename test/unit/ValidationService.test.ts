@@ -1074,6 +1074,66 @@ describe("Unit: ValidationService", function () {
             await race.release({ replayEvents: false, runHeldTasks: false });
         });
 
+        it("local dispute marker set while the contract still reports false → true, no on-chain query", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const observer = h.getPeer(0);
+
+            // a fork this peer disputed locally that was never disputed on-chain
+            const localOnlyForkId = factory.hash();
+            const r = await h
+                .control(observer)
+                .stub.probeIsDisputedFork(localOnlyForkId, true)
+                .request();
+
+            expect(r.disputed).to.equal(true);
+            // the local marker short-circuits the OR
+            expect(r.onChainQueries).to.equal(0);
+        });
+
+        it("no local marker but the contract reports disputed → true from the contract branch", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const byzantineIndex = 1;
+
+            await h.lifecycle.start(3, 2);
+            // the observer never files its own dispute, so only the contract
+            // can tell it the fork is dead
+            await h
+                .control(h.getPeer(observerIndex))
+                .stub.stubSuppressDisputeInitiation()
+                .request();
+            await h.byzantine.submitDoubleSignBlock(byzantineIndex);
+            // only the other honest peer files one - the observer is suppressed
+            await h.assert.dispute.committedWait({
+                expectedCount: 1,
+                mode: "atLeast"
+            });
+
+            const forkId = h.activeForkId!;
+            const observer = h.getPeer(observerIndex);
+
+            const didIDispute = await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    sm.storage.disputes.didIDispute(args.forkId),
+                { forkId }
+            );
+            expect(
+                didIDispute,
+                "this observer must hold no local dispute marker"
+            ).to.equal(false);
+
+            const r = await h
+                .control(observer)
+                .stub.probeIsDisputedFork(forkId, false)
+                .request();
+
+            expect(r.disputed).to.equal(true);
+            // no local marker -> the verdict can only have come on-chain
+            expect(r.onChainQueries).to.equal(1);
+        });
+
         it("a disputed-fork block supplied by a peer that acknowledged the dispute → supplier disconnected, DISCONNECT", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
@@ -1403,6 +1463,45 @@ describe("Unit: ValidationService", function () {
             expect(r.resultName).to.equal("SUCCESS");
             expect(r.disputedForkIds).to.deep.equal([]);
             expect(r.firedHooks).to.deep.equal([]);
+        });
+
+        it("a linked block authored by the wrong leader in the restored state → invalidStateTransitionDetected", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const nextHeight = 2;
+            const [nextWriter, prevBlock] = await Promise.all([
+                h.control(observer).query.getNextToWrite().request(),
+                h.control(observer).query.getBlockByHeight(forkId, 1).request()
+            ]);
+            const nonLeader = h.peers.find(
+                (p) => p.address.toLowerCase() !== nextWriter.toLowerCase()
+            )!;
+
+            const encoded = await factory.buildAndEncodeBlock(
+                nonLeader.signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: nextHeight
+                    },
+                    previousBlockHash: prevBlock!.hash
+                }
+            );
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .request();
+
+            // reaching the leader check at all means the previous snapshot and
+            // state resolved and setState ran first
+            expect(r.firedHooks).to.deep.equal([
+                "invalidStateTransitionDetected"
+            ]);
         });
     });
 
