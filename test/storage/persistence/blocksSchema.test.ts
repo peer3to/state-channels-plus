@@ -3,7 +3,7 @@ import { describe, it, beforeEach } from "mocha";
 import { ethers } from "hardhat";
 
 import Storage from "@/storage";
-import { HydrationIntegrityError } from "@/storage/persistence/HydrationIntegrityError";
+import { HydrationRecordError } from "@/storage/persistence/HydrationRecordError";
 import { BlockStorage } from "@/storage/BlockStorage";
 import { InMemoryPersistencePort } from "@/storage/persistence/InMemoryPersistencePort";
 import { PersistenceEngine } from "@/storage/persistence/PersistenceEngine";
@@ -39,6 +39,45 @@ class OnceFailingPort extends InMemoryPersistencePort {
             throw new Error("injected one-time commit failure");
         }
         await super.commit(ops);
+    }
+}
+
+/** Records every committed op batch; can gate the NEXT commit mid-flight. */
+class GatedPort extends InMemoryPersistencePort {
+    readonly commits: Parameters<InMemoryPersistencePort["commit"]>[0][] = [];
+    private gate?: Promise<void>;
+    private release?: () => void;
+
+    gateNextCommit(): void {
+        this.gate = new Promise((res) => {
+            this.release = res;
+        });
+    }
+
+    releaseCommit(): void {
+        this.release?.();
+    }
+
+    async commit(
+        ops: Parameters<InMemoryPersistencePort["commit"]>[0]
+    ): Promise<void> {
+        this.commits.push(ops);
+        if (this.gate) {
+            const gate = this.gate;
+            this.gate = undefined;
+            await gate;
+        }
+        await super.commit(ops);
+    }
+}
+
+async function waitUntil(cond: () => boolean, timeoutMs = 2000): Promise<void> {
+    const start = Date.now();
+    while (!cond()) {
+        if (Date.now() - start > timeoutMs) {
+            throw new Error("waitUntil timed out");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2));
     }
 }
 
@@ -182,7 +221,7 @@ describe("blocksSchema + PersistenceEngine", () => {
         expect(reader.raw.getBlock(hash)).to.be.undefined;
     });
 
-    it("hydrate skips a corrupt mid-write entry via onError and reports the highest contiguous height", async () => {
+    it("hydrateAll() throws when a record fails to decode/replay, after invoking onError for visibility (FR2)", async () => {
         const port = new InMemoryPersistencePort();
         const writer = makeStore(port);
         const hashes = [0, 1, 2].map(
@@ -190,8 +229,11 @@ describe("blocksSchema + PersistenceEngine", () => {
         );
         await writer.engine.awaitDurable();
 
-        // Simulate a crash mid-write: the tip block's persisted bytes are
-        // truncated/corrupt (keyed by the block hash the engine wrote under).
+        // Simulate corruption: a record's persisted bytes are garbage. A
+        // commit is one durable transaction, so this is corruption of
+        // already-committed state, not evidence of an incomplete write -
+        // fail-closed regardless of which record it is (even the tip; see
+        // Storage.hydrate() TIP/MIDDLE tests below for the host-level check).
         const tipHash = hashes[hashes.length - 1];
         await port.commit([
             {
@@ -203,10 +245,15 @@ describe("blocksSchema + PersistenceEngine", () => {
         ]);
 
         const reader = makeStore(port);
-        await reader.engine.hydrateAll();
+        let hydrateError: unknown;
+        try {
+            await reader.engine.hydrateAll();
+        } catch (err) {
+            hydrateError = err;
+        }
 
-        expect(reader.raw.getLatestBlock(forkId)?.height).to.equal(1);
-        expect(reader.raw.getNextBlockHeight(forkId)).to.equal(2);
+        expect(hydrateError, "hydrateAll() must fail closed").to.not.be
+            .undefined;
         expect(reader.errors).to.have.lengthOf(1);
     });
 
@@ -371,10 +418,14 @@ describe("blocksSchema + PersistenceEngine", () => {
         } catch (err) {
             hydrateError = err;
         }
-        expect(hydrateError).to.be.instanceOf(HydrationIntegrityError);
+        // FR2: PersistenceEngine.hydrateAll() now fails closed on ANY
+        // decode/replay failure before Storage.hydrate() ever reaches
+        // checkHeightContiguity() - so this throws HydrationRecordError, not
+        // the height-gap-specific HydrationIntegrityError.
+        expect(hydrateError).to.be.instanceOf(HydrationRecordError);
     });
 
-    it("Storage.hydrate() does NOT fail closed for a corrupt TIP (safe crash-truncation recovery)", async () => {
+    it("Storage.hydrate() fails closed for a corrupt TIP too (FR2 - a commit is one durable transaction, not an incomplete write)", async () => {
         const port = new InMemoryPersistencePort();
         const writer = new Storage({ port });
         const hashes = [0, 1, 2].map(
@@ -393,25 +444,36 @@ describe("blocksSchema + PersistenceEngine", () => {
         ]);
 
         const reader = new Storage({ port });
-        await reader.hydrate();
-
-        expect(reader.blocks.getNextBlockHeight(forkId)).to.equal(2);
+        let hydrateError: unknown;
+        try {
+            await reader.hydrate();
+        } catch (err) {
+            hydrateError = err;
+        }
+        expect(hydrateError, "hydrate() must fail closed on the corrupt tip").to
+            .not.be.undefined;
     });
 
-    it("Storage's flushIntervalMs durably flushes non-barrier state with no explicit awaitDurable()", async () => {
+    it("Storage's flushIntervalMs durably flushes non-barrier state with no explicit awaitDurable() (TR3 - inspected before dispose's own final flush)", async () => {
         const port = new InMemoryPersistencePort();
         const writer = new Storage({ port, flushIntervalMs: 10 });
 
-        // Force-join is never touched by a signature-release barrier; only
-        // the background flush interval can make this durable.
-        writer.forceJoin.setValue(7);
+        try {
+            // Force-join is never touched by a signature-release barrier;
+            // only the background flush interval can make this durable.
+            writer.forceJoin.setValue(7);
 
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        await writer.dispose();
+            await new Promise((resolve) => setTimeout(resolve, 50));
 
-        const reader = new Storage({ port });
-        await reader.hydrate();
-        expect(reader.forceJoin.getValue()).to.equal(7);
+            // Inspect a fresh reader BEFORE disposing the writer - dispose()
+            // performs its own final flush (FR3), which would mask whether
+            // the interval itself ever fired.
+            const reader = new Storage({ port });
+            await reader.hydrate();
+            expect(reader.forceJoin.getValue()).to.equal(7);
+        } finally {
+            await writer.dispose();
+        }
     });
 
     it("a fresh Storage stores and reads blocks with no flush (default in-memory port)", () => {
@@ -419,5 +481,124 @@ describe("blocksSchema + PersistenceEngine", () => {
         const block = blockAt(0);
         const hash = storage.blocks.storeBlock(block)!;
         expect(storage.blocks.getBlock(hash)?.equals(block)).to.be.true;
+    });
+
+    it("FR1: justPersist -> normal promotion advances the live tip exactly like a fresh hydrate would", async () => {
+        const port = new InMemoryPersistencePort();
+        const writer = makeStore(port);
+
+        // A milestone ahead of the live tip (e.g. a dispute-proof block)
+        // must not move the tip while it's justPersist.
+        const milestone = blockAt(5);
+        writer.raw.storeBlock(milestone, { justPersist: true });
+        expect(writer.raw.getNextBlockHeight(forkId)).to.equal(0);
+
+        // Promotion (the live chain catching up to height 5) must advance
+        // the tip exactly like a brand-new normal block would.
+        writer.raw.storeBlock(milestone);
+        expect(
+            writer.raw.getNextBlockHeight(forkId),
+            "promotion must advance max height, not just clear justPersist"
+        ).to.equal(6);
+
+        await writer.engine.awaitDurable();
+
+        // A fresh hydrate replays the now-durable record through the
+        // "new entry" branch, which always advances max height - live and
+        // restarted state must agree.
+        const reader = makeStore(port);
+        await reader.engine.hydrateAll();
+        expect(reader.raw.getNextBlockHeight(forkId)).to.equal(6);
+    });
+
+    it("RR1: a same-hash mutation racing an in-flight commit survives to the next flush instead of being dropped", async () => {
+        const port = new GatedPort();
+        const writer = makeStore(port);
+
+        const hash = writer.raw.storeBlock(blockAt(0))!;
+        await writer.engine.awaitDurable();
+
+        const commitsBeforeA = port.commits.length;
+        writer.raw.setOnChainTimestamp(hash, 111);
+        port.gateNextCommit();
+        const barrierA = writer.engine.awaitDurable();
+
+        // Wait for A's commit to start (its ops are already diffed from
+        // timestamp=111) before mutating the SAME key again.
+        await waitUntil(() => port.commits.length === commitsBeforeA + 1);
+        writer.raw.setOnChainTimestamp(hash, 222);
+
+        port.releaseCommit();
+        await barrierA;
+
+        // A's diffed value (111) is what actually committed...
+        const afterA = makeStore(port);
+        await afterA.engine.hydrateAll();
+        expect(afterA.raw.getBlock(hash)?.onChainTimestamp).to.equal(111);
+
+        // ...but the second mutation (222) must still be dirty - a plain Set
+        // would have had its re-add wiped by A's post-commit clear.
+        await writer.engine.awaitDurable();
+        const afterB = makeStore(port);
+        await afterB.engine.hydrateAll();
+        expect(afterB.raw.getBlock(hash)?.onChainTimestamp).to.equal(222);
+    });
+
+    it("FO4: a signature/timestamp mutation on a hash-override block (by hash) is durable, not silently dropped", async () => {
+        const port = new InMemoryPersistencePort();
+        const writer = makeStore(port);
+
+        const block = blockAt(0);
+        const overrideHash = factory.hash();
+        writer.raw.storeBlock(block, { hash: overrideHash });
+        await writer.engine.awaitDurable();
+
+        writer.raw.setOnChainTimestamp(overrideHash, 555);
+        await writer.engine.awaitDurable();
+
+        const reader = makeStore(port);
+        await reader.engine.hydrateAll();
+        expect(reader.raw.getBlock(overrideHash)?.onChainTimestamp).to.equal(
+            555
+        );
+    });
+
+    it("FO4: a signature insertion by COORDINATES on a hash-override block dirties the persisted key, not block's own hash", async () => {
+        const port = new InMemoryPersistencePort();
+        const writer = makeStore(port);
+
+        const block = blockAt(3);
+        const overrideHash = factory.hash();
+        writer.raw.storeBlock(block, { hash: overrideHash });
+        await writer.engine.awaitDurable();
+
+        const newSig = sig();
+        writer.raw.insertSignature(newSig, forkId, 3);
+        await writer.engine.awaitDurable();
+
+        const reader = makeStore(port);
+        await reader.engine.hydrateAll();
+        expect(
+            reader.raw
+                .getBlock(overrideHash)
+                ?.confirmationSignatures.has(newSig)
+        ).to.be.true;
+    });
+
+    it("FO4: deleteBlock by COORDINATES on a hash-override block removes the correct persisted key", async () => {
+        const port = new InMemoryPersistencePort();
+        const writer = makeStore(port);
+
+        const block = blockAt(4);
+        const overrideHash = factory.hash();
+        writer.raw.storeBlock(block, { hash: overrideHash });
+        await writer.engine.awaitDurable();
+
+        expect(writer.raw.deleteBlock(forkId, 4)).to.be.true;
+        await writer.engine.awaitDurable();
+
+        const reader = makeStore(port);
+        await reader.engine.hydrateAll();
+        expect(reader.raw.getBlock(overrideHash)).to.be.undefined;
     });
 });

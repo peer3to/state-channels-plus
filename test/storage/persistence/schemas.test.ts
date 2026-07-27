@@ -65,6 +65,18 @@ function fraudProof(
     };
 }
 
+/** Records every committed op's keys per flush. */
+class RecordingPort extends InMemoryPersistencePort {
+    readonly commits: string[][] = [];
+
+    async commit(
+        ops: Parameters<InMemoryPersistencePort["commit"]>[0]
+    ): Promise<void> {
+        this.commits.push(ops.map((op) => op.key));
+        await super.commit(ops);
+    }
+}
+
 describe("Persistence schemas + PersistenceEngine", () => {
     describe("messageBlocksSchema", () => {
         function makeMessageStores(port: InMemoryPersistencePort) {
@@ -254,6 +266,29 @@ describe("Persistence schemas + PersistenceEngine", () => {
             const hydrated = reader.raw.getStateSnapshotByHash(overrideHash);
             expect(hydrated?.hash).to.equal(snapshot.hash);
         });
+
+        it("PO1: a flush only re-diffs dirty keys, not the whole retained history", async () => {
+            const port = new RecordingPort();
+            const writer = makeStore(port);
+
+            const hashes = [
+                factory.stateSnapshot(),
+                factory.stateSnapshot(),
+                factory.stateSnapshot()
+            ].map((snapshot) => writer.raw.storeStateSnapshot(snapshot));
+            await writer.engine.awaitDurable();
+            expect(port.commits[0].sort()).to.deep.equal([...hashes].sort());
+
+            // A new snapshot only dirties its own key - the two already-
+            // durable ones must not be re-diffed.
+            const extraHash = writer.raw.storeStateSnapshot(
+                factory.stateSnapshot()
+            );
+            await writer.engine.awaitDurable();
+
+            expect(port.commits).to.have.lengthOf(2);
+            expect(port.commits[1]).to.deep.equal([extraHash]);
+        });
     });
 
     describe("stateMachineStateSchema", () => {
@@ -293,6 +328,29 @@ describe("Persistence schemas + PersistenceEngine", () => {
             expect(reader.raw.getStateMachineState(overrideHash)).to.equal(
                 bytes
             );
+        });
+
+        it("PO1: a flush only re-diffs dirty keys, not the whole retained history", async () => {
+            const port = new RecordingPort();
+            const writer = makeStore(port);
+
+            const hashes = [
+                ethers.hexlify(ethers.randomBytes(64)),
+                ethers.hexlify(ethers.randomBytes(64)),
+                ethers.hexlify(ethers.randomBytes(64))
+            ].map((bytes) => writer.raw.storeStateMachineState(bytes));
+            await writer.engine.awaitDurable();
+            expect(port.commits[0].sort()).to.deep.equal([...hashes].sort());
+
+            // A new state only dirties its own key - the two already-durable
+            // ones must not be re-diffed.
+            const extraHash = writer.raw.storeStateMachineState(
+                ethers.hexlify(ethers.randomBytes(64))
+            );
+            await writer.engine.awaitDurable();
+
+            expect(port.commits).to.have.lengthOf(2);
+            expect(port.commits[1]).to.deep.equal([extraHash]);
         });
     });
 

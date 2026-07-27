@@ -1,5 +1,9 @@
 import { NamespacedOp, PersistencePort } from "./PersistencePort";
 import { PersistenceSchema, PruneWatermark } from "./PersistenceSchema";
+import {
+    HydrationRecordError,
+    HydrationRecordFailure
+} from "./HydrationRecordError";
 
 export type DurabilityState = { degraded: boolean; err?: unknown };
 
@@ -135,9 +139,21 @@ export class PersistenceEngine {
      * seeded from the record AS-WRITTEN (decode -> changeKey) BEFORE replay, so
      * a pre-hydrate un-flushed live mutation is still diffed and persisted by
      * the next flush.
+     *
+     * Fail-closed (FR2): a commit is one durable transaction, and the
+     * signature-release barrier may already have gossiped the block it
+     * covers before the process died - a record that fails to decode/replay
+     * is corruption of already-committed state, not evidence of an
+     * incomplete write. Trusting it as safe-to-skip could resume at a prior
+     * height and let the same signer create a conflicting block. Every
+     * decode/replay failure across every store is therefore collected and
+     * rethrown once all records are attempted, so the caller
+     * (Storage.hydrate() -> ensurePersistenceForChannel) fails the channel
+     * bind rather than resuming on state that can't be trusted.
      */
     hydrateAll(): Promise<void> {
         return this.enqueue(async () => {
+            const failures: HydrationRecordFailure[] = [];
             for (const [id, schema] of this.schemas) {
                 const shadow = this.shadowFor(id);
                 for await (const record of this.port.load(id)) {
@@ -151,8 +167,12 @@ export class PersistenceEngine {
                         schema.replay(record.encoded, record.key);
                     } catch (err) {
                         this.onError?.(err);
+                        failures.push({ namespace: id, key: record.key, err });
                     }
                 }
+            }
+            if (failures.length > 0) {
+                throw new HydrationRecordError(failures);
             }
         });
     }
@@ -196,12 +216,18 @@ export class PersistenceEngine {
     }
 
     /**
-     * Teardown: stop every timer, DRAIN (enqueue+await one final flush so any
-     * in-flight or dirty non-barrier state commits before the port closes -
-     * RO1/FR3), then mark terminal and close the port. `fatal` must stay
-     * false until the drain completes - runFlush()'s terminal guard would
-     * otherwise skip this very flush. Wired into host teardown by
-     * P2pRuntimeHost. Idempotent.
+     * Teardown: stop every timer, DRAIN (enqueue+await the final flush,
+     * retrying on the same backoff schedule as a steady-state degraded
+     * commit until it durably commits - RO1/FR3), then mark terminal and
+     * close the port. If every retry is exhausted without a successful
+     * commit, disposal is NOT considered complete: `fatal` is never set, the
+     * port is never closed, and dispose() rejects instead of silently
+     * discarding dirty state - the idempotency guard resets so the caller
+     * can call dispose() again (or the still-running background retry can
+     * eventually catch up). `fatal` must stay false until the drain
+     * completes - runFlush()'s terminal guard would otherwise skip this very
+     * flush. Wired into host teardown by P2pRuntimeHost. Idempotent only on
+     * a successful drain.
      */
     async dispose(): Promise<void> {
         if (this.disposed) return;
@@ -209,9 +235,34 @@ export class PersistenceEngine {
         this.clearInterval();
         this.clearRetry();
         this.clearWatchdog();
-        await this.enqueue(() => this.runFlush());
+
+        const committed = await this.enqueue(() => this.drainFinalFlush());
+        if (!committed) {
+            this.disposed = false;
+            throw new Error(
+                "PersistenceEngine.dispose: final flush did not durably commit after retries; port left open for recovery"
+            );
+        }
         this.fatal = true;
         await this.port.close?.();
+    }
+
+    /**
+     * Runs on the serial queue (called from within an already-enqueued
+     * task): attempts the final flush, retrying with the same backoff
+     * schedule used for steady-state degraded commits. Clears any
+     * background retryTimer runFlush() itself scheduled on failure so a
+     * duplicate flush attempt can't race this loop's own retry.
+     */
+    private async drainFinalFlush(): Promise<boolean> {
+        if (await this.runFlush()) return true;
+        for (const delay of this.retryBackoffMs) {
+            this.clearRetry();
+            await new Promise<void>((resolve) => setTimeout(resolve, delay));
+            if (await this.runFlush()) return true;
+        }
+        this.clearRetry();
+        return false;
     }
 
     // --- flush scheduling ---
@@ -223,11 +274,12 @@ export class PersistenceEngine {
         void this.enqueue(() => this.runFlush());
     }
 
-    private async runFlush(): Promise<void> {
+    /** Returns whether the flush committed (or had nothing to commit); false on a caught failure. */
+    private async runFlush(): Promise<boolean> {
         // Terminal guard: a flush already on the queue when dispose()/the
         // watchdog set `fatal` must not commit into a closed port or re-arm
         // the watchdog those paths just cleared.
-        if (this.fatal) return;
+        if (this.fatal) return true;
         // Snapshot phase: take the diff and stamp this flush's generation.
         const startedGen = ++this.lastStartedGen;
         this.pendingFlush = false;
@@ -242,7 +294,7 @@ export class PersistenceEngine {
             const shadowUpdates: ShadowUpdate[] = [];
             const dirtyKeyClears: {
                 schema: PersistenceSchema<unknown>;
-                keys: string[];
+                entries: (readonly [string, number])[];
             }[] = [];
 
             for (const [id, schema] of this.schemas) {
@@ -255,8 +307,13 @@ export class PersistenceEngine {
                 ) {
                     // Bounded diff (PO1): only re-check keys touched since the
                     // last successful flush, not the whole retained history.
-                    const dirtyKeys = Array.from(schema.peekDirtyKeys());
-                    for (const key of dirtyKeys) {
+                    // Each entry carries the revision it was peeked at (RR1):
+                    // clearDirtyKeys only clears it back if that revision is
+                    // still current, so a same-key mutation landing while
+                    // `port.commit()` below is in flight survives to the next
+                    // flush instead of being silently dropped.
+                    const dirtyEntries = Array.from(schema.peekDirtyKeys());
+                    for (const [key] of dirtyEntries) {
                         const value = schema.getEntry(key);
                         if (value === undefined) {
                             if (shadow.has(key)) {
@@ -281,8 +338,8 @@ export class PersistenceEngine {
                             });
                         }
                     }
-                    if (dirtyKeys.length > 0) {
-                        dirtyKeyClears.push({ schema, keys: dirtyKeys });
+                    if (dirtyEntries.length > 0) {
+                        dirtyKeyClears.push({ schema, entries: dirtyEntries });
                     }
                     continue;
                 }
@@ -319,17 +376,19 @@ export class PersistenceEngine {
             // exactly the dirty keys this attempt diffed (anything mutated
             // again since the peek stays dirty for the next flush).
             this.applyShadowUpdates(shadowUpdates);
-            for (const { schema, keys } of dirtyKeyClears) {
-                schema.clearDirtyKeys!(keys);
+            for (const { schema, entries } of dirtyKeyClears) {
+                schema.clearDirtyKeys!(entries);
             }
             if (startedGen > this.committedGen) this.committedGen = startedGen;
             this.onCommitSuccess();
             this.resolveWaiters();
+            return true;
         } catch (err) {
             // Withhold: do NOT advance shadow or generation; barrier stays
             // pending, degraded is signalled, background retry re-diffs (a
             // failed commit re-diffs to the same ops - idempotent).
             this.onCommitFailure(err);
+            return false;
         }
     }
 
@@ -434,7 +493,7 @@ export class PersistenceEngine {
         return shadow;
     }
 
-    private enqueue(task: () => Promise<void>): Promise<void> {
+    private enqueue<T>(task: () => Promise<T>): Promise<T> {
         const run = this.queueTail.then(task, task);
         this.queueTail = run.then(
             () => undefined,

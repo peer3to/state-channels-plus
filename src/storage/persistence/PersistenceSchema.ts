@@ -51,23 +51,31 @@ export interface PersistenceSchema<V> {
     pruneKeep?(key: string, watermark: PruneWatermark): boolean;
 
     /**
-     * Bounded-diff opt-in (PO1): peek keys mutated since the last
-     * successfully-committed flush, WITHOUT clearing them (retry-safe - a
-     * failed commit must re-diff the same keys next attempt). When present
+     * Bounded-diff opt-in (PO1): peek (key, revision) pairs mutated since the
+     * last successfully-committed flush, WITHOUT clearing them (retry-safe -
+     * a failed commit must re-diff the same keys next attempt). When present
      * (with `clearDirtyKeys` and `getEntry`), a flush only re-diffs these
      * keys instead of a full `entries()` scan, bounding barrier cost as
      * retained history grows. Optional: a schema without this always gets
      * the full-scan fallback (the safe default - still catches a mutation
      * however it happened, including one that bypassed dirty-marking).
+     *
+     * The revision (see DirtyKeyTracker) guards a same-key mutation that
+     * lands WHILE a commit built from the peeked value is still in flight
+     * (RR1) - see clearDirtyKeys.
      */
-    peekDirtyKeys?(): Iterable<string>;
+    peekDirtyKeys?(): Iterable<readonly [key: string, revision: number]>;
 
     /**
-     * Clears exactly these keys from the dirty set - called ONLY after
-     * their diff was durably committed. Any key mutated again after the
-     * peek (but before this call) must stay dirty for the next flush.
+     * Clears exactly the peeked (key, revision) pairs whose revision hasn't
+     * advanced since they were peeked - called ONLY after their diff was
+     * durably committed. A key mutated again after the peek (but before this
+     * call) has a newer revision and must stay dirty for the next flush,
+     * since the value diffed into this commit is already stale.
      */
-    clearDirtyKeys?(keys: Iterable<string>): void;
+    clearDirtyKeys?(
+        entries: Iterable<readonly [key: string, revision: number]>
+    ): void;
 
     /**
      * Random-access lookup for one key's CURRENT value (or undefined if

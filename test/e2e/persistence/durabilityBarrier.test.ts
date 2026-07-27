@@ -313,7 +313,21 @@ describe("E2E: durability barrier (sign-before-durable)", function () {
             sleep(500).then(() => "pending" as const)
         ]);
         expect(outcome).to.equal("pending");
-        await storage.dispose();
+
+        // FR3: dispose() must not silently discard an undurable write. It
+        // retries the final flush on the same backoff schedule as a
+        // steady-state degraded commit and, since this port never recovers,
+        // rejects rather than closing the port on a swallowed failure.
+        let disposeError: unknown;
+        try {
+            await storage.dispose();
+        } catch (err) {
+            disposeError = err;
+        }
+        expect(
+            disposeError,
+            "dispose() must reject when the final flush can't durably commit"
+        ).to.not.be.undefined;
 
         // The default in-memory port, by contrast, resolves promptly.
         const okStorage = new Storage();

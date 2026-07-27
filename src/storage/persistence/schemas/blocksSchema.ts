@@ -84,9 +84,11 @@ export function blocksSchema(raw: BlockStorage): PersistenceSchema<Block> {
             raw.storeBlock(decodeBlock(encodedBlock), { hash: key as Hash });
         },
 
-        peekDirtyKeys: () => raw.peekDirtyHashes() as ReadonlySet<string>,
+        peekDirtyKeys: () =>
+            raw.peekDirtyHashes() as Iterable<readonly [string, number]>,
 
-        clearDirtyKeys: (keys) => raw.clearDirtyHashes(keys as Iterable<Hash>),
+        clearDirtyKeys: (entries) =>
+            raw.clearDirtyHashes(entries as Iterable<readonly [Hash, number]>),
 
         getEntry: (key) => raw.getPersistableEntry(key as Hash)
     };

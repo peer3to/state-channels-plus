@@ -13,6 +13,10 @@ import { PersistenceSchema } from "../PersistenceSchema";
  * that diverges from the content-derived hash storeStateSnapshot would
  * otherwise recompute - and rebuilds the derived genesisSnapshotByForkId
  * index.
+ *
+ * PO1: opts into bounded diffing - this store is appended before every
+ * signature-release barrier (StateManager.success()) for the life of a
+ * channel, so a full-scan flush would grow unbounded over a long session.
  */
 export function stateSnapshotSchema(
     raw: StateSnapshotStorage
@@ -36,6 +40,14 @@ export function stateSnapshotSchema(
             raw.storeStateSnapshot(StateSnapshot.decode(encodedSnapshot), {
                 hash: key as Hash
             });
-        }
+        },
+
+        peekDirtyKeys: () =>
+            raw.peekDirtyHashes() as Iterable<readonly [string, number]>,
+
+        clearDirtyKeys: (entries) =>
+            raw.clearDirtyHashes(entries as Iterable<readonly [Hash, number]>),
+
+        getEntry: (key) => raw.getPersistableEntry(key as Hash)
     };
 }

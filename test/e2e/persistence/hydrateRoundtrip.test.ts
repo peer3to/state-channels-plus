@@ -139,19 +139,26 @@ describe("E2E: runtime persistence wiring", function () {
         await restarted.dispose();
     });
 
-    it("watchdog onFatal tears down the worker at the liveness deadline", async function () {
-        // The exact composed behavior the host relies on: a persistently
-        // failing commit degrades the engine, and at the liveness deadline
-        // (livenessDeadlineFraction 0.5 of timeoutWindowMs) the watchdog fires
-        // onFatal. The host's onFatal posts the `hostError` teardown message and
-        // disposes the runtime; here onFatal builds that same teardown payload
-        // and we assert it was produced.
-        let posted: { type: string; error: unknown } | undefined;
+    it("watchdog fires the engine's onFatal hook at the liveness deadline (AO1: component-level - see P2pRuntimeHost for the real onFatal -> hostError -> disposeRuntime wiring, not exercised here)", async function () {
+        // This proves the ENGINE primitive the host wiring is built on: a
+        // persistently failing commit degrades the engine, and at the
+        // liveness deadline (livenessDeadlineFraction 0.5 of
+        // timeoutWindowMs) the watchdog invokes onFatal exactly once with
+        // the durability error. P2pRuntimeHost's onFatal callback (which
+        // posts the real `hostError` message and calls disposeRuntime()) is
+        // separate production wiring this test does not construct or
+        // assert on - covering that end-to-end requires driving a real
+        // persistent commit failure inside a running host and observing its
+        // actual teardown message, which needs harness-level fault
+        // injection this suite doesn't have yet.
+        let fatalErr: unknown;
+        let fatalCount = 0;
         const storage = new Storage({
             port: new FaultyPersistencePort(),
             timeoutWindowMs: 200, // deadline = 100ms
             onFatal: (err) => {
-                posted = { type: "hostError", error: err };
+                fatalCount += 1;
+                fatalErr = err;
             }
         });
 
@@ -161,9 +168,11 @@ describe("E2E: runtime persistence wiring", function () {
         void storage.awaitDurable();
 
         await sleep(500);
-        expect(posted, "onFatal must fire at the liveness deadline").to.not.be
-            .undefined;
-        expect(posted!.type).to.equal("hostError");
+        expect(
+            fatalCount,
+            "onFatal must fire exactly once at the deadline"
+        ).to.equal(1);
+        expect(fatalErr).to.not.be.undefined;
         await storage.dispose();
     });
 
@@ -184,7 +193,21 @@ describe("E2E: runtime persistence wiring", function () {
         void storage.awaitDurable(); // arms the retry + watchdog timers
         await sleep(50); // well before the 200ms deadline
 
-        await storage.dispose();
+        // FR3: with a permanently faulty port dispose() itself now rejects -
+        // it retries the final flush and can never durably commit the
+        // pending write. The point of this test is that dispose() clears
+        // the WATCHDOG timer before that drain, not that dispose() resolves
+        // cleanly, so assert the rejection and move on to the real check.
+        let disposeError: unknown;
+        try {
+            await storage.dispose();
+        } catch (err) {
+            disposeError = err;
+        }
+        expect(
+            disposeError,
+            "dispose() must reject: the faulty port never durably commits"
+        ).to.not.be.undefined;
         await sleep(500); // well past the original deadline
 
         expect(

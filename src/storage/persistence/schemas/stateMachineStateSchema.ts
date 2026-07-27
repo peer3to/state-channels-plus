@@ -11,6 +11,10 @@ import { PersistenceSchema } from "../PersistenceSchema";
  * stored these bytes under an explicit hash override (see
  * storeStateMachineState's `options.hash`) that diverges from the
  * content-derived hash storeStateMachineState would otherwise recompute.
+ *
+ * PO1: opts into bounded diffing - this store is appended before every
+ * signature-release barrier (StateManager.success()) for the life of a
+ * channel, so a full-scan flush would grow unbounded over a long session.
  */
 export function stateMachineStateSchema(
     raw: StateMachineStateStorage
@@ -32,6 +36,14 @@ export function stateMachineStateSchema(
 
         replay: (encodedBytes, key) => {
             raw.storeStateMachineState(encodedBytes, { hash: key as Hash });
-        }
+        },
+
+        peekDirtyKeys: () =>
+            raw.peekDirtyHashes() as Iterable<readonly [string, number]>,
+
+        clearDirtyKeys: (entries) =>
+            raw.clearDirtyHashes(entries as Iterable<readonly [Hash, number]>),
+
+        getEntry: (key) => raw.getPersistableEntry(key as Hash)
     };
 }

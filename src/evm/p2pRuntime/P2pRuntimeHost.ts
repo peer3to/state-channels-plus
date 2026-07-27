@@ -247,18 +247,29 @@ export async function startP2pRuntimeHost<
                 );
             }
             if (runtimeHandle) {
-                // Dispose both even if one rejects: a stateManager.dispose()
-                // throw must not skip storage.dispose(), which clears the
-                // persistence engine's watchdog + retry timers (a leaked
-                // watchdog can otherwise fire a spurious post-teardown onFatal).
-                const disposals = await Promise.allSettled([
-                    runtimeHandle.stateManager.dispose(),
-                    runtimeHandle.storage.dispose()
-                ]);
-                const firstRejection = disposals.find(
-                    (result) => result.status === "rejected"
-                ) as PromiseRejectedResult | undefined;
-                if (firstRejection) throw firstRejection.reason;
+                // Staged, not concurrent (RO1): stateManager.dispose() must
+                // fully settle - stopping every producer that can still call
+                // a storage mutator - BEFORE storage.dispose() takes its
+                // final flush snapshot and closes the port. Disposing both
+                // concurrently let a stateManager callback mutate storage
+                // after the snapshot was taken, silently dropping that write
+                // when the port closed right after. Both still run even if
+                // the first throws - a stateManager.dispose() throw must not
+                // skip storage.dispose(), which clears the persistence
+                // engine's watchdog + retry timers (a leaked watchdog can
+                // otherwise fire a spurious post-teardown onFatal).
+                let firstError: unknown;
+                try {
+                    await runtimeHandle.stateManager.dispose();
+                } catch (err) {
+                    firstError = err;
+                }
+                try {
+                    await runtimeHandle.storage.dispose();
+                } catch (err) {
+                    if (firstError === undefined) firstError = err;
+                }
+                if (firstError !== undefined) throw firstError;
             } else {
                 await contractExecutor?.dispose();
                 logger?.stopPerformanceMonitoring();
@@ -406,10 +417,11 @@ export async function startP2pRuntimeHost<
                         degraded: state.degraded,
                         error: state.err
                     }),
-                // Per-record hydrate decode/replay failure. Not by itself
-                // fatal (a corrupt trailing record is expected, recoverable
-                // crash-truncation - see BlockStorage.checkHeightContiguity),
-                // but always worth surfacing to the log pipeline.
+                // Per-record hydrate decode/replay failure. Fatal (FR2):
+                // PersistenceEngine.hydrateAll() rethrows once every record
+                // is attempted, so this fires purely for log-pipeline
+                // visibility before that throw propagates through
+                // storage.hydrate() and fails the channel bind.
                 onError: (err) =>
                     logger!.error("Persistence hydration record error", {
                         err
