@@ -10,6 +10,7 @@ import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
 import { Block } from "@/models";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
@@ -168,6 +169,23 @@ export class StubService extends ARpcService<
         return this.p2pManager.stateManager;
     }
 
+    /**
+     * Single owner of dispute-strategy construction for the stub probes, so
+     * constructor inputs can't drift between them. `blockIndexInUnfinalized
+     * PartOfStateProof` is 0 - the probes replay the first unfinalized block.
+     */
+    public createDisputeValidationStrategy(
+        dispute: DisputeStruct
+    ): DisputeValidationStrategy {
+        return new DisputeValidationStrategy(
+            this.sm.storage,
+            dispute,
+            0,
+            this.sm.diamondStateMachine.localDiamondContract,
+            this.sm.logger
+        );
+    }
+
     /** Exercise rejected-log retention through the real EventSyncService. */
     public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
         const sm = this.sm;
@@ -300,13 +318,7 @@ export class StubService extends ARpcService<
         const { dispute } = await this.sm.disputeManager.constructDispute(
             this.sm.forkId
         );
-        const strategy = new DisputeValidationStrategy(
-            this.sm.storage,
-            dispute,
-            0,
-            this.sm.diamondStateMachine.localDiamondContract,
-            this.sm.logger
-        );
+        const strategy = this.createDisputeValidationStrategy(dispute);
         const matrix: DisputeStrategyResultMatrix = {};
         for (const result of [
             BlockValidationResult.SUCCESS,
@@ -337,13 +349,7 @@ export class StubService extends ARpcService<
             this.sm.forkId
         );
         if (!latestBlock) throw new Error("Expected a latest block");
-        const strategy = new DisputeValidationStrategy(
-            this.sm.storage,
-            dispute,
-            0,
-            this.sm.diamondStateMachine.localDiamondContract,
-            this.sm.logger
-        );
+        const strategy = this.createDisputeValidationStrategy(dispute);
         const result =
             await strategy.blockIsNotLinkedAndIsNotFirstBlock(latestBlock);
         return {
@@ -370,13 +376,7 @@ export class StubService extends ARpcService<
             },
             this.sm.signer
         );
-        const strategy = new DisputeValidationStrategy(
-            this.sm.storage,
-            dispute,
-            0,
-            this.sm.diamondStateMachine.localDiamondContract,
-            this.sm.logger
-        );
+        const strategy = this.createDisputeValidationStrategy(dispute);
         const earlyAuthorResult =
             await strategy.blockAuthorIsNotParticipant(block);
         const signatureUnionResult =
@@ -413,14 +413,10 @@ export class StubService extends ARpcService<
         // paths driven here don't, so a placeholder dispute is faithful.
         const strategy =
             options?.strategy === "dispute"
-                ? new DisputeValidationStrategy(
-                      sm.storage,
+                ? this.createDisputeValidationStrategy(
                       options.encodedDispute
                           ? Codec.decode(options.encodedDispute, Type.Dispute)
-                          : factory.dispute(),
-                      0,
-                      sm.diamondStateMachine.localDiamondContract,
-                      sm.logger
+                          : factory.dispute()
                   )
                 : sm.getActiveValidationStrategy();
 
