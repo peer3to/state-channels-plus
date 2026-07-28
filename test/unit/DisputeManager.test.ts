@@ -137,6 +137,53 @@ describe("Unit: DisputeManager", function () {
             expect(r.inboundHeight).to.equal(r.storedInboundHeight);
         });
 
+        // no test: `createDispute - isPartial auditingData` is unreachable from
+        // constructDispute. a peer's own proof only spans data it stored - a
+        // missing milestone snapshot already throws inside getStateProof
+        // ("Milestone built but corresponding snapshot not found") and the head
+        // snapshot is required by the "missing state snapshot" guard above it.
+        // getAuditingData only goes partial for a proof handed in by someone
+        // else, which is the audit path covered under `getAuditingData`.
+        it.skip("own proof missing referenced data → isPartial auditingData (unreachable)", function () {});
+
+        it("a peer behind the head → constructDispute builds a complete dispute over what it has", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.network.disconnectPeer(2); // peer 2 misses blocks 0..1
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                h.getPeer(2),
+                async (sm, args) => {
+                    const { dispute, auditingData } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    // the partial guard did not fire -> the proof is whole for
+                    // this peer, and the on-chain verifier accepts it
+                    const verified =
+                        await sm.stateChannelManagerContract.verifyStateProof.staticCall(
+                            dispute,
+                            auditingData
+                        );
+                    return {
+                        verified,
+                        ownHeight:
+                            Number(
+                                sm.storage.blocks.getNextBlockHeight(
+                                    args.forkId
+                                )
+                            ) - 1
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            expect(r.verified).to.equal(true);
+            // behind the peers that kept writing, yet still self-consistent
+            expect(r.ownHeight).to.be.lessThan(2);
+        });
+
         it("a participant has a stored fraud proof → constructDispute bundles it + marks them slashed", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2); // blocks 0..1, next = 2
