@@ -905,6 +905,62 @@ describe("Unit: DisputeManager", function () {
         // just stored the proof. forcing it means feeding a proofless dispute.
         it.skip("no stored fraud proof → throws (defensive)", function () {});
 
+        it("live kill window → the stored proof is submitted and its transaction awaited", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup({
+                timeConfig: { evidenceTime: 12 }
+            });
+            const killer = h.getPeer(0);
+
+            // hold every peer's kill so the proof is stored but nothing is
+            // submitted yet, then drive the one kill under test by hand
+            const kills = await Promise.all([
+                h.rpcStub.suppressDisputeKill(0),
+                h.rpcStub.suppressDisputeKill(1),
+                h.rpcStub.suppressDisputeKill(2)
+            ]);
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index
+            );
+
+            await h.tamper.postTamperedDispute(1, (dispute) => {
+                dispute.input.timeout.participant =
+                    "0x0000000000000000000000000000000000000000";
+                dispute.input.onChainSlashes = [];
+                dispute.input.selfRemoval = false;
+            });
+            // the skipped kill is the moment peer 0 stored its fraud proof
+            await kills[0].waitUntilSkipped();
+            await kills[0].restore();
+
+            const r = await h.execOnHost(
+                killer,
+                async (sm) => {
+                    const proofs =
+                        sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                    await sm.disputeManager.killDispute(proofs[0].dispute);
+                    return {
+                        proofCount: proofs.length,
+                        participant: String(proofs[0].participant).toLowerCase()
+                    };
+                },
+                {},
+                { timeoutMs: 30000 }
+            );
+
+            expect(r.proofCount).to.equal(1);
+            const applies = await probe.applies();
+            expect(applies.length).to.equal(1);
+            expect(
+                applies[0].participants.map((p) => p.toLowerCase())
+            ).to.deep.equal([r.participant]);
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(await h.query.onChainSlashedParticipants()).to.include(
+                h.getPeer(1).address.toLowerCase()
+            );
+        });
+
         it("two killDispute calls inside one live kill window → one slash, the loser lands as a no-op", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({

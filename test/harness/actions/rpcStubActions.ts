@@ -350,17 +350,24 @@ export class RpcStubActions<
     }
 
     /** Keep a peer out of a kill race. Returns a teardown. */
-    async suppressDisputeKill(peerIndex: number): Promise<() => Promise<void>> {
-        const peer = this.harness.getPeer(peerIndex);
-        await this.harness
-            .control(peer)
-            .stub.stubSuppressDisputeKill()
-            .request();
-        return async () => {
-            await this.harness
-                .control(peer)
-                .stub.restoreDisputeKill()
-                .request();
+    async suppressDisputeKill(peerIndex: number): Promise<{
+        skippedCount: () => Promise<number>;
+        /** The first skipped kill also marks the proof as stored. */
+        waitUntilSkipped: (timeoutMs?: number) => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubSuppressDisputeKill().request();
+        const skippedCount = () =>
+            ctl().getSuppressedDisputeKillCount().request();
+        return {
+            skippedCount,
+            waitUntilSkipped: (timeoutMs = 20000) =>
+                waitFor(async () => (await skippedCount()) > 0, timeoutMs),
+            restore: async () => {
+                await ctl().restoreDisputeKill().request();
+            }
         };
     }
 

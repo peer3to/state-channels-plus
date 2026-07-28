@@ -117,6 +117,8 @@ export type RecordedFraudProofApply = {
     error: string | null;
     /** Custom-error name decoded from that failure, when there was one. */
     customError: string | null;
+    /** Set once `killDispute` awaited the returned transaction. */
+    waited: boolean;
 };
 
 export type PausedConstructDisputeStatus = {
@@ -688,7 +690,8 @@ export class StubService extends ARpcService<
             const entry: RecordedFraudProofApply = {
                 participants: proofs.map((proof) => String(proof.participant)),
                 error: null,
-                customError: null
+                customError: null,
+                waited: false
             };
             this.recordedFraudProofApplies.push(entry);
             const hold = this.fraudProofApplyHold;
@@ -711,7 +714,9 @@ export class StubService extends ARpcService<
             const originalWait = tx.wait.bind(tx);
             tx.wait = (async (...args: Parameters<typeof originalWait>) => {
                 try {
-                    return await originalWait(...args);
+                    const receipt = await originalWait(...args);
+                    entry.waited = true;
+                    return receipt;
                 } catch (error) {
                     fail(error);
                     throw error;
