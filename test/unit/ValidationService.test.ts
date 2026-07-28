@@ -30,7 +30,11 @@ const RECOVERY_TIME_CONFIG = {
     chainFallbackTime: 10,
     evidenceTime: 20
 };
-// height 0 gets the evidenceTime grace on top of the ordinary post window
+// the ordinary post window; height 0 additionally gets the evidenceTime grace
+const HEIGHT_ONE_POST_WINDOW =
+    TIMESTAMP_TIME_CONFIG.p2pTime +
+    TIMESTAMP_TIME_CONFIG.agreementTime +
+    TIMESTAMP_TIME_CONFIG.chainFallbackTime;
 const HEIGHT_ZERO_POST_WINDOW =
     TIMESTAMP_TIME_CONFIG.p2pTime +
     TIMESTAMP_TIME_CONFIG.agreementTime +
@@ -849,6 +853,49 @@ describe("Unit: ValidationService", function () {
                 .request();
             expect(recovered, "recovered timestamp must be persisted").to.not.be
                 .null;
+        });
+
+        it("height 1 posted one second past the no-grace deadline → TOO_LATE → DISPUTE", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { observer, authored, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+            expect(authored.height, "this pins the height-1 window").to.equal(
+                1
+            );
+
+            const parent = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 0)
+                .request();
+            // height >= 1 gets no evidenceTime grace on the post window
+            const deadline = parent!.timestamp + HEIGHT_ONE_POST_WINDOW;
+            const postedAt = deadline + 1;
+            // still inside the height-0 window, so wrongly applying the grace
+            // here would return ON_TIME and fail this test
+            expect(postedAt).to.be.at.most(
+                parent!.timestamp + HEIGHT_ZERO_POST_WINDOW
+            );
+
+            await h
+                .control(observer)
+                .stub.stageBlockCalldata(authored.encodedSignedBlock, postedAt)
+                .request();
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .request();
+
+            expect(r.resultName).to.equal("DISPUTE");
+            expect(r.firedHooks).to.include(
+                "objectiveInvalidTimestampDetected"
+            );
+            expect(r.fraudProofType).to.equal(
+                solProofType(FraudProofType.InvalidTimestamp)
+            );
         });
 
         it("objectively valid but never posted, received outside agreementTime → subjectiveInvalidTimestampDetected → NOT_ENOUGH_TIME", async function () {
