@@ -19,6 +19,8 @@ import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
     EventSyncFailureProbe,
+    PausedConstructDisputeState,
+    PausedConstructDisputeStatus,
     PausedReductionStatus,
     ReductionSimulationErrorName,
     ConcurrentCalldataRecoveryProbe,
@@ -783,6 +785,80 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.service.pausedReduction = undefined;
         return restored;
     }
+    /**
+     * Park every `agreementManager.getStateProof` for `forkId` until released.
+     * That call is the first async boundary inside `constructDispute`, so a
+     * construction parked there has already started but has not yet read the
+     * stored fraud proofs - the window a test needs to land one mid-flight.
+     */
+    public stubPauseConstructDisputeAtStateProof(forkId: ForkId): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        if (!this.service.stubOriginals.has("constructDisputeStateProof")) {
+            this.service.stubOriginals.set(
+                "constructDisputeStateProof",
+                agreementManager.getStateProof.bind(agreementManager)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "constructDisputeStateProof"
+        ) as typeof agreementManager.getStateProof;
+
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const state: PausedConstructDisputeState = {
+            targetForkId: forkId,
+            entered: 0,
+            released: false,
+            gate,
+            release
+        };
+        this.service.pausedConstructDispute = state;
+
+        agreementManager.getStateProof = (async (
+            requestedForkId: ForkId,
+            blockHeight: number
+        ) => {
+            if (requestedForkId === state.targetForkId && !state.released) {
+                state.entered += 1;
+                await state.gate;
+            }
+            return original(requestedForkId, blockHeight);
+        }) as typeof agreementManager.getStateProof;
+        return true;
+    }
+
+    public releasePausedConstructDispute(): boolean {
+        const state = this.service.pausedConstructDispute;
+        if (!state) return false;
+        state.released = true;
+        state.release();
+        return true;
+    }
+
+    public getPausedConstructDisputeStatus(): PausedConstructDisputeStatus {
+        const state = this.service.pausedConstructDispute;
+        return {
+            entered: state?.entered ?? 0,
+            released: state?.released ?? false
+        };
+    }
+
+    public restorePausedConstructDispute(): boolean {
+        this.releasePausedConstructDispute();
+        const original = this.service.stubOriginals.get(
+            "constructDisputeStateProof"
+        );
+        if (original === undefined) return false;
+        const agreementManager = this.service.sm.agreementManager;
+        agreementManager.getStateProof =
+            original as typeof agreementManager.getStateProof;
+        this.service.stubOriginals.delete("constructDisputeStateProof");
+        this.service.pausedConstructDispute = undefined;
+        return true;
+    }
+
     /** Hold StateSnapshotUpdated events instead of handling them. */
     public stubHoldSnapshotUpdatedEvents(): boolean {
         const eventHandler = this.service.sm.eventHandler;

@@ -39,7 +39,8 @@ export type StubKey =
     | "finalDisputePreparation"
     | "spectateSync"
     | "pausedReduction"
-    | "pausedReductionKillPeriod";
+    | "pausedReductionKillPeriod"
+    | "constructDisputeStateProof";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -58,6 +59,18 @@ export type PausedReductionState = PausedReductionStatus & {
     inside: boolean;
     release?: () => void;
     promise?: Promise<unknown>;
+};
+
+export type PausedConstructDisputeStatus = {
+    /** Calls parked at the held boundary so far. */
+    entered: number;
+    released: boolean;
+};
+
+export type PausedConstructDisputeState = PausedConstructDisputeStatus & {
+    targetForkId: ForkId;
+    gate: Promise<void>;
+    release: () => void;
 };
 
 export type EventSyncFailureProbe = {
@@ -137,6 +150,8 @@ export class StubService extends ARpcService<
     spectateSyncCallCount = 0;
     /** State for the already-entered old-fork reduction race stub. */
     pausedReduction?: PausedReductionState;
+    /** State for the constructDispute state-proof hold. */
+    pausedConstructDispute?: PausedConstructDisputeState;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(

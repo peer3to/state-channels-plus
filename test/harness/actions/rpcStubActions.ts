@@ -1,7 +1,9 @@
 import { Logger } from "@/utils";
+import type { ForkId } from "@/types/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { ReductionSimulationErrorName } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import { waitFor } from "@test/utils/waitFor";
 
 /**
  * RPC-method stubs that wrap a service's `createRPCMethods` host-side.
@@ -257,6 +259,38 @@ export class RpcStubActions<
                 await ctl()
                     .restoreSnapshotUpdatedEvents(replayEvents)
                     .request();
+            }
+        };
+    }
+
+    /**
+     * Park a peer's `constructDispute` at its first async boundary (the state
+     * proof read) for `forkId`. `waitUntilParked` resolves once a construction
+     * is actually held, so a test can land a real fraud proof inside the window
+     * and then `release` it.
+     */
+    async holdConstructDisputeAtStateProof(
+        peerIndex: number,
+        forkId: ForkId
+    ): Promise<{
+        waitUntilParked: (timeoutMs?: number) => Promise<void>;
+        parkedCount: () => Promise<number>;
+        release: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubPauseConstructDisputeAtStateProof(forkId).request();
+        this.logger.debug(
+            `Holding constructDispute at the state proof read on peer ${peerIndex}`
+        );
+        const parkedCount = async () =>
+            (await ctl().getPausedConstructDisputeStatus().request()).entered;
+        return {
+            parkedCount,
+            waitUntilParked: (timeoutMs = 10000) =>
+                waitFor(async () => (await parkedCount()) > 0, timeoutMs),
+            release: async () => {
+                await ctl().restorePausedConstructDispute().request();
             }
         };
     }

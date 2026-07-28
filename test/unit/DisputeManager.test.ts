@@ -547,112 +547,76 @@ describe("Unit: DisputeManager", function () {
     });
 
     describe("constructDispute → concurrency", function () {
-        it("constructDispute sampled while fraud proofs land → onChainSlashes stays consistent with bundled proofs, never throws", async function () {
+        it("a fraud proof landing mid-construction → the same call bundles it and claims exactly that slash", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(5, 2); // blocks 0..1, next = 2
+            await h.lifecycle.start(3, 2); // blocks 0..1, next = 2
             const observer = h.getPeer(0);
             const forkId = h.activeForkId!;
-            const nextHeight = 2;
 
-            const [nextWriter, prevBlock] = await Promise.all([
+            const [nextHeight, nextWriter, prevBlock] = await Promise.all([
+                h.control(observer).query.getNextBlockHeight(forkId).request(),
                 h.control(observer).query.getNextToWrite().request(),
                 h.control(observer).query.getBlockByHeight(forkId, 1).request()
             ]);
 
-            // linked next blocks by non-leaders -> each stores a real
-            // InvalidStateTransition fraud proof for its author when validated;
-            // they land while constructDispute assembles the slash set
-            const offenders = h.peers
-                .filter(
-                    (p) =>
-                        p.index !== observer.index &&
-                        p.address.toLowerCase() !== nextWriter.toLowerCase()
-                )
-                .slice(0, 2);
-            const encodedFaults = await Promise.all(
-                offenders.map((offender) =>
-                    factory.buildAndEncodeBlock(offender.signer, {
-                        header: {
-                            channelId: h.channelId,
-                            forkId,
-                            transactionCnt: nextHeight,
-                            participant: offender.address as Address
-                        },
-                        previousBlockHash: prevBlock!.hash
-                    })
-                )
+            // a linked next block by a non-leader -> a real InvalidStateTransition
+            // fraud proof, stored for its author when validated
+            const offender = h.peers.find(
+                (p) =>
+                    p.index !== observer.index &&
+                    p.address.toLowerCase() !== nextWriter.toLowerCase()
+            )!;
+            const encodedFault = await factory.buildAndEncodeBlock(
+                offender.signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: nextHeight,
+                        participant: offender.address
+                    },
+                    previousBlockHash: prevBlock!.hash
+                }
             );
 
-            const failures: string[] = [];
-            const countsSeen: number[] = [];
-            let samples = 0;
+            // park the construction after it started but before it reads the
+            // stored fraud proofs - the on-chain slash set is already being read
+            const hold = await h.rpcStub.holdConstructDisputeAtStateProof(
+                observer.index,
+                forkId
+            );
+            const constructing = h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const { dispute, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return {
+                        slashes: dispute.input.onChainSlashes.map((a) =>
+                            String(a).toLowerCase()
+                        ),
+                        fraudProofCount: fraudProofsToApply.length
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+            await hold.waitUntilParked();
+            expect(await hold.parkedCount()).to.equal(1);
 
-            const sample = async () => {
-                const r = await h.execOnHost(
-                    observer,
-                    async (sm, args) => {
-                        try {
-                            const { dispute, fraudProofsToApply } =
-                                await sm.disputeManager.constructDispute(
-                                    args.forkId
-                                );
-                            return {
-                                threw: "",
-                                slashCount: dispute.input.onChainSlashes.length,
-                                fraudProofCount: fraudProofsToApply.length
-                            };
-                        } catch (e) {
-                            return {
-                                threw:
-                                    e instanceof Error ? e.message : String(e),
-                                slashCount: -1,
-                                fraudProofCount: -1
-                            };
-                        }
-                    },
-                    { forkId },
-                    { timeoutMs: 20000 }
-                );
-                samples += 1;
-                // nothing is slashed on-chain here, so every bundled fraud proof
-                // must account for exactly one claimed slash - no more, no less
-                if (r.threw) {
-                    failures.push(`sample ${samples}: threw ${r.threw}`);
-                } else if (r.slashCount !== r.fraudProofCount) {
-                    failures.push(
-                        `sample ${samples}: ${r.slashCount} slashes vs ${r.fraudProofCount} proofs`
-                    );
-                } else {
-                    countsSeen.push(r.fraudProofCount);
-                }
-            };
+            // land the proof inside the window, then let the construction finish
+            const validation = await h
+                .control(observer)
+                .stub.runBlockValidation(encodedFault)
+                .request();
+            expect(validation.fraudProofType).to.not.be.null;
 
-            await sample(); // no proofs yet
-            let landingDone = false;
-            const landing = (async () => {
-                for (const encoded of encodedFaults) {
-                    await h
-                        .control(observer)
-                        .stub.runBlockValidation(encoded)
-                        .request();
-                    await new Promise((res) => setTimeout(res, 80));
-                }
-            })().finally(() => {
-                landingDone = true;
-            });
-            // sampling lasts as long as the fault stream; 40ms only sets density
-            while (!landingDone) {
-                await sample();
-                await new Promise((res) => setTimeout(res, 40));
-            }
-            await landing;
-            await sample(); // every proof landed
+            await hold.release();
+            const r = await constructing;
 
-            expect(failures).to.deep.equal([]);
-            // sanity: samples really spanned the proofs landing (none -> all)
-            expect(Math.min(...countsSeen)).to.equal(0);
-            expect(Math.max(...countsSeen)).to.equal(offenders.length);
-            expect(samples).to.be.greaterThan(2);
+            // nothing is slashed on-chain, so the proof that landed mid-flight
+            // must account for exactly one claimed slash - no more, no less
+            expect(r.fraudProofCount).to.equal(1);
+            expect(r.slashes).to.deep.equal([offender.address.toLowerCase()]);
         });
     });
 });
