@@ -485,6 +485,13 @@ describe("Unit: DisputeManager", function () {
                 mode: "atLeast"
             });
 
+            // the original detached kill (peer 0's EventHandler) shares peer 0's
+            // signer with the re-kill below, so drain it first - two competing
+            // applyDisputeFraudProofs txs would race on the nonce
+            expect(
+                (await h.quiesceHosts()).map((e) => e.message)
+            ).to.deep.equal([]);
+
             // re-kill from the stored proof: the spammer is already slashed, so
             // the on-chain apply is idempotent -> killDispute completes with no
             // throw and no second slash
@@ -523,6 +530,11 @@ describe("Unit: DisputeManager", function () {
                 { timeoutMs: 20000 }
             );
 
+            // the re-kill is the only in-flight apply -> it must settle clean
+            expect(
+                (await h.quiesceHosts()).map((e) => e.message)
+            ).to.deep.equal([]);
+
             expect(r.hadProof).to.equal(true);
             expect(r.threw).to.equal("");
             expect(r.afterCount).to.equal(r.beforeCount);
@@ -530,18 +542,6 @@ describe("Unit: DisputeManager", function () {
             await h.dispute.resolveDisputeWait({
                 forkId: h.activeForkId!,
                 forkSettleTimeoutMs: 15000
-            });
-
-            // the original detached kill (peer 0's EventHandler) and this re-kill
-            // share peer 0's signer, so the competing applyDisputeFraudProofs tx
-            // can lose the nonce race -> a benign detached NONCE_EXPIRED. drain it
-            // host-side and claim any copy that reaches the session hook so the
-            // afterEach doesn't rethrow this expected race.
-            await h.quiesceHosts();
-            await TestSession.expectFirstDetachedError({
-                includes: "NONCE_EXPIRED",
-                timeoutMs: 100,
-                required: false
             });
         });
     });
