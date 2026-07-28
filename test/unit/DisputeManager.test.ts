@@ -522,6 +522,84 @@ describe("Unit: DisputeManager", function () {
             expect(r.rejected).to.equal("");
             expect(r.disputed).to.equal(false);
         });
+
+        it("RaceConditionDisputeEvidencePeriodExpired at send → rejects, marker never set", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: {
+                    customError: "RaceConditionDisputeEvidencePeriodExpired",
+                    at: "send"
+                }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // this handler rethrows -> the caller sees the custom error, and
+            // the send failed before the line that stores the marker
+            expect(r.rejected).to.contain(
+                "RaceConditionDisputeEvidencePeriodExpired"
+            );
+            expect(r.disputed).to.equal(false);
+        });
+
+        it("RaceConditionDisputeEvidencePeriodExpired at wait → rejects with the marker left set", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: {
+                    customError: "RaceConditionDisputeEvidencePeriodExpired",
+                    at: "wait"
+                }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // the rethrow skips the storeDisputedFork(false) in the catch, so
+            // the marker stored before the await survives
+            expect(r.rejected).to.contain(
+                "RaceConditionDisputeEvidencePeriodExpired"
+            );
+            expect(r.disputed).to.equal(true);
+        });
     });
 
     describe("dispute", function () {
