@@ -711,10 +711,21 @@ export class StubService extends ARpcService<
                     error instanceof Error ? error.message : String(error);
                 entry.customError = tryDecodeCustomError(error)?.name ?? null;
             };
-            if (failure?.at === "send") {
-                const error = this.submissionFailure(failure);
-                fail(error);
-                throw error;
+            // an injected failure replaces the send entirely - forwarding it
+            // would leave a landed transaction behind a "failed" apply
+            if (failure) {
+                const reject = () => {
+                    const error = this.submissionFailure(failure);
+                    fail(error);
+                    throw error;
+                };
+                if (failure.at === "send") reject();
+                return {
+                    // a tx that reverts also reverts the preflight `call` that
+                    // tryHandleEvmError retries through
+                    provider: { call: async () => reject() },
+                    wait: async () => reject()
+                };
             }
             let tx;
             try {
@@ -722,14 +733,6 @@ export class StubService extends ARpcService<
             } catch (error) {
                 fail(error);
                 throw error;
-            }
-            if (failure?.at === "wait") {
-                tx.wait = (async () => {
-                    const error = this.submissionFailure(failure);
-                    fail(error);
-                    throw error;
-                }) as typeof tx.wait;
-                return tx;
             }
             const originalWait = tx.wait.bind(tx);
             tx.wait = (async (...args: Parameters<typeof originalWait>) => {

@@ -1030,6 +1030,50 @@ describe("Unit: DisputeManager", function () {
             });
         }
 
+        for (const at of ["send", "wait"] as const) {
+            it(`an unrecognized apply failure at ${at} → swallowed, nothing retried`, async function () {
+                const h = TestSession.getHarness();
+                const { killer, spammer } =
+                    await h.scenario.stageUnkilledSpamDispute();
+                const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                    killer.index,
+                    { failWith: { message: "apply rejected by the node", at } }
+                );
+
+                const r = await h.execOnHost(
+                    killer,
+                    async (sm) => {
+                        const proofs =
+                            sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                        let threw = "";
+                        try {
+                            await sm.disputeManager.killDispute(
+                                proofs[0].dispute
+                            );
+                        } catch (e) {
+                            threw = e instanceof Error ? e.message : String(e);
+                        }
+                        return { threw };
+                    },
+                    {},
+                    { timeoutMs: 30000 }
+                );
+
+                // logged and swallowed; no handler matches, nothing resent
+                expect(r.threw).to.equal("");
+                const applies = await probe.applies();
+                expect(applies.length).to.equal(1);
+                expect(applies[0].customError).to.equal(null);
+                expect(
+                    (await h.quiesceHosts()).map((e) => e.message)
+                ).to.deep.equal([]);
+                // the apply never landed -> the spammer is still unslashed
+                expect(
+                    await h.query.onChainSlashedParticipants()
+                ).to.not.include(spammer.address.toLowerCase());
+            });
+        }
+
         it("live kill window → the stored proof is submitted and its transaction awaited", async function () {
             const h = TestSession.getHarness();
             const { killer, spammer } =
