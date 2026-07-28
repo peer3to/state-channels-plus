@@ -220,6 +220,18 @@ export class RpcStubActions<
     }
 
     /**
+     * Disarm a peer's pending reduction timers. Call it before a test that
+     * staged reductions ends: an armed timer fires into teardown and leaks its
+     * `tryReduce` into the detached-promise drain.
+     */
+    async cancelScheduledReductions(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.cancelScheduledReductions()
+            .request();
+    }
+
+    /**
      * Hold every reduction entry point on a peer — the `reduction-*` timers,
      * the StateSnapshotUpdated handler, and the DisputeReducedResultCommitted
      * handler (which reduces on the spot once the challenge period expires) —
@@ -237,6 +249,13 @@ export class RpcStubActions<
         release: (options?: {
             replayEvents?: boolean;
             runHeldTasks?: boolean;
+            /**
+             * Leave `reduction-*` timer scheduling stubbed out. Use it when the
+             * test is done driving reductions: restoring scheduling lets a
+             * fresh timer arm and fire into teardown, and its `tryReduce` then
+             * hangs the detached-promise drain.
+             */
+            keepTasksHeld?: boolean;
         }) => Promise<void>;
     }> {
         const ctl = () =>
@@ -251,8 +270,16 @@ export class RpcStubActions<
             heldSnapshotEventCount: async () =>
                 await ctl().getHeldSnapshotUpdatedCount().request(),
             release: async (options = {}) => {
-                const { replayEvents = true, runHeldTasks = false } = options;
-                await ctl().restoreReductionTasks(runHeldTasks).request();
+                const {
+                    replayEvents = true,
+                    runHeldTasks = false,
+                    keepTasksHeld = false
+                } = options;
+                if (keepTasksHeld) {
+                    await ctl().dropHeldReductionTasks().request();
+                } else {
+                    await ctl().restoreReductionTasks(runHeldTasks).request();
+                }
                 await ctl().restoreReducedCommitEvents(replayEvents).request();
                 await ctl()
                     .restoreSnapshotUpdatedEvents(replayEvents)

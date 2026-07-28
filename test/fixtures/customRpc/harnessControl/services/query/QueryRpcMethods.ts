@@ -4,6 +4,7 @@ import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import Clock from "@/Clock";
 import { Codec, Type, hash } from "@/utils";
+import { getChecksumAddress } from "@/utils/address";
 import { Status } from "@/types/flags";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
@@ -25,11 +26,41 @@ export interface BlockBundle {
     hash: string;
     author: string;
     height: number;
+    stateSnapshotHash: string;
     encodedSignedBlock: string;
     encodedBlockConfirmation: string;
     timestamp: number;
     onChainTimestamp: number | null;
     confirmationSignatures: string[];
+    confirmationSignerAddresses: string[];
+}
+
+/**
+ * Projection of an assembled state proof plus the on-chain verifier verdicts
+ * (verifyMilestones / isMilestoneFinal / areSignedBlocksLinkedAndVerified).
+ */
+export interface StateProofVerification {
+    /** The block height the proof was assembled at. */
+    blockHeight: number;
+    milestoneCount: number;
+    signedBlockCount: number;
+    /** Height of the proof's latest block, or null for an empty proof. */
+    latestProofHeight: number | null;
+    /** Per milestone: the block height each of its confirmations covers. */
+    milestoneConfirmationHeights: number[][];
+    /** getSnapshotFromMilestone(milestone).hash, one per milestone. */
+    milestoneSnapshotHashes: string[];
+    /** On-chain verdict for the proof's carrier (false for an empty proof). */
+    verified: boolean;
+    /** On-chain isMilestoneFinal for the first milestone; null when no milestone. */
+    isFinal: boolean | null;
+    /** Snapshot hash isMilestoneFinal finalized; null when no milestone. */
+    onChainFinalizedSnapshotHash: string | null;
+    /** TS extractor: getLatestSnapshotFromStateProof. */
+    latestSnapshotHash: string;
+    /** TS extractor: getLatestFinalizedSnapshot. */
+    finalizedSnapshotHash: string;
+    genesisSnapshotHash: string;
 }
 
 /**
@@ -187,6 +218,45 @@ export class QueryRpcMethods extends ARpcMethods {
     public getLatestBlockBundle(forkId: ForkId): BlockBundle | null {
         const block = this.service.storage.blocks.getLatestBlock(forkId);
         return block ? this.service.toBlockBundle(block) : null;
+    }
+
+    // ===== AgreementManager queries =====
+
+    public async getStateProofVerification(
+        forkId: ForkId,
+        blockHeight?: BlockHeight
+    ): Promise<StateProofVerification | null> {
+        return this.service.buildStateProofVerification(forkId, blockHeight);
+    }
+
+    public getLatestSignedBlockByParticipant(
+        forkId: ForkId,
+        participant: Address
+    ): { height: number; signatureRecoversToParticipant: boolean } | null {
+        const result =
+            this.service.sm.agreementManager.getLatestSignedBlockByParticipant(
+                forkId,
+                participant
+            );
+        if (!result) return null;
+        return {
+            height: Number(result.block.height),
+            signatureRecoversToParticipant:
+                result.block.signatureToAddress(result.signature) ===
+                getChecksumAddress(participant)
+        };
+    }
+    public didEveryoneSignBlockAt(
+        forkId: ForkId,
+        height: BlockHeight
+    ): boolean | null {
+        const block = this.service.storage.blocks.getBlock(forkId, height);
+        return block
+            ? this.service.sm.agreementManager.didEveryoneSignBlock(block)
+            : null;
+    }
+    public getParticipantChangeHeights(forkId: ForkId): BlockHeight[] {
+        return this.service.getParticipantChangeHeights(forkId);
     }
 
     /** Whether this peer has blacklisted `evmAddress`. */

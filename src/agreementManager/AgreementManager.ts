@@ -9,18 +9,10 @@ import {
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Storage, { SortOrder } from "@/storage";
-import {
-    Address,
-    BlockHeight,
-    ChannelId,
-    ForkId,
-    Hash,
-    Signature
-} from "@/types/types";
+import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
 import { Block, StateSnapshot, StateProof } from "@/models";
-import { difference, Logger } from "@/utils";
+import { Codec, difference, Logger, Type } from "@/utils";
 import { ZeroHash } from "ethers";
-import { StateChannelManagerProxy } from "@typechain-types/index";
 import { ReduceData } from "@/types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
@@ -92,9 +84,13 @@ class AgreementManager {
             throw new Error("Fork not found");
         }
 
-        // Get all exit points for this fork
+        // Participant changes up to the requested height only
         const participantChangeHeights =
-            this.storage.participantSetChanges.getChangePointsInRange(forkId);
+            this.storage.participantSetChanges.getChangePointsInRange(
+                forkId,
+                undefined,
+                blockHeight
+            );
 
         const milestones: MilestoneProofStruct[] = [];
         let previousThresholdSnapshot = genesisSnapshot;
@@ -109,7 +105,8 @@ class AgreementManager {
 
             const milestone = this.tryBuildMilestone(
                 blockIterator,
-                previousThresholdSnapshot
+                previousThresholdSnapshot,
+                blockHeight
             );
 
             if (milestone) {
@@ -133,9 +130,14 @@ class AgreementManager {
             blockHeight
         );
 
+        // the ceiling is redundant here - a DESC iterator started at
+        // blockHeight only ever walks down - but it is passed anyway so the
+        // "never above the requested height" contract holds at this call site
+        // on its own, rather than resting on how the iterator was built
         const milestone = this.tryBuildMilestone(
             blockIterator,
-            previousThresholdSnapshot
+            previousThresholdSnapshot,
+            blockHeight
         );
         if (milestone) {
             milestones.push(milestone);
@@ -332,12 +334,103 @@ class AgreementManager {
         );
     }
 
+    public getForkDisputeConfirmations(
+        disputeCommitments: readonly Hash[]
+    ): DisputeConfirmationStruct[] {
+        return disputeCommitments.map((commitment) => {
+            const disputeConfirmation =
+                this.storage.disputes.getDisputeConfirmation(commitment);
+            if (!disputeConfirmation) {
+                throw new Error(
+                    `Missing Dispute Confirmation in storage for dispute commitment ${commitment}`
+                );
+            }
+            return disputeConfirmation;
+        });
+    }
+
+    public getForkDisputes(
+        disputeCommitments: readonly Hash[]
+    ): DisputeStruct[] {
+        return this.getForkDisputeConfirmations(disputeCommitments).map(
+            (disputeConfirmation) =>
+                Codec.decode(
+                    disputeConfirmation.signedDispute.encodedDispute,
+                    Type.Dispute
+                )
+        );
+    }
+
+    public async getReduceData(
+        forkId: ForkId,
+        reducedOutput: ReduceOutputStruct
+    ): Promise<ReduceData> {
+        // reducedOutput latestStateSnapshot
+        this.logger.debug(
+            "ReduceOutput",
+            LoggerUtils.getReducedOutputMetadata(reducedOutput)
+        );
+        let reducedLatestStateSnapshot: StateSnapshot;
+        if (
+            !reducedOutput.latestBlock ||
+            reducedOutput.latestBlock.transaction.header.forkId === ZeroHash
+        ) {
+            // Genesis state case - use the genesis snapshot for this fork
+            const genesisSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
+            if (!genesisSnapshot) {
+                throw new Error(`No genesis snapshot found for fork ${forkId}`);
+            }
+            reducedLatestStateSnapshot = genesisSnapshot;
+        } else {
+            // Normal case - use the block's state snapshot
+            const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
+                reducedOutput.latestBlock.stateSnapshotHash
+            );
+            if (!snapshot) {
+                throw new Error(
+                    "Missing latestStateSnapshot for reducedOutput in storage for syncing"
+                );
+            }
+            reducedLatestStateSnapshot = snapshot;
+        }
+
+        // Get the corresponding stateMachineState
+        const reducedLatestEncodedStateMachineState =
+            this.storage.stateMachineStates.getStateMachineState(
+                reducedLatestStateSnapshot.stateMachineStateHash
+            );
+        if (!reducedLatestEncodedStateMachineState)
+            throw new Error(
+                "Missing latestEncodedState for reducedOutput in storage for syncing"
+            );
+
+        const inboundMessageBlocksAppliedInReduce =
+            this.storage.inboundMessages.getMessageBlocksInRange({
+                upperBlockHash: reducedOutput.latestInboundMessageBlockHash,
+                lowerBlockHash:
+                    reducedLatestStateSnapshot.latestInboundMessageBlockHash
+            });
+        return {
+            forkId: forkId,
+            reducedOutput: reducedOutput,
+            latestStateSnapshot: reducedLatestStateSnapshot.toStruct(),
+            encodedStateMachineState: reducedLatestEncodedStateMachineState,
+            inboundMessageBlocks: inboundMessageBlocksAppliedInReduce
+        };
+    }
+
+    // PRIVATE
+
     /**
-     * Try to build a milestone from a block iterator and current snapshot
+     * Try to build a milestone from a block iterator and current snapshot.
+     * maxHeight, if given, is an inclusive ceiling: a block above it is never
+     * consumed, so the milestone can only be built from blocks up to that height.
      */
-    public tryBuildMilestone(
+    private tryBuildMilestone(
         blockIterator: Generator<Block, void, unknown>,
-        previousThresholdSnapshot: StateSnapshot
+        previousThresholdSnapshot: StateSnapshot,
+        maxHeight?: BlockHeight
     ): MilestoneProofStruct | undefined {
         const collectedBlocks: Block[] = [];
         const collectedSigners = new Set<Address>();
@@ -347,6 +440,10 @@ class AgreementManager {
         );
 
         for (const currentBlock of blockIterator) {
+            if (maxHeight !== undefined && currentBlock.height > maxHeight) {
+                break;
+            }
+
             collectedBlocks.push(currentBlock);
 
             if (
@@ -447,147 +544,6 @@ class AgreementManager {
         }
 
         return filteredBlocks;
-    }
-
-    /**
-     * Check if a participant has posted a block on-chain
-     */
-    public didParticipantPostOnChainLocal(
-        forkId: ForkId,
-        blockHeight: BlockHeight,
-        participantAddress: Address
-    ): boolean {
-        const block = this.storage.blocks.getBlock(forkId, blockHeight);
-        if (!block) return false;
-
-        if (!block.onChainTimestamp) return false;
-
-        return block.author === participantAddress;
-    }
-
-    /**
-     * Get a double-signed block if it exists
-     * Checks if the incoming block conflicts with an already stored block at the same coordinates
-     */
-    public getDoubleSignedBlock(
-        signedBlock: SignedBlockStruct
-    ): Block | undefined {
-        const block = Block.fromSignedBlock(signedBlock);
-
-        // Check if there's already a block at these coordinates
-        const existingBlock = this.storage.blocks.getBlock(
-            block.forkId,
-            block.height
-        );
-        if (!existingBlock) return undefined;
-
-        // Check if it's by the same author but different block (double sign)
-        if (
-            existingBlock.author === block.author &&
-            !existingBlock.equals(block)
-        ) {
-            return existingBlock;
-        }
-
-        return undefined;
-    }
-
-    public async getForkDisputeConfirmations(
-        channelId: ChannelId,
-        forkId: ForkId,
-        ethersContract: StateChannelManagerProxy
-    ): Promise<DisputeConfirmationStruct[]> {
-        const disputeCommitments = await ethersContract.getWindowCommitments(
-            channelId,
-            forkId
-        );
-        return disputeCommitments.map((commitment) => {
-            const disputeConfirmation =
-                this.storage.disputes.getDisputeConfirmation(commitment);
-            if (!disputeConfirmation) {
-                throw new Error(
-                    `Missing Dispute Confirmation in storage for dispute commitment ${commitment}`
-                );
-            }
-            return disputeConfirmation;
-        });
-    }
-
-    public async getForkDisputes(
-        disputeCommitments: readonly Hash[]
-    ): Promise<DisputeStruct[]> {
-        // Collect all disputes for this dispute window
-        const currentWindowDisputes: DisputeStruct[] = [];
-        for (const commitment of disputeCommitments) {
-            const dispute = this.storage.disputes.getDispute(commitment);
-            if (!dispute) {
-                throw new Error(
-                    `Missing Dispute in storage for dispute commitment ${commitment}`
-                );
-            }
-
-            currentWindowDisputes.push(dispute);
-        }
-        return currentWindowDisputes;
-    }
-
-    public async getReduceData(
-        forkId: ForkId,
-        reducedOutput: ReduceOutputStruct
-    ): Promise<ReduceData> {
-        // reducedOutput latestStateSnapshot
-        this.logger.debug(
-            "ReduceOutput",
-            LoggerUtils.getReducedOutputMetadata(reducedOutput)
-        );
-        let reducedLatestStateSnapshot: StateSnapshot;
-        if (
-            !reducedOutput.latestBlock ||
-            reducedOutput.latestBlock.transaction.header.forkId === ZeroHash
-        ) {
-            // Genesis state case - use the genesis snapshot for this fork
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
-            if (!genesisSnapshot) {
-                throw new Error(`No genesis snapshot found for fork ${forkId}`);
-            }
-            reducedLatestStateSnapshot = genesisSnapshot;
-        } else {
-            // Normal case - use the block's state snapshot
-            const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
-                reducedOutput.latestBlock.stateSnapshotHash
-            );
-            if (!snapshot) {
-                throw new Error(
-                    "Missing latestStateSnapshot for reducedOutput in storage for syncing"
-                );
-            }
-            reducedLatestStateSnapshot = snapshot;
-        }
-
-        // Get the corresponding stateMachineState
-        const reducedLatestEncodedStateMachineState =
-            this.storage.stateMachineStates.getStateMachineState(
-                reducedLatestStateSnapshot.stateMachineStateHash
-            );
-        if (!reducedLatestEncodedStateMachineState)
-            throw new Error(
-                "Missing latestEncodedState for reducedOutput in storage for syncing"
-            );
-
-        const inboundMessageBlocksAppliedInReduce =
-            this.storage.inboundMessages.getMessageBlocksInRange({
-                upperBlockHash: reducedOutput.latestInboundMessageBlockHash,
-                lowerBlockHash:
-                    reducedLatestStateSnapshot.latestInboundMessageBlockHash
-            });
-        return {
-            forkId: forkId,
-            reducedOutput: reducedOutput,
-            latestStateSnapshot: reducedLatestStateSnapshot.toStruct(),
-            encodedStateMachineState: reducedLatestEncodedStateMachineState,
-            inboundMessageBlocks: inboundMessageBlocksAppliedInReduce
-        };
     }
 }
 

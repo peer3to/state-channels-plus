@@ -242,6 +242,41 @@ export default class EventSyncService {
             return { validationScheduled: false };
         }
     }
+    /**
+     * Whether the chain says this fork is disputed. The local EVM mirror only
+     * knows the dispute events we have already processed, so a walk that reads
+     * its window from the chain has to take the disputed flag from the chain
+     * too - otherwise an undelivered event leaves the flag false and the walk
+     * never enters the window it would have recovered.
+     */
+    async isForkDisputedOnChain(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<boolean> {
+        return this.stateChannelManagerContract.isForkDisputed(
+            channelId,
+            forkId
+        );
+    }
+
+    /**
+     * The fork's dispute window as the chain has it, with any commitment whose
+     * event hasn't reached us yet recovered before we return. Single owner for
+     * both the reduce path and spectate requests, so neither reads a window
+     * its local storage can't back.
+     */
+    async loadSynchronizedWindowCommitments(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<readonly Hash[]> {
+        const commitments =
+            await this.stateChannelManagerContract.getWindowCommitments(
+                channelId,
+                forkId
+            );
+        await this.ensureDisputesProcessed(channelId, forkId, commitments);
+        return commitments;
+    }
 
     async ensureDisputesProcessed(
         channelId: ChannelId,

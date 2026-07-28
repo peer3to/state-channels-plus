@@ -633,6 +633,16 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.heldReductionTasks.length;
     }
 
+    public dropHeldReductionTasks(): boolean {
+        this.service.heldReductionTasks.splice(0);
+        return true;
+    }
+
+    public cancelScheduledReductions(): boolean {
+        this.service.sm.reductionManager.cancelScheduledReductions();
+        return true;
+    }
+
     public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
         return this.service.probeRejectedEventSyncLog();
     }

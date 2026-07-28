@@ -1,6 +1,9 @@
 import ARpcService from "@/rpc/ARpcService";
+import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
+import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type ATransport from "@/transport/ATransport";
+import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { SyncPayload } from "@/types/spectate";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
@@ -40,6 +43,16 @@ export class SpectateControlService extends ARpcService<
     /** The SDK's live spectate service on this peer's local RPC. */
     get spectate() {
         return this.p2pManager.localRpc.spectateService;
+    }
+
+    /** A targeted sync request for this peer's own channel, stamped now. */
+    buildSyncRequest(forkId: ForkId, blockHeight: number): SyncRequest {
+        return {
+            channelId: this.sm.channelId,
+            initTime: Clock.getTimeInSeconds(),
+            forkId,
+            blockHeight
+        };
     }
 
     public createRPCMethods(transport: ATransport): SpectateControlRpcMethods {

@@ -483,35 +483,42 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         const disputeWindows: DisputeWindowVerification[] = [];
         let currentForkId = currentOnChainSnapshot.forkID;
+        // the disputed flag comes from the same owner as the window below. the
+        // local EVM only knows the dispute events we've processed, so reading
+        // it there while reading the window from the chain would skip the walk
+        // entirely for a fork whose events haven't arrived - and serve a proof
+        // for a fork that is disputed and already reduced on-chain
         let isDisputed =
-            await diamondStateMachine.localDiamondContract.isForkDisputed(
+            await stateManager.eventSyncService.isForkDisputedOnChain(
                 channelId,
                 currentForkId
             );
 
         while (isDisputed) {
-            // Collect disputes for this dispute window
-            // Collect all disputes for this dispute window
-            const currentWindowDisputeConfirmations =
-                await this.p2pManager.stateManager.agreementManager.getForkDisputeConfirmations(
+            // Collect all disputes for this dispute window.
+            // A commitment can land on-chain before its dispute event is
+            // processed locally; recover it before reading storage so a
+            // still-pending event doesn't abort the sync.
+            const currentWindowCommitments =
+                await stateManager.eventSyncService.loadSynchronizedWindowCommitments(
                     channelId,
-                    currentForkId,
-                    diamondStateMachine.localDiamondContract
+                    currentForkId
+                );
+            const currentWindowDisputeConfirmations =
+                agreementManager.getForkDisputeConfirmations(
+                    currentWindowCommitments
                 );
 
-            const currentWindowDisputesHashes =
-                currentWindowDisputeConfirmations.map((disputeConfirmation) =>
-                    Codec.decode(
-                        disputeConfirmation.signedDispute.encodedDispute,
-                        Type.Dispute
-                    )
+            const currentWindowDisputes =
+                await agreementManager.getForkDisputes(
+                    currentWindowCommitments
                 );
 
             // After collecting disputes for this window, reduce to get the next fork
             const computation =
                 await stateManager.reductionManager.computeReductionLocally(
                     currentForkId,
-                    currentWindowDisputesHashes
+                    currentWindowDisputes
                 );
             const { reduceData, reducedForkId } = computation;
 
@@ -528,7 +535,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             });
             currentForkId = reducedForkId;
             isDisputed =
-                await diamondStateMachine.localDiamondContract.isForkDisputed(
+                await stateManager.eventSyncService.isForkDisputedOnChain(
                     channelId,
                     currentForkId
                 );

@@ -63,12 +63,17 @@ export class MathByzantineActions extends ByzantineActions {
             .control(peer)
             .query.getBlockBuildingContext(forkId)
             .request();
-        if (ctx.latestBlockTimestamp === null) {
-            throw new Error(`No block found for fork ${forkId}`);
-        }
 
         const transactionData =
             options?.transactionData ?? this.encodeMathAdd(peer);
+
+        // height 0 has no predecessor timestamp
+        const timestamp =
+            ctx.latestBlockTimestamp !== null
+                ? BigInt(
+                      Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
+                  )
+                : BigInt(ctx.currentTimestamp);
 
         const transaction: TransactionStruct = {
             header: {
@@ -76,9 +81,7 @@ export class MathByzantineActions extends ByzantineActions {
                 participant: peer.address,
                 forkId,
                 transactionCnt: BigInt(ctx.nextBlockHeight),
-                timestamp: BigInt(
-                    Math.max(ctx.currentTimestamp, ctx.latestBlockTimestamp)
-                )
+                timestamp
             },
             body: { encodedData: transactionData, data: transactionData }
         };
