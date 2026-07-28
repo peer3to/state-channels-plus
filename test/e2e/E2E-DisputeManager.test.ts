@@ -1,3 +1,4 @@
+import { expect } from "chai";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -20,8 +21,43 @@ describe("E2E: Dispute Manager", function () {
             const forkId = h.activeForkId!;
             const nextPeer = await h.query.getNextPeerToWrite();
             await h.byzantine.submitInvalidStateTransitionBlock(nextPeer.index);
-            await h.assert.dispute.initiatedAndCommitedWait();
+            // settled fork -> the dispute is final, no auditing calldata posted
+            await h.assert.dispute.initiatedAndCommitedWait({
+                initiatedWithAuditingData: false
+            });
             await h.dispute.resolveDisputeWait({ forkId });
+
+            // the dispute bundled the offender's fraud proof into its multicall,
+            // so applying it slashed them on-chain
+            expect(await h.query.onChainSlashedParticipants()).to.include(
+                nextPeer.address.toLowerCase()
+            );
+        });
+
+        it("should post a dispute WITH auditing calldata on a pending-join fork", async function () {
+            const h = TestSession.getHarness();
+            // "calldata-backed" = the pending inbound join leaves the head
+            // not-final-by-everyone, so the dispute's postedAuditingData is true
+            // and dispute() takes the with-calldata upload. shorter evidence
+            // time keeps the real resolve under budget
+            await h.scenario.preDisputeSetupCalldataPath({
+                timeConfig: { evidenceTime: 6 }
+            });
+            const offender = await h.query.getNextPeerToWrite();
+
+            await h.byzantine.submitInvalidStateTransitionBlock(offender.index);
+            await h.assert.dispute.initiatedAndCommitedWait({
+                initiatedWithAuditingData: true
+            });
+            await h.dispute.resolveDisputeWait({
+                forkId: h.activeForkId!,
+                forkSettleTimeoutMs: 20000,
+                syntheticOnChainParticipants: 1
+            });
+
+            expect(await h.query.onChainSlashedParticipants()).to.include(
+                offender.address.toLowerCase()
+            );
         });
 
         it("should post updated state snapshot after fork resolution", async function () {
