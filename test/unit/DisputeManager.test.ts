@@ -900,10 +900,45 @@ describe("Unit: DisputeManager", function () {
     });
 
     describe("killDispute", function () {
-        // no test: the "no dispute fraud proof found" throw is defensive -
-        // killDispute's only caller (EventHandler after a failed audit) has
-        // just stored the proof. forcing it means feeding a proofless dispute.
-        it.skip("no stored fraud proof → throws (defensive)", function () {});
+        it("no stored fraud proof → the throw stays inside, nothing is submitted", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                peer.index
+            );
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    // a locally constructed dispute nobody audited -> no proof
+                    const { dispute } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    let threw = "";
+                    try {
+                        await sm.disputeManager.killDispute(dispute);
+                    } catch (e) {
+                        threw = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        threw,
+                        storedProofs:
+                            sm.storage.disputeFraudProofs.getDisputeFraudProofs()
+                                .length
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // the "No dispute fraud proof found" throw is inside killDispute's
+            // catch-all -> the method resolves and never reaches a submission
+            expect(r.storedProofs).to.equal(0);
+            expect(r.threw).to.equal("");
+            expect(await probe.applies()).to.deep.equal([]);
+        });
 
         // no test: `windowExists=false` is unreachable from the public surface.
         // a stored dispute fraud proof only exists for a dispute the peer
