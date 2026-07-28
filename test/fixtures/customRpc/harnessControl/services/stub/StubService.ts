@@ -1,10 +1,10 @@
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import type { Address, ForkId, Timestamp } from "@/types/types";
+import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
-import { id, Log } from "ethers";
+import { ethers, id, Log } from "ethers";
 import type { StateChannelManagerProxy } from "@typechain-types";
 import type {
     DisputeAuditingDataStruct,
@@ -25,6 +25,7 @@ import DisputeValidationStrategy from "@/stateManager/validationStrategy/Dispute
 import { BlockValidationResult } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
+import { recordValidationBoundary } from "./RecordingValidationStrategy";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
@@ -152,6 +153,7 @@ export type EventSyncFailureProbe = {
     handlerCallCount: number;
     firstError: string | null;
     secondError: string | null;
+    rescheduledError: string | null;
     cursorBefore: number | null;
     cursorAfter: number | null;
     detachedError: string | null;
@@ -482,11 +484,29 @@ export class StubService extends ARpcService<
                     ? rejected.reason.message
                     : String(rejected.reason)
                 : null;
+
+            // A failed log is fatal - rescheduling it returns the cached
+            // rejection and never re-enters the handler, even once the handler
+            // would succeed.
+            eventHandler.onStateSnapshotUpdated = async () => {
+                handlerCallCount += 1;
+            };
+            const rescheduled = sm.eventSyncService.scheduleLog(
+                log,
+                sm.channelId
+            );
+            const rescheduledError = await rescheduled.then(
+                () => null,
+                (error: unknown) =>
+                    error instanceof Error ? error.message : String(error)
+            );
+
             return {
                 samePromise: first === second,
                 handlerCallCount,
                 firstError,
                 secondError,
+                rescheduledError,
                 cursorBefore,
                 cursorAfter:
                     sm.storage.eventSync.getLatestProcessedBlock(
@@ -583,8 +603,9 @@ export class StubService extends ARpcService<
         );
         if (!latestBlock) throw new Error("Expected a latest block");
         const strategy = this.createDisputeValidationStrategy(dispute);
-        const result =
-            await strategy.blockIsNotLinkedAndIsNotFirstBlock(latestBlock);
+        const result = await strategy.blockIsNotLinkedAndIsNotFirstBlock(
+            this.sm.storage.queues.createEntry(latestBlock)
+        );
         return {
             result: BlockValidationResult[result],
             proofStored:
@@ -610,11 +631,12 @@ export class StubService extends ARpcService<
             this.sm.signer
         );
         const strategy = this.createDisputeValidationStrategy(dispute);
+        const entry = this.sm.storage.queues.createEntry(block);
         const earlyAuthorResult =
-            await strategy.blockAuthorIsNotParticipant(block);
+            await strategy.blockAuthorIsNotParticipant(entry);
         const signatureUnionResult =
             await strategy.notAllSingersAreParticipants(
-                this.sm.storage.queues.createEntry(block),
+                entry,
                 new Set([block.originalSignature])
             );
         return {
@@ -1080,6 +1102,185 @@ export class StubService extends ARpcService<
             eventSyncService.tryRecoverBlockCalldataAndScheduleValidation =
                 originalRecover;
         }
+    }
+
+    private async runAuthorGate(
+        author: Address,
+        stateSnapshotHash: Hash,
+        coordinates?: { forkId: ForkId; height: number }
+    ): Promise<string> {
+        const head = this.sm.storage.blocks.getLatestBlock(this.sm.forkId);
+        if (!head) throw new Error("Expected a latest block");
+
+        const blockStruct = {
+            ...factory.blockStructWithTransactionHeader(head.blockStruct, {
+                participant: author,
+                transactionCnt: coordinates?.height ?? head.height + 1,
+                forkId: coordinates?.forkId ?? this.sm.forkId
+            }),
+            previousBlockHash: head.hash,
+            stateSnapshotHash
+        };
+        const block = await Block.fromBlockStruct(blockStruct, this.sm.signer);
+
+        const { strategy, result } = recordValidationBoundary(
+            this.sm.blockValidationStrategy
+        );
+        await this.sm.validationService.validateBlockConfirmation(
+            this.sm.storage.queues.createEntry(block),
+            strategy
+        );
+        // the staged blocks always target the live, open channel - stopping
+        // this early means the staging broke, not that the gate decided
+        if (["wrongChannel", "channelNotOpened"].includes(result.reached)) {
+            throw new Error(
+                `author-gate probe stopped at ${result.reached}, before the gate`
+            );
+        }
+        return result.reached;
+    }
+
+    /** The head block's own resulting snapshot - the anchor the gate binds against. */
+    private previousSnapshot(): StateSnapshot {
+        const head = this.sm.storage.blocks.getLatestBlock(this.sm.forkId);
+        if (!head) throw new Error("Expected a latest block");
+        const snapshot = this.sm.storage.stateSnapshots.getStateSnapshotByHash(
+            head.stateSnapshotHash
+        );
+        if (!snapshot) throw new Error("Expected the latest block's snapshot");
+        return snapshot;
+    }
+
+    /** Store a snapshot listing `participants` at the given coordinates. */
+    private storeSnapshotAt(
+        participants: Address[],
+        height: number,
+        forkId: ForkId = this.sm.forkId
+    ): Hash {
+        const snapshot = factory.stateSnapshot({
+            forkId,
+            blockHeight: height,
+            timestamp: 0,
+            snapshotData: factory.snapshotData({ participants })
+        });
+        this.sm.storage.stateSnapshots.storeStateSnapshot(snapshot);
+        return snapshot.hash;
+    }
+
+    private nextHeight(): number {
+        const head = this.sm.storage.blocks.getLatestBlock(this.sm.forkId);
+        if (!head) throw new Error("Expected a latest block");
+        return head.height + 1;
+    }
+
+    private randomAddress(): Address {
+        return ethers.Wallet.createRandom().address as Address;
+    }
+
+    /** Coordinates with no locally-anchored previous snapshot. */
+    private unanchoredCoordinates() {
+        return {
+            forkId: id("probeAuthorGate-unknown-fork") as ForkId,
+            height: 1
+        };
+    }
+
+    /** Author already listed in the previous snapshot. */
+    public async probeAuthorGatePreviousSnapshotMember(): Promise<string> {
+        const previous = this.previousSnapshot();
+        const member = previous.snapshotData.participants[0] as Address;
+        const head = this.sm.storage.blocks.getLatestBlock(this.sm.forkId)!;
+        return this.runAuthorGate(member, head.stateSnapshotHash);
+    }
+
+    /** Author only in a resulting snapshot bound to the block's own coordinates. */
+    public async probeAuthorGateMatchingResultingSnapshot(): Promise<string> {
+        const outsider = this.randomAddress();
+        const snapshotHash = this.storeSnapshotAt(
+            [outsider],
+            this.nextHeight()
+        );
+        return this.runAuthorGate(outsider, snapshotHash);
+    }
+
+    /** Author only in a resulting snapshot from a different height. */
+    public async probeAuthorGateStaleHeightSnapshot(): Promise<string> {
+        const outsider = this.randomAddress();
+        const snapshotHash = this.storeSnapshotAt(
+            [outsider],
+            this.nextHeight() + 100
+        );
+        return this.runAuthorGate(outsider, snapshotHash);
+    }
+
+    /** Author only in a resulting snapshot from a different fork, same height. */
+    public async probeAuthorGateWrongForkSnapshot(): Promise<string> {
+        const outsider = this.randomAddress();
+        const snapshotHash = this.storeSnapshotAt(
+            [outsider],
+            this.nextHeight(),
+            id("probeAuthorGate-wrong-fork") as ForkId
+        );
+        return this.runAuthorGate(outsider, snapshotHash);
+    }
+
+    /** Resulting snapshot matches the coordinates but omits the author. */
+    public async probeAuthorGateMatchingSnapshotExcludingAuthor(): Promise<string> {
+        const outsider = this.randomAddress();
+        const snapshotHash = this.storeSnapshotAt(
+            [this.randomAddress()],
+            this.nextHeight()
+        );
+        return this.runAuthorGate(outsider, snapshotHash);
+    }
+
+    /** Declared resulting snapshot absent from storage; author is in the previous one. */
+    public async probeAuthorGateMissingSnapshotPreviousMember(): Promise<string> {
+        const member = this.previousSnapshot().snapshotData
+            .participants[0] as Address;
+        return this.runAuthorGate(
+            member,
+            id("probeAuthorGate-unstored-result") as Hash
+        );
+    }
+
+    /** Declared resulting snapshot absent from storage; author is an outsider. */
+    public async probeAuthorGateMissingSnapshotOutsider(): Promise<string> {
+        return this.runAuthorGate(
+            this.randomAddress(),
+            id("probeAuthorGate-unstored-result") as Hash
+        );
+    }
+
+    /** No local anchor; author is a current on-chain participant. */
+    public async probeAuthorGateNoAnchorCurrentParticipant(): Promise<string> {
+        const member = this.previousSnapshot().snapshotData
+            .participants[0] as Address;
+        return this.runAuthorGate(
+            member,
+            ethers.ZeroHash as Hash,
+            this.unanchoredCoordinates()
+        );
+    }
+
+    /** No local anchor; author is a pending (not-yet-current) on-chain participant. */
+    public async probeAuthorGateNoAnchorPendingParticipant(
+        pendingParticipant: Address
+    ): Promise<string> {
+        return this.runAuthorGate(
+            pendingParticipant,
+            ethers.ZeroHash as Hash,
+            this.unanchoredCoordinates()
+        );
+    }
+
+    /** No local anchor; author is unrelated to the channel. */
+    public async probeAuthorGateNoAnchorUnknownAddress(): Promise<string> {
+        return this.runAuthorGate(
+            this.randomAddress(),
+            ethers.ZeroHash as Hash,
+            this.unanchoredCoordinates()
+        );
     }
 
     public createRPCMethods(transport: ATransport): StubRpcMethods {

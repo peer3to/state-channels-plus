@@ -289,6 +289,31 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertFalse(diamond.validateTimeoutCalldataPostedProof(proof, dispute));
     }
 
+    // A height-0 author gets an extra evidenceTime of grace on the calldata-posted
+    // defense. graceWindow = p2p+agreement+chainFallback + evidenceTime; a post at
+    // this edge is beyond the no-grace window and only validates because of the
+    // +evidenceTime first-block grace. (Separate tests: each opens the channel once.)
+    function _firstBlockGraceWindow() internal view returns (uint256) {
+        return diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
+            + diamond.getChainFallbackTime();
+    }
+
+    function test_validateTimeoutCalldataPostedProof_firstBlockGraceEdge_valid() public {
+        require(diamond.getEvidenceTime() > 0, "evidenceTime is 0 - grace not observable");
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) =
+            _timeoutCalldataPostedProofPostedAfter(_firstBlockGraceWindow());
+        assertTrue(diamond.validateTimeoutCalldataPostedProof(proof, dispute), "first-block grace edge rejected");
+    }
+
+    function test_validateTimeoutCalldataPostedProof_pastFirstBlockGrace_invalid() public {
+        require(diamond.getEvidenceTime() > 0, "evidenceTime is 0 - grace not observable");
+        (Dispute memory dispute, TimeoutCalldataPosted memory proof) =
+            _timeoutCalldataPostedProofPostedAfter(_firstBlockGraceWindow() + 1);
+        assertFalse(
+            diamond.validateTimeoutCalldataPostedProof(proof, dispute), "calldata posted past the grace window accepted"
+        );
+    }
+
     function test_disputeBlockAuthorNotParticipant_validOutsiderBlock_killsDisputer() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
@@ -326,6 +351,49 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
         dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
+    }
+
+    function test_disputeBlockAuthorNotParticipant_authorInStaleResultingSnapshot_valid() public {
+        // The author is in the block's declared resulting snapshot, but that
+        // snapshot's coordinates do not match the block (a departed member
+        // naming a stale snapshot). The coordinate binding must not count it, so
+        // the author is not a participant and the proof is valid - matching the
+        // off-chain author gate so an honest auditor is never slashed.
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
+            _disputeBlockAuthorNotParticipantProof();
+
+        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
+        // stale: the resulting snapshot belongs to a later height, not this block
+        proof.resultingStateSnapshot.blockHeight = 5;
+        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
+        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
+        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
+        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+    }
+
+    function test_disputeBlockAuthorNotParticipant_authorInWrongForkResultingSnapshot_valid() public {
+        // The author is in the block's declared resulting snapshot, and the
+        // height matches, but the snapshot's forkId does not (a departed
+        // member naming a stale snapshot from a different fork at the same
+        // height). The coordinate binding must not count it, so the author is
+        // not a participant and the proof is valid - matching the off-chain
+        // author gate so an honest auditor is never slashed.
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
+            _disputeBlockAuthorNotParticipantProof();
+
+        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
+        // stale: the resulting snapshot belongs to a different fork, not this block's
+        proof.resultingStateSnapshot.forkId = keccak256("other-fork");
+        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
+        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
+        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
+        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
     }
 
     function test_blockInvalidStateTransition_wrongTurnWithCorrectSnapshot_slashesSigner() public {
@@ -418,10 +486,21 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         internal
         returns (Dispute memory dispute, TimeoutCalldataPosted memory proof)
     {
+        return _timeoutCalldataPostedProofPostedAfter(0);
+    }
+
+    function _timeoutCalldataPostedProofPostedAfter(uint256 postDelay)
+        internal
+        returns (Dispute memory dispute, TimeoutCalldataPosted memory proof)
+    {
         address[] memory participants = new address[](2);
         participants[0] = vm.addr(1);
         participants[1] = vm.addr(2);
         _openChannel(participants);
+        // genesis timestamp is fixed at channel open; warp forward so the calldata
+        // is posted `postDelay` seconds after genesis - exercises the first-block
+        // grace band on the timeout-calldata-posted defense.
+        vm.warp(block.timestamp + postDelay);
         (, StateSnapshot memory latestSnapshot) = diamond.isChannelOpen(CHANNEL_ID);
 
         MathState memory latestState;
@@ -477,6 +556,9 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         StateSnapshot memory resultingSnapshot;
         resultingSnapshot.snapshotData.participants = new address[](1);
         resultingSnapshot.snapshotData.participants[0] = address(0xA2);
+        // the resulting snapshot is this block's own -> coordinate-bound
+        resultingSnapshot.forkId = FORK_ID;
+        resultingSnapshot.blockHeight = 0;
 
         Block memory invalidBlock;
         invalidBlock.transaction.header.channelId = CHANNEL_ID;

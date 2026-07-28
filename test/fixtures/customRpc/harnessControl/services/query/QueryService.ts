@@ -1,7 +1,7 @@
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import type Block from "@/models/Block";
+import Block from "@/models/Block";
 import { Codec, Type } from "@/utils";
 import type { BlockHeight, ForkId } from "@/types/types";
 import QueryRpcMethods, {
@@ -60,6 +60,12 @@ export class QueryService extends ARpcService<QueryRpcMethods> {
         };
     }
 
+    getParticipantChangeHeights(forkId: ForkId): BlockHeight[] {
+        return this.storage.participantSetChanges
+            .getChangePointsInRange(forkId)
+            .map(Number);
+    }
+
     async buildStateProofVerification(
         forkId: ForkId,
         blockHeight?: BlockHeight
@@ -110,13 +116,7 @@ export class QueryService extends ARpcService<QueryRpcMethods> {
 
         const milestoneConfirmationHeights = proof.milestones.map((milestone) =>
             milestone.blockConfirmations.map((c) =>
-                Number(
-                    this.storage.blocks.getBlock(
-                        sm.agreementManager.getLastBlockFromMilestone({
-                            blockConfirmations: [c]
-                        })!.hash
-                    )?.height ?? -1
-                )
+                Number(Block.fromBlockConfirmation(c).height)
             )
         );
 

@@ -7,6 +7,7 @@ import "../types/MessageTypeHashes.sol";
 import "../StateChannelManagerEvents.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
+import "./utils/GeneralUtils.sol";
 import "hardhat/console.sol";
 
 /**
@@ -363,6 +364,14 @@ contract LocalDiamond is StateChannelManagerProxy {
         return DisputeVerificationFacet(disputeVerificationFacetAddress).checkDisputeAuditingDataCommitment(
             dispute, disputeAuditingData
         );
+    }
+
+    function isBlockAuthorParticipant(
+        Block memory _block,
+        StateSnapshot memory previousSnapshot,
+        StateSnapshot memory resultingSnapshot
+    ) public pure returns (bool) {
+        return _isBlockAuthorParticipant(_block, previousSnapshot, resultingSnapshot);
     }
 
     // function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)

@@ -9,18 +9,10 @@ import {
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import Storage, { SortOrder } from "@/storage";
-import {
-    Address,
-    BlockHeight,
-    ChannelId,
-    ForkId,
-    Hash,
-    Signature
-} from "@/types/types";
+import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
 import { Block, StateSnapshot, StateProof } from "@/models";
-import { difference, Logger } from "@/utils";
+import { Codec, difference, Logger, Type } from "@/utils";
 import { ZeroHash } from "ethers";
-import { StateChannelManagerProxy } from "@typechain-types/index";
 import { ReduceData } from "@/types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
@@ -113,7 +105,8 @@ class AgreementManager {
 
             const milestone = this.tryBuildMilestone(
                 blockIterator,
-                previousThresholdSnapshot
+                previousThresholdSnapshot,
+                blockHeight
             );
 
             if (milestone) {
@@ -137,9 +130,14 @@ class AgreementManager {
             blockHeight
         );
 
+        // the ceiling is redundant here - a DESC iterator started at
+        // blockHeight only ever walks down - but it is passed anyway so the
+        // "never above the requested height" contract holds at this call site
+        // on its own, rather than resting on how the iterator was built
         const milestone = this.tryBuildMilestone(
             blockIterator,
-            previousThresholdSnapshot
+            previousThresholdSnapshot,
+            blockHeight
         );
         if (milestone) {
             milestones.push(milestone);
@@ -336,15 +334,9 @@ class AgreementManager {
         );
     }
 
-    public async getForkDisputeConfirmations(
-        channelId: ChannelId,
-        forkId: ForkId,
-        ethersContract: StateChannelManagerProxy
-    ): Promise<DisputeConfirmationStruct[]> {
-        const disputeCommitments = await ethersContract.getWindowCommitments(
-            channelId,
-            forkId
-        );
+    public getForkDisputeConfirmations(
+        disputeCommitments: readonly Hash[]
+    ): DisputeConfirmationStruct[] {
         return disputeCommitments.map((commitment) => {
             const disputeConfirmation =
                 this.storage.disputes.getDisputeConfirmation(commitment);
@@ -357,22 +349,16 @@ class AgreementManager {
         });
     }
 
-    public async getForkDisputes(
+    public getForkDisputes(
         disputeCommitments: readonly Hash[]
-    ): Promise<DisputeStruct[]> {
-        // Collect all disputes for this dispute window
-        const currentWindowDisputes: DisputeStruct[] = [];
-        for (const commitment of disputeCommitments) {
-            const dispute = this.storage.disputes.getDispute(commitment);
-            if (!dispute) {
-                throw new Error(
-                    `Missing Dispute in storage for dispute commitment ${commitment}`
-                );
-            }
-
-            currentWindowDisputes.push(dispute);
-        }
-        return currentWindowDisputes;
+    ): DisputeStruct[] {
+        return this.getForkDisputeConfirmations(disputeCommitments).map(
+            (disputeConfirmation) =>
+                Codec.decode(
+                    disputeConfirmation.signedDispute.encodedDispute,
+                    Type.Dispute
+                )
+        );
     }
 
     public async getReduceData(
@@ -437,11 +423,14 @@ class AgreementManager {
     // PRIVATE
 
     /**
-     * Try to build a milestone from a block iterator and current snapshot
+     * Try to build a milestone from a block iterator and current snapshot.
+     * maxHeight, if given, is an inclusive ceiling: a block above it is never
+     * consumed, so the milestone can only be built from blocks up to that height.
      */
     private tryBuildMilestone(
         blockIterator: Generator<Block, void, unknown>,
-        previousThresholdSnapshot: StateSnapshot
+        previousThresholdSnapshot: StateSnapshot,
+        maxHeight?: BlockHeight
     ): MilestoneProofStruct | undefined {
         const collectedBlocks: Block[] = [];
         const collectedSigners = new Set<Address>();
@@ -451,6 +440,10 @@ class AgreementManager {
         );
 
         for (const currentBlock of blockIterator) {
+            if (maxHeight !== undefined && currentBlock.height > maxHeight) {
+                break;
+            }
+
             collectedBlocks.push(currentBlock);
 
             if (
