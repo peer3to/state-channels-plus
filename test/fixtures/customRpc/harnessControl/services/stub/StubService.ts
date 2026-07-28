@@ -509,6 +509,16 @@ export class StubService extends ARpcService<
             }
             if (failure?.at === "send") throw this.submissionFailure(failure);
             return {
+                // a tx that reverts also reverts the preflight `call` that
+                // tryHandleEvmError retries through
+                provider:
+                    failure?.at === "wait"
+                        ? {
+                              call: async () => {
+                                  throw this.submissionFailure(failure);
+                              }
+                          }
+                        : undefined,
                 wait: async () => {
                     if (failure?.at === "wait") {
                         throw this.submissionFailure(failure);

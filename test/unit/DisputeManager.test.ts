@@ -600,6 +600,73 @@ describe("Unit: DisputeManager", function () {
             );
             expect(r.disputed).to.equal(true);
         });
+
+        it("an unrecognized send failure → swallowed, fork left undisputed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: { message: "upload rejected by the node", at: "send" }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // no handler matches -> logged, swallowed, marker cleared
+            expect(r.rejected).to.equal("");
+            expect(r.disputed).to.equal(false);
+        });
+
+        it("an unrecognized wait() failure → swallowed, the stored marker is cleared", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: { message: "receipt reverted", at: "wait" }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // the marker was already stored true here, so the catch's
+            // storeDisputedFork(false) is what has to undo it
+            expect(r.rejected).to.equal("");
+            expect(r.disputed).to.equal(false);
+        });
     });
 
     describe("dispute", function () {
