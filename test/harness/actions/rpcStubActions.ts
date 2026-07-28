@@ -2,7 +2,10 @@ import { Logger } from "@/utils";
 import type { ForkId } from "@/types/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { ReductionSimulationErrorName } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import type {
+    RecordedDisputeSubmission,
+    ReductionSimulationErrorName
+} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { waitFor } from "@test/utils/waitFor";
 
 /**
@@ -261,6 +264,61 @@ export class RpcStubActions<
                     .request();
             }
         };
+    }
+
+    /**
+     * Record what `dispute()` uploads on a peer without sending it. With
+     * `hold: true` every recorded send parks until `release`, so a second
+     * `dispute()` can be observed queueing behind the dispute mutex.
+     */
+    async recordDisputeSubmissions(
+        peerIndex: number,
+        options: { hold?: boolean } = {}
+    ): Promise<{
+        submissions: () => Promise<RecordedDisputeSubmission[]>;
+        /** Sends parked at the hold so far. */
+        heldCount: () => Promise<number>;
+        waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+        release: () => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl()
+            .stubRecordDisputeSubmissions(options.hold ?? false)
+            .request();
+        const recorded = () => ctl().getRecordedDisputeSubmissions().request();
+        const heldCount = async () => (await recorded()).held;
+        return {
+            submissions: async () => (await recorded()).submissions,
+            heldCount,
+            waitUntilHeld: (timeoutMs = 10000) =>
+                waitFor(async () => (await heldCount()) > 0, timeoutMs),
+            release: async () => {
+                await ctl().releaseDisputeSubmissions().request();
+            },
+            restore: async () => {
+                await ctl().restoreDisputeSubmissions().request();
+            }
+        };
+    }
+
+    async disputeMutexWaiterCount(peerIndex: number): Promise<number> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.getDisputeMutexWaiterCount()
+            .request();
+    }
+
+    /** Resolve once a second `dispute()` caller is queued behind the mutex. */
+    async waitUntilDisputeMutexContended(
+        peerIndex: number,
+        timeoutMs = 10000
+    ): Promise<void> {
+        await waitFor(
+            async () => (await this.disputeMutexWaiterCount(peerIndex)) > 0,
+            timeoutMs
+        );
     }
 
     /**

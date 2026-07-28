@@ -340,6 +340,78 @@ describe("Unit: DisputeManager", function () {
             expect(r.stillDisputed).to.equal(true);
         });
 
+        it("two concurrent dispute() calls → the mutex serializes them, only the first uploads", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                hold: true
+            });
+
+            // the first caller holds the mutex, parked at its upload
+            const first = h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return {
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+            await probe.waitUntilHeld();
+
+            // the second caller queues behind the mutex; when it finally runs it
+            // must see didIDispute=true and return before constructing anything
+            const second = h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    const dm = sm.disputeManager;
+                    let constructCalls = 0;
+                    const original = dm.constructDispute.bind(dm);
+                    dm.constructDispute = async (f) => {
+                        constructCalls += 1;
+                        return original(f);
+                    };
+                    try {
+                        await dm.dispute(args.forkId);
+                    } finally {
+                        dm.constructDispute = original;
+                    }
+                    return {
+                        constructCalls,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+            await h.rpcStub.waitUntilDisputeMutexContended(peer.index);
+            // still parked -> the waiter reached no upload of its own
+            expect((await probe.submissions()).length).to.equal(1);
+
+            await probe.release();
+            const [firstResult, secondResult] = await Promise.all([
+                first,
+                second
+            ]);
+
+            const submissions = await probe.submissions();
+            expect(submissions.length).to.equal(1);
+            expect(submissions[0].method).to.equal("uploadDispute");
+            expect(submissions[0].waited).to.equal(true);
+            expect(firstResult.disputed).to.equal(true);
+            // the waiter short-circuited on the marker the first call stored
+            expect(secondResult.constructCalls).to.equal(0);
+            expect(secondResult.disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+
         it("real fault on a settled fork → dispute() applies the fraud proof via multicall, no calldata", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({ peerCount: 4 });

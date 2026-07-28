@@ -22,6 +22,7 @@ import type {
     PausedConstructDisputeState,
     PausedConstructDisputeStatus,
     PausedReductionStatus,
+    RecordedDisputeSubmission,
     ReductionSimulationErrorName,
     ConcurrentCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
@@ -785,6 +786,48 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.service.pausedReduction = undefined;
         return restored;
     }
+    /**
+     * Record `dispute()`'s upload without sending it. `holdSubmissions` parks
+     * each recorded send until `releaseDisputeSubmissions`.
+     */
+    public stubRecordDisputeSubmissions(holdSubmissions: boolean): boolean {
+        this.service.installDisputeSubmissionRecorder(holdSubmissions);
+        return true;
+    }
+
+    public getRecordedDisputeSubmissions(): {
+        submissions: RecordedDisputeSubmission[];
+        held: number;
+    } {
+        return {
+            submissions: this.service.recordedDisputeSubmissions.map(
+                (submission) => ({ ...submission })
+            ),
+            held: this.service.disputeSubmissionHold?.held ?? 0
+        };
+    }
+
+    public releaseDisputeSubmissions(): boolean {
+        const hold = this.service.disputeSubmissionHold;
+        if (!hold) return false;
+        this.service.disputeSubmissionHold = undefined;
+        hold.release();
+        return true;
+    }
+
+    public restoreDisputeSubmissions(): boolean {
+        return this.service.restoreDisputeSubmissions();
+    }
+
+    /** Callers queued behind the dispute mutex (its queue is private). */
+    public getDisputeMutexWaiterCount(): number {
+        return (
+            this.service.sm.disputeManager.mutex as unknown as {
+                queue: unknown[];
+            }
+        ).queue.length;
+    }
+
     /**
      * Park every `agreementManager.getStateProof` for `forkId` until released.
      * That call is the first async boundary inside `constructDispute`, so a

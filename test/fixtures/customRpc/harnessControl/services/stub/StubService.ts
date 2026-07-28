@@ -5,7 +5,12 @@ import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { id, Log } from "ethers";
-import { DetachedPromises } from "@/utils";
+import type { StateChannelManagerProxy } from "@typechain-types";
+import type {
+    DisputeAuditingDataStruct,
+    DisputeConfirmationStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Codec, DetachedPromises, Type } from "@/utils";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
 import { Block } from "@/models";
@@ -40,7 +45,8 @@ export type StubKey =
     | "spectateSync"
     | "pausedReduction"
     | "pausedReductionKillPeriod"
-    | "constructDisputeStateProof";
+    | "constructDisputeStateProof"
+    | "disputeSubmissions";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -59,6 +65,36 @@ export type PausedReductionState = PausedReductionStatus & {
     inside: boolean;
     release?: () => void;
     promise?: Promise<unknown>;
+};
+
+export type RecordedDisputeSubmission = {
+    /** Contract method `dispute()` sent. */
+    method: string;
+    /** Inner call names when `method` is `multicall`, in order. */
+    innerMethods: string[];
+    /** `encodedDispute` carried by the uploaded dispute confirmation. */
+    encodedDispute: string;
+    /** Auditing data uploaded alongside the dispute, encoded, or null. */
+    encodedAuditingData: string | null;
+    /** Participants of the fraud proofs bundled by `applyFraudProofs`. */
+    fraudProofParticipants: string[];
+    /** `gasLimit` override sent with the transaction, or null. */
+    gasLimit: string | null;
+    /** Set once `dispute()` awaited the returned transaction. */
+    waited: boolean;
+};
+
+export type DisputeSubmissionOriginals = {
+    multicall: StateChannelManagerProxy["multicall"];
+    uploadDispute: StateChannelManagerProxy["uploadDispute"];
+    uploadDisputeWithCalldata: StateChannelManagerProxy["uploadDisputeWithCalldata"];
+};
+
+export type DisputeSubmissionHold = {
+    gate: Promise<void>;
+    release: () => void;
+    /** Submissions parked at the hold so far. */
+    held: number;
 };
 
 export type PausedConstructDisputeStatus = {
@@ -152,6 +188,10 @@ export class StubService extends ARpcService<
     pausedReduction?: PausedReductionState;
     /** State for the constructDispute state-proof hold. */
     pausedConstructDispute?: PausedConstructDisputeState;
+    /** Uploads seen by the record-only dispute-submission probe (newest last). */
+    readonly recordedDisputeSubmissions: RecordedDisputeSubmission[] = [];
+    /** Gate the dispute-submission probe parks uploads on, when installed. */
+    disputeSubmissionHold?: DisputeSubmissionHold;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
@@ -390,6 +430,151 @@ export class StubService extends ARpcService<
                     dispute
                 ) !== undefined
         };
+    }
+
+    /**
+     * Record-only probe over the three dispute-upload entry points. A real
+     * upload posts an on-chain dispute against the live fork, which derails the
+     * session, so the probe records the send and hands `dispute()` a stand-in
+     * transaction; the real uploads keep their coverage on the e2e paths.
+     * `holdSubmissions` parks every recorded send until released, so a second
+     * caller can be observed queueing behind the dispute mutex.
+     */
+    public installDisputeSubmissionRecorder(holdSubmissions: boolean): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("disputeSubmissions")) {
+            this.stubOriginals.set("disputeSubmissions", {
+                multicall: contract.multicall,
+                uploadDispute: contract.uploadDispute,
+                uploadDisputeWithCalldata: contract.uploadDisputeWithCalldata
+            } satisfies DisputeSubmissionOriginals);
+        }
+        this.recordedDisputeSubmissions.length = 0;
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        this.disputeSubmissionHold = holdSubmissions
+            ? { gate, release, held: 0 }
+            : undefined;
+
+        const record = async (
+            submission: Omit<RecordedDisputeSubmission, "waited">
+        ) => {
+            const entry: RecordedDisputeSubmission = {
+                ...submission,
+                waited: false
+            };
+            this.recordedDisputeSubmissions.push(entry);
+            const hold = this.disputeSubmissionHold;
+            if (hold) {
+                hold.held += 1;
+                await hold.gate;
+            }
+            return {
+                wait: async () => {
+                    entry.waited = true;
+                    return null;
+                }
+            };
+        };
+
+        contract.uploadDispute = ((
+            confirmation: DisputeConfirmationStruct,
+            overrides?: unknown
+        ) =>
+            record({
+                method: "uploadDispute",
+                innerMethods: [],
+                encodedDispute: String(
+                    confirmation.signedDispute.encodedDispute
+                ),
+                encodedAuditingData: null,
+                fraudProofParticipants: [],
+                gasLimit: this.overrideGasLimit(overrides)
+            })) as unknown as typeof contract.uploadDispute;
+
+        contract.uploadDisputeWithCalldata = ((
+            confirmation: DisputeConfirmationStruct,
+            auditingData: DisputeAuditingDataStruct
+        ) =>
+            record({
+                method: "uploadDisputeWithCalldata",
+                innerMethods: [],
+                encodedDispute: String(
+                    confirmation.signedDispute.encodedDispute
+                ),
+                encodedAuditingData: Codec.encode(
+                    auditingData,
+                    Type.DisputeAuditingData
+                ) as string,
+                fraudProofParticipants: [],
+                gasLimit: null
+            })) as unknown as typeof contract.uploadDisputeWithCalldata;
+
+        contract.multicall = ((calls: string[], overrides?: unknown) =>
+            record({
+                ...this.describeMulticall(calls),
+                method: "multicall",
+                gasLimit: this.overrideGasLimit(overrides)
+            })) as unknown as typeof contract.multicall;
+    }
+
+    /** Decode a dispute multicall's legs into the fields a test asserts on. */
+    private describeMulticall(
+        calls: string[]
+    ): Omit<RecordedDisputeSubmission, "waited" | "method" | "gasLimit"> {
+        const contract = this.sm.stateChannelManagerContract;
+        const innerMethods: string[] = [];
+        let encodedDispute = "";
+        let encodedAuditingData: string | null = null;
+        const fraudProofParticipants: string[] = [];
+        for (const data of calls) {
+            const parsed = contract.interface.parseTransaction({ data });
+            if (!parsed) throw new Error("Undecodable dispute multicall leg");
+            innerMethods.push(parsed.name);
+            if (parsed.name === "applyFraudProofs") {
+                for (const proof of parsed.args[0]) {
+                    fraudProofParticipants.push(String(proof.participant));
+                }
+            } else {
+                encodedDispute = String(parsed.args[0].signedDispute[0]);
+                if (parsed.name === "uploadDisputeWithCalldata") {
+                    encodedAuditingData = Codec.encode(
+                        parsed.args[1],
+                        Type.DisputeAuditingData
+                    ) as string;
+                }
+            }
+        }
+        return {
+            innerMethods,
+            encodedDispute,
+            encodedAuditingData,
+            fraudProofParticipants
+        };
+    }
+
+    private overrideGasLimit(overrides: unknown): string | null {
+        const gasLimit = (overrides as { gasLimit?: bigint } | undefined)
+            ?.gasLimit;
+        return gasLimit === undefined ? null : String(gasLimit);
+    }
+
+    public restoreDisputeSubmissions(): boolean {
+        this.disputeSubmissionHold?.release();
+        this.disputeSubmissionHold = undefined;
+        const originals = this.stubOriginals.get("disputeSubmissions") as
+            | DisputeSubmissionOriginals
+            | undefined;
+        if (originals === undefined) return false;
+        const contract = this.sm.stateChannelManagerContract;
+        contract.multicall = originals.multicall;
+        contract.uploadDispute = originals.uploadDispute;
+        contract.uploadDisputeWithCalldata =
+            originals.uploadDisputeWithCalldata;
+        this.stubOriginals.delete("disputeSubmissions");
+        return true;
     }
 
     public createRPCMethods(transport: ATransport): StubRpcMethods {
