@@ -484,6 +484,44 @@ describe("Unit: DisputeManager", function () {
             expect(r.rejected).to.equal("");
             expect(r.disputed).to.equal(false);
         });
+
+        it("RaceConditionDisputeTimeoutWindowCreatedTooEarly → consumed no-op, marker reset", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            // the send lands but the window predates the timeout deadline, so
+            // the revert surfaces from tx.wait() - after the marker was stored
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: {
+                    customError:
+                        "RaceConditionDisputeTimeoutWindowCreatedTooEarly",
+                    at: "wait"
+                }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            expect(r.rejected).to.equal("");
+            expect(r.disputed).to.equal(false);
+        });
     });
 
     describe("dispute", function () {
