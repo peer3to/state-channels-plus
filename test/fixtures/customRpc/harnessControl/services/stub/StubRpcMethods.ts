@@ -23,6 +23,7 @@ import type {
     PausedConstructDisputeStatus,
     PausedReductionStatus,
     RecordedDisputeSubmission,
+    RecordedFraudProofApply,
     ReductionSimulationErrorName,
     ConcurrentCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
@@ -817,6 +818,70 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public restoreDisputeSubmissions(): boolean {
         return this.service.restoreDisputeSubmissions();
+    }
+
+    /**
+     * Record `killDispute`'s on-chain apply and how it settled (the real
+     * transaction still runs). `holdApplies` parks each send until
+     * `releaseDisputeFraudProofApplies`.
+     */
+    public stubRecordDisputeFraudProofApplies(holdApplies: boolean): boolean {
+        this.service.installDisputeFraudProofApplyRecorder(holdApplies);
+        return true;
+    }
+
+    public getRecordedDisputeFraudProofApplies(): {
+        applies: RecordedFraudProofApply[];
+        held: number;
+    } {
+        return {
+            applies: this.service.recordedFraudProofApplies.map((apply) => ({
+                ...apply
+            })),
+            held: this.service.fraudProofApplyHold?.held ?? 0
+        };
+    }
+
+    public releaseDisputeFraudProofApplies(): boolean {
+        const hold = this.service.fraudProofApplyHold;
+        if (!hold) return false;
+        this.service.fraudProofApplyHold = undefined;
+        hold.release();
+        return true;
+    }
+
+    public restoreDisputeFraudProofApplies(): boolean {
+        return this.service.restoreDisputeFraudProofApplies();
+    }
+
+    /** Keep this peer out of a kill race (counts the kills it skipped). */
+    public stubSuppressDisputeKill(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        if (!this.service.stubOriginals.has("disputeKill")) {
+            this.service.stubOriginals.set(
+                "disputeKill",
+                disputeManager.killDispute.bind(disputeManager)
+            );
+        }
+        this.service.suppressedDisputeKillCount = 0;
+        disputeManager.killDispute = (async () => {
+            this.service.suppressedDisputeKillCount += 1;
+        }) as typeof disputeManager.killDispute;
+        return true;
+    }
+
+    public getSuppressedDisputeKillCount(): number {
+        return this.service.suppressedDisputeKillCount;
+    }
+
+    public restoreDisputeKill(): boolean {
+        const original = this.service.stubOriginals.get("disputeKill");
+        if (original === undefined) return false;
+        const disputeManager = this.service.sm.disputeManager;
+        disputeManager.killDispute =
+            original as typeof disputeManager.killDispute;
+        this.service.stubOriginals.delete("disputeKill");
+        return true;
     }
 
     /** Callers queued behind the dispute mutex (its queue is private). */

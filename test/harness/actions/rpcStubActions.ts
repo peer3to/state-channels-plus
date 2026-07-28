@@ -4,6 +4,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     RecordedDisputeSubmission,
+    RecordedFraudProofApply,
     ReductionSimulationErrorName
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { waitFor } from "@test/utils/waitFor";
@@ -300,6 +301,59 @@ export class RpcStubActions<
             restore: async () => {
                 await ctl().restoreDisputeSubmissions().request();
             }
+        };
+    }
+
+    /**
+     * Record `killDispute`'s on-chain apply on a peer (the real transaction
+     * still runs). With `hold: true` every send parks until `release`, so
+     * several kills can be staged inside one live kill window.
+     */
+    async recordDisputeFraudProofApplies(
+        peerIndex: number,
+        options: { hold?: boolean } = {}
+    ): Promise<{
+        applies: () => Promise<RecordedFraudProofApply[]>;
+        /** Sends parked at the hold so far. */
+        heldCount: () => Promise<number>;
+        waitUntilHeld: (count: number, timeoutMs?: number) => Promise<void>;
+        release: () => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl()
+            .stubRecordDisputeFraudProofApplies(options.hold ?? false)
+            .request();
+        const recorded = () =>
+            ctl().getRecordedDisputeFraudProofApplies().request();
+        const heldCount = async () => (await recorded()).held;
+        return {
+            applies: async () => (await recorded()).applies,
+            heldCount,
+            waitUntilHeld: (count, timeoutMs = 20000) =>
+                waitFor(async () => (await heldCount()) >= count, timeoutMs),
+            release: async () => {
+                await ctl().releaseDisputeFraudProofApplies().request();
+            },
+            restore: async () => {
+                await ctl().restoreDisputeFraudProofApplies().request();
+            }
+        };
+    }
+
+    /** Keep a peer out of a kill race. Returns a teardown. */
+    async suppressDisputeKill(peerIndex: number): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubSuppressDisputeKill()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreDisputeKill()
+                .request();
         };
     }
 

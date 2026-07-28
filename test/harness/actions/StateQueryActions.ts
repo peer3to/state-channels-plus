@@ -38,6 +38,16 @@ export class StateQueryActions<
             .request();
     }
 
+    /** Participants slashed on-chain, lowercased, as seen by `peerIndex`. */
+    public async onChainSlashedParticipants(
+        peerIndex: number = 0
+    ): Promise<string[]> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getOnChainSlashedParticipants()
+            .request();
+    }
+
     public async getOnChainSnapshotHash(channelId?: Hash): Promise<Hash> {
         const id = channelId ?? this.harness.channelId;
         return StateSnapshot.from(

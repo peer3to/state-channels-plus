@@ -104,6 +104,16 @@ export class QueryRpcMethods extends ARpcMethods {
         return (await this.service.sm.getOnChainParticipantUnion()).map(String);
     }
 
+    /** Participants slashed on-chain for this channel, lowercased. */
+    public async getOnChainSlashedParticipants(): Promise<string[]> {
+        const sm = this.service.sm;
+        return (
+            await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+                sm.channelId
+            )
+        ).map((address) => String(address).toLowerCase());
+    }
+
     public async getNextToWrite(): Promise<string> {
         return String(
             await this.service.sm.diamondStateMachine.getNextToWrite()

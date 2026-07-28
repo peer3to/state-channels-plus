@@ -10,7 +10,8 @@ import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Codec, DetachedPromises, Type } from "@/utils";
+import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { Codec, DetachedPromises, tryDecodeCustomError, Type } from "@/utils";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
 import { Block } from "@/models";
@@ -46,7 +47,9 @@ export type StubKey =
     | "pausedReduction"
     | "pausedReductionKillPeriod"
     | "constructDisputeStateProof"
-    | "disputeSubmissions";
+    | "disputeSubmissions"
+    | "disputeFraudProofApplies"
+    | "disputeKill";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -93,8 +96,17 @@ export type DisputeSubmissionOriginals = {
 export type DisputeSubmissionHold = {
     gate: Promise<void>;
     release: () => void;
-    /** Submissions parked at the hold so far. */
+    /** Sends parked at the hold so far. */
     held: number;
+};
+
+export type RecordedFraudProofApply = {
+    /** Participants named by the applied dispute fraud proofs. */
+    participants: string[];
+    /** Failure message from the send or from `wait()`, or null when it landed. */
+    error: string | null;
+    /** Custom-error name decoded from that failure, when there was one. */
+    customError: string | null;
 };
 
 export type PausedConstructDisputeStatus = {
@@ -192,6 +204,12 @@ export class StubService extends ARpcService<
     readonly recordedDisputeSubmissions: RecordedDisputeSubmission[] = [];
     /** Gate the dispute-submission probe parks uploads on, when installed. */
     disputeSubmissionHold?: DisputeSubmissionHold;
+    /** Applies seen by the dispute-fraud-proof apply probe (newest last). */
+    readonly recordedFraudProofApplies: RecordedFraudProofApply[] = [];
+    /** Gate the apply probe parks sends on, when installed. */
+    fraudProofApplyHold?: DisputeSubmissionHold;
+    /** Incremented per `killDispute` skipped by the suppress-kill stub. */
+    suppressedDisputeKillCount = 0;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
@@ -574,6 +592,82 @@ export class StubService extends ARpcService<
         contract.uploadDisputeWithCalldata =
             originals.uploadDisputeWithCalldata;
         this.stubOriginals.delete("disputeSubmissions");
+        return true;
+    }
+
+    /**
+     * Record every `applyDisputeFraudProofs` send and how it settled, still
+     * running the real transaction. `holdApplies` parks each send until
+     * released, so several kills can be staged inside one live kill window.
+     */
+    public installDisputeFraudProofApplyRecorder(holdApplies: boolean): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("disputeFraudProofApplies")) {
+            this.stubOriginals.set(
+                "disputeFraudProofApplies",
+                contract.applyDisputeFraudProofs.bind(contract)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "disputeFraudProofApplies"
+        ) as typeof contract.applyDisputeFraudProofs;
+        this.recordedFraudProofApplies.length = 0;
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        this.fraudProofApplyHold = holdApplies
+            ? { gate, release, held: 0 }
+            : undefined;
+
+        contract.applyDisputeFraudProofs = (async (
+            proofs: DisputeFraudProofStruct[]
+        ) => {
+            const entry: RecordedFraudProofApply = {
+                participants: proofs.map((proof) => String(proof.participant)),
+                error: null,
+                customError: null
+            };
+            this.recordedFraudProofApplies.push(entry);
+            const hold = this.fraudProofApplyHold;
+            if (hold) {
+                hold.held += 1;
+                await hold.gate;
+            }
+            const fail = (error: unknown) => {
+                entry.error =
+                    error instanceof Error ? error.message : String(error);
+                entry.customError = tryDecodeCustomError(error)?.name ?? null;
+            };
+            let tx;
+            try {
+                tx = await original(proofs);
+            } catch (error) {
+                fail(error);
+                throw error;
+            }
+            const originalWait = tx.wait.bind(tx);
+            tx.wait = (async (...args: Parameters<typeof originalWait>) => {
+                try {
+                    return await originalWait(...args);
+                } catch (error) {
+                    fail(error);
+                    throw error;
+                }
+            }) as typeof tx.wait;
+            return tx;
+        }) as typeof contract.applyDisputeFraudProofs;
+    }
+
+    public restoreDisputeFraudProofApplies(): boolean {
+        this.fraudProofApplyHold?.release();
+        this.fraudProofApplyHold = undefined;
+        const original = this.stubOriginals.get("disputeFraudProofApplies");
+        if (original === undefined) return false;
+        const contract = this.sm.stateChannelManagerContract;
+        contract.applyDisputeFraudProofs =
+            original as typeof contract.applyDisputeFraudProofs;
+        this.stubOriginals.delete("disputeFraudProofApplies");
         return true;
     }
 
