@@ -1,5 +1,15 @@
-import { ForkId, BlockHeight, BlockCalldata, Address } from "@/types/types";
 import { Block } from "@/models";
+import type {
+    Address,
+    BlockCalldata,
+    BlockHeight,
+    ForkId
+} from "@/types/types";
+
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 
 type CalldataCoordinateKey = string;
 
@@ -7,18 +17,23 @@ export class BlockCalldataStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private coordinatesToBlockMap: Map<CalldataCoordinateKey, BlockCalldata>;
+    private readonly blocks: PersistentCollection<
+        CalldataCoordinateKey,
+        BlockCalldata
+    >;
 
-    constructor() {
-        this.coordinatesToBlockMap = new Map();
+    constructor(controller?: PersistenceController) {
+        this.blocks = new PersistentCollection("blockCalldata", controller);
     }
 
     // ====================================
     // CREATE
     // ====================================
 
-    storeBlockCalldata(blockCalldata: BlockCalldata): CalldataCoordinateKey {
-        const block: Block = Block.fromSignedBlock(
+    public storeBlockCalldata(
+        blockCalldata: BlockCalldata
+    ): CalldataCoordinateKey {
+        const block = Block.fromSignedBlock(
             blockCalldata.signedBlock,
             blockCalldata.onChainTimestamp
         );
@@ -27,7 +42,7 @@ export class BlockCalldataStorage {
             block.height,
             block.author
         );
-        this.coordinatesToBlockMap.set(coordinateKey, blockCalldata);
+        this.blocks.set(coordinateKey, blockCalldata);
         return coordinateKey;
     }
 
@@ -35,20 +50,17 @@ export class BlockCalldataStorage {
     // READ
     // ====================================
 
-    getBlockCalldata(
+    public getBlockCalldata(
         forkId: ForkId,
         height: BlockHeight,
         blockAuthor: Address
     ): BlockCalldata | undefined {
-        const coordinateKey = this.buildCoordinateKey(
-            forkId,
-            height,
-            blockAuthor
+        return this.blocks.get(
+            this.buildCoordinateKey(forkId, height, blockAuthor)
         );
-        return this.coordinatesToBlockMap.get(coordinateKey);
     }
 
-    getMatchingBlockCalldata(block: Block): BlockCalldata | undefined {
+    public getMatchingBlockCalldata(block: Block): BlockCalldata | undefined {
         const calldata = this.getBlockCalldata(
             block.forkId,
             block.height,

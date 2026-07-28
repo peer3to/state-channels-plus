@@ -71,7 +71,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        await this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async notAllSingersAreParticipants(
@@ -134,7 +134,10 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             participant: block.signerAddress,
             blockHeight: block.height
         });
-        this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
+        await this.fraudProofService.createDoubleSignProof(
+            conflictingBlock,
+            block
+        );
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
@@ -145,7 +148,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             blockAuthor: block.author,
             blockHeight: block.height
         });
-        this.fraudProofService.createInvalidStateTransitionProof(block);
+        await this.fraudProofService.createInvalidStateTransitionProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
@@ -185,7 +188,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             blockAuthor: block.author,
             blockHeight: block.height
         });
-        this.fraudProofService.createWrongGenesisProof(block);
+        await this.fraudProofService.createWrongGenesisProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
@@ -197,7 +200,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             blockAuthor: block.author,
             blockHeight: block.height
         });
-        this.fraudProofService.createForgedInboundMessageBlockProof(
+        await this.fraudProofService.createForgedInboundMessageBlockProof(
             block,
             messageBlock
         );
@@ -238,7 +241,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         }
 
         // Queue the block - will process normally
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        await this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
@@ -247,7 +250,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         // Not ready: put it back and let the queue timeout be the sole sync
         // probe (no arrival-time sync from strategy hooks - that punished honest
         // peers before the convergence window).
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        await this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
@@ -264,7 +267,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             blockAuthor: block.author,
             blockHeight: block.height
         });
-        this.fraudProofService.createInvalidTimestampProof(block);
+        await this.fraudProofService.createInvalidTimestampProof(block);
         await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }

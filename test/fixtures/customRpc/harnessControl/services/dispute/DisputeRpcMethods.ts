@@ -188,7 +188,10 @@ export class DisputeRpcMethods extends ARpcMethods {
     }
 
     /** Plant a fresh timeout for `participant` at head+1 height on `forkId`. */
-    public plantFreshTimeout(forkId: ForkId, participant: string): boolean {
+    public async plantFreshTimeout(
+        forkId: ForkId,
+        participant: string
+    ): Promise<boolean> {
         const latestBlock = this.service.storage.blocks.getLatestBlock(forkId);
         if (!latestBlock) {
             throw new Error(`plantFreshTimeout: no latest block for ${forkId}`);

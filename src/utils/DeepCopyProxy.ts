@@ -1,6 +1,9 @@
 import cloneDeep from "lodash.clonedeep";
 
-export function deepCopyProxy<T extends object>(original: T): T {
+export function deepCopyProxy<T extends object>(
+    original: T,
+    options?: { preserveArgumentsFor?: ReadonlySet<PropertyKey> }
+): T {
     return new Proxy(original, {
         get(target, prop) {
             const originalValue = Reflect.get(target, prop);
@@ -9,7 +12,9 @@ export function deepCopyProxy<T extends object>(original: T): T {
             if (typeof originalValue === "function") {
                 return function (...args: any[]) {
                     // Deep copy arguments
-                    const copiedArgs = args.map(cloneDeep);
+                    const copiedArgs = options?.preserveArgumentsFor?.has(prop)
+                        ? args
+                        : args.map(cloneDeep);
 
                     // Call original method
                     const result = originalValue.apply(target, copiedArgs);
@@ -21,6 +26,10 @@ export function deepCopyProxy<T extends object>(original: T): T {
                         typeof result.next === "function"
                     ) {
                         return result;
+                    }
+
+                    if (result instanceof Promise) {
+                        return result.then((value) => cloneDeep(value));
                     }
 
                     // Deep copy other results

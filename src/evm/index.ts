@@ -23,6 +23,7 @@ import type {
     EvmNativeCustomPrecompile
 } from "./EvmFactory";
 import type { LocalStateMachineDeployer } from "../../scripts/V1/deploy";
+import type { PersistenceOptions } from "@/storage/persistence";
 
 export {
     AContractExecutor,
@@ -47,5 +48,6 @@ export type {
     EvmCustomPrecompileManifest,
     EvmFactoryOptions,
     EvmNativeCustomPrecompile,
-    LocalStateMachineDeployer
+    LocalStateMachineDeployer,
+    PersistenceOptions
 };

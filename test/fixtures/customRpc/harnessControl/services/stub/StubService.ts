@@ -448,11 +448,11 @@ export class StubService extends ARpcService<
     }
 
     /** Store a snapshot listing `participants` at the given coordinates. */
-    private storeSnapshotAt(
+    private async storeSnapshotAt(
         participants: Address[],
         height: number,
         forkId: ForkId = this.sm.forkId
-    ): Hash {
+    ): Promise<Hash> {
         const snapshot = factory.stateSnapshot({
             forkId,
             blockHeight: height,
@@ -492,7 +492,7 @@ export class StubService extends ARpcService<
     /** Author only in a resulting snapshot bound to the block's own coordinates. */
     public async probeAuthorGateMatchingResultingSnapshot(): Promise<string> {
         const outsider = this.randomAddress();
-        const snapshotHash = this.storeSnapshotAt(
+        const snapshotHash = await this.storeSnapshotAt(
             [outsider],
             this.nextHeight()
         );
@@ -502,7 +502,7 @@ export class StubService extends ARpcService<
     /** Author only in a resulting snapshot from a different height. */
     public async probeAuthorGateStaleHeightSnapshot(): Promise<string> {
         const outsider = this.randomAddress();
-        const snapshotHash = this.storeSnapshotAt(
+        const snapshotHash = await this.storeSnapshotAt(
             [outsider],
             this.nextHeight() + 100
         );
@@ -512,7 +512,7 @@ export class StubService extends ARpcService<
     /** Author only in a resulting snapshot from a different fork, same height. */
     public async probeAuthorGateWrongForkSnapshot(): Promise<string> {
         const outsider = this.randomAddress();
-        const snapshotHash = this.storeSnapshotAt(
+        const snapshotHash = await this.storeSnapshotAt(
             [outsider],
             this.nextHeight(),
             id("probeAuthorGate-wrong-fork") as ForkId
@@ -523,7 +523,7 @@ export class StubService extends ARpcService<
     /** Resulting snapshot matches the coordinates but omits the author. */
     public async probeAuthorGateMatchingSnapshotExcludingAuthor(): Promise<string> {
         const outsider = this.randomAddress();
-        const snapshotHash = this.storeSnapshotAt(
+        const snapshotHash = await this.storeSnapshotAt(
             [this.randomAddress()],
             this.nextHeight()
         );

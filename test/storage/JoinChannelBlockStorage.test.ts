@@ -29,27 +29,27 @@ describe("MessageBlockStorage - inbound blocks", () => {
     });
 
     describe("store()", () => {
-        it("stores block with computed hash", () => {
+        it("stores block with computed hash", async () => {
             const hash = storage.store(mockMessageBlock);
             expect(hash).to.equal(mockBlockHash);
 
             const storedBlock = storage.getMessageBlock(hash);
-            expect(storedBlock).to.equal(mockMessageBlock);
+            expect(storedBlock).to.deep.equal(mockMessageBlock);
         });
 
-        it("respects provided hash override", () => {
+        it("respects provided hash override", async () => {
             const customHash = factory.hash();
             const hash = storage.store(mockMessageBlock, {
                 hash: customHash
             });
 
             expect(hash).to.equal(customHash);
-            expect(storage.getMessageBlock(customHash)).to.equal(
+            expect(storage.getMessageBlock(customHash)).to.deep.equal(
                 mockMessageBlock
             );
         });
 
-        it("ignores metadata on duplicate store", () => {
+        it("ignores metadata on duplicate store", async () => {
             const hash1 = storage.store(mockMessageBlock);
             const hash2 = storage.store(mockMessageBlock);
             expect(hash1).to.equal(hash2);
@@ -57,16 +57,16 @@ describe("MessageBlockStorage - inbound blocks", () => {
     });
 
     describe("read operations", () => {
-        beforeEach(() => {
+        beforeEach(async () => {
             storage.store(mockMessageBlock);
         });
 
-        it("returns undefined for unknown hashes", () => {
+        it("returns undefined for unknown hashes", async () => {
             const randomHash = factory.hash();
             expect(storage.getMessageBlock(randomHash)).to.be.undefined;
         });
 
-        it("retrieves ordered entries in range", () => {
+        it("retrieves ordered entries in range", async () => {
             const secondBlock = {
                 ...mockMessageBlock,
                 previousBlockHash: mockBlockHash,
@@ -85,13 +85,13 @@ describe("MessageBlockStorage - inbound blocks", () => {
     });
 
     describe("latest block helpers", () => {
-        it("returns undefined when storage is empty", () => {
+        it("returns undefined when storage is empty", async () => {
             expect(storage.getLatestMessageBlock()).to.be.undefined;
             expect(storage.getLatestMessageBlocks()).to.deep.equal([]);
             expect(storage.getLatestBlockHeight()).to.be.undefined;
         });
 
-        it("tracks the highest block height even when stored out of order", () => {
+        it("tracks the highest block height even when stored out of order", async () => {
             const genesisHash = storage.store(mockMessageBlock);
 
             const middleBlock = {

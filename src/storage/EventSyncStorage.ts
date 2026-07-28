@@ -1,26 +1,41 @@
-import { ChannelId } from "@/types/types";
+import type { ChannelId } from "@/types/types";
+
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 
 type ChannelKey = string;
 type BlockNumber = number;
 
 export class EventSyncStorage {
-    private readonly latestProcessedBlocks = new Map<ChannelKey, BlockNumber>();
+    private readonly latestProcessedBlocks: PersistentCollection<
+        ChannelKey,
+        BlockNumber
+    >;
 
-    getLatestProcessedBlock(channelId: ChannelId): BlockNumber | undefined {
+    constructor(controller?: PersistenceController) {
+        this.latestProcessedBlocks = new PersistentCollection(
+            "eventSync",
+            controller
+        );
+    }
+
+    public getLatestProcessedBlock(
+        channelId: ChannelId
+    ): BlockNumber | undefined {
         return this.latestProcessedBlocks.get(this.getChannelKey(channelId));
     }
 
-    storeLatestProcessedBlock(
+    public storeLatestProcessedBlock(
         channelId: ChannelId,
         blockNumber: BlockNumber
     ): BlockNumber {
-        const key = this.getChannelKey(channelId);
-        const latest = Math.max(
-            this.latestProcessedBlocks.get(key) ?? 0,
-            blockNumber
+        const latest = this.latestProcessedBlocks.update(
+            this.getChannelKey(channelId),
+            (existing) => Math.max(existing ?? 0, blockNumber)
         );
-        this.latestProcessedBlocks.set(key, latest);
-        return latest;
+        return latest!;
     }
 
     private getChannelKey(channelId: ChannelId): ChannelKey {

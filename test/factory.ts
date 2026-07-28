@@ -358,8 +358,8 @@ export function stateSnapshot(
     };
     const stateSnapshotObj = {
         ...defaultStateSnapshot,
-        snapshotData: snapshotDataObj,
-        ...overrides
+        ...overrides,
+        snapshotData: snapshotDataObj
     };
 
     return StateSnapshot.from(stateSnapshotObj as StateSnapshotStruct);

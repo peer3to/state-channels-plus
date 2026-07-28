@@ -31,7 +31,11 @@ describe("E2E: Force Join Dispute", function () {
         //  on the 3rd block, the force-join dispute is triggered
 
         const forkId = h.activeForkId!;
-        await h.transition.advanceState({ count: 3 });
+        await h.transition.advanceState({
+            count: 3,
+            waitForPeers: [0, 1],
+            waitForFinalization: true
+        });
 
         // Block assembly can include pending inbound messages again. Dispute
         // construction always reads the real inbound head while this stub is

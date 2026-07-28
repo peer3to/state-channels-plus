@@ -40,12 +40,12 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         );
     }
 
-    private createDisputeInvalidBlockInStateProofApplyFraudProof(
+    private async createDisputeInvalidBlockInStateProofApplyFraudProof(
         fraudProofHash: Hash
-    ): void {
+    ): Promise<void> {
         const fraudProof =
             this.storage.fraudProofs.getFraudProofByHash(fraudProofHash)!;
-        this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
+        await this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
             this.dispute,
             fraudProof,
             this.blockIndexInUnfinalizedPartOfStateProof
@@ -68,7 +68,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         // "continue replay", not "the dispute is valid". A later transition,
         // snapshot, or other authoritative check must make the final decision.
         if (!isInvalid) return BlockValidationResult.SUCCESS;
-        this.disputeFraudProofService.createDisputeInvalidBlockStructure(
+        await this.disputeFraudProofService.createDisputeInvalidBlockStructure(
             this.dispute,
             this.blockIndexInUnfinalizedPartOfStateProof
         );
@@ -143,7 +143,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
                 );
                 return BlockValidationResult.SUCCESS;
             }
-            this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
+            await this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
                 this.dispute,
                 block,
                 participantSnapshots.previous,
@@ -191,7 +191,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             );
             return BlockValidationResult.SUCCESS;
         }
-        this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
+        await this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
             this.dispute,
             block,
             previousStateSnapshot,
@@ -205,7 +205,10 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         block: Block
     ): Promise<BlockValidationResult> {
         // Create and apply normal fraud proof to slash the offender + DEFER creating a new dispute - this dispute may still be honest, so continute validation
-        this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
+        await this.fraudProofService.createDoubleSignProof(
+            conflictingBlock,
+            block
+        );
         // TODO - apply the fraud proof without creating a new dispute
         // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.SUCCESS; // so we continue 'syncing' and checking new blocks
@@ -215,8 +218,10 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         const hash =
-            this.fraudProofService.createInvalidStateTransitionProof(block);
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
+            await this.fraudProofService.createInvalidStateTransitionProof(
+                block
+            );
+        await this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
         // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
@@ -237,8 +242,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             throw new Error("Unexpected genesisSnapshot missing");
         }
         // TODO - here we have to kill the dispute, since the dispute contains incorrect state
-        const hash = this.fraudProofService.createWrongGenesisProof(block);
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
+        const hash =
+            await this.fraudProofService.createWrongGenesisProof(block);
+        await this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
         // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
@@ -247,11 +253,11 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
         const hash =
-            this.fraudProofService.createForgedInboundMessageBlockProof(
+            await this.fraudProofService.createForgedInboundMessageBlockProof(
                 block,
                 messageBlock
             );
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
+        await this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
@@ -283,8 +289,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         // TODO - think about this - can this change over time? i.e. can onChainTimestamp or the presence of calldata change things
-        const hash = this.fraudProofService.createInvalidTimestampProof(block);
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
+        const hash =
+            await this.fraudProofService.createInvalidTimestampProof(block);
+        await this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
         // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }

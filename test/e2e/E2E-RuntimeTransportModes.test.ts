@@ -1,5 +1,9 @@
 import { expect } from "chai";
+import { ClassicLevel } from "classic-level";
 import { ethers, NonceManager } from "ethers";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { EvmStateMachine } from "@/evm";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
@@ -16,10 +20,20 @@ import {
 } from "@typechain-types";
 import { ContractFactory } from "ethers";
 import { startHardhatNode, type NodeHandle } from "@test/utils/nodeInfra";
+import type { PersistenceOptions } from "@/storage/persistence";
 
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 const DEFAULT_HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
+
+interface RuntimeModeOptions {
+    runSdkInThread: boolean;
+    vmDedicatedThread: boolean;
+    generateSigner?: boolean;
+    signerSecret?: string;
+    persistence?: false | PersistenceOptions;
+    channelId?: string;
+}
 
 async function waitForNode(url: string): Promise<void> {
     const provider = new ethers.JsonRpcProvider(url);
@@ -34,12 +48,7 @@ async function waitForNode(url: string): Promise<void> {
     }, 30_000);
 }
 
-async function setupP2pInstance(options: {
-    runSdkInThread: boolean;
-    vmDedicatedThread: boolean;
-    generateSigner?: boolean;
-}) {
-    const { runSdkInThread, vmDedicatedThread, generateSigner } = options;
+async function createP2pInstanceFactory() {
     if (!hardhatNodeUrl) throw new Error("Hardhat node URL is not initialized");
     const provider = new ethers.JsonRpcProvider(hardhatNodeUrl);
     const deployerWallet = ethers.HDNodeWallet.fromPhrase(
@@ -93,22 +102,34 @@ async function setupP2pInstance(options: {
         return receipt.contractAddress;
     };
 
-    return EvmStateMachine.p2pSetup(
-        StateChannelManagerProxy__factory.connect(
-            scmDeployment.address,
-            runtimeSigner
-        ),
-        deployedStateMachine,
-        deployStateMachine,
-        {
-            config: {
-                PROVIDER_URL: hardhatNodeUrl,
-                RUN_SDK_IN_THREAD: runSdkInThread,
-                VM_DEDICATED_THREAD: vmDedicatedThread
-            },
-            signerSecret: generateSigner ? undefined : runtimeWallet.privateKey
-        }
-    );
+    return (options: RuntimeModeOptions) =>
+        EvmStateMachine.p2pSetup(
+            StateChannelManagerProxy__factory.connect(
+                scmDeployment.address,
+                runtimeSigner
+            ),
+            deployedStateMachine,
+            deployStateMachine,
+            {
+                config: {
+                    PROVIDER_URL: hardhatNodeUrl,
+                    RUN_SDK_IN_THREAD: options.runSdkInThread,
+                    VM_DEDICATED_THREAD: options.vmDedicatedThread
+                },
+                persistence: options.persistence ?? false,
+                channelId: options.channelId,
+                signerSecret:
+                    options.signerSecret ??
+                    (options.generateSigner
+                        ? undefined
+                        : runtimeWallet.privateKey)
+            }
+        );
+}
+
+async function setupP2pInstance(options: RuntimeModeOptions) {
+    const createP2pInstance = await createP2pInstanceFactory();
+    return createP2pInstance(options);
 }
 
 describe("E2E: p2pSetup runtime modes", function () {
@@ -307,6 +328,104 @@ describe("E2E: p2pSetup runtime modes", function () {
             ).to.have.length(4);
         } finally {
             await p2pInstance.dispose();
+        }
+    });
+
+    it("recovers the channel signer after a persisted runtime restart", async function () {
+        this.timeout(90_000);
+        const location = await mkdtemp(
+            path.join(tmpdir(), "state-channels-plus-runtime-persistence-")
+        );
+        const createP2pInstance = await createP2pInstanceFactory();
+        const channelId = ethers.hexlify(ethers.randomBytes(32));
+
+        try {
+            const first = await createP2pInstance({
+                runSdkInThread: false,
+                vmDedicatedThread: false,
+                persistence: { location },
+                channelId,
+                signerSecret: ethers.Wallet.createRandom().privateKey
+            });
+            let persistedSignerAddress: string;
+            try {
+                persistedSignerAddress = await first.p2pSigner.getAddress();
+            } finally {
+                await first.dispose();
+            }
+
+            const second = await createP2pInstance({
+                runSdkInThread: false,
+                vmDedicatedThread: false,
+                persistence: { location },
+                channelId,
+                signerSecret: ethers.Wallet.createRandom().privateKey
+            });
+            try {
+                expect(await second.p2pSigner.getAddress()).to.equal(
+                    persistedSignerAddress
+                );
+            } finally {
+                await second.dispose();
+            }
+        } finally {
+            await rm(location, { recursive: true, force: true });
+        }
+    });
+
+    it("reports a corrupt partition location and resets only on request", async function () {
+        this.timeout(90_000);
+        const location = await mkdtemp(
+            path.join(tmpdir(), "state-channels-plus-runtime-reset-")
+        );
+        const createP2pInstance = await createP2pInstanceFactory();
+        const channelId = ethers.hexlify(ethers.randomBytes(32));
+        const options = {
+            runSdkInThread: false,
+            vmDedicatedThread: false,
+            channelId,
+            signerSecret: ethers.Wallet.createRandom().privateKey
+        };
+
+        try {
+            const first = await createP2pInstance({
+                ...options,
+                persistence: { location }
+            });
+            await first.dispose();
+
+            const [namespace] = await readdir(location);
+            const partitionLocation = path.join(location, namespace);
+            const database = new ClassicLevel<string, string>(
+                partitionLocation,
+                {
+                    keyEncoding: "utf8",
+                    valueEncoding: "utf8"
+                }
+            );
+            await database.open();
+            await database.put("records!v1!unknown!record", "corrupt");
+            await database.close();
+
+            let recoveryError: Error | undefined;
+            try {
+                const unexpected = await createP2pInstance({
+                    ...options,
+                    persistence: { location }
+                });
+                await unexpected.dispose();
+            } catch (error) {
+                recoveryError = error as Error;
+            }
+            expect(recoveryError?.message).to.include(partitionLocation);
+
+            const reset = await createP2pInstance({
+                ...options,
+                persistence: { location, reset: true }
+            });
+            await reset.dispose();
+        } finally {
+            await rm(location, { recursive: true, force: true });
         }
     });
 });

@@ -40,13 +40,13 @@ describe("QueueStorage", () => {
     });
 
     describe("Queue Operations", () => {
-        it("should queue blocks", () => {
+        it("should queue blocks", async () => {
             const hash = storage.queueBlock(mockBlock);
             expect(storage.isBlockQueued(mockBlock)).to.be.true;
             expect(storage.isBlockQueued(mockBlock, { hash })).to.be.true;
         });
 
-        it("should queue multiple blocks on same coordinates", () => {
+        it("should queue multiple blocks on same coordinates", async () => {
             const block1 = Block.fromSignedBlock(
                 factory.signedBlock({
                     encodedBlock: factory
@@ -90,7 +90,7 @@ describe("QueueStorage", () => {
     });
 
     describe("Signature Merging", () => {
-        it("should merge signatures when queueing same block multiple times", () => {
+        it("should merge signatures when queueing same block multiple times", async () => {
             const sharedSig = sig();
             const uniqueSig1 = sig();
             const uniqueSig2 = sig();
@@ -119,7 +119,7 @@ describe("QueueStorage", () => {
             );
         });
 
-        it("should merge signatures with existing queued block", () => {
+        it("should merge signatures with existing queued block", async () => {
             storage.queueBlock(mockBlock);
             storage.queueBlock(
                 Block.fromBlockConfirmation({
@@ -133,7 +133,7 @@ describe("QueueStorage", () => {
             expect(dequeued[0].block.confirmationSignatures.size).to.equal(2);
         });
 
-        it("should merge on-chain timestamp when queueing same block again", () => {
+        it("should merge on-chain timestamp when queueing same block again", async () => {
             const onChainTimestamp = 1234567890;
             storage.queueBlock(mockBlock);
 
@@ -148,7 +148,7 @@ describe("QueueStorage", () => {
             );
         });
 
-        it("bounds attribution and retains an early-tracked source under a later junk flood", () => {
+        it("bounds attribution and retains an early-tracked source under a later junk flood", async () => {
             // An honest supplier is tracked first, then a byzantine peer floods
             // the same hash from many distinct addresses.
             const honest = factory.randomAddress();
@@ -175,7 +175,7 @@ describe("QueueStorage", () => {
             expect(storage.isBlockQueued(mockBlock)).to.equal(true);
         });
 
-        it("junk-first: a flood that fills the cap first still lets a later valid copy process", () => {
+        it("junk-first: a flood that fills the cap first still lets a later valid copy process", async () => {
             // Byzantine peer floods the hash to the cap BEFORE any honest copy.
             let hash!: Hash;
             for (let i = 0; i < 300; i++) {
@@ -200,7 +200,7 @@ describe("QueueStorage", () => {
             expect(dequeued[0].block.hash).to.equal(mockBlock.hash);
         });
 
-        it("should overwrite on-chain timestamp when queueing same block again", () => {
+        it("should overwrite on-chain timestamp when queueing same block again", async () => {
             storage.queueBlock(mockBlock);
 
             storage.queueBlock(Block.fromSignedBlock(mockSignedBlock, 20));
@@ -211,7 +211,7 @@ describe("QueueStorage", () => {
             expect(dequeued[0].block.onChainTimestamp).to.equal(30);
         });
 
-        it("should not mutate queue when checking queued duplicate", () => {
+        it("should not mutate queue when checking queued duplicate", async () => {
             const onChainTimestamp = 1234567890;
             storage.queueBlock(mockBlock);
 
@@ -226,7 +226,7 @@ describe("QueueStorage", () => {
             expect(dequeued[0].block.onChainTimestamp).to.equal(undefined);
         });
 
-        it("should merge on-chain timestamp through storage proxy", () => {
+        it("should merge on-chain timestamp through storage proxy", async () => {
             const storageWithProxy = new Storage();
             const onChainTimestamp = 1234567890;
             storageWithProxy.queues.queueBlock(mockBlock);
@@ -249,7 +249,7 @@ describe("QueueStorage", () => {
     });
 
     describe("Dequeue Operations", () => {
-        it("should allow multiple dequeues on different coordinates", () => {
+        it("should allow multiple dequeues on different coordinates", async () => {
             const block1 = Block.fromSignedBlock(
                 factory.signedBlock({
                     encodedBlock: factory
@@ -292,7 +292,7 @@ describe("QueueStorage", () => {
             expect(dequeued2[0].block.equals(block2)).to.be.true;
         });
 
-        it("should dequeue the lowest eligible height by priority", () => {
+        it("should dequeue the lowest eligible height by priority", async () => {
             const block1 = Block.fromSignedBlock(
                 factory.signedBlock({
                     encodedBlock: factory
@@ -335,7 +335,7 @@ describe("QueueStorage", () => {
             expect(dequeued[0].block.equals(block1)).to.be.true;
         });
 
-        it("should track source peers and signature attribution", () => {
+        it("should track source peers and signature attribution", async () => {
             const peerAddress = ethers.Wallet.createRandom().address;
             const confirmationSignature = sig();
             const block = Block.fromBlockConfirmation({
@@ -355,7 +355,7 @@ describe("QueueStorage", () => {
             ).to.equal(true);
         });
 
-        it("should attribute only the signatures each sender's copy carried", () => {
+        it("should attribute only the signatures each sender's copy carried", async () => {
             const senderA = ethers.Wallet.createRandom().address;
             const senderB = ethers.Wallet.createRandom().address;
             const straySig = sig();
@@ -393,7 +393,7 @@ describe("QueueStorage", () => {
             );
         });
 
-        it("should return empty on subsequent dequeues", () => {
+        it("should return empty on subsequent dequeues", async () => {
             storage.queueBlock(mockBlock);
             expect(
                 storage.tryDequeueAt(mockForkId, mockHeight)
@@ -405,7 +405,7 @@ describe("QueueStorage", () => {
     });
 
     describe("Restore Entry", () => {
-        it("should restore a dequeued entry with its attribution intact", () => {
+        it("should restore a dequeued entry with its attribution intact", async () => {
             const senderAddress = ethers.Wallet.createRandom().address;
             const confirmationSignature = sig();
             const block = Block.fromBlockConfirmation({
@@ -433,7 +433,7 @@ describe("QueueStorage", () => {
             ).to.have.lengthOf(1);
         });
 
-        it("should merge a restored entry with a copy queued meanwhile", () => {
+        it("should merge a restored entry with a copy queued meanwhile", async () => {
             const senderA = ethers.Wallet.createRandom().address;
             const senderB = ethers.Wallet.createRandom().address;
             const sigA = sig();
@@ -481,7 +481,7 @@ describe("QueueStorage", () => {
             storageWithProxy = new Storage();
         });
 
-        it("should isolate modifications from outside objects", () => {
+        it("should isolate modifications from outside objects", async () => {
             const originalConfirmation = factory.blockConfirmation({
                 signedBlock: mockSignedBlock,
                 signatures: [sig(), sig()]
@@ -512,7 +512,7 @@ describe("QueueStorage", () => {
             ).to.be.greaterThan(originalCount);
         });
 
-        it("should isolate modifications to dequeued objects", () => {
+        it("should isolate modifications to dequeued objects", async () => {
             const confirmation = factory.blockConfirmation({
                 signedBlock: mockSignedBlock,
                 signatures: [sig()]

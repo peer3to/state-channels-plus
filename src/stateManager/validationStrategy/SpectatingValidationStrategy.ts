@@ -73,7 +73,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        await this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async notAllSingersAreParticipants(
@@ -181,7 +181,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // not ready
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        await this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
@@ -189,7 +189,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // Not ready: put it back and let the queue timeout be the sole sync
         // probe (no arrival-time sync from strategy hooks).
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        await this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(

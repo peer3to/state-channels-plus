@@ -17,7 +17,11 @@ import {
     type AContractExecutor,
     type ContractExecutionLog
 } from "./contractExecutor";
-import { Address, Bytes } from "@/types/types";
+import { Address, Bytes, ChannelId } from "@/types/types";
+import {
+    openPersistencePartition,
+    type PersistenceOptions
+} from "@/storage/persistence";
 import {
     BalanceStruct,
     MessageStruct
@@ -461,6 +465,18 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
              */
             signerSecret?: string;
             /**
+             * Durable storage is enabled by default. Browsers use IndexedDB and
+             * Node uses an embedded LevelDB. One live runtime owns a channel
+             * partition, so local multi-peer setups must use distinct locations
+             * or pass `false`.
+             */
+            persistence?: boolean | PersistenceOptions;
+            /**
+             * Known channel identity used to recover the persisted signer and
+             * channel state before the runtime graph is constructed.
+             */
+            channelId?: ChannelId;
+            /**
              * Context every inline-host handler runs inside (see
              * {@link HostHandlerExecutionContext}). Ignored in threaded mode —
              * a worker thread runs exactly one peer's host.
@@ -471,22 +487,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         // Initialize SDK config for this runtime (intended to be called once).
         const activeConfig = createConfig(options?.config);
 
-        const runtimeSignerSecret =
+        let runtimeSignerSecret =
             options?.signerSecret ?? ethers.Wallet.createRandom().privateKey;
-        const trimmedSignerSecret = runtimeSignerSecret.trim();
-        const resolvedSignerAddress = /^0x[0-9a-fA-F]{64}$/.test(
-            trimmedSignerSecret
-        )
-            ? new ethers.Wallet(trimmedSignerSecret).address
-            : ethers.Wallet.fromPhrase(trimmedSignerSecret).address;
-
-        const logger =
-            options?.peerLogger ||
-            createLogger(
-                { peerId: options?.peerId, peerAddress: resolvedSignerAddress },
-                { component: "ClientApp" },
-                { attachErrorListener: true }
-            );
 
         // Main-thread description of the app contract (rebuilt by the client).
         const stateMachine: SerializedContract = {
@@ -509,12 +511,65 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 "p2pSetup requires the state channel manager to have a provider"
             );
         }
+        const persistence =
+            options?.persistence === false
+                ? undefined
+                : options?.persistence === true ||
+                    options?.persistence === undefined
+                  ? {}
+                  : options.persistence;
+        const persistenceIdentity = persistence
+            ? {
+                  chainId: (
+                      await clientProvider.getNetwork()
+                  ).chainId.toString(),
+                  stateChannelManagerAddress: scm.address,
+                  stateMachineAddress: stateMachine.address
+              }
+            : undefined;
+        const channelId = options?.channelId
+            ? ethers.hexlify(options.channelId)
+            : undefined;
+
+        if (persistence && persistenceIdentity && channelId) {
+            const preparedPartition = await openPersistencePartition({
+                identity: { ...persistenceIdentity, channelId },
+                persistence,
+                signerSecret: runtimeSignerSecret,
+                existingPartition: "allow"
+            });
+            runtimeSignerSecret = preparedPartition.signerSecret;
+            await preparedPartition.databaseHandle.close();
+        }
+
+        const trimmedSignerSecret = runtimeSignerSecret.trim();
+        const resolvedSignerAddress = /^0x[0-9a-fA-F]{64}$/.test(
+            trimmedSignerSecret
+        )
+            ? new ethers.Wallet(trimmedSignerSecret).address
+            : ethers.Wallet.fromPhrase(trimmedSignerSecret).address;
+
+        const logger =
+            options?.peerLogger ||
+            createLogger(
+                { peerId: options?.peerId, peerAddress: resolvedSignerAddress },
+                { component: "ClientApp" },
+                { attachErrorListener: true }
+            );
 
         const payload: SetupPayload = {
             config: activeConfig,
             scm,
             stateMachine,
             signerSecret: runtimeSignerSecret,
+            persistence:
+                persistence && persistenceIdentity
+                    ? {
+                          options: persistence,
+                          identity: persistenceIdentity,
+                          channelId
+                      }
+                    : undefined,
             peerId: options?.peerId,
             customRpcManifest: options?.customRpcManifest,
             customPrecompiles: options?.customPrecompiles

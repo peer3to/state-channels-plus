@@ -17,6 +17,17 @@ import { ForceJoinStorage } from "./ForceJoinStorage";
 import { DisputeFraudProofStorage } from "./DisputeFraudProofStorage";
 import { BlockCalldataStorage } from "./BlockCalldataStorage";
 import { EventSyncStorage } from "./EventSyncStorage";
+import type { Logger } from "@/utils/logging";
+import {
+    PersistenceController,
+    PersistentCollection,
+    type PersistenceControllerOptions,
+    type PersistenceDatabaseHandle
+} from "./persistence";
+import {
+    createStorageRecordCodec,
+    type RuntimeMetadata
+} from "./persistence/storageCodecs";
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -34,27 +45,113 @@ export class Storage {
     public readonly forceJoin: ForceJoinStorage;
     public readonly blockCalldata: BlockCalldataStorage;
     public readonly eventSync: EventSyncStorage;
+    private readonly controller: PersistenceController;
+    private readonly runtimeMetadata: PersistentCollection<
+        "active",
+        RuntimeMetadata
+    >;
+    private persistenceLocation?: string;
 
-    constructor() {
-        this.blocks = deepCopyProxy(new BlockStorage());
-        this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
-        this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
-        this.stateSnapshots = deepCopyProxy(new StateSnapshotStorage());
-        this.stateMachineStates = deepCopyProxy(new StateMachineStateStorage());
-        this.participantSetChanges = deepCopyProxy(
-            new ParticipantSetChangeStorage()
+    constructor(
+        logger?: Logger,
+        persistenceOptions: Pick<
+            PersistenceControllerOptions,
+            "flushIntervalMs" | "maxBatchOperations"
+        > = {}
+    ) {
+        this.controller = new PersistenceController(
+            createStorageRecordCodec(),
+            { logger, ...persistenceOptions }
         );
-        this.queues = deepCopyProxy(new QueueStorage());
-        this.disputes = deepCopyProxy(new DisputeStorage());
-        this.fraudProofs = deepCopyProxy(new FraudProofStorage());
-        this.disputeFraudProofs = deepCopyProxy(new DisputeFraudProofStorage());
-        this.timeout = deepCopyProxy(new TimeoutStorage());
-        this.forceExit = deepCopyProxy(new ForceExitStorage());
-        this.forceJoin = deepCopyProxy(new ForceJoinStorage());
-        this.blockCalldata = deepCopyProxy(new BlockCalldataStorage());
-        this.eventSync = deepCopyProxy(new EventSyncStorage());
-        return deepCopyProxy(this);
+        this.blocks = deepCopyProxy(new BlockStorage(this.controller));
+        this.inboundMessages = deepCopyProxy(
+            new MessageBlockStorage("inboundMessages", this.controller)
+        );
+        this.outboundMessages = deepCopyProxy(
+            new MessageBlockStorage("outboundMessages", this.controller)
+        );
+        this.stateSnapshots = deepCopyProxy(
+            new StateSnapshotStorage(this.controller)
+        );
+        this.stateMachineStates = deepCopyProxy(
+            new StateMachineStateStorage(this.controller)
+        );
+        this.participantSetChanges = deepCopyProxy(
+            new ParticipantSetChangeStorage(this.controller)
+        );
+        this.queues = deepCopyProxy(new QueueStorage(this.controller));
+        this.disputes = deepCopyProxy(new DisputeStorage(this.controller));
+        this.fraudProofs = deepCopyProxy(
+            new FraudProofStorage(this.controller)
+        );
+        this.disputeFraudProofs = deepCopyProxy(
+            new DisputeFraudProofStorage(this.controller)
+        );
+        this.timeout = deepCopyProxy(new TimeoutStorage(this.controller));
+        this.forceExit = deepCopyProxy(new ForceExitStorage(this.controller));
+        this.forceJoin = deepCopyProxy(new ForceJoinStorage(this.controller));
+        this.blockCalldata = deepCopyProxy(
+            new BlockCalldataStorage(this.controller)
+        );
+        this.eventSync = deepCopyProxy(new EventSyncStorage(this.controller));
+        this.runtimeMetadata = new PersistentCollection(
+            "runtimeMetadata",
+            this.controller
+        );
+        return deepCopyProxy(this, {
+            preserveArgumentsFor: new Set([
+                "bind",
+                "setPersistenceFailureHandler",
+                "flush",
+                "close"
+            ])
+        });
     }
+
+    /**
+     * Hydrates EVERY collection above in one pass and rebuilds their derived
+     * indexes; all-or-nothing (a decode failure restores the previous caches
+     * and closes the database). Runs during host construction, before the
+     * StateManager exists - so `StateManager.restorePersistedState` only has to
+     * recover the process-local state that never reaches a collection.
+     */
+    public async bind(
+        databaseHandle: PersistenceDatabaseHandle
+    ): Promise<void> {
+        this.persistenceLocation = databaseHandle.location;
+        this.controller.attachDatabaseHandle(databaseHandle);
+        await this.controller.bind();
+        // TODO(persistence): distinguish legal forward crash prefixes from
+        // referenced corruption before rejecting hydration.
+    }
+
+    public setPersistenceFailureHandler(handler: (error: Error) => void): void {
+        this.controller.setFailureHandler(handler);
+    }
+
+    public setRuntimeMetadata(metadata: RuntimeMetadata): void {
+        this.runtimeMetadata.set("active", metadata);
+    }
+
+    public getRuntimeMetadata(): RuntimeMetadata | undefined {
+        return this.runtimeMetadata.get("active");
+    }
+
+    public flush(): Promise<void> {
+        return this.controller.flush();
+    }
+
+    public close(): Promise<void> {
+        return this.controller.close();
+    }
+
+    public getPersistenceLocation(): string | undefined {
+        return this.persistenceLocation;
+    }
+
+    // TODO(persistence): add proof-aware pruning in a separate design. It must
+    // protect active proof roots, disputes, queue entries, heads, and stale-fork
+    // tombstones, then revalidate writes that raced its reachability scan.
 
     /**
      * Get the state snapshot for given block coordinates.

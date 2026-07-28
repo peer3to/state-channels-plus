@@ -46,6 +46,7 @@ export type {
     EvmNativeCustomPrecompile,
     LocalStateMachineDeployer
 } from "@/evm";
+export type { PersistenceOptions } from "@/storage/persistence";
 
 export {
     AContractExecutor,

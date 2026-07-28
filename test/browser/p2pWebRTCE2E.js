@@ -211,6 +211,7 @@ async function setupPeer(
         deployLocalStateMachine,
         {
             peerId,
+            persistence: false,
             config: {
                 PROVIDER_URL: providerUrl,
                 RUN_SDK_IN_THREAD: true,

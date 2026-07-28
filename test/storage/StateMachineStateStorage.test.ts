@@ -19,7 +19,7 @@ describe("StateMachineStateStorage", () => {
     });
 
     describe("Basic operations", () => {
-        it("should store state with auto-computed hash", () => {
+        it("should store state with auto-computed hash", async () => {
             const hash = storage.storeStateMachineState(mockEncodedState);
             expect(hash).to.equal(mockStateHash);
 
@@ -27,7 +27,7 @@ describe("StateMachineStateStorage", () => {
             expect(stored).to.equal(mockEncodedState);
         });
 
-        it("should store state with provided hash", () => {
+        it("should store state with provided hash", async () => {
             const customHash = ethers.hexlify(ethers.randomBytes(32));
             const hash = storage.storeStateMachineState(mockEncodedState, {
                 hash: customHash
@@ -38,13 +38,13 @@ describe("StateMachineStateStorage", () => {
             expect(stored).to.equal(mockEncodedState);
         });
 
-        it("should get state by hash", () => {
+        it("should get state by hash", async () => {
             storage.storeStateMachineState(mockEncodedState);
             const result = storage.getStateMachineState(mockStateHash);
             expect(result).to.equal(mockEncodedState);
         });
 
-        it("should return undefined for non-existent hash", () => {
+        it("should return undefined for non-existent hash", async () => {
             const nonExistentHash = ethers.hexlify(ethers.randomBytes(32));
             expect(storage.getStateMachineState(nonExistentHash)).to.be
                 .undefined;
@@ -58,7 +58,7 @@ describe("StateMachineStateStorage", () => {
         let stateMachineStateHash: Hash;
         let encodedStateMachineState: Bytes;
 
-        beforeEach(() => {
+        beforeEach(async () => {
             mainStorage = new Storage();
 
             // Create encoded state machine state
@@ -79,20 +79,22 @@ describe("StateMachineStateStorage", () => {
             forkId = genesisSnapshot.forkID;
 
             // Store the genesis snapshot
-            mainStorage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
+            await mainStorage.stateSnapshots.storeStateSnapshot(
+                genesisSnapshot
+            );
 
             // Store the encoded state machine state
-            mainStorage.stateMachineStates.storeStateMachineState(
+            await mainStorage.stateMachineStates.storeStateMachineState(
                 encodedStateMachineState
             );
         });
 
-        it("should return correct bytes for correct fork ID", () => {
+        it("should return correct bytes for correct fork ID", async () => {
             const result = mainStorage.getGenesisStateMachineState(forkId);
             expect(result).to.equal(encodedStateMachineState);
         });
 
-        it("should return undefined for incorrect fork ID", () => {
+        it("should return undefined for incorrect fork ID", async () => {
             const incorrectForkId = ethers.hexlify(ethers.randomBytes(32));
             const result =
                 mainStorage.getGenesisStateMachineState(incorrectForkId);
@@ -100,7 +102,7 @@ describe("StateMachineStateStorage", () => {
             expect(result).to.be.undefined;
         });
 
-        it("should return undefined when genesis snapshot exists but stateMachineStateHash is not in storage", () => {
+        it("should return undefined when genesis snapshot exists but stateMachineStateHash is not in storage", async () => {
             // Create a new genesis snapshot with a different stateMachineStateHash
             const baseSnapshot = factory.stateSnapshot();
             const orphanedSnapshotStruct = baseSnapshot.toStruct();

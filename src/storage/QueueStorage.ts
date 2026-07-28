@@ -1,6 +1,10 @@
 import { Block } from "@/models";
 import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
 import Clock from "@/Clock";
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 
 export type QueueBlockOptions = {
     senderAddress?: Address;
@@ -23,10 +27,16 @@ export class QueueStorage {
     // participant union; overflow is retained as a marker, never rejected.
     private static readonly MAX_ENTRY_SOURCES = 128;
 
-    private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
+    private readonly queuedBlocks: PersistentCollection<Hash, QueuedBlockEntry>;
 
     // Secondary index for efficient queries by coordinates
     private blocksByCoordinates: Map<string, Set<Hash>> = new Map();
+
+    constructor(controller?: PersistenceController) {
+        this.queuedBlocks = new PersistentCollection("queues", controller, () =>
+            this.rebuildIndexes()
+        );
+    }
 
     /**
      * Build a standalone entry for a block copy — the unit of work the
@@ -45,28 +55,24 @@ export class QueueStorage {
 
     /** Queue a block for future processing */
     queueBlock(block: Block, options?: QueueBlockOptions): Hash {
-        // Check if block already exists in queue
-        const existingEntry = this.queuedBlocks.get(block.hash);
+        this.queuedBlocks.update(block.hash, (entry) => {
+            if (entry) {
+                // Check if block already exists in queue
+                // Attribute only the signatures this copy carried to its sender,
+                // never signatures pooled from earlier copies.
+                this.trackSource(
+                    entry,
+                    block.allSignatures,
+                    options?.senderAddress
+                );
+                entry.block.expandSignatures(block.confirmationSignatures);
+                this.mergeOnChainTimestamp(entry.block, block);
+                return entry;
+            }
 
-        if (existingEntry) {
-            // Attribute only the signatures this copy carried to its sender,
-            // never signatures pooled from earlier copies.
-            this.trackSource(
-                existingEntry,
-                block.allSignatures,
-                options?.senderAddress
-            );
-            existingEntry.block.expandSignatures(block.confirmationSignatures);
-            this.mergeOnChainTimestamp(existingEntry.block, block);
-            this.queuedBlocks.set(block.hash, existingEntry);
-            return block.hash;
-        }
-
-        const entry = this.createEntry(block, options);
-
-        // Store the new block confirmation
-        this.queuedBlocks.set(block.hash, entry);
-        this.addHashToCoordinateIndex(block.hash, block.forkId, block.height);
+            // Store the new block confirmation
+            return this.createEntry(block, options);
+        });
 
         return block.hash;
     }
@@ -80,11 +86,7 @@ export class QueueStorage {
             return [];
         }
 
-        const entries = this.dequeueHashes(hashSet);
-
-        this.blocksByCoordinates.delete(coordinateKey);
-
-        return entries;
+        return this.dequeueHashes(hashSet);
     }
 
     tryDequeuePriority(
@@ -109,10 +111,7 @@ export class QueueStorage {
         const hashes = this.blocksByCoordinates.get(lowestKey);
         if (!hashes) return [];
 
-        const entries = this.dequeueHashes(hashes);
-        this.blocksByCoordinates.delete(lowestKey);
-
-        return entries;
+        return this.dequeueHashes(hashes);
     }
 
     isBlockQueued(block: Block, options?: { hash?: Hash }): boolean {
@@ -129,6 +128,10 @@ export class QueueStorage {
         return this.queuedBlocks.get(blockHash);
     }
 
+    public getEntries(): QueuedBlockEntry[] {
+        return [...this.queuedBlocks.values()];
+    }
+
     /**
      * Re-insert a previously dequeued entry, merging its signatures and
      * source attribution into any entry queued for the same block meanwhile.
@@ -136,48 +139,29 @@ export class QueueStorage {
      * `BlockQueueManager` reads the entry back (`getQueuedEntry`) to (re)schedule.
      */
     restoreEntry(entry: QueuedBlockEntry): void {
-        const existing = this.queuedBlocks.get(entry.block.hash);
-        if (!existing) {
-            this.queuedBlocks.set(entry.block.hash, entry);
-            this.addHashToCoordinateIndex(
-                entry.block.hash,
-                entry.block.forkId,
-                entry.block.height
+        this.queuedBlocks.update(entry.block.hash, (existing) => {
+            if (!existing) return entry;
+            existing.block.expandSignatures(entry.block.confirmationSignatures);
+            this.mergeOnChainTimestamp(existing.block, entry.block);
+            existing.firstSeenAt = Math.min(
+                existing.firstSeenAt,
+                entry.firstSeenAt
             );
-            return;
-        }
-
-        existing.block.expandSignatures(entry.block.confirmationSignatures);
-        this.mergeOnChainTimestamp(existing.block, entry.block);
-        existing.firstSeenAt = Math.min(
-            existing.firstSeenAt,
-            entry.firstSeenAt
-        );
-        if (entry.overflowedSources) existing.overflowedSources = true;
-        for (const peer of entry.sourcePeers)
-            this.addSourcePeer(existing, peer);
-        for (const [signature, peers] of entry.signatureSources) {
-            for (const peer of peers) {
-                this.addSignatureSource(existing, signature, peer);
+            if (entry.overflowedSources) existing.overflowedSources = true;
+            for (const peer of entry.sourcePeers) {
+                this.addSourcePeer(existing, peer);
             }
-        }
+            for (const [signature, peers] of entry.signatureSources) {
+                for (const peer of peers) {
+                    this.addSignatureSource(existing, signature, peer);
+                }
+            }
+            return existing;
+        });
     }
 
     removeBlock(blockHash: Hash): QueuedBlockEntry | undefined {
-        const entry = this.queuedBlocks.get(blockHash);
-        if (!entry) return undefined;
-
-        this.queuedBlocks.delete(blockHash);
-        const coordinateKey = this.coordinatesToKey(
-            entry.block.forkId,
-            entry.block.height
-        );
-        const hashes = this.blocksByCoordinates.get(coordinateKey);
-        hashes?.delete(blockHash);
-        if (hashes?.size === 0) {
-            this.blocksByCoordinates.delete(coordinateKey);
-        }
-        return entry;
+        return this.queuedBlocks.takeMany([blockHash])[0];
     }
 
     clearFork(forkId: ForkId): Hash[] {
@@ -187,12 +171,22 @@ export class QueueStorage {
             if (queuedForkId !== String(forkId)) continue;
 
             for (const hash of hashSet) {
-                this.queuedBlocks.delete(hash);
                 removedHashes.push(hash);
             }
-            this.blocksByCoordinates.delete(key);
         }
+        this.queuedBlocks.deleteMany(removedHashes);
         return removedHashes;
+    }
+
+    public rebuildIndexes(): void {
+        this.blocksByCoordinates.clear();
+        for (const [hash, entry] of this.queuedBlocks.entries()) {
+            this.addHashToCoordinateIndex(
+                hash,
+                entry.block.forkId,
+                entry.block.height
+            );
+        }
     }
 
     // ====================================
@@ -217,17 +211,7 @@ export class QueueStorage {
     }
 
     private dequeueHashes(hashSet: Set<Hash>): QueuedBlockEntry[] {
-        const entries: QueuedBlockEntry[] = [];
-
-        for (const hash of hashSet) {
-            const entry = this.queuedBlocks.get(hash);
-            if (entry) {
-                entries.push(entry);
-                this.queuedBlocks.delete(hash);
-            }
-        }
-
-        return entries;
+        return this.queuedBlocks.takeMany([...hashSet]);
     }
 
     private trackSource(

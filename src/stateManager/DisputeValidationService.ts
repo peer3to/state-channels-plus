@@ -54,7 +54,7 @@ export default class DisputeValidationService {
             this.logger.warn("Dispute inbound hash not in chain", {
                 dispute: LoggerUtils.getDisputeMetadata(dispute)
             });
-            this.disputeFraudProofService.createDisputeInboundHashNotInChain(
+            await this.disputeFraudProofService.createDisputeInboundHashNotInChain(
                 dispute
             );
             return false;
@@ -77,7 +77,7 @@ export default class DisputeValidationService {
                     "Dispute posted with auditing data, but auditing data missing"
                 );
             }
-            this.disputeFraudProofService.createDisputeInvalidStateProof(
+            await this.disputeFraudProofService.createDisputeInvalidStateProof(
                 dispute,
                 onChainDisputeAuditingData
             );
@@ -95,7 +95,7 @@ export default class DisputeValidationService {
                     dispute: LoggerUtils.getDisputeMetadata(dispute)
                 }
             );
-            this.disputeFraudProofService.createDisputeStateProofHeaderMismatch(
+            await this.disputeFraudProofService.createDisputeStateProofHeaderMismatch(
                 dispute
             );
             return false;
@@ -110,7 +110,7 @@ export default class DisputeValidationService {
                 dispute: LoggerUtils.getDisputeMetadata(dispute),
                 blockIndex: invalidStructureResult.blockIndex
             });
-            this.disputeFraudProofService.createDisputeInvalidBlockStructure(
+            await this.disputeFraudProofService.createDisputeInvalidBlockStructure(
                 dispute,
                 Number(invalidStructureResult.blockIndex)
             );
@@ -133,14 +133,14 @@ export default class DisputeValidationService {
                 this.logger.warn("Auditing: Invalid state proof", {
                     dispute: LoggerUtils.getDisputeMetadata(dispute)
                 });
-                this.disputeFraudProofService.createDisputeInvalidStateProof(
+                await this.disputeFraudProofService.createDisputeInvalidStateProof(
                     dispute,
                     onChainDisputeAuditingData
                 );
                 return false;
             }
 
-            this.persistDisputeDataWithoutAudit(
+            await this.persistDisputeDataWithoutAudit(
                 dispute,
                 onChainDisputeAuditingData,
                 { includeUnfinalizedBlocks: false }
@@ -151,7 +151,7 @@ export default class DisputeValidationService {
                     dispute
                 );
             if (!milestoneFinalityResult) {
-                this.disputeFraudProofService.createDisputeLastMilestoneNotFinalAndNoAuditingData(
+                await this.disputeFraudProofService.createDisputeLastMilestoneNotFinalAndNoAuditingData(
                     dispute
                 );
                 return false;
@@ -273,7 +273,7 @@ export default class DisputeValidationService {
                             LoggerUtils.getAuditingMetadata(disputeAuditingData)
                     }
                 );
-                this.disputeFraudProofService.createDisputeInvalidStateProof(
+                await this.disputeFraudProofService.createDisputeInvalidStateProof(
                     dispute,
                     disputeAuditingData
                 );
@@ -305,7 +305,7 @@ export default class DisputeValidationService {
                 this.logger.debug(
                     `dispute slashes ${[...disputeOnChainSlashes].map((a) => a.toString())} not subset of on-chain slashes ${[...onChainSlashes].map((a) => a.toString())}`
                 );
-                this.disputeFraudProofService.createDisputeOnChainSlashesNotSubset(
+                await this.disputeFraudProofService.createDisputeOnChainSlashesNotSubset(
                     dispute
                 );
                 return false;
@@ -328,7 +328,7 @@ export default class DisputeValidationService {
                 }
             );
 
-            this.disputeFraudProofService.createDisputeInvalidBalanceInvariant(
+            await this.disputeFraudProofService.createDisputeInvalidBalanceInvariant(
                 dispute,
                 disputeAuditingData.latestStateSnapshot,
                 latestStateMachineState
@@ -353,7 +353,7 @@ export default class DisputeValidationService {
                 this.logger.debug("Dispute not latest state", {
                     dispute: LoggerUtils.getDisputeMetadata(dispute)
                 });
-                this.disputeFraudProofService.createDisputeNotLatestState(
+                await this.disputeFraudProofService.createDisputeNotLatestState(
                     dispute,
                     result.block.encode(),
                     result.signature
@@ -391,7 +391,7 @@ export default class DisputeValidationService {
                 expectedTimeoutHeight !==
                 Number(dispute.input.timeout.blockHeight)
             ) {
-                this.disputeFraudProofService.createTimeoutNotLinkedToLatestState(
+                await this.disputeFraudProofService.createTimeoutNotLinkedToLatestState(
                     dispute
                 );
                 return false;
@@ -402,7 +402,7 @@ export default class DisputeValidationService {
                 latestStateMachineState
             );
             if (nextToWrite !== dispute.input.timeout.participant) {
-                this.disputeFraudProofService.createTimeoutParticipantNotNext(
+                await this.disputeFraudProofService.createTimeoutParticipantNotNext(
                     dispute,
                     disputeAuditingData.latestStateSnapshot,
                     latestStateMachineState
@@ -460,7 +460,7 @@ export default class DisputeValidationService {
                         Number(dispute.input.timeout.blockHeight)
                     )
             ) {
-                this.disputeFraudProofService.createTimeoutTooEarly(
+                await this.disputeFraudProofService.createTimeoutTooEarly(
                     dispute,
                     disputeAuditingData.genesisStateSnapshotData,
                     previousBlockOrSnapshot?.block?.onChainTimestamp
@@ -470,7 +470,7 @@ export default class DisputeValidationService {
 
             // [check] N/N Threshold
             if (block && block.didEveryoneSign(participants)) {
-                this.disputeFraudProofService.createTimeoutThreshold(
+                await this.disputeFraudProofService.createTimeoutThreshold(
                     dispute,
                     block.blockConfirmationStruct,
                     disputeAuditingData.latestStateSnapshot,
@@ -508,7 +508,7 @@ export default class DisputeValidationService {
                         dispute
                     );
                 if (isValid) {
-                    this.disputeFraudProofService.storeTimeoutCalldataPosted(
+                    await this.disputeFraudProofService.storeTimeoutCalldataPosted(
                         dispute,
                         proof
                     );
@@ -537,7 +537,7 @@ export default class DisputeValidationService {
                     dispute: LoggerUtils.getDisputeMetadata(dispute)
                 }
             );
-            this.disputeFraudProofService.createInvalidDisputeReason(
+            await this.disputeFraudProofService.createInvalidDisputeReason(
                 dispute,
                 disputeAuditingData.latestStateSnapshot
             );
@@ -596,7 +596,7 @@ export default class DisputeValidationService {
 
         if (!isCorrectDisputeOutput) {
             // invalid dispute output
-            this.disputeFraudProofService.createDisputeInvalidOutputState(
+            await this.disputeFraudProofService.createDisputeInvalidOutputState(
                 dispute,
                 disputeAuditingData.latestStateSnapshot,
                 latestStateMachineState,
@@ -852,11 +852,11 @@ export default class DisputeValidationService {
         }
     }
 
-    public persistDisputeDataWithoutAudit(
+    public async persistDisputeDataWithoutAudit(
         dispute: DisputeStruct,
         disputeAuditingData: DisputeAuditingDataStruct | undefined,
         options: { includeUnfinalizedBlocks: boolean }
-    ): void {
+    ): Promise<void> {
         if (disputeAuditingData) {
             if (options.includeUnfinalizedBlocks) {
                 this.storage.stateSnapshots.storeStateSnapshot(

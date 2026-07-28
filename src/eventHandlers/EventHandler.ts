@@ -230,6 +230,8 @@ export class EventHandler {
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
         this.logger.info("Handling channel close", { channelId });
 
+        // TODO(persistence): destroy the settled channel partition after
+        // signer-key lifecycle ownership is defined.
         this.stateManager.setStatus(Status.NOT_OPENED);
 
         // Disconnect from all peers in this channel
@@ -254,8 +256,8 @@ export class EventHandler {
                 Block.fromSignedBlock(signedBlock)
             )
         });
-        // Recovery schedules this handler without awaiting validation; keep
-        // this store before the first await so its immediate re-read is valid.
+        // Recovery schedules this handler without awaiting validation; finish
+        // this store before its immediate re-read.
         this.storage.blockCalldata.storeBlockCalldata({
             signedBlock,
             onChainTimestamp: timestamp
@@ -358,7 +360,7 @@ export class EventHandler {
             return;
         }
 
-        this.stateManager.blockQueueManager.clearFork(forkId);
+        await this.stateManager.blockQueueManager.clearFork(forkId);
 
         const isFirstOccurrence =
             this.stateManager.p2pManager.localRpc.isForkDisputedService.requestDisputeAcknowledgment(
@@ -504,7 +506,7 @@ export class EventHandler {
                     );
                 }
             }
-            this.stateManager.disputeValidationService.persistDisputeDataWithoutAudit(
+            await this.stateManager.disputeValidationService.persistDisputeDataWithoutAudit(
                 dispute,
                 persistableAuditingData,
                 { includeUnfinalizedBlocks: true }

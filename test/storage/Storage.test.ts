@@ -49,7 +49,7 @@ describe("Storage", () => {
             });
         });
 
-        beforeEach(() => {
+        beforeEach(async () => {
             storage = new Storage();
 
             // Store genesis snapshot
@@ -64,7 +64,7 @@ describe("Storage", () => {
             );
         });
 
-        it("should return genesis state snapshot when height < 0", () => {
+        it("should return genesis state snapshot when height < 0", async () => {
             const coordinates: BlockCoordinates = {
                 forkId: forkId,
                 height: -1
@@ -78,7 +78,7 @@ describe("Storage", () => {
             );
         });
 
-        it("should return genesis state snapshot when height is any negative number", () => {
+        it("should return genesis state snapshot when height is any negative number", async () => {
             const coordinates: BlockCoordinates = {
                 forkId: forkId,
                 // Random height between -200 and -100
@@ -93,7 +93,7 @@ describe("Storage", () => {
             );
         });
 
-        it("should return state snapshot from block when height >= 0", () => {
+        it("should return state snapshot from block when height >= 0", async () => {
             const coordinates: BlockCoordinates = {
                 forkId: forkId,
                 height: 1
@@ -105,7 +105,7 @@ describe("Storage", () => {
             expect(result?.toStruct()).to.deep.equal(blockSnapshot.toStruct());
         });
 
-        it("genesis snapshot doesn't exist", () => {
+        it("genesis snapshot doesn't exist", async () => {
             const nonExistentForkId =
                 "0x9999999999999999999999999999999999999999999999999999999999999999";
 
@@ -117,7 +117,7 @@ describe("Storage", () => {
             ).to.be.undefined;
         });
 
-        it("block confirmation doesn't exist", () => {
+        it("block confirmation doesn't exist", async () => {
             expect(
                 storage.getStateSnapshot({
                     forkId: forkId,
@@ -126,7 +126,7 @@ describe("Storage", () => {
             ).to.be.undefined;
         });
 
-        it("correct block height, wrong forkId", () => {
+        it("correct block height, wrong forkId", async () => {
             const wrongForkId =
                 "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
             expect(
@@ -137,7 +137,7 @@ describe("Storage", () => {
             ).to.be.undefined;
         });
 
-        it("modifying retrieved snapshot doesn't affect stored snapshot", () => {
+        it("modifying retrieved snapshot doesn't affect stored snapshot", async () => {
             const coordinates: BlockCoordinates = {
                 forkId: forkId,
                 height: 1

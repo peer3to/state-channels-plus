@@ -15,7 +15,7 @@ describe("ParticipantSetChangeStorage", () => {
     });
 
     describe("CREATE - storeChangePoint()", () => {
-        it("should store change point and return the set", () => {
+        it("should store change point and return the set", async () => {
             const blockHeight: BlockHeight = 100;
             const result = storage.storeChangePoint(forkId1, blockHeight);
 
@@ -24,7 +24,7 @@ describe("ParticipantSetChangeStorage", () => {
             expect(result.size).to.equal(1);
         });
 
-        it("should insert across different forks", () => {
+        it("should insert across different forks", async () => {
             const height1: BlockHeight = 100;
             const height2: BlockHeight = 200;
 
@@ -37,7 +37,7 @@ describe("ParticipantSetChangeStorage", () => {
             expect(result2.has(height1)).to.be.false;
         });
 
-        it("should handle duplicate insertions", () => {
+        it("should handle duplicate insertions", async () => {
             const blockHeight: BlockHeight = 100;
 
             const result1 = storage.storeChangePoint(forkId1, blockHeight);
@@ -45,16 +45,17 @@ describe("ParticipantSetChangeStorage", () => {
 
             expect(result1.size).to.equal(1);
             expect(result2.size).to.equal(1);
-            expect(result1).to.equal(result2);
+            expect(result1).to.deep.equal(result2);
+            expect(result1).to.not.equal(result2);
             expect(result1.has(blockHeight)).to.be.true;
         });
 
-        it("should add multiple change points to same fork", () => {
+        it("should add multiple change points to same fork", async () => {
             const heights = [100, 200, 300];
 
-            heights.forEach((height) => {
+            for (const height of heights) {
                 storage.storeChangePoint(forkId1, height);
-            });
+            }
 
             const result = storage.storeChangePoint(forkId1, 400);
             expect(result.size).to.equal(4);
@@ -66,17 +67,17 @@ describe("ParticipantSetChangeStorage", () => {
     });
 
     describe("READ - getChangePointsInRange()", () => {
-        beforeEach(() => {
-            [100, 200, 300, 400, 500].forEach((height) => {
+        beforeEach(async () => {
+            for (const height of [100, 200, 300, 400, 500]) {
                 storage.storeChangePoint(forkId1, height);
-            });
-            [150, 250].forEach((height) => {
+            }
+            for (const height of [150, 250]) {
                 storage.storeChangePoint(forkId2, height);
-            });
+            }
         });
 
         describe("Non-existent fork", () => {
-            it("should return empty array for non-existent fork id", () => {
+            it("should return empty array for non-existent fork id", async () => {
                 const result =
                     storage.getChangePointsInRange("non-existent-fork");
                 expect(result).to.deep.equal([]);
@@ -84,17 +85,17 @@ describe("ParticipantSetChangeStorage", () => {
         });
 
         describe("Get all change points", () => {
-            it("should get all when both start and end are undefined", () => {
+            it("should get all when both start and end are undefined", async () => {
                 const result = storage.getChangePointsInRange(forkId1);
                 expect(result).to.have.lengthOf(5);
                 expect(result).to.include.members([100, 200, 300, 400, 500]);
             });
 
-            it("should return sorted results when getting all", () => {
+            it("should return sorted results when getting all", async () => {
                 const newFork = "unsorted-fork";
-                [300, 100, 500, 200, 400].forEach((height) => {
+                for (const height of [300, 100, 500, 200, 400]) {
                     storage.storeChangePoint(newFork, height);
-                });
+                }
 
                 const result = storage.getChangePointsInRange(newFork);
                 expect(result).to.deep.equal([100, 200, 300, 400, 500]);
@@ -102,7 +103,7 @@ describe("ParticipantSetChangeStorage", () => {
         });
 
         describe("Range queries with start undefined", () => {
-            it("should get all from beginning when start is undefined", () => {
+            it("should get all from beginning when start is undefined", async () => {
                 const result = storage.getChangePointsInRange(
                     forkId1,
                     undefined,
@@ -111,7 +112,7 @@ describe("ParticipantSetChangeStorage", () => {
                 expect(result).to.deep.equal([100, 200, 300]);
             });
 
-            it("should get single element when start undefined and end is just after first", () => {
+            it("should get single element when start undefined and end is just after first", async () => {
                 const result = storage.getChangePointsInRange(
                     forkId1,
                     undefined,
@@ -122,19 +123,19 @@ describe("ParticipantSetChangeStorage", () => {
         });
 
         describe("Range queries with end undefined", () => {
-            it("should get all from start to end when end is undefined", () => {
+            it("should get all from start to end when end is undefined", async () => {
                 const result = storage.getChangePointsInRange(forkId1, 250);
                 expect(result).to.deep.equal([300, 400, 500]);
             });
 
-            it("should get all from exact match when end undefined", () => {
+            it("should get all from exact match when end undefined", async () => {
                 const result = storage.getChangePointsInRange(forkId1, 300);
                 expect(result).to.deep.equal([300, 400, 500]);
             });
         });
 
         describe("Invalid range scenarios", () => {
-            it("should return empty array when end <= start", () => {
+            it("should return empty array when end <= start", async () => {
                 const result1 = storage.getChangePointsInRange(
                     forkId1,
                     300,
@@ -152,12 +153,12 @@ describe("ParticipantSetChangeStorage", () => {
         });
 
         describe("Range boundaries", () => {
-            it("should handle start < actual smallest block height", () => {
+            it("should handle start < actual smallest block height", async () => {
                 const result = storage.getChangePointsInRange(forkId1, 50, 250);
                 expect(result).to.deep.equal([100, 200]);
             });
 
-            it("should handle end > actual largest block height", () => {
+            it("should handle end > actual largest block height", async () => {
                 const result = storage.getChangePointsInRange(
                     forkId1,
                     350,
@@ -166,7 +167,7 @@ describe("ParticipantSetChangeStorage", () => {
                 expect(result).to.deep.equal([400, 500]);
             });
 
-            it("should handle both start and end outside actual range", () => {
+            it("should handle both start and end outside actual range", async () => {
                 const result1 = storage.getChangePointsInRange(forkId1, 50, 80);
                 expect(result1).to.deep.equal([]);
 
@@ -180,7 +181,7 @@ describe("ParticipantSetChangeStorage", () => {
         });
 
         describe("Range inclusivity/exclusivity", () => {
-            it("should be inclusive of start and inclusive of end", () => {
+            it("should be inclusive of start and inclusive of end", async () => {
                 const result = storage.getChangePointsInRange(
                     forkId1,
                     200,
@@ -189,7 +190,7 @@ describe("ParticipantSetChangeStorage", () => {
                 expect(result).to.deep.equal([200, 300, 400]);
             });
 
-            it("should include exact start value", () => {
+            it("should include exact start value", async () => {
                 const result = storage.getChangePointsInRange(
                     forkId1,
                     300,
@@ -198,7 +199,7 @@ describe("ParticipantSetChangeStorage", () => {
                 expect(result).to.deep.equal([300, 400]);
             });
 
-            it("should include exact end value", () => {
+            it("should include exact end value", async () => {
                 const result = storage.getChangePointsInRange(
                     forkId1,
                     200,
@@ -207,7 +208,7 @@ describe("ParticipantSetChangeStorage", () => {
                 expect(result).to.deep.equal([200, 300]);
             });
 
-            it("should work with single-element ranges", () => {
+            it("should work with single-element ranges", async () => {
                 const result = storage.getChangePointsInRange(
                     forkId1,
                     300,
@@ -216,7 +217,7 @@ describe("ParticipantSetChangeStorage", () => {
                 expect(result).to.deep.equal([300]);
             });
 
-            it("should return empty for gap ranges", () => {
+            it("should return empty for gap ranges", async () => {
                 const result = storage.getChangePointsInRange(
                     forkId1,
                     350,

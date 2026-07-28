@@ -25,19 +25,21 @@ describe("MessageBlockStorage - outbound behavior", () => {
     });
 
     describe("store()", () => {
-        it("stores block with computed hash", () => {
+        it("stores block with computed hash", async () => {
             const hash = storage.store(mockExitBlock);
             expect(hash).to.equal(mockBlockHash);
-            expect(storage.getMessageBlock(hash)).to.equal(mockExitBlock);
+            expect(storage.getMessageBlock(hash)).to.deep.equal(mockExitBlock);
         });
 
-        it("accepts provided hash", () => {
+        it("accepts provided hash", async () => {
             const customHash = factory.hash();
-            const hash = storage.store(mockExitBlock, { hash: customHash });
+            const hash = storage.store(mockExitBlock, {
+                hash: customHash
+            });
             expect(hash).to.equal(customHash);
         });
 
-        it("ignores duplicate stores", () => {
+        it("ignores duplicate stores", async () => {
             const hash1 = storage.store(mockExitBlock);
             const hash2 = storage.store(mockExitBlock);
             expect(hash1).to.equal(hash2);
@@ -45,21 +47,21 @@ describe("MessageBlockStorage - outbound behavior", () => {
     });
 
     describe("read operations", () => {
-        beforeEach(() => {
+        beforeEach(async () => {
             storage.store(mockExitBlock);
         });
 
-        it("returns undefined for unknown hashes", () => {
+        it("returns undefined for unknown hashes", async () => {
             const randomHash = factory.hash();
             expect(storage.getMessageBlock(randomHash)).to.be.undefined;
         });
 
-        it("retrieves block by hash", () => {
+        it("retrieves block by hash", async () => {
             const block = storage.getMessageBlock(mockBlockHash);
-            expect(block).to.equal(mockExitBlock);
+            expect(block).to.deep.equal(mockExitBlock);
         });
 
-        it("returns ordered message blocks when iterating by range", () => {
+        it("returns ordered message blocks when iterating by range", async () => {
             const nextBlock = {
                 ...mockExitBlock,
                 previousBlockHash: mockBlockHash,
@@ -77,7 +79,7 @@ describe("MessageBlockStorage - outbound behavior", () => {
     });
 
     describe("latest block helpers", () => {
-        it("returns the most recent block", () => {
+        it("returns the most recent block", async () => {
             const baseHash = storage.store(mockExitBlock);
 
             const newerBlock = {
@@ -95,7 +97,7 @@ describe("MessageBlockStorage - outbound behavior", () => {
             expect(latestBlocks[0]).to.deep.equal(newerBlock);
         });
 
-        it("returns blocks sorted from newest to oldest when no limit is provided", () => {
+        it("returns blocks sorted from newest to oldest when no limit is provided", async () => {
             storage.store(mockExitBlock);
             const followingBlock = {
                 ...mockExitBlock,

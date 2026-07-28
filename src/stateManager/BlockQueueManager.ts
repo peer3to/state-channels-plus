@@ -30,6 +30,12 @@ export default class BlockQueueManager {
         new Map();
     private readonly logger: Logger;
 
+    // Blocks currently dequeued and executing. An entry leaves the queue before
+    // it runs, so a copy arriving meanwhile would otherwise look unknown and be
+    // scheduled a second time. Held from dequeue until `executeQueuedEntry`
+    // finishes (released in its `finally`, so a throw can't strand the hash).
+    private readonly executingHashes = new Set<Hash>();
+
     // Fork-recovery gate. A mismatched block may just mean we're late to reduce
     // our own disputed current fork. Reducing takes the StateManager mutex, so
     // it MUST run detached (ingest can be under that mutex via the dispute
@@ -88,6 +94,16 @@ export default class BlockQueueManager {
                 options?.onChainTimestamp
             );
 
+            // Executing right now: park the copy so its signatures/sources pool
+            // into a deferred entry (queued under the same block hash) without
+            // scheduling a second execution. `executeQueuedEntry` drains it.
+            if (this.executingHashes.has(block.hash)) {
+                this.stateManager.storage.queues.queueBlock(block, {
+                    senderAddress: options?.senderAddress
+                });
+                return true;
+            }
+
             if (this.isBlockStored(block)) {
                 this.scheduleStoredBlockConfirmationMerge(
                     this.stateManager.storage.queues.createEntry(block, {
@@ -117,7 +133,7 @@ export default class BlockQueueManager {
                     block.channelId
                 )
             ) {
-                this.clearFork(block.forkId);
+                await this.clearFork(block.forkId);
                 this.logger.verbose(
                     "ingestBlockConfirmation - ignoring unstored block on disputed fork",
                     {
@@ -160,6 +176,24 @@ export default class BlockQueueManager {
     public onForkTransition(): void {
         this.recoveryScheduledForFork.clear();
         this.recoverySuppressedUntil.clear();
+    }
+
+    /**
+     * Restart entry point: the queue is durable but timers are process-local,
+     * so hydrated entries come back with no timeout armed. Re-arm each one for
+     * the REMAINDER of its window (`scheduleQueueTimeout` reads the persisted
+     * `firstSeenAt`, so a restart never grants a fresh one) and drain the forks
+     * they belong to. Runs before listeners/transport attach.
+     */
+    public async resumePersistedQueue(): Promise<void> {
+        const forkIds = new Set<ForkId>();
+        for (const entry of this.stateManager.storage.queues.getEntries()) {
+            this.scheduleQueueTimeout(entry.block.hash);
+            forkIds.add(entry.block.forkId);
+        }
+        for (const forkId of forkIds) {
+            await this.tryExecuteFromQueue(forkId);
+        }
     }
 
     /**
@@ -262,7 +296,7 @@ export default class BlockQueueManager {
             for (const entry of entries) {
                 this.cancelQueueTimeout(entry.block.hash);
             }
-            this.clearFork(entries[0].block.forkId);
+            await this.clearFork(entries[0].block.forkId);
             this.logger.verbose(
                 "tryExecuteFromQueue - discarded queued blocks for disputed fork",
                 {
@@ -275,6 +309,7 @@ export default class BlockQueueManager {
 
         for (const entry of entries) {
             this.cancelQueueTimeout(entry.block.hash);
+            this.executingHashes.add(entry.block.hash);
             this.scheduleQueuedEntryExecution(entry);
         }
     }
@@ -293,7 +328,7 @@ export default class BlockQueueManager {
                 entry.block.channelId
             )
         ) {
-            this.clearFork(entry.block.forkId);
+            await this.clearFork(entry.block.forkId);
             return;
         }
 
@@ -355,7 +390,7 @@ export default class BlockQueueManager {
         this.requestSync(entry);
     }
 
-    public clearFork(forkId: ForkId): void {
+    public async clearFork(forkId: ForkId): Promise<void> {
         const removedHashes =
             this.stateManager.storage.queues.clearFork(forkId);
         for (const hash of removedHashes) {
@@ -451,10 +486,10 @@ export default class BlockQueueManager {
      * - Otherwise restore + (re)arm the remaining-window timeout; if the window
      *   already elapsed, run the timeout logic as an immediate task.
      */
-    public restoreQueuedEntry(
+    public async restoreQueuedEntry(
         entry: QueuedBlockEntry,
         strategy?: AValidationStrategy
-    ): void {
+    ): Promise<void> {
         if (this.isBlockStored(entry.block)) {
             this.scheduleStoredBlockConfirmationMerge(
                 entry,
@@ -517,33 +552,72 @@ export default class BlockQueueManager {
         });
     }
 
+    /**
+     * Executes a dequeued entry and then drains its deferred copy - the single
+     * entry (the queue is keyed by block hash) that pooled every copy ingest
+     * parked while this hash was in `executingHashes`. That copy carries
+     * signatures/attribution `entry` never saw, and ingest scheduled neither a
+     * timeout nor an execution for it, so nothing else would pick it up - and
+     * the queue is durable now, so it would linger past restart.
+     */
     private async executeQueuedEntry(entry: QueuedBlockEntry): Promise<void> {
-        if (this.isBlockStored(entry.block)) {
-            await this.handleStoredBlockConfirmationMerge(
-                entry,
-                this.stateManager.getActiveValidationStrategy()
-            );
-            return;
-        }
-
-        // The pipeline handles a fork that moved out from under this entry (as a
-        // side effect: it restores the entry for a timeout sync, or drops it if
-        // we've moved past it) - see `onBlockConfirmation`. A `false` here is a
-        // genuine validation failure on the current fork.
-        const shouldKeepConnection =
-            await this.stateManager.onBlockConfirmation(entry);
-
-        if (!shouldKeepConnection) {
-            this.logger.warn(
-                "tryExecuteFromQueue - queued block failed canonical validation",
-                {
-                    block: LoggerUtils.getBlockMetadata(
-                        entry.block,
-                        this.stateManager.storage
-                    ),
-                    sourcePeers: Array.from(entry.sourcePeers)
+        try {
+            if (this.isBlockStored(entry.block)) {
+                await this.handleStoredBlockConfirmationMerge(
+                    entry,
+                    this.stateManager.getActiveValidationStrategy()
+                );
+                // Merged separately: `entry` was dequeued before the copies
+                // arrived, so the two hold different signature sets.
+                const deferred = this.stateManager.storage.queues.removeBlock(
+                    entry.block.hash
+                );
+                if (deferred) {
+                    await this.handleStoredBlockConfirmationMerge(
+                        deferred,
+                        this.stateManager.getActiveValidationStrategy()
+                    );
                 }
-            );
+                return;
+            }
+
+            // The pipeline handles a fork that moved out from under this entry (as a
+            // side effect: it restores the entry for a timeout sync, or drops it if
+            // we've moved past it) - see `onBlockConfirmation`. A `false` here is a
+            // genuine validation failure on the current fork.
+            const shouldKeepConnection =
+                await this.stateManager.onBlockConfirmation(entry);
+
+            if (!shouldKeepConnection) {
+                this.logger.warn(
+                    "tryExecuteFromQueue - queued block failed canonical validation",
+                    {
+                        block: LoggerUtils.getBlockMetadata(
+                            entry.block,
+                            this.stateManager.storage
+                        ),
+                        sourcePeers: Array.from(entry.sourcePeers)
+                    }
+                );
+            }
+
+            // Only drain once the block actually stored. On a failure or a
+            // not-ready result `restoreQueuedEntry` has already merged `entry`
+            // INTO the deferred copy and armed its timeout - removing it here
+            // would drop the entry the queue now owns.
+            if (this.isBlockStored(entry.block)) {
+                const deferred = this.stateManager.storage.queues.removeBlock(
+                    entry.block.hash
+                );
+                if (deferred) {
+                    await this.handleStoredBlockConfirmationMerge(
+                        deferred,
+                        this.stateManager.getActiveValidationStrategy()
+                    );
+                }
+            }
+        } finally {
+            this.executingHashes.delete(entry.block.hash);
         }
     }
 

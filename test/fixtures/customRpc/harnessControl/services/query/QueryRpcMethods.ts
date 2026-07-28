@@ -59,6 +59,10 @@ export class QueryRpcMethods extends ARpcMethods {
         return this.service.sm.signerAddress as string;
     }
 
+    public flushStorage(): Promise<void> {
+        return this.service.storage.flush();
+    }
+
     public getForkId(): string {
         return this.service.sm.forkId as string;
     }
@@ -316,11 +320,7 @@ export class QueryRpcMethods extends ARpcMethods {
 
     /** Number of distinct state snapshots stored. */
     public getSnapshotCount(): number {
-        // Reads the storage's private index (no public count accessor).
-        const store = this.service.storage.stateSnapshots as unknown as {
-            snapshotsByHash: Map<string, unknown>;
-        };
-        return store.snapshotsByHash.size;
+        return this.service.storage.stateSnapshots.getSnapshotCount();
     }
 
     /**

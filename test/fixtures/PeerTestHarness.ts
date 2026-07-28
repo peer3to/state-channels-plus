@@ -748,6 +748,7 @@ export class PeerTestHarness<
                 customPrecompiles: this.options.customPrecompiles!,
                 customRpcManifest: this.resolveHarnessRpcManifest(),
                 signerSecret,
+                persistence: false,
                 config: this.harnessConfig,
                 handlerExecutionContext: useWorker
                     ? undefined

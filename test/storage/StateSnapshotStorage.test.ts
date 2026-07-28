@@ -24,7 +24,7 @@ describe("StateSnapshotStorage", () => {
 
     describe("CREATE - storeStateSnapshot()", () => {
         describe("Auto-computed hash", () => {
-            it("should store snapshot with computed hash", () => {
+            it("should store snapshot with computed hash", async () => {
                 const hash = storage.storeStateSnapshot(stateSnapshot);
                 expect(hash).to.equal(stateSnapshot.hash);
 
@@ -34,7 +34,7 @@ describe("StateSnapshotStorage", () => {
                 );
             });
 
-            it("should store genesis snapshot and auto-add to genesis mapping", () => {
+            it("should store genesis snapshot and auto-add to genesis mapping", async () => {
                 const hash = storage.storeStateSnapshot(genesisStateSnapshot);
                 expect(hash).to.equal(genesisStateSnapshot.hash);
 
@@ -55,7 +55,7 @@ describe("StateSnapshotStorage", () => {
         });
 
         describe("Provided hash", () => {
-            it("should store snapshot with provided hash", () => {
+            it("should store snapshot with provided hash", async () => {
                 const customHash = ethers.hexlify(ethers.randomBytes(32));
                 const hash = storage.storeStateSnapshot(stateSnapshot, {
                     hash: customHash
@@ -68,7 +68,7 @@ describe("StateSnapshotStorage", () => {
                 );
             });
 
-            it("should store genesis snapshot with provided hash and auto-add to genesis mapping", () => {
+            it("should store genesis snapshot with provided hash and auto-add to genesis mapping", async () => {
                 const customHash = ethers.hexlify(ethers.randomBytes(32));
                 const hash = storage.storeStateSnapshot(genesisStateSnapshot, {
                     hash: customHash
@@ -93,23 +93,27 @@ describe("StateSnapshotStorage", () => {
     });
 
     describe("READ operations", () => {
-        beforeEach(() => {
+        beforeEach(async () => {
             storage.storeStateSnapshot(stateSnapshot);
             storage.storeStateSnapshot(genesisStateSnapshot);
         });
 
-        it("should get snapshot by hash", () => {
+        it("should get snapshot by hash", async () => {
             const result = storage.getStateSnapshotByHash(stateSnapshot.hash);
             expect(result?.toStruct()).to.deep.equal(stateSnapshot.toStruct());
         });
 
-        it("should return undefined for non-existent snapshot hash", () => {
+        it("should return the number of stored snapshots", async () => {
+            expect(storage.getSnapshotCount()).to.equal(2);
+        });
+
+        it("should return undefined for non-existent snapshot hash", async () => {
             const nonExistentHash = ethers.hexlify(ethers.randomBytes(32));
             expect(storage.getStateSnapshotByHash(nonExistentHash)).to.be
                 .undefined;
         });
 
-        it("should get genesis snapshot by forkId", () => {
+        it("should get genesis snapshot by forkId", async () => {
             const result = storage.getGenesisSnapshotByForkId(
                 genesisStateSnapshot.forkID
             );
@@ -118,7 +122,7 @@ describe("StateSnapshotStorage", () => {
             );
         });
 
-        it("should return undefined for non-existent genesis forkId", () => {
+        it("should return undefined for non-existent genesis forkId", async () => {
             const nonExistentForkId = ethers.hexlify(ethers.randomBytes(32));
             expect(storage.getGenesisSnapshotByForkId(nonExistentForkId)).to.be
                 .undefined;
@@ -126,12 +130,12 @@ describe("StateSnapshotStorage", () => {
     });
 
     describe("Genesis snapshot logic", () => {
-        it("should identify genesis snapshot correctly", () => {
+        it("should identify genesis snapshot correctly", async () => {
             expect(genesisStateSnapshot.isGenesis).to.be.true;
             expect(stateSnapshot.isGenesis).to.be.false;
         });
 
-        it("should not non-genesis snapshots in genesis mapping", () => {
+        it("should not non-genesis snapshots in genesis mapping", async () => {
             // Store non-genesis snapshot
             storage.storeStateSnapshot(stateSnapshot);
 

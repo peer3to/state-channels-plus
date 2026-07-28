@@ -77,7 +77,9 @@ export class SpectateControlRpcMethods extends ARpcMethods<
     }
 
     /** Store a block straight into storage (`justPersist`); returns its hash. */
-    public storeBlockJustPersist(encodedSignedBlock: string): string {
+    public async storeBlockJustPersist(
+        encodedSignedBlock: string
+    ): Promise<string> {
         const block = Block.fromSignedBlock(
             Codec.decode(encodedSignedBlock, Type.SignedBlock)
         );

@@ -259,8 +259,6 @@ export default class FraudProofService {
             encodedProof: Codec.encode(proof.struct, proof.type)
         };
 
-        const proofHash = this.storage.fraudProofs.storeFraudProof(fraudProof);
-
-        return proofHash;
+        return this.storage.fraudProofs.storeFraudProof(fraudProof);
     }
 }

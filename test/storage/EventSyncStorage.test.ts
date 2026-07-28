@@ -5,7 +5,7 @@ import { EventSyncStorage } from "@/storage/EventSyncStorage";
 import { ChannelId } from "@/types/types";
 
 describe("EventSyncStorage", () => {
-    it("stores independent monotonic watermarks per normalized channel", () => {
+    it("stores independent monotonic watermarks per normalized channel", async () => {
         const storage = new EventSyncStorage();
         const channelA = ethers.id("event-sync-a") as ChannelId;
         const channelB = ethers.id("event-sync-b") as ChannelId;
@@ -21,7 +21,7 @@ describe("EventSyncStorage", () => {
         expect(storage.getLatestProcessedBlock(channelB)).to.equal(15);
     });
 
-    it("has no cursor until an event-bearing block is published", () => {
+    it("has no cursor until an event-bearing block is published", async () => {
         const storage = new EventSyncStorage();
         const channelId = ethers.id("event-sync-empty") as ChannelId;
 

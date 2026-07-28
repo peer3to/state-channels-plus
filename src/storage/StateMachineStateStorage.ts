@@ -1,25 +1,36 @@
-import { Hash, Bytes } from "@/types/types";
 import { ethers } from "ethers";
+
+import type { Bytes, Hash } from "@/types/types";
+
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 
 type StoreOptions = {
     hash?: Hash;
 };
 
 export class StateMachineStateStorage {
-    private statesByHash: Map<Hash, Bytes>;
+    private readonly states: PersistentCollection<Hash, Bytes>;
 
-    constructor() {
-        this.statesByHash = new Map();
+    constructor(controller?: PersistenceController) {
+        this.states = new PersistentCollection(
+            "stateMachineStates",
+            controller
+        );
     }
 
     // ====================================
     // CREATE
     // ====================================
 
-    storeStateMachineState(encodedState: Bytes, options?: StoreOptions): Hash {
+    public storeStateMachineState(
+        encodedState: Bytes,
+        options?: StoreOptions
+    ): Hash {
         const hash = options?.hash ?? ethers.keccak256(encodedState);
-        this.statesByHash.set(hash, encodedState);
-
+        this.states.set(hash, encodedState);
         return hash;
     }
 
@@ -27,7 +38,7 @@ export class StateMachineStateStorage {
     // READ
     // ====================================
 
-    getStateMachineState(hash: Hash): Bytes | undefined {
-        return this.statesByHash.get(hash);
+    public getStateMachineState(hash: Hash): Bytes | undefined {
+        return this.states.get(hash);
     }
 }

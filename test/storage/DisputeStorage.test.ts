@@ -29,16 +29,16 @@ describe("DisputeStorage", () => {
     });
 
     describe("CREATE - storeDispute()", () => {
-        it("should store SignedDispute with auto-computed hash and return hash with empty signatures", () => {
+        it("should store SignedDispute with auto-computed hash and return hash with empty signatures", async () => {
             const hash = storage.storeDispute(mockSignedDispute);
 
             expect(hash).to.equal(mockDisputeHash);
             const stored = storage.getDisputeConfirmation(hash);
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
+            expect(stored?.signedDispute).to.deep.equal(mockSignedDispute);
             expect(stored?.signatures).to.deep.equal([]);
         });
 
-        it("should store SignedDispute with provided hash", () => {
+        it("should store SignedDispute with provided hash", async () => {
             const customHash = ethers.hexlify(ethers.randomBytes(32));
             const hash = storage.storeDispute(mockSignedDispute, {
                 hash: customHash
@@ -46,11 +46,11 @@ describe("DisputeStorage", () => {
 
             expect(hash).to.equal(customHash);
             const stored = storage.getDisputeConfirmation(customHash);
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
+            expect(stored?.signedDispute).to.deep.equal(mockSignedDispute);
             expect(stored?.signatures).to.deep.equal([]);
         });
 
-        it("should return same hash on duplicate insert and preserve existing signatures", () => {
+        it("should return same hash on duplicate insert and preserve existing signatures", async () => {
             // First store with empty signatures
             const hash1 = storage.storeDispute(mockSignedDispute);
             expect(hash1).to.equal(mockDisputeHash);
@@ -72,17 +72,17 @@ describe("DisputeStorage", () => {
     });
 
     describe("CREATE - storeDisputeConfirmation()", () => {
-        it("should store DisputeConfirmation with auto-computed hash", () => {
+        it("should store DisputeConfirmation with auto-computed hash", async () => {
             const hash = storage.storeDisputeConfirmation(
                 mockDisputeConfirmation
             );
 
             expect(hash).to.equal(mockDisputeHash);
             const stored = storage.getDisputeConfirmation(hash);
-            expect(stored).to.equal(mockDisputeConfirmation);
+            expect(stored).to.deep.equal(mockDisputeConfirmation);
         });
 
-        it("should store DisputeConfirmation with provided hash", () => {
+        it("should store DisputeConfirmation with provided hash", async () => {
             const customHash = ethers.hexlify(ethers.randomBytes(32));
             const hash = storage.storeDisputeConfirmation(
                 mockDisputeConfirmation,
@@ -91,10 +91,10 @@ describe("DisputeStorage", () => {
 
             expect(hash).to.equal(customHash);
             const stored = storage.getDisputeConfirmation(customHash);
-            expect(stored).to.equal(mockDisputeConfirmation);
+            expect(stored).to.deep.equal(mockDisputeConfirmation);
         });
 
-        it("should merge signatures with deduplication on duplicate insert", () => {
+        it("should merge signatures with deduplication on duplicate insert", async () => {
             // Create shared and unique signatures
             const sharedSignature = sig();
             const uniqueSignature1 = sig();
@@ -138,7 +138,7 @@ describe("DisputeStorage", () => {
             expect(signatureSet.size).to.equal(stored?.signatures.length);
         });
 
-        it("should handle empty signatures array", () => {
+        it("should handle empty signatures array", async () => {
             const disputeWithEmptySignatures = {
                 ...mockDisputeConfirmation,
                 signatures: []
@@ -152,7 +152,7 @@ describe("DisputeStorage", () => {
             expect(stored?.signatures).to.deep.equal([]);
         });
 
-        it("should preserve original SignedDispute when merging signatures", () => {
+        it("should reject an incompatible SignedDispute for the same hash", () => {
             // Store first dispute
             const hash1 = storage.storeDisputeConfirmation(
                 mockDisputeConfirmation
@@ -166,33 +166,25 @@ describe("DisputeStorage", () => {
             };
 
             // Store second dispute with same hash
-            const hash2 = storage.storeDisputeConfirmation(secondDispute, {
-                hash: hash1
-            });
-
-            expect(hash1).to.equal(hash2);
-
-            const stored = storage.getDisputeConfirmation(hash1);
-            // Should preserve the original SignedDispute
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
-            // Should have merged signatures
-            expect(stored?.signatures.length).to.be.greaterThan(
-                mockDisputeConfirmation.signatures.length
-            );
+            expect(() =>
+                storage.storeDisputeConfirmation(secondDispute, {
+                    hash: hash1
+                })
+            ).to.throw(`Incompatible dispute confirmation for ${hash1}`);
         });
     });
 
     describe("READ - getDisputeConfirmation()", () => {
-        beforeEach(() => {
+        beforeEach(async () => {
             storage.storeDisputeConfirmation(mockDisputeConfirmation);
         });
 
-        it("should get dispute confirmation by hash", () => {
+        it("should get dispute confirmation by hash", async () => {
             const result = storage.getDisputeConfirmation(mockDisputeHash);
-            expect(result).to.equal(mockDisputeConfirmation);
+            expect(result).to.deep.equal(mockDisputeConfirmation);
         });
 
-        it("should return undefined for non-existent dispute", () => {
+        it("should return undefined for non-existent dispute", async () => {
             const nonExistentHash = ethers.hexlify(ethers.randomBytes(32));
             expect(storage.getDisputeConfirmation(nonExistentHash)).to.be
                 .undefined;
@@ -200,7 +192,7 @@ describe("DisputeStorage", () => {
     });
 
     describe("Edge cases and behavior", () => {
-        it("should handle multiple different disputes", () => {
+        it("should handle multiple different disputes", async () => {
             const dispute1 = factory.signedDispute();
             const dispute2 = factory.signedDispute();
             const dispute3 = factory.signedDispute();
@@ -217,16 +209,16 @@ describe("DisputeStorage", () => {
             // All disputes should be retrievable
             expect(
                 storage.getDisputeConfirmation(hash1)?.signedDispute
-            ).to.equal(dispute1);
+            ).to.deep.equal(dispute1);
             expect(
                 storage.getDisputeConfirmation(hash2)?.signedDispute
-            ).to.equal(dispute2);
+            ).to.deep.equal(dispute2);
             expect(
                 storage.getDisputeConfirmation(hash3)?.signedDispute
-            ).to.equal(dispute3);
+            ).to.deep.equal(dispute3);
         });
 
-        it("should maintain signatures across different storage methods", () => {
+        it("should maintain signatures across different storage methods", async () => {
             // Store with storeDispute first
             const hash1 = storage.storeDispute(mockSignedDispute);
 
@@ -245,7 +237,7 @@ describe("DisputeStorage", () => {
             expect(stored?.signatures).to.have.lengthOf(1);
         });
 
-        it("should handle large signature arrays efficiently", () => {
+        it("should handle large signature arrays efficiently", async () => {
             const largeSignatureArray = Array.from({ length: 100 }, () =>
                 sig()
             );

@@ -4,7 +4,7 @@ import { BlockCalldataStorage } from "@/storage/BlockCalldataStorage";
 import * as factory from "../factory";
 
 describe("BlockCalldataStorage", function () {
-    it("returns calldata only for the exact signed block hash", function () {
+    it("returns calldata only for the exact signed block hash", async function () {
         const storage = new BlockCalldataStorage();
         const block = factory.block();
         storage.storeBlockCalldata({

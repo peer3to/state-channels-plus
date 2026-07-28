@@ -1,60 +1,58 @@
-import { BlockHeight, ForkId } from "@/types/types";
+import type { BlockHeight, ForkId } from "@/types/types";
+
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 
 export class ParticipantSetChangeStorage {
-    private map: Map<ForkId, Set<BlockHeight>>;
+    private readonly changes: PersistentCollection<ForkId, Set<BlockHeight>>;
 
-    constructor() {
-        this.map = new Map();
+    constructor(controller?: PersistenceController) {
+        this.changes = new PersistentCollection(
+            "participantSetChanges",
+            controller
+        );
     }
 
     // ====================================
     // CREATE
     // ====================================
 
-    storeChangePoint(
+    public storeChangePoint(
         forkId: ForkId,
         blockHeight: BlockHeight
     ): Set<BlockHeight> {
-        const changePoints = this.map.get(forkId) ?? new Set();
-        changePoints.add(blockHeight);
-        this.map.set(forkId, changePoints);
-
-        return this.map.get(forkId) as Set<BlockHeight>;
+        const updated = this.changes.update(forkId, (changePoints) => {
+            const next = changePoints ?? new Set<BlockHeight>();
+            next.add(blockHeight);
+            return next;
+        });
+        return updated!;
     }
 
     // ====================================
     // READ
     // ====================================
 
-    getChangePointsInRange(
+    public getChangePointsInRange(
         forkId: ForkId,
         start?: BlockHeight,
         end?: BlockHeight
     ): BlockHeight[] {
-        const changePoints = this.map.get(forkId);
-        if (!changePoints?.size) {
-            return [];
-        }
+        const changePoints = this.changes.get(forkId);
+        if (!changePoints?.size) return [];
 
         // invalid range
-        if (start !== undefined && end !== undefined && end <= start) {
-            return [];
-        }
-        const list = Array.from(changePoints).sort(
-            (a, b) => Number(a) - Number(b)
-        );
+        if (start !== undefined && end !== undefined && end <= start) return [];
 
-        if (start === undefined && end === undefined) {
-            return list;
-        }
+        const list = [...changePoints].sort((a, b) => a - b);
+        if (start === undefined && end === undefined) return list;
 
         const actualStart = start ?? list[0];
         const actualEnd = end ?? list[list.length - 1] + 1;
-
-        const filteredChangePoints = list.filter(
+        return list.filter(
             (height) => height >= actualStart && height <= actualEnd
         );
-
-        return filteredChangePoints;
     }
 }

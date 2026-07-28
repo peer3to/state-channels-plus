@@ -240,7 +240,7 @@ describe("E2E: Malicious updateSnapshot", function () {
             h.peers.map((p) =>
                 h.execOnHost(
                     p,
-                    (sm, args) => {
+                    async (sm, args) => {
                         sm.storage.stateMachineStates.storeStateMachineState(
                             args.encoded,
                             { hash: args.hash }

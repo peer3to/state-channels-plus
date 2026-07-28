@@ -178,6 +178,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
                 PingPongRpc
             >(scm, stateMachineTemplate, deployLocalStateMachine, {
                 signerSecret: runtimeWallet.privateKey,
+                persistence: false,
                 customRpcManifest: { module: PING_PONG_MANIFEST },
                 config: {
                     PROVIDER_URL: hardhatNodeUrl,

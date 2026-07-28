@@ -43,6 +43,7 @@
     "hardhat-gas-reporter": "^1.0.8",
     "husky": "^8.0.3",
     "lint-staged": "^14.0.1",
+    "memory-level": "^3",
     "nyc": "^15.1.0",
     "playwright": "^1.55.0",
     "prettier": "^3.2.5",
@@ -66,7 +67,9 @@
     "@nomiclabs/hardhat-ethers": "2.2.3",
     "@nomiclabs/hardhat-waffle": "2.0.6",
     "@openzeppelin/contracts": "^5.0.2",
+    "abstract-level": "^3",
     "axios": "^1.6.8",
+    "browser-level": "^3",
     "buffer": "^6.0.3",
     "ethereum-waffle": "4.0.10",
     "fflate": "^0.8.2",
@@ -89,6 +92,7 @@
     "get-logs": "ts-node scripts/logging/fetch-logs.ts",
     "test": "yarn hardhat test --no-compile $(find test -name '*.test.ts' -not -path 'test/e2e/*')",
     "test:browser:worker": "yarn build:browser && node test/browser/run-worker-contract-executor.mjs",
+    "test:browser:persistence": "yarn build:browser && node test/browser/run-persistence-restart.mjs",
     "test:browser:webrtc": "node test/browser/run-p2p-webrtc-e2e.mjs",
     "test:debug": "yarn hardhat test --no-compile $(find test -name '*.test.ts')",
     "test:all": "yarn hardhat test $(find test -name '*.test.ts')",
@@ -158,5 +162,8 @@
     "example": "examples",
     "test": "test"
   },
-  "author": ""
+  "author": "",
+  "optionalDependencies": {
+    "classic-level": "^3"
+  }
 }

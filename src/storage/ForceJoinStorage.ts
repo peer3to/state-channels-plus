@@ -1,17 +1,28 @@
-import { BlockHeight } from "@/types/types";
+import type { BlockHeight } from "@/types/types";
+
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
+
+type ForceJoinKey = "value";
 
 export class ForceJoinStorage {
-    private joinSubmissionBlockHeight?: BlockHeight;
+    private readonly value: PersistentCollection<ForceJoinKey, BlockHeight>;
 
-    setJoinSubmissionBlockHeight(height: BlockHeight): void {
-        this.joinSubmissionBlockHeight = height;
+    constructor(controller?: PersistenceController) {
+        this.value = new PersistentCollection("forceJoin", controller);
     }
 
-    getJoinSubmissionBlockHeight(): BlockHeight | undefined {
-        return this.joinSubmissionBlockHeight;
+    public setJoinSubmissionBlockHeight(height: BlockHeight): void {
+        this.value.set("value", height);
     }
 
-    clear(): void {
-        this.joinSubmissionBlockHeight = undefined;
+    public getJoinSubmissionBlockHeight(): BlockHeight | undefined {
+        return this.value.get("value");
+    }
+
+    public clear(): void {
+        this.value.delete("value");
     }
 }

@@ -2,6 +2,10 @@ import type { Config } from "@/utils/config";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
 import type { CustomRpcManifest } from "@/rpc/registry";
 import type { RuntimeRequestInput } from "./worker/protocol";
+import type {
+    PersistenceOptions,
+    PersistencePartitionIdentity
+} from "@/storage/persistence";
 
 /**
  * Transport definitions for the p2p runtime channel.
@@ -54,6 +58,11 @@ export interface SetupPayload {
      * `ethers.Wallet` inside the host.
      */
     signerSecret: string;
+    persistence?: {
+        options: PersistenceOptions;
+        identity: Omit<PersistencePartitionIdentity, "channelId">;
+        channelId?: string;
+    };
     peerId?: number;
     /** Optional dynamic custom RPC manifest resolved on the host side. */
     customRpcManifest?: CustomRpcManifest;

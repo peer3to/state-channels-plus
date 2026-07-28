@@ -19,6 +19,9 @@
             "@platform/p2pRuntimeWorkerRuntime": [
                 "src/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime"
             ],
+            "@platform/persistenceDatabase": [
+                "src/storage/persistence/browser/createPersistenceDatabase"
+            ],
             "@platform/DeployUtils": ["src/utils/browser/DeployUtils"],
             "@platform/LocalDiscoveryServer": [
                 "src/utils/browser/LocalDiscoveryServer"
@@ -38,6 +41,8 @@
         "src/evm/node",
         "src/evm/contractExecutor/node",
         "src/evm/p2pRuntime/node",
+        "src/storage/persistence/node",
+        "test/storage/persistence/node",
         "src/utils/node",
         "src/utils/logging/node"
     ]

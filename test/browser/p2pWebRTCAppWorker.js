@@ -69,6 +69,7 @@ self.onmessage = async (event) => {
             {
                 peerId,
                 signerSecret,
+                persistence: false,
                 config: {
                     PROVIDER_URL: providerUrl,
                     // Inline host in this worker realm — no nested SDK worker.

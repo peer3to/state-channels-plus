@@ -137,10 +137,13 @@ export default class EventSyncService {
                 });
                 throw error;
             })
-            .finally(() => {
+            .finally(async () => {
                 state.pending -= 1;
                 state.complete = state.pending === 0 && !state.failed;
-                this.publishCompletedBlocks(scheduledChannelId, channelKey);
+                await this.publishCompletedBlocks(
+                    scheduledChannelId,
+                    channelKey
+                );
             });
         this.eventPromises.set(eventKey, promise);
         this.eventBlockNumbers.set(eventKey, log.blockNumber);
@@ -458,10 +461,10 @@ export default class EventSyncService {
         }
     }
 
-    private publishCompletedBlocks(
+    private async publishCompletedBlocks(
         channelId: ChannelId,
         channelKey: ChannelKey
-    ): void {
+    ): Promise<void> {
         const states = this.getBlockStates(channelKey);
         const ordered = [...states.keys()].sort((a, b) => a - b);
         let publishable: BlockNumber | undefined;

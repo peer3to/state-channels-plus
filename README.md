@@ -58,6 +58,42 @@ The SDK abstracts away most of the complexities of the system and is designed to
 
 ## Configuration
 
+### Persistence
+
+`p2pSetup` enables persistence by default. Browser runtimes store channel
+partitions in IndexedDB; Node runtimes use embedded LevelDB in the operating
+system's application-data directory unless `persistence.location` is set.
+Pass the channel ID during setup to restore the channel signer and cached state
+before connecting:
+
+```ts
+await EvmStateMachine.p2pSetup(scm, stateMachine, deployStateMachine, {
+    channelId,
+    persistence: { location: "/path/to/app-data" }
+});
+```
+
+Each channel partition permits one live writer. Local demos or tests running
+multiple peers for the same channel must use separate locations or
+`persistence: false`.
+
+Storage writes update the in-memory cache immediately and are buffered to the
+platform database in short atomic batches. Protocol actions that expose signed
+state or submit transactions flush the required state internally first, and a
+graceful SDK shutdown flushes the remaining buffered writes. A forced process
+or worker termination can lose the unflushed, non-externalized tail.
+
+Persistence recovery fails closed when stored data is corrupt or incomplete
+and reports the resolved database location. Passing
+`persistence: { location, reset: true }` explicitly deletes that channel
+partition and starts fresh; it does not attempt to repair or preserve its data.
+
+Signer secrets are currently stored as plaintext local metadata. Node limits
+the default root to the current OS user; browsers rely on the origin boundary.
+Caller-supplied encryption and automatic partition destruction after a channel
+settles are not implemented yet. Proof-aware pruning is also pending, so
+partitions grow until the application removes them.
+
 Create a `peer3.config.json` file in the root of your project (next to `package.json`) with the following structure and set the values per your configuration:
 
 ```json

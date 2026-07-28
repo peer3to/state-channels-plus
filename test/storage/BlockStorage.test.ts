@@ -38,7 +38,7 @@ describe("BlockStorage", () => {
     });
 
     describe("CREATE - storeBlockConfirmation()", () => {
-        it("should merge signatures with deduplication on duplicate insert", () => {
+        it("should merge signatures with deduplication on duplicate insert", async () => {
             // Create shared and unique signatures
             const sharedSignature = sig();
             const uniqueSignature1 = sig();
@@ -77,7 +77,7 @@ describe("BlockStorage", () => {
             );
         });
 
-        it("should overwrite on-chain timestamp on duplicate insert", () => {
+        it("should overwrite on-chain timestamp on duplicate insert", async () => {
             storage.storeBlock(
                 Block.fromBlockConfirmation(mockBlockConfirmation, 20)
             );
@@ -92,15 +92,16 @@ describe("BlockStorage", () => {
             );
         });
 
-        it("should insert block confirmation with auto-computed keys", () => {
+        it("should insert block confirmation with auto-computed keys", async () => {
             const block = Block.fromBlockConfirmation(mockBlockConfirmation);
             const hash = storage.storeBlock(block);
 
             const stored = storage.getBlock(hash!);
-            expect(stored).to.equal(block);
+            expect(stored?.equals(block)).to.be.true;
+            expect(stored).to.not.equal(block);
         });
 
-        it("should insert block confirmation with provided keys", () => {
+        it("should insert block confirmation with provided keys", async () => {
             const block = Block.fromBlockConfirmation(mockBlockConfirmation);
             const hash = storage.storeBlock(block, {
                 coordinates: { forkId: mockForkId, height: mockHeight }
@@ -108,36 +109,37 @@ describe("BlockStorage", () => {
 
             const stored = storage.getBlock(hash!);
             const storedByCoords = storage.getBlock(mockForkId, mockHeight);
-            expect(stored).to.equal(block);
-            expect(storedByCoords).to.equal(block);
+            expect(stored?.equals(block)).to.be.true;
+            expect(storedByCoords?.equals(block)).to.be.true;
+            expect(stored).to.not.equal(block);
         });
     });
 
     describe("READ - getBlockEntry()", () => {
-        beforeEach(() => {
+        beforeEach(async () => {
             const block = Block.fromBlockConfirmation(mockBlockConfirmation);
             storage.storeBlock(block, {
                 coordinates: { forkId: mockForkId, height: mockHeight }
             });
         });
 
-        it("should get block by hash", () => {
+        it("should get block by hash", async () => {
             const result = storage.getBlock(mockBlockHash);
             expect(result?.equals(mockBlock)).to.be.true;
         });
 
-        it("should get block by coordinates", () => {
+        it("should get block by coordinates", async () => {
             const result = storage.getBlock(mockForkId, mockHeight);
             expect(result?.equals(mockBlock)).to.be.true;
         });
 
-        it("should return undefined for non-existent blocks", () => {
+        it("should return undefined for non-existent blocks", async () => {
             expect(storage.getBlock(ethers.hexlify(ethers.randomBytes(32)))).to
                 .be.undefined;
             expect(storage.getBlock("nonexistent", 999)).to.be.undefined;
         });
 
-        it("should maintain consistency between lookups", () => {
+        it("should maintain consistency between lookups", async () => {
             const byHash = storage.getBlock(mockBlockHash);
             const byCoords = storage.getBlock(mockForkId, mockHeight);
             expect(byHash).to.equal(byCoords); // Same object reference
@@ -145,13 +147,13 @@ describe("BlockStorage", () => {
     });
 
     describe("UPDATE - insertSignature()", () => {
-        beforeEach(() => {
+        beforeEach(async () => {
             storage.storeBlock(mockBlock, {
                 coordinates: { forkId: mockForkId, height: mockHeight }
             });
         });
 
-        it("should insert signature by hash", () => {
+        it("should insert signature by hash", async () => {
             const newSig = sig();
             const result = storage.insertSignature(newSig, mockBlockHash);
 
@@ -159,7 +161,7 @@ describe("BlockStorage", () => {
             expect(result?.allSignatures.has(newSig)).to.be.true;
         });
 
-        it("should insert signature by coordinates", () => {
+        it("should insert signature by coordinates", async () => {
             const newSig = sig();
             const result = storage.insertSignature(
                 newSig,
@@ -171,7 +173,7 @@ describe("BlockStorage", () => {
             expect(result?.allSignatures.has(newSig)).to.be.true;
         });
 
-        it("should return undefined for non-existent blocks", () => {
+        it("should return undefined for non-existent blocks", async () => {
             const newSig = sig();
             expect(storage.insertSignature(newSig, "nonexistent")).to.be
                 .undefined;
@@ -179,7 +181,7 @@ describe("BlockStorage", () => {
                 .undefined;
         });
 
-        it("should modify same object regardless of lookup method", () => {
+        it("should modify same object regardless of lookup method", async () => {
             const newSig = sig();
 
             // Insert via hash
@@ -190,7 +192,7 @@ describe("BlockStorage", () => {
             expect(block?.allSignatures.has(newSig)).to.be.true;
         });
 
-        it("should prevent duplicate signatures", () => {
+        it("should prevent duplicate signatures", async () => {
             const newSig = sig();
             const prevNumSignatures = mockBlock.confirmationSignatures.size;
             const expectedNumSignatures = prevNumSignatures + 1;
@@ -210,7 +212,7 @@ describe("BlockStorage", () => {
             expect(result2?.confirmationSignatures.has(newSig)).to.be.true;
         });
 
-        it("should prevent duplicate signatures by coordinates", () => {
+        it("should prevent duplicate signatures by coordinates", async () => {
             const newSig = sig();
             const prevNumSignatures = mockBlock.confirmationSignatures.size;
             const expectedNumSignatures = prevNumSignatures + 1;
@@ -238,7 +240,7 @@ describe("BlockStorage", () => {
             expect(result2?.confirmationSignatures.has(newSig)).to.be.true;
         });
 
-        it("should allow multiple unique signatures", () => {
+        it("should allow multiple unique signatures", async () => {
             const prevNumSignatures = mockBlock.confirmationSignatures.size;
             const expectedNumSignatures = prevNumSignatures + 3;
             expect(
@@ -257,7 +259,7 @@ describe("BlockStorage", () => {
     });
 
     describe("READ - getIterator() DESC clamp", () => {
-        it("clamps an absurd startHeight to maxHeight instead of looping the empty range", () => {
+        it("clamps an absurd startHeight to maxHeight instead of looping the empty range", async () => {
             storage.storeBlock(mockBlock);
 
             // Without the clamp this would loop from ~9e15 down to 0 and hang
@@ -275,23 +277,23 @@ describe("BlockStorage", () => {
     });
 
     describe("DELETE - deleteBlock()", () => {
-        beforeEach(() => {
+        beforeEach(async () => {
             storage.storeBlock(mockBlock);
         });
 
-        it("should delete by hash", () => {
+        it("should delete by hash", async () => {
             expect(storage.deleteBlock(mockBlockHash)).to.be.true;
             expect(storage.getBlock(mockBlockHash)).to.be.undefined;
             expect(storage.getBlock(mockForkId, mockHeight)).to.be.undefined;
         });
 
-        it("should delete by coordinates", () => {
+        it("should delete by coordinates", async () => {
             expect(storage.deleteBlock(mockForkId, mockHeight)).to.be.true;
             expect(storage.getBlock(mockBlockHash)).to.be.undefined;
             expect(storage.getBlock(mockForkId, mockHeight)).to.be.undefined;
         });
 
-        it("should return false when deleting non-existent blocks", () => {
+        it("should return false when deleting non-existent blocks", async () => {
             expect(storage.deleteBlock("nonexistent")).to.be.false;
             expect(storage.deleteBlock("nonexistent", 999)).to.be.false;
         });
@@ -304,7 +306,7 @@ describe("BlockStorage", () => {
             storageWithProxy = new Storage();
         });
 
-        it("altering object inside storage (adding signatures) doesn't affect original object", () => {
+        it("altering object inside storage (adding signatures) doesn't affect original object", async () => {
             // Create a blockConfirmation with initial signatures
             const originalBlockConfirmation = factory.blockConfirmation({
                 signedBlock: mockSignedBlock,
@@ -344,7 +346,7 @@ describe("BlockStorage", () => {
             );
         });
 
-        it("altering object outside storage doesn't affect object inside storage", () => {
+        it("altering object outside storage doesn't affect object inside storage", async () => {
             // Store a blockConfirmation
             const originalBlockConfirmation = factory.blockConfirmation({
                 signedBlock: mockSignedBlock,
@@ -379,7 +381,7 @@ describe("BlockStorage", () => {
 
     describe("CONFLICT DETECTION - _storeBlockEntryWithOptions()", () => {
         describe("Different blocks with same coordinates", () => {
-            it("should return undefined when storing different blocks with same coordinates", () => {
+            it("should return undefined when storing different blocks with same coordinates", async () => {
                 // Store first block
                 storage.storeBlock(
                     Block.fromBlockConfirmation(mockBlockConfirmation)
@@ -402,7 +404,7 @@ describe("BlockStorage", () => {
                 expect(result).to.be.undefined;
             });
 
-            it("should not store conflicting block in coordinates map", () => {
+            it("should not store conflicting block in coordinates map", async () => {
                 // Store first block
                 storage.storeBlock(mockBlock);
 
@@ -427,7 +429,7 @@ describe("BlockStorage", () => {
         });
 
         describe("Different blocks with same hash but different coordinates", () => {
-            it("should return hash when storing block with same hash but different coordinates", () => {
+            it("should reject a stored hash with different coordinates", async () => {
                 // Store first block
                 storage.storeBlock(
                     Block.fromBlockConfirmation(mockBlockConfirmation)
@@ -445,12 +447,21 @@ describe("BlockStorage", () => {
                     }
                 );
 
-                expect(result).to.equal(mockBlockHash);
+                expect(result).to.equal(undefined);
+                expect(
+                    storage.getBlock(
+                        differentCoordinates.forkId,
+                        differentCoordinates.height
+                    )
+                ).to.equal(undefined);
+                expect(
+                    storage.getBlock(mockBlockHash)?.coordinates
+                ).to.deep.equal(mockBlock.coordinates);
             });
         });
 
-        describe("Reference equality", () => {
-            it("should maintain reference equality between hash and coordinates maps", () => {
+        describe("Clone replacement", () => {
+            it("should replace the cached block without mutating an earlier read", async () => {
                 // Store a block
                 const hash = storage.storeBlock(
                     Block.fromBlockConfirmation(mockBlockConfirmation)
@@ -471,10 +482,9 @@ describe("BlockStorage", () => {
                 expect(blockByHash?.confirmationSignatures.has(newSignature)).to
                     .be.true;
                 expect(blockByCoords?.confirmationSignatures.has(newSignature))
-                    .to.be.true;
+                    .to.be.false;
 
-                // Verify they are the same object reference
-                expect(blockByHash).to.equal(blockByCoords);
+                expect(blockByHash).to.not.equal(blockByCoords);
             });
         });
     });
@@ -509,7 +519,7 @@ describe("ForkIdToMaxHeightMap", () => {
     }
 
     describe("ADDING - Max Height Updates", () => {
-        it("should update max height when adding block with higher height", () => {
+        it("should update max height when adding block with higher height", async () => {
             // Add block at height 5
             const blockConfirmation1 = createBlockWithCoordinates(forkId, 5);
             storage.storeBlock(Block.fromBlockConfirmation(blockConfirmation1));
@@ -535,7 +545,7 @@ describe("ForkIdToMaxHeightMap", () => {
             expect(heighestBlockData.coordinates.height).to.equal(10);
         });
 
-        it("should not update max height when adding block with lower height", () => {
+        it("should not update max height when adding block with lower height", async () => {
             // Add block at height 10 first
             storage.storeBlock(
                 Block.fromBlockConfirmation(
@@ -566,7 +576,7 @@ describe("ForkIdToMaxHeightMap", () => {
             expect(secondBlockData.coordinates.height).to.equal(5);
         });
 
-        it("should handle multiple forks independently", () => {
+        it("should handle multiple forks independently", async () => {
             const forkId1 = factory.hash();
             const forkId2 = factory.hash();
 
@@ -586,7 +596,7 @@ describe("ForkIdToMaxHeightMap", () => {
     });
 
     describe("REMOVING - Max Height Updates", () => {
-        it("should update max height when removing the highest block", () => {
+        it("should update max height when removing the highest block", async () => {
             // Add blocks at heights 0, 5, 10
             for (const height of [0, 5, 10]) {
                 const blockConfirmation = createBlockWithCoordinates(
@@ -613,7 +623,7 @@ describe("ForkIdToMaxHeightMap", () => {
             ).to.equal(0);
         });
 
-        it("should not update max height when removing non-highest block", () => {
+        it("should not update max height when removing non-highest block", async () => {
             // Add blocks at heights 0, 5, 10
             for (const height of [0, 5, 10]) {
                 const blockConfirmation = createBlockWithCoordinates(
@@ -640,7 +650,7 @@ describe("ForkIdToMaxHeightMap", () => {
             ).to.equal(0);
         });
 
-        it("should handle removing the only block in a fork", () => {
+        it("should handle removing the only block in a fork", async () => {
             // Add single block at height 5
             const blockConfirmation = createBlockWithCoordinates(forkId, 5);
             storage.storeBlock(Block.fromBlockConfirmation(blockConfirmation));
@@ -654,12 +664,12 @@ describe("ForkIdToMaxHeightMap", () => {
     });
 
     describe("GETTING - getIterator", () => {
-        it("should return empty when no blocks exist on fork", () => {
+        it("should return empty when no blocks exist on fork", async () => {
             const block = storage.getIterator(forkId).next().value;
             expect(block).to.be.undefined;
         });
 
-        it("should return blocks in correct order", () => {
+        it("should return blocks in correct order", async () => {
             // Add blocks in random order
             for (const height of [10, 0, 5]) {
                 const blockConfirmation = createBlockWithCoordinates(

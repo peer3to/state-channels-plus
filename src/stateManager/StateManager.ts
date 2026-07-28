@@ -33,6 +33,7 @@ import { ReductionManager } from "./reduction";
 import { SnapshotUpdateService } from "./snapshotUpdate";
 import Storage from "@/storage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import { validatePersistedRuntimeState } from "@/storage/persistence/validatePersistedRuntimeState";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import {
     tryDecodeCustomError,
@@ -279,11 +280,10 @@ class StateManager<
             try {
                 await this.stateChannelEventListener.dispose();
             } finally {
-                await Promise.all([
-                    this.timeoutManager.dispose(),
-                    this.p2pManager.dispose(),
-                    this.diamondStateMachine.dispose()
-                ]);
+                await this.timeoutManager.dispose();
+                await this.p2pManager.dispose();
+                await this.storage.close();
+                await this.diamondStateMachine.dispose();
             }
         })().finally(() => {
             this.logger.dispose({
@@ -373,7 +373,37 @@ class StateManager<
         this.logger.updateSharedContext({ channelId: String(channelId) });
         this.disputeManager.setChannelId(channelId);
         this.eventSyncService.setChannelId(channelId);
+        await this.restorePersistedState();
         await this.stateChannelEventListener.setChannelId(channelId);
+    }
+
+    /**
+     * Restores what a restart CANNOT get from storage. Every storage collection
+     * (blocks, messages, snapshots, disputes, queues, ...) is already hydrated
+     * by `Storage.bind()`, which runs during host construction before this
+     * StateManager exists - so `validatePersistedRuntimeState` only cross-checks
+     * loaded caches, it never loads. What remains is the process-local state:
+     * the local diamond's VM state, the active fork field, the status (derived,
+     * deliberately never persisted), and the queue's timers.
+     */
+    public async restorePersistedState(): Promise<void> {
+        const persisted = validatePersistedRuntimeState(
+            this.storage,
+            this.channelId
+        );
+        if (!persisted) return;
+
+        // TODO(persistence): classify and recover legal forward crash prefixes
+        // from multi-record flows instead of failing every inconsistent prefix.
+        await this.diamondStateMachine.setState(persisted.encodedState);
+        this.forkId = persisted.metadata.activeForkId;
+        const participants = await this.diamondStateMachine.getParticipants();
+        this.setStatus(
+            participants.includes(this.signerAddress)
+                ? Status.PARTICIPATING
+                : Status.SYNCED
+        );
+        await this.blockQueueManager.resumePersistedQueue();
     }
     public getChannelId(): ChannelId {
         return this.channelId;
@@ -451,12 +481,15 @@ class StateManager<
         this.storage.forceJoin.setJoinSubmissionBlockHeight(
             joinSubmissionHeight
         );
+        // TODO(persistence): reconcile a crash after this durable marker but
+        // before the join transaction is accepted on-chain.
         this.logger.info(
             "joinChannel - recorded force join submission height",
             { joinSubmissionHeight }
         );
 
         try {
+            await this.storage.flush();
             const tx = await this.stateChannelManagerContract.joinChannel(
                 confirmation,
                 expectedSnapshotHash,
@@ -593,7 +626,16 @@ class StateManager<
         // Update the forkId to the new fork
         const forkId = stateSnapshot.forkId;
         this.forkId = forkId;
+        // TODO(persistence): recover legal prefixes if the process crashes
+        // between these individually durable records.
+        this.storage.setRuntimeMetadata({
+            activeForkId: forkId,
+            headHash: this.storage.blocks.getLatestBlock(forkId)?.hash,
+            snapshotHash: latestSnapshot.hash,
+            stateHash: latestSnapshot.stateMachineStateHash
+        });
 
+        await this.storage.flush();
         const participants = await this.diamondStateMachine.getParticipants();
         const isParticipant = participants.includes(this.signerAddress);
         if (isParticipant) {
@@ -825,7 +867,8 @@ class StateManager<
             }
         }
 
-        this.storage.blocks.storeBlock(block);
+        const validationResult =
+            await strategy.goodNewSignaturesOnExistingBlock(block);
         const persisted = this.storage.blocks.getBlock(block.hash);
         if (persisted) {
             P2pEventHooksUtils.maybeNotifyBlockFinalized({
@@ -836,14 +879,7 @@ class StateManager<
             });
         }
 
-        if (!(strategy instanceof DisputeValidationStrategy)) {
-            this.p2pManager.remoteRpc.stateTransitionService
-                .onBlockConfirmation(block.blockConfirmationStruct)
-                .broadcast();
-            return BlockValidationResult.BROADCAST;
-        }
-
-        return BlockValidationResult.DUPLICATE;
+        return validationResult;
     }
 
     /**
@@ -909,7 +945,10 @@ class StateManager<
                         { blockHash: block.hash, blockForkId: block.forkId }
                     );
                 } else {
-                    this.blockQueueManager.restoreQueuedEntry(entry, strategy);
+                    await this.blockQueueManager.restoreQueuedEntry(
+                        entry,
+                        strategy
+                    );
                 }
                 keepConnection = true; // not a peer fault
                 return keepConnection;
@@ -2267,21 +2306,6 @@ class StateManager<
             onBlockCommitted?: () => void;
         }
     ): Promise<void> {
-        // step 9 - potentially change status: SYNCED | PENDING_PARTICIPANT → PARTICIPATING
-        if (
-            this.status === Status.SYNCED ||
-            this.status === Status.PENDING_PARTICIPANT
-        ) {
-            const participants =
-                await this.diamondStateMachine.getParticipants();
-            const isParticipant = participants.includes(this.signerAddress);
-            if (isParticipant) {
-                this.setStatus(Status.PARTICIPATING);
-                this.storage.forceJoin.clear();
-            } else if (this.status === Status.PENDING_PARTICIPANT) {
-                await this.maybeInitiateForceJoinDispute(block, participants);
-            }
-        }
         // step 1 - persist the state snapshot + state machine state first:
         // shouldSignBlock reads the resulting participants from storage
         this.storage.stateSnapshots.storeStateSnapshot(stateSnapshot);
@@ -2289,10 +2313,18 @@ class StateManager<
             encodedStateMachineState,
             { hash: stateSnapshot.stateMachineStateHash }
         );
+        const mayPromoteStatus =
+            this.status === Status.SYNCED ||
+            this.status === Status.PENDING_PARTICIPANT;
+        const participants = mayPromoteStatus
+            ? await this.diamondStateMachine.getParticipants()
+            : [];
+        const shouldPromoteToParticipant =
+            mayPromoteStatus && participants.includes(this.signerAddress);
 
         // step 2 - add my signature if appropriate
         if (
-            (await this.shouldSignBlock(block)) &&
+            (await this.shouldSignBlock(block, shouldPromoteToParticipant)) &&
             !(options?.strategy instanceof DisputeValidationStrategy)
         ) {
             // Sign the block and add our signature to confirmation signatures
@@ -2307,6 +2339,42 @@ class StateManager<
         this.storage.blocks.storeBlock(block, {
             justPersist: options?.strategy instanceof DisputeValidationStrategy
         });
+        if (!(options?.strategy instanceof DisputeValidationStrategy)) {
+            // TODO(persistence): recover legal prefixes if the process crashes
+            // between snapshot, state, block, and metadata commits.
+            this.storage.setRuntimeMetadata({
+                activeForkId: block.forkId,
+                headHash: block.hash,
+                snapshotHash: stateSnapshot.hash,
+                stateHash: stateSnapshot.stateMachineStateHash
+            });
+        }
+        // step 5 - persist the outbound message blocks if any
+        if (options?.outboundMessageBlock) {
+            this.storage.outboundMessages.store(options.outboundMessageBlock);
+        }
+
+        // step 6 - persist participant change points
+        if (
+            !(options?.strategy instanceof DisputeValidationStrategy) &&
+            (participantChanges.left.size > 0 ||
+                participantChanges.joined.size > 0)
+        ) {
+            this.storage.participantSetChanges.storeChangePoint(
+                block.forkId,
+                block.height
+            );
+        }
+
+        // step 9 - potentially change status: SYNCED | PENDING_PARTICIPANT → PARTICIPATING
+        // Publish status only after all durable mutations for the transition
+        // have succeeded.
+        if (shouldPromoteToParticipant) {
+            this.storage.forceJoin.clear();
+        }
+
+        await this.storage.flush();
+
         // The block is canonical from here: a failure in the remaining side
         // effects must not roll the VM back behind stored state.
         options?.onBlockCommitted?.();
@@ -2317,23 +2385,16 @@ class StateManager<
             logger: this.logger
         });
 
-        // step 5 - persist the outbound message blocks if any
-        if (options?.outboundMessageBlock) {
-            this.storage.outboundMessages.store(options.outboundMessageBlock);
-        }
-
         // TODO - quick hack - cleaner code later
         if (options?.strategy instanceof DisputeValidationStrategy) return;
 
-        // step 6 - persist participant change points
-        if (
-            participantChanges.left.size > 0 ||
-            participantChanges.joined.size > 0
+        if (shouldPromoteToParticipant) {
+            this.setStatus(Status.PARTICIPATING);
+        } else if (
+            mayPromoteStatus &&
+            this.status === Status.PENDING_PARTICIPANT
         ) {
-            this.storage.participantSetChanges.storeChangePoint(
-                block.forkId,
-                block.height
-            );
+            await this.maybeInitiateForceJoinDispute(block, participants);
         }
 
         // step 7 - gossip after local persistence, so echoed confirmations are
@@ -2398,9 +2459,14 @@ class StateManager<
         // Universally scheduled on mutex release
     }
 
-    public async shouldSignBlock(block: Block): Promise<boolean> {
+    public async shouldSignBlock(
+        block: Block,
+        allowPendingPromotion = false
+    ): Promise<boolean> {
         if (this.p2pManager.isBlacklisted(block.author)) return false;
-        if (this.status !== Status.PARTICIPATING) return false;
+        if (this.status !== Status.PARTICIPATING && !allowPendingPromotion) {
+            return false;
+        }
         // Sign only blocks whose previous/resulting participant union contains
         // us (e.g. never after leaving the channel). The resulting snapshot is
         // persisted before signing, so a missing union means "don't sign".

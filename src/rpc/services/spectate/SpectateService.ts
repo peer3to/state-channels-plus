@@ -854,7 +854,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                             .stateMachineStateHash
                     }
                 );
-                this.persistFinalizedBlocks(finalizedBlocks);
+                await this.persistFinalizedBlocks(finalizedBlocks);
                 for (const snapshot of syncPayload.milestoneSnapshots)
                     storage.stateSnapshots.storeStateSnapshot(
                         StateSnapshot.from(snapshot)
@@ -903,7 +903,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         return blocks.some((block) => this.hasBlockConflict(block));
     }
 
-    private persistFinalizedBlocks(blocks: Block[]): void {
+    private async persistFinalizedBlocks(blocks: Block[]): Promise<void> {
         const storage = this.p2pManager.stateManager.storage;
         for (const block of blocks) storage.blocks.storeBlock(block);
     }

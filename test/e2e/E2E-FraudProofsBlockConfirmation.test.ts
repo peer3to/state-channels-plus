@@ -187,7 +187,7 @@ describe("E2E: Block Fraud Proofs", function () {
         // One-off white-box mutation: queue the latest block host-side.
         await h.execOnHost(
             observer,
-            (sm, args) => {
+            async (sm, args) => {
                 const latest = sm.storage.blocks.getLatestBlock(args.forkId);
                 if (!latest) throw new Error("no latest block to queue");
                 sm.storage.queues.queueBlock(latest);

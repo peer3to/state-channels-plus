@@ -83,6 +83,10 @@ const platformAliases = {
         projectRoot,
         "src/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime.ts"
     ),
+    "@platform/persistenceDatabase": path.join(
+        projectRoot,
+        "src/storage/persistence/browser/createPersistenceDatabase.ts"
+    ),
     "@": path.join(projectRoot, "src"),
     "@test": path.join(projectRoot, "test"),
     "@typechain-types": path.join(projectRoot, "typechain-types"),
@@ -227,10 +231,26 @@ try {
             "runP2pWebRTCMainThreadE2E",
             "p2p WebRTC main-thread e2e"
         );
-        assert.equal(mainThread.bridgePortA, true, "peer A must surface a bridge port");
-        assert.equal(mainThread.bridgePortB, true, "peer B must surface a bridge port");
-        assert.equal(mainThread.connectedAtoB, true, "peer A must connect to peer B");
-        assert.equal(mainThread.connectedBtoA, true, "peer B must connect to peer A");
+        assert.equal(
+            mainThread.bridgePortA,
+            true,
+            "peer A must surface a bridge port"
+        );
+        assert.equal(
+            mainThread.bridgePortB,
+            true,
+            "peer B must surface a bridge port"
+        );
+        assert.equal(
+            mainThread.connectedAtoB,
+            true,
+            "peer A must connect to peer B"
+        );
+        assert.equal(
+            mainThread.connectedBtoA,
+            true,
+            "peer B must connect to peer A"
+        );
         assert.ok(
             mainThread.rtcConnected >= 1,
             `main-thread: expected >=1 main-thread WebRTC connection, got ${mainThread.rtcConnected}`
@@ -246,8 +266,16 @@ try {
             bubbleUp.bridgesInstalled >= 2,
             `bubble-up: expected 2 bubbled-up bridges installed, got ${bubbleUp.bridgesInstalled}`
         );
-        assert.equal(bubbleUp.connectedAtoB, true, "bubble-up: peer A must connect to peer B");
-        assert.equal(bubbleUp.connectedBtoA, true, "bubble-up: peer B must connect to peer A");
+        assert.equal(
+            bubbleUp.connectedAtoB,
+            true,
+            "bubble-up: peer A must connect to peer B"
+        );
+        assert.equal(
+            bubbleUp.connectedBtoA,
+            true,
+            "bubble-up: peer B must connect to peer A"
+        );
         assert.ok(
             bubbleUp.rtcConnected >= 1,
             `bubble-up: expected >=1 main-thread WebRTC connection, got ${bubbleUp.rtcConnected}`

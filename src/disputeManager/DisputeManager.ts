@@ -110,6 +110,8 @@ class DisputeManager {
                 fraudProofsToApply
             );
 
+            await this.storage.flush();
+
             // check if multicall is needed
             if (fraudProofsToApply.length > 0) {
                 // 1) apply fraud proofs

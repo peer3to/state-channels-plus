@@ -1,11 +1,17 @@
-import { ForkId, Hash } from "@/types/types";
 import { ethers } from "ethers";
-import {
+import type {
     DisputeConfirmationStruct,
     DisputeStruct,
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
+
+import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
+
+import {
+    PersistentCollection,
+    type PersistenceController
+} from "./persistence";
 
 type StoreOptions = {
     hash?: Hash;
@@ -16,12 +22,18 @@ export class DisputeStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private disputes: Map<Hash, DisputeConfirmationStruct>;
-    private disputedForks: Map<ForkId, DidIDispute>;
+    private readonly disputes: PersistentCollection<
+        Hash,
+        DisputeConfirmationStruct
+    >;
+    private readonly disputedForks: PersistentCollection<ForkId, DidIDispute>;
 
-    constructor() {
-        this.disputes = new Map();
-        this.disputedForks = new Map();
+    constructor(controller?: PersistenceController) {
+        this.disputes = new PersistentCollection("disputes", controller);
+        this.disputedForks = new PersistentCollection(
+            "disputedForks",
+            controller
+        );
     }
 
     // ====================================
@@ -29,67 +41,27 @@ export class DisputeStorage {
     // ====================================
 
     /*────────────────────────────────────────────────────────────────────────────
-      STORE  DISPUTE 
+      STORE SIGNED DISPUTE
     ────────────────────────────────────────────────────────────────────────────*/
-    storeDispute(dispute: SignedDisputeStruct, options?: StoreOptions): Hash {
+    public storeDispute(
+        dispute: SignedDisputeStruct,
+        options?: StoreOptions
+    ): Hash {
         // Convert SignedDispute to DisputeConfirmation (empty signatures)
-        const disputeConfirmation: DisputeConfirmationStruct = {
-            signedDispute: dispute,
-            signatures: [] // Starts empty, ready for peer confirmations
-        };
-
-        return this._storeDisputeConfirmationWithOptions(
-            disputeConfirmation,
+        return this.storeDisputeConfirmation(
+            { signedDispute: dispute, signatures: [] },
             options
         );
     }
 
-    storeDisputedFork(forkId: ForkId, disputed: boolean): void {
+    public storeDisputedFork(forkId: ForkId, disputed: boolean): void {
         this.disputedForks.set(forkId, disputed);
     }
 
     /*────────────────────────────────────────────────────────────────────────────
       STORE DISPUTE CONFIRMATION
     ────────────────────────────────────────────────────────────────────────────*/
-    storeDisputeConfirmation(
-        disputeConfirmation: DisputeConfirmationStruct,
-        options?: StoreOptions
-    ): Hash {
-        return this._storeDisputeConfirmationWithOptions(
-            disputeConfirmation,
-            options
-        );
-    }
-
-    // ====================================
-    // READ
-    // ====================================
-
-    getDisputeConfirmation(
-        disputeHash: Hash
-    ): DisputeConfirmationStruct | undefined {
-        return this.disputes.get(disputeHash);
-    }
-
-    getDispute(disputeHash: Hash): DisputeStruct | undefined {
-        const disputeConfirmation = this.getDisputeConfirmation(disputeHash);
-        return disputeConfirmation
-            ? Codec.decode(
-                  disputeConfirmation.signedDispute.encodedDispute,
-                  Type.Dispute
-              )
-            : undefined;
-    }
-
-    didIDispute(forkId: ForkId): DidIDispute {
-        return this.disputedForks.get(forkId) ?? false;
-    }
-
-    // ====================================
-    // PRIVATE HELPERS
-    // ====================================
-
-    private _storeDisputeConfirmationWithOptions(
+    public storeDisputeConfirmation(
         disputeConfirmation: DisputeConfirmationStruct,
         options?: StoreOptions
     ): Hash {
@@ -97,27 +69,65 @@ export class DisputeStorage {
         const disputeHash =
             options?.hash ??
             ethers.keccak256(disputeConfirmation.signedDispute.encodedDispute);
-
-        const existingDispute = this.disputes.get(disputeHash);
-
-        if (existingDispute !== undefined) {
-            // Merge signatures
-            const signaturesSet = new Set(existingDispute.signatures);
-            for (const newSignature of disputeConfirmation.signatures) {
-                signaturesSet.add(newSignature);
+        this.disputes.update(disputeHash, (existing) => {
+            if (!existing) {
+                // If no existing dispute, store new dispute
+                return disputeConfirmation;
+            }
+            if (
+                !ethers.isBytesLike(
+                    disputeConfirmation.signedDispute.encodedDispute
+                ) ||
+                ethers.hexlify(existing.signedDispute.encodedDispute) !==
+                    ethers.hexlify(
+                        disputeConfirmation.signedDispute.encodedDispute
+                    ) ||
+                ethers.hexlify(existing.signedDispute.signature) !==
+                    ethers.hexlify(disputeConfirmation.signedDispute.signature)
+            ) {
+                throw new Error(
+                    `Incompatible dispute confirmation for ${disputeHash}`
+                );
             }
 
-            const mergedDispute: DisputeConfirmationStruct = {
-                signedDispute: existingDispute.signedDispute,
-                signatures: Array.from(signaturesSet)
+            // Merge signatures
+            const signatures = new Set(existing.signatures.map(ethers.hexlify));
+            for (const signature of disputeConfirmation.signatures) {
+                signatures.add(ethers.hexlify(signature));
+            }
+            return {
+                signedDispute: existing.signedDispute,
+                signatures: [...signatures]
             };
-
-            this.disputes.set(disputeHash, mergedDispute);
-            return disputeHash;
-        }
-        // If no existing dispute, store new dispute
-
-        this.disputes.set(disputeHash, disputeConfirmation);
+        });
         return disputeHash;
     }
+
+    // ====================================
+    // READ
+    // ====================================
+
+    public getDisputeConfirmation(
+        disputeHash: Hash
+    ): DisputeConfirmationStruct | undefined {
+        return this.disputes.get(disputeHash);
+    }
+
+    public getDispute(disputeHash: Hash): DisputeStruct | undefined {
+        const confirmation = this.getDisputeConfirmation(disputeHash);
+        return confirmation
+            ? Codec.decode(
+                  confirmation.signedDispute.encodedDispute,
+                  Type.Dispute
+              )
+            : undefined;
+    }
+
+    public didIDispute(forkId: ForkId): DidIDispute {
+        return this.disputedForks.get(forkId) ?? false;
+    }
+
+    // ====================================
+    // PRIVATE HELPERS
+    // ====================================
 }

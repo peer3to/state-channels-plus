@@ -956,10 +956,10 @@ describe("E2E: BlockQueueManager", function () {
                         );
                     const originalDispute =
                         disputeManager.dispute.bind(disputeManager);
-                    fraudProofService.createWrongGenesisProof = (
+                    fraudProofService.createWrongGenesisProof = async (
                         ...a: unknown[]
                     ) => {
-                        proofHash = originalProof(...a);
+                        proofHash = await originalProof(...a);
                         return proofHash;
                     };
                     // Record-only: an on-chain dispute against an honest
@@ -1197,13 +1197,13 @@ describe("E2E: BlockQueueManager", function () {
 
                         // Duplicate copies merge into the entry - age it
                         // precisely instead of sleeping.
-                        ageEntryBy(hash, 4);
+                        await ageEntryBy(hash, 4);
                         const aged = manager.scheduleQueueTimeout(hash);
                         const agedDelayMs =
                             scheduled[scheduled.length - 1]?.delayMs;
                         const cancelledAfterAging = cancelled.length;
 
-                        ageEntryBy(hash, agreementTime); // past the deadline
+                        await ageEntryBy(hash, agreementTime); // past the deadline
                         const atDeadline = manager.scheduleQueueTimeout(hash);
                         const cancelledAfterDeadlineAttempt = cancelled.length;
                         const scheduledCount = scheduled.length;

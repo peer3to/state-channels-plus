@@ -12,6 +12,10 @@ import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import type { ForkId, Hash } from "@/types/types";
 import {
+    openPersistencePartition,
+    type PersistenceDatabaseHandle
+} from "@/storage/persistence";
+import {
     createLogger,
     Codec,
     DebugProxy,
@@ -78,6 +82,7 @@ export interface HostContext {
 interface RuntimeHostState {
     stateManager: StateManager;
     evmDiamondStateMachine: EvmDiamondStateMachine;
+    storage: Storage;
 }
 
 /**
@@ -207,16 +212,33 @@ export async function startP2pRuntimeHost<
 >(port: RuntimePort, payload: SetupPayload, ctx: HostContext): Promise<void> {
     const { threadLabel, handlerExecutionContext } = ctx;
     let chainContext: RuntimeChainContext;
+    let persistenceDatabaseHandle: PersistenceDatabaseHandle | undefined;
+    let runtimeSignerSecret = payload.signerSecret;
+    let boundChannelId = payload.persistence?.channelId;
     try {
+        if (payload.persistence?.channelId) {
+            const partition = await openPersistencePartition({
+                identity: {
+                    ...payload.persistence.identity,
+                    channelId: payload.persistence.channelId
+                },
+                persistence: payload.persistence.options,
+                signerSecret: payload.signerSecret,
+                existingPartition: "allow"
+            });
+            persistenceDatabaseHandle = partition.databaseHandle;
+            runtimeSignerSecret = partition.signerSecret;
+        }
         chainContext = await createRuntimeChainContext(
             payload.config,
-            payload.signerSecret
+            runtimeSignerSecret
         );
     } catch (error) {
         // Provider creation happens before the rest of the runtime graph exists,
         // but its failure must still settle the paired client's `ready` promise.
         port.post({ type: "hostError", error: serializeError(error) });
         port.close();
+        await persistenceDatabaseHandle?.close();
         throw error;
     }
     const { provider, signer } = chainContext;
@@ -238,6 +260,7 @@ export async function startP2pRuntimeHost<
             if (runtimeHandle) {
                 await runtimeHandle.stateManager.dispose();
             } else {
+                await persistenceDatabaseHandle?.close();
                 await contractExecutor?.dispose();
                 logger?.stopPerformanceMonitoring();
             }
@@ -339,7 +362,11 @@ export async function startP2pRuntimeHost<
                     disputeExecutionGasLimit
                 );
 
-            const storage = new Storage();
+            const storage = new Storage(logger, payload.persistence?.options);
+            if (persistenceDatabaseHandle) {
+                await storage.bind(persistenceDatabaseHandle);
+                persistenceDatabaseHandle = undefined;
+            }
 
             const stateManager = new StateManager<
                 TCustomRpc,
@@ -359,6 +386,7 @@ export async function startP2pRuntimeHost<
                 customRpcResolved?.customRpc,
                 customRpcResolved?.customRpcOptions
             );
+            storage.setPersistenceFailureHandler(() => stateManager.abort());
 
             evmDiamondStateMachine.setStateManager(stateManager);
 
@@ -370,6 +398,10 @@ export async function startP2pRuntimeHost<
             evmDiamondStateMachine.setContractEventEmitter((name, args) =>
                 port.post({ type: "contractEvent", name, args })
             );
+
+            if (boundChannelId) {
+                await stateManager.setChannelId(boundChannelId);
+            }
 
             forwardEventHandlerInvocations(
                 stateManager.eventHandler,
@@ -386,7 +418,11 @@ export async function startP2pRuntimeHost<
                     );
             }
 
-            runtimeHandle = { stateManager, evmDiamondStateMachine };
+            runtimeHandle = {
+                stateManager,
+                evmDiamondStateMachine,
+                storage
+            };
             // A bridge-setup failure must not deadlock `ready`; WebRTC is optional.
             try {
                 bridgeWorkerPort = await bubbleWebRTCBridgePortIfNeeded(port);
@@ -491,6 +527,7 @@ export async function startP2pRuntimeHost<
                     case "connectToChannel":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
+                        await bindPersistenceForChannel(request.channelId);
                         await runtimeHandle.stateManager.p2pManager.p2pSigner.connectToChannel(
                             request.channelId
                         );
@@ -542,6 +579,7 @@ export async function startP2pRuntimeHost<
                     case "setChannelId":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
+                        await bindPersistenceForChannel(request.channelId);
                         await runtimeHandle.stateManager.p2pManager.p2pSigner.setChannelId(
                             request.channelId
                         );
@@ -618,6 +656,42 @@ export async function startP2pRuntimeHost<
                     error: serializeError(error)
                 });
             }
+        };
+
+        const bindPersistenceForChannel = async (
+            channelId: string
+        ): Promise<void> => {
+            if (!payload.persistence) return;
+            const normalizedChannelId = ethers.hexlify(channelId).toLowerCase();
+            if (boundChannelId) {
+                if (
+                    ethers.hexlify(boundChannelId).toLowerCase() !==
+                    normalizedChannelId
+                ) {
+                    throw new Error(
+                        "A persistent runtime cannot be rebound to another channel"
+                    );
+                }
+                return;
+            }
+            if (!runtimeHandle) throw new Error("Runtime is not ready");
+            const partition = await openPersistencePartition({
+                identity: {
+                    ...payload.persistence.identity,
+                    channelId: normalizedChannelId
+                },
+                persistence: payload.persistence.options,
+                signerSecret: runtimeSignerSecret,
+                existingPartition: "reject"
+            });
+            if (partition.signerSecret !== runtimeSignerSecret) {
+                await partition.databaseHandle.close();
+                throw new Error(
+                    "Late channel binding cannot replace the runtime signer"
+                );
+            }
+            await runtimeHandle.storage.bind(partition.databaseHandle);
+            boundChannelId = normalizedChannelId;
         };
 
         const onPortMessage = (raw: unknown): void => {

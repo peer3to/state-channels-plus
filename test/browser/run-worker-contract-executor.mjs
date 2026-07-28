@@ -60,6 +60,10 @@ const server = await createServer({
                 projectRoot,
                 "src/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime.ts"
             ),
+            "@platform/persistenceDatabase": path.join(
+                projectRoot,
+                "src/storage/persistence/browser/createPersistenceDatabase.ts"
+            ),
             "@": path.join(projectRoot, "src"),
             "@test": path.join(projectRoot, "test"),
             "@typechain-types": path.join(projectRoot, "typechain-types")
