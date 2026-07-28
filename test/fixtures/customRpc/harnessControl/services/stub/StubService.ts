@@ -160,8 +160,10 @@ export class StubService extends ARpcService<
     readonly heldDisputeCommittedArgs: unknown[][] = [];
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
-    /** Subscribed calldata-posted logs already dropped once by the stub. */
-    readonly droppedCalldataPostedEventKeys = new Set<CalldataPostedEventKey>();
+    /** Subscribed calldata logs the hold stub has already lost once. */
+    readonly heldCalldataPostedEventKeys = new Set<CalldataPostedEventKey>();
+    /** Resolvers waiting for the first held calldata log. */
+    private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Whether the dispute-event hold stub should pass its first new log. */
     passFirstDisputeCommittedEvent = true;
     readonly heldReducedCommitArgs: unknown[][] = [];
@@ -205,6 +207,21 @@ export class StubService extends ARpcService<
             0,
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
+        );
+    }
+
+    public notifyCalldataPostedEventHeld(): void {
+        this.heldCalldataPostedWaiters
+            .splice(0)
+            .forEach((resolve) => resolve());
+    }
+
+    public waitForHeldCalldataPostedEvent(): Promise<boolean> {
+        if (this.heldCalldataPostedEventKeys.size > 0) {
+            return Promise.resolve(true);
+        }
+        return new Promise((resolve) =>
+            this.heldCalldataPostedWaiters.push(() => resolve(true))
         );
     }
 

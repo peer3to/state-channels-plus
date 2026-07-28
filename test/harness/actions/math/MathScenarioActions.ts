@@ -1,5 +1,5 @@
 import { Logger, sleep } from "@/utils";
-import { ForkId } from "@/types/types";
+import { ForkId, Hash } from "@/types/types";
 import { Status, TimeConfig } from "@/types";
 import {
     CreateAndResolveDisputeResult,
@@ -8,7 +8,6 @@ import {
 } from "@test/harness/core/types";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { MathPeerTestHarness } from "test-harness";
-import { waitFor } from "@test/utils/waitFor";
 
 export class MathScenarioActions extends ScenarioActions {
     declare public harness: MathPeerTestHarness;
@@ -450,15 +449,17 @@ export class MathScenarioActions extends ScenarioActions {
             .query.getNextBlockHeight(forkId)
             .request();
         await parentAuthor.p2pInstance.p2pContractInstance.add(1);
-        await waitFor(
-            async () =>
-                (await h
-                    .control(parentAuthor)
-                    .query.getNextBlockHeight(forkId)
-                    .request()) ===
-                parentHeight + 1,
-            20000
-        );
+        await h.syncCoordinator.waitForPeersToSync([parentAuthor], forkId, {
+            minHeight: parentHeight,
+            waitForFinalization: false
+        });
+        const parentBundle = await h
+            .control(parentAuthor)
+            .query.getBlockByHeight(forkId, parentHeight)
+            .request();
+        if (!parentBundle) {
+            throw new Error(`Parent author never stored block ${parentHeight}`);
+        }
 
         const nextWriterAddress = await h
             .control(parentAuthor)
@@ -475,14 +476,10 @@ export class MathScenarioActions extends ScenarioActions {
             throw new Error("No third peer available as observer");
         }
 
-        await waitFor(
-            async () =>
-                (await h
-                    .control(observer)
-                    .query.getBlockByHeight(forkId, parentHeight)
-                    .request()) !== null,
-            20000
-        );
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: observer.index,
+            blockHash: parentBundle.hash as Hash
+        });
         const previous = await h
             .control(observer)
             .query.getBlockByHeight(forkId, parentHeight)
@@ -501,10 +498,7 @@ export class MathScenarioActions extends ScenarioActions {
 
         // the observer loses the subscribed delivery, so it only learns the
         // parent's post time by recovering it during validation
-        await h
-            .control(observer)
-            .stub.stubDropSubscribedCalldataEvents()
-            .request();
+        await h.control(observer).stub.stubHoldCalldataPostedEvents().request();
 
         // leave the parent's p2p window before posting, so its real post time
         // is strictly later than its own timestamp
@@ -518,14 +512,10 @@ export class MathScenarioActions extends ScenarioActions {
                 `Parent posted at ${parentPostTimestamp}, not after its own ${previous.timestamp}`
             );
         }
-        await waitFor(
-            async () =>
-                (await h
-                    .control(observer)
-                    .stub.getDroppedCalldataPostedCount()
-                    .request()) > 0,
-            20000
-        );
+        await h
+            .control(observer)
+            .stub.waitForHeldCalldataPostedEvent()
+            .request();
 
         return { observer, author, previous, forkId, parentPostTimestamp };
     }

@@ -891,12 +891,8 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.heldDisputeCommittedArgs.length;
     }
 
-    /**
-     * Drop subscribed `BlockCalldataPosted` logs before the scheduler records
-     * their key, modelling a missed subscription delivery. A later explicit
-     * recovery query of the same log reaches the real scheduler.
-     */
-    public stubDropSubscribedCalldataEvents(): boolean {
+    /** Hold subscribed calldata logs before the scheduler records their key. */
+    public stubHoldCalldataPostedEvents(): boolean {
         const eventSyncService = this.service.sm.eventSyncService;
         if (!this.service.stubOriginals.has("calldataPostedEvents")) {
             this.service.stubOriginals.set(
@@ -915,10 +911,12 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                 });
             if (parsed?.name === "BlockCalldataPosted") {
                 const eventKey = `${args[0].transactionHash}:${args[0].index}`;
-                if (
-                    !this.service.droppedCalldataPostedEventKeys.has(eventKey)
-                ) {
-                    this.service.droppedCalldataPostedEventKeys.add(eventKey);
+                if (!this.service.heldCalldataPostedEventKeys.has(eventKey)) {
+                    // Lose the subscribed delivery once. A later explicit
+                    // query of the same log must reach the real scheduler so
+                    // this stub accurately models missed subscription data.
+                    this.service.heldCalldataPostedEventKeys.add(eventKey);
+                    this.service.notifyCalldataPostedEventHeld();
                     return;
                 }
             }
@@ -927,19 +925,20 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    public restoreDropSubscribedCalldataEvents(): boolean {
+    public restoreCalldataPostedEvents(): boolean {
         const eventSyncService = this.service.sm.eventSyncService;
         const original = this.service.stubOriginals.get("calldataPostedEvents");
         if (original === undefined) return false;
         eventSyncService.scheduleLog =
             original as typeof eventSyncService.scheduleLog;
         this.service.stubOriginals.delete("calldataPostedEvents");
-        this.service.droppedCalldataPostedEventKeys.clear();
+        this.service.heldCalldataPostedEventKeys.clear();
         return true;
     }
 
-    public getDroppedCalldataPostedCount(): number {
-        return this.service.droppedCalldataPostedEventKeys.size;
+    /** Resolves once a subscribed calldata log has been held. */
+    public waitForHeldCalldataPostedEvent(): Promise<boolean> {
+        return this.service.waitForHeldCalldataPostedEvent();
     }
 
     /** Reserve this participant as a later evidence author. */

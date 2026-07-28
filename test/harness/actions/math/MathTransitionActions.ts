@@ -8,7 +8,6 @@ import {
 } from "@test/harness/actions/TransitionActions";
 import { MathPeerTestHarness } from "test-harness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { waitFor } from "@test/utils/waitFor";
 
 type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
     txFn?: (contract: MathStateMachine) => Promise<any>;
@@ -86,16 +85,13 @@ export class MathTransitionActions extends TransitionActions<
             .stub.stubSuppressMaybePostBlockOnChain()
             .request();
         await h.byzantine.stubBroadcast(leader.index);
+
         await leader.p2pInstance.p2pContractInstance.add(1);
-        await waitFor(
-            async () =>
-                (await h
-                    .control(leader)
-                    .query.getNextBlockHeight(forkId)
-                    .request()) ===
-                startHeight + 1,
-            15000
-        );
+        // the sync barrier settles on the leader's own event stream
+        await h.syncCoordinator.waitForPeersToSync([leader], forkId, {
+            minHeight: startHeight,
+            waitForFinalization: false
+        });
 
         const authored = await h
             .control(leader)

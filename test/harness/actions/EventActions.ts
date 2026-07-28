@@ -131,28 +131,25 @@ export class EventActions<
      */
     async waitPastAgreementTime(
         peerIndex: number,
-        blockTimestamp: number,
-        timeoutMs: number = 30000
+        blockTimestamp: number
     ): Promise<number> {
         const agreementTime = resolveTestTimeConfig(
             this.harness.options.timeConfig
         ).agreementTime;
-        const deadline = Date.now() + timeoutMs;
+        const peer = this.harness.getPeer(peerIndex);
 
-        for (;;) {
-            const now = await this.harness
-                .control(this.harness.getPeer(peerIndex))
-                .query.getClockTimeInSeconds()
-                .request();
-            const gap = Math.abs(now - blockTimestamp);
-            if (gap > agreementTime) return gap;
-            if (Date.now() > deadline) {
-                throw new Error(
-                    `Peer ${peerIndex} clock stayed within agreementTime of ${blockTimestamp} (gap ${gap}) after ${timeoutMs}ms`
-                );
-            }
-            await sleep(250);
+        await this.waitUntilTimestamp(blockTimestamp + agreementTime + 1);
+        const now = await this.harness
+            .control(peer)
+            .query.getClockTimeInSeconds()
+            .request();
+        const gap = Math.abs(now - blockTimestamp);
+        if (gap <= agreementTime) {
+            throw new Error(
+                `Peer ${peerIndex} clock is still within agreementTime of ${blockTimestamp} (gap ${gap})`
+            );
         }
+        return gap;
     }
 
     protocolEventTimeoutMs(

@@ -8,7 +8,6 @@ import {
     MIN_TEST_TIME_CONFIG
 } from "@test/harness";
 import * as factory from "@test/factory";
-import { waitFor } from "@test/utils/waitFor";
 import type { Address } from "@/types/types";
 import { Status } from "@/types";
 
@@ -805,11 +804,11 @@ describe("Unit: ValidationService", function () {
             const { leader, observer, authored, forkId } =
                 await h.transition.authorNextBlockOffWireWait();
 
-            // the observer loses the subscribed posted-calldata delivery, so it
-            // holds no timestamp until validation queries the chain itself
+            // the observer loses the subscribed calldata delivery, so it holds
+            // no timestamp until validation queries the chain itself
             await h
                 .control(observer)
-                .stub.stubDropSubscribedCalldataEvents()
+                .stub.stubHoldCalldataPostedEvents()
                 .request();
 
             await h
@@ -817,14 +816,10 @@ describe("Unit: ValidationService", function () {
                 .stub.postBlockCalldataOnChain(authored.encodedSignedBlock)
                 .request();
 
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(observer)
-                        .stub.getDroppedCalldataPostedCount()
-                        .request()) > 0,
-                30000
-            );
+            await h
+                .control(observer)
+                .stub.waitForHeldCalldataPostedEvent()
+                .request();
 
             const before = await h
                 .control(observer)
