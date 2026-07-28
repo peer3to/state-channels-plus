@@ -18,6 +18,7 @@ import { id } from "ethers";
 import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
+    DisputeSubmissionFailureSpec,
     EventSyncFailureProbe,
     PausedConstructDisputeState,
     PausedConstructDisputeStatus,
@@ -789,10 +790,14 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
     /**
      * Record `dispute()`'s upload without sending it. `holdSubmissions` parks
-     * each recorded send until `releaseDisputeSubmissions`.
+     * each recorded send until `releaseDisputeSubmissions`; `failure` makes the
+     * send (or its `wait()`) fail with a real custom-error revert.
      */
-    public stubRecordDisputeSubmissions(holdSubmissions: boolean): boolean {
-        this.service.installDisputeSubmissionRecorder(holdSubmissions);
+    public stubRecordDisputeSubmissions(
+        holdSubmissions: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): boolean {
+        this.service.installDisputeSubmissionRecorder(holdSubmissions, failure);
         return true;
     }
 

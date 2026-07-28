@@ -12,6 +12,7 @@ import type {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, DetachedPromises, tryDecodeCustomError, Type } from "@/utils";
+import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
 import { Block } from "@/models";
@@ -85,6 +86,15 @@ export type RecordedDisputeSubmission = {
     gasLimit: string | null;
     /** Set once `dispute()` awaited the returned transaction. */
     waited: boolean;
+};
+
+export type DisputeSubmissionFailureSpec = {
+    /** Solidity custom error to revert with (its selector is the revert data). */
+    customError?: RaceConditionErrorName;
+    /** Failure message when the failure is not a decodable custom error. */
+    message?: string;
+    /** Whether the failure surfaces from the send or from `tx.wait()`. */
+    at: "send" | "wait";
 };
 
 export type DisputeSubmissionOriginals = {
@@ -204,6 +214,8 @@ export class StubService extends ARpcService<
     readonly recordedDisputeSubmissions: RecordedDisputeSubmission[] = [];
     /** Gate the dispute-submission probe parks uploads on, when installed. */
     disputeSubmissionHold?: DisputeSubmissionHold;
+    /** Failure the dispute-submission probe injects, when installed. */
+    disputeSubmissionFailure?: DisputeSubmissionFailureSpec;
     /** Applies seen by the dispute-fraud-proof apply probe (newest last). */
     readonly recordedFraudProofApplies: RecordedFraudProofApply[] = [];
     /** Gate the apply probe parks sends on, when installed. */
@@ -456,9 +468,14 @@ export class StubService extends ARpcService<
      * session, so the probe records the send and hands `dispute()` a stand-in
      * transaction; the real uploads keep their coverage on the e2e paths.
      * `holdSubmissions` parks every recorded send until released, so a second
-     * caller can be observed queueing behind the dispute mutex.
+     * caller can be observed queueing behind the dispute mutex. `failure` makes
+     * the send (or its `wait()`) fail - a custom error reverts with the real
+     * 4-byte selector, exactly what the SDK's decoder reads off a real revert.
      */
-    public installDisputeSubmissionRecorder(holdSubmissions: boolean): void {
+    public installDisputeSubmissionRecorder(
+        holdSubmissions: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): void {
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("disputeSubmissions")) {
             this.stubOriginals.set("disputeSubmissions", {
@@ -475,6 +492,7 @@ export class StubService extends ARpcService<
         this.disputeSubmissionHold = holdSubmissions
             ? { gate, release, held: 0 }
             : undefined;
+        this.disputeSubmissionFailure = failure;
 
         const record = async (
             submission: Omit<RecordedDisputeSubmission, "waited">
@@ -489,8 +507,12 @@ export class StubService extends ARpcService<
                 hold.held += 1;
                 await hold.gate;
             }
+            if (failure?.at === "send") throw this.submissionFailure(failure);
             return {
                 wait: async () => {
+                    if (failure?.at === "wait") {
+                        throw this.submissionFailure(failure);
+                    }
                     entry.waited = true;
                     return null;
                 }
@@ -595,6 +617,13 @@ export class StubService extends ARpcService<
         };
     }
 
+    private submissionFailure(failure: DisputeSubmissionFailureSpec): unknown {
+        if (failure.customError) {
+            return { data: id(`${failure.customError}()`).slice(0, 10) };
+        }
+        return new Error(failure.message ?? "dispute upload failed");
+    }
+
     private overrideGasLimit(overrides: unknown): string | null {
         const gasLimit = (overrides as { gasLimit?: bigint } | undefined)
             ?.gasLimit;
@@ -604,6 +633,7 @@ export class StubService extends ARpcService<
     public restoreDisputeSubmissions(): boolean {
         this.disputeSubmissionHold?.release();
         this.disputeSubmissionHold = undefined;
+        this.disputeSubmissionFailure = undefined;
         const originals = this.stubOriginals.get("disputeSubmissions") as
             | DisputeSubmissionOriginals
             | undefined;

@@ -445,6 +445,47 @@ describe("Unit: DisputeManager", function () {
         });
     });
 
+    // how dispute() reacts to a failing upload. the failures are injected at the
+    // contract boundary as the real 4-byte custom-error revert data, so the
+    // SDK's own decoder + handler table decide the outcome.
+    describe("dispute → upload failure policy", function () {
+        it("ErrorCantParticipateInDispute → dispute() resolves and the fork stays undisputed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            await h.rpcStub.recordDisputeSubmissions(peer.index, {
+                failWith: {
+                    customError: "ErrorCantParticipateInDispute",
+                    at: "send"
+                }
+            });
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // the handler consumes the error -> no rejection, marker cleared
+            expect(r.rejected).to.equal("");
+            expect(r.disputed).to.equal(false);
+        });
+    });
+
     describe("dispute", function () {
         it("already-disputed fork → dispute() short-circuits before constructDispute", async function () {
             const h = TestSession.getHarness();

@@ -3,6 +3,7 @@ import type { ForkId } from "@/types/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
+    DisputeSubmissionFailureSpec,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     ReductionSimulationErrorName
@@ -274,7 +275,10 @@ export class RpcStubActions<
      */
     async recordDisputeSubmissions(
         peerIndex: number,
-        options: { hold?: boolean } = {}
+        options: {
+            hold?: boolean;
+            failWith?: DisputeSubmissionFailureSpec;
+        } = {}
     ): Promise<{
         submissions: () => Promise<RecordedDisputeSubmission[]>;
         /** Sends parked at the hold so far. */
@@ -286,7 +290,10 @@ export class RpcStubActions<
         const ctl = () =>
             this.harness.control(this.harness.getPeer(peerIndex)).stub;
         await ctl()
-            .stubRecordDisputeSubmissions(options.hold ?? false)
+            .stubRecordDisputeSubmissions(
+                options.hold ?? false,
+                options.failWith
+            )
             .request();
         const recorded = () => ctl().getRecordedDisputeSubmissions().request();
         const heldCount = async () => (await recorded()).held;
