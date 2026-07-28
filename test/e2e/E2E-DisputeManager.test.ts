@@ -30,7 +30,7 @@ describe("E2E: Dispute Manager", function () {
             // the dispute bundled the offender's fraud proof into its multicall,
             // so applying it slashed them on-chain
             expect(await h.query.onChainSlashedParticipants()).to.include(
-                nextPeer.address.toLowerCase()
+                nextPeer.address
             );
         });
 
@@ -56,7 +56,7 @@ describe("E2E: Dispute Manager", function () {
             });
 
             expect(await h.query.onChainSlashedParticipants()).to.include(
-                offender.address.toLowerCase()
+                offender.address
             );
         });
 

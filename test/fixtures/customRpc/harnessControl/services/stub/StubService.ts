@@ -48,6 +48,7 @@ export type StubKey =
     | "pausedReduction"
     | "pausedReductionKillPeriod"
     | "constructDisputeStateProof"
+    | "constructDisputeEntry"
     | "disputeSubmissions"
     | "disputeFraudProofApplies"
     | "disputeKill";
@@ -129,6 +130,8 @@ export type PausedConstructDisputeStatus = {
 
 export type PausedConstructDisputeState = PausedConstructDisputeStatus & {
     targetForkId: ForkId;
+    /** True only while a `constructDispute` for the target fork is running. */
+    inside: boolean;
     gate: Promise<void>;
     release: () => void;
 };

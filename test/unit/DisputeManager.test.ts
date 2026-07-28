@@ -87,31 +87,24 @@ describe("Unit: DisputeManager", function () {
                         signedBlockCount:
                             dispute.input.stateProof.signedBlocks.length,
                         fraudProofCount: fraudProofsToApply.length,
-                        latestStateSnapshotHash: String(
-                            dispute.input.latestStateSnapshotHash
-                        ),
-                        genesisHash: String(genesis.hash),
-                        timeoutParticipant: String(
-                            dispute.input.timeout.participant
-                        ),
+                        latestStateSnapshotHash:
+                            dispute.input.latestStateSnapshotHash,
+                        genesisHash: genesis.hash,
+                        timeoutParticipant: dispute.input.timeout.participant,
                         timeoutBlockHeight: Number(
                             dispute.input.timeout.blockHeight
                         ),
                         selfRemoval: dispute.input.selfRemoval,
                         onChainSlashCount: dispute.input.onChainSlashes.length,
-                        inboundHash: String(
-                            dispute.input.latestInboundMessageBlockHash
-                        ),
+                        inboundHash:
+                            dispute.input.latestInboundMessageBlockHash,
                         inboundHeight: Number(
                             dispute.input.lastInboundMessageBlockHeight
                         ),
-                        storedInboundHash: String(
-                            sm.storage.inboundMessages.getLatestBlockHash() ??
-                                ""
-                        ),
+                        storedInboundHash:
+                            sm.storage.inboundMessages.getLatestBlockHash(),
                         storedInboundHeight: Number(
-                            sm.storage.inboundMessages.getLatestBlockHeight() ??
-                                0
+                            sm.storage.inboundMessages.getLatestBlockHeight()
                         )
                     };
                 },
@@ -441,10 +434,8 @@ describe("Unit: DisputeManager", function () {
                 submission.encodedDispute,
                 Type.Dispute
             );
-            expect(String(dispute.input.forkId)).to.equal(forkId);
-            expect(String(dispute.input.disputer).toLowerCase()).to.equal(
-                peer.address.toLowerCase()
-            );
+            expect(dispute.input.forkId).to.equal(forkId);
+            expect(dispute.input.disputer).to.equal(peer.address);
             expect(dispute.postedAuditingData).to.equal(false);
             expect(disputed).to.equal(true);
             expect(
@@ -481,7 +472,7 @@ describe("Unit: DisputeManager", function () {
             expect(dispute.postedAuditingData).to.equal(true);
             // the auditing data uploaded is the one the dispute commits to
             expect(hash(submission.encodedAuditingData!)).to.equal(
-                String(dispute.input.disputeAuditingDataHash)
+                dispute.input.disputeAuditingDataHash
             );
             expect(disputed).to.equal(true);
             expect(
@@ -515,9 +506,9 @@ describe("Unit: DisputeManager", function () {
                 "applyFraudProofs",
                 "uploadDispute"
             ]);
-            expect(
-                submission.fraudProofParticipants.map((p) => p.toLowerCase())
-            ).to.deep.equal([offender.address.toLowerCase()]);
+            expect(submission.fraudProofParticipants).to.deep.equal([
+                offender.address
+            ]);
             expect(submission.encodedAuditingData).to.equal(null);
             expect(submission.waited).to.equal(true);
             const dispute = Codec.decode(
@@ -557,9 +548,9 @@ describe("Unit: DisputeManager", function () {
                 "applyFraudProofs",
                 "uploadDisputeWithCalldata"
             ]);
-            expect(
-                submission.fraudProofParticipants.map((p) => p.toLowerCase())
-            ).to.deep.equal([offender.address.toLowerCase()]);
+            expect(submission.fraudProofParticipants).to.deep.equal([
+                offender.address
+            ]);
             expect(submission.waited).to.equal(true);
             const dispute = Codec.decode(
                 submission.encodedDispute,
@@ -567,7 +558,7 @@ describe("Unit: DisputeManager", function () {
             );
             expect(dispute.postedAuditingData).to.equal(true);
             expect(hash(submission.encodedAuditingData!)).to.equal(
-                String(dispute.input.disputeAuditingDataHash)
+                dispute.input.disputeAuditingDataHash
             );
             expect(disputed).to.equal(true);
             expect(
@@ -1082,7 +1073,7 @@ describe("Unit: DisputeManager", function () {
                 // the apply never landed -> the spammer is still unslashed
                 expect(
                     await h.query.onChainSlashedParticipants()
-                ).to.not.include(spammer.address.toLowerCase());
+                ).to.not.include(spammer.address);
             });
         }
 
@@ -1102,7 +1093,7 @@ describe("Unit: DisputeManager", function () {
                     await sm.disputeManager.killDispute(proofs[0].dispute);
                     return {
                         proofCount: proofs.length,
-                        participant: String(proofs[0].participant).toLowerCase()
+                        participant: proofs[0].participant
                     };
                 },
                 {},
@@ -1112,13 +1103,11 @@ describe("Unit: DisputeManager", function () {
             expect(r.proofCount).to.equal(1);
             const applies = await probe.applies();
             expect(applies.length).to.equal(1);
-            expect(
-                applies[0].participants.map((p) => p.toLowerCase())
-            ).to.deep.equal([r.participant]);
+            expect(applies[0].participants).to.deep.equal([r.participant]);
             expect(applies[0].error).to.equal(null);
             expect(applies[0].waited).to.equal(true);
             expect(await h.query.onChainSlashedParticipants()).to.include(
-                spammer.address.toLowerCase()
+                spammer.address
             );
         });
 
@@ -1167,16 +1156,17 @@ describe("Unit: DisputeManager", function () {
             expect(applies.map((a) => a.error)).to.deep.equal([null, null]);
             const after = await h.query.onChainSlashedParticipants();
             expect(after.length).to.equal(before.length + 1);
-            expect(after).to.include(spammer.address.toLowerCase());
+            expect(after).to.include(spammer.address);
         });
     });
 
     describe("constructDispute → concurrency", function () {
-        it("a fraud proof landing mid-construction → the same call bundles it and claims exactly that slash", async function () {
+        it("fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2); // blocks 0..1, next = 2
             const observer = h.getPeer(0);
             const forkId = h.activeForkId!;
+            // crafted only - nothing is stored until it is validated below
             const { offender, encodedBlock } =
                 await h.byzantine.craftInvalidTransitionBlock(observer.index);
 
@@ -1192,19 +1182,18 @@ describe("Unit: DisputeManager", function () {
                     const { dispute, fraudProofsToApply } =
                         await sm.disputeManager.constructDispute(args.forkId);
                     return {
-                        slashes: dispute.input.onChainSlashes.map((a) =>
-                            String(a).toLowerCase()
-                        ),
+                        onChainSlashes: dispute.input.onChainSlashes,
                         fraudProofCount: fraudProofsToApply.length
                     };
                 },
                 { forkId },
                 { timeoutMs: 30000 }
             );
+            // the park is scoped to constructDispute, so this pins that call
             await hold.waitUntilParked();
             expect(await hold.parkedCount()).to.equal(1);
 
-            // land the proof inside the window, then let the construction finish
+            // store the proof inside the window, then let the construction finish
             const validation = await h
                 .control(observer)
                 .stub.runBlockValidation(encodedBlock)
@@ -1214,10 +1203,10 @@ describe("Unit: DisputeManager", function () {
             await hold.release();
             const r = await constructing;
 
-            // nothing is slashed on-chain, so the proof that landed mid-flight
-            // must account for exactly one claimed slash - no more, no less
+            // nothing is slashed on-chain, so the proof stored mid-flight must
+            // account for exactly one claimed slash - no more, no less
             expect(r.fraudProofCount).to.equal(1);
-            expect(r.slashes).to.deep.equal([offender.address.toLowerCase()]);
+            expect(r.onChainSlashes).to.deep.equal([offender.address]);
         });
     });
 });

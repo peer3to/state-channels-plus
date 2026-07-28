@@ -905,22 +905,33 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
-     * Park every `agreementManager.getStateProof` for `forkId` until released.
-     * That call is the first async boundary inside `constructDispute`, so a
-     * construction parked there has already started but has not yet read the
-     * stored fraud proofs - the window a test needs to land one mid-flight.
+     * Park `constructDispute` for `forkId` at its `getStateProof` await - the
+     * first async boundary inside it, so a construction parked there has
+     * started but has not yet read the stored fraud proofs. The park is scoped
+     * to a running `constructDispute`, so an unrelated `getStateProof` caller
+     * can never take it instead and leave the test's race unstaged.
      */
     public stubPauseConstructDisputeAtStateProof(forkId: ForkId): boolean {
         const agreementManager = this.service.sm.agreementManager;
+        const disputeManager = this.service.sm.disputeManager;
         if (!this.service.stubOriginals.has("constructDisputeStateProof")) {
             this.service.stubOriginals.set(
                 "constructDisputeStateProof",
                 agreementManager.getStateProof.bind(agreementManager)
             );
         }
-        const original = this.service.stubOriginals.get(
+        if (!this.service.stubOriginals.has("constructDisputeEntry")) {
+            this.service.stubOriginals.set(
+                "constructDisputeEntry",
+                disputeManager.constructDispute.bind(disputeManager)
+            );
+        }
+        const originalStateProof = this.service.stubOriginals.get(
             "constructDisputeStateProof"
         ) as typeof agreementManager.getStateProof;
+        const originalConstruct = this.service.stubOriginals.get(
+            "constructDisputeEntry"
+        ) as typeof disputeManager.constructDispute;
 
         let release!: () => void;
         const gate = new Promise<void>((resolve) => {
@@ -930,20 +941,35 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             targetForkId: forkId,
             entered: 0,
             released: false,
+            inside: false,
             gate,
             release
         };
         this.service.pausedConstructDispute = state;
 
+        disputeManager.constructDispute = ((requestedForkId: ForkId) => {
+            if (requestedForkId !== state.targetForkId) {
+                return originalConstruct(requestedForkId);
+            }
+            state.inside = true;
+            return originalConstruct(requestedForkId).finally(() => {
+                state.inside = false;
+            });
+        }) as typeof disputeManager.constructDispute;
+
         agreementManager.getStateProof = (async (
             requestedForkId: ForkId,
             blockHeight: number
         ) => {
-            if (requestedForkId === state.targetForkId && !state.released) {
+            if (
+                state.inside &&
+                requestedForkId === state.targetForkId &&
+                !state.released
+            ) {
                 state.entered += 1;
                 await state.gate;
             }
-            return original(requestedForkId, blockHeight);
+            return originalStateProof(requestedForkId, blockHeight);
         }) as typeof agreementManager.getStateProof;
         return true;
     }
@@ -966,14 +992,24 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public restorePausedConstructDispute(): boolean {
         this.releasePausedConstructDispute();
-        const original = this.service.stubOriginals.get(
+        const originalStateProof = this.service.stubOriginals.get(
             "constructDisputeStateProof"
         );
-        if (original === undefined) return false;
+        if (originalStateProof === undefined) return false;
         const agreementManager = this.service.sm.agreementManager;
         agreementManager.getStateProof =
-            original as typeof agreementManager.getStateProof;
+            originalStateProof as typeof agreementManager.getStateProof;
         this.service.stubOriginals.delete("constructDisputeStateProof");
+
+        const originalConstruct = this.service.stubOriginals.get(
+            "constructDisputeEntry"
+        );
+        if (originalConstruct !== undefined) {
+            const disputeManager = this.service.sm.disputeManager;
+            disputeManager.constructDispute =
+                originalConstruct as typeof disputeManager.constructDispute;
+            this.service.stubOriginals.delete("constructDisputeEntry");
+        }
         this.service.pausedConstructDispute = undefined;
         return true;
     }

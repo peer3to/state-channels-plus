@@ -46,7 +46,7 @@ export class StateQueryActions<
             .request();
     }
 
-    /** Participants slashed on-chain, lowercased, as seen by `peerIndex`. */
+    /** Participants slashed on-chain, as seen by `peerIndex`. */
     public async onChainSlashedParticipants(
         peerIndex: number = 0
     ): Promise<string[]> {
