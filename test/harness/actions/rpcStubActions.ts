@@ -318,7 +318,10 @@ export class RpcStubActions<
      */
     async recordDisputeFraudProofApplies(
         peerIndex: number,
-        options: { hold?: boolean } = {}
+        options: {
+            hold?: boolean;
+            failWith?: DisputeSubmissionFailureSpec;
+        } = {}
     ): Promise<{
         applies: () => Promise<RecordedFraudProofApply[]>;
         /** Sends parked at the hold so far. */
@@ -330,7 +333,10 @@ export class RpcStubActions<
         const ctl = () =>
             this.harness.control(this.harness.getPeer(peerIndex)).stub;
         await ctl()
-            .stubRecordDisputeFraudProofApplies(options.hold ?? false)
+            .stubRecordDisputeFraudProofApplies(
+                options.hold ?? false,
+                options.failWith
+            )
             .request();
         const recorded = () =>
             ctl().getRecordedDisputeFraudProofApplies().request();

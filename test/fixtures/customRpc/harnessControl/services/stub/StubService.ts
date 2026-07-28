@@ -222,6 +222,8 @@ export class StubService extends ARpcService<
     readonly recordedFraudProofApplies: RecordedFraudProofApply[] = [];
     /** Gate the apply probe parks sends on, when installed. */
     fraudProofApplyHold?: DisputeSubmissionHold;
+    /** Failure the apply probe injects, when installed. */
+    fraudProofApplyFailure?: DisputeSubmissionFailureSpec;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
 
@@ -662,9 +664,13 @@ export class StubService extends ARpcService<
     /**
      * Record every `applyDisputeFraudProofs` send and how it settled, still
      * running the real transaction. `holdApplies` parks each send until
-     * released, so several kills can be staged inside one live kill window.
+     * released, so several kills can be staged inside one live kill window;
+     * `failure` reverts the send (or its `wait()`) instead of sending it.
      */
-    public installDisputeFraudProofApplyRecorder(holdApplies: boolean): void {
+    public installDisputeFraudProofApplyRecorder(
+        holdApplies: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): void {
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("disputeFraudProofApplies")) {
             this.stubOriginals.set(
@@ -683,6 +689,7 @@ export class StubService extends ARpcService<
         this.fraudProofApplyHold = holdApplies
             ? { gate, release, held: 0 }
             : undefined;
+        this.fraudProofApplyFailure = failure;
 
         contract.applyDisputeFraudProofs = (async (
             proofs: DisputeFraudProofStruct[]
@@ -704,12 +711,25 @@ export class StubService extends ARpcService<
                     error instanceof Error ? error.message : String(error);
                 entry.customError = tryDecodeCustomError(error)?.name ?? null;
             };
+            if (failure?.at === "send") {
+                const error = this.submissionFailure(failure);
+                fail(error);
+                throw error;
+            }
             let tx;
             try {
                 tx = await original(proofs);
             } catch (error) {
                 fail(error);
                 throw error;
+            }
+            if (failure?.at === "wait") {
+                tx.wait = (async () => {
+                    const error = this.submissionFailure(failure);
+                    fail(error);
+                    throw error;
+                }) as typeof tx.wait;
+                return tx;
             }
             const originalWait = tx.wait.bind(tx);
             tx.wait = (async (...args: Parameters<typeof originalWait>) => {
@@ -729,6 +749,7 @@ export class StubService extends ARpcService<
     public restoreDisputeFraudProofApplies(): boolean {
         this.fraudProofApplyHold?.release();
         this.fraudProofApplyHold = undefined;
+        this.fraudProofApplyFailure = undefined;
         const original = this.stubOriginals.get("disputeFraudProofApplies");
         if (original === undefined) return false;
         const contract = this.sm.stateChannelManagerContract;

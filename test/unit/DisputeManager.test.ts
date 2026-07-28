@@ -949,29 +949,13 @@ describe("Unit: DisputeManager", function () {
 
         it("expired kill window → killDispute returns before submitting anything", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 6 }
-            });
-            const killer = h.getPeer(0);
-            const forkId = h.activeForkId!;
-
-            const kills = await Promise.all([
-                h.rpcStub.suppressDisputeKill(0),
-                h.rpcStub.suppressDisputeKill(1),
-                h.rpcStub.suppressDisputeKill(2)
-            ]);
+            const { killer, forkId } =
+                await h.scenario.stageUnkilledSpamDispute({
+                    timeConfig: { evidenceTime: 6 }
+                });
             const probe = await h.rpcStub.recordDisputeFraudProofApplies(
                 killer.index
             );
-
-            await h.tamper.postTamperedDispute(1, (dispute) => {
-                dispute.input.timeout.participant =
-                    "0x0000000000000000000000000000000000000000";
-                dispute.input.onChainSlashes = [];
-                dispute.input.selfRemoval = false;
-            });
-            await kills[0].waitUntilSkipped();
-            await kills[0].restore();
 
             // let the kill period lapse while the stored proof sits unused
             const { killPeriodEnd } = await h.query.killPeriod(forkId);
@@ -1001,33 +985,58 @@ describe("Unit: DisputeManager", function () {
             expect(await probe.applies()).to.deep.equal([]);
         });
 
+        // the races killDispute recognises. each is injected at the contract
+        // boundary as the real 4-byte custom-error revert data, so the SDK's own
+        // decoder + handler table decide the outcome.
+        for (const customError of [
+            "RaceConditionDisputeKillPeriodExpired",
+            "RaceConditionOnChainSlashes",
+            "RaceConditionGenesisTimestampNotAvailable",
+            "RaceConditionUnexpectedBlockCalldataPosted"
+        ] as const) {
+            it(`${customError} on the apply → consumed, no rejection, no detached error`, async function () {
+                const h = TestSession.getHarness();
+                const { killer } = await h.scenario.stageUnkilledSpamDispute();
+                const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                    killer.index,
+                    { failWith: { customError, at: "send" } }
+                );
+
+                const r = await h.execOnHost(
+                    killer,
+                    async (sm) => {
+                        const proofs =
+                            sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                        let threw = "";
+                        try {
+                            await sm.disputeManager.killDispute(
+                                proofs[0].dispute
+                            );
+                        } catch (e) {
+                            threw = e instanceof Error ? e.message : String(e);
+                        }
+                        return { threw };
+                    },
+                    {},
+                    { timeoutMs: 30000 }
+                );
+
+                expect(r.threw).to.equal("");
+                const [apply] = await probe.applies();
+                expect(apply.customError).to.equal(customError);
+                expect(
+                    (await h.quiesceHosts()).map((e) => e.message)
+                ).to.deep.equal([]);
+            });
+        }
+
         it("live kill window → the stored proof is submitted and its transaction awaited", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 12 }
-            });
-            const killer = h.getPeer(0);
-
-            // hold every peer's kill so the proof is stored but nothing is
-            // submitted yet, then drive the one kill under test by hand
-            const kills = await Promise.all([
-                h.rpcStub.suppressDisputeKill(0),
-                h.rpcStub.suppressDisputeKill(1),
-                h.rpcStub.suppressDisputeKill(2)
-            ]);
+            const { killer, spammer } =
+                await h.scenario.stageUnkilledSpamDispute();
             const probe = await h.rpcStub.recordDisputeFraudProofApplies(
                 killer.index
             );
-
-            await h.tamper.postTamperedDispute(1, (dispute) => {
-                dispute.input.timeout.participant =
-                    "0x0000000000000000000000000000000000000000";
-                dispute.input.onChainSlashes = [];
-                dispute.input.selfRemoval = false;
-            });
-            // the skipped kill is the moment peer 0 stored its fraud proof
-            await kills[0].waitUntilSkipped();
-            await kills[0].restore();
 
             const r = await h.execOnHost(
                 killer,
@@ -1053,57 +1062,42 @@ describe("Unit: DisputeManager", function () {
             expect(applies[0].error).to.equal(null);
             expect(applies[0].waited).to.equal(true);
             expect(await h.query.onChainSlashedParticipants()).to.include(
-                h.getPeer(1).address.toLowerCase()
+                spammer.address.toLowerCase()
             );
         });
 
         it("two killDispute calls inside one live kill window → one slash, the loser lands as a no-op", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 12 }
-            });
-            const killer = h.getPeer(0);
-
-            // every other peer audits the spam dispute too (the spammer
-            // included) - keep them out so the window is decided purely by peer
-            // 0's two calls, whose applies park before they reach the chain
-            await Promise.all([
-                h.rpcStub.suppressDisputeKill(1),
-                h.rpcStub.suppressDisputeKill(2)
-            ]);
+            const { killer, spammer } =
+                await h.scenario.stageUnkilledSpamDispute();
+            // both kills park before they reach the chain, so the window stays
+            // live for both of them
             const probe = await h.rpcStub.recordDisputeFraudProofApplies(
                 killer.index,
                 { hold: true }
             );
 
-            // a dispute that's internally valid but has no enforcement basis ->
-            // peer 0 audit-fails, stores a fraud proof and kills it
-            await h.tamper.postTamperedDispute(1, (dispute) => {
-                dispute.input.timeout.participant =
-                    "0x0000000000000000000000000000000000000000";
-                dispute.input.onChainSlashes = [];
-                dispute.input.selfRemoval = false;
-            });
+            const kill = () =>
+                h.execOnHost(
+                    killer,
+                    async (sm) => {
+                        const proofs =
+                            sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                        if (proofs.length === 0) return { hadProof: false };
+                        await sm.disputeManager.killDispute(proofs[0].dispute);
+                        return { hadProof: true };
+                    },
+                    {},
+                    { timeoutMs: 30000 }
+                );
+            const first = kill();
             await probe.waitUntilHeld(1);
-
-            // a second kill for the same dispute: the window is still live (the
-            // first apply hasn't landed), so it clears the preflight too
-            const second = h.execOnHost(
-                killer,
-                async (sm) => {
-                    const proofs =
-                        sm.storage.disputeFraudProofs.getDisputeFraudProofs();
-                    if (proofs.length === 0) return { hadProof: false };
-                    await sm.disputeManager.killDispute(proofs[0].dispute);
-                    return { hadProof: true };
-                },
-                {},
-                { timeoutMs: 30000 }
-            );
+            const second = kill();
             await probe.waitUntilHeld(2);
 
             const before = await h.query.onChainSlashedParticipants();
             await probe.release();
+            expect(await first).to.deep.equal({ hadProof: true });
             expect(await second).to.deep.equal({ hadProof: true });
             expect(
                 (await h.quiesceHosts()).map((e) => e.message)
@@ -1117,7 +1111,7 @@ describe("Unit: DisputeManager", function () {
             expect(applies.map((a) => a.error)).to.deep.equal([null, null]);
             const after = await h.query.onChainSlashedParticipants();
             expect(after.length).to.equal(before.length + 1);
-            expect(after).to.include(h.getPeer(1).address.toLowerCase());
+            expect(after).to.include(spammer.address.toLowerCase());
         });
 
         it("a killed spam dispute re-killed → no second slash, no throw", async function () {

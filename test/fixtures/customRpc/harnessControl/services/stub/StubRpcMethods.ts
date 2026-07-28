@@ -830,8 +830,14 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      * transaction still runs). `holdApplies` parks each send until
      * `releaseDisputeFraudProofApplies`.
      */
-    public stubRecordDisputeFraudProofApplies(holdApplies: boolean): boolean {
-        this.service.installDisputeFraudProofApplyRecorder(holdApplies);
+    public stubRecordDisputeFraudProofApplies(
+        holdApplies: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): boolean {
+        this.service.installDisputeFraudProofApplyRecorder(
+            holdApplies,
+            failure
+        );
         return true;
     }
 
