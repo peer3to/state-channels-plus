@@ -169,8 +169,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DUPLICATE;
     }
     public async blockAuthorIsNotParticipant(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        const block = entry.block;
         const previousStateSnapshot = this.storage.getPreviousStateSnapshot(
             block.coordinates
         );
@@ -254,7 +255,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
-        _block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return this.handleInvalidBlockStructure();
     }
@@ -273,7 +274,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         );
     }
     public async blockIsNotLinkedAndIsNotFirstBlock(
-        _block: Block
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return this.handleInvalidBlockStructure();
     }

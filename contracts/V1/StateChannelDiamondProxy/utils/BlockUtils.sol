@@ -2,6 +2,7 @@ pragma solidity ^0.8.8;
 
 import "../../types/DisputeTypes.sol";
 import "../Errors.sol";
+import "./GeneralUtils.sol";
 
 function _getBlockHeight(Block memory _block) pure returns (uint256) {
     return _block.transaction.header.transactionCnt;
@@ -33,4 +34,23 @@ function _areBlocksSameChannel(Block memory _block1, Block memory _block2) pure 
 
 function _doesBlockCommitToSnapshot(Block memory _block, StateSnapshot memory snapshot) pure returns (bool) {
     return _block.stateSnapshotHash == keccak256(abi.encode(snapshot));
+}
+
+function _isBlockAuthorParticipant(
+    Block memory _block,
+    StateSnapshot memory previousSnapshot,
+    StateSnapshot memory resultingSnapshot
+) pure returns (bool) {
+    address author = _getBlockAuthor(_block);
+    if (_isAddressInArray(previousSnapshot.snapshotData.participants, author)) {
+        return true;
+    }
+
+    if (
+        resultingSnapshot.blockHeight == _getBlockHeight(_block) && resultingSnapshot.forkId == _getBlockFork(_block)
+            && _isAddressInArray(resultingSnapshot.snapshotData.participants, author)
+    ) {
+        return true;
+    }
+    return false;
 }

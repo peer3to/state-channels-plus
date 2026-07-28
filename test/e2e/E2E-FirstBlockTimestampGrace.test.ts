@@ -197,8 +197,7 @@ describe("E2E: First block timestamp grace", function () {
         await h.assert.dispute.didNotInitiate({ peers: [0, 1, 2] });
 
         await h.assert.dispute.initiatedWait({
-            peersIndices: [1, 2],
-            timeoutMs: 15000
+            peersIndices: [1, 2]
         });
         await h.assert.dispute.didNotInitiate({ peers: [0] });
     });

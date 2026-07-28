@@ -255,6 +255,9 @@ export class QueryRpcMethods extends ARpcMethods {
             ? this.service.sm.agreementManager.didEveryoneSignBlock(block)
             : null;
     }
+    public getParticipantChangeHeights(forkId: ForkId): BlockHeight[] {
+        return this.service.getParticipantChangeHeights(forkId);
+    }
 
     /** Whether this peer has blacklisted `evmAddress`. */
     public isBlacklisted(evmAddress: Address): boolean {

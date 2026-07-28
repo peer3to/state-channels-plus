@@ -24,6 +24,26 @@ export default class StateSnapshot {
         return StateSnapshot.from(snapshot);
     }
 
+    static empty(): StateSnapshot {
+        const emptyBalance = { amount: 0n, data: "0x" };
+        return StateSnapshot.from({
+            forkId: ethers.ZeroHash,
+            blockHeight: 0n,
+            timestamp: 0n,
+            snapshotData: {
+                originForkId: ethers.ZeroHash,
+                stateMachineStateHash: ethers.ZeroHash,
+                participants: [],
+                latestInboundMessageBlockHash: ethers.ZeroHash,
+                latestInboundMessageBlockHeight: 0n,
+                latestOutboundMessageBlockHash: ethers.ZeroHash,
+                latestOutboundMessageBlockHeight: 0n,
+                totalDeposits: emptyBalance,
+                totalWithdrawals: emptyBalance
+            }
+        });
+    }
+
     toStruct(): StateSnapshotStruct {
         return this.snapshot;
     }

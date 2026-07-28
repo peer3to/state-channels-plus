@@ -54,7 +54,7 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockAuthorIsNotParticipant(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract doubleSignDetected(
@@ -82,7 +82,7 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract conflictingButNotLinkedBlockDetected(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract blockForkIsDisputed(
@@ -94,7 +94,7 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     public abstract blockIsNotLinkedAndIsNotFirstBlock(
-        block: Block
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract objectiveInvalidTimestampDetected(

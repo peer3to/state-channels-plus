@@ -1137,5 +1137,473 @@ describe("E2E: Spectate Service", function () {
                 );
             });
         }
+        it("pins the sync payload to the exact leave-block height while the responder is ahead", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 1, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 10,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const forkId = h.activeForkId!;
+            const participantIndices = [0, 1, 2, 3];
+
+            // the requester must be genuinely behind the leave, so cut it
+            // before the leave block is produced
+            const requester = await h.join.addSpectatorWait();
+            await h.network.disconnectPeer(requester.index);
+            const requesterHeightBefore =
+                (await h
+                    .control(requester)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()) ?? -1;
+
+            for (const peerIndex of participantIndices) {
+                await h
+                    .control(h.getPeer(peerIndex))
+                    .stub.stubPostStateSnapshot()
+                    .request();
+            }
+
+            const leaverIndex =
+                await h.transition.participantLeaveStateTransition({
+                    waitForPeers: participantIndices,
+                    waitForFinalization: true
+                });
+            const remainingPeerIndices = participantIndices.filter(
+                (peerIndex) => peerIndex !== leaverIndex
+            );
+            const responder = h.getPeer(remainingPeerIndices[0]);
+
+            // pin the request to the real participant-set change point instead
+            // of to whatever block happens to be latest right after the leave
+            const changeHeights = await h
+                .control(responder)
+                .query.getParticipantChangeHeights(forkId)
+                .request();
+            expect(
+                changeHeights.length,
+                "the leave must be the only participant-set change on this fork"
+            ).to.equal(1);
+            const leaveHeight = changeHeights[0];
+
+            // confirming blocks land above the leave, so the responder is
+            // locally ahead of the requested height
+            await h.transition.advanceState({
+                count: 3,
+                waitForPeers: remainingPeerIndices,
+                waitForFinalization: true
+            });
+
+            // staging sanity: responder genuinely ahead, requester genuinely
+            // behind - otherwise the pin below proves nothing
+            expect(
+                await h
+                    .control(responder)
+                    .query.getLatestBlockHeight(forkId)
+                    .request(),
+                "responder must be ahead of the requested height"
+            ).to.be.greaterThan(leaveHeight);
+            expect(
+                requesterHeightBefore,
+                "requester must be behind the requested height"
+            ).to.be.lessThan(leaveHeight);
+
+            const syncResult = await h
+                .control(responder)
+                .spectate.generateSyncPayload(h.channelId!, forkId, leaveHeight)
+                .request();
+            expect(syncResult).to.not.equal(null);
+            const syncPayload = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+
+            const milestoneHeights = syncPayload.stateProof.milestones.flatMap(
+                (milestone) =>
+                    milestone.blockConfirmations.map((confirmation) =>
+                        Number(
+                            Codec.decode(
+                                confirmation.signedBlock.encodedBlock,
+                                Type.Block
+                            ).transaction.header.transactionCnt
+                        )
+                    )
+            );
+            expect(
+                milestoneHeights.every((height) => height <= leaveHeight),
+                "sync payload milestones must never exceed the requested height"
+            ).to.equal(true);
+
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.at(-1) ??
+                syncPayload.latestForkGenesisSnapshot;
+            expect(
+                Number(latestFinalizedSnapshot.blockHeight),
+                "the payload must prove exactly the leave height"
+            ).to.equal(leaveHeight);
+
+            // the requester runs the real receive side against the payload and
+            // must land exactly on the leave, not on the responder's tip
+            await h
+                .control(requester)
+                .spectate.applySyncResponse(
+                    responder.address,
+                    forkId,
+                    leaveHeight,
+                    syncResult!.encodedSyncPayload
+                )
+                .request();
+
+            expect(
+                await h.control(requester).query.getStatus().request(),
+                "a failed sync aborts the spectator, dropping it out of SYNCED"
+            ).to.equal(Status.SYNCED);
+            expect(
+                await h
+                    .control(requester)
+                    .query.getLatestBlockHeight(forkId)
+                    .request(),
+                "requester must complete the sync at exactly the requested height"
+            ).to.equal(leaveHeight);
+        });
+        it("pins the sync payload below a participant leave while the responder is ahead", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 10,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
+            });
+
+            const forkId = h.activeForkId!;
+            const participantIndices = [0, 1, 2, 3];
+
+            // the requester has to be behind the requested height, so take it
+            // out before any block is produced
+            const requester = await h.join.addSpectatorWait();
+            await h.network.disconnectPeer(requester.index);
+            const requesterHeightBefore =
+                (await h
+                    .control(requester)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()) ?? -1;
+
+            // keep the on-chain snapshot behind the proof: a posted snapshot
+            // above the requested height makes the receiver reject the payload
+            // before any of this is exercised
+            for (const peerIndex of participantIndices) {
+                await h
+                    .control(h.getPeer(peerIndex))
+                    .stub.stubPostStateSnapshot()
+                    .request();
+            }
+
+            await h.transition.advanceState({
+                count: 2, // blocks 0..1, below the leave
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+
+            const leaverIndex =
+                await h.transition.participantLeaveStateTransition({
+                    waitForPeers: participantIndices,
+                    waitForFinalization: true
+                });
+            const remainingPeerIndices = participantIndices.filter(
+                (peerIndex) => peerIndex !== leaverIndex
+            );
+            const responder = h.getPeer(remainingPeerIndices[0]);
+
+            // confirming blocks land above the leave, so the responder is
+            // locally ahead of both the leave and the requested height
+            await h.transition.advanceState({
+                count: 3,
+                waitForPeers: remainingPeerIndices,
+                waitForFinalization: true
+            });
+
+            const changeHeights = await h
+                .control(responder)
+                .query.getParticipantChangeHeights(forkId)
+                .request();
+            expect(
+                changeHeights.length,
+                "the leave must be the only participant-set change on this fork"
+            ).to.equal(1);
+            const leaveHeight = changeHeights[0];
+            const requestedHeight = leaveHeight - 1;
+
+            // staging sanity: the request is genuinely below the leave, the
+            // responder is genuinely above it, and the requester is behind
+            expect(
+                requestedHeight,
+                "the leave must leave a block below it to request"
+            ).to.be.greaterThan(-1);
+            expect(
+                await h
+                    .control(responder)
+                    .query.getLatestBlockHeight(forkId)
+                    .request(),
+                "responder must be ahead of the leave"
+            ).to.be.greaterThan(leaveHeight);
+            expect(
+                requesterHeightBefore,
+                "requester must be behind the requested height"
+            ).to.be.lessThan(requestedHeight);
+
+            const syncResult = await h
+                .control(responder)
+                .spectate.generateSyncPayload(
+                    h.channelId!,
+                    forkId,
+                    requestedHeight
+                )
+                .request();
+            expect(syncResult).to.not.equal(null);
+            const syncPayload = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+
+            // the leave's change point sits above the request and must not be
+            // proven at all - unbounded, its milestone ships blocks from the
+            // leave upwards inside a payload answering for a lower height
+            const milestoneHeights = syncPayload.stateProof.milestones.flatMap(
+                (milestone) =>
+                    milestone.blockConfirmations.map((confirmation) =>
+                        Number(
+                            Codec.decode(
+                                confirmation.signedBlock.encodedBlock,
+                                Type.Block
+                            ).transaction.header.transactionCnt
+                        )
+                    )
+            );
+            expect(
+                milestoneHeights.every((height) => height <= requestedHeight),
+                "sync payload milestones must never reach the leave or above"
+            ).to.equal(true);
+
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.at(-1) ??
+                syncPayload.latestForkGenesisSnapshot;
+            expect(
+                Number(latestFinalizedSnapshot.blockHeight),
+                "the payload must prove exactly the requested height"
+            ).to.equal(requestedHeight);
+
+            // and the real receive side accepts the bounded proof and lands on
+            // it, rather than aborting or following the responder's tip
+            await h
+                .control(requester)
+                .spectate.applySyncResponse(
+                    responder.address,
+                    forkId,
+                    requestedHeight,
+                    syncResult!.encodedSyncPayload
+                )
+                .request();
+
+            expect(
+                await h.control(requester).query.getStatus().request(),
+                "a failed sync aborts the spectator, dropping it out of SYNCED"
+            ).to.equal(Status.SYNCED);
+            expect(
+                await h
+                    .control(requester)
+                    .query.getLatestBlockHeight(forkId)
+                    .request(),
+                "requester must complete the sync at exactly the requested height"
+            ).to.equal(requestedHeight);
+        });
+    });
+
+    describe("Spectate request across a dispute-window event gap", function () {
+        // A commitment can sit on-chain while the responder's DisputeCommitted
+        // event is still undelivered. generateSyncPayload walks the on-chain
+        // window, so it must close that gap itself before it reads dispute
+        // storage - otherwise the missing-dispute lookup throws and the
+        // spectate request dies instead of being answered.
+        it("suppressed dispute event on the responder → the on-chain window is recovered and the disputed fork is declined, not proved", async function () {
+            const h = TestSession.getHarness();
+            const responderIndex = 0;
+            const maliciousPeerIndex = 2;
+
+            await h.lifecycle.start(4, 1);
+            const forkId = h.activeForkId!;
+
+            // freeze the responder's own reduction so it can't close the gap in
+            // the background before the spectate request observes it
+            const race = await h.rpcStub.holdReductionRace(responderIndex);
+
+            // the responder's own dispute is created locally (so isForkDisputed
+            // flips regardless of event delivery), but only the FIRST
+            // externally-arriving dispute event is let through - the other
+            // honest disputers' commitments stay genuinely missing from storage
+            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+                responderIndex,
+                { passFirst: true }
+            );
+
+            await h.byzantine.submitInvalidStateTransitionBlock(
+                maliciousPeerIndex
+            );
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [responderIndex, 1, 3]
+            });
+            // exclude the responder - its own onDisputeCommitted delivery is
+            // deliberately held back except for the first event
+            await h.assert.dispute.committedWait({ peersIndices: [1, 3] });
+
+            const responder = h.getPeer(responderIndex);
+            const responderLatestHeight = await h
+                .control(responder)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(responderLatestHeight).to.not.equal(null);
+
+            const staged = await h.execOnHost(
+                responder,
+                async (sm, args) => {
+                    const isDisputed =
+                        await sm.diamondStateMachine.localDiamondContract.isForkDisputed(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    const commitments =
+                        await sm.stateChannelManagerContract.getWindowCommitments(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    return {
+                        isDisputed,
+                        commitmentCount: commitments.length,
+                        missingBeforeCount: commitments.filter(
+                            (c) => !sm.storage.disputes.getDispute(c)
+                        ).length
+                    };
+                },
+                { forkId }
+            );
+
+            // sanity: the responder really is answering for a disputed fork and
+            // really is missing a commitment of that fork's on-chain window
+            expect(
+                staged.isDisputed,
+                "responder must see the fork as disputed"
+            ).to.equal(true);
+            expect(
+                staged.commitmentCount,
+                "window must hold commitments"
+            ).to.be.greaterThan(0);
+            expect(
+                staged.missingBeforeCount,
+                "at least one commitment must be missing from the responder's storage"
+            ).to.be.greaterThan(0);
+
+            let threw = "";
+            let syncResult: { encodedSyncPayload: string } | null = null;
+            try {
+                syncResult = await h
+                    .control(responder)
+                    .spectate.generateSyncPayload(
+                        h.channelId!,
+                        forkId,
+                        responderLatestHeight!
+                    )
+                    .request();
+            } catch (e) {
+                threw = e instanceof Error ? e.message : String(e);
+            }
+            expect(
+                threw,
+                "generateSyncPayload must recover, not throw"
+            ).to.equal("");
+
+            const recovered = await h.execOnHost(
+                responder,
+                async (sm, args) => {
+                    const commitments =
+                        await sm.stateChannelManagerContract.getWindowCommitments(
+                            sm.channelId,
+                            args.forkId
+                        );
+                    const disputes =
+                        await sm.agreementManager.getForkDisputes(commitments);
+                    return {
+                        commitmentCount: commitments.length,
+                        missingAfterCount: commitments.filter(
+                            (c) => !sm.storage.disputes.getDispute(c)
+                        ).length,
+                        reducibleDisputeCount: disputes.length
+                    };
+                },
+                { forkId }
+            );
+
+            // the recovery really ran: the whole on-chain window is in storage
+            // afterwards. events are still held and the responder's reduction is
+            // still frozen, so the spectate request is the only thing that could
+            // have stored them.
+            expect(
+                recovered.commitmentCount,
+                "the window must not shrink across the call"
+            ).to.equal(staged.commitmentCount);
+            expect(
+                recovered.missingAfterCount,
+                "generateSyncPayload must recover every missing dispute before reading confirmations"
+            ).to.equal(0);
+
+            expect(
+                recovered.reducibleDisputeCount,
+                "the recovered window must be reducible in full"
+            ).to.equal(recovered.commitmentCount);
+
+            // and the answer itself: with the recovered window the responder
+            // reduces to a different tip than the fork it was asked about, so it
+            // declines instead of serving a proof for a fork it can't prove.
+            expect(
+                syncResult,
+                "the disputed fork is not the tip the recovered window reduces to"
+            ).to.be.null;
+
+            // the peer-observable part: let the responder finish the reduction
+            // it just gathered the window for, with its dispute events STILL
+            // held. It can only land on the same fork as the honest peers
+            // because the window came from the chain - a reduce over the subset
+            // its own event feed delivered produces a different fork.
+            await race.release({ replayEvents: false, runHeldTasks: true });
+
+            await h.assert.dispute.reductionCompletedWait({
+                sourceForkId: forkId,
+                peerIndices: [responderIndex, 1, 3]
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [responderIndex, 1, 3]
+            });
+
+            const forkIds = await Promise.all(
+                [responderIndex, 1, 3].map((peerIndex) =>
+                    h.control(h.getPeer(peerIndex)).query.getForkId().request()
+                )
+            );
+            expect(
+                new Set(forkIds).size,
+                "the responder must reduce to the same fork as the honest peers"
+            ).to.equal(1);
+            expect(
+                forkIds[0],
+                "the reduced fork must not be the disputed one"
+            ).to.not.equal(forkId);
+
+            await restoreEvents(false);
+            await h.rpcStub.cancelScheduledReductions(responderIndex);
+        });
     });
 });

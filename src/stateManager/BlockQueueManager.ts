@@ -391,6 +391,12 @@ export default class BlockQueueManager {
         }
     }
 
+    private disconnectEntrySources(entry: QueuedBlockEntry): void {
+        this.stateManager.p2pManager.disconnectAndBlacklistPeers(
+            entry.sourcePeers
+        );
+    }
+
     public scheduleStoredBlockConfirmationMerge(
         entry: QueuedBlockEntry,
         strategy: AValidationStrategy
@@ -502,11 +508,7 @@ export default class BlockQueueManager {
             await strategy.interpretFinalValidationResult(validationResult);
 
         if (!shouldKeepConnection) {
-            for (const peer of entry.sourcePeers) {
-                this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peer
-                );
-            }
+            this.disconnectEntrySources(entry);
         }
         P2pEventHooksUtils.notifyBlockConfirmationProcessed({
             blockHash: entry.block.hash,

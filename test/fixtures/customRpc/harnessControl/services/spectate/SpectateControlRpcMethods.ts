@@ -68,6 +68,20 @@ export class SpectateControlRpcMethods extends ARpcMethods<
         return true;
     }
 
+    public async applySyncResponse(
+        responderAddress: Address,
+        forkId: ForkId,
+        blockHeight: number,
+        encodedSyncPayload: string
+    ): Promise<boolean> {
+        await this.service.spectate.applySyncResponse(
+            String(responderAddress),
+            this.service.buildSyncRequest(forkId, blockHeight),
+            encodedSyncPayload
+        );
+        return true;
+    }
+
     /** Persist an encoded sync payload; returns whether spectating aborted. */
     public async persistSyncPayload(
         encodedSyncPayload: string
