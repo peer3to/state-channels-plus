@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import { ZeroAddress } from "ethers";
 import { Codec, hash, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 
@@ -51,6 +52,89 @@ describe("Unit: DisputeManager", function () {
             expect(r.timeoutParticipant).to.equal(
                 "0x0000000000000000000000000000000000000000"
             );
+        });
+
+        it("no blocks written yet → a genesis-based dispute with an empty state proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0); // channel open, nothing written
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const r = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    const { dispute, auditingData, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    const verified =
+                        await sm.stateChannelManagerContract.verifyStateProof.staticCall(
+                            dispute,
+                            auditingData
+                        );
+                    const genesis =
+                        sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                            args.forkId
+                        )!;
+                    return {
+                        verified,
+                        latestBlockHeight:
+                            Number(
+                                sm.storage.blocks.getNextBlockHeight(
+                                    args.forkId
+                                )
+                            ) - 1,
+                        milestoneCount:
+                            dispute.input.stateProof.milestones.length,
+                        signedBlockCount:
+                            dispute.input.stateProof.signedBlocks.length,
+                        fraudProofCount: fraudProofsToApply.length,
+                        latestStateSnapshotHash: String(
+                            dispute.input.latestStateSnapshotHash
+                        ),
+                        genesisHash: String(genesis.hash),
+                        timeoutParticipant: String(
+                            dispute.input.timeout.participant
+                        ),
+                        timeoutBlockHeight: Number(
+                            dispute.input.timeout.blockHeight
+                        ),
+                        selfRemoval: dispute.input.selfRemoval,
+                        onChainSlashCount: dispute.input.onChainSlashes.length,
+                        inboundHash: String(
+                            dispute.input.latestInboundMessageBlockHash
+                        ),
+                        inboundHeight: Number(
+                            dispute.input.lastInboundMessageBlockHeight
+                        ),
+                        storedInboundHash: String(
+                            sm.storage.inboundMessages.getLatestBlockHash() ??
+                                ""
+                        ),
+                        storedInboundHeight: Number(
+                            sm.storage.inboundMessages.getLatestBlockHeight() ??
+                                0
+                        )
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // the pre-first-block boundary: latestBlockHeight is -1
+            expect(r.latestBlockHeight).to.equal(-1);
+            expect(r.verified).to.equal(true);
+            expect(r.milestoneCount).to.equal(0);
+            expect(r.signedBlockCount).to.equal(0);
+            expect(r.fraudProofCount).to.equal(0);
+            // the head is genesis -> the dispute pins the genesis snapshot
+            expect(r.latestStateSnapshotHash).to.equal(r.genesisHash);
+            expect(r.timeoutParticipant).to.equal(ZeroAddress);
+            expect(r.timeoutBlockHeight).to.equal(0);
+            expect(r.selfRemoval).to.equal(false);
+            expect(r.onChainSlashCount).to.equal(0);
+            // the channel-open join already left an inbound head - the dispute
+            // copies it verbatim rather than defaulting to zero
+            expect(r.inboundHash).to.equal(r.storedInboundHash);
+            expect(r.inboundHeight).to.equal(r.storedInboundHeight);
         });
 
         it("a participant has a stored fraud proof → constructDispute bundles it + marks them slashed", async function () {
