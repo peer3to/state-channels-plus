@@ -905,6 +905,67 @@ describe("Unit: DisputeManager", function () {
         // just stored the proof. forcing it means feeding a proofless dispute.
         it.skip("no stored fraud proof → throws (defensive)", function () {});
 
+        // no test: `windowExists=false` is unreachable from the public surface.
+        // a stored dispute fraud proof only exists for a dispute the peer
+        // audited after it was committed, and committing creates the window;
+        // _killDispute only pops the commitment, never the window
+        // (DisputeVerificationFacet._killDispute).
+        it.skip("no dispute window → killDispute returns before submitting (unreachable)", function () {});
+
+        it("expired kill window → killDispute returns before submitting anything", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup({
+                timeConfig: { evidenceTime: 6 }
+            });
+            const killer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const kills = await Promise.all([
+                h.rpcStub.suppressDisputeKill(0),
+                h.rpcStub.suppressDisputeKill(1),
+                h.rpcStub.suppressDisputeKill(2)
+            ]);
+            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index
+            );
+
+            await h.tamper.postTamperedDispute(1, (dispute) => {
+                dispute.input.timeout.participant =
+                    "0x0000000000000000000000000000000000000000";
+                dispute.input.onChainSlashes = [];
+                dispute.input.selfRemoval = false;
+            });
+            await kills[0].waitUntilSkipped();
+            await kills[0].restore();
+
+            // let the kill period lapse while the stored proof sits unused
+            const { killPeriodEnd } = await h.query.killPeriod(forkId);
+            await h.event.waitUntilTimestamp(killPeriodEnd + 2);
+            const period = await h.query.killPeriod(forkId);
+            expect(period.windowExists).to.equal(true);
+            expect(period.isExpired).to.equal(true);
+
+            const r = await h.execOnHost(
+                killer,
+                async (sm) => {
+                    const proofs =
+                        sm.storage.disputeFraudProofs.getDisputeFraudProofs();
+                    let threw = "";
+                    try {
+                        await sm.disputeManager.killDispute(proofs[0].dispute);
+                    } catch (e) {
+                        threw = e instanceof Error ? e.message : String(e);
+                    }
+                    return { threw };
+                },
+                {},
+                { timeoutMs: 30000 }
+            );
+
+            expect(r.threw).to.equal("");
+            expect(await probe.applies()).to.deep.equal([]);
+        });
+
         it("live kill window → the stored proof is submitted and its transaction awaited", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
