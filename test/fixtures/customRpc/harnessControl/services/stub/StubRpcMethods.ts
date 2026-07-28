@@ -3,10 +3,6 @@ import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import { Codec, sleep, Type } from "@/utils";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { Block } from "@/models";
-import { BlockValidationResult } from "@/types";
-import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
-import * as factory from "@test/factory";
 import type { Address } from "@/types/types";
 import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
@@ -29,7 +25,10 @@ import type {
     ConcurrentCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
     DisputeStrategyResultMatrix,
-    MissingParticipantSnapshotsProbe
+    MissingParticipantSnapshotsProbe,
+    BlockValidationProbe,
+    BlockValidationProbeOptions,
+    IsDisputedForkProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
 
@@ -1123,6 +1122,56 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.heldDisputeCommittedArgs.length;
     }
 
+    /** Hold subscribed calldata logs before the scheduler records their key. */
+    public stubHoldCalldataPostedEvents(): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        if (!this.service.stubOriginals.has("calldataPostedEvents")) {
+            this.service.stubOriginals.set(
+                "calldataPostedEvents",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "calldataPostedEvents"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.service.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (parsed?.name === "BlockCalldataPosted") {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                if (!this.service.heldCalldataPostedEventKeys.has(eventKey)) {
+                    // Lose the subscribed delivery once. A later explicit
+                    // query of the same log must reach the real scheduler so
+                    // this stub accurately models missed subscription data.
+                    this.service.heldCalldataPostedEventKeys.add(eventKey);
+                    this.service.notifyCalldataPostedEventHeld();
+                    return;
+                }
+            }
+            return original(...args);
+        };
+        return true;
+    }
+
+    public restoreCalldataPostedEvents(): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        const original = this.service.stubOriginals.get("calldataPostedEvents");
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.service.stubOriginals.delete("calldataPostedEvents");
+        this.service.heldCalldataPostedEventKeys.clear();
+        return true;
+    }
+
+    /** Resolves once a subscribed calldata log has been held. */
+    public waitForHeldCalldataPostedEvent(): Promise<boolean> {
+        return this.service.waitForHeldCalldataPostedEvent();
+    }
+
     /** Reserve this participant as a later evidence author. */
     public stubSuppressDisputeInitiation(): boolean {
         const disputeManager = this.service.sm.disputeManager;
@@ -1346,135 +1395,52 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.spectateSyncCallCount;
     }
 
+    /** Run isDisputedFork, counting local-diamond queries. */
+    public async probeIsDisputedFork(
+        forkId: ForkId,
+        markLocallyDisputed: boolean
+    ): Promise<IsDisputedForkProbe> {
+        return this.service.probeIsDisputedFork(forkId, markLocallyDisputed);
+    }
+
+    /** Store a block directly into block storage (dispute-replay fixtures). */
+    public storeBlockFixture(encodedBlockConfirmation: string): {
+        hash: string;
+    } {
+        return this.service.storeBlockFixture(encodedBlockConfirmation);
+    }
+
+    /** Store a state snapshot directly into snapshot storage. */
+    public storeStateSnapshotFixture(encodedSnapshot: string): {
+        hash: string;
+    } {
+        return this.service.storeStateSnapshotFixture(encodedSnapshot);
+    }
+
+    /** Stage on-chain calldata for a block at a chosen timestamp. */
+    public stageBlockCalldata(
+        encodedSignedBlock: string,
+        onChainTimestamp: Timestamp
+    ): boolean {
+        this.service.stageBlockCalldata(encodedSignedBlock, onChainTimestamp);
+        return true;
+    }
+
+    /** Post a block's calldata on-chain (chain-fallback path). */
+    public async postBlockCalldataOnChain(
+        encodedSignedBlock: string
+    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
+        return this.service.postBlockCalldataOnChain(encodedSignedBlock);
+    }
+
     public async runBlockValidation(
         encodedBlockConfirmation: string,
-        options?: { strategy?: "active" | "dispute"; encodedDispute?: string }
-    ): Promise<{
-        result: number;
-        resultName: string;
-        disputedForkIds: string[];
-        disconnectedAddresses: string[];
-        firedHooks: string[];
-        restoreQueuedEntryCalled: boolean;
-        signerAddress: string;
-        fraudProofType: string | null;
-    }> {
-        const sm = this.service.sm;
-        const blockConfirmation = Codec.decode(
+        options?: BlockValidationProbeOptions
+    ): Promise<BlockValidationProbe> {
+        return this.service.runBlockValidation(
             encodedBlockConfirmation,
-            Type.BlockConfirmation
+            options
         );
-        const block = Block.fromBlockConfirmation(blockConfirmation);
-        const entry = sm.storage.queues.createEntry(block);
-        // default: the live block strategy (PARTICIPATING). "dispute" builds a
-        // real DisputeValidationStrategy - as dispute auditing does - so the
-        // dispute-only branches (skip future/disputed gates, setState, the
-        // isLinked !prevBlock edge) are drivable here. the dispute struct is
-        // only referenced when a deviation stores fraud-proof evidence; the
-        // paths driven here don't, so a placeholder dispute is faithful.
-        const strategy =
-            options?.strategy === "dispute"
-                ? new DisputeValidationStrategy(
-                      sm.storage,
-                      options.encodedDispute
-                          ? Codec.decode(options.encodedDispute, Type.Dispute)
-                          : factory.dispute(),
-                      0,
-                      sm.diamondStateMachine.localDiamondContract,
-                      sm.logger
-                  )
-                : sm.getActiveValidationStrategy();
-
-        const disputedForkIds: string[] = [];
-        const disconnectedAddresses: string[] = [];
-        let restoreQueuedEntryCalled = false;
-
-        // record-only: a real dispute posts on-chain against the crafted block,
-        // a real disconnect cuts a live transport, a real restore re-arms a
-        // queue timeout -> all would derail the session. Fraud-proof creation
-        // stays real so the hook is identifiable by the persisted proof type.
-        const disputeManager = (
-            strategy as unknown as {
-                disputeManager?: {
-                    dispute: (forkId: ForkId) => Promise<void>;
-                };
-            }
-        ).disputeManager;
-        const originalDispute = disputeManager?.dispute.bind(disputeManager);
-        if (disputeManager) {
-            disputeManager.dispute = async (forkId: ForkId) => {
-                disputedForkIds.push(String(forkId));
-            };
-        }
-        const p2pManager = this.p2pManager;
-        const originalDisconnect =
-            p2pManager.disconnectAndBlacklistPeerByEvmAddress.bind(p2pManager);
-        p2pManager.disconnectAndBlacklistPeerByEvmAddress = ((
-            address: Address
-        ) => {
-            disconnectedAddresses.push(String(address));
-        }) as typeof p2pManager.disconnectAndBlacklistPeerByEvmAddress;
-        const originalRestore = sm.blockQueueManager.restoreQueuedEntry.bind(
-            sm.blockQueueManager
-        );
-        sm.blockQueueManager.restoreQueuedEntry = (() => {
-            restoreQueuedEntryCalled = true;
-        }) as typeof sm.blockQueueManager.restoreQueuedEntry;
-
-        // record which deviation hook the strategy fired, so a test can pin its
-        // named guard
-        const firedHooks: string[] = [];
-        const instrumentedStrategy = new Proxy(strategy, {
-            get(target, prop) {
-                const value = Reflect.get(target, prop);
-                if (typeof value !== "function") return value;
-                return (...args: unknown[]) =>
-                    Promise.resolve(
-                        (value as (...a: unknown[]) => unknown).apply(
-                            target,
-                            args
-                        )
-                    ).then((resolved) => {
-                        if (
-                            typeof prop === "string" &&
-                            typeof resolved === "number" &&
-                            BlockValidationResult[resolved] !== undefined
-                        ) {
-                            firedHooks.push(prop);
-                        }
-                        return resolved;
-                    });
-            }
-        });
-
-        try {
-            const result = await sm.validationService.validateBlockConfirmation(
-                entry,
-                instrumentedStrategy
-            );
-            const fraudProof =
-                sm.storage.fraudProofs.getFraudProofForParticipant(
-                    block.signerAddress
-                );
-            return {
-                result,
-                resultName:
-                    BlockValidationResult[result] ?? `UNKNOWN(${result})`,
-                disputedForkIds,
-                disconnectedAddresses,
-                firedHooks,
-                restoreQueuedEntryCalled,
-                signerAddress: String(block.signerAddress),
-                fraudProofType: fraudProof ? String(fraudProof.proofType) : null
-            };
-        } finally {
-            if (disputeManager && originalDispute) {
-                disputeManager.dispute = originalDispute;
-            }
-            p2pManager.disconnectAndBlacklistPeerByEvmAddress =
-                originalDisconnect;
-            sm.blockQueueManager.restoreQueuedEntry = originalRestore;
-        }
     }
 }
 

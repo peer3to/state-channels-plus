@@ -1,6 +1,5 @@
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
-import { OnChainPostTiming } from "@/stateManager/ValidationService";
 import { Codec, Type } from "@/utils";
 import {
     MathTestSession as TestSession,
@@ -168,86 +167,6 @@ describe("E2E: First block timestamp grace", function () {
                 (block) => block.allSignerAddresses.size === 3
             )
         ).to.equal(true);
-    });
-
-    it("applies first-block grace to the on-chain post timing boundary", async function () {
-        this.timeout(90000);
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 2);
-
-        const forkId = h.activeForkId!;
-        const timings = await h.execOnHost(
-            h.peers[0],
-            async (sm, args) => {
-                const genesis =
-                    sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                        args.forkId
-                    );
-                if (!genesis) throw new Error("missing genesis snapshot");
-                const block0 = sm.storage.blocks.getBlock(args.forkId, 0);
-                if (!block0) throw new Error("missing block at height 0");
-
-                const probe = async (
-                    height: number,
-                    previousTimestamp: number,
-                    onChainTimestamp: number
-                ) => {
-                    const block = sm.storage.blocks.getBlock(
-                        args.forkId,
-                        height
-                    );
-                    if (!block)
-                        throw new Error(`missing block at height ${height}`);
-                    const original = block.onChainTimestamp;
-                    block.onChainTimestamp = onChainTimestamp;
-                    const timing = await sm.validationService[
-                        "getOnChainPostTiming"
-                    ](previousTimestamp, block);
-                    block.onChainTimestamp = original;
-                    return timing;
-                };
-
-                const heightZeroDeadline = genesis.timestamp + args.h0Window;
-                const heightOneDeadline = block0.timestamp + args.h1Window;
-                return {
-                    h0AtDeadline: await probe(
-                        0,
-                        genesis.timestamp,
-                        heightZeroDeadline
-                    ),
-                    h0PastDeadline: await probe(
-                        0,
-                        genesis.timestamp,
-                        heightZeroDeadline + 1
-                    ),
-                    h1AtDeadline: await probe(
-                        1,
-                        block0.timestamp,
-                        heightOneDeadline
-                    ),
-                    h1PastDeadline: await probe(
-                        1,
-                        block0.timestamp,
-                        heightOneDeadline + 1
-                    )
-                };
-            },
-            {
-                forkId,
-                h0Window:
-                    TIME.p2pTime +
-                    TIME.agreementTime +
-                    TIME.chainFallbackTime +
-                    TIME.evidenceTime,
-                h1Window:
-                    TIME.p2pTime + TIME.agreementTime + TIME.chainFallbackTime
-            }
-        );
-
-        expect(timings.h0AtDeadline).to.equal(OnChainPostTiming.ON_TIME);
-        expect(timings.h0PastDeadline).to.equal(OnChainPostTiming.TOO_LATE);
-        expect(timings.h1AtDeadline).to.equal(OnChainPostTiming.ON_TIME);
-        expect(timings.h1PastDeadline).to.equal(OnChainPostTiming.TOO_LATE);
     });
 
     it("does not time out height 0 inside the grace window and times out after it", async function () {

@@ -308,13 +308,28 @@ export async function encodeAuthoredConfirmation(
     ) as string;
 }
 
-/** Craft a block and return its author-signed confirmation encoding. */
+/**
+ * Craft a block and return its author-signed confirmation encoding.
+ * The signer is the author by default -> pass `header.participant` only to
+ * deliberately craft a signer/author mismatch.
+ */
 export async function buildAndEncodeBlock(
     signer: ethers.Signer,
     overrides: BlockFactoryOverrides = {},
     signatures: string[] = []
 ): Promise<string> {
-    return encodeAuthoredConfirmation(block(overrides), signer, signatures);
+    const authoredOverrides: BlockFactoryOverrides = {
+        ...overrides,
+        header: {
+            participant: (await signer.getAddress()) as Address,
+            ...overrides.header
+        }
+    };
+    return encodeAuthoredConfirmation(
+        block(authoredOverrides),
+        signer,
+        signatures
+    );
 }
 
 export function exitChannelBlock(
@@ -400,8 +415,10 @@ export function stateSnapshot(
     };
     const stateSnapshotObj = {
         ...defaultStateSnapshot,
-        snapshotData: snapshotDataObj,
-        ...overrides
+        ...overrides,
+        // after the spread: a partial snapshotData override must not replace
+        // the merged object wholesale
+        snapshotData: snapshotDataObj
     };
 
     return StateSnapshot.from(stateSnapshotObj as StateSnapshotStruct);
