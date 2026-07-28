@@ -42,6 +42,58 @@ describe("E2E: Dispute Manager", function () {
         });
     });
 
+    describe("Writer Timeout on a Pending-Join Fork", function () {
+        // the DisputeManager branch it exercises (no fraud proof + calldata ->
+        // uploadDisputeWithCalldata) is pinned directly by
+        // test/unit/DisputeManager.test.ts; enable this workflow regression once
+        // the reduction race below is handled.
+        // skipped: flaky - exposes a real product bug (~10% of runs), not a test
+        // defect. see the KNOWN RACE note below: a losing peer's reduceAndFinalize
+        // reverts ErrorDisputeInboundMessageBlocksInvalid on the reduction path and
+        // it's rethrown into a fire-and-forget promise -> unhandled detached
+        // rejection.
+        // https://trello.com/c/MUwszX7B
+        it.skip("should dispute a timed-out writer on a pending-join fork with auditing calldata", async function () {
+            this.timeout(90000);
+            const h = TestSession.getHarness();
+
+            // a pending inbound join leaves the head not-final-by-everyone, so a
+            // dispute here carries postedAuditingData=true (auditing calldata)
+            await h.scenario.preDisputeSetupCalldataPath({
+                timeConfig: { chainFallbackTime: 2 }
+            });
+
+            // no block is produced -> the next writer's turn lapses -> the honest
+            // peers dispute the timed-out writer. a timeout has no fraud proof, so
+            // on this calldata-backed fork dispute() takes the no-multicall +
+            // uploadDisputeWithCalldata path (the branch this test covers)
+            const darkWriter = await h.query.getNextPeerToWrite();
+            const disputers = h.peers
+                .filter((p) => p.index !== darkWriter.index)
+                .map((p) => p.index);
+            await h.assert.dispute.initiatedAndCommitedWait({
+                peersIndices: disputers,
+                expectedCount: disputers.length,
+                initiatedWithAuditingData: true, // the calldata upload we wanted
+                timeoutMs: 30000
+            });
+
+            // after commit every honest peer runs a fire-and-forget reduction to
+            // settle the fork; one wins. KNOWN RACE: a losing peer precomputed its
+            // reduce, but the on-chain reduceAndFinalize re-reduces against an
+            // advanced window and reverts ErrorDisputeInboundMessageBlocksInvalid;
+            // the reduction path doesn't handle that error -> it rethrows into a
+            // fire-and-forget promise -> unhandled detached rejection (~10% of runs)
+            await h.dispute.resolveDisputeWait({
+                forkId: h.activeForkId!,
+                honestPeerIndices: disputers,
+                forkSettleTimeoutMs: 25000,
+                assertMaliciousRemoved: false,
+                syntheticOnChainParticipants: 1
+            });
+        });
+    });
+
     describe("Fraud Proof Detection", function () {
         it("should kill a spam dispute with no legitimate enforcement basis", async function () {
             const h = TestSession.getHarness();
