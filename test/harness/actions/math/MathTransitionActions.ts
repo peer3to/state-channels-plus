@@ -64,9 +64,7 @@ export class MathTransitionActions extends TransitionActions<
             .control(h.getPeer(0))
             .query.getNextToWrite()
             .request();
-        const leader = h.peers.find(
-            (p) => p.address.toLowerCase() === nextWriter.toLowerCase()
-        );
+        const leader = h.peers.find((p) => p.address === nextWriter);
         if (!leader) {
             throw new Error(`No peer matches the next writer ${nextWriter}`);
         }

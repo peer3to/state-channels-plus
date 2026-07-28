@@ -421,7 +421,7 @@ export class MathScenarioActions extends ScenarioActions {
             .query.getNextToWrite()
             .request();
         const parentAuthor = h.peers.find(
-            (p) => p.address.toLowerCase() === parentAuthorAddress.toLowerCase()
+            (p) => p.address === parentAuthorAddress
         );
         if (!parentAuthor) {
             throw new Error(`No peer matches writer ${parentAuthorAddress}`);
@@ -464,9 +464,7 @@ export class MathScenarioActions extends ScenarioActions {
             .control(parentAuthor)
             .query.getNextToWrite()
             .request();
-        const author = h.peers.find(
-            (p) => p.address.toLowerCase() === nextWriterAddress.toLowerCase()
-        );
+        const author = h.peers.find((p) => p.address === nextWriterAddress);
         if (!author || author.index === parentAuthor.index) {
             throw new Error(`Unexpected next writer ${nextWriterAddress}`);
         }
@@ -492,10 +490,7 @@ export class MathScenarioActions extends ScenarioActions {
         if (!previous) {
             throw new Error(`Observer never stored block ${parentHeight}`);
         }
-        const signers = previous.confirmationSignerAddresses.map((a) =>
-            a.toLowerCase()
-        );
-        if (signers.includes(author.address.toLowerCase())) {
+        if (previous.confirmationSignerAddresses.includes(author.address)) {
             throw new Error(
                 "Next writer signed the parent - its on-chain timestamp would be ignored"
             );

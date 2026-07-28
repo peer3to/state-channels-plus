@@ -257,9 +257,7 @@ describe("Unit: ValidationService", function () {
                 h.control(observer).query.getBlockByHeight(forkId, 1).request()
             ]);
 
-            const nonLeader = h.peers.find(
-                (p) => p.address.toLowerCase() !== nextWriter.toLowerCase()
-            )!;
+            const nonLeader = h.peers.find((p) => p.address !== nextWriter)!;
             const encoded = await factory.buildAndEncodeBlock(
                 nonLeader.signer,
                 {
@@ -301,11 +299,9 @@ describe("Unit: ValidationService", function () {
                 h.channelId
             );
             expect(
-                onChainParticipants.map((a: unknown) =>
-                    String(a).toLowerCase()
-                ),
+                onChainParticipants,
                 "author must be an on-chain active participant"
-            ).to.include(author.address.toLowerCase());
+            ).to.include(author.address);
 
             // unknown fork -> no previous snapshot, and the random resulting
             // stateSnapshotHash resolves to nothing -> empty local union
@@ -363,13 +359,12 @@ describe("Unit: ValidationService", function () {
                 h.channelManager.getPendingParticipants(h.channelId),
                 h.channelManager.getParticipants(h.channelId)
             ]);
-            const joinerAddress = joiner.address.toLowerCase();
+            const joinerAddress = joiner.address;
+            expect(pending, "joiner must be on-chain pending").to.include(
+                joinerAddress
+            );
             expect(
-                pending.map((a: unknown) => String(a).toLowerCase()),
-                "joiner must be on-chain pending"
-            ).to.include(joinerAddress);
-            expect(
-                active.map((a: unknown) => String(a).toLowerCase()),
+                active,
                 "joiner must not be an active participant yet"
             ).to.not.include(joinerAddress);
 
@@ -407,9 +402,7 @@ describe("Unit: ValidationService", function () {
                 h.control(observer).query.getBlockByHeight(forkId, 1).request(),
                 h.control(observer).query.getBlockByHeight(forkId, 0).request()
             ]);
-            const author = h.peers.find(
-                (p) => p.address.toLowerCase() === stored!.author.toLowerCase()
-            )!;
+            const author = h.peers.find((p) => p.address === stored!.author)!;
 
             // same author + height + link to the real prev, different content
             // (random stateSnapshotHash from the factory default) -> double sign
@@ -446,9 +439,7 @@ describe("Unit: ValidationService", function () {
                 h.control(observer).query.getBlockByHeight(forkId, 0).request()
             ]);
             // different author but linked to the real prev -> slashable divergence
-            const other = h.peers.find(
-                (p) => p.address.toLowerCase() !== stored!.author.toLowerCase()
-            )!;
+            const other = h.peers.find((p) => p.address !== stored!.author)!;
             const encoded = await factory.buildAndEncodeBlock(other.signer, {
                 header: {
                     channelId: h.channelId,
@@ -483,9 +474,7 @@ describe("Unit: ValidationService", function () {
                 .request();
             // different author's block 0, unlinked. an unlinked conflict alone
             // DISCONNECTs, but at height 0 it's a wrong-genesis claim -> dispute.
-            const other = h.peers.find(
-                (p) => p.address.toLowerCase() !== stored!.author.toLowerCase()
-            )!;
+            const other = h.peers.find((p) => p.address !== stored!.author)!;
             const encoded = await factory.buildAndEncodeBlock(other.signer, {
                 header: {
                     channelId: h.channelId,
@@ -544,9 +533,7 @@ describe("Unit: ValidationService", function () {
                 .control(observer)
                 .query.getBlockByHeight(forkId, 1)
                 .request();
-            const other = h.peers.find(
-                (p) => p.address.toLowerCase() !== stored!.author.toLowerCase()
-            )!;
+            const other = h.peers.find((p) => p.address !== stored!.author)!;
             // unlinked conflict could sit on a double-signer's reality -> no slash
             const encoded = await factory.buildAndEncodeBlock(other.signer, {
                 header: {
@@ -585,9 +572,7 @@ describe("Unit: ValidationService", function () {
                     .query.getGenesisSnapshotHash(forkId)
                     .request()
             ]);
-            const leader = h.peers.find(
-                (p) => p.address.toLowerCase() === nextWriter.toLowerCase()
-            )!;
+            const leader = h.peers.find((p) => p.address === nextWriter)!;
 
             // valid block 0 except a timestamp before genesis
             const encoded = await factory.buildAndEncodeBlock(leader.signer, {
@@ -624,9 +609,7 @@ describe("Unit: ValidationService", function () {
                 h.control(observer).query.getNextToWrite().request(),
                 h.control(observer).query.getBlockByHeight(forkId, 1).request()
             ]);
-            const leader = h.peers.find(
-                (p) => p.address.toLowerCase() === nextWriter.toLowerCase()
-            )!;
+            const leader = h.peers.find((p) => p.address === nextWriter)!;
 
             // linked next block, timestamp before its parent's. NOT block 0, so
             // it tries an on-chain fetch for the parent; the parent isn't
@@ -989,9 +972,7 @@ describe("Unit: ValidationService", function () {
             expect(r.disputedForkIds).to.deep.equal([]);
             expect(r.fraudProofType).to.be.null;
             expect(r.firedHooks).to.deep.equal([]);
-            expect(r.signerAddress.toLowerCase()).to.equal(
-                leader.address.toLowerCase()
-            );
+            expect(r.signerAddress).to.equal(leader.address);
         });
     });
 
@@ -1178,16 +1159,12 @@ describe("Unit: ValidationService", function () {
                 })
                 .request();
 
-            expect(r.sourcePeers.map((a) => a.toLowerCase())).to.deep.equal([
-                supplier.address.toLowerCase()
-            ]);
+            expect(r.sourcePeers).to.deep.equal([supplier.address]);
             expect(r.firedHooks).to.include("blockForkIsDisputed");
             // every supplier knowingly built on the dead fork -> nothing honest
             // left to wait for
             expect(r.resultName).to.equal("DISCONNECT");
-            expect(
-                r.disconnectedAddresses.map((a) => a.toLowerCase())
-            ).to.deep.equal([supplier.address.toLowerCase()]);
+            expect(r.disconnectedAddresses).to.deep.equal([supplier.address]);
             expect(r.restoreQueuedEntryCalled).to.equal(false);
         });
 
@@ -1226,9 +1203,7 @@ describe("Unit: ValidationService", function () {
                 })
                 .request();
 
-            expect(r.sourcePeers.map((a) => a.toLowerCase())).to.deep.equal([
-                String(unacknowledgedSupplier).toLowerCase()
-            ]);
+            expect(r.sourcePeers).to.deep.equal([unacknowledgedSupplier]);
             expect(r.firedHooks).to.include("blockForkIsDisputed");
             // not provably byzantine -> restored for the timeout sync
             expect(r.resultName).to.equal("NOT_READY");
@@ -1476,9 +1451,7 @@ describe("Unit: ValidationService", function () {
                 h.control(observer).query.getNextToWrite().request(),
                 h.control(observer).query.getBlockByHeight(forkId, 1).request()
             ]);
-            const nonLeader = h.peers.find(
-                (p) => p.address.toLowerCase() !== nextWriter.toLowerCase()
-            )!;
+            const nonLeader = h.peers.find((p) => p.address !== nextWriter)!;
 
             const encoded = await factory.buildAndEncodeBlock(
                 nonLeader.signer,
