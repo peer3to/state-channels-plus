@@ -497,45 +497,67 @@ export class StubService extends ARpcService<
             };
         };
 
-        contract.uploadDispute = ((
-            confirmation: DisputeConfirmationStruct,
-            overrides?: unknown
-        ) =>
-            record({
-                method: "uploadDispute",
-                innerMethods: [],
-                encodedDispute: String(
-                    confirmation.signedDispute.encodedDispute
-                ),
-                encodedAuditingData: null,
-                fraudProofParticipants: [],
-                gasLimit: this.overrideGasLimit(overrides)
-            })) as unknown as typeof contract.uploadDispute;
+        contract.uploadDispute = this.asRecordingContractMethod(
+            contract.uploadDispute,
+            (confirmation: DisputeConfirmationStruct, overrides?: unknown) =>
+                record({
+                    method: "uploadDispute",
+                    innerMethods: [],
+                    encodedDispute: String(
+                        confirmation.signedDispute.encodedDispute
+                    ),
+                    encodedAuditingData: null,
+                    fraudProofParticipants: [],
+                    gasLimit: this.overrideGasLimit(overrides)
+                })
+        );
 
-        contract.uploadDisputeWithCalldata = ((
-            confirmation: DisputeConfirmationStruct,
-            auditingData: DisputeAuditingDataStruct
-        ) =>
-            record({
-                method: "uploadDisputeWithCalldata",
-                innerMethods: [],
-                encodedDispute: String(
-                    confirmation.signedDispute.encodedDispute
-                ),
-                encodedAuditingData: Codec.encode(
-                    auditingData,
-                    Type.DisputeAuditingData
-                ) as string,
-                fraudProofParticipants: [],
-                gasLimit: null
-            })) as unknown as typeof contract.uploadDisputeWithCalldata;
+        contract.uploadDisputeWithCalldata = this.asRecordingContractMethod(
+            contract.uploadDisputeWithCalldata,
+            (
+                confirmation: DisputeConfirmationStruct,
+                auditingData: DisputeAuditingDataStruct
+            ) =>
+                record({
+                    method: "uploadDisputeWithCalldata",
+                    innerMethods: [],
+                    encodedDispute: String(
+                        confirmation.signedDispute.encodedDispute
+                    ),
+                    encodedAuditingData: Codec.encode(
+                        auditingData,
+                        Type.DisputeAuditingData
+                    ) as string,
+                    fraudProofParticipants: [],
+                    gasLimit: null
+                })
+        );
 
-        contract.multicall = ((calls: string[], overrides?: unknown) =>
-            record({
-                ...this.describeMulticall(calls),
-                method: "multicall",
-                gasLimit: this.overrideGasLimit(overrides)
-            })) as unknown as typeof contract.multicall;
+        contract.multicall = this.asRecordingContractMethod(
+            contract.multicall,
+            (calls: string[], overrides?: unknown) =>
+                record({
+                    ...this.describeMulticall(calls),
+                    method: "multicall",
+                    gasLimit: this.overrideGasLimit(overrides)
+                })
+        );
+    }
+
+    /**
+     * A stand-in that records the send but keeps the original method's helpers
+     * (`populateTransaction`, `staticCall`, …) - the multicall branch builds its
+     * legs through `populateTransaction` on these very methods.
+     */
+    private asRecordingContractMethod<T extends object>(
+        original: T,
+        recorder: (...args: never[]) => unknown
+    ): T {
+        Object.defineProperties(
+            recorder,
+            Object.getOwnPropertyDescriptors(original)
+        );
+        return recorder as unknown as T;
     }
 
     /** Decode a dispute multicall's legs into the fields a test asserts on. */

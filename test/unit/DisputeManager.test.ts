@@ -1,8 +1,6 @@
 import { expect } from "chai";
-import { Codec, Type } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
-import * as factory from "@test/factory";
-import type { Address } from "@/types/types";
 
 describe("Unit: DisputeManager", function () {
     describe("constructDispute", function () {
@@ -61,31 +59,9 @@ describe("Unit: DisputeManager", function () {
             const observer = h.getPeer(0);
             const forkId = h.activeForkId!;
 
-            const [nextHeight, nextWriter, prevBlock] = await Promise.all([
-                h.control(observer).query.getNextBlockHeight(forkId).request(),
-                h.control(observer).query.getNextToWrite().request(),
-                h.control(observer).query.getBlockByHeight(forkId, 1).request()
-            ]);
-
-            // a linked next block by a non-leader -> real InvalidStateTransition
-            // fraud proof, stored for the offender in this peer's storage
-            const offender = h.peers.find(
-                (p) => p.address.toLowerCase() !== nextWriter.toLowerCase()
-            )!;
-            const encoded = await factory.buildAndEncodeBlock(offender.signer, {
-                header: {
-                    channelId: h.channelId,
-                    forkId,
-                    transactionCnt: nextHeight,
-                    participant: offender.address as Address
-                },
-                previousBlockHash: prevBlock!.hash
-            });
-            const validation = await h
-                .control(observer)
-                .stub.runBlockValidation(encoded)
-                .request();
-            expect(validation.fraudProofType).to.not.be.null; // fraud proof stored
+            const offender = await h.byzantine.storeInvalidTransitionFraudProof(
+                observer.index
+            );
 
             const r = await h.execOnHost(
                 observer,
@@ -299,6 +275,173 @@ describe("Unit: DisputeManager", function () {
             // no block in the proof -> latest resolves to genesis, all present
             expect(r.isPartial).to.equal(false);
             expect(r.latestStateHash).to.equal(r.genesisStateHash);
+        });
+    });
+
+    // the four submission branches dispute() picks between: fraud-proof or not
+    // (multicall or a bare upload) x calldata or not (which upload). the uploads
+    // are recorded instead of sent - a real one posts an on-chain dispute
+    // against a healthy fork and derails the session; the e2e dispute flows
+    // cover the sends for real.
+    describe("dispute → submission branch", function () {
+        it("no fraud proof, settled fork → uploadDispute alone", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3); // fully-signed head -> no calldata
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const disputed = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            const [submission] = await probe.submissions();
+            expect(submission.method).to.equal("uploadDispute");
+            expect(submission.encodedAuditingData).to.equal(null);
+            expect(submission.gasLimit).to.equal("2500000");
+            expect(submission.waited).to.equal(true);
+            const dispute = Codec.decode(
+                submission.encodedDispute,
+                Type.Dispute
+            );
+            expect(String(dispute.input.forkId)).to.equal(forkId);
+            expect(String(dispute.input.disputer).toLowerCase()).to.equal(
+                peer.address.toLowerCase()
+            );
+            expect(dispute.postedAuditingData).to.equal(false);
+            expect(disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+
+        it("no fraud proof, unfinalized fork → uploadDisputeWithCalldata alone", async function () {
+            const h = TestSession.getHarness();
+            // a pending inbound join leaves the head not-final-by-everyone
+            await h.scenario.preDisputeSetupCalldataPath();
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const disputed = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            const [submission] = await probe.submissions();
+            expect(submission.method).to.equal("uploadDisputeWithCalldata");
+            expect(submission.gasLimit).to.equal(null);
+            expect(submission.waited).to.equal(true);
+            const dispute = Codec.decode(
+                submission.encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.postedAuditingData).to.equal(true);
+            // the auditing data uploaded is the one the dispute commits to
+            expect(hash(submission.encodedAuditingData!)).to.equal(
+                String(dispute.input.disputeAuditingDataHash)
+            );
+            expect(disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+
+        it("a fraud proof, settled fork → multicall of applyFraudProofs + uploadDispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const offender = await h.byzantine.storeInvalidTransitionFraudProof(
+                peer.index
+            );
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const disputed = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            const [submission] = await probe.submissions();
+            expect(submission.method).to.equal("multicall");
+            expect(submission.innerMethods).to.deep.equal([
+                "applyFraudProofs",
+                "uploadDispute"
+            ]);
+            expect(
+                submission.fraudProofParticipants.map((p) => p.toLowerCase())
+            ).to.deep.equal([offender.address.toLowerCase()]);
+            expect(submission.encodedAuditingData).to.equal(null);
+            expect(submission.waited).to.equal(true);
+            const dispute = Codec.decode(
+                submission.encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.postedAuditingData).to.equal(false);
+            expect(disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
+        });
+
+        it("a fraud proof, unfinalized fork → multicall of applyFraudProofs + uploadDisputeWithCalldata", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupCalldataPath();
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const offender = await h.byzantine.storeInvalidTransitionFraudProof(
+                peer.index
+            );
+
+            const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const disputed = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            const [submission] = await probe.submissions();
+            expect(submission.method).to.equal("multicall");
+            expect(submission.innerMethods).to.deep.equal([
+                "applyFraudProofs",
+                "uploadDisputeWithCalldata"
+            ]);
+            expect(
+                submission.fraudProofParticipants.map((p) => p.toLowerCase())
+            ).to.deep.equal([offender.address.toLowerCase()]);
+            expect(submission.waited).to.equal(true);
+            const dispute = Codec.decode(
+                submission.encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.postedAuditingData).to.equal(true);
+            expect(hash(submission.encodedAuditingData!)).to.equal(
+                String(dispute.input.disputeAuditingDataHash)
+            );
+            expect(disputed).to.equal(true);
+            expect(
+                h.event.getEventCallCount(peer.index, "onInitiatingDispute")
+            ).to.equal(1);
         });
     });
 
@@ -687,32 +830,8 @@ describe("Unit: DisputeManager", function () {
             await h.lifecycle.start(3, 2); // blocks 0..1, next = 2
             const observer = h.getPeer(0);
             const forkId = h.activeForkId!;
-
-            const [nextHeight, nextWriter, prevBlock] = await Promise.all([
-                h.control(observer).query.getNextBlockHeight(forkId).request(),
-                h.control(observer).query.getNextToWrite().request(),
-                h.control(observer).query.getBlockByHeight(forkId, 1).request()
-            ]);
-
-            // a linked next block by a non-leader -> a real InvalidStateTransition
-            // fraud proof, stored for its author when validated
-            const offender = h.peers.find(
-                (p) =>
-                    p.index !== observer.index &&
-                    p.address.toLowerCase() !== nextWriter.toLowerCase()
-            )!;
-            const encodedFault = await factory.buildAndEncodeBlock(
-                offender.signer,
-                {
-                    header: {
-                        channelId: h.channelId,
-                        forkId,
-                        transactionCnt: nextHeight,
-                        participant: offender.address
-                    },
-                    previousBlockHash: prevBlock!.hash
-                }
-            );
+            const { offender, encodedBlock } =
+                await h.byzantine.craftInvalidTransitionBlock(observer.index);
 
             // park the construction after it started but before it reads the
             // stored fraud proofs - the on-chain slash set is already being read
@@ -741,7 +860,7 @@ describe("Unit: DisputeManager", function () {
             // land the proof inside the window, then let the construction finish
             const validation = await h
                 .control(observer)
-                .stub.runBlockValidation(encodedFault)
+                .stub.runBlockValidation(encodedBlock)
                 .request();
             expect(validation.fraudProofType).to.not.be.null;
 

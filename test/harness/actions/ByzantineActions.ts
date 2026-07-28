@@ -5,6 +5,7 @@ import { Block } from "@/models";
 import type { Address } from "@/types/types";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { TestPeer } from "@test/harness/core/types";
 import { Codec, Logger, Type } from "@/utils";
 import { ForkId, Bytes, BlockHeight } from "@/types/types";
 import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -201,6 +202,89 @@ export class ByzantineActions<
      * real participant author signature — the fork mismatch must be the only
      * reason a receiver treats it specially.
      */
+    /**
+     * A linked next block authored by a peer whose turn it isn't - validating
+     * it yields a real InvalidStateTransition fraud proof for its author.
+     */
+    async craftInvalidTransitionBlock(
+        observerIndex: number,
+        options: { offenderIndex?: number } = {}
+    ): Promise<{ offender: TestPeer<TCustomRpc>; encodedBlock: string }> {
+        const observer = this.harness.getPeer(observerIndex);
+        const forkId = this.harness.activeForkId;
+        if (!forkId) {
+            throw new Error(
+                "storeInvalidTransitionFraudProof: no active fork ID"
+            );
+        }
+        const [nextHeight, nextWriter] = await Promise.all([
+            this.harness
+                .control(observer)
+                .query.getNextBlockHeight(forkId)
+                .request(),
+            this.harness.control(observer).query.getNextToWrite().request()
+        ]);
+        const offender =
+            options.offenderIndex === undefined
+                ? this.harness.peers.find(
+                      (p) =>
+                          p.index !== observerIndex &&
+                          p.address.toLowerCase() !== nextWriter.toLowerCase()
+                  )
+                : this.harness.getPeer(options.offenderIndex);
+        if (!offender) {
+            throw new Error(
+                "craftInvalidTransitionBlock: no non-leader offender available"
+            );
+        }
+        const previousHeight = Number(nextHeight) - 1;
+        const previous = await this.harness
+            .control(observer)
+            .query.getBlockByHeight(forkId, previousHeight)
+            .request();
+        if (!previous) {
+            throw new Error(
+                `craftInvalidTransitionBlock: no block at height ${previousHeight}`
+            );
+        }
+        const encodedBlock = await factory.buildAndEncodeBlock(
+            offender.signer,
+            {
+                header: {
+                    channelId: this.harness.channelId,
+                    forkId,
+                    transactionCnt: nextHeight,
+                    participant: offender.address
+                },
+                previousBlockHash: previous.hash
+            }
+        );
+        return { offender, encodedBlock };
+    }
+
+    /**
+     * Craft that block and run it through `observerIndex`'s live validation, so
+     * a real InvalidStateTransition fraud proof lands in its storage. Returns
+     * the offender the proof names.
+     */
+    async storeInvalidTransitionFraudProof(
+        observerIndex: number,
+        options: { offenderIndex?: number } = {}
+    ): Promise<TestPeer<TCustomRpc>> {
+        const { offender, encodedBlock } =
+            await this.craftInvalidTransitionBlock(observerIndex, options);
+        const validation = await this.harness
+            .control(this.harness.getPeer(observerIndex))
+            .stub.runBlockValidation(encodedBlock)
+            .request();
+        if (validation.fraudProofType === null) {
+            throw new Error(
+                `storeInvalidTransitionFraudProof: no fraud proof stored (${validation.resultName})`
+            );
+        }
+        return offender;
+    }
+
     async craftBogusForkBlockZero(authorIndex: number): Promise<{
         bogusBlock: Block;
         blockConfirmation: BlockConfirmationStruct;
