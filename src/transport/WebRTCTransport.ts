@@ -40,7 +40,6 @@ class WebRTCTransport extends ATransport {
         if (this.webRTCChannel.readyState === "open") {
             this.onChannelOpen();
         }
-        //TODO! update peerProfile and close old socket
     }
 
     private onChannelOpen(): void {

@@ -44,8 +44,7 @@ describe("E2E: Timeouts", function () {
                 }
             });
             await h.network.disconnectPeer(2);
-            // TODO - never flaky when run in isolation - very flaky when run in parallel
-            // TODO - under load Peer 1 can experience RaceConditionBlockCalldataTimestampTooLate - investigate
+            // TODO - under load Peer 1 can hit StateChannelManagerProxy's RaceConditionBlockCalldataTimestampTooLate revert; fix the timing bug (not #391 - that tracker sets the E2E-Timeouts cluster aside as an anomaly)
             await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] }); // Peers 0 and 1 write (peer 2 disconnected)
             await h.assert.calldata.calldataPosted();
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });

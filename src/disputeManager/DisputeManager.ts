@@ -144,7 +144,7 @@ class DisputeManager {
             } else {
                 // no multicall - upload dispute separately
                 if (shouldPostAuditingData) {
-                    // TODO - do the actual check (_isAuditingCalldataRequired) when we have early finalization implemented
+                    // TODO - revisit postedAuditingData under early finalization
                     txResponse =
                         await this.stateChannelManagerContract.uploadDisputeWithCalldata(
                             disputeConfirmation,

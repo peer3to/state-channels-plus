@@ -406,7 +406,6 @@ class StateManager<
         return this.signerAddress;
     }
     public getParticipantsCurrent(): Promise<Address[]> {
-        //TODO? this can be done through the AgreementManager for the given fork or thought the stateMachine
         return this.diamondStateMachine.getParticipants();
     }
     public get forkId(): ForkId {
@@ -490,7 +489,7 @@ class StateManager<
                     // TODO: support concurrent joins by collecting safe extra signatures before submission.
                     // Rethrown as CustomEvmError
                     this.abort();
-                    throw custom; //TODO - comunncate abort to the outside
+                    throw custom;
             }
             this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
                 error: error instanceof Error ? error.message : String(error)
@@ -1165,7 +1164,7 @@ class StateManager<
                 // their byzantine senders — continue with the valid ones.
             }
 
-            // TODO - apply strategy here too
+            // TODO - move DisputeValidationStrategy handling in success() behind a strategy hook
             // All validations passed - proceed with success action
             await this.success(
                 block,

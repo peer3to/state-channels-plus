@@ -215,7 +215,6 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             signerAddress
         });
         // Check if this peer is blacklisted
-        // TODO - we destory the profile, so we wouldn't have this information
         if (this.p2pManager.isBlacklisted(signerAddress)) {
             LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
                 direction: "local",

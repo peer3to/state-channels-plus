@@ -23,6 +23,9 @@ export type LogUploaderOptions = {
 export type LogUploaderConfig = {
     uploadEndpoint: string;
     apiToken?: string;
+    // Fixed upload jitter in ms. Unset in production (random 0-3s); tests set it
+    // for a deterministic delay instead of stubbing Math.random.
+    jitterMs?: number;
 };
 
 export abstract class LogUploader {
@@ -67,21 +70,47 @@ export abstract class LogUploader {
         return Promise.resolve(undefined);
     }
 
-    public async uploadLogs(
-        unhandledError?: Error,
-        isUserInitiated = false
-    ): Promise<void> {
-        // TODO - use the above arguments
+    // Single owner of unhandled-error capture for both platforms (browser window
+    // events, node process events). Normalizes the reason safely, then logs it -
+    // Logger.error() stores it and schedules the upload. Redaction of the error
+    // graph happens once, in encodeLogEntry, so both crash paths stay in sync.
+    public captureUnhandled(reason: unknown, source: string): void {
+        const error =
+            reason instanceof Error
+                ? reason
+                : new Error(LogUploader.safeStringify(reason));
+        this.logger?.error(`Unhandled ${source} captured for log upload`, {
+            error
+        });
+    }
+
+    // A non-Error rejection reason can have a throwing toString; the global crash
+    // handler must not itself throw and lose the rejection.
+    private static safeStringify(reason: unknown): string {
+        try {
+            return String(reason);
+        } catch {
+            return "[unstringifiable rejection reason]";
+        }
+    }
+
+    // Random jitter (0-3s) to spread upload bursts. Overridable via config so
+    // tests get a deterministic delay without stubbing Math.random.
+    protected getJitterMs(): number {
+        return this.config.jitterMs ?? Math.floor(Math.random() * 3000);
+    }
+
+    public async uploadLogs(): Promise<void> {
         let rawLogsSize;
         let compressedLogsSize;
         const uploadStartedAt = Date.now();
         try {
             if (!this.isEnabled()) return;
 
-            // Random jitter (0-3s) to spread upload bursts
-            const jitterMs = Math.floor(Math.random() * 3000);
             if (this.uploadInitiated) return;
             this.uploadInitiated = true;
+
+            const jitterMs = this.getJitterMs();
             await sleep(jitterMs);
             this.uploadInitiated = false;
 

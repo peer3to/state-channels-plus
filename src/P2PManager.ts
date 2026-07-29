@@ -34,7 +34,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     remoteRpc: RemoteRpcProxyType<TCustomRpc>;
     /** In-process transport used for "send to self" (no-target) delivery. */
     loopbackTransport: LoopbackTransport;
-    //TODO - map EVM address to websocket
+    // TODO - route WebRTCSetupService and LocalDiscoveryServer scans through ProfileManager
     openConnections: ATransport[] = [];
     holepunch: Holepunch;
     self = config.DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;

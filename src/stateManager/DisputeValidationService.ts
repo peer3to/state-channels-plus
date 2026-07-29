@@ -339,8 +339,6 @@ export default class DisputeValidationService {
 
         // isLatestState
 
-        // TODO
-        // should  this be  input.disputeAuditingDataHash or input.forkId??
         const result = this.agreementManager.getLatestSignedBlockByParticipant(
             dispute.input.forkId,
             dispute.input.disputer
@@ -420,7 +418,7 @@ export default class DisputeValidationService {
                 throw new Error(
                     "Timeout timestamp not found, dispute state not synced locally"
                 );
-            // TODO - this doesn't account for race condition (us not aware of on-chain calldata)
+            // TODO - cross-audit race: calldata may be posted after the kill decision
             const previousBlockOrSnapshot =
                 this.storage.getPreviousBlockOrSnapshot(cooridnates);
             let previousTimestamp = 0;
