@@ -1518,6 +1518,60 @@ describe("Unit: ValidationService", function () {
                 "invalidStateTransitionDetected"
             ]);
         });
+
+        it("repositions the state machine to the block's predecessor before the leader check", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+
+            // a real valid next block, authored off-wire; the observer's live
+            // machine is still positioned at the block's predecessor
+            const { observer, authored, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+
+            // mis-position the observer's machine at genesis - a different valid
+            // stored state whose next writer differs from the block's leader
+            const { correctLeader, wrongLeader } = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const correctLeader =
+                        await sm.diamondStateMachine.getNextToWrite();
+                    const genesis =
+                        sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                            args.forkId
+                        )!;
+                    const genesisState =
+                        sm.storage.stateMachineStates.getStateMachineState(
+                            genesis.stateMachineStateHash
+                        )!;
+                    await sm.diamondStateMachine.setState(genesisState);
+                    const wrongLeader =
+                        await sm.diamondStateMachine.getNextToWrite();
+                    return { correctLeader, wrongLeader };
+                },
+                { forkId }
+            );
+
+            // preconditions that make the preload observable: the block's real
+            // leader is the predecessor's next writer, and genesis names another
+            expect(authored!.author).to.equal(correctLeader);
+            expect(
+                wrongLeader,
+                "genesis must name a different next writer"
+            ).to.not.equal(correctLeader);
+
+            // only prepareStateMachineForLeaderCheck's setState can move the
+            // machine back to the predecessor; without it getNextToWrite returns
+            // wrongLeader and the leader check flags the block instead
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(authored!.encodedBlockConfirmation, {
+                    strategy: "dispute"
+                })
+                .request();
+
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.firedHooks).to.deep.equal([]);
+        });
     });
 
     // the probe replaces shared live methods (dispute/disconnect/restore) while

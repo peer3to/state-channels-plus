@@ -15,7 +15,6 @@ import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import type StateManager from "@/stateManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
-import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
 import EventSyncService from "./EventSyncService";
 
 export enum OnChainPostTiming {
@@ -98,8 +97,7 @@ export default class ValidationService {
         }
 
         if (
-            //TODO - quick hack - later want cleaner code
-            !(strategy instanceof DisputeValidationStrategy) &&
+            strategy.enforcesLiveForkAndOrderingGates &&
             (await this.isDisputedFork(block.forkId, block.channelId))
         ) {
             this.logger.warn("validateBlockConfirmation - fork disputed", {
@@ -114,8 +112,7 @@ export default class ValidationService {
             block.forkId
         );
         if (
-            //TODO - quick hack - later want cleaner code
-            !(strategy instanceof DisputeValidationStrategy) &&
+            strategy.enforcesLiveForkAndOrderingGates &&
             block.height > expectedNextHeight
         ) {
             this.logger.warn(
@@ -146,42 +143,12 @@ export default class ValidationService {
             return await strategy.blockIsNotLinkedAndIsNotFirstBlock(entry);
         }
 
-        // isNextLeader
-        //TODO - quick hack - later want cleaner code
-        if (strategy instanceof DisputeValidationStrategy) {
-            const previousSnapshot = this.storage.getPreviousStateSnapshot(
-                block.coordinates
-            );
-            if (!previousSnapshot) {
-                this.logger.error(
-                    "DISPUTE Strategy -validateBlockConfirmation - missing previous snapshot",
-                    {
-                        strategy: strategy.name,
-                        block: LoggerUtils.getBlockMetadata(block, this.storage)
-                    }
-                );
-                throw new Error(
-                    "Missing previous snapshot for dispute validation strategy"
-                );
-            }
-            const previousState =
-                this.storage.stateMachineStates.getStateMachineState(
-                    previousSnapshot.stateMachineStateHash
-                );
-            if (!previousState) {
-                this.logger.error(
-                    "DISPUTE Strategy -validateBlockConfirmation - missing previous state machine state",
-                    {
-                        strategy: strategy.name,
-                        block: LoggerUtils.getBlockMetadata(block, this.storage)
-                    }
-                );
-                throw new Error(
-                    "Missing previous state machine state for dispute validation strategy"
-                );
-            }
-            await this.diamondStateMachine.setState(previousState);
-        }
+        // isNextLeader - dispute replay must position the state machine at the
+        // block's predecessor first; live pipelines are already positioned.
+        await strategy.prepareStateMachineForLeaderCheck(
+            entry,
+            this.diamondStateMachine
+        );
         const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
             this.logger.warn(
