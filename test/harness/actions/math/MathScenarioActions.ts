@@ -1,6 +1,6 @@
-import { Logger } from "@/utils";
-import { ForkId } from "@/types/types";
-import { Status } from "@/types";
+import { Logger, sleep } from "@/utils";
+import { ForkId, Hash } from "@/types/types";
+import { Status, TimeConfig } from "@/types";
 import {
     CreateAndResolveDisputeResult,
     HarnessOptions,
@@ -8,6 +8,10 @@ import {
 } from "@test/harness/core/types";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { MathPeerTestHarness } from "test-harness";
+import type { MathStateMachine } from "@typechain-types";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+
+type MathTestPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
 
 export class MathScenarioActions extends ScenarioActions {
     declare public harness: MathPeerTestHarness;
@@ -144,6 +148,59 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
+    }
+
+    /**
+     * A committed spam dispute (internally valid, no enforcement basis) that
+     * every peer audit-failed, with every peer's `killDispute` suppressed while
+     * it happened. `killerIndex` therefore holds a real dispute fraud proof
+     * against a still-live kill window, and its `killDispute` is restored so a
+     * test can drive the kill itself.
+     */
+    async stageUnkilledSpamDispute(options?: {
+        killerIndex?: number;
+        spammerIndex?: number;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }): Promise<{
+        forkId: ForkId;
+        spammer: MathTestPeer;
+        killer: MathTestPeer;
+    }> {
+        const killerIndex = options?.killerIndex ?? 0;
+        const spammerIndex = options?.spammerIndex ?? 1;
+        await this.preDisputeSetup({
+            timeConfig: { evidenceTime: 12, ...options?.timeConfig }
+        });
+        const forkId = this.harness.activeForkId!;
+
+        const kills = await Promise.all(
+            this.harness.peers.map((peer) =>
+                this.harness.rpcStub.suppressDisputeKill(peer.index)
+            )
+        );
+        await this.harness.tamper.postTamperedDispute(
+            spammerIndex,
+            (dispute) => {
+                dispute.input.timeout.participant =
+                    "0x0000000000000000000000000000000000000000";
+                dispute.input.onChainSlashes = [];
+                dispute.input.selfRemoval = false;
+            }
+        );
+        // the skipped kill is the moment the killer stored its fraud proof
+        await kills[killerIndex].waitUntilSkipped();
+        await kills[killerIndex].restore();
+
+        return {
+            forkId,
+            spammer: this.harness.getPeer(spammerIndex),
+            killer: this.harness.getPeer(killerIndex)
+        };
     }
 
     async preDisputeSetupCalldataPath(options?: {
@@ -398,6 +455,126 @@ export class MathScenarioActions extends ScenarioActions {
             peerIndices: [0, 1, 2]
         });
         this.harness.event.resetEventSpies();
+    }
+
+    /**
+     * Produce a block whose confirmations never reach the other peers, so the
+     * next writer's signature is missing from everyone else's copy - the only
+     * shape in which the parent's on-chain timestamp still matters to the next
+     * block. On-chain posting is suppressed so the parent keeps no on-chain
+     * timestamp. Returns an observer holding the parent, the next writer, and
+     * a candidate timestamp already past the parent's p2p window.
+     */
+    async previousBlockUnsignedByNextWriter(options: {
+        timeConfig: TimeConfig;
+    }) {
+        const h = this.harness;
+        await h.lifecycle.start(3, 1, { timeConfig: options.timeConfig });
+        const forkId = h.activeForkId!;
+
+        const parentAuthorAddress = await h
+            .control(h.getPeer(0))
+            .query.getNextToWrite()
+            .request();
+        const parentAuthor = h.peers.find(
+            (p) => p.address === parentAuthorAddress
+        );
+        if (!parentAuthor) {
+            throw new Error(`No peer matches writer ${parentAuthorAddress}`);
+        }
+
+        // no on-chain posting anywhere -> the parent keeps no on-chain
+        // timestamp, and no peer's block reaches the observer through calldata
+        await Promise.all(
+            h.peers.map((peer) =>
+                h
+                    .control(peer)
+                    .stub.stubSuppressMaybePostBlockOnChain()
+                    .request()
+            )
+        );
+        // only the parent author's copy travels -> no other confirmation
+        // signature lands on anyone else's copy
+        for (const peer of h.peers) {
+            if (peer.index !== parentAuthor.index) {
+                await h.byzantine.stubBroadcast(peer.index);
+            }
+        }
+
+        const parentHeight = await h
+            .control(parentAuthor)
+            .query.getNextBlockHeight(forkId)
+            .request();
+        await parentAuthor.p2pInstance.p2pContractInstance.add(1);
+        await h.syncCoordinator.waitForPeersToSync([parentAuthor], forkId, {
+            minHeight: parentHeight,
+            waitForFinalization: false
+        });
+        const parentBundle = await h
+            .control(parentAuthor)
+            .query.getBlockByHeight(forkId, parentHeight)
+            .request();
+        if (!parentBundle) {
+            throw new Error(`Parent author never stored block ${parentHeight}`);
+        }
+
+        const nextWriterAddress = await h
+            .control(parentAuthor)
+            .query.getNextToWrite()
+            .request();
+        const author = h.peers.find((p) => p.address === nextWriterAddress);
+        if (!author || author.index === parentAuthor.index) {
+            throw new Error(`Unexpected next writer ${nextWriterAddress}`);
+        }
+        const observer = h.peers.find(
+            (p) => p.index !== parentAuthor.index && p.index !== author.index
+        );
+        if (!observer) {
+            throw new Error("No third peer available as observer");
+        }
+
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: observer.index,
+            blockHash: parentBundle.hash as Hash
+        });
+        const previous = await h
+            .control(observer)
+            .query.getBlockByHeight(forkId, parentHeight)
+            .request();
+        if (!previous) {
+            throw new Error(`Observer never stored block ${parentHeight}`);
+        }
+        if (previous.confirmationSignerAddresses.includes(author.address)) {
+            throw new Error(
+                "Next writer signed the parent - its on-chain timestamp would be ignored"
+            );
+        }
+        if (previous.onChainTimestamp !== null) {
+            throw new Error("Parent already carries an on-chain timestamp");
+        }
+
+        // the observer loses the subscribed delivery, so it only learns the
+        // parent's post time by recovering it during validation
+        await h.control(observer).stub.stubHoldCalldataPostedEvents().request();
+
+        // leave the parent's p2p window before posting, so its real post time
+        // is strictly later than its own timestamp
+        await sleep((options.timeConfig.p2pTime + 2) * 1000);
+        const { onChainTimestamp: parentPostTimestamp } = await h
+            .control(parentAuthor)
+            .stub.postBlockCalldataOnChain(previous.encodedSignedBlock)
+            .request();
+        if (parentPostTimestamp <= previous.timestamp) {
+            throw new Error(
+                `Parent posted at ${parentPostTimestamp}, not after its own ${previous.timestamp}`
+            );
+        }
+        await h
+            .control(observer)
+            .stub.waitForHeldCalldataPostedEvent()
+            .request();
+
+        return { observer, author, previous, forkId, parentPostTimestamp };
     }
 
     async activeChannelWithDispute(options: {

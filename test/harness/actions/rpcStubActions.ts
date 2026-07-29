@@ -1,7 +1,14 @@
 import { Logger } from "@/utils";
+import type { ForkId } from "@/types/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { ReductionSimulationErrorName } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import type {
+    DisputeSubmissionFailureSpec,
+    RecordedDisputeSubmission,
+    RecordedFraudProofApply,
+    ReductionSimulationErrorName
+} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import { waitFor } from "@test/utils/waitFor";
 
 /**
  * RPC-method stubs that wrap a service's `createRPCMethods` host-side.
@@ -284,6 +291,165 @@ export class RpcStubActions<
                 await ctl()
                     .restoreSnapshotUpdatedEvents(replayEvents)
                     .request();
+            }
+        };
+    }
+
+    /**
+     * Record what `dispute()` uploads on a peer without sending it. With
+     * `hold: true` every recorded send parks until `release`, so a second
+     * `dispute()` can be observed queueing behind the dispute mutex.
+     */
+    async recordDisputeSubmissions(
+        peerIndex: number,
+        options: {
+            hold?: boolean;
+            failWith?: DisputeSubmissionFailureSpec;
+        } = {}
+    ): Promise<{
+        submissions: () => Promise<RecordedDisputeSubmission[]>;
+        /** Sends parked at the hold so far. */
+        heldCount: () => Promise<number>;
+        waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+        release: () => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl()
+            .stubRecordDisputeSubmissions(
+                options.hold ?? false,
+                options.failWith
+            )
+            .request();
+        const recorded = () => ctl().getRecordedDisputeSubmissions().request();
+        const heldCount = async () => (await recorded()).held;
+        return {
+            submissions: async () => (await recorded()).submissions,
+            heldCount,
+            waitUntilHeld: (timeoutMs = 10000) =>
+                waitFor(async () => (await heldCount()) > 0, timeoutMs),
+            release: async () => {
+                await ctl().releaseDisputeSubmissions().request();
+            },
+            restore: async () => {
+                await ctl().restoreDisputeSubmissions().request();
+            }
+        };
+    }
+
+    /**
+     * Record `killDispute`'s on-chain apply on a peer (the real transaction
+     * still runs). With `hold: true` every send parks until `release`, so
+     * several kills can be staged inside one live kill window.
+     */
+    async recordDisputeFraudProofApplies(
+        peerIndex: number,
+        options: {
+            hold?: boolean;
+            failWith?: DisputeSubmissionFailureSpec;
+        } = {}
+    ): Promise<{
+        applies: () => Promise<RecordedFraudProofApply[]>;
+        /** Sends parked at the hold so far. */
+        heldCount: () => Promise<number>;
+        waitUntilHeld: (count: number, timeoutMs?: number) => Promise<void>;
+        release: () => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl()
+            .stubRecordDisputeFraudProofApplies(
+                options.hold ?? false,
+                options.failWith
+            )
+            .request();
+        const recorded = () =>
+            ctl().getRecordedDisputeFraudProofApplies().request();
+        const heldCount = async () => (await recorded()).held;
+        return {
+            applies: async () => (await recorded()).applies,
+            heldCount,
+            waitUntilHeld: (count, timeoutMs = 20000) =>
+                waitFor(async () => (await heldCount()) >= count, timeoutMs),
+            release: async () => {
+                await ctl().releaseDisputeFraudProofApplies().request();
+            },
+            restore: async () => {
+                await ctl().restoreDisputeFraudProofApplies().request();
+            }
+        };
+    }
+
+    /** Keep a peer out of a kill race. Returns a teardown. */
+    async suppressDisputeKill(peerIndex: number): Promise<{
+        skippedCount: () => Promise<number>;
+        /** The first skipped kill also marks the proof as stored. */
+        waitUntilSkipped: (timeoutMs?: number) => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubSuppressDisputeKill().request();
+        const skippedCount = () =>
+            ctl().getSuppressedDisputeKillCount().request();
+        return {
+            skippedCount,
+            waitUntilSkipped: (timeoutMs = 20000) =>
+                waitFor(async () => (await skippedCount()) > 0, timeoutMs),
+            restore: async () => {
+                await ctl().restoreDisputeKill().request();
+            }
+        };
+    }
+
+    async disputeMutexWaiterCount(peerIndex: number): Promise<number> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.getDisputeMutexWaiterCount()
+            .request();
+    }
+
+    /** Resolve once a second `dispute()` caller is queued behind the mutex. */
+    async waitUntilDisputeMutexContended(
+        peerIndex: number,
+        timeoutMs = 10000
+    ): Promise<void> {
+        await waitFor(
+            async () => (await this.disputeMutexWaiterCount(peerIndex)) > 0,
+            timeoutMs
+        );
+    }
+
+    /**
+     * Park a peer's `constructDispute` at its first async boundary (the state
+     * proof read) for `forkId`. `waitUntilParked` resolves once a construction
+     * is actually held, so a test can land a real fraud proof inside the window
+     * and then `release` it.
+     */
+    async holdConstructDisputeAtStateProof(
+        peerIndex: number,
+        forkId: ForkId
+    ): Promise<{
+        waitUntilParked: (timeoutMs?: number) => Promise<void>;
+        parkedCount: () => Promise<number>;
+        release: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubPauseConstructDisputeAtStateProof(forkId).request();
+        this.logger.debug(
+            `Holding constructDispute at the state proof read on peer ${peerIndex}`
+        );
+        const parkedCount = async () =>
+            (await ctl().getPausedConstructDisputeStatus().request()).entered;
+        return {
+            parkedCount,
+            waitUntilParked: (timeoutMs = 10000) =>
+                waitFor(async () => (await parkedCount()) > 0, timeoutMs),
+            release: async () => {
+                await ctl().restorePausedConstructDispute().request();
             }
         };
     }

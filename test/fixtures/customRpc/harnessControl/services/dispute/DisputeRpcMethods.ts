@@ -114,6 +114,27 @@ export class DisputeRpcMethods extends ARpcMethods {
         };
     }
 
+    /** On-chain kill-period state for `forkId`, as this peer's chain reports it. */
+    public async getKillPeriod(forkId: ForkId): Promise<{
+        windowExists: boolean;
+        isExpired: boolean;
+        killPeriodEnd: number;
+        blockTimestamp: number;
+    }> {
+        const sm = this.service.sm;
+        const { windowExists, isExpired, killPeriodEnd, blockTimestamp } =
+            await sm.stateChannelManagerContract.isKillPeriodExpired(
+                sm.channelId,
+                forkId
+            );
+        return {
+            windowExists,
+            isExpired,
+            killPeriodEnd: Number(killPeriodEnd),
+            blockTimestamp: Number(blockTimestamp)
+        };
+    }
+
     /** Genesis state-snapshot for `forkId`, encoded (`Type.StateSnapshot`), or null. */
     public getGenesisSnapshotStruct(
         forkId: ForkId

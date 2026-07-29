@@ -38,6 +38,24 @@ export class StateQueryActions<
             .request();
     }
 
+    /** On-chain kill-period state for `forkId`, as seen by `peerIndex`. */
+    public async killPeriod(forkId: ForkId, peerIndex: number = 0) {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .dispute.getKillPeriod(forkId)
+            .request();
+    }
+
+    /** Participants slashed on-chain, as seen by `peerIndex`. */
+    public async onChainSlashedParticipants(
+        peerIndex: number = 0
+    ): Promise<string[]> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getOnChainSlashedParticipants()
+            .request();
+    }
+
     public async getOnChainSnapshotHash(channelId?: Hash): Promise<Hash> {
         const id = channelId ?? this.harness.channelId;
         return StateSnapshot.from(

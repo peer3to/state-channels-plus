@@ -176,6 +176,22 @@ use a non-overwritten form (`expect(x, "msg").to.not.be.undefined`). Found via
 cpu-profile on the wrong-fork dispute tests (2026-07-06); the starvation counter
 in the parallel summary is the detector.
 
+## Comparing addresses — no defensive conversions
+
+Addresses are already ethers-checksummed everywhere a test can reach them:
+`peer.address`, control-service projections (`signerAddress`, `author`,
+`sourcePeers`, `disconnectedAddresses`, `confirmationSignerAddresses`) and
+contract reads (`getParticipants`, `getPendingParticipants`). **Compare them
+directly.** No `.toLowerCase()` on either side, no
+`.map((a: unknown) => String(a))` to "normalize" a contract array, no `String(x)`
+around a value that is already a string.
+
+These conversions are noise: they hide which side is actually wrong and make an
+assertion pass for the wrong reason. If a comparison only passes with one, the
+projection or its type is wrong — fix that, don't paper over it. Verified by
+stripping all 29 of them from `test/unit/ValidationService.test.ts` (2026-07-28)
+with the suite still green.
+
 ## Running tests
 
 - Typecheck: `yarn tsc --noEmit -p tsconfig.json` (the `TestPeer`/control surface
