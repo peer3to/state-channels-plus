@@ -8,6 +8,10 @@ import {
 } from "@test/harness/core/types";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
 import { MathPeerTestHarness } from "test-harness";
+import type { MathStateMachine } from "@typechain-types";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+
+type MathTestPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
 
 export class MathScenarioActions extends ScenarioActions {
     declare public harness: MathPeerTestHarness;
@@ -144,6 +148,59 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
+    }
+
+    /**
+     * A committed spam dispute (internally valid, no enforcement basis) that
+     * every peer audit-failed, with every peer's `killDispute` suppressed while
+     * it happened. `killerIndex` therefore holds a real dispute fraud proof
+     * against a still-live kill window, and its `killDispute` is restored so a
+     * test can drive the kill itself.
+     */
+    async stageUnkilledSpamDispute(options?: {
+        killerIndex?: number;
+        spammerIndex?: number;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }): Promise<{
+        forkId: ForkId;
+        spammer: MathTestPeer;
+        killer: MathTestPeer;
+    }> {
+        const killerIndex = options?.killerIndex ?? 0;
+        const spammerIndex = options?.spammerIndex ?? 1;
+        await this.preDisputeSetup({
+            timeConfig: { evidenceTime: 12, ...options?.timeConfig }
+        });
+        const forkId = this.harness.activeForkId!;
+
+        const kills = await Promise.all(
+            this.harness.peers.map((peer) =>
+                this.harness.rpcStub.suppressDisputeKill(peer.index)
+            )
+        );
+        await this.harness.tamper.postTamperedDispute(
+            spammerIndex,
+            (dispute) => {
+                dispute.input.timeout.participant =
+                    "0x0000000000000000000000000000000000000000";
+                dispute.input.onChainSlashes = [];
+                dispute.input.selfRemoval = false;
+            }
+        );
+        // the skipped kill is the moment the killer stored its fraud proof
+        await kills[killerIndex].waitUntilSkipped();
+        await kills[killerIndex].restore();
+
+        return {
+            forkId,
+            spammer: this.harness.getPeer(spammerIndex),
+            killer: this.harness.getPeer(killerIndex)
+        };
     }
 
     async preDisputeSetupCalldataPath(options?: {

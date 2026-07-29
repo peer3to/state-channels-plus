@@ -5,13 +5,26 @@ import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { ethers, id, Log } from "ethers";
-import { Codec, DetachedPromises, Mutex, Type } from "@/utils";
+import type { StateChannelManagerProxy } from "@typechain-types";
+import type {
+    DisputeAuditingDataStruct,
+    DisputeConfirmationStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import {
+    Codec,
+    DetachedPromises,
+    Mutex,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
+import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockValidationResult } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
-import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { recordValidationBoundary } from "./RecordingValidationStrategy";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
@@ -45,7 +58,12 @@ export type StubKey =
     | "finalDisputePreparation"
     | "spectateSync"
     | "pausedReduction"
-    | "pausedReductionKillPeriod";
+    | "pausedReductionKillPeriod"
+    | "constructDisputeStateProof"
+    | "constructDisputeEntry"
+    | "disputeSubmissions"
+    | "disputeFraudProofApplies"
+    | "disputeKill";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -64,6 +82,70 @@ export type PausedReductionState = PausedReductionStatus & {
     inside: boolean;
     release?: () => void;
     promise?: Promise<unknown>;
+};
+
+export type RecordedDisputeSubmission = {
+    /** Contract method `dispute()` sent. */
+    method: string;
+    /** Inner call names when `method` is `multicall`, in order. */
+    innerMethods: string[];
+    /** `encodedDispute` carried by the uploaded dispute confirmation. */
+    encodedDispute: string;
+    /** Auditing data uploaded alongside the dispute, encoded, or null. */
+    encodedAuditingData: string | null;
+    /** Participants of the fraud proofs bundled by `applyFraudProofs`. */
+    fraudProofParticipants: string[];
+    /** `gasLimit` override sent with the transaction, or null. */
+    gasLimit: string | null;
+    /** Set once `dispute()` awaited the returned transaction. */
+    waited: boolean;
+};
+
+export type DisputeSubmissionFailureSpec = {
+    /** Solidity custom error to revert with (its selector is the revert data). */
+    customError?: RaceConditionErrorName;
+    /** Failure message when the failure is not a decodable custom error. */
+    message?: string;
+    /** Whether the failure surfaces from the send or from `tx.wait()`. */
+    at: "send" | "wait";
+};
+
+export type DisputeSubmissionOriginals = {
+    multicall: StateChannelManagerProxy["multicall"];
+    uploadDispute: StateChannelManagerProxy["uploadDispute"];
+    uploadDisputeWithCalldata: StateChannelManagerProxy["uploadDisputeWithCalldata"];
+};
+
+export type DisputeSubmissionHold = {
+    gate: Promise<void>;
+    release: () => void;
+    /** Sends parked at the hold so far. */
+    held: number;
+};
+
+export type RecordedFraudProofApply = {
+    /** Participants named by the applied dispute fraud proofs. */
+    participants: string[];
+    /** Failure message from the send or from `wait()`, or null when it landed. */
+    error: string | null;
+    /** Custom-error name decoded from that failure, when there was one. */
+    customError: string | null;
+    /** Set once `killDispute` awaited the returned transaction. */
+    waited: boolean;
+};
+
+export type PausedConstructDisputeStatus = {
+    /** Calls parked at the held boundary so far. */
+    entered: number;
+    released: boolean;
+};
+
+export type PausedConstructDisputeState = PausedConstructDisputeStatus & {
+    targetForkId: ForkId;
+    /** True only while a `constructDispute` for the target fork is running. */
+    inside: boolean;
+    gate: Promise<void>;
+    release: () => void;
 };
 
 export type EventSyncFailureProbe = {
@@ -175,6 +257,22 @@ export class StubService extends ARpcService<
     spectateSyncCallCount = 0;
     /** State for the already-entered old-fork reduction race stub. */
     pausedReduction?: PausedReductionState;
+    /** State for the constructDispute state-proof hold. */
+    pausedConstructDispute?: PausedConstructDisputeState;
+    /** Uploads seen by the record-only dispute-submission probe (newest last). */
+    readonly recordedDisputeSubmissions: RecordedDisputeSubmission[] = [];
+    /** Gate the dispute-submission probe parks uploads on, when installed. */
+    disputeSubmissionHold?: DisputeSubmissionHold;
+    /** Failure the dispute-submission probe injects, when installed. */
+    disputeSubmissionFailure?: DisputeSubmissionFailureSpec;
+    /** Applies seen by the dispute-fraud-proof apply probe (newest last). */
+    readonly recordedFraudProofApplies: RecordedFraudProofApply[] = [];
+    /** Gate the apply probe parks sends on, when installed. */
+    fraudProofApplyHold?: DisputeSubmissionHold;
+    /** Failure the apply probe injects, when installed. */
+    fraudProofApplyFailure?: DisputeSubmissionFailureSpec;
+    /** Incremented per `killDispute` skipped by the suppress-kill stub. */
+    suppressedDisputeKillCount = 0;
     /**
      * Serializes `runBlockValidation`'s record-only patch/restore region. The
      * patch replaces shared live methods (dispute, disconnect, restore), so two
@@ -549,6 +647,302 @@ export class StubService extends ARpcService<
                     dispute
                 ) !== undefined
         };
+    }
+
+    /**
+     * Record-only probe over the three dispute-upload entry points. A real
+     * upload posts an on-chain dispute against the live fork, which derails the
+     * session, so the probe records the send and hands `dispute()` a stand-in
+     * transaction; the real uploads keep their coverage on the e2e paths.
+     * `holdSubmissions` parks every recorded send until released, so a second
+     * caller can be observed queueing behind the dispute mutex. `failure` makes
+     * the send (or its `wait()`) fail - a custom error reverts with the real
+     * 4-byte selector, exactly what the SDK's decoder reads off a real revert.
+     */
+    public installDisputeSubmissionRecorder(
+        holdSubmissions: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("disputeSubmissions")) {
+            this.stubOriginals.set("disputeSubmissions", {
+                multicall: contract.multicall,
+                uploadDispute: contract.uploadDispute,
+                uploadDisputeWithCalldata: contract.uploadDisputeWithCalldata
+            } satisfies DisputeSubmissionOriginals);
+        }
+        this.recordedDisputeSubmissions.length = 0;
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        this.disputeSubmissionHold = holdSubmissions
+            ? { gate, release, held: 0 }
+            : undefined;
+        this.disputeSubmissionFailure = failure;
+
+        const record = async (
+            submission: Omit<RecordedDisputeSubmission, "waited">
+        ) => {
+            const entry: RecordedDisputeSubmission = {
+                ...submission,
+                waited: false
+            };
+            this.recordedDisputeSubmissions.push(entry);
+            const hold = this.disputeSubmissionHold;
+            if (hold) {
+                hold.held += 1;
+                await hold.gate;
+            }
+            if (failure?.at === "send") throw this.submissionFailure(failure);
+            return {
+                // a tx that reverts also reverts the preflight `call` that
+                // tryHandleEvmError retries through
+                provider:
+                    failure?.at === "wait"
+                        ? {
+                              call: async () => {
+                                  throw this.submissionFailure(failure);
+                              }
+                          }
+                        : undefined,
+                wait: async () => {
+                    if (failure?.at === "wait") {
+                        throw this.submissionFailure(failure);
+                    }
+                    entry.waited = true;
+                    return null;
+                }
+            };
+        };
+
+        contract.uploadDispute = this.asRecordingContractMethod(
+            contract.uploadDispute,
+            (confirmation: DisputeConfirmationStruct, overrides?: unknown) =>
+                record({
+                    method: "uploadDispute",
+                    innerMethods: [],
+                    encodedDispute: String(
+                        confirmation.signedDispute.encodedDispute
+                    ),
+                    encodedAuditingData: null,
+                    fraudProofParticipants: [],
+                    gasLimit: this.overrideGasLimit(overrides)
+                })
+        );
+
+        contract.uploadDisputeWithCalldata = this.asRecordingContractMethod(
+            contract.uploadDisputeWithCalldata,
+            (
+                confirmation: DisputeConfirmationStruct,
+                auditingData: DisputeAuditingDataStruct
+            ) =>
+                record({
+                    method: "uploadDisputeWithCalldata",
+                    innerMethods: [],
+                    encodedDispute: String(
+                        confirmation.signedDispute.encodedDispute
+                    ),
+                    encodedAuditingData: Codec.encode(
+                        auditingData,
+                        Type.DisputeAuditingData
+                    ) as string,
+                    fraudProofParticipants: [],
+                    gasLimit: null
+                })
+        );
+
+        contract.multicall = this.asRecordingContractMethod(
+            contract.multicall,
+            (calls: string[], overrides?: unknown) =>
+                record({
+                    ...this.describeMulticall(calls),
+                    method: "multicall",
+                    gasLimit: this.overrideGasLimit(overrides)
+                })
+        );
+    }
+
+    /**
+     * A stand-in that records the send but keeps the original method's helpers
+     * (`populateTransaction`, `staticCall`, …) - the multicall branch builds its
+     * legs through `populateTransaction` on these very methods.
+     */
+    private asRecordingContractMethod<T extends object>(
+        original: T,
+        recorder: (...args: never[]) => unknown
+    ): T {
+        Object.defineProperties(
+            recorder,
+            Object.getOwnPropertyDescriptors(original)
+        );
+        return recorder as unknown as T;
+    }
+
+    /** Decode a dispute multicall's legs into the fields a test asserts on. */
+    private describeMulticall(
+        calls: string[]
+    ): Omit<RecordedDisputeSubmission, "waited" | "method" | "gasLimit"> {
+        const contract = this.sm.stateChannelManagerContract;
+        const innerMethods: string[] = [];
+        let encodedDispute = "";
+        let encodedAuditingData: string | null = null;
+        const fraudProofParticipants: string[] = [];
+        for (const data of calls) {
+            const parsed = contract.interface.parseTransaction({ data });
+            if (!parsed) throw new Error("Undecodable dispute multicall leg");
+            innerMethods.push(parsed.name);
+            if (parsed.name === "applyFraudProofs") {
+                for (const proof of parsed.args[0]) {
+                    fraudProofParticipants.push(String(proof.participant));
+                }
+            } else {
+                encodedDispute = String(parsed.args[0].signedDispute[0]);
+                if (parsed.name === "uploadDisputeWithCalldata") {
+                    encodedAuditingData = Codec.encode(
+                        parsed.args[1],
+                        Type.DisputeAuditingData
+                    ) as string;
+                }
+            }
+        }
+        return {
+            innerMethods,
+            encodedDispute,
+            encodedAuditingData,
+            fraudProofParticipants
+        };
+    }
+
+    private submissionFailure(failure: DisputeSubmissionFailureSpec): unknown {
+        if (failure.customError) {
+            return { data: id(`${failure.customError}()`).slice(0, 10) };
+        }
+        return new Error(failure.message ?? "dispute upload failed");
+    }
+
+    private overrideGasLimit(overrides: unknown): string | null {
+        const gasLimit = (overrides as { gasLimit?: bigint } | undefined)
+            ?.gasLimit;
+        return gasLimit === undefined ? null : String(gasLimit);
+    }
+
+    public restoreDisputeSubmissions(): boolean {
+        this.disputeSubmissionHold?.release();
+        this.disputeSubmissionHold = undefined;
+        this.disputeSubmissionFailure = undefined;
+        const originals = this.stubOriginals.get("disputeSubmissions") as
+            | DisputeSubmissionOriginals
+            | undefined;
+        if (originals === undefined) return false;
+        const contract = this.sm.stateChannelManagerContract;
+        contract.multicall = originals.multicall;
+        contract.uploadDispute = originals.uploadDispute;
+        contract.uploadDisputeWithCalldata =
+            originals.uploadDisputeWithCalldata;
+        this.stubOriginals.delete("disputeSubmissions");
+        return true;
+    }
+
+    /**
+     * Record every `applyDisputeFraudProofs` send and how it settled, still
+     * running the real transaction. `holdApplies` parks each send until
+     * released, so several kills can be staged inside one live kill window;
+     * `failure` reverts the send (or its `wait()`) instead of sending it.
+     */
+    public installDisputeFraudProofApplyRecorder(
+        holdApplies: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("disputeFraudProofApplies")) {
+            this.stubOriginals.set(
+                "disputeFraudProofApplies",
+                contract.applyDisputeFraudProofs.bind(contract)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "disputeFraudProofApplies"
+        ) as typeof contract.applyDisputeFraudProofs;
+        this.recordedFraudProofApplies.length = 0;
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        this.fraudProofApplyHold = holdApplies
+            ? { gate, release, held: 0 }
+            : undefined;
+        this.fraudProofApplyFailure = failure;
+
+        contract.applyDisputeFraudProofs = (async (
+            proofs: DisputeFraudProofStruct[]
+        ) => {
+            const entry: RecordedFraudProofApply = {
+                participants: proofs.map((proof) => String(proof.participant)),
+                error: null,
+                customError: null,
+                waited: false
+            };
+            this.recordedFraudProofApplies.push(entry);
+            const hold = this.fraudProofApplyHold;
+            if (hold) {
+                hold.held += 1;
+                await hold.gate;
+            }
+            const fail = (error: unknown) => {
+                entry.error =
+                    error instanceof Error ? error.message : String(error);
+                entry.customError = tryDecodeCustomError(error)?.name ?? null;
+            };
+            // an injected failure replaces the send entirely - forwarding it
+            // would leave a landed transaction behind a "failed" apply
+            if (failure) {
+                const reject = () => {
+                    const error = this.submissionFailure(failure);
+                    fail(error);
+                    throw error;
+                };
+                if (failure.at === "send") reject();
+                return {
+                    // a tx that reverts also reverts the preflight `call` that
+                    // tryHandleEvmError retries through
+                    provider: { call: async () => reject() },
+                    wait: async () => reject()
+                };
+            }
+            let tx;
+            try {
+                tx = await original(proofs);
+            } catch (error) {
+                fail(error);
+                throw error;
+            }
+            const originalWait = tx.wait.bind(tx);
+            tx.wait = (async (...args: Parameters<typeof originalWait>) => {
+                try {
+                    const receipt = await originalWait(...args);
+                    entry.waited = true;
+                    return receipt;
+                } catch (error) {
+                    fail(error);
+                    throw error;
+                }
+            }) as typeof tx.wait;
+            return tx;
+        }) as typeof contract.applyDisputeFraudProofs;
+    }
+
+    public restoreDisputeFraudProofApplies(): boolean {
+        this.fraudProofApplyHold?.release();
+        this.fraudProofApplyHold = undefined;
+        this.fraudProofApplyFailure = undefined;
+        const original = this.stubOriginals.get("disputeFraudProofApplies");
+        if (original === undefined) return false;
+        const contract = this.sm.stateChannelManagerContract;
+        contract.applyDisputeFraudProofs =
+            original as typeof contract.applyDisputeFraudProofs;
+        this.stubOriginals.delete("disputeFraudProofApplies");
+        return true;
     }
 
     public async runBlockValidation(

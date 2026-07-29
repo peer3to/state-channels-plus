@@ -14,8 +14,13 @@ import { id } from "ethers";
 import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
+    DisputeSubmissionFailureSpec,
     EventSyncFailureProbe,
+    PausedConstructDisputeState,
+    PausedConstructDisputeStatus,
     PausedReductionStatus,
+    RecordedDisputeSubmission,
+    RecordedFraudProofApply,
     ReductionSimulationErrorName,
     ConcurrentCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
@@ -836,6 +841,232 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.service.pausedReduction = undefined;
         return restored;
     }
+    /**
+     * Record `dispute()`'s upload without sending it. `holdSubmissions` parks
+     * each recorded send until `releaseDisputeSubmissions`; `failure` makes the
+     * send (or its `wait()`) fail with a real custom-error revert.
+     */
+    public stubRecordDisputeSubmissions(
+        holdSubmissions: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): boolean {
+        this.service.installDisputeSubmissionRecorder(holdSubmissions, failure);
+        return true;
+    }
+
+    public getRecordedDisputeSubmissions(): {
+        submissions: RecordedDisputeSubmission[];
+        held: number;
+    } {
+        return {
+            submissions: this.service.recordedDisputeSubmissions.map(
+                (submission) => ({ ...submission })
+            ),
+            held: this.service.disputeSubmissionHold?.held ?? 0
+        };
+    }
+
+    public releaseDisputeSubmissions(): boolean {
+        const hold = this.service.disputeSubmissionHold;
+        if (!hold) return false;
+        this.service.disputeSubmissionHold = undefined;
+        hold.release();
+        return true;
+    }
+
+    public restoreDisputeSubmissions(): boolean {
+        return this.service.restoreDisputeSubmissions();
+    }
+
+    /**
+     * Record `killDispute`'s on-chain apply and how it settled (the real
+     * transaction still runs). `holdApplies` parks each send until
+     * `releaseDisputeFraudProofApplies`.
+     */
+    public stubRecordDisputeFraudProofApplies(
+        holdApplies: boolean,
+        failure?: DisputeSubmissionFailureSpec
+    ): boolean {
+        this.service.installDisputeFraudProofApplyRecorder(
+            holdApplies,
+            failure
+        );
+        return true;
+    }
+
+    public getRecordedDisputeFraudProofApplies(): {
+        applies: RecordedFraudProofApply[];
+        held: number;
+    } {
+        return {
+            applies: this.service.recordedFraudProofApplies.map((apply) => ({
+                ...apply
+            })),
+            held: this.service.fraudProofApplyHold?.held ?? 0
+        };
+    }
+
+    public releaseDisputeFraudProofApplies(): boolean {
+        const hold = this.service.fraudProofApplyHold;
+        if (!hold) return false;
+        this.service.fraudProofApplyHold = undefined;
+        hold.release();
+        return true;
+    }
+
+    public restoreDisputeFraudProofApplies(): boolean {
+        return this.service.restoreDisputeFraudProofApplies();
+    }
+
+    /** Keep this peer out of a kill race (counts the kills it skipped). */
+    public stubSuppressDisputeKill(): boolean {
+        const disputeManager = this.service.sm.disputeManager;
+        if (!this.service.stubOriginals.has("disputeKill")) {
+            this.service.stubOriginals.set(
+                "disputeKill",
+                disputeManager.killDispute.bind(disputeManager)
+            );
+        }
+        this.service.suppressedDisputeKillCount = 0;
+        disputeManager.killDispute = (async () => {
+            this.service.suppressedDisputeKillCount += 1;
+        }) as typeof disputeManager.killDispute;
+        return true;
+    }
+
+    public getSuppressedDisputeKillCount(): number {
+        return this.service.suppressedDisputeKillCount;
+    }
+
+    public restoreDisputeKill(): boolean {
+        const original = this.service.stubOriginals.get("disputeKill");
+        if (original === undefined) return false;
+        const disputeManager = this.service.sm.disputeManager;
+        disputeManager.killDispute =
+            original as typeof disputeManager.killDispute;
+        this.service.stubOriginals.delete("disputeKill");
+        return true;
+    }
+
+    /** Callers queued behind the dispute mutex (its queue is private). */
+    public getDisputeMutexWaiterCount(): number {
+        return (
+            this.service.sm.disputeManager.mutex as unknown as {
+                queue: unknown[];
+            }
+        ).queue.length;
+    }
+
+    /**
+     * Park `constructDispute` for `forkId` at its `getStateProof` await - the
+     * first async boundary inside it, so a construction parked there has
+     * started but has not yet read the stored fraud proofs. The park is scoped
+     * to a running `constructDispute`, so an unrelated `getStateProof` caller
+     * can never take it instead and leave the test's race unstaged.
+     */
+    public stubPauseConstructDisputeAtStateProof(forkId: ForkId): boolean {
+        const agreementManager = this.service.sm.agreementManager;
+        const disputeManager = this.service.sm.disputeManager;
+        if (!this.service.stubOriginals.has("constructDisputeStateProof")) {
+            this.service.stubOriginals.set(
+                "constructDisputeStateProof",
+                agreementManager.getStateProof.bind(agreementManager)
+            );
+        }
+        if (!this.service.stubOriginals.has("constructDisputeEntry")) {
+            this.service.stubOriginals.set(
+                "constructDisputeEntry",
+                disputeManager.constructDispute.bind(disputeManager)
+            );
+        }
+        const originalStateProof = this.service.stubOriginals.get(
+            "constructDisputeStateProof"
+        ) as typeof agreementManager.getStateProof;
+        const originalConstruct = this.service.stubOriginals.get(
+            "constructDisputeEntry"
+        ) as typeof disputeManager.constructDispute;
+
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const state: PausedConstructDisputeState = {
+            targetForkId: forkId,
+            entered: 0,
+            released: false,
+            inside: false,
+            gate,
+            release
+        };
+        this.service.pausedConstructDispute = state;
+
+        disputeManager.constructDispute = ((requestedForkId: ForkId) => {
+            if (requestedForkId !== state.targetForkId) {
+                return originalConstruct(requestedForkId);
+            }
+            state.inside = true;
+            return originalConstruct(requestedForkId).finally(() => {
+                state.inside = false;
+            });
+        }) as typeof disputeManager.constructDispute;
+
+        agreementManager.getStateProof = (async (
+            requestedForkId: ForkId,
+            blockHeight: number
+        ) => {
+            if (
+                state.inside &&
+                requestedForkId === state.targetForkId &&
+                !state.released
+            ) {
+                state.entered += 1;
+                await state.gate;
+            }
+            return originalStateProof(requestedForkId, blockHeight);
+        }) as typeof agreementManager.getStateProof;
+        return true;
+    }
+
+    public releasePausedConstructDispute(): boolean {
+        const state = this.service.pausedConstructDispute;
+        if (!state) return false;
+        state.released = true;
+        state.release();
+        return true;
+    }
+
+    public getPausedConstructDisputeStatus(): PausedConstructDisputeStatus {
+        const state = this.service.pausedConstructDispute;
+        return {
+            entered: state?.entered ?? 0,
+            released: state?.released ?? false
+        };
+    }
+
+    public restorePausedConstructDispute(): boolean {
+        this.releasePausedConstructDispute();
+        const originalStateProof = this.service.stubOriginals.get(
+            "constructDisputeStateProof"
+        );
+        if (originalStateProof === undefined) return false;
+        const agreementManager = this.service.sm.agreementManager;
+        agreementManager.getStateProof =
+            originalStateProof as typeof agreementManager.getStateProof;
+        this.service.stubOriginals.delete("constructDisputeStateProof");
+
+        const originalConstruct = this.service.stubOriginals.get(
+            "constructDisputeEntry"
+        );
+        if (originalConstruct !== undefined) {
+            const disputeManager = this.service.sm.disputeManager;
+            disputeManager.constructDispute =
+                originalConstruct as typeof disputeManager.constructDispute;
+            this.service.stubOriginals.delete("constructDisputeEntry");
+        }
+        this.service.pausedConstructDispute = undefined;
+        return true;
+    }
+
     /** Hold StateSnapshotUpdated events instead of handling them. */
     public stubHoldSnapshotUpdatedEvents(): boolean {
         const eventHandler = this.service.sm.eventHandler;
