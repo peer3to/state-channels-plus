@@ -10,10 +10,18 @@ const http = require("http");
 const net = require("net");
 const path = require("path");
 
-const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
-const REPO_ROOT = path.join(__dirname, "..", "..");
+const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js", {
+    paths: [process.cwd()]
+});
+const PROJECT_ROOT = process.cwd();
+const runtimeRoot = path.join(__dirname, "..", "..");
+const discoveryScriptFrom = (root) =>
+    path.join(root, "scripts", "infra", "local-discovery-registry.js");
+const PACKAGE_ROOT = fs.existsSync(discoveryScriptFrom(runtimeRoot))
+    ? runtimeRoot
+    : path.join(runtimeRoot, "..");
 const DISCOVERY_SCRIPT = path.join(
-    REPO_ROOT,
+    PACKAGE_ROOT,
     "scripts",
     "infra",
     "local-discovery-registry.js"
@@ -95,7 +103,7 @@ async function startHardhatNode({
             String(nodePort)
         ],
         {
-            cwd: REPO_ROOT,
+            cwd: PROJECT_ROOT,
             env: { ...process.env, ...env },
             stdio: ["ignore", "pipe", "pipe"]
         }
@@ -143,7 +151,7 @@ async function startDiscoveryRegistry({
 } = {}) {
     const discPort = port ?? (await getFreePort());
     const child = spawn(process.execPath, [DISCOVERY_SCRIPT], {
-        cwd: REPO_ROOT,
+        cwd: PROJECT_ROOT,
         env: {
             ...process.env,
             LOCAL_DISCOVERY_HOST: "127.0.0.1",

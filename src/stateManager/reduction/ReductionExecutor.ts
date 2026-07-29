@@ -312,8 +312,7 @@ export default class ReductionExecutor {
     ): Promise<ReductionSubmissionStatus> {
         try {
             await this.stateManager.stateChannelManagerContract.multicall.staticCall(
-                submission.calldata,
-                { gasLimit: 3_000_000 }
+                submission.calldata
             );
             return "submit";
         } catch (error) {
@@ -339,12 +338,13 @@ export default class ReductionExecutor {
         });
         let txResponse: TransactionResponse | undefined;
         const transaction = this.stateManager.stateChannelManagerContract
-            .multicall(submission.calldata, {
-                // Right-sized from 10M: measures ~0.5M avg / ~1.2M max in e2e, so 3M
-                // leaves ample headroom while freeing block gas under concurrency
-                // (was inflated to dodge ethers gas-estimation failures).
-                gasLimit: 3_000_000
-            })
+            .getGasLimit()
+            .then((gasLimit) =>
+                this.stateManager.stateChannelManagerContract.multicall(
+                    submission.calldata,
+                    { gasLimit }
+                )
+            )
             .then(async (tx) => {
                 txResponse = tx;
                 await tx.wait();

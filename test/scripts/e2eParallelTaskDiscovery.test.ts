@@ -8,7 +8,8 @@ const { discoverTasks } =
         discoverTasks: (
             testDir: string,
             grep?: string,
-            e2eDir?: string
+            e2eDir?: string,
+            testPattern?: string
         ) => {
             files: string[];
             tasks: Array<{
@@ -68,6 +69,31 @@ describe("parallel Mocha task discovery", function () {
             const { tasks } = discoverTasks(testDir, "logic second");
             expect(tasks).to.have.lengthOf(1);
             expect(tasks[0].fullTitle).to.equal("logic second");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("supports a consumer-defined test filename pattern", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "mocha-pattern-"));
+        const testDir = path.join(root, "test");
+        fs.mkdirSync(testDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(testDir, "consumer.spec.ts"),
+            'describe("consumer", () => { it("runs", () => {}); });'
+        );
+
+        try {
+            expect(discoverTasks(testDir).tasks).to.be.empty;
+            const { tasks } = discoverTasks(
+                testDir,
+                undefined,
+                undefined,
+                "**/*.spec.ts"
+            );
+            expect(tasks.map((task) => task.fullTitle)).to.deep.equal([
+                "consumer runs"
+            ]);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
