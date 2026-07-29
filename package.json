@@ -50,7 +50,6 @@
     "sinon": "^20.0.0",
     "solidity-coverage": "^0.8.1",
     "source-map-support": "^0.5.21",
-    "ts-morph": "^27.0.2",
     "ts-node": "^10.9.2",
     "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
@@ -74,13 +73,15 @@
     "glob": "10.3.10",
     "hardhat": "^2.22.1",
     "hyperswarm": "4.3.5",
-    "prompt": "1.3.0"
+    "prompt": "1.3.0",
+    "ts-morph": "^27.0.2"
   },
   "engines": {
     "yarn": ">=1.15"
   },
   "scripts": {
     "compile": "yarn hardhat clean && yarn hardhat compile --force && yarn hardhat typechain && yarn generate-enums && yarn generate-artifacts",
+    "copy:test-runtime-utils": "node scripts/copy-test-runtime-utils.js",
     "infra:hardhat-node": "node scripts/infra/start-hardhat-node.js",
     "infra:local-discovery": "node scripts/infra/local-discovery-registry.js",
     "dev:tsc": "tsc -w -p tsconfig.json",
@@ -120,7 +121,7 @@
     "test:profile:e2e:v8": "LOG_LEVEL=verbose node --prof --enable-source-maps ./node_modules/hardhat/internal/cli/cli.js test $(find test/e2e -name '*.test.ts')",
     "test:profile:e2e:v8:process": "node --prof-process isolate-*.log > ./profiles/v8-prof.txt",
     "build:browser": "rimraf dist/browser && tsc -p tsconfig.browser.json && tsc-alias -p tsconfig.browser.json",
-    "build": "yarn compile && rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && yarn build:browser && npm pack && node rename-pack.js",
+    "build": "yarn compile && rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && yarn copy:test-runtime-utils && yarn build:browser && npm pack && node rename-pack.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:fix": "eslint src/**/*.ts test/**/*.ts --fix",
@@ -139,7 +140,12 @@
     "dist",
     "contracts",
     "artifacts",
-    "hardhat.config.ts"
+    "hardhat.config.ts",
+    "scripts/e2e-parallel",
+    "scripts/test-e2e-parallel.js",
+    "scripts/infra",
+    "test/utils/nodeInfra.js",
+    "test/utils/nodeInfra.d.ts"
   ],
   "exports": {
     ".": {
@@ -154,6 +160,7 @@
       "import": "./dist/test-harness.js",
       "default": "./dist/test-harness.js"
     },
+    "./test-parallel": "./scripts/test-e2e-parallel.js",
     "./contracts/*": "./contracts/*"
   },
   "description": "This is an SDK for creating scalable and resilient client side peer-to-peer (p2p) state channels for arbitrary state machines with shared security inherited from a distributed ledger (blockchain).",

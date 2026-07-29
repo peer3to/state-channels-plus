@@ -41,3 +41,5 @@ src/utils/GeneratedArtifacts.ts
 *.tsbuildinfo
 
 /profiles
+
+extensions

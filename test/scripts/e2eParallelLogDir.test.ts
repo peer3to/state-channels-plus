@@ -14,6 +14,7 @@ const { getHelpText, parseCliArgs } =
             logDirProvided: boolean;
             help: boolean;
             e2eOnly: boolean;
+            testPattern?: string;
             schedulerTickMs?: number;
         };
     };
@@ -42,23 +43,33 @@ const {
     safeEmptyDir: (dirPath: string, allow: boolean) => void;
     nextRunDir: (baseDir: string) => string;
 };
-const { getStarvationDisposition } =
+const { getStarvationDisposition, accountPartitionFor } =
     require("../../scripts/e2e-parallel/scheduler.js") as {
         getStarvationDisposition: (
             starveCount: number,
             starvationRetryCount: number
         ) => "complete" | "retry" | "fail";
+        accountPartitionFor: (
+            slot: { id: number } | null,
+            accountPartition: number
+        ) => number;
     };
-const { buildBaseEnv } = require("../../scripts/test-e2e-parallel.js") as {
-    buildBaseEnv: (threadModes: {
-        sdkThread: boolean;
-        vmThread: boolean;
-    }) => NodeJS.ProcessEnv;
-};
+const { buildBaseEnv, main } =
+    require("../../scripts/test-e2e-parallel.js") as {
+        buildBaseEnv: (threadModes: {
+            sdkThread: boolean;
+            vmThread: boolean;
+        }) => NodeJS.ProcessEnv;
+        main: (options?: { testPattern?: string }) => Promise<void>;
+    };
 
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
 describe("e2e-parallel argParser - logDir validation", function () {
+    it("exports the runner entry point for package consumers", function () {
+        expect(main).to.be.a("function");
+    });
+
     it("supports standard help flags and documents every option", function () {
         expect(parseCliArgs(["node", "script", "--help"]).help).to.equal(true);
         expect(parseCliArgs(["node", "script", "-h"]).help).to.equal(true);
@@ -67,6 +78,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
         for (const option of [
             "--help",
             "--grep",
+            "--test-pattern",
             "--e2e-only",
             "--log-dir",
             "--allow-logdir-purge",
@@ -83,6 +95,17 @@ describe("e2e-parallel argParser - logDir validation", function () {
         ]) {
             expect(help).to.include(option);
         }
+    });
+
+    it("accepts a consumer test filename pattern", function () {
+        expect(
+            parseCliArgs(["node", "script", "--test-pattern", "**/*.spec.ts"])
+                .testPattern
+        ).to.equal("**/*.spec.ts");
+        expect(
+            parseCliArgs(["node", "script", "--test-pattern=**/*.ts"])
+                .testPattern
+        ).to.equal("**/*.ts");
     });
 
     it("runs all Mocha tests by default and supports --e2e-only", function () {
@@ -203,6 +226,11 @@ describe("e2e-parallel logging - purge guards", function () {
 });
 
 describe("e2e-parallel logging - starvation diagnostics", function () {
+    it("uses account partitions only when tests share an infrastructure slot", function () {
+        expect(accountPartitionFor({ id: 1 }, 23)).to.equal(23);
+        expect(accountPartitionFor(null, 23)).to.equal(0);
+    });
+
     it("retries the first starved attempt and fails a second starved attempt", function () {
         expect(getStarvationDisposition(1, 0)).to.equal("retry");
         expect(getStarvationDisposition(1, 1)).to.equal("fail");

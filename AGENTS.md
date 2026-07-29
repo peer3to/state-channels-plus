@@ -52,13 +52,23 @@ cleared) as-is; dirs outside `./logs` additionally need
 
 ### Testing changes to `src/`
 
-Every `src/` change ships with tests in the same pass — both kinds:
+Every `src/` change ships with tests in the same pass, at the appropriate
+layers:
 
-- **Unit tests** for the isolated logic (no mocks, no junk data — see
-  `test/AGENTS.md`: factory-built domain objects, or a teleported harness
-  session when the component has collaborators).
-- **E2E tests** when the change affects peer-observable behavior (new
-  guard/punishment/queue semantics, protocol deviations, sync flows).
+- **Unit tests treat the component as a black box through its public surface.**
+  Cover every meaningful component-level variation: normal and no-op paths,
+  both sides of boundaries, valid and invalid/missing state, failures,
+  retry/recovery, and relevant concurrency/interleavings. Use no mocks or junk
+  data — see `test/AGENTS.md`: use factory-built domain objects, or a
+  teleported harness session when the component has collaborators.
+- **E2E tests cover how that black box interacts with other systems.** For
+  peer-observable changes (guard/punishment/queue semantics, protocol
+  deviations, sync flows), test each affected integration boundary and
+  representative end-to-end success, failure, recovery, and race workflow.
+  Do not duplicate every unit-level input or boundary permutation in E2E.
+  Separate E2E cases are required only when a variation changes observable
+  system behavior, crosses a different integration boundary, or exercises a
+  materially different system interaction.
 
 Verify with the narrowest targeted run (`--grep` the touched files) before
 handing off.

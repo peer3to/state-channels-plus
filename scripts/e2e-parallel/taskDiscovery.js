@@ -112,7 +112,7 @@ function enumerateMochaTests(filePath) {
             path.resolve(filePath)
         ],
         {
-            cwd: path.resolve(__dirname, "../.."),
+            cwd: process.cwd(),
             encoding: "utf8"
         }
     );
@@ -140,8 +140,13 @@ function sanitizeFileName(name) {
  * `--grep` RegExp against the full mocha title. Returns { files, tasks }; the
  * caller decides how to handle an empty result. Throws on an invalid grep.
  */
-function discoverTasks(testDir, grep, e2eDir = path.resolve("test/e2e")) {
-    const files = globSync(path.join(testDir, "**/*.test.ts"));
+function discoverTasks(
+    testDir,
+    grep,
+    e2eDir = path.resolve("test/e2e"),
+    testPattern = "**/*.test.ts"
+) {
+    const files = globSync(path.join(testDir, testPattern));
     const resolvedE2eDir = path.resolve(e2eDir);
     let tasks = [];
     for (const f of files) {

@@ -9,6 +9,7 @@ Run each discovered Mocha test in an independently scheduled process.
 Options:
   -h, --help                     Show this help and exit
   -g, --grep <regexp>            Run tests whose full Mocha title matches
+      --test-pattern <glob>      Test filename glob relative to test/
       --e2e-only                 Discover only tests under test/e2e
   -d, --log-dir, --logDir, --dir <path>
                                   Use and clear this exact log directory
@@ -49,6 +50,7 @@ function parseCliArgs(argv) {
         logDirProvided: false,
         allowLogdirPurge: false,
         grep: undefined,
+        testPattern: undefined,
         help: false,
         e2eOnly: false,
         dryRun: false,
@@ -94,6 +96,18 @@ function parseCliArgs(argv) {
         }
         if (arg.startsWith("--grep=")) {
             options.grep = arg.slice("--grep=".length);
+            continue;
+        }
+        if (arg === "--test-pattern") {
+            const next = argv[i + 1];
+            if (next && !next.startsWith("-")) {
+                options.testPattern = next;
+                i++;
+            }
+            continue;
+        }
+        if (arg.startsWith("--test-pattern=")) {
+            options.testPattern = arg.slice("--test-pattern=".length);
             continue;
         }
         if (arg === "--e2e-only") {

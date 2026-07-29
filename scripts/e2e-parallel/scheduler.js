@@ -65,6 +65,10 @@ function getStarvationDisposition(starveCount, starvationRetryCount) {
     return starvationRetryCount === 0 ? "retry" : "fail";
 }
 
+function accountPartitionFor(slot, accountPartition) {
+    return slot ? accountPartition : 0;
+}
+
 /**
  * Run all tasks with one admission per tick, gated by latest CPU utilization,
  * live memory, and a concurrency cap. Slots are assigned round-robin; account
@@ -191,7 +195,11 @@ async function runScheduler({
         runTask(
             process.execPath,
             [HARDHAT_CLI, ...taskArgs],
-            { ...baseEnv, ...infraEnv, E2E_SLOT_INDEX: String(acct) },
+            {
+                ...baseEnv,
+                ...infraEnv,
+                E2E_SLOT_INDEX: String(accountPartitionFor(slot, acct))
+            },
             task.label,
             logging.getLogPath(logDir, task.logName)
         ).then(({ code, label, stdout, stderr, durationMs }) => {
@@ -330,5 +338,6 @@ module.exports = {
     cpuTimes,
     rssGbForPids,
     getStarvationDisposition,
+    accountPartitionFor,
     runScheduler
 };

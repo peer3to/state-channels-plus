@@ -56,8 +56,8 @@ function buildBaseEnv(threadModes) {
     };
 }
 
-async function main() {
-    const cli = parseCliArgs(process.argv);
+async function main(options = {}) {
+    const cli = { ...parseCliArgs(process.argv), ...options };
     if (cli.help) {
         console.log(getHelpText());
         return;
@@ -68,7 +68,12 @@ async function main() {
     let tasks;
     const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
     try {
-        ({ files, tasks } = discoverTasks(testDir, cli.grep));
+        ({ files, tasks } = discoverTasks(
+            testDir,
+            cli.grep,
+            undefined,
+            cli.testPattern
+        ));
     } catch (e) {
         console.error(`Invalid --grep RegExp: ${cli.grep}`, e);
         process.exit(1);
@@ -239,4 +244,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { buildBaseEnv };
+module.exports = { buildBaseEnv, main };
