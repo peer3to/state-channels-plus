@@ -181,8 +181,10 @@ export class DisputeOrchestrator<
                 expectedDisputesCommittedPerPeer:
                     options?.expectedDisputesCommittedPerPeer ?? 1,
                 disputesCommittedMode: "atLeast",
-                disputesCommittedTimeoutMs: 15000,
-                forkSettleTimeoutMs: 30000,
+                disputesCommittedTimeoutMs:
+                    this.harness.event.protocolEventTimeoutMs(0),
+                forkSettleTimeoutMs:
+                    this.harness.event.protocolEventTimeoutMs(0),
                 syntheticOnChainParticipants:
                     options?.syntheticOnChainParticipants,
                 expectedResolution: {
@@ -249,8 +251,11 @@ export class DisputeOrchestrator<
         const syncPeerIndices = [...honestPeerIndices];
 
         const disputesCommittedTimeoutMs =
-            options.disputesCommittedTimeoutMs ?? 5000;
-        const forkSettleTimeoutMs = options.forkSettleTimeoutMs ?? 20000;
+            options.disputesCommittedTimeoutMs ??
+            this.harness.event.protocolEventTimeoutMs(0);
+        const forkSettleTimeoutMs =
+            options.forkSettleTimeoutMs ??
+            this.harness.event.protocolEventTimeoutMs(0);
 
         await this.harness.event.waitForEventCounts(
             "onDisputeCommitted",

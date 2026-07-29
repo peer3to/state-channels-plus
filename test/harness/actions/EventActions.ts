@@ -220,7 +220,8 @@ export class EventActions<
         if (!peer) {
             throw new Error(`Peer ${peerIndex} not found`);
         }
-        const { timeoutMs = 15000, timeoutMessage } = options ?? {};
+        const { timeoutMs = this.protocolEventTimeoutMs(1), timeoutMessage } =
+            options ?? {};
         const statusName = Status[expectedStatus] ?? String(expectedStatus);
         await this.harness.eventCountsBarrier.waitFor(
             async () =>

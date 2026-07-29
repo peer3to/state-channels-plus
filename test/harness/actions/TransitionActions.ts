@@ -303,7 +303,11 @@ export class TransitionActions<
             await this.harness.syncCoordinator.waitForPeersToSync(
                 peers,
                 forkId,
-                { minHeight, waitForFinalization }
+                {
+                    minHeight,
+                    waitForFinalization,
+                    timeoutMs: this.harness.event.protocolEventTimeoutMs(1)
+                }
             );
         }
 

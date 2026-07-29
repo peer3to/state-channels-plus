@@ -94,7 +94,9 @@ export class JoinActions<
                 peer.index,
                 Status.SYNCED,
                 {
-                    timeoutMs: options?.statusTimeoutMs ?? 15000,
+                    timeoutMs:
+                        options?.statusTimeoutMs ??
+                        this.harness.event.protocolEventTimeoutMs(1),
                     timeoutMessage:
                         options?.statusTimeoutMessage ??
                         `Spectator peer ${peer.index} did not reach SYNCED after connect`
@@ -113,7 +115,9 @@ export class JoinActions<
                 peer.index,
                 Status.SYNCED,
                 {
-                    timeoutMs: options?.statusTimeoutMs ?? 15000,
+                    timeoutMs:
+                        options?.statusTimeoutMs ??
+                        this.harness.event.protocolEventTimeoutMs(1),
                     timeoutMessage:
                         options?.statusTimeoutMessage ??
                         `Spectator peer ${peer.index} did not reach SYNCED after connect`
