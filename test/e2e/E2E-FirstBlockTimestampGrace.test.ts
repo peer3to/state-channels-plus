@@ -36,7 +36,6 @@ describe("E2E: First block timestamp grace", function () {
     });
 
     it("authors height 0 after the old participant deadline and every peer finalizes it", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, {
             timeConfig: FIRST_BLOCK_AUTHORING_TIME
@@ -110,7 +109,6 @@ describe("E2E: First block timestamp grace", function () {
     });
 
     it("caps height 1 without evidenceTime grace and every peer finalizes it", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
 
@@ -170,7 +168,6 @@ describe("E2E: First block timestamp grace", function () {
     });
 
     it("does not time out height 0 inside the grace window and times out after it", async function () {
-        this.timeout(120000);
         const h = TestSession.getHarness();
         await h.lifecycle.timeoutSetup(3, 0);
 

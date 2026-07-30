@@ -94,7 +94,6 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
     let discoveryHandle: DiscoveryHandle | undefined;
 
     before(async function () {
-        this.timeout(60_000);
         if (hardhatNodeUrl) {
             await waitForNode(hardhatNodeUrl);
         } else {
@@ -108,7 +107,6 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
     });
 
     afterEach(async function () {
-        this.timeout(30_000);
         await Promise.allSettled(peers.map((peer) => peer.dispose()));
         peers = [];
         await LocalDiscoveryServer.cleanup();
@@ -120,8 +118,6 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
     });
 
     it("lets a client drive hostRpc.request()/sendOne() across the port (self + peer)", async function () {
-        this.timeout(120_000);
-
         if (!hardhatNodeUrl) {
             throw new Error("Hardhat node URL is not initialized");
         }

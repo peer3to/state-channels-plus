@@ -14,7 +14,6 @@ const WAIT = 45000;
 
 describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
     it("fork A→B→C: two reductions then sustained honest activity → all survivors stay in sync", async function () {
-        this.timeout(300000);
         const h = TestSession.getHarness();
         const survivors = () => h.getActiveHonestPeers().map((p) => p.index);
 

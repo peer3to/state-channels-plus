@@ -5,7 +5,6 @@ import { MathTestSession as TestSession } from "@test/harness";
 
 describe("StateManager timeout", function () {
     it("does not submit a timeout when the existing dispute window predates its deadline", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         const evidenceTime = 8;
         await h.scenario.preDisputeSetup({

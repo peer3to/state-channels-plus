@@ -15,8 +15,6 @@ import type { Address } from "@/types/types";
 
 describe("E2E: BlockQueueManager", function () {
     it("ingest rejects a block confirmation with a forged author signature", async function () {
-        this.timeout(90000);
-
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);
 
@@ -67,8 +65,6 @@ describe("E2E: BlockQueueManager", function () {
     });
 
     it("ingest drops a wrong-channel block and cuts the transport when the sender is known", async function () {
-        this.timeout(90000);
-
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
 
@@ -146,8 +142,6 @@ describe("E2E: BlockQueueManager", function () {
     });
 
     it("future block is evicted at queue timeout without punishing the supplier", async function () {
-        this.timeout(90000);
-
         const h = TestSession.getHarness();
         const timeConfig = {
             p2pTime: 3,
@@ -221,8 +215,6 @@ describe("E2E: BlockQueueManager", function () {
     });
 
     it("queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted", async function () {
-        this.timeout(90000);
-
         const h = TestSession.getHarness();
         const timeConfig = {
             p2pTime: 3,
@@ -314,8 +306,6 @@ describe("E2E: BlockQueueManager", function () {
         };
 
         it("recovers the first reduced-fork block by reducing locally at ingest", async function () {
-            this.timeout(90000);
-
             const h = TestSession.getHarness();
             const targetPeerIndex = 1;
             const maliciousPeerIndex = 2;
@@ -454,8 +444,6 @@ describe("E2E: BlockQueueManager", function () {
         });
 
         it("queues an unknown-fork block for sync; the failed sync, not the queue, punishes the supplier", async function () {
-            this.timeout(90000);
-
             const h = TestSession.getHarness();
             const timeConfig = {
                 p2pTime: 3,
@@ -549,8 +537,6 @@ describe("E2E: BlockQueueManager", function () {
         });
 
         it("still recovers via local reduction when the raced block is on yet another unknown fork", async function () {
-            this.timeout(90000);
-
             const h = TestSession.getHarness();
             const targetPeerIndex = 1;
             const maliciousPeerIndex = 2;
@@ -663,8 +649,6 @@ describe("E2E: BlockQueueManager", function () {
         });
 
         it("drains an early reduced-fork block once the fork transition catches up", async function () {
-            this.timeout(90000);
-
             const h = TestSession.getHarness();
             const targetPeerIndex = 1;
             const maliciousPeerIndex = 2;
@@ -813,8 +797,6 @@ describe("E2E: BlockQueueManager", function () {
         // real queued entry (host-side, all collaborators live).
         describe("wrongGenesisDetected (host-side unit scope)", function () {
             it("missing genesis: no proof to build, sources blacklisted, no dispute", async function () {
-                this.timeout(90000);
-
                 const h = TestSession.getHarness();
                 await h.lifecycle.start(3, 0, {
                     timeConfig: {
@@ -927,8 +909,6 @@ describe("E2E: BlockQueueManager", function () {
             });
 
             it("present genesis: builds the WrongGenesis proof and disputes the fork", async function () {
-                this.timeout(90000);
-
                 const h = TestSession.getHarness();
                 await h.lifecycle.start(3, 0, {
                     timeConfig: { agreementTime: 10 }
@@ -995,8 +975,6 @@ describe("E2E: BlockQueueManager", function () {
 
         describe("stale-fork entry gates (host-side unit scope)", function () {
             it("never validates an entry whose fork is not current", async function () {
-                this.timeout(90000);
-
                 const h = TestSession.getHarness();
                 await h.lifecycle.start(3, 0, {
                     timeConfig: {
@@ -1117,8 +1095,6 @@ describe("E2E: BlockQueueManager", function () {
 
     describe("queue timeout window (host-side unit scope)", function () {
         it("schedules the full window fresh, only the remainder after aging, and nothing at the deadline", async function () {
-            this.timeout(90000);
-
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: {

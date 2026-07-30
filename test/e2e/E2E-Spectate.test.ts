@@ -1080,8 +1080,6 @@ describe("E2E: Spectate Service", function () {
         // normalizes an over-proved height, so it can't distinguish the fix).
         for (const requestedHeight of [0, 1]) {
             it(`pins the sync payload to requested height ${requestedHeight} while ahead`, async function () {
-                this.timeout(90000);
-
                 const h = TestSession.getHarness();
                 await h.lifecycle.start(2, 0, {
                     timeConfig: {

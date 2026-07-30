@@ -90,7 +90,6 @@ describe("E2E: Dispute Manager", function () {
         // rejection.
         // https://trello.com/c/MUwszX7B
         it.skip("should dispute a timed-out writer on a pending-join fork with auditing calldata", async function () {
-            this.timeout(90000);
             const h = TestSession.getHarness();
 
             // a pending inbound join leaves the head not-final-by-everyone, so a

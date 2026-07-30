@@ -35,6 +35,23 @@ run's dir is cleared/cleaned. An explicit `--logDir <dir>` is used (and
 cleared) as-is; dirs outside `./logs` additionally need
 `--allow-logdir-purge`. Prune old `run-*` dirs manually when done comparing.
 
+### Test timeouts
+
+- **Never set `this.timeout(...)` in a test.** The global `timeout` in
+  `.mocharc.json` governs every test. A per-test override is acceptable only when
+  a measurement proves that one test needs longer, and the measurement belongs in
+  the PR description.
+- Never add one pre-emptively "to be safe" -> it gets copy-pasted onto every
+  neighbouring test, and then nothing catches a test that has genuinely gone slow.
+- A test that does not fit the global timeout is doing too much: split it or slim
+  its setup instead of raising its ceiling.
+- A load flake is not a reason for a per-test bump. The parallel runner re-runs
+  tasks it starved, and a starved task carries the starvation signature
+  (watchdog / event-loop-delay / `exit null`), not a real timeout.
+- Hook budgets are separate: the `this.timeout(...)` calls in
+  `test/harness/session/registerTestSessionHooks.ts` size session reset and the
+  detached-promise drain, not a test.
+
 ### Test-chain RPC mutations
 
 - **Never call node-wide test RPC methods from a test that may share its node or

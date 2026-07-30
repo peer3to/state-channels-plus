@@ -13,8 +13,6 @@ import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/servic
 
 describe("E2E: Block Fraud Proofs", function () {
     it("queued future block accepts later calldata event and executes after predecessor", async function () {
-        this.timeout(90000);
-
         const h = TestSession.getHarness();
         const timeConfig = {
             p2pTime: 3,
