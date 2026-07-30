@@ -32,7 +32,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
                     .query.isConnectedTo(victim.address)
                     .request(),
             {
-                timeoutMs: h.event.protocolEventTimeoutMs(1),
+                timeoutMs: h.event.protocolEventTimeoutMs(),
                 timeoutMessage: "attacker never connected to victim"
             }
         );
@@ -73,7 +73,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
                     .query.isConnectedTo(victim.address)
                     .request(),
             {
-                timeoutMs: h.event.protocolEventTimeoutMs(1),
+                timeoutMs: h.event.protocolEventTimeoutMs(),
                 timeoutMessage: "attacker never connected to victim"
             }
         );
@@ -109,7 +109,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
                     .query.isConnectedTo(victim.address)
                     .request(),
             {
-                timeoutMs: h.event.protocolEventTimeoutMs(1),
+                timeoutMs: h.event.protocolEventTimeoutMs(),
                 timeoutMessage: "attacker never connected to victim"
             }
         );
@@ -165,7 +165,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
                     .query.isConnectedTo(victim.address)
                     .request()),
             {
-                timeoutMs: h.event.protocolEventTimeoutMs(1),
+                timeoutMs: h.event.protocolEventTimeoutMs(),
                 timeoutMessage: "relayer/author never both connected to victim"
             }
         );

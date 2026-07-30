@@ -30,7 +30,16 @@ describe("test time config", () => {
         expect(participantTimeoutWaitMs(config, 0)).to.equal(15000);
         expect(participantTimeoutWaitMs(config, 1)).to.equal(9000);
         expect(evidencePeriodWaitMs(config)).to.equal(7000);
-        expect(protocolEventTimeoutMs(config, 0, 4)).to.equal(24000);
-        expect(protocolEventTimeoutMs(config, 1, 4)).to.equal(18000);
+        expect(protocolEventTimeoutMs(config)).to.equal(18000);
+        expect(
+            protocolEventTimeoutMs(config, {
+                withFirstBlockGrace: true
+            })
+        ).to.equal(24000);
+        expect(
+            protocolEventTimeoutMs(config, {
+                settlementMarginSeconds: 2
+            })
+        ).to.equal(16000);
     });
 });

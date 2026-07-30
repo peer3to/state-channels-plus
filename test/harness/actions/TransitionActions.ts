@@ -306,7 +306,7 @@ export class TransitionActions<
                 {
                     minHeight,
                     waitForFinalization,
-                    timeoutMs: this.harness.event.protocolEventTimeoutMs(1)
+                    timeoutMs: this.harness.event.protocolEventTimeoutMs()
                 }
             );
         }

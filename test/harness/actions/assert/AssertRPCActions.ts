@@ -22,7 +22,7 @@ export class AssertRPCActions<
             observer,
             target,
             expectedStatus,
-            timeoutMs = this.harness.event.protocolEventTimeoutMs(1)
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
         } = options;
 
         await this.harness.disconnectionBarrier.waitFor(
@@ -57,7 +57,7 @@ export class AssertRPCActions<
         const {
             peerIndex,
             expectedFinalCount,
-            timeoutMs = this.harness.event.protocolEventTimeoutMs(1)
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
         } = options;
 
         await this.harness.disconnectionBarrier.waitFor(
@@ -107,7 +107,7 @@ export class AssertRPCActions<
             requestingPeer,
             forkId,
             excludePeers = [],
-            timeoutMs = this.harness.event.protocolEventTimeoutMs(1)
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
         } = options;
 
         const activeForkId = forkId ?? this.harness.activeForkId;

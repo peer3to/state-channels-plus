@@ -77,7 +77,7 @@ describe("E2E: Is Fork Disputed", function () {
             await h.assert.rpc.peerDisconnectedFrom({
                 peerIndex: 0,
                 expectedFinalCount: 0,
-                timeoutMs: h.event.protocolEventTimeoutMs(1)
+                timeoutMs: h.event.protocolEventTimeoutMs()
             });
         });
     });

@@ -37,13 +37,18 @@ export function evidencePeriodWaitMs(
 
 export function protocolEventTimeoutMs(
     timeConfig: TimeConfig,
-    blockHeight: number,
-    settlementMarginSeconds: number = 4
+    {
+        withFirstBlockGrace = false,
+        settlementMarginSeconds = 4
+    }: {
+        withFirstBlockGrace?: boolean;
+        settlementMarginSeconds?: number;
+    } = {}
 ): number {
     // After the timeout becomes eligible, allow the full evidence window for
     // the dispute upload, audit, fraud-proof transaction, and kill event.
     return (
-        participantTimeoutWaitMs(timeConfig, blockHeight, 0) +
+        participantTimeoutWaitMs(timeConfig, withFirstBlockGrace ? 0 : 1, 0) +
         evidencePeriodWaitMs(timeConfig, settlementMarginSeconds)
     );
 }

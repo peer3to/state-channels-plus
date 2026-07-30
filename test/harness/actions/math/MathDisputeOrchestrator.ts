@@ -60,10 +60,14 @@ export class MathDisputeOrchestrator extends DisputeOrchestrator {
             honestPeerIndices: options.honestPeerIndices,
             disputesCommittedTimeoutMs:
                 options.disputesCommittedTimeoutMs ??
-                this.harness.event.protocolEventTimeoutMs(0),
+                this.harness.event.protocolEventTimeoutMs({
+                    withFirstBlockGrace: true
+                }),
             forkSettleTimeoutMs:
                 options.forkSettleTimeoutMs ??
-                this.harness.event.protocolEventTimeoutMs(0)
+                this.harness.event.protocolEventTimeoutMs({
+                    withFirstBlockGrace: true
+                })
         });
 
         const evictedAddresses = options.evictedPeerIndices.map(

@@ -200,7 +200,9 @@ describe("E2E: Dispute Manager", function () {
                 1,
                 {
                     mode: "atLeast",
-                    timeoutMs: h.event.protocolEventTimeoutMs(0)
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
                 }
             );
 

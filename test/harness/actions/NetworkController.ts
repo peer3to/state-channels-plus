@@ -50,7 +50,7 @@ export class NetworkController<
      */
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
         const actualTimeout =
-            timeoutMs ?? this.harness.event.protocolEventTimeoutMs(1);
+            timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
 
         const condition = async () => {
             const connectedAddressesByPeer = await Promise.all(

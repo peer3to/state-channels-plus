@@ -164,7 +164,7 @@ export class MathJoinActions extends JoinActions {
         participant: string;
     }> {
         const timeoutMs =
-            options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs(1);
+            options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
         const waitForHonestPeersObserve =
             options?.waitForHonestPeersObserve ?? true;
 
@@ -186,7 +186,7 @@ export class MathJoinActions extends JoinActions {
         options?: ForceInboundJoinOptions
     ): Promise<{ participant: string }> {
         const timeoutMs =
-            options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs(1);
+            options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
         const waitForHonestPeersObserve =
             options?.waitForHonestPeersObserve ?? true;
 

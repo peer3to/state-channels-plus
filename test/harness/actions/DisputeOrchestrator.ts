@@ -89,7 +89,9 @@ export class DisputeOrchestrator<
                     }
                 },
                 {
-                    timeoutMs: this.harness.event.protocolEventTimeoutMs(0),
+                    timeoutMs: this.harness.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }),
                     timeoutMessage: `Final-dispute author ${finalAuthor.index} did not store double-sign evidence`,
                     label: "finalDisputeAuthorEvidence"
                 }
@@ -182,9 +184,12 @@ export class DisputeOrchestrator<
                     options?.expectedDisputesCommittedPerPeer ?? 1,
                 disputesCommittedMode: "atLeast",
                 disputesCommittedTimeoutMs:
-                    this.harness.event.protocolEventTimeoutMs(0),
-                forkSettleTimeoutMs:
-                    this.harness.event.protocolEventTimeoutMs(0),
+                    this.harness.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }),
+                forkSettleTimeoutMs: this.harness.event.protocolEventTimeoutMs({
+                    withFirstBlockGrace: true
+                }),
                 syntheticOnChainParticipants:
                     options?.syntheticOnChainParticipants,
                 expectedResolution: {
@@ -252,10 +257,14 @@ export class DisputeOrchestrator<
 
         const disputesCommittedTimeoutMs =
             options.disputesCommittedTimeoutMs ??
-            this.harness.event.protocolEventTimeoutMs(0);
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
         const forkSettleTimeoutMs =
             options.forkSettleTimeoutMs ??
-            this.harness.event.protocolEventTimeoutMs(0);
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
 
         await this.harness.event.waitForEventCounts(
             "onDisputeCommitted",
