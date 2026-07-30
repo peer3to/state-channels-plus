@@ -2,7 +2,6 @@ pragma solidity ^0.8.8;
 
 import "./types/DataTypes.sol";
 import "./types/MessageTypeHashes.sol";
-import "hardhat/console.sol";
 
 abstract contract AStateMachine {
     Transaction _tx; // This should be used instead of msg.sender at least for now
@@ -103,11 +102,6 @@ abstract contract AStateMachine {
 
     function _clearOutboundMessages() internal {
         delete _outboundMessages;
-        // TODO - pop loop since for some reason sometimes delete doesn't set length to 0
-        while (_outboundMessages.length > 0) {
-            _outboundMessages.pop();
-        }
-        console.log("Clearing outbound messages. Count after clear:", _outboundMessages.length);
     }
 
     function setState(bytes memory encodedState) external _nonReentrant {
@@ -157,7 +151,6 @@ abstract contract AStateMachine {
             }
         }
         Message[] memory recordedMessages = new Message[](_outboundMessages.length);
-        console.log("Recorded outbound messages count:", _outboundMessages.length);
         for (uint256 i = 0; i < _outboundMessages.length; i++) {
             recordedMessages[i] = _outboundMessages[i];
         }

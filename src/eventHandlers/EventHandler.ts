@@ -109,7 +109,7 @@ export class EventHandler {
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct
     ): Promise<void> {
-        //TODO - make sure snapshots are in ascending order if events can be collected in random order - e.g we have the latest one always
+        // TODO - gate this TS handler by ascending (blockNumber, logIndex); the local-EVM mirror already does
 
         const updatedSnapshot = StateSnapshot.from(stateSnapshot);
         const knownSnapshot =
@@ -119,7 +119,8 @@ export class EventHandler {
         if (!knownSnapshot) {
             const status = this.stateManager.getStatus();
             if (status === Status.SYNCED) {
-                // TODO: replace with general abort() once it exists outside spectate
+                // TODO: call stateManager.abort() here; it drops to OPENED and disposes,
+                // but no resync path exists yet.
 
                 this.logger.warn(
                     "onStateSnapshotUpdated - unknown snapshot while SYNCED, should abort + resync",
@@ -572,7 +573,6 @@ export class EventHandler {
             disputeConfirmation
         );
 
-        // this is like success - TODO - consider moving this to DisputeStrategy.success
         const canConstructMoreEvidence =
             await this.canConstructMoreEvidence(dispute);
         if (canConstructMoreEvidence) {
@@ -888,7 +888,6 @@ export class EventHandler {
         forkId: ForkId,
         reducedForkId: ForkId
     ): Promise<boolean> {
-        // TODO - extract this function since it's used in multiple places (e.g spectating RPC...)
         const disputes =
             await this.stateManager.reductionManager.getSyncedForkDisputes(
                 forkId

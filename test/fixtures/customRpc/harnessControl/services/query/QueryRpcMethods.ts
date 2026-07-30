@@ -104,6 +104,14 @@ export class QueryRpcMethods extends ARpcMethods {
         return (await this.service.sm.getOnChainParticipantUnion()).map(String);
     }
 
+    /** Participants slashed on-chain for this channel. */
+    public async getOnChainSlashedParticipants(): Promise<string[]> {
+        const sm = this.service.sm;
+        return await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+            sm.channelId
+        );
+    }
+
     public async getNextToWrite(): Promise<string> {
         return String(
             await this.service.sm.diamondStateMachine.getNextToWrite()
@@ -425,6 +433,26 @@ export class QueryRpcMethods extends ARpcMethods {
             ),
             currentTimestamp: Clock.getTimeInSeconds()
         };
+    }
+
+    /** On-chain timestamp of the stored calldata for a block, or null. */
+    public getBlockCalldataTimestamp(
+        forkId: ForkId,
+        height: BlockHeight,
+        blockAuthor: Address
+    ): number | null {
+        return (
+            this.service.storage.blockCalldata.getBlockCalldata(
+                forkId,
+                height,
+                blockAuthor
+            )?.onChainTimestamp ?? null
+        );
+    }
+
+    /** The peer's protocol clock in seconds (chain-adjusted, not wall clock). */
+    public getClockTimeInSeconds(): number {
+        return Clock.getTimeInSeconds();
     }
 
     /** The peer's local-diamond state snapshot, encoded (`Type.StateSnapshot`). */

@@ -9,17 +9,13 @@ export class BrowserLogUploader extends LogUploader {
 
         this.onWindowError = (e: ErrorEvent) => {
             if (e.error) {
-                this.uploadLogs(e.error);
+                this.captureUnhandled(e.error, "error");
             }
         };
         window.addEventListener("error", this.onWindowError);
 
         this.onWindowUnhandledRejection = (e: PromiseRejectionEvent) => {
-            this.uploadLogs(
-                e.reason instanceof Error
-                    ? e.reason
-                    : new Error(String(e.reason))
-            );
+            this.captureUnhandled(e.reason, "unhandledrejection");
         };
         window.addEventListener(
             "unhandledrejection",

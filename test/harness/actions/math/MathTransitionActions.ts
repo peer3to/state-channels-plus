@@ -49,6 +49,63 @@ export class MathTransitionActions extends TransitionActions<
         });
     }
 
+    /**
+     * Let the current leader author its next block with its broadcast stubbed,
+     * so no other peer stores it. Returns the leader, an observer that has not
+     * seen the block, and the authored block projection - the staging for
+     * feeding a real, unseen block into a single peer's validation.
+     */
+    async authorNextBlockOffWireWait(options?: { observerIndex?: number }) {
+        const h = this.harness;
+        const forkId = h.activeForkId!;
+
+        const nextWriter = await h
+            .control(h.getPeer(0))
+            .query.getNextToWrite()
+            .request();
+        const leader = h.peers.find((p) => p.address === nextWriter);
+        if (!leader) {
+            throw new Error(`No peer matches the next writer ${nextWriter}`);
+        }
+        const observer =
+            options?.observerIndex !== undefined
+                ? h.getPeer(options.observerIndex)
+                : h.peers.find((p) => p.index !== leader.index)!;
+
+        const startHeight = await h
+            .control(observer)
+            .query.getNextBlockHeight(forkId)
+            .request();
+
+        // off-wire means off the chain too: without this the leader's
+        // chain-fallback post leaks the block to everyone else after
+        // agreementTime
+        await h
+            .control(leader)
+            .stub.stubSuppressMaybePostBlockOnChain()
+            .request();
+        await h.byzantine.stubBroadcast(leader.index);
+
+        await leader.p2pInstance.p2pContractInstance.add(1);
+        // the sync barrier settles on the leader's own event stream
+        await h.syncCoordinator.waitForPeersToSync([leader], forkId, {
+            minHeight: startHeight,
+            waitForFinalization: false
+        });
+
+        const authored = await h
+            .control(leader)
+            .query.getBlockByHeight(forkId, startHeight)
+            .request();
+        if (!authored) {
+            throw new Error(
+                `Leader ${leader.index} did not author block ${startHeight}`
+            );
+        }
+
+        return { leader, observer, authored, startHeight, forkId };
+    }
+
     async peerWrite(options: {
         peer: number;
         value?: number;

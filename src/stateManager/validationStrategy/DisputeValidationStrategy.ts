@@ -207,17 +207,14 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         // Create and apply normal fraud proof to slash the offender + DEFER creating a new dispute - this dispute may still be honest, so continute validation
         this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
         // TODO - apply the fraud proof without creating a new dispute
-        // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.SUCCESS; // so we continue 'syncing' and checking new blocks
     }
     public async invalidStateTransitionDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         const hash =
             this.fraudProofService.createInvalidStateTransitionProof(block);
         this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
-        // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
@@ -236,10 +233,8 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         ) {
             throw new Error("Unexpected genesisSnapshot missing");
         }
-        // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         const hash = this.fraudProofService.createWrongGenesisProof(block);
         this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
-        // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async forgedInboundMessageBlockDetected(
@@ -281,11 +276,9 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     public async objectiveInvalidTimestampDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        // TODO - here we have to kill the dispute, since the dispute contains incorrect state
         // TODO - think about this - can this change over time? i.e. can onChainTimestamp or the presence of calldata change things
         const hash = this.fraudProofService.createInvalidTimestampProof(block);
         this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
-        // await this.disputeManager.dispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(

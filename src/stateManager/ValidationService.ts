@@ -143,7 +143,6 @@ export default class ValidationService {
                 strategy: strategy.name,
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
-            // TODO -> here for the dispute strategy we can kill the dispute, since the stateProof comitted to the whole structure
             return await strategy.blockIsNotLinkedAndIsNotFirstBlock(entry);
         }
 
