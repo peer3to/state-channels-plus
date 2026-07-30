@@ -154,6 +154,10 @@ describe("Unit: ValidationService", function () {
             expect(r.resultName).to.equal("DISCONNECT");
             expect(r.disputedForkIds).to.deep.equal([]);
             expect(r.firedHooks).to.include("blockAuthorIsNotParticipant");
+            // no transport supplied this copy -> the author is the whole
+            // attribution set
+            expect(r.sourcePeers).to.deep.equal([]);
+            expect(r.disconnectedAddresses).to.deep.equal([outsider.address]);
         });
 
         it("height above nextHeight → blockIsNotNextAndIsInTheFuture → NOT_READY, requeued", async function () {
@@ -285,6 +289,79 @@ describe("Unit: ValidationService", function () {
             expect(r.fraudProofType).to.equal(
                 solProofType(FraudProofType.BlockInvalidStateTransition)
             );
+        });
+    });
+    describe("validateBlockConfirmation → punishment attribution", function () {
+        it("outsider author relayed by another peer → relayer and author both cut", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const observer = h.getPeer(0);
+            const relayer = h.getPeer(1);
+
+            const outsider = factory.randomWallet();
+            const { encodedBlockConfirmation } =
+                await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
+                    observer.index,
+                    h.activeForkId!,
+                    outsider
+                );
+
+            const r = await h
+                .control(observer)
+                .stub.runBlockValidation(encodedBlockConfirmation, {
+                    senderAddress: relayer.address
+                })
+                .request();
+
+            expect(r.strategyName).to.equal("BlockValidationStrategy");
+            expect(r.resultName).to.equal("DISCONNECT");
+            expect(r.firedHooks).to.include("blockAuthorIsNotParticipant");
+            expect(r.sourcePeers).to.deep.equal([relayer.address]);
+            expect(r.disconnectedAddresses).to.have.members([
+                relayer.address,
+                outsider.address
+            ]);
+        });
+
+        // an unknown-fork entry never reaches validateBlockConfirmation:
+        // BlockQueueManager.scheduleQueueExecution and tryExecuteFromQueue both
+        // return early when the entry's fork is not the current one. so this
+        // branch is driven by invoking the hook directly
+        it("spectating: missing genesis → supplier and author both cut, spectator keeps spectating", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const spectator = await h.join.addSpectatorWait();
+            const author = h.getPeer(1);
+            const supplier = h.getPeer(2);
+
+            const { blockConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(author.index);
+
+            const r = await h
+                .control(spectator)
+                .stub.runBlockValidation(
+                    Codec.encode(
+                        blockConfirmation,
+                        Type.BlockConfirmation
+                    ) as string,
+                    {
+                        senderAddress: supplier.address,
+                        invokeHook: "wrongGenesisDetected"
+                    }
+                )
+                .request();
+
+            expect(r.strategyName).to.equal("SpectatingValidationStrategy");
+            expect(r.resultName).to.equal("DISCONNECT");
+            expect(r.firedHooks).to.include("wrongGenesisDetected");
+            expect(r.disconnectedAddresses).to.have.members([
+                supplier.address,
+                author.address
+            ]);
+
+            expect(
+                await h.control(spectator).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
         });
     });
 

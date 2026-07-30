@@ -17,6 +17,12 @@ export type QueuedBlockEntry = {
     overflowedSources?: boolean;
 };
 
+export function sourcePeersAndAuthor(entry: QueuedBlockEntry): Set<Address> {
+    const peers = new Set(entry.sourcePeers);
+    peers.add(entry.block.author);
+    return peers;
+}
+
 export class QueueStorage {
     // Structural per-entry retention caps: bound memory against a peer flooding
     // unique junk signatures/sources for one block hash. Far above any real

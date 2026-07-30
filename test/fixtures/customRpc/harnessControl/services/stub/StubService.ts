@@ -189,11 +189,22 @@ export type BlockValidationProbeOptions = {
     encodedDispute?: string;
     /** Supplier of this copy - drives `sourcePeers`/`signatureSources`. */
     senderAddress?: Address;
+    /**
+     * Drive this one deviation hook on the strategy instead of the whole
+     * pipeline. For branches the pipeline can't reach: an unknown-fork entry is
+     * never handed to `validateBlockConfirmation` because
+     * `BlockQueueManager.scheduleQueueExecution` and `tryExecuteFromQueue` both
+     * return early on a non-current fork, so the missing-genesis branch is only
+     * reachable by calling the hook.
+     */
+    invokeHook?: "blockAuthorIsNotParticipant" | "wrongGenesisDetected";
 };
 
 export type BlockValidationProbe = {
     result: number;
     resultName: string;
+    /** Which strategy implementation ran (live, spectating, dispute, ...). */
+    strategyName: string;
     disputedForkIds: string[];
     disconnectedAddresses: string[];
     firedHooks: string[];
@@ -255,6 +266,13 @@ export class StubService extends ARpcService<
     reduceCallCount = 0;
     /** Incremented per `spectateService.sync` by the record stub. */
     spectateSyncCallCount = 0;
+    /** Addresses `spectateService.sync` was asked to sync from, newest last. */
+    readonly spectateSyncTargets: string[] = [];
+    /** Resolvers waiting for a given number of `spectateService.sync` calls. */
+    private readonly spectateSyncWaiters: {
+        target: number;
+        resolve: () => void;
+    }[] = [];
     /** State for the already-entered old-fork reduction race stub. */
     pausedReduction?: PausedReductionState;
     /** State for the constructDispute state-proof hold. */
@@ -307,6 +325,32 @@ export class StubService extends ARpcService<
             0,
             this.sm.diamondStateMachine.localDiamondContract,
             this.sm.logger
+        );
+    }
+
+    /** Record one `spectateService.sync` call and release anyone waiting on it. */
+    public recordSpectateSyncCall(peerAddress: string): void {
+        this.spectateSyncCallCount += 1;
+        this.spectateSyncTargets.push(peerAddress);
+        for (const waiter of this.spectateSyncWaiters.splice(0)) {
+            if (this.spectateSyncCallCount >= waiter.target) waiter.resolve();
+            else this.spectateSyncWaiters.push(waiter);
+        }
+    }
+
+    /**
+     * Resolve with the recorded targets once `spectateService.sync` has been
+     * called `count` times. Signal, not a poll - the record stub releases it.
+     */
+    public waitForSpectateSyncCalls(count: number): Promise<string[]> {
+        if (this.spectateSyncCallCount >= count) {
+            return Promise.resolve([...this.spectateSyncTargets]);
+        }
+        return new Promise((resolve) =>
+            this.spectateSyncWaiters.push({
+                target: count,
+                resolve: () => resolve([...this.spectateSyncTargets])
+            })
         );
     }
 
@@ -1069,10 +1113,12 @@ export class StubService extends ARpcService<
         });
 
         try {
-            const result = await sm.validationService.validateBlockConfirmation(
-                entry,
-                instrumentedStrategy
-            );
+            const result = options?.invokeHook
+                ? await instrumentedStrategy[options.invokeHook](entry)
+                : await sm.validationService.validateBlockConfirmation(
+                      entry,
+                      instrumentedStrategy
+                  );
             const fraudProof =
                 sm.storage.fraudProofs.getFraudProofForParticipant(
                     block.signerAddress
@@ -1081,6 +1127,7 @@ export class StubService extends ARpcService<
                 result,
                 resultName:
                     BlockValidationResult[result] ?? `UNKNOWN(${result})`,
+                strategyName: strategy.name,
                 disputedForkIds,
                 disconnectedAddresses,
                 firedHooks,

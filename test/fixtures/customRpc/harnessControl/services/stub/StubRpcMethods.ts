@@ -1414,8 +1414,9 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
-     * Count `spectateService.sync` requests; `forward` keeps the real sync
-     * running (record-only otherwise — the punishment path stays quiet).
+     * Count `spectateService.sync` requests and record who was asked; `forward`
+     * keeps the real sync running (record-only otherwise — the punishment path
+     * stays quiet).
      */
     public stubRecordSpectateSync(forward: boolean): boolean {
         const spectate = this.p2pManager.localRpc.spectateService;
@@ -1426,11 +1427,12 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             );
         }
         this.service.spectateSyncCallCount = 0;
+        this.service.spectateSyncTargets.length = 0;
         const original = this.service.stubOriginals.get(
             "spectateSync"
         ) as typeof spectate.sync;
         spectate.sync = ((...args: Parameters<typeof spectate.sync>) => {
-            this.service.spectateSyncCallCount += 1;
+            this.service.recordSpectateSyncCall(String(args[0]));
             if (forward) return original(...args);
         }) as typeof spectate.sync;
         return true;
@@ -1447,6 +1449,11 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public getSpectateSyncCallCount(): number {
         return this.service.spectateSyncCallCount;
+    }
+
+    /** Resolves with the sync targets once `count` sync calls have been made. */
+    public waitForSpectateSyncCalls(count: number): Promise<string[]> {
+        return this.service.waitForSpectateSyncCalls(count);
     }
 
     /** Run isDisputedFork, counting local-diamond queries. */
