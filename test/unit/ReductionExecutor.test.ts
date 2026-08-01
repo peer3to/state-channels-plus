@@ -1,8 +1,145 @@
 import { expect } from "chai";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import * as factory from "@test/factory";
+import {
+    compareSubmittedInboundTarget,
+    tryReadInboundMessageBlocksFailure
+} from "@/stateManager/reduction/ReductionExecutor";
+import { CustomEvmError } from "@/utils/evmErrorHandler";
+import { errorAbis } from "@/utils/GeneratedArtifacts";
+import { ethers } from "ethers";
+
+// Built from the real contract ABI, not a hand-written signature: a rename or
+// reordering in Errors.sol must break these tests rather than silently feed the
+// decoder `undefined` or the neighbouring field's value.
+const errorInterface = new ethers.Interface(errorAbis);
+
+/** A real encoded revert, decoded the way the executor decodes one. */
+function inboundBlocksRevert(
+    overrides: Partial<{
+        submittedSnapshotInboundHash: string;
+        expectedTargetInboundHash: string;
+        runningInboundHash: string;
+        breakIndex: number;
+        submittedBlockCount: number;
+        failureReason: number;
+    }> = {}
+): CustomEvmError {
+    const args = {
+        submittedSnapshotInboundHash: factory.hash(),
+        expectedTargetInboundHash: factory.hash(),
+        runningInboundHash: factory.hash(),
+        breakIndex: 0,
+        submittedBlockCount: 2,
+        failureReason: 0,
+        ...overrides
+    };
+    const encoded = errorInterface.encodeErrorResult(
+        "ErrorDisputeInboundMessageBlocksInvalid",
+        [
+            args.submittedSnapshotInboundHash,
+            args.expectedTargetInboundHash,
+            args.runningInboundHash,
+            args.breakIndex,
+            args.submittedBlockCount,
+            args.failureReason
+        ]
+    );
+    return new CustomEvmError(errorInterface.parseError(encoded)!, {});
+}
 
 describe("Unit: ReductionExecutor", function () {
+    describe("tryReadInboundMessageBlocksFailure", function () {
+        it("reads every compared value out of the revert", function () {
+            const expected = {
+                submittedSnapshotInboundHash: factory.hash(),
+                expectedTargetInboundHash: factory.hash(),
+                runningInboundHash: factory.hash(),
+                breakIndex: 1,
+                submittedBlockCount: 3,
+                failureReason: "hash-link" as const
+            };
+
+            expect(
+                tryReadInboundMessageBlocksFailure(
+                    inboundBlocksRevert({ ...expected, failureReason: 0 })
+                )
+            ).to.deep.equal(expected);
+        });
+
+        // a broken hash link and a broken height sequence both stop at the same
+        // breakIndex, so the reason code is the only thing separating them
+        it("maps each contract failure code to its reason", function () {
+            const reasons = [0, 1, 2].map(
+                (failureReason) =>
+                    tryReadInboundMessageBlocksFailure(
+                        inboundBlocksRevert({ failureReason })
+                    )?.failureReason
+            );
+
+            expect(reasons).to.deep.equal([
+                "hash-link",
+                "height-sequence",
+                "final-target"
+            ]);
+        });
+
+        it("an unrecognised failure code reads as unknown, not a wrong reason", function () {
+            expect(
+                tryReadInboundMessageBlocksFailure(
+                    inboundBlocksRevert({ failureReason: 99 })
+                )?.failureReason
+            ).to.equal("unknown");
+        });
+
+        it("a different custom error carries no inbound comparison", function () {
+            const encoded = errorInterface.encodeErrorResult(
+                "ErrorInvalidLatestState",
+                []
+            );
+            const other = new CustomEvmError(
+                errorInterface.parseError(encoded)!,
+                {}
+            );
+
+            expect(tryReadInboundMessageBlocksFailure(other)).to.equal(
+                undefined
+            );
+        });
+    });
+
+    describe("compareSubmittedInboundTarget", function () {
+        // the chain derived a different target than we did, so our candidate
+        // went stale between compute and submission
+        it("on-chain target differs from ours → chain-target-moved", function () {
+            const failure = tryReadInboundMessageBlocksFailure(
+                inboundBlocksRevert({
+                    expectedTargetInboundHash: factory.hash()
+                })
+            )!;
+
+            expect(
+                compareSubmittedInboundTarget(failure, factory.hash())
+            ).to.equal("chain-target-moved");
+        });
+
+        // same target on both sides, so the target was never the problem - our
+        // own supplied blocks failed to link
+        it("on-chain target equals ours → local-chain-diverged", function () {
+            const submittedTarget = factory.hash();
+            const failure = tryReadInboundMessageBlocksFailure(
+                inboundBlocksRevert({
+                    expectedTargetInboundHash: submittedTarget
+                })
+            )!;
+
+            expect(
+                compareSubmittedInboundTarget(failure, submittedTarget)
+            ).to.equal("local-chain-diverged");
+        });
+    });
+
     describe("getSyncedForkDisputes", function () {
         // a dispute commitment lands on-chain before our onDisputeCommitted
         // handler stores the struct. tryReduce firing in that gap used to

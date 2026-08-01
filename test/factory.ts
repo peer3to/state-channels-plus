@@ -18,8 +18,10 @@ import {
 import {
     DisputeStruct,
     SignedDisputeStruct,
-    DisputeInputStruct
+    DisputeInputStruct,
+    ReduceOutputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { ReduceData } from "@/types/disputes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
@@ -332,10 +334,10 @@ export async function buildAndEncodeBlock(
     );
 }
 
-export function exitChannelBlock(
+export function messageBlock(
     overrides: Partial<MessageBlockStruct> = {}
 ): MessageBlockStruct {
-    const defaultExitChannelBlock: MessageBlockStruct = {
+    const defaultMessageBlock: MessageBlockStruct = {
         previousBlockHash: ethers.hexlify(ethers.randomBytes(32)),
         blockHeight: BigInt(randomInt(0, 1000)),
         messages: [],
@@ -347,10 +349,85 @@ export function exitChannelBlock(
     };
 
     return {
-        ...defaultExitChannelBlock,
+        ...defaultMessageBlock,
         ...overrides,
-        messages: overrides.messages ?? defaultExitChannelBlock.messages
+        messages: overrides.messages ?? defaultMessageBlock.messages
     };
+}
+
+export function exitChannelBlock(
+    overrides: Partial<MessageBlockStruct> = {}
+): MessageBlockStruct {
+    return messageBlock(overrides);
+}
+
+/**
+ * A chain of message blocks where each block's `previousBlockHash` is the
+ * encoded hash of the one before it, starting from `previousBlockHash` -
+ * exactly the linkage `_verifyInboundMessageBlocks` walks.
+ */
+export function linkedMessageBlocks(
+    count: number,
+    previousBlockHash: Bytes = hash()
+): MessageBlockStruct[] {
+    const blocks: MessageBlockStruct[] = [];
+    let runningHash = previousBlockHash;
+    for (let height = 0; height < count; height++) {
+        const nextBlock = messageBlock({
+            previousBlockHash: runningHash,
+            blockHeight: BigInt(height)
+        });
+        blocks.push(nextBlock);
+        runningHash = ethers.keccak256(
+            Codec.encode(nextBlock, Type.MessageBlock)
+        );
+    }
+    return blocks;
+}
+
+export function reduceOutput(
+    overrides: Partial<ReduceOutputStruct> = {}
+): ReduceOutputStruct {
+    const defaultReduceOutput: ReduceOutputStruct = {
+        latestBlock: {
+            transaction: transaction(),
+            previousBlockHash: zeroHex(),
+            stateSnapshotHash: zeroHex(),
+            messageBlocks: []
+        },
+        slashedParticipants: [],
+        latestInboundMessageBlockHash: hash(),
+        latestInboundMessageBlockHeight: 0n,
+        timeout: {
+            participant: randomAddress(),
+            blockHeight: 0n,
+            minTimeStamp: 0n,
+            isForced: false,
+            previousBlockProducer: randomAddress(),
+            previousBlockProducerPostedCalldata: false,
+            participantSignatureOnPreviousBlock: "0x"
+        },
+        selfRemovals: []
+    };
+
+    return { ...defaultReduceOutput, ...overrides };
+}
+
+export function reduceData(overrides: Partial<ReduceData> = {}): ReduceData {
+    const defaultReduceData: ReduceData = {
+        forkId: zeroHex() as ForkId,
+        reducedOutput: reduceOutput(),
+        latestStateSnapshot: {
+            snapshotData: snapshotData(),
+            forkId: zeroHex(),
+            blockHeight: 0n,
+            timestamp: 0n
+        },
+        encodedStateMachineState: "0x",
+        inboundMessageBlocks: []
+    };
+
+    return { ...defaultReduceData, ...overrides };
 }
 
 export function snapshotData(

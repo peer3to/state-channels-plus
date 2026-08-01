@@ -7,6 +7,7 @@ import { StateSnapshot } from "@/models";
 import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
 import {
+    type CustomEvmError,
     type RaceConditionErrorHandlers,
     type RaceConditionErrorName,
     tryDecodeCustomError,
@@ -32,6 +33,65 @@ type LocalReductionCandidate = ReductionComputation & {
 
 type ReductionCacheKey = string;
 type ReductionSubmissionStatus = "submit" | "already-reduced" | "superseded";
+// Which call site is reporting the failure. "simulation" has installed nothing
+// yet; "detached" already installed the candidate before submitting.
+type ReductionSubmissionPath = "simulation" | "detached";
+// Mirrors the INBOUND_FAILURE_* constants in Errors.sol. Indexed by the
+// contract's uint8; the value is what lands in the log.
+const INBOUND_FAILURE_REASONS = [
+    "hash-link",
+    "height-sequence",
+    "final-target"
+] as const;
+
+// The values ErrorDisputeInboundMessageBlocksInvalid carries out of the revert.
+// All describe the failing call itself, so nothing has to be read back from a
+// later chain state to interpret them.
+export type InboundMessageBlocksFailure = {
+    submittedSnapshotInboundHash: string;
+    expectedTargetInboundHash: string;
+    runningInboundHash: string;
+    breakIndex: number;
+    submittedBlockCount: number;
+    // "hash-link" and "height-sequence" both break at breakIndex and are
+    // otherwise indistinguishable; "unknown" means the contract sent a code
+    // this build does not know.
+    failureReason: (typeof INBOUND_FAILURE_REASONS)[number] | "unknown";
+};
+
+export function tryReadInboundMessageBlocksFailure(
+    custom: CustomEvmError | undefined
+): InboundMessageBlocksFailure | undefined {
+    if (custom?.name !== "ErrorDisputeInboundMessageBlocksInvalid")
+        return undefined;
+    const args = custom.errorDescription.args;
+    return {
+        submittedSnapshotInboundHash: String(args.submittedSnapshotInboundHash),
+        expectedTargetInboundHash: String(args.expectedTargetInboundHash),
+        runningInboundHash: String(args.runningInboundHash),
+        breakIndex: Number(args.breakIndex),
+        submittedBlockCount: Number(args.submittedBlockCount),
+        failureReason:
+            INBOUND_FAILURE_REASONS[Number(args.failureReason)] ?? "unknown"
+    };
+}
+
+/**
+ * Which of the two causes produced the revert. Both hashes come from the failed
+ * call itself: `expectedTargetInboundHash` is what reduce() derived on chain
+ * during that call, and `submittedTarget` is what we derived locally before
+ * submitting. A difference means the chain's target moved out from under the
+ * candidate; equality means the target was right and our own supplied blocks
+ * did not link.
+ */
+export function compareSubmittedInboundTarget(
+    failure: InboundMessageBlocksFailure,
+    submittedTarget: string
+) {
+    return failure.expectedTargetInboundHash === submittedTarget
+        ? "local-chain-diverged"
+        : "chain-target-moved";
+}
 const REDUCTION_RACE_ERRORS = [
     "RaceConditionDisputeAlreadyReduced",
     "RaceConditionBlockHeightTooOld",
@@ -189,6 +249,7 @@ export default class ReductionExecutor {
         const submission = await this.prepareSubmission(candidate);
         const submissionStatus = await this.simulateSubmission(
             forkId,
+            candidate,
             disputes,
             submission
         );
@@ -222,7 +283,7 @@ export default class ReductionExecutor {
                 }
             );
         if (installed && submissionStatus === "submit") {
-            this.submitDetached(forkId, disputes, submission);
+            this.submitDetached(forkId, candidate, disputes, submission);
         }
     }
 
@@ -307,6 +368,7 @@ export default class ReductionExecutor {
 
     private async simulateSubmission(
         forkId: ForkId,
+        candidate: LocalReductionCandidate,
         disputes: DisputeStruct[],
         submission: { calldata: string[] }
     ): Promise<ReductionSubmissionStatus> {
@@ -323,12 +385,19 @@ export default class ReductionExecutor {
                 disputes
             );
             if (status) return status;
+            this.logUnclassifiedSubmissionFailure(
+                custom ?? undefined,
+                forkId,
+                candidate,
+                "simulation"
+            );
             throw custom ?? error;
         }
     }
 
     private submitDetached(
         forkId: ForkId,
+        candidate: LocalReductionCandidate,
         disputes: DisputeStruct[],
         submission: { calldata: string[] }
     ): void {
@@ -372,9 +441,52 @@ export default class ReductionExecutor {
                     );
                     if (status) return;
                 }
-                throw tryDecodeCustomError(error) ?? error;
+                const custom = tryDecodeCustomError(error);
+                this.logUnclassifiedSubmissionFailure(
+                    custom ?? undefined,
+                    forkId,
+                    candidate,
+                    "detached"
+                );
+                throw custom ?? error;
             });
         DetachedPromises.collect(transaction);
+    }
+
+    /**
+     * A reduction submission failed with something we do not classify as a
+     * race, so it is about to be rethrown. Record what the contract compared
+     * before it goes: the error name alone cannot distinguish the chain moving
+     * between compute and submission from our own supplied blocks never
+     * linking, and those two call for opposite responses.
+     */
+    private logUnclassifiedSubmissionFailure(
+        custom: CustomEvmError | undefined,
+        forkId: ForkId,
+        candidate: LocalReductionCandidate,
+        path: ReductionSubmissionPath
+    ): void {
+        const submittedTarget = String(
+            candidate.reduceData.reducedOutput.latestInboundMessageBlockHash
+        );
+        const failure = tryReadInboundMessageBlocksFailure(custom);
+        this.logger.warn("Reduction submission failed unclassified", {
+            errorName: custom?.name,
+            forkId,
+            candidateForkId: candidate.reducedForkId,
+            channelId: this.stateManager.channelId,
+            path,
+            submittedTarget,
+            inbound: LoggerUtils.getReductionInboundMetadata(
+                candidate.reduceData
+            ),
+            // present only for the inbound-blocks revert; other unclassified
+            // errors carry no comparison of their own
+            onChainComparison: failure,
+            cause: failure
+                ? compareSubmittedInboundTarget(failure, submittedTarget)
+                : undefined
+        });
     }
 
     private async classifyReductionRace(
