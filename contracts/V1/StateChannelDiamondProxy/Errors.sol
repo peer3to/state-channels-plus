@@ -56,7 +56,29 @@ error ErrorDisputeStateMachineJoiningFailed();
 error ErrorDisputeStateMachineSlashingFailed();
 error ErrorDisputeStateMachineRemovingFailed();
 error ErrorDisputeStateMachineInboundProcessingFailed();
-error ErrorDisputeInboundMessageBlocksInvalid();
+// Why the inbound walk rejected the chain. Plain `uint8` constants rather than
+// an enum on purpose: `scripts/generate-enums.ts` numbers the generated TS
+// enums by discovery order, so adding an enum here would silently renumber
+// FraudProofType and DisputeFraudProofType.
+uint8 constant INBOUND_FAILURE_HASH_LINK = 0;
+uint8 constant INBOUND_FAILURE_HEIGHT_SEQUENCE = 1;
+uint8 constant INBOUND_FAILURE_FINAL_TARGET = 2;
+
+/// `submittedSnapshotInboundHash` is where the submitted snapshot said the
+/// inbound chain starts, `expectedTargetInboundHash` where reduce() said it
+/// ends, and `runningInboundHash` how far the walk actually got. `breakIndex`
+/// is the block that failed, or `submittedBlockCount` for a final-target
+/// mismatch. `failureReason` is one of the INBOUND_FAILURE_* constants — a
+/// hash link and a height sequence both break at a block index, and without it
+/// the two are indistinguishable.
+error ErrorDisputeInboundMessageBlocksInvalid(
+    bytes32 submittedSnapshotInboundHash,
+    bytes32 expectedTargetInboundHash,
+    bytes32 runningInboundHash,
+    uint256 breakIndex,
+    uint256 submittedBlockCount,
+    uint8 failureReason
+);
 error ErrorInvalidLatestState();
 
 //FraudProofs
