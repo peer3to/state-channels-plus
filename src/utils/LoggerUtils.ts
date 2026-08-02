@@ -148,11 +148,13 @@ export class LoggerUtils {
      * needs a hand-written field list here. Unnamed solidity params have no key
      * to convert to, so those come out positional.
      */
-    static getCustomEvmErrorMetadata(custom: CustomEvmError | null | undefined) {
-        if (!custom) return undefined;
-        const args = custom.errorDescription.args;
+    static getCustomEvmErrorMetadata(
+        customError: CustomEvmError | null | undefined
+    ) {
+        if (!customError) return undefined;
+        const args = customError.errorDescription.args;
         return {
-            errorName: custom.name,
+            errorName: customError.name,
             args: isEthersResult(args)
                 ? Codec.convertEthersResultToObject<
                       Record<string, unknown> | unknown[]

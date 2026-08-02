@@ -462,10 +462,10 @@ export function customEvmError(
         errorName,
         args
     );
-    const revert = Object.assign(new Error("execution reverted"), {
+    const revertError = Object.assign(new Error("execution reverted"), {
         data: encodedRevert
     });
-    return tryDecodeCustomError(revert)!;
+    return tryDecodeCustomError(revertError)!;
 }
 
 export function snapshotData(

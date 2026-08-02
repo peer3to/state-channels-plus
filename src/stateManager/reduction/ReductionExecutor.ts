@@ -315,20 +315,20 @@ export default class ReductionExecutor {
             );
             return "submit";
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
+            const customError = tryDecodeCustomError(error);
             const status = await this.classifyReductionRace(
-                custom?.name,
+                customError?.name,
                 forkId,
                 candidate.disputes
             );
             if (status) return status;
             this.logUnclassifiedSubmissionFailure(
-                custom,
+                customError,
                 forkId,
                 candidate,
                 "simulation"
             );
-            throw custom ?? error;
+            throw customError ?? error;
         }
     }
 
@@ -377,14 +377,14 @@ export default class ReductionExecutor {
                     );
                     if (status) return;
                 }
-                const custom = tryDecodeCustomError(error);
+                const customError = tryDecodeCustomError(error);
                 this.logUnclassifiedSubmissionFailure(
-                    custom,
+                    customError,
                     forkId,
                     candidate,
                     "detached"
                 );
-                throw custom ?? error;
+                throw customError ?? error;
             });
         DetachedPromises.collect(transaction);
     }
@@ -396,18 +396,18 @@ export default class ReductionExecutor {
      * inbound chain this candidate submitted.
      */
     private logUnclassifiedSubmissionFailure(
-        custom: CustomEvmError | null,
+        customError: CustomEvmError | null,
         forkId: ForkId,
         candidate: LocalReductionCandidate,
-        path: ReductionSubmissionPath
+        submissionPath: ReductionSubmissionPath
     ): void {
         this.logger.warn("Reduction submission failed unclassified", {
-            customError: LoggerUtils.getCustomEvmErrorMetadata(custom),
+            customError: LoggerUtils.getCustomEvmErrorMetadata(customError),
             forkId,
             candidateForkId: candidate.reducedForkId,
             channelId: this.stateManager.channelId,
-            path,
-            inbound: LoggerUtils.getReductionInboundMetadata(
+            submissionPath,
+            inboundChain: LoggerUtils.getReductionInboundMetadata(
                 candidate.reduceData
             )
         });
