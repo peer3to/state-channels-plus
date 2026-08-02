@@ -14,6 +14,7 @@ import type P2PManager from "@/P2PManager";
 import type BlockQueueManager from "../BlockQueueManager";
 import DisputeManager from "@/disputeManager";
 import { Logger } from "@/utils";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
@@ -31,6 +32,9 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             this.storage,
             this.logger
         );
+    }
+    public get enforcesLiveForkAndOrderingGates(): boolean {
+        return true;
     }
     public async interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
@@ -256,6 +260,13 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         // Malformed linkage, not a provable fraud proof - drop the sender.
         this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
+    }
+    public async prepareStateMachineForLeaderCheck(
+        _entry: QueuedBlockEntry,
+        _diamondStateMachine: ADiamondStateMachine
+    ): Promise<void> {
+        // Live pipeline: the state machine already holds the predecessor state
+        // (blocks execute in order), so no repositioning is needed.
     }
     public async objectiveInvalidTimestampDetected(
         block: Block

@@ -5,6 +5,7 @@ import {
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export type ParticipantSnapshots = {
     previous: StateSnapshot;
@@ -15,6 +16,17 @@ export default abstract class AValidationStrategy {
     public get name(): string {
         return this.constructor.name;
     }
+
+    /**
+     * Whether this pipeline enforces the live fork/ordering gates - the
+     * disputed-fork check and the not-in-the-future check. Live gossip,
+     * spectate, and calldata pipelines validate in-order blocks and enforce
+     * both. Dispute replay audits a fixed proof out of live order on an
+     * already-disputed fork, so it enforces neither (and never pays for the
+     * disputed-fork lookup). When false, `blockForkIsDisputed` and
+     * `blockIsNotNextAndIsInTheFuture` are never called.
+     */
+    public abstract get enforcesLiveForkAndOrderingGates(): boolean;
 
     public abstract interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
@@ -96,6 +108,17 @@ export default abstract class AValidationStrategy {
     public abstract blockIsNotLinkedAndIsNotFirstBlock(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
+
+    /**
+     * Position the state machine before the next-leader check. Live pipelines
+     * already hold the block's predecessor state (blocks execute in order), so
+     * this is a no-op; dispute replay walks a proof out of live order and must
+     * load the block's previous-snapshot state first.
+     */
+    public abstract prepareStateMachineForLeaderCheck(
+        entry: QueuedBlockEntry,
+        diamondStateMachine: ADiamondStateMachine
+    ): Promise<void>;
 
     public abstract objectiveInvalidTimestampDetected(
         block: Block

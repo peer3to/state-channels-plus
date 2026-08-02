@@ -10,6 +10,7 @@ import AValidationStrategy, {
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import DisputeManager from "@/disputeManager";
 import BlockValidationStrategy from "./BlockValidationStrategy";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export default class CalldataCommittedStrategy extends AValidationStrategy {
     constructor(
@@ -17,6 +18,9 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         private readonly blockValidationStrategy: BlockValidationStrategy
     ) {
         super();
+    }
+    public get enforcesLiveForkAndOrderingGates(): boolean {
+        return this.blockValidationStrategy.enforcesLiveForkAndOrderingGates;
     }
     public async interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
@@ -133,6 +137,15 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         // otherwise our dispute.StateProof will reveal information for the timeout peer to do a dispute containing a double sign or invalid state transition fraud proof, which when reduce will cancel the timeout
         return this.blockValidationStrategy.blockIsNotLinkedAndIsNotFirstBlock(
             entry
+        );
+    }
+    public async prepareStateMachineForLeaderCheck(
+        entry: QueuedBlockEntry,
+        diamondStateMachine: ADiamondStateMachine
+    ): Promise<void> {
+        return this.blockValidationStrategy.prepareStateMachineForLeaderCheck(
+            entry,
+            diamondStateMachine
         );
     }
     public async objectiveInvalidTimestampDetected(
