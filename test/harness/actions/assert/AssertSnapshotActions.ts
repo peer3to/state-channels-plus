@@ -41,7 +41,9 @@ export class AssertSnapshotActions<
             expectedForkId,
             previousForkId,
             expectedSnapshot,
-            timeoutMs = 8000
+            timeoutMs = this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            })
         } = options || {};
 
         let honestPeers;
@@ -269,7 +271,11 @@ export class AssertSnapshotActions<
         checkpointName: string,
         options?: { timeoutMs?: number }
     ): Promise<void> {
-        const { timeoutMs = 5000 } = options || {};
+        const {
+            timeoutMs = this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            })
+        } = options || {};
         const peer = this.harness.peers[peerIndex];
         if (!peer) {
             throw new Error(`Peer ${peerIndex} not found`);

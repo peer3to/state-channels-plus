@@ -38,7 +38,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // and should be killed by peer 1 detecting TimeoutNotLinkedToLatestState.
         await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
             mode: "atLeast",
-            timeoutMs: h.event.protocolEventTimeoutMs(0)
+            timeoutMs: h.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            })
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
@@ -75,7 +77,9 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         // and should be killed by peer 1 detecting TimeoutNotLinkedToLatestState.
         await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
             mode: "atLeast",
-            timeoutMs: h.event.protocolEventTimeoutMs(0)
+            timeoutMs: h.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            })
         });
 
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({

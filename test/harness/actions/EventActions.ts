@@ -152,14 +152,16 @@ export class EventActions<
         return gap;
     }
 
-    protocolEventTimeoutMs(
-        blockHeight: number,
-        settlementMarginSeconds?: number
-    ): number {
+    protocolEventTimeoutMs({
+        withFirstBlockGrace = false,
+        settlementMarginSeconds
+    }: {
+        withFirstBlockGrace?: boolean;
+        settlementMarginSeconds?: number;
+    } = {}): number {
         return protocolEventTimeoutMs(
             resolveTestTimeConfig(this.harness.options.timeConfig),
-            blockHeight,
-            settlementMarginSeconds
+            { withFirstBlockGrace, settlementMarginSeconds }
         );
     }
 
@@ -186,7 +188,7 @@ export class EventActions<
         timeoutMs?: number,
         peerIndices?: number[]
     ): Promise<void> {
-        const waitTimeoutMs = timeoutMs ?? this.protocolEventTimeoutMs(1);
+        const waitTimeoutMs = timeoutMs ?? this.protocolEventTimeoutMs();
         const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         const condition = () => {
             return peers.every(
@@ -210,7 +212,7 @@ export class EventActions<
             peerIndex,
             blockHash,
             keepConnection,
-            timeoutMs = this.protocolEventTimeoutMs(1)
+            timeoutMs = this.protocolEventTimeoutMs()
         } = options;
         const peer = this.harness.getPeer(peerIndex);
 
@@ -248,7 +250,8 @@ export class EventActions<
         if (!peer) {
             throw new Error(`Peer ${peerIndex} not found`);
         }
-        const { timeoutMs = 15000, timeoutMessage } = options ?? {};
+        const { timeoutMs = this.protocolEventTimeoutMs(), timeoutMessage } =
+            options ?? {};
         const statusName = Status[expectedStatus] ?? String(expectedStatus);
         await this.harness.eventCountsBarrier.waitFor(
             async () =>
@@ -278,7 +281,8 @@ export class EventActions<
         await this.waitForEventCounts(
             eventName,
             expectedCounts,
-            options?.timeoutMs ?? this.protocolEventTimeoutMs(0),
+            options?.timeoutMs ??
+                this.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
             { mode: options?.mode }
         );
     }
@@ -297,7 +301,8 @@ export class EventActions<
         await this.waitForEventCounts(
             eventName,
             expectedCounts,
-            options?.timeoutMs ?? this.protocolEventTimeoutMs(0),
+            options?.timeoutMs ??
+                this.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
             { mode: options?.mode }
         );
     }
@@ -307,7 +312,9 @@ export class EventActions<
         minCount: number,
         options?: { timeoutMs?: number }
     ): Promise<void> {
-        const timeoutMs = options?.timeoutMs ?? this.protocolEventTimeoutMs(0);
+        const timeoutMs =
+            options?.timeoutMs ??
+            this.protocolEventTimeoutMs({ withFirstBlockGrace: true });
         const condition = () => {
             const count = this.getEventCallCount(
                 peerIndex,
@@ -326,7 +333,9 @@ export class EventActions<
         peerIndices: number[],
         options?: { timeoutMs?: number }
     ): Promise<void> {
-        const timeoutMs = options?.timeoutMs ?? this.protocolEventTimeoutMs(0);
+        const timeoutMs =
+            options?.timeoutMs ??
+            this.protocolEventTimeoutMs({ withFirstBlockGrace: true });
         const condition = () => {
             for (const peerIndex of peerIndices) {
                 if (

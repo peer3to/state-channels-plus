@@ -36,7 +36,7 @@ export class AssertCalldataActions<
 
     async calldataPosted(options?: { timeoutMs?: number }): Promise<void> {
         const timeoutMs =
-            options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs(1);
+            options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
 
         const condition = () => {
             return this.harness.peers.some(

@@ -49,11 +49,8 @@ export class NetworkController<
      * Wait for P2P connections to establish
      */
     async waitForP2PConnections(timeoutMs?: number): Promise<void> {
-        // Parallel local runs have the same interval-mined, multi-process
-        // connection latency as CI. A shorter local-only deadline makes setup
-        // fail even though discovery is still progressing normally.
-        const defaultTimeout = 15000;
-        const actualTimeout = timeoutMs ?? defaultTimeout;
+        const actualTimeout =
+            timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
 
         const condition = async () => {
             const connectedAddressesByPeer = await Promise.all(

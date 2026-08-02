@@ -163,7 +163,8 @@ export class MathJoinActions extends JoinActions {
     async forceInboundJoinWait(options?: ForceInboundJoinOptions): Promise<{
         participant: string;
     }> {
-        const timeoutMs = options?.timeoutMs ?? 15000;
+        const timeoutMs =
+            options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
         const waitForHonestPeersObserve =
             options?.waitForHonestPeersObserve ?? true;
 
@@ -184,7 +185,8 @@ export class MathJoinActions extends JoinActions {
     async forceInboundJoinObserveDetached(
         options?: ForceInboundJoinOptions
     ): Promise<{ participant: string }> {
-        const timeoutMs = options?.timeoutMs ?? 15000;
+        const timeoutMs =
+            options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
         const waitForHonestPeersObserve =
             options?.waitForHonestPeersObserve ?? true;
 

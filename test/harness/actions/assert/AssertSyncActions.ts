@@ -19,7 +19,7 @@ export class AssertSyncActions<
         const {
             expectedStateMachineStateHash,
             peerIndices,
-            timeout = 10000,
+            timeout = this.harness.event.protocolEventTimeoutMs(),
             waitForFinalization = true
         } = options || {};
         const peers = this.harness.getFilteredPeers(peerIndices);
@@ -152,7 +152,11 @@ export class AssertSyncActions<
         honestPeerIndices?: number[];
         timeoutMs?: number;
     }): Promise<void> {
-        const { timeoutMs = 5000 } = options || {};
+        const {
+            timeoutMs = this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            })
+        } = options || {};
         const condition = async () => {
             try {
                 await this.forkChanged(options);
@@ -264,7 +268,8 @@ export class AssertSyncActions<
         otherPeerIndex: number,
         options?: { timeoutMs?: number }
     ): Promise<void> {
-        const { timeoutMs = 5000 } = options || {};
+        const { timeoutMs = this.harness.event.protocolEventTimeoutMs() } =
+            options || {};
         const forkId = this.harness.activeForkId;
         if (!forkId) {
             throw new Error("No active fork ID");
@@ -297,7 +302,11 @@ export class AssertSyncActions<
         peerIndex?: number;
         timeoutMs?: number;
     }): Promise<void> {
-        const { expectedCount, peerIndex = 0, timeoutMs = 10000 } = options;
+        const {
+            expectedCount,
+            peerIndex = 0,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
+        } = options;
 
         const peer = this.harness.peers[peerIndex];
         if (!peer) {
@@ -331,7 +340,11 @@ export class AssertSyncActions<
         peerIndices: number[];
         timeoutMs?: number;
     }): Promise<void> {
-        const { spectatorPeerIndex, peerIndices, timeoutMs = 15000 } = options;
+        const {
+            spectatorPeerIndex,
+            peerIndices,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
+        } = options;
         const spectator = this.harness.getPeer(spectatorPeerIndex);
 
         await this.harness.disconnectionBarrier.waitFor(
