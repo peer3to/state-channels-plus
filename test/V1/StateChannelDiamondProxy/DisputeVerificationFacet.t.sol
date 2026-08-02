@@ -64,13 +64,13 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
 }
 
 /// Exposes the internal inbound walk so its report can be asserted directly.
-contract InboundWalkHarness is StateChannelCommon {
-    function walk(
+contract InboundVerificationHarness is StateChannelCommon {
+    function verifyInboundMessageBlocks(
         bytes32 previousInboundMessageBlockHash,
         bytes32 latestInboundMessageBlockHash,
         MessageBlock[] memory inboundMessageBlocks
     ) external pure returns (bool, bytes32, uint256, uint8) {
-        return _walkInboundMessageBlocks(
+        return _verifyInboundMessageBlocks(
             previousInboundMessageBlockHash, latestInboundMessageBlockHash, inboundMessageBlocks
         );
     }
@@ -79,7 +79,7 @@ contract InboundWalkHarness is StateChannelCommon {
 // test naming: test_<targetFunction>_<property>
 contract DisputeVerificationFacetTest is DiamondHarness {
     StateChannelManagerProxy internal diamond;
-    InboundWalkHarness internal walkHarness;
+    InboundVerificationHarness internal verificationHarness;
 
     bytes32 internal constant CHANNEL_ID = keccak256("dv-channel");
     bytes32 internal constant FORK_ID = keccak256("dv-fork");
@@ -87,7 +87,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
     function setUp() public {
         diamond = deployDiamond();
-        walkHarness = new InboundWalkHarness();
+        verificationHarness = new InboundVerificationHarness();
     }
 
     // reduce() must not OOB-panic when dispute.input.onChainSlashes.length exceeds
@@ -644,21 +644,21 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
     // ---- inbound message block walk ----
 
-    function test_walkInboundMessageBlocks_linkedChainMatchingTarget_isValid() public {
+    function test_verifyInboundMessageBlocks_linkedChainMatchingTarget_isValid() public {
         MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
         bytes32 target = _chainHead(blocks);
 
-        (bool isValid,,,) = walkHarness.walk(SNAPSHOT_HEAD, target, blocks);
+        (bool isValid,,,) = verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, target, blocks);
 
         assertTrue(isValid);
     }
 
-    function test_walkInboundMessageBlocks_firstBlockNotChainedToSnapshotHead_reportsHashLinkAtZero() public {
+    function test_verifyInboundMessageBlocks_firstBlockNotChainedToSnapshotHead_reportsHashLinkAtZero() public {
         MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 2, 0);
         blocks[0].previousBlockHash = keccak256("not the snapshot head");
 
         (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
-            walkHarness.walk(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
 
         assertFalse(isValid);
         assertEq(breakIndex, 0);
@@ -666,13 +666,13 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(reason, INBOUND_FAILURE_HASH_LINK);
     }
 
-    function test_walkInboundMessageBlocks_midChainLinkBroken_reportsHashLinkAtBreakIndex() public {
+    function test_verifyInboundMessageBlocks_midChainLinkBroken_reportsHashLinkAtBreakIndex() public {
         MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
         bytes32 headBeforeBreak = keccak256(abi.encode(blocks[0]));
         blocks[1].previousBlockHash = keccak256("wrong link");
 
         (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
-            walkHarness.walk(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
 
         assertFalse(isValid);
         assertEq(breakIndex, 1);
@@ -683,13 +683,13 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     // the case the reason code exists for: hashes chain correctly, so a report
     // without a reason looks like a consistent chain that broke for no visible
     // cause. Only the height sequence is wrong.
-    function test_walkInboundMessageBlocks_skippedHeight_reportsHeightSequenceWithIntactHashLink() public {
+    function test_verifyInboundMessageBlocks_skippedHeight_reportsHeightSequenceWithIntactHashLink() public {
         MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
         bytes32 headBeforeBreak = keccak256(abi.encode(blocks[0]));
         blocks[1].blockHeight = blocks[0].blockHeight + 2;
 
         (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
-            walkHarness.walk(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
 
         assertFalse(isValid);
         assertEq(breakIndex, 1);
@@ -700,12 +700,12 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(runningHash, blocks[1].previousBlockHash);
     }
 
-    function test_walkInboundMessageBlocks_allLinkedButWrongTarget_reportsFinalTargetAtBlockCount() public {
+    function test_verifyInboundMessageBlocks_allLinkedButWrongTarget_reportsFinalTargetAtBlockCount() public {
         MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
         bytes32 computedHead = _chainHead(blocks);
 
         (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
-            walkHarness.walk(SNAPSHOT_HEAD, keccak256("some other target"), blocks);
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, keccak256("some other target"), blocks);
 
         assertFalse(isValid);
         assertEq(breakIndex, blocks.length);
@@ -713,13 +713,13 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(reason, INBOUND_FAILURE_FINAL_TARGET);
     }
 
-    function test_walkInboundMessageBlocks_noBlocks_comparesSnapshotHeadAgainstTarget() public {
+    function test_verifyInboundMessageBlocks_noBlocks_comparesSnapshotHeadAgainstTarget() public {
         MessageBlock[] memory blocks = new MessageBlock[](0);
 
         (bool matching,, uint256 matchingBreakIndex, uint8 matchingReason) =
-            walkHarness.walk(SNAPSHOT_HEAD, SNAPSHOT_HEAD, blocks);
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, SNAPSHOT_HEAD, blocks);
         (bool mismatched, bytes32 runningHash,, uint8 mismatchedReason) =
-            walkHarness.walk(SNAPSHOT_HEAD, keccak256("other"), blocks);
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, keccak256("other"), blocks);
 
         assertTrue(matching);
         assertEq(matchingBreakIndex, blocks.length);

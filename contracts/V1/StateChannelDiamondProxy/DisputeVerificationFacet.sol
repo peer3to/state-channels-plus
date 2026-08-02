@@ -304,7 +304,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         );
         //verify inbound message blocks
         (bool inboundMessageBlocksValid, bytes32 runningInboundHash, uint256 breakIndex, uint8 failureReason) =
-        _walkInboundMessageBlocks(
+        _verifyInboundMessageBlocks(
             latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             reducedOutput.latestInboundMessageBlockHash,
             inboundMessageBlocks

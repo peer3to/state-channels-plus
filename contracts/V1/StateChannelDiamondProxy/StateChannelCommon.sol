@@ -450,20 +450,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             return false;
         }
 
-        return _verifyInboundMessageBlocks(
+        (bool isValid,,,) = _verifyInboundMessageBlocks(
             latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             dispute.input.latestInboundMessageBlockHash,
             inboundMessageBlocks
-        );
-    }
-
-    function _verifyInboundMessageBlocks(
-        bytes32 previousInboundMessageBlockHash,
-        bytes32 latestInboundMessageBlockHash,
-        MessageBlock[] memory inboundMessageBlocks
-    ) internal pure returns (bool) {
-        (bool isValid,,,) = _walkInboundMessageBlocks(
-            previousInboundMessageBlockHash, latestInboundMessageBlockHash, inboundMessageBlocks
         );
         return isValid;
     }
@@ -475,7 +465,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     /// `inboundMessageBlocks.length` for a final-target mismatch;
     /// `failureReason` is one of the INBOUND_FAILURE_* constants and is only
     /// meaningful when `isValid` is false.
-    function _walkInboundMessageBlocks(
+    function _verifyInboundMessageBlocks(
         bytes32 previousInboundMessageBlockHash,
         bytes32 latestInboundMessageBlockHash,
         MessageBlock[] memory inboundMessageBlocks
