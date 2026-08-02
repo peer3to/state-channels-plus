@@ -25,6 +25,10 @@ import type { ReduceData } from "@/types/disputes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
+import {
+    tryDecodeCustomError,
+    type CustomEvmError
+} from "@/utils/evmErrorHandler";
 import { Block, StateSnapshot } from "@/models";
 import {
     Address,
@@ -428,6 +432,40 @@ export function reduceData(overrides: Partial<ReduceData> = {}): ReduceData {
     };
 
     return { ...defaultReduceData, ...overrides };
+}
+
+let errorInterface: ethers.Interface | undefined;
+
+// GeneratedArtifacts is ~2MB, and this file loads in the SDK worker thread, so
+// importing it at module scope stalls the worker event loop long enough to skew
+// the protocol clock and fail unrelated time-sensitive tests. Load it on first
+// use instead - only error-decoding tests pay for it.
+function getErrorInterface(): ethers.Interface {
+    if (!errorInterface) {
+        const { errorAbis } =
+            require("@/utils/GeneratedArtifacts") as typeof import("@/utils/GeneratedArtifacts");
+        errorInterface = new ethers.Interface(errorAbis);
+    }
+    return errorInterface;
+}
+
+/**
+ * A real ABI-encoded revert, decoded by the SDK's own decoder. Built from the
+ * generated error ABIs, so a rename in Errors.sol breaks the tests instead of
+ * silently feeding them an undefined field.
+ */
+export function customEvmError(
+    errorName: string,
+    args: readonly unknown[] = []
+): CustomEvmError {
+    const encodedRevert = getErrorInterface().encodeErrorResult(
+        errorName,
+        args
+    );
+    const revert = Object.assign(new Error("execution reverted"), {
+        data: encodedRevert
+    });
+    return tryDecodeCustomError(revert)!;
 }
 
 export function snapshotData(

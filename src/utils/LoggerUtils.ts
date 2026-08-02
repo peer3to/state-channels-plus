@@ -12,6 +12,8 @@ import {
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
+import { isEthersResult } from "./EthersResultProxy";
+import type { CustomEvmError } from "./evmErrorHandler";
 import { hash } from "./hash";
 import { difference } from "./set";
 import { Address, BlockOrSnapshot, Bytes, Hash } from "@/types/types";
@@ -136,6 +138,26 @@ export class LoggerUtils {
                 : {}),
             functionSelector: encodedData.slice(0, 10),
             calldataBytes: ethers.dataLength(encodedData)
+        };
+    }
+
+    /**
+     * Log metadata for any decoded custom EVM error. The args of an
+     * `ErrorDescription` are an ethers `Result` whose field names come from the
+     * error's ABI, so every error describes itself at runtime and none of them
+     * needs a hand-written field list here. Unnamed solidity params have no key
+     * to convert to, so those come out positional.
+     */
+    static getCustomEvmErrorMetadata(custom: CustomEvmError | null | undefined) {
+        if (!custom) return undefined;
+        const args = custom.errorDescription.args;
+        return {
+            errorName: custom.name,
+            args: isEthersResult(args)
+                ? Codec.convertEthersResultToObject<
+                      Record<string, unknown> | unknown[]
+                  >(args)
+                : args
         };
     }
 

@@ -7,7 +7,7 @@ function isListener(value: unknown): value is Listener {
     return typeof value === "function";
 }
 
-function isEthersResult(value: unknown): value is ethers.Result {
+export function isEthersResult(value: unknown): value is ethers.Result {
     return (
         value instanceof ethers.Result &&
         Object.getPrototypeOf(value) === ethers.Result.prototype

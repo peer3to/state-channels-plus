@@ -22,6 +22,79 @@ describe("LoggerUtils", function () {
         });
     });
 
+    describe("getCustomEvmErrorMetadata", function () {
+        it("names every revert arg from the error ABI", function () {
+            const expectedParticipant = factory.randomAddress();
+            const actualSubmitter = factory.randomAddress();
+
+            const metadata = LoggerUtils.getCustomEvmErrorMetadata(
+                factory.customEvmError("ErrorJoinChannelInvalidSubmitter", [
+                    expectedParticipant,
+                    actualSubmitter
+                ])
+            );
+
+            // nothing here lists those field names - they come off the decoded
+            // result, so any custom error describes itself in the log
+            expect(metadata).to.deep.equal({
+                errorName: "ErrorJoinChannelInvalidSubmitter",
+                args: { expectedParticipant, actualSubmitter }
+            });
+        });
+
+        it("keeps numeric revert args as bigints", function () {
+            const submittedSnapshotInboundHash = factory.hash();
+            const expectedTargetInboundHash = factory.hash();
+            const runningInboundHash = factory.hash();
+
+            const metadata = LoggerUtils.getCustomEvmErrorMetadata(
+                factory.customEvmError(
+                    "ErrorDisputeInboundMessageBlocksInvalid",
+                    [
+                        submittedSnapshotInboundHash,
+                        expectedTargetInboundHash,
+                        runningInboundHash,
+                        1,
+                        3,
+                        2
+                    ]
+                )
+            );
+
+            // the log pipeline stringifies bigints on its way out, so they must
+            // arrive here intact rather than narrowed to a lossy number
+            expect(metadata?.args).to.deep.equal({
+                submittedSnapshotInboundHash,
+                expectedTargetInboundHash,
+                runningInboundHash,
+                breakIndex: 1n,
+                submittedBlockCount: 3n,
+                failureReason: 2n
+            });
+        });
+
+        it("an error without args still reports its name", function () {
+            expect(
+                LoggerUtils.getCustomEvmErrorMetadata(
+                    factory.customEvmError("ErrorInvalidLatestState")
+                )
+            ).to.deep.equal({
+                errorName: "ErrorInvalidLatestState",
+                args: []
+            });
+        });
+
+        it("no decoded custom error yields no metadata", function () {
+            // tryDecodeCustomError returns null; an optional caller has undefined
+            expect(LoggerUtils.getCustomEvmErrorMetadata(null)).to.equal(
+                undefined
+            );
+            expect(LoggerUtils.getCustomEvmErrorMetadata(undefined)).to.equal(
+                undefined
+            );
+        });
+    });
+
     it("reports each message block's previousBlockHash", function () {
         const blocks = factory.linkedMessageBlocks(3);
 
