@@ -250,24 +250,16 @@ export default class ReductionExecutor {
         const submissionStatus = await this.simulateSubmission(
             forkId,
             candidate,
-            disputes,
             submission
         );
         if (submissionStatus === "superseded") return;
 
-        await this.complete(
-            forkId,
-            candidate,
-            disputes,
-            submission,
-            submissionStatus
-        );
+        await this.complete(forkId, candidate, submission, submissionStatus);
     }
 
     private async complete(
         forkId: ForkId,
         candidate: LocalReductionCandidate,
-        disputes: DisputeStruct[],
         submission: { calldata: string[] },
         submissionStatus: ReductionSubmissionStatus
     ): Promise<void> {
@@ -283,7 +275,7 @@ export default class ReductionExecutor {
                 }
             );
         if (installed && submissionStatus === "submit") {
-            this.submitDetached(forkId, candidate, disputes, submission);
+            this.submitDetached(forkId, candidate, submission);
         }
     }
 
@@ -369,7 +361,6 @@ export default class ReductionExecutor {
     private async simulateSubmission(
         forkId: ForkId,
         candidate: LocalReductionCandidate,
-        disputes: DisputeStruct[],
         submission: { calldata: string[] }
     ): Promise<ReductionSubmissionStatus> {
         try {
@@ -382,7 +373,7 @@ export default class ReductionExecutor {
             const status = await this.classifyReductionRace(
                 custom?.name,
                 forkId,
-                disputes
+                candidate.disputes
             );
             if (status) return status;
             this.logUnclassifiedSubmissionFailure(
@@ -398,7 +389,6 @@ export default class ReductionExecutor {
     private submitDetached(
         forkId: ForkId,
         candidate: LocalReductionCandidate,
-        disputes: DisputeStruct[],
         submission: { calldata: string[] }
     ): void {
         this.logger.info("Reduction transaction submit", {
@@ -437,7 +427,7 @@ export default class ReductionExecutor {
                     const status = await this.classifyReductionRace(
                         raceErrorName,
                         forkId,
-                        disputes
+                        candidate.disputes
                     );
                     if (status) return;
                 }
