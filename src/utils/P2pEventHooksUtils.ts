@@ -174,6 +174,9 @@ export default class P2pEventHooksUtils {
             relevantTimestamp
         });
 
+        // The StateManager's hooks object is a bus-publishing proxy, so this
+        // one call also reaches every realm-local
+        // `events.on("p2pEventHooks", "onTurn", ...)` subscriber.
         p2pEventHooks.onTurn?.(
             nextToWrite,
             timeConfig.p2pTime,

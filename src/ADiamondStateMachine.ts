@@ -10,6 +10,7 @@ type TransitionResponse = {
     outboundMessages: MessageStruct[];
     successCallback: () => void;
 };
+
 abstract class ADiamondStateMachine {
     localDiamondContract: LocalDiamond;
 
@@ -47,6 +48,9 @@ abstract class ADiamondStateMachine {
     public abstract getZeroBalance(): Promise<BalanceStruct>;
 
     public abstract dispose(): Promise<void> | void;
+
+    /** The state machine's address in its executing EVM. */
+    public abstract getStateMachineAddress(): Address;
 }
 
 export default ADiamondStateMachine;

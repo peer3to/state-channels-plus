@@ -10,6 +10,12 @@ import AContractExecutor, {
 } from "./AContractExecutor";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
+// TODO(evm-upgrade): profiling shows the @ethereumjs/evm 3.x interpreter
+// dominates CPU under load — Interpreter._getValidJumpDests re-scans the full
+// contract bytecode on EVERY message call (no code-hash cache), which is ~25%
+// of all EVM time for large viaIR facets behind a diamond. Try upgrading
+// @ethereumjs/evm (newer majors restructured jumpdest/opcode caching) or add
+// a code-keyed jumpdest cache.
 export default class ContractExecutor extends AContractExecutor {
     private readonly evm: EVM;
     private readonly logger?: Logger;

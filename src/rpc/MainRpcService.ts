@@ -37,5 +37,12 @@ class MainRpcService {
         this.joinChannelService = new JoinChannelService(this.p2pManager);
         return this.self;
     }
+
+    /**
+     * Runtime-shutdown hook for custom RPC roots. `StateManager.dispose()`
+     * awaits it before tearing down the p2p manager, timeout manager, and EVM,
+     * so a root can settle waits and drain async work. The base is a no-op.
+     */
+    dispose(): Promise<void> | void {}
 }
 export default MainRpcService;

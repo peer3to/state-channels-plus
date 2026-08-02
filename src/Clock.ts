@@ -13,6 +13,12 @@ class Clock {
     }
 
     public static async init(provider: ethers.Provider): Promise<void> {
+        // A fresh session brings a fresh provider and may have destroyed the
+        // old one; re-initialize instead of serving stale chain reads.
+        if (Clock.instance && Clock.instance.provider !== provider) {
+            Clock.instance = undefined;
+            Clock.initialization = undefined;
+        }
         if (!Clock.initialization) {
             const instance = new Clock(provider);
             Clock.initialization = instance

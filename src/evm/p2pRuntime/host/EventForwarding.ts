@@ -1,44 +1,24 @@
 import type { EventHandler } from "@/eventHandlers/EventHandler";
-import type P2pEventHooks from "@/P2pEventHooks";
+import type { EventBus } from "@/events/EventBus";
 import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
 import type { HostHandlerExecutionContext } from "../HostHandlerExecutionContext";
-import type { RuntimePort } from "../types";
-
-/** Best-effort structured-clone of handler args; `[]` if not cloneable. */
-function safeEventArgs(args: unknown[]): unknown[] {
-    try {
-        return structuredClone(args);
-    } catch {
-        throw new Error("Event handler arguments are not cloneable");
-    }
-}
-
-/**
- * A {@link P2pEventHooks} whose every hook forwards the call over the port.
- * The client dispatches it to registered listeners on the main thread.
- */
-export function createForwardingHooks(port: RuntimePort): P2pEventHooks {
-    return new Proxy({} as P2pEventHooks, {
-        get(_target, name) {
-            if (typeof name !== "string") return undefined;
-            return (...args: unknown[]) =>
-                port.post({ type: "p2pEventHook", name, args });
-        }
-    });
-}
 
 /**
  * Wrap each forwarded `eventHandler` method in place so that, after the original
- * resolves, it mirrors an `eventHandlerInvoked` message to the client.
+ * resolves, it publishes an `eventHandler` bus event with the ORIGINAL
+ * arguments (the bridge tap carries it to the client; a non-cloneable payload
+ * fails there, after local delivery).
  *
  * In-place replacement (not a get-trap proxy) keeps one concrete function per
  * method, so the harness-control RPC can stub/restore them without double
  * wrapping. The caller passes the single shared `EventHandler` instance (the
  * same one reachable via `stateManager.stateChannelEventListener.eventHandler`).
+ * The original handler runs before publication, so local delivery always
+ * precedes a bridge failure.
  */
 export function forwardEventHandlerInvocations(
     eventHandler: EventHandler,
-    port: RuntimePort,
+    events: EventBus,
     handlerExecutionContext?: HostHandlerExecutionContext
 ): void {
     const handler = eventHandler as unknown as Record<string, unknown>;
@@ -48,11 +28,11 @@ export function forwardEventHandlerInvocations(
         const originalFn = original as (...args: unknown[]) => unknown;
         const forwardingMethod = async function (...args: unknown[]) {
             const result = await originalFn.apply(handler, args);
-            port.post({
-                type: "eventHandlerInvoked",
-                name,
-                args: safeEventArgs(args)
-            });
+            // Original arguments go to the local bus so worker listeners run
+            // first; the structured-clone check happens only in the bridge
+            // tap (port.post), whose failure surfaces here AFTER local
+            // delivery — the producer clone policy from the plan.
+            events.emit("eventHandler", name, args);
             return result;
         };
         handler[name] = handlerExecutionContext

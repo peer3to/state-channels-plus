@@ -90,6 +90,7 @@
     "generate-enums": "ts-node scripts/generate-enums.ts",
     "generate-artifacts": "node scripts/generate-artifacts.js",
     "get-logs": "ts-node scripts/logging/fetch-logs.ts",
+    "logs:clean": "node scripts/clean-test-run-logs.js",
     "test": "yarn hardhat test --no-compile $(find test -name '*.test.ts' -not -path 'test/e2e/*')",
     "test:browser:worker": "yarn build:browser && node test/browser/run-worker-contract-executor.mjs",
     "test:browser:webrtc": "node test/browser/run-p2p-webrtc-e2e.mjs",

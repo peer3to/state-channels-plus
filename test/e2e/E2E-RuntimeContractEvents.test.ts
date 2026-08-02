@@ -5,9 +5,10 @@ import { waitFor } from "@test/utils/waitFor";
 
 /**
  * A contract event emitted by the host EVM must reach a subscriber on the
- * main-thread contract. The host parses the event, forwards { name, args } over
- * the runtime port, and P2pRuntimeClient.dispatchContractEvent re-emits it on
- * the main-thread contract — whose runner is the provider-less ClientP2pSigner.
+ * main-thread contract. The host publishes the parsed event on the worker bus,
+ * the bridge tap forwards it as one `busEvent` message, and the client's
+ * `attachContractEvents` mirror re-emits it on the main-thread contract —
+ * whose runner is the provider-less ClientP2pSigner.
  *
  * Regression guard for the NoopEventProvider fix: without an event-capable
  * runner, ethers rejects the `contract.on(...)` subscription ("contract runner

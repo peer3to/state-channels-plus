@@ -7,6 +7,8 @@ export class TestSession {
     private static detachedErrorNotify?: () => void;
     // Expected error substrings; matching unhandledRejections are ignored (multi-peer dupes).
     private static detachedErrorAllowlist: string[] = [];
+    // True only while harness cleanup runs; scopes teardown-only rejection filters.
+    private static isCleanupActive = false;
 
     protected static createHarness(): PeerTestHarness {
         throw new Error(
@@ -35,7 +37,12 @@ export class TestSession {
             return;
         }
 
-        await this.harness.cleanup();
+        this.isCleanupActive = true;
+        try {
+            await this.harness.cleanup();
+        } finally {
+            this.isCleanupActive = false;
+        }
         this.firstDetachedError = undefined;
         this.detachedErrorAllowlist = [];
         this.harness = undefined;
@@ -57,6 +64,10 @@ export class TestSession {
         const notify = this.detachedErrorNotify;
         this.detachedErrorNotify = undefined;
         notify?.();
+    }
+
+    static getIsCleanupActive(): boolean {
+        return this.isCleanupActive;
     }
 
     static getFirstDetachedError(): Error | undefined {

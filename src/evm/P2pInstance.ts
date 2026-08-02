@@ -7,10 +7,7 @@ import type ClientP2pSigner from "./signer/ClientP2pSigner";
 import type ClientChainSigner from "./signer/ClientChainSigner";
 import type { StateChannelManagerProxy } from "@typechain-types";
 import type P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
-import type {
-    RuntimeEventMap,
-    RuntimeEventName
-} from "./p2pRuntime/RuntimeEventEmitter";
+import type { EventBus } from "@/events/EventBus";
 import { createHostRpc } from "./p2pRuntime/ClientHostRpc";
 import {
     installWebRTCMainThreadBridge,
@@ -36,6 +33,13 @@ export default class P2pInstance<
      * port).
      */
     hostRpc: RemoteRpcProxyType<TCustomRpc>;
+
+    /**
+     * Main-thread event surface: `events.on(kind, eventName, listener)` for
+     * p2p hooks, contract events, and mirrored `EventHandler` events — the
+     * same bus shape the worker realm exposes on `stateManager.events`.
+     */
+    readonly events: EventBus;
 
     private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
     private readonly client: P2pRuntimeClient<T>;
@@ -73,6 +77,7 @@ export default class P2pInstance<
         this.chainSigner = client.chainSigner;
         this.stateChannelManagerContract = client.stateChannelManagerContract;
         this.logger = logger;
+        this.events = client.events;
         this.hostRpc = createHostRpc<TCustomRpc>(client);
     }
 
@@ -87,26 +92,6 @@ export default class P2pInstance<
             this.webRTCBridgeHandle?.dispose();
             this.webRTCBridgeHandle = undefined;
         }
-    }
-
-    /**
-     * Subscribe to a runtime event (p2p hooks or mirrored `EventHandler`
-     * events). Multiple listeners per event are supported; returns an
-     * unsubscribe function.
-     */
-    public on<K extends RuntimeEventName>(
-        event: K,
-        listener: RuntimeEventMap[K]
-    ): () => void {
-        return this.client.on(event, listener);
-    }
-
-    /** Remove a previously registered runtime-event listener. */
-    public off<K extends RuntimeEventName>(
-        event: K,
-        listener: RuntimeEventMap[K]
-    ): void {
-        this.client.off(event, listener);
     }
 
     /**

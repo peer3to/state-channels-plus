@@ -47,7 +47,8 @@ import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 import type { CustomRpcManifest } from "@/rpc/registry";
 import type StateManager from "@/stateManager/StateManager";
 import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
-import type { RuntimeEventName } from "@/evm/p2pRuntime/RuntimeEventEmitter";
+import type { BusEventMaps } from "@/events/EventBus";
+import type { HostExecModules } from "@test/fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods";
 
 import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
 import { JoinActions } from "@test/harness/actions/JoinActions";
@@ -809,17 +810,25 @@ export class PeerTestHarness<
     ): void {
         for (const [name, fn] of Object.entries(hooks)) {
             if (typeof fn === "function") {
-                peer.p2pInstance.on(name as RuntimeEventName, fn as never);
+                peer.p2pInstance.events.on(
+                    "p2pEventHooks",
+                    name as keyof BusEventMaps["p2pEventHooks"],
+                    fn as never
+                );
             }
         }
 
         const spies = peer.eventSpies;
         for (const name of EVENT_HANDLER_HOOK_NAMES) {
-            peer.p2pInstance.on(name, (...args: unknown[]) => {
-                const spy = spies[name as keyof EventSpies];
-                spy?.(...(args as Parameters<sinon.SinonSpy>));
-                void this.eventCountsBarrier.signal();
-            });
+            peer.p2pInstance.events.on(
+                "eventHandler",
+                name,
+                (...args: unknown[]) => {
+                    const spy = spies[name as keyof EventSpies];
+                    spy?.(...(args as Parameters<sinon.SinonSpy>));
+                    void this.eventCountsBarrier.signal();
+                }
+            );
         }
     }
 
@@ -995,7 +1004,11 @@ export class PeerTestHarness<
         A extends Record<string, unknown> = Record<string, never>
     >(
         peer: TestPeer<TCustomRpc, TStateMachine>,
-        fn: (sm: StateManager<HarnessControlRpc>, args: A) => T | Promise<T>,
+        fn: (
+            sm: StateManager<TCustomRpc>,
+            args: A,
+            modules: HostExecModules
+        ) => T | Promise<T>,
         args: A = {} as A,
         options?: RpcRequestOptions
     ): Promise<T> {

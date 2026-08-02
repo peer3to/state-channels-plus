@@ -33,7 +33,7 @@ class ClientP2pSigner implements Signer {
     // `sendTransaction`), so this provider never routes RPC. It exists only so
     // the main-thread contract can register event subscriptions: ethers'
     // `Contract.on(...)` requires `runner.provider` to be set, and contract
-    // events are then delivered via `P2pRuntimeClient.dispatchContractEvent`.
+    // events are then delivered via the bus mirror (`attachContractEvents`).
     provider: Provider = new NoopEventProvider();
     signerAddress: Address;
     private isLeader = false;

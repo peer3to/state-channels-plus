@@ -37,6 +37,16 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
         process.prependListener("unhandledRejection", (reason) => {
             const error =
                 reason instanceof Error ? reason : new Error(String(reason));
+            // Teardown-time ethers cancellation: destroying a provider rejects
+            // its in-flight internal requests with no handler attached.
+            // `destroy()` only runs in harness cleanup, so the filter is scoped
+            // to it -- the same rejection during a test is a stale-provider bug.
+            if (
+                testSession.getIsCleanupActive() &&
+                error.message.includes("provider destroyed; cancelled request")
+            ) {
+                return;
+            }
             maybeStampErrorWithPeerAddress(
                 error,
                 PeerIdentityExecutionContext.getPeerAddressOfCurrentAsyncContext()

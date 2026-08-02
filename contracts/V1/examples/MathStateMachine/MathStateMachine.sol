@@ -21,10 +21,14 @@ contract MathStateMachine is AStateMachine {
     }
 
     event Addition(uint256 a, uint256 b, uint256 result);
+    // Array-typed arguments exercise the runtime-port event mirror: nested
+    // ethers Results must be flattened before crossing the port.
+    event Roster(address[] participants, uint256[] balances);
 
     function add(uint256 _number) public returns (uint256) {
         require(_tx.header.participant == getNextToWrite(), "MathStateMachine: add only next player can write");
         emit Addition(state.number, _number, state.number + _number);
+        emit Roster(state.participants, state.balances);
         state.number += _number;
         state.currentTurnIndex++;
         return state.number;

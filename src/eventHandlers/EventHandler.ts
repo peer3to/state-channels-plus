@@ -892,6 +892,20 @@ export class EventHandler {
             await this.stateManager.reductionManager.getSyncedForkDisputes(
                 forkId
             );
+        if (disputes.length === 0) {
+            // The commitments for this fork are no longer available locally:
+            // the reduction was already consumed (finalized and applied) or
+            // pruned as stale after local dispute state moved on. Calling the
+            // Solidity reducer with an empty set reverts
+            // (ErrorNoDisputesProvided) — treat the event as already
+            // processed instead. The final case was handled by the
+            // challenge-period check before validation.
+            this.logger.info(
+                "Dispute reduction event without locally available disputes; treating as consumed",
+                { forkId, reducedForkId }
+            );
+            return true;
+        }
 
         const computation =
             await this.stateManager.reductionManager.computeReduction(
