@@ -23,6 +23,8 @@ import {
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {BlockInvalidStateTransitionProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
+import {AStateMachine} from "../../../contracts/V1/AStateMachine.sol";
+import {MESSAGE_TYPE_EXIT} from "../../../contracts/V1/types/MessageTypeHashes.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
 contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificationFacet {
@@ -76,10 +78,19 @@ contract InboundVerificationHarness is StateChannelCommon {
     }
 }
 
+/// Wires SM + Utility so public computeDisputeOutputState (and _calculateRemovals) can be exercised.
+contract DisputeOutputStateHarness is DisputeVerificationFacet {
+    constructor(AStateMachine sm, address util) {
+        stateMachineImplementation = sm;
+        utilityFacetAddress = util;
+    }
+}
+
 // test naming: test_<targetFunction>_<property>
 contract DisputeVerificationFacetTest is DiamondHarness {
     StateChannelManagerProxy internal diamond;
     InboundVerificationHarness internal verificationHarness;
+    DisputeOutputStateHarness internal outputHarness;
 
     bytes32 internal constant CHANNEL_ID = keccak256("dv-channel");
     bytes32 internal constant FORK_ID = keccak256("dv-fork");
@@ -88,6 +99,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     function setUp() public {
         diamond = deployDiamond();
         verificationHarness = new InboundVerificationHarness();
+        outputHarness = new DisputeOutputStateHarness(stateMachine, address(utilityFacet));
     }
 
     // reduce() must not OOB-panic when dispute.input.onChainSlashes.length exceeds
@@ -128,7 +140,111 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(out.slashedParticipants.length, 0);
     }
 
-    function test_computeDisputeOutputState_timeoutOnly_removesTimedOutParticipant() public {
+    // ---- public computeDisputeOutputState (hits _calculateRemovals + exit shrink) ----
+    // Participants include address(0) as a sentinel: _calculateRemovals allocates length 2 and
+    // only shrinks when removalCount < 2. Without that shrink, trailing address(0) slots are
+    // fed to removeParticipant and wrongly strip the sentinel — so these tests go red if the
+    // shrink is dropped. (The both-removals case fills both slots, so shrink is a no-op there;
+    // its mutation surface is the ordered exit list.)
+
+    function test_computeDisputeOutputState_noRemoval_keepsAllParticipantsAndNoExits() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        // no selfRemoval, no timeout, no onChainSlashes
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        assertEq(result.participants.length, 4);
+        assertEq(result.participants[0], participants[0]);
+        assertEq(result.participants[1], participants[1]);
+        assertEq(result.participants[2], participants[2]);
+        assertEq(result.participants[3], address(0));
+        assertEq(out.outboundMessageBlock.messages.length, 0);
+    }
+
+    function test_computeDisputeOutputState_selfRemovalOnly_removesDisputerAndEmitsExit() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.selfRemoval = true;
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        assertEq(result.participants.length, 3);
+        assertEq(result.participants[0], participants[1]);
+        assertEq(result.participants[1], participants[2]);
+        assertEq(result.participants[2], address(0));
+        _assertExactExitMessages(out, _oneAddress(participants[0]), _oneAmount(10));
+    }
+
+    function test_computeDisputeOutputState_timeoutOnly_removesTimedOutParticipantAndEmitsExit() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.timeout.participant = participants[2];
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        assertEq(result.participants.length, 3);
+        assertEq(result.participants[0], participants[0]);
+        assertEq(result.participants[1], participants[1]);
+        assertEq(result.participants[2], address(0));
+        _assertExactExitMessages(out, _oneAddress(participants[2]), _oneAmount(30));
+    }
+
+    function test_computeDisputeOutputState_selfRemovalAndTimeout_removesBothInOrderAndEmitsExits() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.selfRemoval = true;
+        input.timeout.participant = participants[1];
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        // _calculateRemovals order: selfRemoval first, then timeout (fills both slots)
+        assertEq(result.participants.length, 2);
+        assertEq(result.participants[0], participants[2]);
+        assertEq(result.participants[1], address(0));
+        address[] memory expectedExits = new address[](2);
+        expectedExits[0] = participants[0];
+        expectedExits[1] = participants[1];
+        uint256[] memory expectedAmounts = new uint256[](2);
+        expectedAmounts[0] = 10;
+        expectedAmounts[1] = 20;
+        _assertExactExitMessages(out, expectedExits, expectedAmounts);
+    }
+
+    function test_computeDisputeOutputState_slashSuppressesTimeout_keepsTimeoutTargetAndExitsSlashOnly() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.onChainSlashes = _oneAddress(participants[0]);
+        input.timeout.participant = participants[2];
+
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+
+        // onChainSlashes non-empty → timeout ignored by _calculateRemovals; only slash applies
+        // removals empty after shrink — without shrink, trailing zeros would also strip the sentinel
+        assertEq(result.participants.length, 3);
+        assertEq(result.participants[0], participants[1]);
+        assertEq(result.participants[1], participants[2]);
+        assertEq(result.participants[2], address(0));
+        _assertExactExitMessages(out, _oneAddress(participants[0]), _oneAmount(10));
+    }
+
+    // reduceOutput path (does not hit _calculateRemovals; keeps prior coverage of reduceOutputToSnapshotData)
+    function test_reduceOutputToSnapshotData_timeoutOnly_removesTimedOutParticipant() public {
         address[] memory participants = _participants();
         ReduceOutput memory reducedOutput;
         reducedOutput.timeout.participant = participants[2];
@@ -140,7 +256,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(output[1], participants[1]);
     }
 
-    function test_computeDisputeOutputState_slashOnly_removesSlashedParticipant() public {
+    function test_reduceOutputToSnapshotData_slashOnly_removesSlashedParticipant() public {
         address[] memory participants = _participants();
         ReduceOutput memory reducedOutput;
         reducedOutput.slashedParticipants = new address[](1);
@@ -153,7 +269,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(output[1], participants[2]);
     }
 
-    function test_computeDisputeOutputState_slashAndTimeout_ignoresTimeout() public {
+    function test_reduceOutputToSnapshotData_slashAndTimeout_ignoresTimeout() public {
         address[] memory participants = _participants();
         ReduceOutput memory reducedOutput;
         reducedOutput.slashedParticipants = new address[](1);
@@ -167,7 +283,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(output[1], participants[2]);
     }
 
-    function test_computeDisputeOutputState_slashTimeoutAndSelfRemoval_ignoresTimeout() public {
+    function test_reduceOutputToSnapshotData_slashTimeoutAndSelfRemoval_ignoresTimeout() public {
         address[] memory participants = _participants();
         ReduceOutput memory reducedOutput;
         reducedOutput.slashedParticipants = new address[](1);
@@ -180,6 +296,47 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
         assertEq(output.length, 1);
         assertEq(output[0], participants[2]);
+    }
+
+    // ---- getOnChainSlashedParticipantsUpToTimestamp (hits _shrinkAddressArray) ----
+
+    function test_getOnChainSlashedParticipantsUpToTimestamp_returnsStrictPrefixByCutoff() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address first = address(0xB1);
+        address second = address(0xB2);
+
+        // known timestamps so cutoffs are unambiguous
+        uint256 t1 = 1000;
+        uint256 t2 = 2000;
+
+        vm.warp(t1);
+        Dispute memory d1 = _structurallyInvalidDispute(keccak256("slash-cutoff-1"), first);
+        harness.seedDispute(d1, t1);
+        harness.killDispute(d1);
+
+        vm.warp(t2);
+        Dispute memory d2 = _structurallyInvalidDispute(keccak256("slash-cutoff-2"), second);
+        harness.seedDispute(d2, t2);
+        harness.killDispute(d2);
+
+        // (a) cutoff before any slash -> empty
+        address[] memory beforeAny = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t1 - 1);
+        assertEq(beforeAny.length, 0);
+
+        // (b) cutoff between slashes -> strict prefix of first only
+        address[] memory between = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t1);
+        assertEq(between.length, 1);
+        assertEq(between[0], first);
+
+        address[] memory stillBetween = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t2 - 1);
+        assertEq(stillBetween.length, 1);
+        assertEq(stillBetween[0], first);
+
+        // (c) cutoff after all -> every slash, order preserved
+        address[] memory afterAll = harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, t2);
+        assertEq(afterAll.length, 2);
+        assertEq(afterAll[0], first);
+        assertEq(afterAll[1], second);
     }
 
     function test_isInvalidBlockStructure_validSignedOnlyChain_returnsFalse() public {
@@ -623,6 +780,68 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         participants[0] = address(0xA1);
         participants[1] = address(0xA2);
         participants[2] = address(0xA3);
+    }
+
+    /// Three real members + address(0) sentinel. Trailing zero slots from an unshrunk
+    /// _calculateRemovals array would remove the sentinel and break length/order asserts.
+    function _participantsWithZeroSentinel() internal pure returns (address[] memory participants) {
+        participants = new address[](4);
+        participants[0] = address(0xA1);
+        participants[1] = address(0xA2);
+        participants[2] = address(0xA3);
+        participants[3] = address(0);
+    }
+
+    /// Fixed non-zero balances so exit amounts pin which participant was removed.
+    /// Index matches _participantsWithZeroSentinel (sentinel gets amount 40).
+    function _participantBalances(uint256 length) internal pure returns (uint256[] memory balances) {
+        balances = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            balances[i] = 10 * (i + 1);
+        }
+    }
+
+    function _oneAddress(address a) internal pure returns (address[] memory arr) {
+        arr = new address[](1);
+        arr[0] = a;
+    }
+
+    function _oneAmount(uint256 amount) internal pure returns (uint256[] memory arr) {
+        arr = new uint256[](1);
+        arr[0] = amount;
+    }
+
+    function _computeDisputeOutputState(address[] memory participants, DisputeInput memory input)
+        internal
+        returns (DisputeOutputState memory out, MathState memory result)
+    {
+        MathState memory state;
+        state.participants = participants;
+        state.balances = _participantBalances(participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.forkId = FORK_ID;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.participants = participants;
+
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](0);
+        out = outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+        result = abi.decode(out.encodedModifiedState, (MathState));
+    }
+
+    function _assertExactExitMessages(
+        DisputeOutputState memory out,
+        address[] memory expectedParticipants,
+        uint256[] memory expectedAmounts
+    ) internal pure {
+        Message[] memory messages = out.outboundMessageBlock.messages;
+        assertEq(messages.length, expectedParticipants.length);
+        for (uint256 i = 0; i < expectedParticipants.length; i++) {
+            assertEq(messages[i].messageType, MESSAGE_TYPE_EXIT);
+            assertEq(messages[i].participant, expectedParticipants[i]);
+            assertEq(messages[i].balance.amount, expectedAmounts[i]);
+        }
     }
 
     function _outputParticipants(ReduceOutput memory reducedOutput, address[] memory participants)
