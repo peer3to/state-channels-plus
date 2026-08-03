@@ -450,32 +450,49 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             return false;
         }
 
-        return _verifyInboundMessageBlocks(
+        (bool isValid,,,) = _verifyInboundMessageBlocks(
             latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             dispute.input.latestInboundMessageBlockHash,
             inboundMessageBlocks
         );
+        return isValid;
     }
 
+    /// Walks the inbound chain and reports where and why it stopped, so a
+    /// caller that reverts can say what was compared instead of only that it
+    /// failed. `runningInboundMessageBlockHash` is the head the walk had
+    /// reached; `breakIndex` is the block that failed, or
+    /// `inboundMessageBlocks.length` for a final-target mismatch;
+    /// `failureReason` is one of the INBOUND_FAILURE_* constants and is only
+    /// meaningful when `isValid` is false.
     function _verifyInboundMessageBlocks(
         bytes32 previousInboundMessageBlockHash,
         bytes32 latestInboundMessageBlockHash,
         MessageBlock[] memory inboundMessageBlocks
-    ) internal pure returns (bool) {
+    )
+        internal
+        pure
+        returns (bool isValid, bytes32 runningInboundMessageBlockHash, uint256 breakIndex, uint8 failureReason)
+    {
         uint256 lastHeight;
         bool hasLastHeight;
         for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
             if (previousInboundMessageBlockHash != inboundMessageBlocks[i].previousBlockHash) {
-                return false;
+                return (false, previousInboundMessageBlockHash, i, INBOUND_FAILURE_HASH_LINK);
             }
             if (hasLastHeight && inboundMessageBlocks[i].blockHeight != lastHeight + 1) {
-                return false;
+                return (false, previousInboundMessageBlockHash, i, INBOUND_FAILURE_HEIGHT_SEQUENCE);
             }
             previousInboundMessageBlockHash = keccak256(abi.encode(inboundMessageBlocks[i]));
             lastHeight = inboundMessageBlocks[i].blockHeight;
             hasLastHeight = true;
         }
-        return previousInboundMessageBlockHash == latestInboundMessageBlockHash;
+        return (
+            previousInboundMessageBlockHash == latestInboundMessageBlockHash,
+            previousInboundMessageBlockHash,
+            inboundMessageBlocks.length,
+            INBOUND_FAILURE_FINAL_TARGET
+        );
     }
 
     function _applyInboundMessages(

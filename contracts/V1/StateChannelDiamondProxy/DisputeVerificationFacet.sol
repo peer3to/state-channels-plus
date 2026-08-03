@@ -303,13 +303,22 @@ contract DisputeVerificationFacet is StateChannelCommon {
             ErrorInvalidLatestState()
         );
         //verify inbound message blocks
+        (bool inboundMessageBlocksValid, bytes32 runningInboundHash, uint256 breakIndex, uint8 failureReason) =
+        _verifyInboundMessageBlocks(
+            latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+            reducedOutput.latestInboundMessageBlockHash,
+            inboundMessageBlocks
+        );
         require(
-            _verifyInboundMessageBlocks(
+            inboundMessageBlocksValid,
+            ErrorDisputeInboundMessageBlocksInvalid(
                 latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
                 reducedOutput.latestInboundMessageBlockHash,
-                inboundMessageBlocks
-            ),
-            ErrorDisputeInboundMessageBlocksInvalid()
+                runningInboundHash,
+                breakIndex,
+                inboundMessageBlocks.length,
+                failureReason
+            )
         );
 
         address[] memory removals = reducedOutput.selfRemovals;
