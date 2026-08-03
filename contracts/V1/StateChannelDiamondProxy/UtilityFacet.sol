@@ -200,7 +200,7 @@ contract UtilityFacet {
             return result;
         }
 
-        // Otherwise we need to create a sized-down copy
+        // Otherwise shrink to the deduplicated size
         return _shrinkAddressArray(result, uniqueCount);
     }
 
