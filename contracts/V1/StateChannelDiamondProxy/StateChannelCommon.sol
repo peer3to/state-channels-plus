@@ -27,11 +27,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         ) {
             slashedParticipants[actualCount++] = disputeData[channelId].onChainSlashes[i].participant;
         }
-        address[] memory finalSlashedParticipants = new address[](actualCount);
-        for (uint256 i = 0; i < actualCount; i++) {
-            finalSlashedParticipants[i] = slashedParticipants[i];
-        }
-        return finalSlashedParticipants;
+        return _shrinkAddressArray(slashedParticipants, actualCount);
     }
 
     function getOnChainSlashedParticipants(bytes32 channelId) public view virtual returns (address[] memory) {

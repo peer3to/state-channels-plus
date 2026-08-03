@@ -23,3 +23,27 @@ function _isAddressInArray(address[] memory array, address adr) pure returns (bo
     }
     return false;
 }
+
+/// @dev In-place length truncation of a memory array is safe when shrinking:
+/// the tail elements become unreachable waste; the allocator never reclaims them.
+/// Callers must not read the array again through a still-full-length reference.
+function _shrinkAddressArray(address[] memory arr, uint256 newLength) pure returns (address[] memory) {
+    assembly ("memory-safe") {
+        mstore(arr, newLength)
+    }
+    return arr;
+}
+
+function _shrinkExitChannelArray(ExitChannel[] memory arr, uint256 newLength) pure returns (ExitChannel[] memory) {
+    assembly ("memory-safe") {
+        mstore(arr, newLength)
+    }
+    return arr;
+}
+
+function _shrinkJoinChannelArray(JoinChannel[] memory arr, uint256 newLength) pure returns (JoinChannel[] memory) {
+    assembly ("memory-safe") {
+        mstore(arr, newLength)
+    }
+    return arr;
+}

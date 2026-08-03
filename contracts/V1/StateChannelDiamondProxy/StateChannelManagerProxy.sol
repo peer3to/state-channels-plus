@@ -311,10 +311,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         }
         require(successfulJoinCount > 0, ErrorNoSuccessfulJoinChannel());
         // Resize the array to the number of successful joins - only ok for shrinking the array
-        // TODO - find other places in the code that shrink MEMORY arrays and do the same - better than to allocate more space
-        assembly ("memory-safe") {
-            mstore(filteredJoinChannels, successfulJoinCount)
-        }
+        filteredJoinChannels = _shrinkJoinChannelArray(filteredJoinChannels, successfulJoinCount);
 
         // Build message block representing the inbound joins
         Message[] memory messages = new Message[](successfulJoinCount);
