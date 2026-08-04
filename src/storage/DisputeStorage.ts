@@ -25,6 +25,20 @@ export class DisputeStorage {
     }
 
     // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /** The persistence engine's view of this store's PRIMARY map. */
+    *persistableEntries(): Iterable<[Hash, DisputeConfirmationStruct]> {
+        yield* this.disputes;
+    }
+
+    /** The persistence engine's view of the disputedForks side-map. */
+    *persistableDisputedForkEntries(): Iterable<[ForkId, DidIDispute]> {
+        yield* this.disputedForks;
+    }
+
+    // ====================================
     // CREATE
     // ====================================
 

@@ -65,13 +65,15 @@ import {
     MessageBlockEthersType,
     BalanceEthersType,
     SignedBlockEthersType,
-    StateProofEthersType
+    StateProofEthersType,
+    TimeoutEthersType
 } from "@/types";
 import {
     DisputeStruct,
     DisputeConfirmationStruct,
     DisputeAuditingDataStruct,
-    StateProofStruct
+    StateProofStruct,
+    TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
@@ -145,7 +147,8 @@ type StructType =
     | BalanceStruct
     | SignedBlockStruct
     | StateProofStruct
-    | SyncPayload;
+    | SyncPayload
+    | TimeoutStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -169,7 +172,8 @@ export enum Type {
     Balance,
     SignedBlock,
     StateProof,
-    SyncPayload
+    SyncPayload,
+    Timeout
 }
 
 export class Codec {
@@ -200,6 +204,7 @@ export class Codec {
         [Type.SignedBlock, SignedBlockEthersType],
         [Type.StateProof, StateProofEthersType],
         [Type.SyncPayload, SyncPayloadEthersType],
+        [Type.Timeout, TimeoutEthersType],
         // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
@@ -413,6 +418,7 @@ export class Codec {
         encoded: Bytes,
         type: Type.StateProof
     ): StateProofStruct;
+    public static decode(encoded: Bytes, type: Type.Timeout): TimeoutStruct;
     public static decode(
         encoded: Bytes,
         type: DisputeFraudProofType.DisputeInvalidBlockStructure
