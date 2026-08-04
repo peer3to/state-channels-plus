@@ -1,8 +1,11 @@
 import { expect } from "chai";
 import { ethers } from "ethers";
 import { Codec, Type } from "@/utils";
-import { BlockValidationResult } from "@/types";
-import { MathTestSession as TestSession } from "@test/harness";
+import { BlockValidationResult, Status } from "@/types";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import * as factory from "@test/factory";
 import type { Address } from "@/types/types";
@@ -143,6 +146,68 @@ describe("E2E: BlockQueueManager", function () {
                 .query.getBlockByHash(foreignBlock.hash)
                 .request()
         ).to.be.null;
+    });
+    it("ingest cuts both the relayer and the author of an outsider-authored block", async function () {
+        const h = TestSession.getHarness();
+        // short windows so the two spectators converge on the victim inside the
+        // connection barrier below
+        await h.lifecycle.start(3, 1, {
+            timeConfig: { ...MIN_TEST_TIME_CONFIG, chainFallbackTime: 12 }
+        });
+        const forkId = h.activeForkId!;
+
+        const victim = h.getPeer(0);
+        expect(
+            await h.control(victim).query.getStatus().request(),
+            "victim is an active participant"
+        ).to.equal(Status.PARTICIPATING);
+
+        // two connected non-participants: one authors, the other relays
+        const author = await h.join.addSpectator();
+        const relayer = await h.join.addSpectator();
+        await h.connectionBarrier.waitFor(
+            async () =>
+                (await h
+                    .control(relayer)
+                    .query.isConnectedTo(victim.address)
+                    .request()) &&
+                (await h
+                    .control(author)
+                    .query.isConnectedTo(victim.address)
+                    .request()),
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(1),
+                timeoutMessage: "relayer/author never both connected to victim"
+            }
+        );
+
+        h.event.resetEventSpies();
+
+        const { encodedBlockConfirmation } =
+            await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
+                victim.index,
+                forkId,
+                author.signer
+            );
+        await h
+            .control(relayer)
+            .byzantine.sendBlockConfirmation(
+                encodedBlockConfirmation,
+                victim.address
+            )
+            .request();
+
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: relayer,
+            expectedStatus: Status.PARTICIPATING
+        });
+        await h.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: victim,
+            target: author,
+            expectedStatus: Status.PARTICIPATING
+        });
+        h.assert.dispute.noDisputes();
     });
 
     it("future block is evicted at queue timeout without punishing the supplier", async function () {
@@ -548,6 +613,103 @@ describe("E2E: BlockQueueManager", function () {
             await restoreReduce();
         });
 
+        // Supplier != author, so the recorded targets separate them: the timeout
+        // asks everyone the entry is attributed to, not just the sender.
+        it("unknown-fork timeout asks both the supplier and the author to sync", async function () {
+            const h = TestSession.getHarness();
+            const timeConfig = {
+                p2pTime: 3,
+                agreementTime: 4,
+                chainFallbackTime: 30,
+                evidenceTime: 8
+            };
+            await h.lifecycle.start(3, 0, { timeConfig });
+
+            const observer = h.getPeer(0);
+            const author = h.getPeer(1);
+            const supplier = h.getPeer(2);
+
+            const restoreSync = await h.rpcStub.recordSpectateSync(0, {
+                forward: false
+            });
+
+            const { bogusBlock, blockConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(author.index);
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation,
+                ingestOptions: { senderAddress: supplier.address },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(bogusBlock.hash)
+                    .request()
+            ).to.equal(true);
+
+            // the record stub releases this once the queue timeout has asked
+            // both - a signal, not a poll. members, not a set: same addresses in
+            // any order, and a peer asked twice would fail on the extra entry
+            expect(
+                await h.rpcStub.spectateSyncTargetsWait(
+                    0,
+                    2,
+                    (timeConfig.agreementTime + 20) * 1000
+                )
+            ).to.have.members([supplier.address, author.address]);
+
+            await restoreSync();
+        });
+
+        it("unknown fork: both the supplier and the author are asked and both are cut", async function () {
+            const h = TestSession.getHarness();
+            const timeConfig = {
+                p2pTime: 3,
+                agreementTime: 4,
+                chainFallbackTime: 30,
+                evidenceTime: 8
+            };
+            await h.lifecycle.start(3, 0, { timeConfig });
+
+            const observer = h.getPeer(0);
+            const author = h.getPeer(1);
+            const supplier = h.getPeer(2);
+            const originalForkId = await h
+                .control(observer)
+                .query.getForkId()
+                .request();
+            const observerStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
+
+            const { blockConfirmation } =
+                await h.byzantine.craftBogusForkBlockZero(author.index);
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation,
+                ingestOptions: { senderAddress: supplier.address },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+
+            await h.assert.rpc.peerBlacklistedAndDisconnected({
+                observer,
+                target: supplier,
+                expectedStatus: observerStatus
+            });
+            await h.assert.rpc.peerBlacklistedAndDisconnected({
+                observer,
+                target: author,
+                expectedStatus: observerStatus
+            });
+            expect(
+                await h.control(observer).query.getForkId().request()
+            ).to.equal(originalForkId);
+        });
+
         it("still recovers via local reduction when the raced block is on yet another unknown fork", async function () {
             this.timeout(90000);
 
@@ -812,7 +974,7 @@ describe("E2E: BlockQueueManager", function () {
         // forks out of validation, so drive the real strategy directly on a
         // real queued entry (host-side, all collaborators live).
         describe("wrongGenesisDetected (host-side unit scope)", function () {
-            it("missing genesis: no proof to build, sources blacklisted, no dispute", async function () {
+            it("missing genesis: no proof to build, sources and author blacklisted, no dispute", async function () {
                 this.timeout(90000);
 
                 const h = TestSession.getHarness();
@@ -915,11 +1077,17 @@ describe("E2E: BlockQueueManager", function () {
                 expect(r!.result).to.equal(BlockValidationResult.DISCONNECT);
                 expect(r!.proofs).to.equal(0);
                 expect(r!.disputes).to.equal(0);
-                // The real p2pManager cut the entry's supplier.
+                // The real p2pManager cut the entry's supplier AND its author.
                 expect(
                     await h
                         .control(observer)
                         .query.isBlacklisted(supplier.address)
+                        .request()
+                ).to.equal(true);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(author.address)
                         .request()
                 ).to.equal(true);
 

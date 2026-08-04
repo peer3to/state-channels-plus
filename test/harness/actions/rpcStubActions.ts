@@ -516,4 +516,21 @@ export class RpcStubActions<
             .stub.getSpectateSyncCallCount()
             .request();
     }
+
+    /**
+     * Addresses this peer asked to sync from, once `count` sync calls have
+     * landed. Resolved by the record stub, so no polling - but the request is
+     * parked host-side for as long as that takes, so it needs a timeout well
+     * past the queue window (the RPC default is 6s).
+     */
+    async spectateSyncTargetsWait(
+        peerIndex: number,
+        count: number,
+        timeoutMs: number
+    ): Promise<string[]> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.waitForSpectateSyncCalls(count)
+            .request({ timeoutMs });
+    }
 }

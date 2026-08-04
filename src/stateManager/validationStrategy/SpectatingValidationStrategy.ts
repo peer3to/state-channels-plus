@@ -7,7 +7,10 @@ import {
 import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import {
+    sourcePeersAndAuthor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
@@ -128,9 +131,9 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         // Non-participant author: authentication passed (they signed with their
         // own key) but they are not in the channel. Drop + blacklist the sender,
         // keep spectating - this is the DoS vector, never an abort.
-        const culprits = new Set(entry.sourcePeers);
-        culprits.add(entry.block.author);
-        this.p2pManager.disconnectAndBlacklistPeers(culprits);
+        this.p2pManager.disconnectAndBlacklistPeers(
+            sourcePeersAndAuthor(entry)
+        );
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
@@ -159,9 +162,9 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
             // No genesis snapshot means no fraud proof to build - nothing is
             // proven against a participant, so cut the suppliers and the author
             // and keep spectating rather than abort.
-            const culprits = new Set(entry.sourcePeers);
-            culprits.add(block.author);
-            this.p2pManager.disconnectAndBlacklistPeers(culprits);
+            this.p2pManager.disconnectAndBlacklistPeers(
+                sourcePeersAndAuthor(entry)
+            );
             return BlockValidationResult.DISCONNECT;
         }
         this.abort();

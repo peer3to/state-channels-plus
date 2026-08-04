@@ -7,7 +7,10 @@ import {
 import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import {
+    sourcePeersAndAuthor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
@@ -125,9 +128,9 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async blockAuthorIsNotParticipant(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        const culprits = new Set(entry.sourcePeers);
-        culprits.add(entry.block.author);
-        this.p2pManager.disconnectAndBlacklistPeers(culprits);
+        this.p2pManager.disconnectAndBlacklistPeers(
+            sourcePeersAndAuthor(entry)
+        );
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
@@ -166,12 +169,13 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             // unknown-fork blocks out of validation entirely. No genesis
             // snapshot means no fraud proof to build and no dispute to raise
             // — cut the suppliers instead.
+            const culprits = sourcePeersAndAuthor(entry);
             this.logger.warn(
                 "Missing genesis reached validation despite fork gate - blacklisting sources and author",
                 {
                     blockAuthor: block.author,
                     blockForkId: block.forkId,
-                    sourcePeers: Array.from(entry.sourcePeers)
+                    culprits: Array.from(culprits)
                 }
             );
             // Cut the transport suppliers AND the signer: the author put its
@@ -180,8 +184,6 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             // unknown-fork blocks out of validation); an honest first block on
             // a not-yet-known fork is queued + timeout-synced, never reaching
             // here - covered by the no-false-positive e2e.
-            const culprits = new Set(entry.sourcePeers);
-            culprits.add(block.author);
             this.p2pManager.disconnectAndBlacklistPeers(culprits);
             return BlockValidationResult.DISCONNECT;
         }

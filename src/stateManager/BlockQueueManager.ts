@@ -13,7 +13,10 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import Clock from "@/Clock";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import {
+    sourcePeersAndAuthor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import type StateManager from "./StateManager";
@@ -558,11 +561,7 @@ export default class BlockQueueManager {
     private requestSync(entry: QueuedBlockEntry): void {
         const block = entry.block;
 
-        const peers = new Set<Address>();
-        for (const sourcePeer of entry.sourcePeers) peers.add(sourcePeer);
-        peers.add(block.author);
-
-        for (const peer of peers) {
+        for (const peer of sourcePeersAndAuthor(entry)) {
             this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,
                 block.channelId,
