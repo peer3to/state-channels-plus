@@ -27,6 +27,8 @@ import type {
     MissingParticipantSnapshotsProbe,
     BlockValidationProbe,
     BlockValidationProbeOptions,
+    BlockProbeOptions,
+    BlockIngestProbe,
     IsDisputedForkProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
@@ -1591,6 +1593,13 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             encodedBlockConfirmation,
             options
         );
+    }
+
+    public async runBlockIngest(
+        encodedBlockConfirmation: string,
+        options?: BlockProbeOptions
+    ): Promise<BlockIngestProbe> {
+        return this.service.runBlockIngest(encodedBlockConfirmation, options);
     }
 
     public async runStoredBlockMerge(

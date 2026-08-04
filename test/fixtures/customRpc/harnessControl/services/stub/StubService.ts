@@ -22,6 +22,8 @@ import {
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
+import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
@@ -187,20 +189,23 @@ export type IsDisputedForkProbe = {
     onChainQueries: number;
 };
 
-export type BlockValidationProbeOptions = {
+export type BlockProbeOptions = {
     strategy?: "active" | "dispute";
     encodedDispute?: string;
     /** Supplier of this copy - drives `sourcePeers`/`signatureSources`. */
     senderAddress?: Address;
+};
+
+export type BlockValidationProbeOptions = BlockProbeOptions & {
     /**
-     * Drive this one deviation hook on the strategy instead of the whole
-     * pipeline. For branches the pipeline can't reach: an unknown-fork entry is
-     * never handed to `validateBlockConfirmation` because
-     * `BlockQueueManager.scheduleQueueExecution` and `tryExecuteFromQueue` both
-     * return early on a non-current fork, so the missing-genesis branch is only
-     * reachable by calling the hook.
+     * Drive this one deviation hook instead of validateBlockConfirmation -
+     * for branches the pipeline can't reach: an unknown-fork entry is never
+     * handed to `validateBlockConfirmation` because
+     * `BlockQueueManager.scheduleQueueExecution` and `tryExecuteFromQueue`
+     * both return early on a non-current fork, so the missing-genesis branch
+     * is only reachable by calling the hook.
      */
-    invokeHook?: "blockAuthorIsNotParticipant" | "wrongGenesisDetected";
+    hook?: "blockAuthorIsNotParticipant" | "wrongGenesisDetected";
     /**
      * "validate" (default) runs validateBlockConfirmation only; "full" runs
      * the whole onBlockConfirmation pipeline (assembly, hash compare, VM
@@ -224,8 +229,34 @@ export type BlockValidationProbe = {
     sourcePeers: string[];
     /** How many times validation asked EventSyncService to recover calldata. */
     calldataRecoveryQueries: number;
-    /** Only set by pipeline: "full" - onBlockConfirmation's return value. */
-    keepConnection?: boolean;
+};
+
+export type BlockIngestProbe = BlockValidationProbe & {
+    /** onBlockConfirmation's return value. */
+    keepConnection: boolean;
+};
+
+/**
+ * One in-flight runBlockValidation/runBlockIngest call: the decoded block and
+ * entry, the chosen strategy (`instrumentedStrategy` is the same strategy
+ * wrapped to log fired deviation hooks into `recorded`), the side effects the
+ * record-only stubs captured, and `restore()` to put the patched live methods
+ * back.
+ */
+type RecordedValidationRun = {
+    block: Block;
+    entry: QueuedBlockEntry;
+    strategy: AValidationStrategy;
+    instrumentedStrategy: AValidationStrategy;
+    recorded: {
+        disputedForkIds: string[];
+        disconnectedAddresses: string[];
+        firedHooks: string[];
+        restoreQueuedEntryCalled: boolean;
+        calldataRecoveryQueries: number;
+        lastHookResult: BlockValidationResult | undefined;
+    };
+    restore: () => void;
 };
 
 /**
@@ -308,7 +339,8 @@ export class StubService extends ARpcService<
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
     /**
-     * Serializes `runBlockValidation`'s record-only patch/restore region. The
+     * Serializes runBlockValidation/runBlockIngest's record-only
+     * patch/restore region. The
      * patch replaces shared live methods (dispute, disconnect, restore), so two
      * overlapping probes would restore each other's replacements.
      */
@@ -1051,19 +1083,76 @@ export class StubService extends ARpcService<
             taskName: "stub-run-block-validation"
         });
         try {
-            return await this.runBlockValidationLocked(
+            const run = this.startRecordedValidation(
                 encodedBlockConfirmation,
                 options
             );
+            try {
+                const result = options?.hook
+                    ? await run.instrumentedStrategy[options.hook](run.entry)
+                    : await this.sm.validationService.validateBlockConfirmation(
+                          run.entry,
+                          run.instrumentedStrategy
+                      );
+                return this.buildValidationProbe(run, result);
+            } finally {
+                run.restore();
+            }
         } finally {
             this.blockValidationProbeMutex.unlock();
         }
     }
 
-    private async runBlockValidationLocked(
+    /**
+     * White-box: run the whole onBlockConfirmation pipeline (assembly, hash
+     * compare, VM restore) under the same record-only side-effect wrappers as
+     * `runBlockValidation`. `result` is the last deviation-hook verdict, or
+     * SUCCESS when none fired.
+     */
+    public async runBlockIngest(
         encodedBlockConfirmation: string,
-        options?: BlockValidationProbeOptions
-    ): Promise<BlockValidationProbe> {
+        options?: BlockProbeOptions
+    ): Promise<BlockIngestProbe> {
+        await this.blockValidationProbeMutex.lock({
+            taskName: "stub-run-block-ingest"
+        });
+        try {
+            const run = this.startRecordedValidation(
+                encodedBlockConfirmation,
+                options
+            );
+            try {
+                const keepConnection =
+                    await this.sm.blockIngestService.onBlockConfirmation(
+                        run.entry,
+                        { validationStrategy: run.instrumentedStrategy }
+                    );
+                const result =
+                    run.recorded.lastHookResult ??
+                    BlockValidationResult.SUCCESS;
+                return {
+                    ...this.buildValidationProbe(run, result),
+                    keepConnection
+                };
+            } finally {
+                run.restore();
+            }
+        } finally {
+            this.blockValidationProbeMutex.unlock();
+        }
+    }
+
+    /**
+     * Decode the confirmation, build the same entry the gossip pipeline
+     * builds, pick the strategy, and swap the destructive side effects
+     * (dispute, disconnect, queue restore) for recorders. The caller drives
+     * validation against `entry`/`instrumentedStrategy`, reads what happened
+     * off `recorded`, and MUST call `restore()` when done.
+     */
+    private startRecordedValidation(
+        encodedBlockConfirmation: string,
+        options: BlockProbeOptions | undefined
+    ): RecordedValidationRun {
         const sm = this.sm;
         const blockConfirmation = Codec.decode(
             encodedBlockConfirmation,
@@ -1090,9 +1179,14 @@ export class StubService extends ARpcService<
                   )
                 : sm.getActiveValidationStrategy();
 
-        const disputedForkIds: string[] = [];
-        const disconnectedAddresses: string[] = [];
-        let restoreQueuedEntryCalled = false;
+        const recorded: RecordedValidationRun["recorded"] = {
+            disputedForkIds: [],
+            disconnectedAddresses: [],
+            firedHooks: [],
+            restoreQueuedEntryCalled: false,
+            calldataRecoveryQueries: 0,
+            lastHookResult: undefined
+        };
 
         // record-only: a real dispute posts on-chain against the crafted block,
         // a real disconnect cuts a live transport, a real restore re-arms a
@@ -1108,7 +1202,7 @@ export class StubService extends ARpcService<
         const originalDispute = disputeManager?.dispute.bind(disputeManager);
         if (disputeManager) {
             disputeManager.dispute = async (forkId: ForkId) => {
-                disputedForkIds.push(String(forkId));
+                recorded.disputedForkIds.push(String(forkId));
             };
         }
         const p2pManager = this.p2pManager;
@@ -1117,17 +1211,16 @@ export class StubService extends ARpcService<
         p2pManager.disconnectAndBlacklistPeerByEvmAddress = ((
             address: Address
         ) => {
-            disconnectedAddresses.push(String(address));
+            recorded.disconnectedAddresses.push(String(address));
         }) as typeof p2pManager.disconnectAndBlacklistPeerByEvmAddress;
         const originalRestore = sm.blockQueueManager.restoreQueuedEntry.bind(
             sm.blockQueueManager
         );
         sm.blockQueueManager.restoreQueuedEntry = (() => {
-            restoreQueuedEntryCalled = true;
+            recorded.restoreQueuedEntryCalled = true;
         }) as typeof sm.blockQueueManager.restoreQueuedEntry;
         // count-and-forward: recovery must stay real, the count only proves
         // validation reached the on-chain lookup
-        let calldataRecoveryQueries = 0;
         const eventSyncService = sm.eventSyncService;
         const originalRecover =
             eventSyncService.tryRecoverBlockCalldataAndScheduleValidation.bind(
@@ -1136,14 +1229,12 @@ export class StubService extends ARpcService<
         eventSyncService.tryRecoverBlockCalldataAndScheduleValidation = ((
             ...args: Parameters<typeof originalRecover>
         ) => {
-            calldataRecoveryQueries += 1;
+            recorded.calldataRecoveryQueries += 1;
             return originalRecover(...args);
         }) as typeof eventSyncService.tryRecoverBlockCalldataAndScheduleValidation;
 
         // record which deviation hook the strategy fired, so a test can pin its
         // named guard
-        const firedHooks: string[] = [];
-        let lastHookResult: BlockValidationResult | undefined;
         const instrumentedStrategy = new Proxy(strategy, {
             get(target, prop) {
                 const value = Reflect.get(target, prop);
@@ -1160,62 +1251,55 @@ export class StubService extends ARpcService<
                             typeof resolved === "number" &&
                             BlockValidationResult[resolved] !== undefined
                         ) {
-                            firedHooks.push(prop);
-                            lastHookResult = resolved as BlockValidationResult;
+                            recorded.firedHooks.push(prop);
+                            recorded.lastHookResult =
+                                resolved as BlockValidationResult;
                         }
                         return resolved;
                     });
             }
         });
 
-        try {
-            let keepConnection: boolean | undefined;
-            let result: BlockValidationResult;
-            if (options?.invokeHook) {
-                result = await instrumentedStrategy[options.invokeHook](entry);
-            } else if (options?.pipeline === "full") {
-                keepConnection =
-                    await sm.blockIngestService.onBlockConfirmation(entry, {
-                        validationStrategy: instrumentedStrategy
-                    });
-                result = lastHookResult ?? BlockValidationResult.SUCCESS;
-            } else {
-                result = await sm.validationService.validateBlockConfirmation(
-                    entry,
-                    instrumentedStrategy
-                );
+        return {
+            block,
+            entry,
+            strategy,
+            instrumentedStrategy,
+            recorded,
+            restore: () => {
+                if (disputeManager && originalDispute) {
+                    disputeManager.dispute = originalDispute;
+                }
+                p2pManager.disconnectAndBlacklistPeerByEvmAddress =
+                    originalDisconnect;
+                sm.blockQueueManager.restoreQueuedEntry = originalRestore;
+                eventSyncService.tryRecoverBlockCalldataAndScheduleValidation =
+                    originalRecover;
             }
-            const fraudProof =
-                sm.storage.fraudProofs.getFraudProofForParticipant(
-                    block.signerAddress
-                );
-            return {
-                result,
-                keepConnection,
-                resultName:
-                    BlockValidationResult[result] ?? `UNKNOWN(${result})`,
-                strategyName: strategy.name,
-                disputedForkIds,
-                disconnectedAddresses,
-                firedHooks,
-                restoreQueuedEntryCalled,
-                signerAddress: String(block.signerAddress),
-                fraudProofType: fraudProof
-                    ? String(fraudProof.proofType)
-                    : null,
-                sourcePeers: [...entry.sourcePeers].map(String),
-                calldataRecoveryQueries
-            };
-        } finally {
-            if (disputeManager && originalDispute) {
-                disputeManager.dispute = originalDispute;
-            }
-            p2pManager.disconnectAndBlacklistPeerByEvmAddress =
-                originalDisconnect;
-            sm.blockQueueManager.restoreQueuedEntry = originalRestore;
-            eventSyncService.tryRecoverBlockCalldataAndScheduleValidation =
-                originalRecover;
-        }
+        };
+    }
+
+    private buildValidationProbe(
+        run: RecordedValidationRun,
+        result: BlockValidationResult
+    ): BlockValidationProbe {
+        const fraudProof =
+            this.sm.storage.fraudProofs.getFraudProofForParticipant(
+                run.block.signerAddress
+            );
+        return {
+            result,
+            resultName: BlockValidationResult[result] ?? `UNKNOWN(${result})`,
+            strategyName: run.strategy.name,
+            disputedForkIds: run.recorded.disputedForkIds,
+            disconnectedAddresses: run.recorded.disconnectedAddresses,
+            firedHooks: run.recorded.firedHooks,
+            restoreQueuedEntryCalled: run.recorded.restoreQueuedEntryCalled,
+            signerAddress: String(run.block.signerAddress),
+            fraudProofType: fraudProof ? String(fraudProof.proofType) : null,
+            sourcePeers: [...run.entry.sourcePeers].map(String),
+            calldataRecoveryQueries: run.recorded.calldataRecoveryQueries
+        };
     }
 
     private async runAuthorGate(
