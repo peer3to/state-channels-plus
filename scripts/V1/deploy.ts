@@ -201,6 +201,8 @@ export type DeployFullStackParams = {
     consumerFacetArgs?: any[];
     timeConfig?: TimeConfig;
     disputeExecutionGasLimit?: number;
+    /** Reuse already-deployed config-independent facets (see `deploy`). */
+    facetAddresses?: string[];
 };
 
 export async function deploy(
@@ -208,9 +210,15 @@ export async function deploy(
     consumerFacetAddress: string,
     signer: Signer,
     timeConfigOverrides?: TimeConfig,
-    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
+    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
+    // The dispute/verification facets are stateless and config-independent:
+    // a caller that already deployed them (or found them cached on the node)
+    // passes their addresses to skip the redeploy — only the proxy carries
+    // timeConfig/gas-limit state.
+    existingFacetAddresses?: string[]
 ): Promise<{ address: string; contract: StateChannelManagerProxy }> {
-    const facetAddresses = await deployFacets(signer);
+    const facetAddresses =
+        existingFacetAddresses ?? (await deployFacets(signer));
     const timeConfig = getTimeConfig(timeConfigOverrides);
     return await deployArtifact<StateChannelManagerProxy>(
         StateChannelManagerProxyArtifact,
@@ -240,7 +248,8 @@ export async function deployFullStack(
         stateMachineArgs,
         consumerFacetArgs,
         timeConfig,
-        disputeExecutionGasLimit
+        disputeExecutionGasLimit,
+        facetAddresses
     } = params;
 
     const stateMachinePromise = deployArtifact(stateMachineArtifact, signer, {
@@ -259,7 +268,8 @@ export async function deployFullStack(
         consumerFacetAddress,
         signer,
         timeConfig,
-        disputeExecutionGasLimit
+        disputeExecutionGasLimit,
+        facetAddresses
     );
 }
 

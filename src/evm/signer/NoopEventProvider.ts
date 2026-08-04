@@ -4,9 +4,9 @@ import type { Listener, ProviderEvent } from "ethers";
 /**
  * Event-only provider stub for the main-thread runtime contract.
  *
- * Contract events are delivered over the runtime message port
- * ({@link P2pRuntimeClient} `dispatchContractEvent` re-emits them on the
- * contract), so ethers must not spin up its own `getLogs` poller. But ethers'
+ * Contract events are delivered through the event bus mirror
+ * (`attachContractEvents` re-emits them on the contract), so ethers must not
+ * spin up its own `getLogs` poller. But ethers'
  * `Contract.on(...)` refuses to register a subscription unless `runner.provider`
  * is set, and its subscription machinery calls `provider.on(filter, listener)`
  * under the hood. Every subscription entry point is a no-op so a local

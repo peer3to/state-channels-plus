@@ -65,9 +65,13 @@ describe("RuntimeChainContext", () => {
                     channel.port2,
                     {
                         config: createConfig({
-                            PROVIDER_URL:
-                                process.env.PROVIDER_URL ??
-                                "http://127.0.0.1:18545"
+                            // Deliberately unreachable: this case asserts that
+                            // a failed chain connection is reported and the
+                            // host provider destroyed. It must NOT pick up an
+                            // ambient PROVIDER_URL — the runner offers every
+                            // task a live node, which would make startup
+                            // succeed and the assertions below meaningless.
+                            PROVIDER_URL: "http://127.0.0.1:1"
                         }),
                         scm,
                         stateMachine,

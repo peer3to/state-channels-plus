@@ -186,7 +186,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
 
             // Track connection completion via a client-side p2p event listener
             // (forwarded over the port from the host).
-            instance.on("onConnection", (address) => {
+            instance.events.on("p2pEventHooks", "onConnection", (address) => {
                 connectedTo
                     .get(selfAddress)
                     ?.add(String(address).toLowerCase());

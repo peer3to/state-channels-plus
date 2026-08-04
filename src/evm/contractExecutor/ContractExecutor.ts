@@ -10,6 +10,12 @@ import AContractExecutor, {
 } from "./AContractExecutor";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
+// Jumpdest scan cost: profiling showed Interpreter._getValidJumpDests
+// re-scanning the full contract bytecode on EVERY message call at ~25% of all
+// EVM CPU for large viaIR facets behind a diamond. Verified that
+// @ethereumjs/evm 10.x still re-scans per call (analysis is only skipped for
+// jump-free code), so upgrading does not fix it — the code-keyed cache in
+// @platform/evmJumpdestCache (installed by createEvm) does.
 export default class ContractExecutor extends AContractExecutor {
     private readonly evm: EVM;
     private readonly logger?: Logger;

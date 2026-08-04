@@ -10,7 +10,13 @@ import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes
 import StateManager from "../stateManager/StateManager";
 import { TimeConfig } from "@/types";
 import { BalanceEthersType, MessageEthersType } from "@/types/ethers";
-import { Codec, createLogger, Logger, createEthersResultProxy } from "@/utils";
+import {
+    Codec,
+    convertEthersValue,
+    createLogger,
+    Logger,
+    createEthersResultProxy
+} from "@/utils";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import P2pInstance from "./P2pInstance";
 import {
@@ -57,8 +63,6 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     readonly contractExecutor: AContractExecutor;
     readonly contractInterface: ethers.Interface;
     private readonly stateMachineAddress: Address;
-    private p2pContractInstance?: AStateMachineContract;
-    private contractEventEmitter?: (name: string, args: unknown[]) => void;
     public stateManager?: StateManager;
 
     constructor(
@@ -90,22 +94,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         );
     }
 
-    public setP2pContractInstance<T extends AStateMachineContract>(
-        p2pContractInstance: T
-    ) {
-        this.p2pContractInstance = p2pContractInstance;
-    }
-
-    /**
-     * Overrides how parsed contract events are dispatched. When set (e.g. by the
-     * runtime host), parsed events are forwarded to this emitter instead of
-     * being emitted directly on the local contract instance. This lets events
-     * cross the runtime channel to be re-emitted on the main-thread contract.
-     */
-    public setContractEventEmitter(
-        emitter: (name: string, args: unknown[]) => void
-    ) {
-        this.contractEventEmitter = emitter;
+    public getStateMachineAddress(): Address {
+        return this.stateMachineAddress;
     }
 
     public setStateManager(stateManager: StateManager) {
@@ -125,22 +115,39 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         if (!logs || logs.length === 0) return;
 
         for (const log of logs) {
+            let event: ethers.LogDescription | null;
             try {
-                const event = this.contractInterface.parseLog(log);
-                if (!event) continue;
-                if (this.contractEventEmitter) {
-                    this.contractEventEmitter(
-                        event.name,
-                        Object.values(event.args)
-                    );
-                } else if (this.p2pContractInstance) {
-                    void this.p2pContractInstance.emit(
-                        event.name,
-                        ...Object.values(event.args)
-                    );
-                }
+                event = this.contractInterface.parseLog(log);
             } catch {
                 // Unknown log event - ignore silently
+                continue;
+            }
+            if (!event) continue;
+            // Nested ethers Results are not structured-cloneable, so the port
+            // bridge would drop any event carrying an array argument. The
+            // canonical converter keeps struct field names; the top level
+            // stays positional for emit(name, ...args).
+            const args = convertEthersValue(Object.values(event.args));
+
+            // The one publication: bus listeners in this realm (isolated), any
+            // attached ethers instances (via attachContractEvents), and the
+            // port bridge to the other realm all ride this emit. This runs
+            // synchronously inside the transition success path, BEFORE the
+            // next onTurn publishes — ordering-critical consumers subscribe on
+            // the bus. A bridge failure is logged and processing continues:
+            // a contract event must never fail the transition.
+            try {
+                this.stateManager?.events.emit(
+                    "contractEvents",
+                    event.name,
+                    args
+                );
+            } catch (error) {
+                this.stateManager?.logger.error("Contract event emit failed", {
+                    eventName: event.name,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
             }
         }
     }
@@ -549,6 +556,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             stateMachine,
             scm,
             provider: clientProvider,
+            logger,
             onClose
         });
 

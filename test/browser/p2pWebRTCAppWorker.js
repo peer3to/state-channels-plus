@@ -93,7 +93,7 @@ self.onmessage = async (event) => {
             return;
         }
 
-        p2pInstance.on("onConnection", (address) => {
+        p2pInstance.events.on("p2pEventHooks", "onConnection", (address) => {
             self.postMessage({ type: "connection", address: String(address) });
         });
 

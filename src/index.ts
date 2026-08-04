@@ -70,6 +70,14 @@ export {
     createContractExecutorFactory
 };
 export { Status } from "@/types";
+export type { ChannelId } from "@/types";
+export {
+    EventBus,
+    attachContractEvents,
+    type BusEventMaps,
+    type BusKind,
+    type ContractEventTarget
+} from "@/events/EventBus";
 
 export { startP2pRuntimeWorker } from "@/evm/p2pRuntime/worker/startP2pRuntimeWorker";
 export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";

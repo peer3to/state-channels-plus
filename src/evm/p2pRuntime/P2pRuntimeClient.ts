@@ -6,19 +6,15 @@ import {
 
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
 import type { Address } from "@/types/types";
+import type { Logger } from "@/utils";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
 import ClientChainSigner from "../signer/ClientChainSigner";
-import RuntimeEventEmitter, {
-    type RuntimeEventMap,
-    type RuntimeEventName
-} from "./RuntimeEventEmitter";
+import { attachContractEvents, EventBus } from "@/events/EventBus";
 import type {
+    RuntimeBusEventMessage,
     RuntimeClientRequest,
-    RuntimeContractEventMessage,
-    RuntimeEventHandlerMessage,
     RuntimeHostErrorMessage,
     RuntimeHostMessage,
-    RuntimeP2pEventHookMessage,
     RuntimePort,
     RuntimeRequestInput,
     RuntimeResponse,
@@ -69,6 +65,8 @@ export interface P2pRuntimeClientOptions {
     scm: SerializedContract;
     /** Main-thread provider used for reads and native transaction responses. */
     provider: ethers.Provider;
+    /** Sink for bus listener/adapter failures (e.g. a failed mirror emit). */
+    logger?: Logger;
     /** Invoked after the port is closed (e.g. to terminate a worker). */
     onClose?: () => void | Promise<void>;
 }
@@ -107,7 +105,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
     private readonly signerAddress: Address;
     private readonly pending = new Map<number, PendingRequest>();
     private nextRequestId = 1;
-    private readonly events = new RuntimeEventEmitter();
+    readonly events: EventBus;
     private readonly hostErrorListeners = new Set<(error: Error) => void>();
     private readonly onClose?: () => void | Promise<void>;
     private resolveReady!: () => void;
@@ -116,6 +114,13 @@ class P2pRuntimeClient<T = ethers.Contract> {
     private disposed = false;
 
     constructor(port: RuntimePort, options: P2pRuntimeClientOptions) {
+        this.events = new EventBus((kind, eventName, error) =>
+            options.logger?.error("Event bus listener failed", {
+                kind,
+                eventName,
+                error: error instanceof Error ? error.message : String(error)
+            })
+        );
         this.port = port;
         this.signerAddress = options.signerAddress;
         this.onClose = options.onClose;
@@ -135,11 +140,22 @@ class P2pRuntimeClient<T = ethers.Contract> {
                 options.scm.address,
                 this.chainSigner
             );
-        this.contract = new ethers.Contract(
+        const contract = new ethers.Contract(
             options.stateMachine.address,
             JSON.parse(options.stateMachine.abiJson),
             this.signer
-        ) as T;
+        );
+        this.contract = contract as T;
+        // The main-thread contract mirror: the same helper worker code uses.
+        // Events are forwarded as { name, args } and re-emitted by event name,
+        // so name-based and unindexed `contract.filters.X()` subscriptions
+        // receive them. A subscription that filters on an indexed argument
+        // (`contract.filters.X(indexedValue)`) resolves to a different ethers
+        // tag and will NOT match — the original topics aren't forwarded.
+        // A failed mirror emit reports through the bus error reporter.
+        attachContractEvents(contract, this.events, undefined, {
+            runtimeOwned: true
+        });
 
         this.port.onMessage((message) =>
             this.handleMessage(message as RuntimeHostMessage)
@@ -202,22 +218,6 @@ class P2pRuntimeClient<T = ethers.Contract> {
         });
     }
 
-    /** Subscribe to a runtime event; returns an unsubscribe function. */
-    on<K extends RuntimeEventName>(
-        event: K,
-        listener: RuntimeEventMap[K]
-    ): () => void {
-        return this.events.on(event, listener);
-    }
-
-    /** Remove a previously registered runtime-event listener. */
-    off<K extends RuntimeEventName>(
-        event: K,
-        listener: RuntimeEventMap[K]
-    ): void {
-        this.events.off(event, listener);
-    }
-
     /**
      * Subscribe to autonomous host-side errors (worker unhandledRejection /
      * uncaughtException funnelled over the port). With no subscriber, such an
@@ -274,14 +274,8 @@ class P2pRuntimeClient<T = ethers.Contract> {
             case "response":
                 this.handleResponse(message);
                 return;
-            case "p2pEventHook":
-                this.dispatchP2pEventHook(message);
-                return;
-            case "contractEvent":
-                this.dispatchContractEvent(message);
-                return;
-            case "eventHandlerInvoked":
-                this.dispatchEventHandlerInvocation(message);
+            case "busEvent":
+                this.dispatchBusEvent(message);
                 return;
             case "hostError":
                 this.dispatchHostError(message);
@@ -315,10 +309,8 @@ class P2pRuntimeClient<T = ethers.Contract> {
         for (const listener of this.hostErrorListeners) listener(error);
     }
 
-    private dispatchEventHandlerInvocation(
-        message: RuntimeEventHandlerMessage
-    ): void {
-        this.events.emit(message.name, message.args);
+    private dispatchBusEvent(message: RuntimeBusEventMessage): void {
+        this.events.emit(message.kind, message.eventName, message.args);
     }
 
     private handleResponse(message: RuntimeResponse): void {
@@ -331,22 +323,6 @@ class P2pRuntimeClient<T = ethers.Contract> {
         } else {
             pending.reject(deserializeError(message.error));
         }
-    }
-
-    private dispatchP2pEventHook(message: RuntimeP2pEventHookMessage): void {
-        this.events.emit(message.name, message.args);
-    }
-
-    private dispatchContractEvent(message: RuntimeContractEventMessage): void {
-        // Events are forwarded as { name, args } and re-emitted by event name,
-        // so name-based and unindexed `contract.filters.X()` subscriptions
-        // receive them. A subscription that filters on an indexed argument
-        // (`contract.filters.X(indexedValue)`) resolves to a different ethers
-        // tag and will NOT match — the original topics aren't forwarded.
-        void (this.contract as unknown as ethers.Contract).emit(
-            message.name,
-            ...message.args
-        );
     }
 
     private rejectAllPending(reason: Error): void {

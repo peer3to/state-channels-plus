@@ -1,9 +1,5 @@
 import { ethers } from "ethers";
-import {
-    StateChannelManagerProxy,
-    AStateMachine as AStateMachineContract
-} from "@typechain-types";
-import { JoinChannelConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { StateChannelManagerProxy } from "@typechain-types";
 
 import StateManager from "@/stateManager/StateManager";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
@@ -31,10 +27,7 @@ import {
 } from "@/evm/contractExecutor";
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
 import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
-import {
-    createForwardingHooks,
-    forwardEventHandlerInvocations
-} from "./host/EventForwarding";
+import { forwardEventHandlerInvocations } from "./host/EventForwarding";
 import {
     deserializeTransactionRequest,
     serializeTransactionResponse
@@ -353,7 +346,10 @@ export async function startP2pRuntimeHost<
                 connectedScmContract,
                 evmDiamondStateMachine,
                 timeConfig,
-                createForwardingHooks(port),
+                // The app's hooks live on the main thread; the worker realm
+                // publishes through the bus and the bridge tap below forwards
+                // every event over the port.
+                {},
                 storage,
                 logger!,
                 customRpcResolved?.customRpc,
@@ -362,18 +358,17 @@ export async function startP2pRuntimeHost<
 
             evmDiamondStateMachine.setStateManager(stateManager);
 
-            const p2pContractInstance = stateMachineContract.connect(
-                stateManager.p2pManager.p2pSigner
-            ) as unknown as AStateMachineContract;
-            evmDiamondStateMachine.setP2pContractInstance(p2pContractInstance);
-
-            evmDiamondStateMachine.setContractEventEmitter((name, args) =>
-                port.post({ type: "contractEvent", name, args })
+            // The single port bridge: every bus emission crosses as one
+            // uniform payload. It runs after all local listeners; a clone
+            // failure propagates to the producer (posting after close is a
+            // silent drop on Node -- remote closure is handled by onClose).
+            stateManager.events.setBridgeTap((kind, eventName, args) =>
+                port.post({ type: "busEvent", kind, eventName, args })
             );
 
             forwardEventHandlerInvocations(
                 stateManager.eventHandler,
-                port,
+                stateManager.events,
                 handlerExecutionContext
             );
 

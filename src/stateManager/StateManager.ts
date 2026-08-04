@@ -88,6 +88,7 @@ import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
+import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
 import MainRpcService from "@/rpc/MainRpcService";
 import type { CustomRpcConstructor } from "@/rpc/registry";
 import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
@@ -136,6 +137,15 @@ class StateManager<
     blockQueueManager: BlockQueueManager;
     readonly reductionManager: ReductionManager;
     readonly snapshotUpdateService: SnapshotUpdateService;
+    /** Realm subscription surface: p2p hooks, contract events, handler events. */
+    readonly events: EventBus = new EventBus((kind, eventName, error) =>
+        this.logger?.error("Event bus listener failed", {
+            kind,
+            eventName,
+            error: error instanceof Error ? error.message : String(error)
+        })
+    );
+    private appP2pEventHooks: P2pEventHooks;
     private disposalPromise?: Promise<void>;
 
     constructor(
@@ -153,7 +163,15 @@ class StateManager<
         this.signer = signer;
         this.signerAddress = signerAddress;
         this.diamondStateMachine = diamondStateMachine;
-        this.p2pEventHooks = p2pEventHooks;
+        // Stable publishing proxy: every hook call anywhere in the runtime
+        // publishes on `events` first, then forwards to the current app hooks.
+        // Components capture this one object; setP2pEventHooks swaps only the
+        // app target behind it.
+        this.appP2pEventHooks = p2pEventHooks;
+        this.p2pEventHooks = createBusPublishingHooks(
+            this.events,
+            () => this.appP2pEventHooks
+        );
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = createEthersResultProxy(
             stateChannelManagerContract
@@ -276,14 +294,32 @@ class StateManager<
         // Event handlers may still need the local EVM while draining already
         // scheduled contract logs. Dispose their dependencies only afterward.
         this.disposalPromise = (async () => {
+            // The custom RPC root disposes first so it can settle waits that
+            // depend on the timeout manager and p2p below. A broken root must
+            // never skip runtime teardown: its error is captured and rethrown
+            // only after the remaining cleanup finished.
+            let customRpcError: Error | undefined;
+            try {
+                await this.p2pManager.localRpc.dispose();
+            } catch (error) {
+                customRpcError =
+                    error instanceof Error ? error : new Error(String(error));
+            }
             try {
                 await this.stateChannelEventListener.dispose();
             } finally {
+                // Drain scheduled work (queued block applications) before its
+                // dependencies disappear: a queued entry mid-execution still
+                // needs the EVM executor and p2p below. The drain is bounded
+                // by the timeout manager's dispose wait.
+                await this.timeoutManager.dispose();
                 await Promise.all([
-                    this.timeoutManager.dispose(),
                     this.p2pManager.dispose(),
                     this.diamondStateMachine.dispose()
                 ]);
+            }
+            if (customRpcError) {
+                throw customRpcError;
             }
         })().finally(() => {
             this.logger.dispose({
@@ -294,7 +330,7 @@ class StateManager<
         return this.disposalPromise;
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
-        this.p2pEventHooks = p2pEventHooks;
+        this.appP2pEventHooks = p2pEventHooks;
     }
 
     public setStatus(status: Status) {

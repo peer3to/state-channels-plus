@@ -13,6 +13,7 @@ import { Status } from "@/types";
 import type { Logger } from "@/utils";
 import type { ForkId, Hash } from "@/types/types";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import NoopEventProvider from "./NoopEventProvider";
 
 /**
  * Signer used by the live p2p runtime state manager for channel-scoped
@@ -36,7 +37,11 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     ) {
         this.signer = signer;
         this.signerAddress = signerAddress;
-        this.provider = signer.provider;
+        // Event-only provider stub: worker-side typed `contract.on(...)`
+        // registers without starting a real-chain filter for a local-EVM
+        // address -- events are supplied manually via attachContractEvents.
+        // Calls and transactions keep delegating to the wrapped signer.
+        this.provider = new NoopEventProvider();
         this.p2pManager = p2pManager;
         this.isLeader = false;
         this.logger = p2pManager.logger.child({ component: "P2pSigner" });

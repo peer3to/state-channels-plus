@@ -1,4 +1,4 @@
-import type P2pEventHooks from "@/P2pEventHooks";
+import type { BusKind } from "@/events/EventBus";
 import type {
     DistributiveOmit,
     RuntimeRequest,
@@ -207,27 +207,17 @@ export interface RuntimeReadyMessage {
     type: "ready";
 }
 
-/** Host→client p2p event hook invocation, dispatched to client listeners. */
-export interface RuntimeP2pEventHookMessage {
-    type: "p2pEventHook";
-    name: keyof P2pEventHooks;
-    args: unknown[];
-}
-
-/** Host→client contract event, re-emitted on the main-thread contract. */
-export interface RuntimeContractEventMessage {
-    type: "contractEvent";
-    name: string;
-    args: unknown[];
-}
-
 /**
- * Host→client mirror of an `EventHandler` invocation, fired after the handler
- * resolves. `args` is a best-effort clone, empty when not serializable.
+ * Host→client bus event: ONE payload for every forwarded event kind (p2p
+ * hooks, contract events, `EventHandler` mirrors). The client re-emits it into
+ * its own bus; contract events additionally re-emit on the main-thread
+ * contract. Handler `args` are a best-effort clone, empty when not
+ * serializable.
  */
-export interface RuntimeEventHandlerMessage {
-    type: "eventHandlerInvoked";
-    name: string;
+export interface RuntimeBusEventMessage {
+    type: "busEvent";
+    kind: BusKind;
+    eventName: string;
     args: unknown[];
 }
 
@@ -256,9 +246,7 @@ export interface RuntimeWebRTCBridgePortMessage {
 export type RuntimeHostMessage =
     | RuntimeReadyMessage
     | RuntimeResponse
-    | RuntimeP2pEventHookMessage
-    | RuntimeContractEventMessage
-    | RuntimeEventHandlerMessage
+    | RuntimeBusEventMessage
     | RuntimeHostErrorMessage
     | RuntimeWebRTCBridgePortMessage;
 

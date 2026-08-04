@@ -146,38 +146,34 @@ async function runScheduler({
     const launch = (task, seq) => {
         running++;
         const acct = freeAccounts.shift();
-        const slot =
-            task.isE2E && slotCount > 0 ? slots[(seq - 1) % slotCount] : null;
+        // Every task is OFFERED a slot's infra; nothing is classified up front.
+        // The harness uses PROVIDER_URL when present (and reuses that node's
+        // already-deployed manager); tests that want their own chain simply
+        // ignore it and keep hardhat's in-process network.
+        const slot = slotCount > 0 ? slots[(seq - 1) % slotCount] : null;
         const where = slot ? `slot ${slot.id}/${slotCount}` : "in-process";
 
-        let taskArgs = task.args;
-        let infraEnv;
-        if (slot) {
-            taskArgs = [
-                task.args[0],
-                "--network",
-                "localhost",
-                ...task.args.slice(1)
-            ];
-            infraEnv = {
-                PROVIDER_URL: slot.nodeUrl,
-                HARDHAT_NODE_URL: slot.nodeUrl,
-                LOCAL_DISCOVERY_REGISTRY_URL: slot.discoveryUrl,
-                E2E_MANAGER_CACHE_DIR: slot.cacheDir,
-                E2E_INTERVAL_MINING: "1"
-            };
-        } else {
-            // Plain in-process Hardhat tests rely on automining: their setup
-            // helpers return deployed contracts for immediate use. Harness
-            // tests self-provision an interval-mined node when they need one.
-            infraEnv = {
-                PROVIDER_URL: undefined,
-                HARDHAT_NODE_URL: undefined,
-                LOCAL_DISCOVERY_REGISTRY_URL: undefined,
-                E2E_MANAGER_CACHE_DIR: undefined,
-                E2E_INTERVAL_MINING: undefined
-            };
-        }
+        // The task's own hardhat network stays untouched (default = in-process
+        // and automining), so tests that use it are unaffected by the offer.
+        // E2E_INTERVAL_MINING is deliberately NOT set: the slot node is
+        // already interval-mined by the runner, and setting it here would
+        // switch the in-process network out of automine for tests that need it.
+        const taskArgs = task.args;
+        const infraEnv = slot
+            ? {
+                  PROVIDER_URL: slot.nodeUrl,
+                  HARDHAT_NODE_URL: slot.nodeUrl,
+                  LOCAL_DISCOVERY_REGISTRY_URL: slot.discoveryUrl,
+                  E2E_MANAGER_CACHE_DIR: slot.cacheDir,
+                  E2E_INTERVAL_MINING: undefined
+              }
+            : {
+                  PROVIDER_URL: undefined,
+                  HARDHAT_NODE_URL: undefined,
+                  LOCAL_DISCOVERY_REGISTRY_URL: undefined,
+                  E2E_MANAGER_CACHE_DIR: undefined,
+                  E2E_INTERVAL_MINING: undefined
+              };
 
         logging.admission({
             seq,

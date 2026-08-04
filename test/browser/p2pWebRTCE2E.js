@@ -257,7 +257,7 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
 
     const connectedBy = peerInstances.map(() => new Set());
     peerInstances.forEach((peer, index) => {
-        peer.on("onConnection", (address) => {
+        peer.events.on("p2pEventHooks", "onConnection", (address) => {
             connectedBy[index].add(String(address).toLowerCase());
         });
     });

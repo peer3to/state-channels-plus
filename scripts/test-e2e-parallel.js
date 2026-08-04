@@ -96,15 +96,12 @@ async function main(options = {}) {
     }
 
     // ---- resolve config ----
-    // TODO: Classify tasks by infrastructure needs instead of directory. Some
-    // non-E2E tests use the shared harness and could reuse slots, while plain
-    // unit/contract tests still require an isolated in-process Hardhat node.
-    const hasE2ETasks = tasks.some((task) => task.isE2E);
+    // Slots are provisioned unconditionally and offered to every task; no
+    // task is classified by directory or source. A test uses the shared node
+    // (via PROVIDER_URL) or ignores it and keeps hardhat's in-process network.
     const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
-    const slotCount = hasE2ETasks
-        ? Math.min(requestedSlotCount, MAX_SLOTS_FROM_POOL)
-        : 0;
-    if (hasE2ETasks && requestedSlotCount > slotCount) {
+    const slotCount = Math.min(requestedSlotCount, MAX_SLOTS_FROM_POOL);
+    if (requestedSlotCount > slotCount) {
         console.log(
             `slots clamped to ${slotCount} (account pool allows ${MAX_SLOTS_FROM_POOL})`
         );

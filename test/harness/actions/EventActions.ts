@@ -139,6 +139,22 @@ export class EventActions<
         const peer = this.harness.getPeer(peerIndex);
 
         await this.waitUntilTimestamp(blockTimestamp + agreementTime + 1);
+        // The main thread and the peer's worker sync their chain-clock
+        // adjustments independently, so their clocks can disagree by a
+        // second. The wait above used OUR clock; the assertion below uses the
+        // PEER's. Wait the measured residual out against the peer's own clock
+        // instead of failing on the boundary.
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const now = await this.harness
+                .control(peer)
+                .query.getClockTimeInSeconds()
+                .request();
+            const gap = Math.abs(now - blockTimestamp);
+            if (gap > agreementTime) {
+                return gap;
+            }
+            await sleep((agreementTime - gap + 1) * 1000);
+        }
         const now = await this.harness
             .control(peer)
             .query.getClockTimeInSeconds()
