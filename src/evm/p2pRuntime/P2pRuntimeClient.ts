@@ -6,6 +6,7 @@ import {
 
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
 import type { Address } from "@/types/types";
+import type { ResumeResult } from "@/P2PManager";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
 import ClientChainSigner from "../signer/ClientChainSigner";
 import RuntimeEventEmitter, {
@@ -243,6 +244,14 @@ class P2pRuntimeClient<T = ethers.Contract> {
             { timeoutMs: null }
         );
         return serialized.map(deserializeError);
+    }
+
+    /**
+     * Mobile reconnect: recover this channel after coming back from
+     * background. See `P2PManager.resumeFromBackground`.
+     */
+    resumeFromBackground(): Promise<ResumeResult> {
+        return this.request<ResumeResult>({ type: "resumeFromBackground" });
     }
 
     /** Tear down the runtime: dispose the host, reject pending work, close. */

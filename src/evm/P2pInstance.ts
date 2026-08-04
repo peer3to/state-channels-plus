@@ -17,6 +17,7 @@ import {
     type WebRTCMainThreadBridgeHandle
 } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
 import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import type { ResumeResult } from "@/P2PManager";
 
 export default class P2pInstance<
     T extends AStateMachine,
@@ -125,6 +126,15 @@ export default class P2pInstance<
      */
     public quiesce(): Promise<Error[]> {
         return this.client.quiesce();
+    }
+
+    /**
+     * Mobile reconnect: recover this channel after coming back from
+     * background — rejoin the topic, hydrate storage, and resync through a
+     * connected peer. See `P2PManager.resumeFromBackground`.
+     */
+    public resumeFromBackground(): Promise<ResumeResult> {
+        return this.client.resumeFromBackground();
     }
 
     /**

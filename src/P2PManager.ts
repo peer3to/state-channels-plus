@@ -16,12 +16,34 @@ import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
 import { config, isNodeRuntime } from "@/utils/config";
-import { Address } from "./types/types";
+import { Address, ChannelId } from "./types/types";
 import { isInstanceOfRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import type { CustomRpcConstructor } from "./rpc/registry";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { sleep } from "@/utils";
+
+/** Max distinct connected peers tried, one at a time, before giving up. */
+const MAX_RESUME_SYNC_PEERS = 3;
+/** Fixed delay between peer-switch attempts. */
+const RESUME_PEER_SWITCH_DELAY_MS = 500;
+/**
+ * Per-attempt request timeout for a resume sync. Deliberately NOT
+ * timeConfig.agreementTime (5s) - a placeholder pending devops SPIKE-0's
+ * measured RTT figures for the resume path specifically.
+ */
+const RESUME_SYNC_TIMEOUT_MS = 8000;
+/** Resume must leave window for be-03's self-defense/back-off. */
+const RESUME_BUDGET_FRACTION = 0.5;
+
+export type ResumeResult =
+    | { status: "restored"; hydrated: boolean }
+    | {
+          status: "failed";
+          reason: "transport" | "sync-timeout" | "no-peers" | "unknown";
+          retryable: boolean;
+      };
 
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     implements IOnMessage
@@ -39,6 +61,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     holepunch: Holepunch;
     self = config.DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
+
+    // Dedups concurrent resumeFromBackground() calls. A single in-flight
+    // promise (not a per-channel map) is enough: this P2PManager instance is
+    // itself scoped to one channel, via `stateManager`.
+    private resumeInFlight?: Promise<ResumeResult>;
 
     private rpcRequestCounter = 0;
     private pendingRpcRequests = new Map<
@@ -348,6 +375,151 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             }
         }
         return addresses;
+    }
+
+    /**
+     * Mobile reconnect: recover a backgrounded channel without tearing down
+     * the process-global Holepunch swarm (it's shared across every open
+     * channel - see Holepunch.ts/HolepunchRelay.ts). Channel-scoped recovery
+     * is topic rejoin + re-handshake + an awaited resync; no swarm
+     * dispose/destroy/close. Dedups concurrent calls by returning the
+     * in-flight promise.
+     */
+    public resumeFromBackground(): Promise<ResumeResult> {
+        if (this.resumeInFlight) return this.resumeInFlight;
+
+        const channelId = this.stateManager.getChannelId();
+        this.resumeInFlight = this.doResumeFromBackground(channelId).finally(
+            () => {
+                this.resumeInFlight = undefined;
+            }
+        );
+        return this.resumeInFlight;
+    }
+
+    private async doResumeFromBackground(
+        channelId: ChannelId
+    ): Promise<ResumeResult> {
+        // Budget from the steady-state timeout window (height >= 1). The
+        // height-0 evidence grace is deliberately excluded: storage isn't
+        // hydrated yet so the in-memory height can't be trusted, and the
+        // shorter window is the conservative side for the budget cap.
+        const deadline =
+            Date.now() +
+            this.stateManager.getTimeoutWaitTimeSeconds(1) *
+                1000 *
+                RESUME_BUDGET_FRACTION;
+
+        this.stateManager.p2pEventHooks.onResumePhase?.("reconnecting");
+
+        try {
+            // Topic rejoin (Holepunch.rejoinTopics via join()) + whatever
+            // re-handshake the existing connection flow drives. Never touches
+            // the shared swarm singleton itself.
+            await this.tryOpenConnectionToChannel(String(channelId));
+        } catch (e) {
+            this.logger.warn("resumeFromBackground - transport rejoin failed", {
+                channelId,
+                error: e instanceof Error ? e.message : String(e)
+            });
+            return { status: "failed", reason: "transport", retryable: true };
+        }
+
+        try {
+            await this.stateManager.storage.hydrate();
+        } catch (e) {
+            this.logger.warn("resumeFromBackground - storage hydrate failed", {
+                channelId,
+                error: e instanceof Error ? e.message : String(e)
+            });
+            return { status: "failed", reason: "unknown", retryable: true };
+        }
+
+        this.stateManager.p2pEventHooks.onResumePhase?.("resyncing");
+
+        try {
+            return await this.resyncWithPeerSwitch(channelId, deadline);
+        } catch (e) {
+            this.logger.warn("resumeFromBackground - unexpected error", {
+                channelId,
+                error: e instanceof Error ? e.message : String(e)
+            });
+            return { status: "failed", reason: "unknown", retryable: true };
+        }
+    }
+
+    /**
+     * Try up to MAX_RESUME_SYNC_PEERS connected peers (one at a time, 500ms
+     * apart) via the awaitable resume sync, within the remaining budget. Also
+     * sidesteps a concurrent reactive (non-resume) sync blacklisting a given
+     * peer - a collision/failure just switches to the next candidate peer.
+     */
+    private async resyncWithPeerSwitch(
+        channelId: ChannelId,
+        deadline: number
+    ): Promise<ResumeResult> {
+        const attemptedPeers = new Set<Address>();
+        let attempts = 0;
+
+        while (
+            Date.now() < deadline &&
+            attemptedPeers.size < MAX_RESUME_SYNC_PEERS
+        ) {
+            const peer = this.pickNextResumePeer(attemptedPeers);
+            if (!peer) {
+                const remainingMs = deadline - Date.now();
+                if (remainingMs <= 0) break;
+                await sleep(Math.min(RESUME_PEER_SWITCH_DELAY_MS, remainingMs));
+                continue;
+            }
+
+            const remainingMs = deadline - Date.now();
+            if (remainingMs <= 0) break;
+            attempts++;
+
+            const outcome = await this.localRpc.spectateService.syncAwaitable(
+                peer,
+                channelId,
+                {
+                    resumeMode: true,
+                    timeoutMs: Math.min(RESUME_SYNC_TIMEOUT_MS, remainingMs)
+                }
+            );
+
+            if (outcome.ok) {
+                return { status: "restored", hydrated: !outcome.localWasAhead };
+            }
+
+            this.logger.debug(
+                "resumeFromBackground - peer sync failed; switching peer",
+                { channelId, peer, reason: outcome.reason }
+            );
+
+            // A collision with an already-running sync to this same peer is
+            // transient - that sync may finish and resync us within a beat.
+            // Don't burn a peer slot on it; retry the same peer after the
+            // delay instead of permanently giving up on it.
+            if (outcome.reason !== "in-flight-collision") {
+                attemptedPeers.add(peer);
+                if (attemptedPeers.size >= MAX_RESUME_SYNC_PEERS) break;
+            }
+            const remainingAfter = deadline - Date.now();
+            if (remainingAfter <= 0) break;
+            await sleep(Math.min(RESUME_PEER_SWITCH_DELAY_MS, remainingAfter));
+        }
+
+        return {
+            status: "failed",
+            reason: attempts === 0 ? "no-peers" : "sync-timeout",
+            retryable: true
+        };
+    }
+
+    private pickNextResumePeer(attempted: Set<Address>): Address | undefined {
+        for (const peer of this.getConnectedPeers()) {
+            if (!attempted.has(peer)) return peer;
+        }
+        return undefined;
     }
 }
 

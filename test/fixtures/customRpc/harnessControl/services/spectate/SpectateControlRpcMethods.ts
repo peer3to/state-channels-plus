@@ -3,7 +3,7 @@ import { ZeroHash } from "ethers";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import { Codec, Type } from "@/utils";
+import { Codec, getChecksumAddress, Type } from "@/utils";
 import Block from "@/models/Block";
 import type { Address, ChannelId, ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
@@ -100,6 +100,20 @@ export class SpectateControlRpcMethods extends ARpcMethods<
                 justPersist: true
             })
         );
+    }
+
+    /** Kick off the fire-and-forget `sync()` (the reactive path) - test-only trigger. */
+    public triggerSync(peerAddress: Address, channelId: ChannelId): void {
+        this.service.spectate.sync(peerAddress, channelId);
+    }
+
+    /** Whether a sync is currently held in-flight for this peer (guard state). */
+    public isSyncInFlight(peerAddress: Address): boolean {
+        return (
+            this.service.spectate as unknown as {
+                inFlightByPeerAddress: Set<string>;
+            }
+        ).inFlightByPeerAddress.has(getChecksumAddress(peerAddress));
     }
 }
 
