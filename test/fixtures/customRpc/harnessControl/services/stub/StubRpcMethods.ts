@@ -3,13 +3,12 @@ import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import { Codec, sleep, Type } from "@/utils";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
+import type { Status } from "@/types";
 import type { Address } from "@/types/types";
 import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
-import type { StateSnapshot } from "@/models";
-import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { id } from "ethers";
 import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
@@ -102,21 +101,17 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     /** Make authored blocks omit pending inbound messages. */
     public stubPendingInboundInclusion(): boolean {
-        // This is deliberately scoped to block assembly. Stubbing the inbound
+        // This is deliberately scoped to block authoring. Stubbing the inbound
         // storage head also corrupts disputes constructed while the stub is
         // active.
-        const sm = this.service.sm as unknown as {
-            getPendingInboundMessageBlocks: (
-                previousStateSnapshot: StateSnapshot
-            ) => MessageBlockStruct[];
-        };
+        const production = this.service.sm.blockProductionService;
         if (!this.service.stubOriginals.has("pendingInboundInclusion")) {
             this.service.stubOriginals.set(
                 "pendingInboundInclusion",
-                sm.getPendingInboundMessageBlocks
+                production["getPendingInboundMessageBlocks"]
             );
         }
-        sm.getPendingInboundMessageBlocks = () => [];
+        production["getPendingInboundMessageBlocks"] = () => [];
         return true;
     }
 
@@ -125,10 +120,9 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             "pendingInboundInclusion"
         );
         if (original === undefined) return false;
-        const sm = this.service.sm as unknown as {
-            getPendingInboundMessageBlocks: unknown;
-        };
-        sm.getPendingInboundMessageBlocks = original;
+        const production = this.service.sm.blockProductionService;
+        production["getPendingInboundMessageBlocks"] =
+            original as (typeof production)["getPendingInboundMessageBlocks"];
         this.service.stubOriginals.delete("pendingInboundInclusion");
         return true;
     }
@@ -169,19 +163,17 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     /**
      * Suppress this peer posting its own block on-chain (forces the on-chain
-     * calldata path). `maybePostBlockOnChain` is private — cast to reach it.
+     * calldata path).
      */
     public stubSuppressMaybePostBlockOnChain(): boolean {
-        const sm = this.service.sm as unknown as {
-            maybePostBlockOnChain: (blockHash: unknown) => void;
-        };
+        const posting = this.service.sm.calldataPostingService;
         if (!this.service.stubOriginals.has("maybePostBlockOnChain")) {
             this.service.stubOriginals.set(
                 "maybePostBlockOnChain",
-                sm.maybePostBlockOnChain
+                posting.maybePostBlockOnChain
             );
         }
-        sm.maybePostBlockOnChain = () => {};
+        posting.maybePostBlockOnChain = () => {};
         return true;
     }
 
@@ -190,12 +182,108 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             "maybePostBlockOnChain"
         );
         if (original === undefined) return false;
-        (
-            this.service.sm as unknown as {
-                maybePostBlockOnChain: unknown;
-            }
-        ).maybePostBlockOnChain = original;
+        const posting = this.service.sm.calldataPostingService;
+        posting.maybePostBlockOnChain =
+            original as typeof posting.maybePostBlockOnChain;
         this.service.stubOriginals.delete("maybePostBlockOnChain");
+        return true;
+    }
+
+    /**
+     * Stop this peer running the participant-timeout check, so a staged
+     * scenario is not cut short by a real timeout dispute.
+     */
+    public stubSuppressTimeoutCheck(): boolean {
+        const timeouts = this.service.sm.participantTimeoutService;
+        if (!this.service.stubOriginals.has("timeoutCheck")) {
+            this.service.stubOriginals.set(
+                "timeoutCheck",
+                timeouts["tryTimeoutParticipant"]
+            );
+        }
+        timeouts["tryTimeoutParticipant"] = async () => undefined;
+        return true;
+    }
+
+    public restoreSuppressTimeoutCheck(): boolean {
+        const original = this.service.stubOriginals.get("timeoutCheck");
+        if (original === undefined) return false;
+        const timeouts = this.service.sm.participantTimeoutService;
+        timeouts["tryTimeoutParticipant"] =
+            original as (typeof timeouts)["tryTimeoutParticipant"];
+        this.service.stubOriginals.delete("timeoutCheck");
+        return true;
+    }
+
+    /**
+     * Make this peer reject every ingested block confirmation, as if the
+     * queue refused it.
+     */
+    public stubRejectIngestedConfirmations(): boolean {
+        const queue = this.service.sm.blockQueueManager;
+        if (!this.service.stubOriginals.has("ingestConfirmations")) {
+            this.service.stubOriginals.set(
+                "ingestConfirmations",
+                queue.ingestBlockConfirmation
+            );
+        }
+        queue.ingestBlockConfirmation = async () => false;
+        return true;
+    }
+
+    public restoreRejectIngestedConfirmations(): boolean {
+        const original = this.service.stubOriginals.get("ingestConfirmations");
+        if (original === undefined) return false;
+        const queue = this.service.sm.blockQueueManager;
+        queue.ingestBlockConfirmation =
+            original as typeof queue.ingestBlockConfirmation;
+        this.service.stubOriginals.delete("ingestConfirmations");
+        return true;
+    }
+
+    /**
+     * Record the label and delay of every scheduled task; tasks whose label
+     * starts with `suppressPrefix` are recorded and never run.
+     */
+    public stubRecordScheduledTasks(suppressPrefix?: string): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        if (!this.service.stubOriginals.has("scheduledTasks")) {
+            this.service.stubOriginals.set(
+                "scheduledTasks",
+                timeoutManager.scheduleTask.bind(timeoutManager)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "scheduledTasks"
+        ) as typeof timeoutManager.scheduleTask;
+        this.service.recordedScheduledTasks.length = 0;
+        timeoutManager.scheduleTask = (task, delayMs, taskName = "unnamed") => {
+            this.service.recordedScheduledTasks.push({ taskName, delayMs });
+            if (suppressPrefix && taskName.startsWith(suppressPrefix)) {
+                return {} as ReturnType<typeof setTimeout>;
+            }
+            return original(task, delayMs, taskName);
+        };
+        return true;
+    }
+
+    public getRecordedScheduledTasks(): {
+        tasks: { taskName: string; delayMs: number }[];
+    } {
+        return {
+            tasks: this.service.recordedScheduledTasks.map((entry) => ({
+                ...entry
+            }))
+        };
+    }
+
+    public restoreRecordScheduledTasks(): boolean {
+        const original = this.service.stubOriginals.get("scheduledTasks");
+        if (original === undefined) return false;
+        const timeoutManager = this.service.sm.timeoutManager;
+        timeoutManager.scheduleTask =
+            original as typeof timeoutManager.scheduleTask;
+        this.service.stubOriginals.delete("scheduledTasks");
         return true;
     }
 
@@ -227,21 +315,21 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      * `wasUnsafeSetLatestStateCalled`) but still runs the original.
      */
     public stubRecordUnsafeSetLatestState(): boolean {
-        const sm = this.service.sm;
+        const stateApplication = this.service.sm.stateApplicationService;
         if (!this.service.stubOriginals.has("unsafeSetLatestState")) {
             this.service.stubOriginals.set(
                 "unsafeSetLatestState",
-                sm.unsafeSetLatestState
+                stateApplication.unsafeSetLatestState
             );
         }
         this.service.unsafeSetLatestStateCalled = false;
         const original = this.service.stubOriginals.get(
             "unsafeSetLatestState"
-        ) as typeof sm.unsafeSetLatestState;
+        ) as typeof stateApplication.unsafeSetLatestState;
         const stubService = this.service;
-        sm.unsafeSetLatestState = async (...args) => {
+        stateApplication.unsafeSetLatestState = async (...args) => {
             stubService.unsafeSetLatestStateCalled = true;
-            return original.apply(stubService.sm, args);
+            return original.apply(stateApplication, args);
         };
         return true;
     }
@@ -253,8 +341,9 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public restoreUnsafeSetLatestState(): boolean {
         const original = this.service.stubOriginals.get("unsafeSetLatestState");
         if (original === undefined) return false;
-        const sm = this.service.sm;
-        sm.unsafeSetLatestState = original as typeof sm.unsafeSetLatestState;
+        const stateApplication = this.service.sm.stateApplicationService;
+        stateApplication.unsafeSetLatestState =
+            original as typeof stateApplication.unsafeSetLatestState;
         this.service.stubOriginals.delete("unsafeSetLatestState");
         return true;
     }
@@ -647,7 +736,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     public cancelScheduledReductions(): boolean {
-        this.service.sm.reductionManager.cancelScheduledReductions();
+        this.service.sm.reductionManager["cancelScheduledReductions"]();
         return true;
     }
 
@@ -1502,6 +1591,25 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             encodedBlockConfirmation,
             options
         );
+    }
+
+    public async runStoredBlockMerge(
+        encodedBlockConfirmation: string,
+        options?: { strategy?: "active" | "dispute" }
+    ): Promise<{
+        result: number | null;
+        persistedSignatures: string[] | null;
+    }> {
+        return this.service.runStoredBlockMerge(
+            encodedBlockConfirmation,
+            options
+        );
+    }
+
+    /** Staging: force this peer's session status (fault injection). */
+    public setPeerStatus(status: Status): boolean {
+        this.service.sm.setStatus(status);
+        return true;
     }
 }
 

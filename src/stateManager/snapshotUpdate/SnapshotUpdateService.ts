@@ -54,7 +54,7 @@ export default class SnapshotUpdateService {
         return submission.expectedSnapshot;
     }
 
-    public async postStateSnapshotWait(
+    private async postStateSnapshotWait(
         forkId: ForkId
     ): Promise<StateSnapshot | undefined> {
         const submission = await this.submitStateSnapshot(forkId);
@@ -186,7 +186,7 @@ export default class SnapshotUpdateService {
     /**
      * Prepares data for updateStateSnapshotFork
      */
-    public async prepareUpdateStateSnapshotFork(): Promise<ForkSnapshotUpdatePreparation> {
+    private async prepareUpdateStateSnapshotFork(): Promise<ForkSnapshotUpdatePreparation> {
         try {
             // Get the current on-chain snapshot first
             const currentOnChainSnapshot = StateSnapshot.from(
@@ -381,7 +381,7 @@ export default class SnapshotUpdateService {
     /**
      * Prepares data for updating the state snapshot when the fork is the same.
      */
-    public async prepareUpdateSnapshotSameFork(
+    private async prepareUpdateSnapshotSameFork(
         forkId: ForkId,
         baseSnapshot?: StateSnapshot
     ): Promise<SameForkSnapshotUpdatePreparation> {

@@ -4,8 +4,10 @@ import { Codec, Logger, sleep, Type } from "@/utils";
 import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Block, StateSnapshot } from "@/models";
-import type { IngestBlockConfirmationOptions } from "@/stateManager/BlockQueueManager";
+import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { ForkId } from "@/types/types";
+import type { Status } from "@/types";
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -392,5 +394,75 @@ export class TransitionActions<
             this.logger.error(`Peer ${peer.index} turn wait timed out`);
             throw e;
         }
+    }
+    /**
+     * White-box: run `tryMergeStoredBlockConfirmation` on the host, under the
+     * peer's live block strategy or a fabricated dispute strategy. Returns the
+     * merge result and the persisted signature set.
+     */
+    async runStoredBlockMerge(options: {
+        peerIndex: number;
+        confirmation: { signedBlock: unknown; signatures: string[] };
+        strategy?: "active" | "dispute";
+    }): Promise<{
+        result: number | null;
+        persistedSignatures: string[] | null;
+    }> {
+        const { peerIndex, confirmation, strategy } = options;
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.runStoredBlockMerge(
+                Codec.encode(
+                    confirmation as BlockConfirmationStruct,
+                    Type.BlockConfirmation
+                ) as string,
+                strategy ? { strategy } : undefined
+            )
+            .request();
+    }
+
+    /**
+     * White-box: run `StateApplicationService.unsafeSetLatestState` with the
+     * peer's own latest stored snapshot/state, optionally shifting the
+     * snapshot timestamp, and return the recomputed status.
+     */
+    async runSetLatestState(options: {
+        peerIndex: number;
+        forkId: ForkId;
+        timestampOverride?: number;
+        timestampOffsetSeconds?: number;
+    }): Promise<Status> {
+        const { peerIndex, forkId, timestampOverride, timestampOffsetSeconds } =
+            options;
+        return await this.harness.execOnHost(
+            this.harness.getPeer(peerIndex),
+            async (sm, args) => {
+                const next = sm.storage.blocks.getNextBlockHeight(args.forkId);
+                const model =
+                    sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow({
+                        forkId: args.forkId,
+                        height: next
+                    });
+                const encodedState =
+                    sm.storage.stateMachineStates.getStateMachineState(
+                        model.stateMachineStateHash
+                    );
+                if (!encodedState) throw new Error("no stored machine state");
+                await sm.stateApplicationService.unsafeSetLatestState(
+                    {
+                        forkId: model.forkID,
+                        blockHeight: model.blockHeight,
+                        timestamp:
+                            args.timestampOverride ??
+                            Number(model.timestamp) +
+                                (args.timestampOffsetSeconds ?? 0),
+                        snapshotData: model.snapshotData
+                    },
+                    encodedState
+                );
+                return sm.status;
+            },
+            { forkId, timestampOverride, timestampOffsetSeconds }
+        );
     }
 }

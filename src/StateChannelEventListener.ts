@@ -1,7 +1,7 @@
 import { StateChannelManagerProxy } from "@typechain-types";
 import { Filter, Log } from "ethers";
 
-import EventSyncService from "@/stateManager/EventSyncService";
+import EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import { ChannelId } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
 

@@ -63,7 +63,10 @@ export type StubKey =
     | "constructDisputeEntry"
     | "disputeSubmissions"
     | "disputeFraudProofApplies"
-    | "disputeKill";
+    | "disputeKill"
+    | "timeoutCheck"
+    | "scheduledTasks"
+    | "ingestConfirmations";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -198,6 +201,12 @@ export type BlockValidationProbeOptions = {
      * reachable by calling the hook.
      */
     invokeHook?: "blockAuthorIsNotParticipant" | "wrongGenesisDetected";
+    /**
+     * "validate" (default) runs validateBlockConfirmation only; "full" runs
+     * the whole onBlockConfirmation pipeline (assembly, hash compare, VM
+     * restore) under the same record-only side-effect wrappers.
+     */
+    pipeline?: "validate" | "full";
 };
 
 export type BlockValidationProbe = {
@@ -215,6 +224,8 @@ export type BlockValidationProbe = {
     sourcePeers: string[];
     /** How many times validation asked EventSyncService to recover calldata. */
     calldataRecoveryQueries: number;
+    /** Only set by pipeline: "full" - onBlockConfirmation's return value. */
+    keepConnection?: boolean;
 };
 
 /**
@@ -249,6 +260,11 @@ export class StubService extends ARpcService<
     readonly heldReductionTasks: {
         taskName: string;
         task: () => void | Promise<void>;
+    }[] = [];
+    /** Label + delay of every scheduled task, captured by the record stub. */
+    readonly recordedScheduledTasks: {
+        taskName: string;
+        delayMs: number;
     }[] = [];
     /** Event arg-tuples captured by the hold-event stubs. */
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
@@ -989,6 +1005,44 @@ export class StubService extends ARpcService<
         return true;
     }
 
+    /**
+     * White-box: run `tryMergeStoredBlockConfirmation` against the entry built
+     * from the confirmation, under the live block strategy or a fabricated
+     * dispute strategy. Returns the merge result and the persisted signature
+     * set for the block's hash.
+     */
+    public async runStoredBlockMerge(
+        encodedBlockConfirmation: string,
+        options?: { strategy?: "active" | "dispute" }
+    ): Promise<{
+        result: number | null;
+        persistedSignatures: string[] | null;
+    }> {
+        const sm = this.sm;
+        const blockConfirmation = Codec.decode(
+            encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        const block = Block.fromBlockConfirmation(blockConfirmation);
+        const entry = sm.storage.queues.createEntry(block);
+        const strategy =
+            options?.strategy === "dispute"
+                ? this.createDisputeValidationStrategy(factory.dispute())
+                : sm.blockValidationStrategy;
+        const result =
+            await sm.storedBlockMergeService.tryMergeStoredBlockConfirmation(
+                entry,
+                strategy
+            );
+        const persisted = sm.storage.blocks.getBlock(block.hash);
+        return {
+            result: result === undefined ? null : Number(result),
+            persistedSignatures: persisted
+                ? Array.from(persisted.confirmationSignatures).map(String)
+                : null
+        };
+    }
+
     public async runBlockValidation(
         encodedBlockConfirmation: string,
         options?: BlockValidationProbeOptions
@@ -1089,6 +1143,7 @@ export class StubService extends ARpcService<
         // record which deviation hook the strategy fired, so a test can pin its
         // named guard
         const firedHooks: string[] = [];
+        let lastHookResult: BlockValidationResult | undefined;
         const instrumentedStrategy = new Proxy(strategy, {
             get(target, prop) {
                 const value = Reflect.get(target, prop);
@@ -1106,6 +1161,7 @@ export class StubService extends ARpcService<
                             BlockValidationResult[resolved] !== undefined
                         ) {
                             firedHooks.push(prop);
+                            lastHookResult = resolved as BlockValidationResult;
                         }
                         return resolved;
                     });
@@ -1113,18 +1169,29 @@ export class StubService extends ARpcService<
         });
 
         try {
-            const result = options?.invokeHook
-                ? await instrumentedStrategy[options.invokeHook](entry)
-                : await sm.validationService.validateBlockConfirmation(
-                      entry,
-                      instrumentedStrategy
-                  );
+            let keepConnection: boolean | undefined;
+            let result: BlockValidationResult;
+            if (options?.invokeHook) {
+                result = await instrumentedStrategy[options.invokeHook](entry);
+            } else if (options?.pipeline === "full") {
+                keepConnection =
+                    await sm.blockIngestService.onBlockConfirmation(entry, {
+                        validationStrategy: instrumentedStrategy
+                    });
+                result = lastHookResult ?? BlockValidationResult.SUCCESS;
+            } else {
+                result = await sm.validationService.validateBlockConfirmation(
+                    entry,
+                    instrumentedStrategy
+                );
+            }
             const fraudProof =
                 sm.storage.fraudProofs.getFraudProofForParticipant(
                     block.signerAddress
                 );
             return {
                 result,
+                keepConnection,
                 resultName:
                     BlockValidationResult[result] ?? `UNKNOWN(${result})`,
                 strategyName: strategy.name,

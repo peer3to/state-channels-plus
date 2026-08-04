@@ -19,8 +19,8 @@ import {
 } from "@/storage/QueueStorage";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import type StateManager from "./StateManager";
-import type AValidationStrategy from "./validationStrategy/AValidationStrategy";
+import type StateManager from "../StateManager";
+import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 
 export type IngestBlockConfirmationOptions = {
     onChainTimestamp?: Timestamp;
@@ -63,7 +63,7 @@ export default class BlockQueueManager {
                 this.stateManager.getActiveValidationStrategy();
 
             const isAuthentic =
-                await this.stateManager.isBlockConfirmationAuthentic(
+                await this.stateManager.validationService.isBlockConfirmationAuthentic(
                     blockConfirmation
                 );
 
@@ -115,7 +115,7 @@ export default class BlockQueueManager {
             }
 
             if (
-                await this.stateManager.isForkDisputed(
+                await this.stateManager.validationService.isDisputedFork(
                     block.forkId,
                     block.channelId
                 )
@@ -165,6 +165,130 @@ export default class BlockQueueManager {
         this.recoverySuppressedUntil.clear();
     }
 
+    public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
+        const activeForkId = forkId ?? this.stateManager.forkId;
+        // A scheduled forkId is not authority - a fork transition may have
+        // landed since; the entries drain via the post-transition call.
+        if (activeForkId !== this.stateManager.forkId) return;
+        const maxHeight =
+            this.stateManager.storage.blocks.getNextBlockHeight(activeForkId);
+
+        const entries = this.stateManager.storage.queues.tryDequeuePriority(
+            activeForkId,
+            maxHeight
+        );
+
+        if (entries.length === 0) return;
+
+        if (
+            await this.stateManager.validationService.isDisputedFork(
+                entries[0].block.forkId,
+                entries[0].block.channelId
+            )
+        ) {
+            for (const entry of entries) {
+                this.cancelQueueTimeout(entry.block.hash);
+            }
+            this.clearFork(entries[0].block.forkId);
+            this.logger.verbose(
+                "tryExecuteFromQueue - discarded queued blocks for disputed fork",
+                {
+                    forkId: entries[0].block.forkId,
+                    removedCount: entries.length
+                }
+            );
+            return;
+        }
+
+        for (const entry of entries) {
+            this.cancelQueueTimeout(entry.block.hash);
+            this.scheduleQueuedEntryExecution(entry);
+        }
+    }
+
+    public clearFork(forkId: ForkId): void {
+        const removedHashes =
+            this.stateManager.storage.queues.clearFork(forkId);
+        for (const hash of removedHashes) {
+            this.cancelQueueTimeout(hash);
+        }
+        this.logger.verbose("Cleared queued blocks for disputed fork", {
+            forkId,
+            removedCount: removedHashes.length
+        });
+    }
+
+    public disconnectPeersForSignatures(
+        entry: QueuedBlockEntry,
+        signatures: Set<Signature>
+    ): void {
+        const disconnectedPeers = new Set<Address>();
+        for (const signature of signatures) {
+            const peers = entry.signatureSources.get(signature);
+            if (!peers) continue;
+            for (const peer of peers) {
+                if (disconnectedPeers.has(peer)) continue;
+                disconnectedPeers.add(peer);
+                this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                    peer
+                );
+            }
+        }
+        if (disconnectedPeers.size > 0) {
+            this.logger.warn("Disconnected peers for invalid signatures", {
+                blockHash: entry.block.hash,
+                disconnectedPeers: Array.from(disconnectedPeers)
+            });
+        }
+    }
+
+    public scheduleStoredBlockConfirmationMerge(
+        entry: QueuedBlockEntry,
+        strategy: AValidationStrategy
+    ): void {
+        this.timeoutManager.scheduleTask(
+            () => this.handleStoredBlockConfirmationMerge(entry, strategy),
+            0,
+            `BlockQueueManager.handleStoredBlockConfirmationMerge - fork ${entry.block.forkId} - block ${entry.block.height}`
+        );
+    }
+    /**
+     * The ONLY sanctioned way to put a dequeued entry back. Strategy hooks reach
+     * this while `onBlockConfirmation` holds the StateManager mutex, so all work
+     * here is either synchronous storage mutation or a scheduled task - never an
+     * inline timeout (that would re-enter validation on the wrong stack).
+     *
+     * - If the block became stored while it was out of the queue, merge the
+     *   stored confirmation instead of waiting out the timeout, under the
+     *   caller's `strategy` (falling back to the active one).
+     * - Otherwise restore + (re)arm the remaining-window timeout; if the window
+     *   already elapsed, run the timeout logic as an immediate task.
+     */
+    public restoreQueuedEntry(
+        entry: QueuedBlockEntry,
+        strategy?: AValidationStrategy
+    ): void {
+        if (this.isBlockStored(entry.block)) {
+            this.scheduleStoredBlockConfirmationMerge(
+                entry,
+                strategy ?? this.stateManager.getActiveValidationStrategy()
+            );
+            return;
+        }
+
+        this.stateManager.storage.queues.restoreEntry(entry);
+        const hash = entry.block.hash;
+
+        if (this.scheduleQueueTimeout(hash)) return;
+
+        // Deadline already crossed while dequeued: evict via a task, not inline.
+        this.timeoutManager.scheduleTask(
+            () => this.queueTimeout(hash),
+            0,
+            `BlockQueueManager.queueTimeout (restore past deadline) - ${hash}`
+        );
+    }
+
     /**
      * Consult the kill-period cache BEFORE scheduling (avoid task-queue pressure
      * under a junk flood), then hand off to the coalescing gate. Awaited from
@@ -174,7 +298,12 @@ export default class BlockQueueManager {
         channelId: ChannelId
     ): Promise<void> {
         const currentForkId = this.stateManager.forkId;
-        if (!(await this.stateManager.isForkDisputed(currentForkId, channelId)))
+        if (
+            !(await this.stateManager.validationService.isDisputedFork(
+                currentForkId,
+                channelId
+            ))
+        )
             return;
         const { isExpired, killPeriodEnd } =
             await this.stateManager.reductionManager.isKillPeriodExpiredCached(
@@ -212,7 +341,7 @@ export default class BlockQueueManager {
             // landed, or the fork may no longer be disputed.
             if (forkId !== this.stateManager.forkId) return;
             if (
-                !(await this.stateManager.isForkDisputed(
+                !(await this.stateManager.validationService.isDisputedFork(
                     forkId,
                     this.stateManager.channelId
                 ))
@@ -241,47 +370,6 @@ export default class BlockQueueManager {
         }
     }
 
-    public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
-        const activeForkId = forkId ?? this.stateManager.forkId;
-        // A scheduled forkId is not authority - a fork transition may have
-        // landed since; the entries drain via the post-transition call.
-        if (activeForkId !== this.stateManager.forkId) return;
-        const maxHeight =
-            this.stateManager.storage.blocks.getNextBlockHeight(activeForkId);
-
-        const entries = this.stateManager.storage.queues.tryDequeuePriority(
-            activeForkId,
-            maxHeight
-        );
-
-        if (entries.length === 0) return;
-
-        if (
-            await this.stateManager.isForkDisputed(
-                entries[0].block.forkId,
-                entries[0].block.channelId
-            )
-        ) {
-            for (const entry of entries) {
-                this.cancelQueueTimeout(entry.block.hash);
-            }
-            this.clearFork(entries[0].block.forkId);
-            this.logger.verbose(
-                "tryExecuteFromQueue - discarded queued blocks for disputed fork",
-                {
-                    forkId: entries[0].block.forkId,
-                    removedCount: entries.length
-                }
-            );
-            return;
-        }
-
-        for (const entry of entries) {
-            this.cancelQueueTimeout(entry.block.hash);
-            this.scheduleQueuedEntryExecution(entry);
-        }
-    }
-
     private async queueTimeout(blockHash: Hash): Promise<void> {
         this.timeoutHandles.delete(blockHash);
         // Dequeue first: the timeout owns the entry it sees - no race with
@@ -291,7 +379,7 @@ export default class BlockQueueManager {
         if (!entry) return;
 
         if (
-            await this.stateManager.isForkDisputed(
+            await this.stateManager.validationService.isDisputedFork(
                 entry.block.forkId,
                 entry.block.channelId
             )
@@ -309,7 +397,11 @@ export default class BlockQueueManager {
         }
 
         if (entry.block.forkId !== this.stateManager.forkId) {
-            if (await this.stateManager.isKnownStaleFork(entry.block.forkId)) {
+            if (
+                await this.stateManager.validationService.isKnownStaleFork(
+                    entry.block.forkId
+                )
+            ) {
                 // A known-past fork (disputed, or one we hold a genesis snapshot
                 // for): we are ahead, and a sync request would blacklist honest
                 // stragglers. Drop silently.
@@ -358,56 +450,9 @@ export default class BlockQueueManager {
         this.requestSync(entry);
     }
 
-    public clearFork(forkId: ForkId): void {
-        const removedHashes =
-            this.stateManager.storage.queues.clearFork(forkId);
-        for (const hash of removedHashes) {
-            this.cancelQueueTimeout(hash);
-        }
-        this.logger.verbose("Cleared queued blocks for disputed fork", {
-            forkId,
-            removedCount: removedHashes.length
-        });
-    }
-
-    public disconnectPeersForSignatures(
-        entry: QueuedBlockEntry,
-        signatures: Set<Signature>
-    ): void {
-        const disconnectedPeers = new Set<Address>();
-        for (const signature of signatures) {
-            const peers = entry.signatureSources.get(signature);
-            if (!peers) continue;
-            for (const peer of peers) {
-                if (disconnectedPeers.has(peer)) continue;
-                disconnectedPeers.add(peer);
-                this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peer
-                );
-            }
-        }
-        if (disconnectedPeers.size > 0) {
-            this.logger.warn("Disconnected peers for invalid signatures", {
-                blockHash: entry.block.hash,
-                disconnectedPeers: Array.from(disconnectedPeers)
-            });
-        }
-    }
-
     private disconnectEntrySources(entry: QueuedBlockEntry): void {
         this.stateManager.p2pManager.disconnectAndBlacklistPeers(
             entry.sourcePeers
-        );
-    }
-
-    public scheduleStoredBlockConfirmationMerge(
-        entry: QueuedBlockEntry,
-        strategy: AValidationStrategy
-    ): void {
-        this.timeoutManager.scheduleTask(
-            () => this.handleStoredBlockConfirmationMerge(entry, strategy),
-            0,
-            `BlockQueueManager.handleStoredBlockConfirmationMerge - fork ${entry.block.forkId} - block ${entry.block.height}`
         );
     }
 
@@ -442,43 +487,6 @@ export default class BlockQueueManager {
         return true;
     }
 
-    /**
-     * The ONLY sanctioned way to put a dequeued entry back. Strategy hooks reach
-     * this while `onBlockConfirmation` holds the StateManager mutex, so all work
-     * here is either synchronous storage mutation or a scheduled task - never an
-     * inline timeout (that would re-enter validation on the wrong stack).
-     *
-     * - If the block became stored while it was out of the queue, merge the
-     *   stored confirmation instead of waiting out the timeout, under the
-     *   caller's `strategy` (falling back to the active one).
-     * - Otherwise restore + (re)arm the remaining-window timeout; if the window
-     *   already elapsed, run the timeout logic as an immediate task.
-     */
-    public restoreQueuedEntry(
-        entry: QueuedBlockEntry,
-        strategy?: AValidationStrategy
-    ): void {
-        if (this.isBlockStored(entry.block)) {
-            this.scheduleStoredBlockConfirmationMerge(
-                entry,
-                strategy ?? this.stateManager.getActiveValidationStrategy()
-            );
-            return;
-        }
-
-        this.stateManager.storage.queues.restoreEntry(entry);
-        const hash = entry.block.hash;
-
-        if (this.scheduleQueueTimeout(hash)) return;
-
-        // Deadline already crossed while dequeued: evict via a task, not inline.
-        this.timeoutManager.scheduleTask(
-            () => this.queueTimeout(hash),
-            0,
-            `BlockQueueManager.queueTimeout (restore past deadline) - ${hash}`
-        );
-    }
-
     private scheduleQueueExecution(forkId: ForkId): void {
         if (forkId !== this.stateManager.forkId) return;
         this.timeoutManager.scheduleTask(
@@ -501,7 +509,7 @@ export default class BlockQueueManager {
         strategy: AValidationStrategy
     ): Promise<void> {
         const validationResult =
-            await this.stateManager.tryMergeStoredBlockConfirmation(
+            await this.stateManager.storedBlockMergeService.tryMergeStoredBlockConfirmation(
                 entry,
                 strategy
             );
@@ -534,7 +542,9 @@ export default class BlockQueueManager {
         // we've moved past it) - see `onBlockConfirmation`. A `false` here is a
         // genuine validation failure on the current fork.
         const shouldKeepConnection =
-            await this.stateManager.onBlockConfirmation(entry);
+            await this.stateManager.blockIngestService.onBlockConfirmation(
+                entry
+            );
 
         if (!shouldKeepConnection) {
             this.logger.warn(

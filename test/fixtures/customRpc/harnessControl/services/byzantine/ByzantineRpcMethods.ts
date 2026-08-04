@@ -70,7 +70,7 @@ export class ByzantineRpcMethods extends ARpcMethods {
         encodedTransaction: string
     ): Promise<{ success: boolean; stateSnapshotHash: string }> {
         const { success, encodedState } =
-            await this.service.sm.applyTransaction(
+            await this.service.sm.snapshotAssemblyService["applyTransaction"](
                 Codec.decode(encodedTransaction, Type.Transaction)
             );
         return { success, stateSnapshotHash: String(hash(encodedState)) };
@@ -159,7 +159,7 @@ export class ByzantineRpcMethods extends ARpcMethods {
 
         const transaction: TransactionStruct = {
             header: {
-                channelId: this.service.sm.getChannelId(),
+                channelId: this.service.sm.channelId,
                 participant: this.service.sm.signerAddress,
                 forkId,
                 transactionCnt: BigInt(height),

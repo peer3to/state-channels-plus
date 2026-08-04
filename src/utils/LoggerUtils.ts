@@ -399,7 +399,7 @@ export class LoggerUtils {
         return {
             peerAddress,
             transportType,
-            channelId: stateManager.getChannelId(),
+            channelId: stateManager.channelId,
             forkId: stateManager.forkId.toString()
         };
     }

@@ -30,18 +30,13 @@ import {
     type CustomEvmError
 } from "@/utils/evmErrorHandler";
 import { Block, StateSnapshot } from "@/models";
-import {
-    Address,
-    BlockHeight,
-    Bytes,
-    ForkId,
-    Hash,
-    Timestamp
-} from "@/types/types";
+import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 export const hash = (): `0x${string}` =>
     ethers.hexlify(ethers.randomBytes(32)) as `0x${string}`;
+
+export const zeroHash = () => ethers.ZeroHash as `0x${string}`;
 
 export const randomWallet = (): ethers.HDNodeWallet =>
     ethers.Wallet.createRandom();

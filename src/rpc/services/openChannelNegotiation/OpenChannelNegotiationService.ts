@@ -88,7 +88,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         this.startTimeout();
 
         const channelId = ethers.hexlify(
-            this.p2pManager.stateManager.getChannelId()
+            this.p2pManager.stateManager.channelId
         );
 
         this.remoteRpc.openChannelNegotiationService
@@ -158,7 +158,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const { participants, balances, lower } =
             this.getParticipantsAndBalances(peer);
 
-        const channelId = this.p2pManager.stateManager.getChannelId();
+        const channelId = this.p2pManager.stateManager.channelId;
         let [alreadyOpen] =
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isChannelOpen(
                 channelId
@@ -273,7 +273,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const mismatch = getOpenChannelProposalMismatch(
             decoded,
             {
-                channelId: this.p2pManager.stateManager.getChannelId(),
+                channelId: this.p2pManager.stateManager.channelId,
                 participants,
                 balances
             },
@@ -362,7 +362,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
 
         this.state.timeoutHandle = setTimeout(async () => {
             try {
-                const channelId = this.p2pManager.stateManager.getChannelId();
+                const channelId = this.p2pManager.stateManager.channelId;
                 let [isOpen] =
                     await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isChannelOpen(
                         channelId

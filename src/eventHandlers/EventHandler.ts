@@ -80,7 +80,7 @@ export class EventHandler {
 
         await this.stateManager.withMutex(
             () =>
-                this.stateManager.unsafeSetGenesisState(
+                this.stateManager.stateApplicationService.unsafeSetGenesisState(
                     stateSnapshot.snapshotData,
                     encodedState,
                     stateSnapshot.forkId,
@@ -117,7 +117,7 @@ export class EventHandler {
                 updatedSnapshot.hash
             );
         if (!knownSnapshot) {
-            const status = this.stateManager.getStatus();
+            const status = this.stateManager.status;
             if (status === Status.SYNCED) {
                 // TODO: call stateManager.abort() here; it drops to OPENED and disposes,
                 // but no resync path exists yet.
@@ -185,7 +185,7 @@ export class EventHandler {
         const signerAddress = this.stateManager.signerAddress;
         const snapshotParticipants = stateSnapshot.snapshotData
             .participants as Address[];
-        const status = this.stateManager.getStatus();
+        const status = this.stateManager.status;
 
         const snapshotHasSigner = snapshotParticipants.some((p) =>
             addressesEqual(p, signerAddress)
@@ -274,13 +274,16 @@ export class EventHandler {
             signedBlock,
             signatures: []
         };
-        await this.stateManager.ingestBlockConfirmation(blockConfirmation, {
-            onChainTimestamp: Number(timestamp),
-            validationStrategy: new CalldataCommittedStrategy(
-                this.stateManager.disputeManager,
-                this.stateManager.blockValidationStrategy
-            )
-        });
+        await this.stateManager.blockQueueManager.ingestBlockConfirmation(
+            blockConfirmation,
+            {
+                onChainTimestamp: Number(timestamp),
+                validationStrategy: new CalldataCommittedStrategy(
+                    this.stateManager.disputeManager,
+                    this.stateManager.blockValidationStrategy
+                )
+            }
+        );
     }
 
     async onDisputeCommitted(
@@ -436,7 +439,7 @@ export class EventHandler {
                             : undefined
                 };
             } catch (error) {
-                const status = this.stateManager.getStatus();
+                const status = this.stateManager.status;
                 if (
                     status !== Status.PARTICIPATING &&
                     status !== Status.PENDING_PARTICIPANT
@@ -610,7 +613,7 @@ export class EventHandler {
         // Create our own dispute
         const { dispute: ourDispute } =
             await this.stateManager.disputeManager.constructDispute(
-                this.stateManager.latestForkId
+                this.stateManager.forkId
             );
 
         this.logger.verbose("Constructed our own dispute for comparison", {
@@ -658,7 +661,7 @@ export class EventHandler {
         this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
             participant
         );
-        const latestFork = this.stateManager.latestForkId;
+        const latestFork = this.stateManager.forkId;
         let isDisputed =
             await this.diamondStateMachine.localDiamondContract.isForkDisputed(
                 channelId,
@@ -739,7 +742,7 @@ export class EventHandler {
                 reducedForkId
             );
         } catch (error) {
-            const status = this.stateManager.getStatus();
+            const status = this.stateManager.status;
             if (
                 status !== Status.PARTICIPATING &&
                 status !== Status.PENDING_PARTICIPANT
