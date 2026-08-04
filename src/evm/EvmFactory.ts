@@ -5,6 +5,7 @@ import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
 import type { Logger } from "@/utils";
 import { toEthereumJsEvmAddress } from "@/utils";
 import { importModuleFromManifest } from "@platform/moduleLoader";
+import { installEvmJumpdestCache } from "@platform/evmJumpdestCache";
 
 export type EvmCustomPrecompileManifest<TOptions = unknown> = {
     address: Address | string;
@@ -60,6 +61,9 @@ export async function createEvm(
         }
     ];
 
+    // See TODO(evm-upgrade) in ContractExecutor: v10 still re-scans per call,
+    // so the cache is the fix regardless of the package version.
+    installEvmJumpdestCache();
     const evm = await EVM.create({
         ...evmOptions,
         customPrecompiles

@@ -64,6 +64,8 @@ export type HarnessDeploymentParams = {
     disputeExecutionGasLimit: number;
     timeConfig: TimeConfig;
     harnessConfig: Partial<Config>;
+    /** Node-cached config-independent SCM facets to reuse (see `deploy`). */
+    facetAddresses?: string[];
 };
 
 export type HarnessOnChainContractsDeploymentParams = HarnessDeploymentParams;
@@ -73,6 +75,13 @@ export type HarnessLocalStateMachineDeploymentParams = HarnessDeploymentParams;
 export type HarnessDeploymentConfig<
     TContract extends AStateMachineContract = AStateMachineContract
 > = {
+    /**
+     * Extra identity for the deployed stack, folded into the node-level
+     * deployment cache key. MUST include every consumer-side parameter baked
+     * into the deployed state machine (e.g. poker's maxPlayers) — otherwise a
+     * cache hit could hand back a stack built with different parameters.
+     */
+    getDeploymentCacheKeyFragment?: () => string;
     /**
      * Deploy the on-chain state machine implementation, facets, and manager,
      * then return the deployed manager address.

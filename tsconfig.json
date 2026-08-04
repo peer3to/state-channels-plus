@@ -27,6 +27,7 @@
             "@platform/LocalDiscoveryServer": [
                 "src/utils/node/LocalDiscoveryServer"
             ],
+            "@platform/evmJumpdestCache": ["src/evm/node/evmJumpdestCache"],
             "@platform/moduleLoader": [
                 "src/utils/moduleLoader/node/importModuleFromManifest"
             ],

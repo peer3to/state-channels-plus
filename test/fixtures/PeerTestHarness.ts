@@ -41,8 +41,9 @@ import SyncCoordinator from "@test/utils/SyncCoordinator";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
 import type { RpcRequestOptions } from "@/rpc/RpcHandler";
 import path from "node:path";
-import fs from "node:fs";
 import { createHash } from "node:crypto";
+import { deployFacets } from "../../scripts/V1/deploy";
+import { resolveOrDeployShared } from "../harness/core/deploymentCache";
 import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 import type { CustomRpcManifest } from "@/rpc/registry";
 import type StateManager from "@/stateManager/StateManager";
@@ -441,53 +442,56 @@ export class PeerTestHarness<
                 JSON.stringify({
                     tc: sortedTc,
                     sm: String(stateMachineGasLimit),
-                    de: String(disputeExecutionGasLimit)
+                    de: String(disputeExecutionGasLimit),
+                    // Consumer-side identity (e.g. poker's maxPlayers): a
+                    // stack built with different parameters must never be
+                    // served from this cache.
+                    cs: deployment.getDeploymentCacheKeyFragment?.() ?? ""
                 })
             )
             .digest("hex")
             .slice(0, 16);
 
-        // Candidate A: explicit env var — validate strictly.
-        const explicitAddress = process.env.E2E_REUSE_MANAGER_ADDRESS;
-        if (explicitAddress && !ethers.isAddress(explicitAddress)) {
-            throw new Error(
-                `E2E_REUSE_MANAGER_ADDRESS is not a valid EVM address: ${explicitAddress}`
-            );
-        }
-
-        // Candidate B: per-slot cache dir marker file.
         const cacheDir = process.env.E2E_MANAGER_CACHE_DIR;
-        const markerPath = cacheDir
-            ? path.join(cacheDir, `${deployKey}.addr`)
-            : undefined;
-        let cachedAddress: string | undefined;
-        if (markerPath) {
-            try {
-                const raw = fs.readFileSync(markerPath, "utf8").trim();
-                if (ethers.isAddress(raw)) {
-                    cachedAddress = raw;
+
+        const hasCode = async (address: string): Promise<boolean> => {
+            if (!ethers.isAddress(address)) return false;
+            const code = await this.provider.getCode(address);
+            return Boolean(code) && code !== "0x";
+        };
+
+        // The dispute/verification facets are stateless and identical for
+        // every configuration, so one deployment per node serves every test:
+        // the marker cache deploys them once and later tests reuse them.
+        const facetResolution = await resolveOrDeployShared({
+            cacheDir,
+            markerName: "scm-facets.json",
+            validate: async (stored) => {
+                try {
+                    const parsed = JSON.parse(stored) as unknown;
+                    if (!Array.isArray(parsed) || parsed.length === 0) {
+                        return false;
+                    }
+                    const checks = await Promise.all(
+                        parsed.map((address) => hasCode(String(address)))
+                    );
+                    return checks.every(Boolean);
+                } catch {
+                    return false;
                 }
-                // Malformed marker → ignore, deploy fresh (no throw).
-            } catch {
-                // File not present or unreadable → no candidate.
-            }
-        }
+            },
+            deploy: async () =>
+                JSON.stringify(await deployFacets(deployerSigner)),
+            logger: this.logger
+        });
+        const facetAddresses = JSON.parse(facetResolution.value) as string[];
 
-        // A takes precedence over B.
-        const candidateAddress = explicitAddress || cachedAddress;
-        const candidateSource = explicitAddress ? "explicit env" : "cache";
-
-        let channelManagerAddress: string;
-        if (candidateAddress) {
-            const code = await this.provider.getCode(candidateAddress);
-            if (code && code !== "0x") {
-                channelManagerAddress = candidateAddress;
-                this.logger.debug(
-                    `Reusing deployed StateChannelManager at ${channelManagerAddress} (${candidateSource})`
-                );
-            } else {
-                // Node is fresh — candidate address is stale, deploy anew.
-                channelManagerAddress = await deployment.deployOnChainContracts(
+        const scmResolution = await resolveOrDeployShared({
+            cacheDir,
+            markerName: `${deployKey}.addr`,
+            validate: hasCode,
+            deploy: async () => {
+                const deployedAddress = await deployment.deployOnChainContracts(
                     {
                         signer: deployerSigner,
                         stateMachineGasLimit:
@@ -495,37 +499,22 @@ export class PeerTestHarness<
                         disputeExecutionGasLimit:
                             this.options.disputeExecutionGasLimit!,
                         timeConfig: this.options.timeConfig as TimeConfig,
-                        harnessConfig: this.harnessConfig
+                        harnessConfig: this.harnessConfig,
+                        facetAddresses
                     }
                 );
                 this.logger.debug(
-                    `Deployed StateChannelManager at ${channelManagerAddress}`
+                    `Deployed StateChannelManager at ${deployedAddress}`
                 );
-            }
-        } else {
-            channelManagerAddress = await deployment.deployOnChainContracts({
-                signer: deployerSigner,
-                stateMachineGasLimit: this.options.stateMachineGasLimit!,
-                disputeExecutionGasLimit:
-                    this.options.disputeExecutionGasLimit!,
-                timeConfig: this.options.timeConfig as TimeConfig,
-                harnessConfig: this.harnessConfig
-            });
+                return deployedAddress;
+            },
+            logger: this.logger
+        });
+        const channelManagerAddress = scmResolution.value;
+        if (scmResolution.source === "cache") {
             this.logger.debug(
-                `Deployed StateChannelManager at ${channelManagerAddress}`
+                `Reusing deployed StateChannelManager at ${channelManagerAddress} (cache)`
             );
-        }
-
-        // Write marker so subsequent tests on the same slot node can reuse.
-        if (cacheDir && markerPath) {
-            try {
-                fs.mkdirSync(cacheDir, { recursive: true });
-                fs.writeFileSync(markerPath, channelManagerAddress);
-            } catch (err) {
-                this.logger.debug(
-                    `Failed to write manager cache marker (non-fatal): ${err}`
-                );
-            }
         }
 
         // Wrap like the SDK wraps its own contracts: converts ethers `Result`s

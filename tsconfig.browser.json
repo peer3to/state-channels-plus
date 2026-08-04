@@ -23,6 +23,7 @@
             "@platform/LocalDiscoveryServer": [
                 "src/utils/browser/LocalDiscoveryServer"
             ],
+            "@platform/evmJumpdestCache": ["src/evm/browser/evmJumpdestCache"],
             "@platform/moduleLoader": [
                 "src/utils/moduleLoader/browser/importModuleFromManifest"
             ],
