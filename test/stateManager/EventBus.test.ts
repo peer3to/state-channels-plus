@@ -3,6 +3,7 @@ import { expect } from "chai";
 import { MathTestSession as TestSession } from "@test/harness";
 import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { randomAddress } from "@test/factory";
 
 /**
  * The unified event bus, end to end through the real runtime.
@@ -29,8 +30,7 @@ describe("EventBus (worker + main thread)", function () {
         const peer = h.getPeer(0);
 
         // Register worker-side listeners, then produce one real block from the
-        // client. The promise resolves shortly after the first onTurn dispatch
-        // so repeated signals from the same block are counted too.
+        // client. Resolve after both real hooks have fired.
         const pending = h.execOnHost(
             peer,
             (sm) =>
@@ -52,6 +52,28 @@ describe("EventBus (worker + main thread)", function () {
                     let blockFinalizedCount = 0;
                     let turnWriter = "";
                     let turnAgreementTime = 0;
+                    let resolveScheduled = false;
+                    const maybeResolve = () => {
+                        if (
+                            resolveScheduled ||
+                            firstListenerTurnCount === 0 ||
+                            secondListenerTurnCount === 0 ||
+                            blockFinalizedCount === 0
+                        ) {
+                            return;
+                        }
+                        resolveScheduled = true;
+                        queueMicrotask(() =>
+                            resolve({
+                                firstListenerTurnCount,
+                                secondListenerTurnCount,
+                                unsubscribedListenerTurnCount,
+                                blockFinalizedCount,
+                                turnWriter,
+                                turnAgreementTime
+                            })
+                        );
+                    };
 
                     // A throwing listener must be isolated: the two healthy
                     // listeners below still receive every signal.
@@ -69,21 +91,11 @@ describe("EventBus (worker + main thread)", function () {
                     );
                     sm.events.on("p2pEventHooks", "onBlockFinalized", () => {
                         blockFinalizedCount += 1;
+                        maybeResolve();
                     });
                     sm.events.on("p2pEventHooks", "onTurn", () => {
                         secondListenerTurnCount += 1;
-                        setTimeout(
-                            () =>
-                                resolve({
-                                    firstListenerTurnCount,
-                                    secondListenerTurnCount,
-                                    unsubscribedListenerTurnCount,
-                                    blockFinalizedCount,
-                                    turnWriter,
-                                    turnAgreementTime
-                                }),
-                            300
-                        );
+                        maybeResolve();
                     });
                     const unsubscribe = sm.events.on(
                         "p2pEventHooks",
@@ -175,6 +187,7 @@ describe("EventBus (worker + main thread)", function () {
                         let unsubscribedEventCount = 0;
                         let typedAdditionB = -1;
                         let detachedDeliveryCount = 0;
+                        let resolveScheduled = false;
 
                         // The consumer story: build your own typed instance from
                         // the diamond address + ABI + the p2p signer, then attach.
@@ -189,6 +202,36 @@ describe("EventBus (worker + main thread)", function () {
                             sm.p2pManager.p2pSigner
                         );
                         attachContractEvents(contract, sm.events);
+                        const maybeResolve = () => {
+                            if (
+                                resolveScheduled ||
+                                additionArgCount === 0 ||
+                                rosterParticipantCount < 0 ||
+                                typedAdditionB < 0
+                            ) {
+                                return;
+                            }
+                            resolveScheduled = true;
+                            // Typed ethers delivery is async. One event-loop
+                            // turn lets sibling mirror dispatches drain.
+                            setImmediate(() => {
+                                contract
+                                    .getFunction("getSum")()
+                                    .then((sum: bigint) =>
+                                        resolve({
+                                            additionArgCount,
+                                            rosterParticipantCount,
+                                            rosterIsPlainArray,
+                                            unsubscribedEventCount,
+                                            typedAdditionB,
+                                            detachedDeliveryCount,
+                                            contractReadSum: Number(sum),
+                                            rawProviderSubscriptionCount
+                                        })
+                                    )
+                                    .catch(reject);
+                            });
+                        };
                         // A second attachment detached immediately: its listener
                         // must never fire (independent detach).
                         const detachProbe = new ethers.Contract(
@@ -215,6 +258,7 @@ describe("EventBus (worker + main thread)", function () {
                             contract.filters.Addition(),
                             (_a: bigint, b: bigint) => {
                                 typedAdditionB = Number(b);
+                                maybeResolve();
                             }
                         );
 
@@ -231,6 +275,7 @@ describe("EventBus (worker + main thread)", function () {
                                 rosterIsPlainArray =
                                     Array.isArray(participants) &&
                                     participants.constructor === Array;
+                                maybeResolve();
                             }
                         );
                         sm.events.on(
@@ -238,26 +283,7 @@ describe("EventBus (worker + main thread)", function () {
                             "Addition",
                             (...args: unknown[]) => {
                                 additionArgCount = args.length;
-                                // Delay so the async ethers re-emit lands, then
-                                // read through the typed instance (local EVM call
-                                // via the p2p signer).
-                                setTimeout(() => {
-                                    contract
-                                        .getFunction("getSum")()
-                                        .then((sum: bigint) =>
-                                            resolve({
-                                                additionArgCount,
-                                                rosterParticipantCount,
-                                                rosterIsPlainArray,
-                                                unsubscribedEventCount,
-                                                typedAdditionB,
-                                                detachedDeliveryCount,
-                                                contractReadSum: Number(sum),
-                                                rawProviderSubscriptionCount
-                                            })
-                                        )
-                                        .catch(reject);
-                                }, 300);
+                                maybeResolve();
                             }
                         );
                         const unsubscribe = sm.events.on(
@@ -370,9 +396,8 @@ describe("EventBus (worker + main thread)", function () {
                         "onStateSnapshotUpdated",
                         () => {
                             workerDeliveryCount += 1;
-                            setTimeout(
-                                () => resolve({ workerDeliveryCount }),
-                                300
+                            queueMicrotask(() =>
+                                resolve({ workerDeliveryCount })
                             );
                         }
                     );
@@ -425,13 +450,11 @@ describe("EventBus (worker + main thread)", function () {
                     });
                     sm.events.on("p2pEventHooks", "onTurn", () => {
                         busTurnCount += 1;
-                        setTimeout(
-                            () =>
-                                resolve({
-                                    replacementTurnCount,
-                                    busTurnCount
-                                }),
-                            300
+                        queueMicrotask(() =>
+                            resolve({
+                                replacementTurnCount,
+                                busTurnCount
+                            })
                         );
                     });
                 }),
@@ -454,15 +477,26 @@ describe("EventBus (worker + main thread)", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
         const peer = h.getPeer(0);
+        const fenceAddress = randomAddress();
 
-        let mainDeliveries = 0;
-        peer.p2pInstance.events.on("p2pEventHooks", "onConnection", () => {
-            mainDeliveries += 1;
+        // Addresses delivered to the main-thread onConnection listener.
+        const deliveredAddresses: unknown[] = [];
+        const fenceArrived = new Promise<void>((resolve) => {
+            peer.p2pInstance.events.on(
+                "p2pEventHooks",
+                "onConnection",
+                (address) => {
+                    deliveredAddresses.push(address);
+                    if (address === fenceAddress) {
+                        resolve();
+                    }
+                }
+            );
         });
 
         const result = await h.execOnHost(
             peer,
-            (sm) =>
+            (sm, args) =>
                 new Promise<{
                     workerDeliveries: number;
                     producerError: string;
@@ -486,20 +520,23 @@ describe("EventBus (worker + main thread)", function () {
                                 ? error.message
                                 : String(error);
                     }
-                    setTimeout(
-                        () => resolve({ workerDeliveries, producerError }),
-                        300
+                    // A successful post through the same producer is a FIFO
+                    // fence for every earlier worker post.
+                    sm.p2pEventHooks.onConnection?.(
+                        args.fenceAddress as never,
+                        true
                     );
+                    resolve({ workerDeliveries, producerError });
                 }),
-            {},
+            { fenceAddress },
             { timeoutMs: 30000 }
         );
 
-        expect(result.workerDeliveries).to.equal(1);
+        expect(result.workerDeliveries).to.equal(2);
         expect(result.producerError.length).to.be.greaterThan(0);
-        // The event never crossed the port.
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        expect(mainDeliveries).to.equal(0);
+        await fenceArrived;
+        // Only the cloneable fence crossed the port.
+        expect(deliveredAddresses).to.deep.equal([fenceAddress]);
     });
 
     it("surfaces a clone error to the real wrapped event-handler producer after the original and local delivery ran", async function () {
@@ -507,17 +544,23 @@ describe("EventBus (worker + main thread)", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
         const peer = h.getPeer(0);
+        const fenceAddress = randomAddress();
 
-        // Count main-thread deliveries from here on: exactly ONE is expected
-        // (the real snapshot event); the failed redelivery must add none.
+        // The real snapshot and the later fence must arrive. The failed
+        // redelivery must add nothing between them.
         let mainDeliveries = 0;
-        peer.p2pInstance.events.on(
-            "eventHandler",
-            "onStateSnapshotUpdated",
-            () => {
-                mainDeliveries += 1;
-            }
-        );
+        const fenceArrived = new Promise<void>((resolve) => {
+            peer.p2pInstance.events.on(
+                "eventHandler",
+                "onStateSnapshotUpdated",
+                (...eventArgs: unknown[]) => {
+                    mainDeliveries += 1;
+                    if (eventArgs[eventArgs.length - 1] === fenceAddress) {
+                        resolve();
+                    }
+                }
+            );
+        });
 
         // One worker exec captures the REAL event args (they contain BigInts
         // and stay in the worker realm), then redelivers through the REAL
@@ -526,7 +569,7 @@ describe("EventBus (worker + main thread)", function () {
         // the bridge clone failure surfaces to the caller.
         const pending = h.execOnHost(
             peer,
-            (sm) =>
+            (sm, args) =>
                 new Promise<{
                     workerDeliveries: number;
                     producerError: string;
@@ -574,7 +617,7 @@ describe("EventBus (worker + main thread)", function () {
                             redelivered = true;
                             // Redeliver asynchronously so this dispatch
                             // finishes first.
-                            setTimeout(() => {
+                            queueMicrotask(() => {
                                 void (async () => {
                                     originalProcessSnapshot =
                                         handlerInternals.processStateSnapshotUpdated;
@@ -610,17 +653,26 @@ describe("EventBus (worker + main thread)", function () {
                                     } finally {
                                         restoreProbe();
                                     }
+                                    // This cloneable call through the same
+                                    // producer is a FIFO fence for the failed
+                                    // redelivery.
+                                    await (
+                                        sm.eventHandler
+                                            .onStateSnapshotUpdated as (
+                                            ...handlerArgs: unknown[]
+                                        ) => Promise<void>
+                                    )(...eventArgs, args.fenceAddress);
                                     resolve({
                                         workerDeliveries,
                                         producerError,
                                         originalRanBeforeLocalDelivery
                                     });
                                 })();
-                            }, 100);
+                            });
                         }
                     );
                 }),
-            {},
+            { fenceAddress },
             { timeoutMs: 60000 }
         );
 
@@ -629,18 +681,18 @@ describe("EventBus (worker + main thread)", function () {
         await h.transition.postSnapshot();
         const result = await pending;
 
-        // Two worker deliveries (the real event + the redelivery's local
-        // emit, which runs BEFORE the bridge), the clone failure surfaced to
+        // Three worker deliveries (the real event, the failed redelivery's
+        // local emit, and the fence), the clone failure surfaced to
         // the producer, and the probe on the handler's final
         // snapshot-processing step recorded the ORIGINAL resolving before the
         // local publication — this fails if emit() ever moves ahead of (or
         // between) the original's awaited steps.
-        expect(result.workerDeliveries).to.equal(2);
+        expect(result.workerDeliveries).to.equal(3);
         expect(result.originalRanBeforeLocalDelivery).to.equal(true);
         expect(result.producerError.length).to.be.greaterThan(0);
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        // Only the real event reached the main thread.
-        expect(mainDeliveries).to.equal(1);
+        await fenceArrived;
+        // Only the real event and the fence reached the main thread.
+        expect(mainDeliveries).to.equal(2);
     });
 
     it("delivers nothing to the client after runtime disposal", async function () {
