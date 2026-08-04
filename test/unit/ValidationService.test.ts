@@ -346,7 +346,7 @@ describe("Unit: ValidationService", function () {
                     ) as string,
                     {
                         senderAddress: supplier.address,
-                        invokeHook: "wrongGenesisDetected"
+                        hook: "wrongGenesisDetected"
                     }
                 )
                 .request();

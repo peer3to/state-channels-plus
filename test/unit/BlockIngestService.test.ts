@@ -328,7 +328,7 @@ describe("Unit: BlockIngestService", function () {
                 .request();
             const probe = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { pipeline: "full" })
+                .stub.runBlockIngest(encoded)
                 .request();
             const turnAfter = await h
                 .control(observer)
@@ -412,7 +412,7 @@ describe("Unit: BlockIngestService", function () {
 
             const probe = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { pipeline: "full" })
+                .stub.runBlockIngest(encoded)
                 .request();
 
             expect(probe.keepConnection).to.equal(false);
