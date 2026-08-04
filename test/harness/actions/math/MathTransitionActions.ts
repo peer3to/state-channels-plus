@@ -133,7 +133,9 @@ export class MathTransitionActions extends TransitionActions<
             leaverIndex,
             Status.SYNCED,
             {
-                timeoutMs: statusTimeoutMs ?? 15000,
+                timeoutMs:
+                    statusTimeoutMs ??
+                    this.harness.event.protocolEventTimeoutMs(),
                 timeoutMessage:
                     statusTimeoutMessage ??
                     "Exiting peer did not reach SYNCED after snapshot update"
@@ -153,7 +155,9 @@ export class MathTransitionActions extends TransitionActions<
             leaverIndex,
             Status.SYNCED,
             {
-                timeoutMs: statusTimeoutMs ?? 15000,
+                timeoutMs:
+                    statusTimeoutMs ??
+                    this.harness.event.protocolEventTimeoutMs(),
                 timeoutMessage:
                     statusTimeoutMessage ??
                     "Exiting peer did not reach SYNCED after snapshot update"

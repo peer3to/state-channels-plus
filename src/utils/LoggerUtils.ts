@@ -12,6 +12,8 @@ import {
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { Codec, Type } from "./Codec";
+import { isEthersResult } from "./EthersResultProxy";
+import type { CustomEvmError } from "./evmErrorHandler";
 import { hash } from "./hash";
 import { difference } from "./set";
 import { Address, BlockOrSnapshot, Bytes, Hash } from "@/types/types";
@@ -32,7 +34,7 @@ import {
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import Clock from "@/Clock";
-import { TimeConfig } from "@/types";
+import { ReduceData, TimeConfig } from "@/types";
 import type Rpc from "@/rpc/Rpc";
 import { ethers } from "ethers";
 
@@ -136,6 +138,28 @@ export class LoggerUtils {
                 : {}),
             functionSelector: encodedData.slice(0, 10),
             calldataBytes: ethers.dataLength(encodedData)
+        };
+    }
+
+    /**
+     * Log metadata for any decoded custom EVM error. The args of an
+     * `ErrorDescription` are an ethers `Result` whose field names come from the
+     * error's ABI, so every error describes itself at runtime and none of them
+     * needs a hand-written field list here. Unnamed solidity params have no key
+     * to convert to, so those come out positional.
+     */
+    static getCustomEvmErrorMetadata(
+        customError: CustomEvmError | null | undefined
+    ) {
+        if (!customError) return undefined;
+        const args = customError.errorDescription.args;
+        return {
+            errorName: customError.name,
+            args: isEthersResult(args)
+                ? Codec.convertEthersResultToObject<
+                      Record<string, unknown> | unknown[]
+                  >(args)
+                : args
         };
     }
 
@@ -486,6 +510,10 @@ export class LoggerUtils {
             blockHash: String(
                 hash(Codec.encode(messageBlock, Type.MessageBlock))
             ),
+            // `_verifyInboundMessageBlocks` walks the chain by comparing this
+            // against the running head, so it is the field that says where a
+            // linkage check actually broke.
+            previousBlockHash: String(messageBlock.previousBlockHash),
             blockHeight: Number(messageBlock.blockHeight),
             timestamp: Number(messageBlock.timestamp),
             messagesCount: messageBlock.messages.length,
@@ -520,6 +548,26 @@ export class LoggerUtils {
             this.MESSAGE_TYPE_LABELS[messageType] ??
             "UNKNOWN_MESSAGE_TYPE"
         );
+    }
+
+    /**
+     * The three inbound-chain values `_verifyInboundMessageBlocks` compares:
+     * where our submitted snapshot says the chain starts, where `reduce()` said
+     * it ends, and the blocks we supplied to bridge them.
+     */
+    static getReductionInboundMetadata(reduceData: ReduceData) {
+        return {
+            submittedSnapshotInboundHash: String(
+                reduceData.latestStateSnapshot.snapshotData
+                    .latestInboundMessageBlockHash
+            ),
+            computedTargetInboundHash: String(
+                reduceData.reducedOutput.latestInboundMessageBlockHash
+            ),
+            submittedInboundBlocks: reduceData.inboundMessageBlocks.map(
+                (messageBlock) => this.getMessageBlockMetadata(messageBlock)
+            )
+        };
     }
 
     static getReducedOutputMetadata(reducedOutput: ReduceOutputStruct) {

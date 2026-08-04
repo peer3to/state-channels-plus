@@ -28,7 +28,9 @@ export class AssertDisputeActions<
     }): Promise<void> {
         const {
             peersIndices,
-            timeoutMs = this.harness.event.protocolEventTimeoutMs(0),
+            timeoutMs = this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            }),
             initiatedWithAuditingData
         } = options || {};
 
@@ -89,7 +91,9 @@ export class AssertDisputeActions<
     }): Promise<void> {
         const {
             expectedCount = this.harness.getHonestPeers().length,
-            timeoutMs = this.harness.event.protocolEventTimeoutMs(0),
+            timeoutMs = this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            }),
             peersIndices,
             mode = "atLeast"
         } = options || {};
@@ -141,7 +145,9 @@ export class AssertDisputeActions<
                             )
                             .request()) !== null,
                     options.timeoutMs ??
-                        this.harness.event.protocolEventTimeoutMs(0),
+                        this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }),
                     50
                 )
             )

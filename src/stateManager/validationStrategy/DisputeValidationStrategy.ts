@@ -15,6 +15,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Logger } from "@/utils";
 import { LocalDiamond } from "@typechain-types";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export default class DisputeValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
@@ -38,6 +39,12 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             this.storage,
             this.logger
         );
+    }
+
+    // Dispute replay audits a fixed proof out of live order on the disputed
+    // fork, so it enforces neither live gate and skips the disputed-fork lookup.
+    public get enforcesLiveForkAndOrderingGates(): boolean {
+        return false;
     }
 
     private createDisputeInvalidBlockInStateProofApplyFraudProof(
@@ -257,6 +264,8 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     public async blockForkIsDisputed(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        // Guarded by enforcesLiveForkAndOrderingGates: dispute replay never
+        // reaches the disputed-fork gate (it audits the disputed fork itself).
         throw new Error(
             "DisputeValidationStrategy - blockForkIsDisputed should not be called"
         );
@@ -264,6 +273,8 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     public async blockIsNotNextAndIsInTheFuture(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
+        // Guarded by enforcesLiveForkAndOrderingGates: dispute replay never
+        // reaches the future-block gate (it walks a proof out of live order).
         throw new Error(
             "DisputeValidationStrategy - blockIsNotNextAndIsInTheFuture should not be called"
         );
@@ -272,6 +283,42 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         return this.handleInvalidBlockStructure();
+    }
+    public async prepareStateMachineForLeaderCheck(
+        entry: QueuedBlockEntry,
+        diamondStateMachine: ADiamondStateMachine
+    ): Promise<void> {
+        // Dispute replay is not positioned at the block's predecessor (it walks
+        // a proof out of live order), so load the previous snapshot's state
+        // before the leader check. A missing snapshot/state is a bug on this
+        // path, not a peer fault - fail loudly rather than mis-proving.
+        const block = entry.block;
+        const previousSnapshot = this.storage.getPreviousStateSnapshot(
+            block.coordinates
+        );
+        if (!previousSnapshot) {
+            this.logger.error(
+                "DISPUTE Strategy - prepareStateMachineForLeaderCheck - missing previous snapshot",
+                { blockHash: block.hash }
+            );
+            throw new Error(
+                "Missing previous snapshot for dispute validation strategy"
+            );
+        }
+        const previousState =
+            this.storage.stateMachineStates.getStateMachineState(
+                previousSnapshot.stateMachineStateHash
+            );
+        if (!previousState) {
+            this.logger.error(
+                "DISPUTE Strategy - prepareStateMachineForLeaderCheck - missing previous state machine state",
+                { blockHash: block.hash }
+            );
+            throw new Error(
+                "Missing previous state machine state for dispute validation strategy"
+            );
+        }
+        await diamondStateMachine.setState(previousState);
     }
     public async objectiveInvalidTimestampDetected(
         block: Block

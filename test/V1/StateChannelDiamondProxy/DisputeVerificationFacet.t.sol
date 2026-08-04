@@ -6,7 +6,12 @@ import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondP
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
 import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
+import {StateChannelCommon} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol";
 import {
+    ErrorDisputeInboundMessageBlocksInvalid,
+    INBOUND_FAILURE_FINAL_TARGET,
+    INBOUND_FAILURE_HASH_LINK,
+    INBOUND_FAILURE_HEIGHT_SEQUENCE,
     RaceConditionDisputeKillPeriodExpired,
     RaceConditionDisputeTimeoutWindowCreatedTooEarly
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
@@ -58,15 +63,31 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
     }
 }
 
+/// Exposes the internal inbound walk so its report can be asserted directly.
+contract InboundVerificationHarness is StateChannelCommon {
+    function verifyInboundMessageBlocks(
+        bytes32 previousInboundMessageBlockHash,
+        bytes32 latestInboundMessageBlockHash,
+        MessageBlock[] memory inboundMessageBlocks
+    ) external pure returns (bool, bytes32, uint256, uint8) {
+        return _verifyInboundMessageBlocks(
+            previousInboundMessageBlockHash, latestInboundMessageBlockHash, inboundMessageBlocks
+        );
+    }
+}
+
 // test naming: test_<targetFunction>_<property>
 contract DisputeVerificationFacetTest is DiamondHarness {
     StateChannelManagerProxy internal diamond;
+    InboundVerificationHarness internal verificationHarness;
 
     bytes32 internal constant CHANNEL_ID = keccak256("dv-channel");
     bytes32 internal constant FORK_ID = keccak256("dv-fork");
+    bytes32 internal constant SNAPSHOT_HEAD = keccak256("dv-inbound-head");
 
     function setUp() public {
         diamond = deployDiamond();
+        verificationHarness = new InboundVerificationHarness();
     }
 
     // reduce() must not OOB-panic when dispute.input.onChainSlashes.length exceeds
@@ -619,5 +640,146 @@ contract DisputeVerificationFacetTest is DiamondHarness {
             keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, inboundMessageBlocks
         );
         return abi.decode(encodedModifiedState, (MathState)).participants;
+    }
+
+    // ---- inbound message block walk ----
+
+    function test_verifyInboundMessageBlocks_linkedChainMatchingTarget_isValid() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
+        bytes32 target = _chainHead(blocks);
+
+        (bool isValid,,,) = verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, target, blocks);
+
+        assertTrue(isValid);
+    }
+
+    function test_verifyInboundMessageBlocks_firstBlockNotChainedToSnapshotHead_reportsHashLinkAtZero() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 2, 0);
+        blocks[0].previousBlockHash = keccak256("not the snapshot head");
+
+        (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+
+        assertFalse(isValid);
+        assertEq(breakIndex, 0);
+        assertEq(runningHash, SNAPSHOT_HEAD);
+        assertEq(reason, INBOUND_FAILURE_HASH_LINK);
+    }
+
+    function test_verifyInboundMessageBlocks_midChainLinkBroken_reportsHashLinkAtBreakIndex() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
+        bytes32 headBeforeBreak = keccak256(abi.encode(blocks[0]));
+        blocks[1].previousBlockHash = keccak256("wrong link");
+
+        (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+
+        assertFalse(isValid);
+        assertEq(breakIndex, 1);
+        assertEq(runningHash, headBeforeBreak);
+        assertEq(reason, INBOUND_FAILURE_HASH_LINK);
+    }
+
+    // the case the reason code exists for: hashes chain correctly, so a report
+    // without a reason looks like a consistent chain that broke for no visible
+    // cause. Only the height sequence is wrong.
+    function test_verifyInboundMessageBlocks_skippedHeight_reportsHeightSequenceWithIntactHashLink() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
+        bytes32 headBeforeBreak = keccak256(abi.encode(blocks[0]));
+        blocks[1].blockHeight = blocks[0].blockHeight + 2;
+
+        (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, _chainHead(blocks), blocks);
+
+        assertFalse(isValid);
+        assertEq(breakIndex, 1);
+        assertEq(reason, INBOUND_FAILURE_HEIGHT_SEQUENCE);
+        // the hash link at the break is intact - this is exactly what a bare
+        // (runningHash, breakIndex) report could not distinguish
+        assertEq(runningHash, headBeforeBreak);
+        assertEq(runningHash, blocks[1].previousBlockHash);
+    }
+
+    function test_verifyInboundMessageBlocks_allLinkedButWrongTarget_reportsFinalTargetAtBlockCount() public {
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 3, 0);
+        bytes32 computedHead = _chainHead(blocks);
+
+        (bool isValid, bytes32 runningHash, uint256 breakIndex, uint8 reason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, keccak256("some other target"), blocks);
+
+        assertFalse(isValid);
+        assertEq(breakIndex, blocks.length);
+        assertEq(runningHash, computedHead);
+        assertEq(reason, INBOUND_FAILURE_FINAL_TARGET);
+    }
+
+    function test_verifyInboundMessageBlocks_noBlocks_comparesSnapshotHeadAgainstTarget() public {
+        MessageBlock[] memory blocks = new MessageBlock[](0);
+
+        (bool matching,, uint256 matchingBreakIndex, uint8 matchingReason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, SNAPSHOT_HEAD, blocks);
+        (bool mismatched, bytes32 runningHash,, uint8 mismatchedReason) =
+            verificationHarness.verifyInboundMessageBlocks(SNAPSHOT_HEAD, keccak256("other"), blocks);
+
+        assertTrue(matching);
+        assertEq(matchingBreakIndex, blocks.length);
+        assertEq(matchingReason, INBOUND_FAILURE_FINAL_TARGET);
+        assertFalse(mismatched);
+        assertEq(runningHash, SNAPSHOT_HEAD);
+        assertEq(mismatchedReason, INBOUND_FAILURE_FINAL_TARGET);
+    }
+
+    // proves the walk's report actually reaches the revert payload callers decode
+    function test_reduceOutputToSnapshotData_unlinkedInboundBlocks_revertsCarryingComparedHashes() public {
+        MathState memory state;
+        state.participants = _participants();
+        state.balances = new uint256[](state.participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+
+        MessageBlock[] memory blocks = _linkedInboundBlocks(SNAPSHOT_HEAD, 2, 0);
+        blocks[0].previousBlockHash = keccak256("not the snapshot head");
+
+        ReduceOutput memory reducedOutput;
+        reducedOutput.latestInboundMessageBlockHash = keccak256("target");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeInboundMessageBlocksInvalid.selector,
+                SNAPSHOT_HEAD,
+                reducedOutput.latestInboundMessageBlockHash,
+                SNAPSHOT_HEAD,
+                uint256(0),
+                uint256(blocks.length),
+                INBOUND_FAILURE_HASH_LINK
+            )
+        );
+        diamond.reduceOutputToSnapshotData(
+            keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, blocks
+        );
+    }
+
+    /// `count` blocks each chained to the previous, heights ascending from
+    /// `firstHeight`, the first anchored to `startHash`.
+    function _linkedInboundBlocks(bytes32 startHash, uint256 count, uint256 firstHeight)
+        internal
+        pure
+        returns (MessageBlock[] memory blocks)
+    {
+        blocks = new MessageBlock[](count);
+        bytes32 runningHash = startHash;
+        for (uint256 i = 0; i < count; i++) {
+            blocks[i].previousBlockHash = runningHash;
+            blocks[i].blockHeight = firstHeight + i;
+            blocks[i].timestamp = 1000 + i;
+            runningHash = keccak256(abi.encode(blocks[i]));
+        }
+    }
+
+    function _chainHead(MessageBlock[] memory blocks) internal pure returns (bytes32 head) {
+        head = blocks.length == 0 ? bytes32(0) : keccak256(abi.encode(blocks[blocks.length - 1]));
     }
 }

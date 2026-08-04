@@ -17,7 +17,10 @@ export function decodeLogs(encodedLogs: string): LogEntry[] {
 // throwing getter (must not escape the crash handler that is trying to log it)
 // or a getter that returns a non-string - e.g. the secret-bearing error itself -
 // which must not slip a raw object into the "safe" record.
-function readErrorField(error: Error, key: "name" | "message" | "stack"): string {
+function readErrorField(
+    error: Error,
+    key: "name" | "message" | "stack"
+): string {
     try {
         const value = error[key];
         if (value === undefined || value === null) return "";

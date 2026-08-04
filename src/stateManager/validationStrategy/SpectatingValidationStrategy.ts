@@ -7,12 +7,16 @@ import {
 import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import {
+    sourcePeersAndAuthor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
 import type BlockQueueManager from "../BlockQueueManager";
 import { Logger } from "@/utils";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export default class SpectatingValidationStrategy extends AValidationStrategy {
     private readonly fraudProofService: FraudProofService;
@@ -29,6 +33,9 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
             this.storage,
             this.logger
         );
+    }
+    public get enforcesLiveForkAndOrderingGates(): boolean {
+        return true;
     }
     public async interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
@@ -124,9 +131,9 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         // Non-participant author: authentication passed (they signed with their
         // own key) but they are not in the channel. Drop + blacklist the sender,
         // keep spectating - this is the DoS vector, never an abort.
-        const culprits = new Set(entry.sourcePeers);
-        culprits.add(entry.block.author);
-        this.p2pManager.disconnectAndBlacklistPeers(culprits);
+        this.p2pManager.disconnectAndBlacklistPeers(
+            sourcePeersAndAuthor(entry)
+        );
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
@@ -155,9 +162,9 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
             // No genesis snapshot means no fraud proof to build - nothing is
             // proven against a participant, so cut the suppliers and the author
             // and keep spectating rather than abort.
-            const culprits = new Set(entry.sourcePeers);
-            culprits.add(block.author);
-            this.p2pManager.disconnectAndBlacklistPeers(culprits);
+            this.p2pManager.disconnectAndBlacklistPeers(
+                sourcePeersAndAuthor(entry)
+            );
             return BlockValidationResult.DISCONNECT;
         }
         this.abort();
@@ -198,6 +205,13 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         // Malformed linkage, not a provable fraud proof - drop the sender
         this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
+    }
+    public async prepareStateMachineForLeaderCheck(
+        _entry: QueuedBlockEntry,
+        _diamondStateMachine: ADiamondStateMachine
+    ): Promise<void> {
+        // Spectate sync applies blocks in order, so the state machine already
+        // holds the predecessor state - no repositioning is needed.
     }
     public async objectiveInvalidTimestampDetected(
         _block: Block

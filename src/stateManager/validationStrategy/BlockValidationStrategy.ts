@@ -7,13 +7,17 @@ import {
 import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import {
+    sourcePeersAndAuthor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
 import type BlockQueueManager from "../BlockQueueManager";
 import DisputeManager from "@/disputeManager";
 import { Logger } from "@/utils";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
@@ -31,6 +35,9 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             this.storage,
             this.logger
         );
+    }
+    public get enforcesLiveForkAndOrderingGates(): boolean {
+        return true;
     }
     public async interpretFinalValidationResult(
         blockValidationResult: BlockValidationResult
@@ -121,9 +128,9 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async blockAuthorIsNotParticipant(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        const culprits = new Set(entry.sourcePeers);
-        culprits.add(entry.block.author);
-        this.p2pManager.disconnectAndBlacklistPeers(culprits);
+        this.p2pManager.disconnectAndBlacklistPeers(
+            sourcePeersAndAuthor(entry)
+        );
         return BlockValidationResult.DISCONNECT;
     }
     public async doubleSignDetected(
@@ -162,12 +169,13 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             // unknown-fork blocks out of validation entirely. No genesis
             // snapshot means no fraud proof to build and no dispute to raise
             // — cut the suppliers instead.
+            const culprits = sourcePeersAndAuthor(entry);
             this.logger.warn(
                 "Missing genesis reached validation despite fork gate - blacklisting sources and author",
                 {
                     blockAuthor: block.author,
                     blockForkId: block.forkId,
-                    sourcePeers: Array.from(entry.sourcePeers)
+                    culprits: Array.from(culprits)
                 }
             );
             // Cut the transport suppliers AND the signer: the author put its
@@ -176,8 +184,6 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             // unknown-fork blocks out of validation); an honest first block on
             // a not-yet-known fork is queued + timeout-synced, never reaching
             // here - covered by the no-false-positive e2e.
-            const culprits = new Set(entry.sourcePeers);
-            culprits.add(block.author);
             this.p2pManager.disconnectAndBlacklistPeers(culprits);
             return BlockValidationResult.DISCONNECT;
         }
@@ -256,6 +262,13 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         // Malformed linkage, not a provable fraud proof - drop the sender.
         this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
         return BlockValidationResult.DISCONNECT;
+    }
+    public async prepareStateMachineForLeaderCheck(
+        _entry: QueuedBlockEntry,
+        _diamondStateMachine: ADiamondStateMachine
+    ): Promise<void> {
+        // Live pipeline: the state machine already holds the predecessor state
+        // (blocks execute in order), so no repositioning is needed.
     }
     public async objectiveInvalidTimestampDetected(
         block: Block

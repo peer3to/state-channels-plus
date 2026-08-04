@@ -7,6 +7,7 @@ import { StateSnapshot } from "@/models";
 import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
 import {
+    type CustomEvmError,
     type RaceConditionErrorHandlers,
     type RaceConditionErrorName,
     tryDecodeCustomError,
@@ -32,6 +33,10 @@ type LocalReductionCandidate = ReductionComputation & {
 
 type ReductionCacheKey = string;
 type ReductionSubmissionStatus = "submit" | "already-reduced" | "superseded";
+// Which call site is reporting the failure. "simulation" has installed nothing
+// yet; "detached" already installed the candidate before submitting.
+type ReductionSubmissionPath = "simulation" | "detached";
+
 const REDUCTION_RACE_ERRORS = [
     "RaceConditionDisputeAlreadyReduced",
     "RaceConditionBlockHeightTooOld",
@@ -189,24 +194,17 @@ export default class ReductionExecutor {
         const submission = await this.prepareSubmission(candidate);
         const submissionStatus = await this.simulateSubmission(
             forkId,
-            disputes,
+            candidate,
             submission
         );
         if (submissionStatus === "superseded") return;
 
-        await this.complete(
-            forkId,
-            candidate,
-            disputes,
-            submission,
-            submissionStatus
-        );
+        await this.complete(forkId, candidate, submission, submissionStatus);
     }
 
     private async complete(
         forkId: ForkId,
         candidate: LocalReductionCandidate,
-        disputes: DisputeStruct[],
         submission: { calldata: string[] },
         submissionStatus: ReductionSubmissionStatus
     ): Promise<void> {
@@ -222,7 +220,7 @@ export default class ReductionExecutor {
                 }
             );
         if (installed && submissionStatus === "submit") {
-            this.submitDetached(forkId, disputes, submission);
+            this.submitDetached(forkId, candidate, submission);
         }
     }
 
@@ -274,9 +272,10 @@ export default class ReductionExecutor {
                 genesisTimestamp
             };
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
             this.logger.error("Error computing reduced snapshot data", {
-                custom,
+                customError: LoggerUtils.getCustomEvmErrorMetadata(
+                    tryDecodeCustomError(error)
+                ),
                 error: error instanceof Error ? error.message : String(error)
             });
             throw error;
@@ -307,7 +306,7 @@ export default class ReductionExecutor {
 
     private async simulateSubmission(
         forkId: ForkId,
-        disputes: DisputeStruct[],
+        candidate: LocalReductionCandidate,
         submission: { calldata: string[] }
     ): Promise<ReductionSubmissionStatus> {
         try {
@@ -316,20 +315,26 @@ export default class ReductionExecutor {
             );
             return "submit";
         } catch (error) {
-            const custom = tryDecodeCustomError(error);
+            const customError = tryDecodeCustomError(error);
             const status = await this.classifyReductionRace(
-                custom?.name,
+                customError?.name,
                 forkId,
-                disputes
+                candidate.disputes
             );
             if (status) return status;
-            throw custom ?? error;
+            this.logUnclassifiedSubmissionFailure(
+                customError,
+                forkId,
+                candidate,
+                "simulation"
+            );
+            throw customError ?? error;
         }
     }
 
     private submitDetached(
         forkId: ForkId,
-        disputes: DisputeStruct[],
+        candidate: LocalReductionCandidate,
         submission: { calldata: string[] }
     ): void {
         this.logger.info("Reduction transaction submit", {
@@ -368,13 +373,44 @@ export default class ReductionExecutor {
                     const status = await this.classifyReductionRace(
                         raceErrorName,
                         forkId,
-                        disputes
+                        candidate.disputes
                     );
                     if (status) return;
                 }
-                throw tryDecodeCustomError(error) ?? error;
+                const customError = tryDecodeCustomError(error);
+                this.logUnclassifiedSubmissionFailure(
+                    customError,
+                    forkId,
+                    candidate,
+                    "detached"
+                );
+                throw customError ?? error;
             });
         DetachedPromises.collect(transaction);
+    }
+
+    /**
+     * A reduction submission failed with something we do not classify as a
+     * race, so it is about to be rethrown. Record what the failing call
+     * carried before it goes: whatever the revert itself reported, next to the
+     * inbound chain this candidate submitted.
+     */
+    private logUnclassifiedSubmissionFailure(
+        customError: CustomEvmError | null,
+        forkId: ForkId,
+        candidate: LocalReductionCandidate,
+        submissionPath: ReductionSubmissionPath
+    ): void {
+        this.logger.warn("Reduction submission failed unclassified", {
+            customError: LoggerUtils.getCustomEvmErrorMetadata(customError),
+            forkId,
+            candidateForkId: candidate.reducedForkId,
+            channelId: this.stateManager.channelId,
+            submissionPath,
+            inboundChain: LoggerUtils.getReductionInboundMetadata(
+                candidate.reduceData
+            )
+        });
     }
 
     private async classifyReductionRace(
