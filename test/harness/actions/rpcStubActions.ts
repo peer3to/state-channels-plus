@@ -1,5 +1,6 @@
 import { Logger } from "@/utils";
 import type { ForkId } from "@/types/types";
+import type { Status } from "@/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
@@ -508,6 +509,57 @@ export class RpcStubActions<
                 .stub.restoreSpectateSync()
                 .request();
         };
+    }
+
+    /**
+     * Stop a peer running the participant-timeout check, so staging is not cut
+     * short by a real timeout dispute. Returns a teardown.
+     */
+    async suppressTimeoutCheck(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubSuppressTimeoutCheck()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreSuppressTimeoutCheck()
+                .request();
+        };
+    }
+
+    /**
+     * Record every scheduled task's label and delay on a peer; tasks matching
+     * `suppressPrefix` are recorded without running.
+     */
+    async recordScheduledTasks(
+        peerIndex: number,
+        options: { suppressPrefix?: string } = {}
+    ): Promise<{
+        tasks: () => Promise<{ taskName: string; delayMs: number }[]>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubRecordScheduledTasks(options.suppressPrefix).request();
+        return {
+            tasks: async () =>
+                (await ctl().getRecordedScheduledTasks().request()).tasks,
+            restore: async () => {
+                await ctl().restoreRecordScheduledTasks().request();
+            }
+        };
+    }
+
+    /** Staging: force a peer's session status (fault injection). */
+    async setPeerStatus(peerIndex: number, status: Status): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.setPeerStatus(status)
+            .request();
     }
 
     async spectateSyncCallCount(peerIndex: number): Promise<number> {

@@ -14,7 +14,7 @@ import {
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
 import type P2PManager from "@/P2PManager";
-import type BlockQueueManager from "../BlockQueueManager";
+import type BlockQueueManager from "../ingest/BlockQueueManager";
 import DisputeManager from "@/disputeManager";
 import { Logger } from "@/utils";
 import type ADiamondStateMachine from "@/ADiamondStateMachine";
