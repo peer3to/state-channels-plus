@@ -21,7 +21,6 @@ const REPS = Number(process.env.REPS ?? "1");
 describe("E2E: Fuzz - dispute soundness under randomized state evolution", function () {
     for (let rep = 1; rep <= REPS; rep++) {
         it(`rep ${rep}/${REPS}: survivors stay in sync; every attack is contained without honest loss`, async function () {
-            this.timeout(1200000);
             const h = TestSession.getHarness();
 
             const rng = SeededRng.fromEnv();

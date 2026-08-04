@@ -8,7 +8,6 @@ import { MathTestSession as TestSession } from "@test/harness";
 
 describe("JoinChannel signature requests", function () {
     it("validates requests, signs exact joins, and fails fast when a threshold transport is missing", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 1);
         const joiner = await h.join.addSpectatorWait();

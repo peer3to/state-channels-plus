@@ -3,7 +3,6 @@ import { MathTestSession as TestSession } from "@test/harness";
 
 describe("ReductionManager", function () {
     it("returns undefined without retaining an operation for a non-disputed fork", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
         const result = await h.execOnHost(
@@ -25,7 +24,6 @@ describe("ReductionManager", function () {
     });
 
     it("keeps future timer state independent from reduction completion", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
         const hasOperation = await h
@@ -40,7 +38,6 @@ describe("ReductionManager", function () {
     });
 
     it("reuses one resolved outcome for duplicate terminal triggers", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
@@ -86,7 +83,6 @@ describe("ReductionManager", function () {
     });
 
     it("checks the dispute status before starting reduction", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
@@ -133,7 +129,6 @@ describe("ReductionManager", function () {
     });
 
     it("serializes concurrent ordinary reduction attempts", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,

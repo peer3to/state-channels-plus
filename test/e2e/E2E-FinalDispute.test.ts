@@ -5,7 +5,6 @@ import { Status } from "@/types";
 
 describe("E2E: final dispute resolution", function () {
     it("threshold-final dispute installs its exact output and can post the next snapshot", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
@@ -77,7 +76,6 @@ describe("E2E: final dispute resolution", function () {
     });
 
     it("threshold-final dispute makes a queued reduction timeout a no-op", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         const targetPeerIndex = 0;
         await h.scenario.preDisputeSetup({
@@ -138,7 +136,6 @@ describe("E2E: final dispute resolution", function () {
     });
 
     it("duplicate completion is idempotent", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         const targetPeerIndex = 0;
         await h.scenario.preDisputeSetup({
@@ -164,7 +161,6 @@ describe("E2E: final dispute resolution", function () {
     });
 
     it("missed final-dispute delivery recovers the exact final output during reduction", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         const targetPeerIndex = 2;
         await h.scenario.preDisputeSetup({
@@ -214,7 +210,6 @@ describe("E2E: final dispute resolution", function () {
     });
 
     it("failed final-dispute preparation propagates without abandoning participation", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         const targetPeerIndex = 0;
         await h.scenario.preDisputeSetup({

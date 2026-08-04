@@ -94,8 +94,6 @@ describe("E2E: State Snapshots", function () {
     });
 
     it("should not re-emit setState when a held old-fork reduction timeout runs after snapshot-event reduction", async function () {
-        this.timeout(90000);
-
         const h = TestSession.getHarness();
         const targetPeerIndex = 0;
         const maliciousPeerIndex = 2;
@@ -174,8 +172,6 @@ describe("E2E: State Snapshots", function () {
     });
 
     it("should not re-emit setState when a snapshot event joins an already-entered old-fork reduction", async function () {
-        this.timeout(90000);
-
         const h = TestSession.getHarness();
         const targetPeerIndex = 0;
         const maliciousPeerIndex = 2;

@@ -115,7 +115,6 @@ describe("E2E: p2pSetup runtime modes", function () {
     let nodeHandle: NodeHandle | undefined;
 
     before(async function () {
-        this.timeout(60_000);
         if (hardhatNodeUrl) {
             await waitForNode(hardhatNodeUrl);
         } else {
@@ -140,8 +139,6 @@ describe("E2E: p2pSetup runtime modes", function () {
         const vmLabel = combo.vmDedicatedThread ? "dedicated-vm" : "inline-vm";
 
         it(`connects and round-trips contract calls in ${modeLabel}/${vmLabel} mode`, async function () {
-            this.timeout(90_000);
-
             const p2pInstance = await setupP2pInstance(combo);
 
             try {
@@ -292,7 +289,6 @@ describe("E2E: p2pSetup runtime modes", function () {
     }
 
     it("generates a host-owned signer when no secret is supplied", async function () {
-        this.timeout(90_000);
         const p2pInstance = await setupP2pInstance({
             runSdkInThread: false,
             vmDedicatedThread: false,

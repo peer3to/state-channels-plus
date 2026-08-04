@@ -91,8 +91,6 @@ describe("E2E: Spectate stale-proof guard", function () {
     // weaken it. A participant requester (not a spectator) means the abort
     // blacklists the responder rather than node-aborting.
     it("blacklists the responder when a participant requests a target behind the on-chain snapshot", async function () {
-        this.timeout(90000);
-
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0, {
             timeConfig: {

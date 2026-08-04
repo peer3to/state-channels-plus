@@ -17,7 +17,6 @@ describe("E2E: ReductionManager", function () {
         const targetPeerIndex = 0;
 
         beforeEach(async function () {
-            this.timeout(90000);
             h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
                 peerCount: 4,
@@ -112,7 +111,6 @@ describe("E2E: ReductionManager", function () {
     });
 
     it("an empty dispute set posts replacement evidence and resumes the same reduction", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,

@@ -4,7 +4,6 @@ import { MathTestSession as TestSession } from "@test/harness";
 
 describe("SnapshotUpdateService", function () {
     it("returns an admissible no-op when the on-chain fork is not disputed", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
 
@@ -26,7 +25,6 @@ describe("SnapshotUpdateService", function () {
     });
 
     it("submits a prepared snapshot", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
         await h.transition.advanceState();
@@ -49,7 +47,6 @@ describe("SnapshotUpdateService", function () {
     });
 
     it("blocks fork calldata while the current dispute has no final reduced result", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
@@ -91,7 +88,6 @@ describe("SnapshotUpdateService", function () {
     });
 
     it("blocks same-fork calldata when its snapshot has not consumed the on-chain inbound head", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         const { joiner, confirmation, expectedSnapshotHash, expectedForkId } =
             await h.scenario.syncSpectatorAndPrepareJoin();
@@ -135,7 +131,6 @@ describe("SnapshotUpdateService", function () {
     });
 
     it("walks two finalized dispute windows and prepares one terminal fork update", async function () {
-        this.timeout(120000);
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,

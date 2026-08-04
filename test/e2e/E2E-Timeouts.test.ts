@@ -12,7 +12,6 @@ import { MathTestSession as TestSession } from "@test/harness";
 describe("E2E: Timeouts", function () {
     describe("Basic Timeout Scenarios", function () {
         it("should handle timeout when next peer to write does not author a block", async function () {
-            this.timeout(90000);
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 2);
 

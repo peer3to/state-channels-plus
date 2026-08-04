@@ -5,7 +5,6 @@ import { MathTestSession as TestSession } from "@test/harness";
 
 describe("StateManager abort", function () {
     it("cancels session-owned timeout work", async function () {
-        this.timeout(90000);
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
 
