@@ -23,6 +23,7 @@ import type {
     RecordedFraudProofApply,
     ReductionSimulationErrorName,
     ConcurrentCalldataRecoveryProbe,
+    BlockCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
     DisputeStrategyResultMatrix,
     MissingParticipantSnapshotsProbe,
@@ -657,6 +658,22 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
         return this.service.probeConcurrentCalldataRecovery();
+    }
+
+    public async probeBlockCalldataRecovery(
+        forkId: ForkId,
+        blockHeight: number,
+        blockAuthor: Address,
+        anchorTimestamp: Timestamp,
+        emptyLogScan: boolean
+    ): Promise<BlockCalldataRecoveryProbe> {
+        return this.service.probeBlockCalldataRecovery(
+            forkId,
+            blockHeight,
+            blockAuthor,
+            anchorTimestamp,
+            emptyLogScan
+        );
     }
 
     public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {

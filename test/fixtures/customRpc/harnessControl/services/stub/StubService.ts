@@ -166,6 +166,17 @@ export type ConcurrentCalldataRecoveryProbe = {
     retryFound: boolean;
 };
 
+export type BlockCalldataRecoveryProbe = {
+    /** The chain proved a commitment exists for the probed slot. */
+    commitmentFound: boolean;
+    /** The calldata itself was recovered (absent => retry, not "never posted"). */
+    calldataRecovered: boolean;
+    /** Chain block range the log scan was bounded to. */
+    fromBlock: number;
+    toBlock: number;
+    latestBlockNumber: number;
+};
+
 export type DisputeStrategyResultMatrix = Record<string, string>;
 
 export type CleanCommittedDivergenceProbe = {
@@ -576,18 +587,21 @@ export class StubService extends ARpcService<
             await held;
             return original(...parameters);
         }) as typeof contract.getBlockCallDataCommitment;
+        const anchorTimestamp = Clock.getTimeInSeconds();
         try {
             const first =
                 this.sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                     id("recovery-fork"),
                     1,
-                    this.sm.signerAddress
+                    this.sm.signerAddress,
+                    anchorTimestamp
                 );
             const second =
                 this.sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                     id("recovery-fork"),
                     1,
-                    this.sm.signerAddress
+                    this.sm.signerAddress,
+                    anchorTimestamp
                 );
             release?.();
             const [firstResult, secondResult] = await Promise.all([
@@ -598,7 +612,8 @@ export class StubService extends ARpcService<
                 await this.sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                     id("recovery-fork"),
                     1,
-                    this.sm.signerAddress
+                    this.sm.signerAddress,
+                    anchorTimestamp
                 );
             return {
                 queryCount,
@@ -608,6 +623,57 @@ export class StubService extends ARpcService<
             };
         } finally {
             contract.getBlockCallDataCommitment = original;
+        }
+    }
+
+    /**
+     * Drive the live calldata recovery for one slot and report both how it
+     * classified the slot and the chain block range its log scan was bounded to.
+     * `emptyLogScan` injects a scan that finds nothing while the on-chain
+     * commitment stays real - the "posted but not recovered" case.
+     */
+    public async probeBlockCalldataRecovery(
+        forkId: ForkId,
+        blockHeight: number,
+        blockAuthor: Address,
+        anchorTimestamp: Timestamp,
+        emptyLogScan: boolean
+    ): Promise<BlockCalldataRecoveryProbe> {
+        const contract = this.sm.stateChannelManagerContract;
+        const originalQueryFilter = contract.queryFilter.bind(contract);
+        let fromBlock: number | undefined;
+        let toBlock: number | undefined;
+        contract.queryFilter = (async (
+            ...parameters: Parameters<typeof originalQueryFilter>
+        ) => {
+            const [, scanFrom, scanTo] = parameters;
+            if (typeof scanFrom === "number") {
+                fromBlock = Math.min(fromBlock ?? scanFrom, scanFrom);
+            }
+            if (typeof scanTo === "number") {
+                toBlock = Math.max(toBlock ?? scanTo, scanTo);
+            }
+            if (emptyLogScan) return [];
+            return originalQueryFilter(...parameters);
+        }) as typeof contract.queryFilter;
+        try {
+            const recovery =
+                await this.sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                    forkId,
+                    blockHeight,
+                    blockAuthor,
+                    anchorTimestamp
+                );
+            const latest = await Clock.getBlockchainTime();
+            return {
+                commitmentFound: recovery.commitmentFound,
+                calldataRecovered: recovery.blockCalldata !== undefined,
+                fromBlock: fromBlock ?? -1,
+                toBlock: toBlock ?? -1,
+                latestBlockNumber: latest.blockNumber
+            };
+        } finally {
+            contract.queryFilter = originalQueryFilter;
         }
     }
 
