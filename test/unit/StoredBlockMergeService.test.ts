@@ -222,6 +222,141 @@ describe("Unit: StoredBlockMergeService", function () {
         expect(r.persistedSignatures).to.not.include(straySignature);
     });
 
+    it("under SpectatingValidationStrategy a genuine new signature → BROADCAST and persisted", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        const forkId = h.activeForkId!;
+
+        // same staging as the live-strategy case; the spectating strategy also
+        // re-gossips merged signatures so spectators keep relaying
+        const writer = await h.query.getNextPeerToWrite();
+        const silenced = h.peers.find((p) => p.index !== writer.index)!;
+        const heightBefore = await h
+            .control(writer)
+            .query.getNextBlockHeight(forkId)
+            .request();
+        await h.byzantine.stubBroadcast(silenced.index);
+        await h.getPeer(writer.index).p2pInstance.p2pContractInstance.add(1);
+        const writerBundle = await h
+            .control(writer)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        expect(writerBundle!.height).to.equal(heightBefore);
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: silenced.index,
+            blockHash: writerBundle!.hash,
+            keepConnection: true
+        });
+        const silencedBundle = await h
+            .control(silenced)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        await h.control(silenced).stub.restoreBroadcast().request();
+
+        const newSignatures = silencedBundle!.confirmationSignatures.filter(
+            (s) => !writerBundle!.confirmationSignatures.includes(s)
+        );
+        expect(newSignatures.length).to.be.greaterThan(0);
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: writer.index,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    writerBundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: silencedBundle!.confirmationSignatures.map(String)
+            },
+            strategy: "spectating"
+        });
+        expect(r.result).to.equal(BlockValidationResult.BROADCAST);
+        expect(r.persistedSignatures).to.include.members(newSignatures);
+    });
+
+    it("under CalldataCommittedStrategy the event-shaped confirmation (no signatures) → DUPLICATE, the tripwire never fires", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const forkId = h.activeForkId!;
+
+        const bundle = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockBundle(forkId)
+            .request();
+
+        // EventHandler always builds {signedBlock, signatures: []} from a
+        // CalldataPosted event, so the merge must exit through
+        // noNewSignaturesOnExistingBlock - not the unreachable-tripwire throw
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: 0,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: []
+            },
+            strategy: "calldata"
+        });
+        expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
+        expect(r.persistedSignatures).to.have.members(
+            bundle!.confirmationSignatures
+        );
+    });
+
+    it("under CalldataCommittedStrategy a genuine new signature → the unreachable tripwire throws", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        const forkId = h.activeForkId!;
+
+        // a signature the writer never saw, handed to the merge as if a
+        // calldata event carried it - the event shape forbids this, so the
+        // strategy's tripwire must fail loudly instead of gossiping
+        const writer = await h.query.getNextPeerToWrite();
+        const silenced = h.peers.find((p) => p.index !== writer.index)!;
+        await h.byzantine.stubBroadcast(silenced.index);
+        await h.getPeer(writer.index).p2pInstance.p2pContractInstance.add(1);
+        const writerBundle = await h
+            .control(writer)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: silenced.index,
+            blockHash: writerBundle!.hash,
+            keepConnection: true
+        });
+        const silencedBundle = await h
+            .control(silenced)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        await h.control(silenced).stub.restoreBroadcast().request();
+        expect(
+            silencedBundle!.confirmationSignatures.filter(
+                (s) => !writerBundle!.confirmationSignatures.includes(s)
+            ).length
+        ).to.be.greaterThan(0);
+
+        let thrown: Error | undefined;
+        try {
+            await h.transition.runStoredBlockMerge({
+                peerIndex: writer.index,
+                confirmation: {
+                    signedBlock: Codec.decode(
+                        writerBundle!.encodedSignedBlock,
+                        Type.SignedBlock
+                    ),
+                    signatures:
+                        silencedBundle!.confirmationSignatures.map(String)
+                },
+                strategy: "calldata"
+            });
+        } catch (error) {
+            thrown = error as Error;
+        }
+        expect(thrown, "the tripwire should reject the merge").to.not.be
+            .undefined;
+        expect(String(thrown)).to.contain("goodNewSignaturesOnExistingBlock");
+    });
+
     it("under DisputeValidationStrategy a genuine new signature → DUPLICATE, not re-gossiped", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });

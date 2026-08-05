@@ -1604,7 +1604,9 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public async runStoredBlockMerge(
         encodedBlockConfirmation: string,
-        options?: { strategy?: "active" | "dispute" }
+        options?: {
+            strategy?: "active" | "dispute" | "spectating" | "calldata";
+        }
     ): Promise<{
         result: number | null;
         persistedSignatures: string[] | null;
