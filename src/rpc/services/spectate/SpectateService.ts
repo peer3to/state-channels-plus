@@ -1225,20 +1225,38 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 // block rows alone are NOT proof: a prior attempt can have
                 // written blocks up to (or past) the target height and then
                 // thrown out of unsafeSetLatestState, leaving active state
-                // stale. The active-state-hash match (with matching fork) is
-                // the only path to "already-current" - height-alone must
-                // fall through and redo the writes.
+                // stale.
+                //
+                // The proof is NOT "active state matches the incoming
+                // payload's target snapshot" - a peer that's genuinely
+                // AHEAD of an older sync request has active state that
+                // correctly reflects ITS OWN, later height, which will never
+                // hash-match an older target's snapshot even though nothing
+                // is wrong (this broke a legitimate "spectator already past
+                // the requested height" case). The correct, height-agnostic
+                // proof is that active state matches the snapshot associated
+                // with OUR OWN locally-stored latest block - i.e. our
+                // storage is internally consistent with what we've actually
+                // applied. A poisoned prior attempt fails this exactly the
+                // same way: its written block rows claim a height, but
+                // active state (never advanced, since unsafeSetLatestState
+                // threw) doesn't match the snapshot at that height.
                 if (localLatestHeight >= finalizedHeight) {
                     const activeForkMatches =
                         stateManager.forkId === finalizedForkId;
-                    const activeStateHash = activeForkMatches
+                    const localSnapshot = activeForkMatches
+                        ? storage.getStateSnapshot({
+                              forkId: finalizedForkId,
+                              height: localLatestHeight
+                          })
+                        : undefined;
+                    const activeStateHash = localSnapshot
                         ? await stateManager.getActiveStateHash()
                         : undefined;
                     const activeStateMatches =
-                        activeForkMatches &&
+                        localSnapshot !== undefined &&
                         activeStateHash ===
-                            latestFinalizedSnapshot.snapshotData
-                                .stateMachineStateHash;
+                            localSnapshot.snapshotData.stateMachineStateHash;
 
                     if (activeStateMatches) {
                         this.logger.info(

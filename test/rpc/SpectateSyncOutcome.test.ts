@@ -95,6 +95,11 @@ function buildHarness(): Harness {
         .returns({ request: requestStub });
 
     const storage = {
+        // Undefined by default: persistSyncPayload treats a missing local
+        // snapshot as "cannot prove already-current" and falls through to
+        // redo the write - the safe default for every test that doesn't
+        // explicitly stage an already-current scenario.
+        getStateSnapshot: sinon.stub().returns(undefined),
         blocks: {
             getNextBlockHeight: sinon.stub().returns(5),
             getLatestBlock: sinon.stub().returns(undefined),
@@ -920,6 +925,9 @@ describe("SpectateService - persistSyncPayload outcome contract", function () {
             buildHappyPayload();
 
         h.storage.blocks.getLatestBlock.returns({ height: genesisHeight });
+        h.storage.getStateSnapshot.returns({
+            snapshotData: { stateMachineStateHash: genesisStateHash }
+        });
         h.stateManager.forkId = forkId;
         h.stateManager.getActiveStateHash = sinon
             .stub()
