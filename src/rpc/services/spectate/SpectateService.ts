@@ -34,11 +34,15 @@ export interface SyncRequest {
 }
 
 export type SyncFailReason =
-    | "aborted"
-    | "request-failed"
-    | "timeout"
     | "in-flight-collision"
-    | "malformed-payload";
+    | "request-failed"
+    | "rtt-exceeded"
+    | "chain-view-mismatch"
+    | "storage-conflict"
+    | "pipeline-rejected"
+    | "internal-error"
+    | "malformed-payload"
+    | "invalid-proof";
 
 export type SyncOutcome =
     | {
@@ -49,15 +53,57 @@ export type SyncOutcome =
       }
     | { ok: false; reason: SyncFailReason };
 
+// Result of `persistSyncPayload`. "already-current" is only reachable when
+// BOTH the block-height check AND the active-state proof (fork + state hash)
+// confirm the target snapshot (or later) is actually restored - see
+// `persistSyncPayload` for why height alone is not proof. "incomplete"
+// distinguishes a local write fault (e.g. unsafeSetLatestState throwing after
+// partial writes) from peer fraud ("conflict") - it must never be classified
+// as invalid-proof/malformed-payload, since it's our own storage failing, not
+// evidence the peer lied.
+export type PersistSyncResult =
+    | { outcome: "applied" }
+    | { outcome: "already-current" }
+    | { outcome: "conflict" }
+    | { outcome: "incomplete"; error: unknown };
+
+// Classification rationale: a reason is peer-provable only when it's
+// decidable from the payload itself plus data whose truth we establish
+// independently (crypto hashes, our own request, or a contract call whose
+// inputs AND body touch only payload-supplied data) - and no honest peer
+// could produce it through a race or a stale chain view. Everything else
+// (time-, chain-view-, or local-state-dependent) is ambiguous. See failSync
+// below for the full policy and the operational test used to classify each
+// failure site.
+const PEER_PROVABLE_REASONS: ReadonlySet<SyncFailReason> = new Set([
+    "malformed-payload",
+    "invalid-proof"
+]);
+
+interface InFlightSync {
+    promise: Promise<SyncOutcome>;
+    resumeMode: boolean;
+    forkId?: ForkId;
+    blockHeight?: number;
+}
+
 class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
-    // Peers with a sync request currently in flight. Guards against launching a
-    // second concurrent sync to the same peer. The request payload itself now
-    // lives in `runSync`'s closure (request/response), so no per-peer request
-    // map is needed. NOTE: this is a per-peer rate-limiter, not a
-    // request-correlation key - `syncAwaitable` checks it synchronously and
-    // resolves {ok:false, reason:'in-flight-collision'} on a hit rather than
-    // coalescing onto whatever non-resume sync is already running.
-    private readonly inFlightByPeerAddress: Set<string> = new Set();
+    // Peers with a sync request currently in flight, keyed by checksummed
+    // address. Guards against launching a second concurrent sync to the same
+    // peer, and carries enough of the request (forkId/blockHeight) for
+    // `syncAwaitable` to decide whether it's safe to ADOPT the in-flight
+    // sync's outcome (same target) or must report a collision (different
+    // target - adopting would mis-confirm a target that sync never sought).
+    // Registration/deregistration happens in exactly one place: `runSync`'s
+    // try/finally.
+    private readonly inFlightByPeerAddress: Map<string, InFlightSync> =
+        new Map();
+
+    // Depth counter (not boolean) for the resume window: overlapping/nested
+    // resumes must not let the first one's exit reopen destructive failure
+    // policy while a second is still active. See `enterResumeWindow` /
+    // `exitResumeWindow`.
+    private resumeWindowDepth = 0;
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -115,12 +161,15 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     /**
      * Awaitable, correlatable sync entry point used by the resume path
      * (P2PManager.resumeFromBackground). The in-flight guard is checked
-     * SYNCHRONOUSLY FIRST, before constructing/adding anything: a sync already
-     * in-flight for this peer was started by the fire-and-forget `sync()` path
-     * above (or another concurrent syncAwaitable), returns void/is not
-     * request-scoped, and may blacklist on failure - waiting on it here would
-     * risk a hung promise. Resolve immediately with 'in-flight-collision'
-     * instead of coalescing.
+     * SYNCHRONOUSLY FIRST, before constructing/adding anything. A sync
+     * already in-flight for this peer - started by the fire-and-forget
+     * `sync()` path above or a previous `syncAwaitable` call - is safe to
+     * ADOPT (await its promise, raced against our own timeout) only when it
+     * targets the same forkId/blockHeight we're requesting; adopting a
+     * different target's outcome would report OUR target as confirmed by a
+     * sync that never sought it. A different-target collision is routed
+     * through `failSync` (always resume-mode here) and resolves immediately
+     * with 'in-flight-collision'.
      */
     public syncAwaitable(
         peerAddress: Address,
@@ -131,15 +180,36 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     ): Promise<SyncOutcome> {
         const normalizedPeerAddress = getChecksumAddress(peerAddress);
 
-        if (this.inFlightByPeerAddress.has(normalizedPeerAddress)) {
+        const existing = this.inFlightByPeerAddress.get(normalizedPeerAddress);
+        if (existing) {
+            const sameTarget =
+                existing.forkId === forkId &&
+                existing.blockHeight === blockHeight;
+            if (!sameTarget) {
+                this.logger.debug(
+                    "spectateSync - sync already in-flight for a different target; resolving awaitable with in-flight-collision",
+                    {
+                        peerAddress: normalizedPeerAddress,
+                        requestedForkId: forkId,
+                        requestedBlockHeight: blockHeight,
+                        inFlightForkId: existing.forkId,
+                        inFlightBlockHeight: existing.blockHeight
+                    }
+                );
+                return Promise.resolve(
+                    this.failSync(
+                        normalizedPeerAddress,
+                        "in-flight-collision",
+                        true
+                    )
+                );
+            }
+
             this.logger.debug(
-                "spectateSync - sync already in-flight; resolving awaitable with in-flight-collision",
+                "spectateSync - sync already in-flight for the same target; adopting its outcome",
                 { peerAddress: normalizedPeerAddress }
             );
-            return Promise.resolve({
-                ok: false,
-                reason: "in-flight-collision"
-            });
+            return this.raceAgainstTimeout(existing.promise, opts.timeoutMs);
         }
 
         return this.runSync(
@@ -152,13 +222,43 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     }
 
     /**
-     * Shared request/response launcher for both `sync()` and `syncAwaitable()`.
-     * Assumes the in-flight guard was already checked by the caller. Adds to
-     * `inFlightByPeerAddress` synchronously (same tick as the caller), then
-     * dispatches the request. Never rejects - every failure path resolves a
-     * SyncOutcome so callers can never hang on this promise.
+     * Races an already-running sync's promise against our own timeout,
+     * WITHOUT cancelling or otherwise affecting the underlying in-flight
+     * sync - it keeps running (and stays registered) regardless of whether
+     * we time out waiting on it.
      */
-    private async runSync(
+    private raceAgainstTimeout(
+        promise: Promise<SyncOutcome>,
+        timeoutMs: number
+    ): Promise<SyncOutcome> {
+        return new Promise<SyncOutcome>((resolve) => {
+            const timer = setTimeout(() => {
+                resolve({ ok: false, reason: "in-flight-collision" });
+            }, timeoutMs);
+            void promise.then((outcome) => {
+                clearTimeout(timer);
+                resolve(outcome);
+            });
+        });
+    }
+
+    /**
+     * Shared request/response launcher for both `sync()` and `syncAwaitable()`.
+     * Assumes the in-flight guard was already checked by the caller. The map
+     * entry (add) is created before anything below awaits, and removed in the
+     * `finally` below - this is the ONLY add/delete site for
+     * `inFlightByPeerAddress`. Never rejects - every failure path resolves a
+     * SyncOutcome so callers can never hang on this promise.
+     *
+     * Registration ordering: `outcome` is a manually-resolved deferred, not
+     * `runSync`'s own async-function promise, specifically so the map entry
+     * can be registered (with a live promise callers can await) strictly
+     * before the request-sending await below - there is no way to obtain an
+     * async function's own promise from inside itself, so a deferred is the
+     * only way to avoid a window where the entry is either missing or holds
+     * a stale placeholder.
+     */
+    private runSync(
         normalizedPeerAddress: string,
         channelId: ChannelId,
         opts: { resumeMode: boolean; timeoutMs: number },
@@ -171,44 +271,91 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             forkId,
             blockHeight
         };
-        this.inFlightByPeerAddress.add(normalizedPeerAddress);
 
-        try {
-            // Transport can change (e.g. WebRTC upgrade). Always send by
-            // address. p2p sync is mutual-cooperation: a request must be
-            // answered with a valid proof. Any rejection - timeout,
-            // transport error, or the responder cutting us because it can't
-            // prove the target - means the peer didn't help us sync, so we
-            // blacklist it (non-resume only). `applySyncResponse` handles
-            // payload-validation failures itself (via failSync), so the catch
-            // here is the request path plus a defensive backstop.
-            const { encodedSyncPayload } = await this.remoteRpc.spectateService
-                .onSpectateRequest(syncRequest)
-                .request(normalizedPeerAddress, {
-                    timeoutMs: opts.timeoutMs
-                });
+        let resolveOutcome!: (outcome: SyncOutcome) => void;
+        const outcome = new Promise<SyncOutcome>((resolve) => {
+            resolveOutcome = resolve;
+        });
+        this.inFlightByPeerAddress.set(normalizedPeerAddress, {
+            promise: outcome,
+            resumeMode: opts.resumeMode,
+            forkId,
+            blockHeight
+        });
 
-            return await this.applySyncResponse(
-                normalizedPeerAddress,
-                syncRequest,
-                encodedSyncPayload,
-                { resumeMode: opts.resumeMode }
-            );
-        } catch (error) {
-            this.logger.debug("spectateSync - request failed", {
-                peerAddress: normalizedPeerAddress,
-                resumeMode: opts.resumeMode,
-                error: error instanceof Error ? error.message : String(error)
-            });
-            if (!opts.resumeMode) {
-                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    normalizedPeerAddress
+        (async () => {
+            try {
+                // Transport can change (e.g. WebRTC upgrade). Always send by
+                // address. p2p sync is mutual-cooperation: a request must be
+                // answered with a valid proof. Any rejection - timeout,
+                // transport error, or the responder cutting us because it
+                // can't prove the target - means the peer didn't help us
+                // sync, so we blacklist it (outside an active resume
+                // window). `applySyncResponse` handles payload-validation
+                // failures itself (via failSync), so the catch here is the
+                // request path plus a defensive backstop.
+                const { encodedSyncPayload } =
+                    await this.remoteRpc.spectateService
+                        .onSpectateRequest(syncRequest)
+                        .request(normalizedPeerAddress, {
+                            timeoutMs: opts.timeoutMs
+                        });
+
+                resolveOutcome(
+                    await this.applySyncResponse(
+                        normalizedPeerAddress,
+                        syncRequest,
+                        encodedSyncPayload,
+                        {
+                            resumeMode: opts.resumeMode,
+                            timeoutMs: opts.timeoutMs
+                        }
+                    )
                 );
+            } catch (error) {
+                this.logger.debug("spectateSync - request failed", {
+                    peerAddress: normalizedPeerAddress,
+                    resumeMode: opts.resumeMode,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+                // A reactive (resumeMode:false) sync whose request fails
+                // while a resume window is open must be held to the same
+                // non-destructive policy as a resumeMode:true failure - a
+                // resume's own transport rejoin is exactly what triggers the
+                // handshake that fires this reactive sync. Outside a window,
+                // preserve the original non-resume behavior exactly:
+                // unconditional blacklist.
+                const ambiguousFailureGated =
+                    opts.resumeMode || this.resumeWindowDepth > 0;
+                if (ambiguousFailureGated) {
+                    this.logger.warn(
+                        "spectateSync - suppressing punishment for request failure (resume mode or resume window active)",
+                        {
+                            peerAddress: normalizedPeerAddress,
+                            resumeMode: opts.resumeMode,
+                            resumeWindowDepth: this.resumeWindowDepth
+                        }
+                    );
+                } else {
+                    this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                        normalizedPeerAddress
+                    );
+                }
+                resolveOutcome({ ok: false, reason: "request-failed" });
+            } finally {
+                this.inFlightByPeerAddress.delete(normalizedPeerAddress);
             }
-            return { ok: false, reason: "request-failed" };
-        } finally {
-            this.inFlightByPeerAddress.delete(normalizedPeerAddress);
-        }
+        })().catch((e: unknown) => {
+            // Defensive backstop only - the try/catch above already resolves
+            // `outcome` on every path, so this should never fire.
+            this.logger.error("spectateSync - unexpected runSync failure", {
+                peerAddress: normalizedPeerAddress,
+                error: e instanceof Error ? e.message : String(e)
+            });
+        });
+
+        return outcome;
     }
 
     /**
@@ -223,16 +370,17 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         peerAddress: string,
         syncRequest: SyncRequest,
         encodedSyncPayload: Bytes,
-        opts: { resumeMode: boolean }
+        opts: { resumeMode: boolean; timeoutMs: number }
     ): Promise<SyncOutcome> {
         const channelId = syncRequest.channelId;
 
         // A malicious/broken peer can return bytes that aren't a valid
         // Codec.encode(SyncPayload). Decoded in its own try/catch (not the big
         // one below) because that's unambiguously the peer's fault - no
-        // legitimate on-chain race explains undecodable bytes, unlike every
-        // other "aborted" reason below - so `failSync` punishes it even in
-        // resume mode.
+        // legitimate on-chain race explains undecodable bytes, unlike the
+        // chain-view-/local-state-dependent reasons below - so `failSync`
+        // punishes it (malformed-payload is peer-provable) even in resume
+        // mode.
         let syncPayload: SyncPayload;
         try {
             syncPayload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
@@ -257,12 +405,21 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 `applySyncResponse - RTT: ${rtt}s, initTime: ${syncRequest.initTime}, responseTime: ${localTime}`
             );
 
-            // If RTT is too high, abort.
-            if (rtt > this.p2pManager.stateManager.timeConfig.agreementTime) {
+            // If RTT is too high, abort. Resume mode is bounded by the
+            // resume attempt's own timeout, not the (unrelated, and often
+            // longer) agreement-time config - FO3.
+            const rttLimitSeconds = opts.resumeMode
+                ? opts.timeoutMs / 1000
+                : this.p2pManager.stateManager.timeConfig.agreementTime;
+            if (rtt > rttLimitSeconds) {
                 this.logger.debug(
                     `applySyncResponse - RTT too high (${rtt}s), aborting`
                 );
-                return this.failSync(peerAddress, "timeout", opts.resumeMode);
+                return this.failSync(
+                    peerAddress,
+                    "rtt-exceeded",
+                    opts.resumeMode
+                );
             }
 
             // What we ultimately want to do here is:
@@ -331,7 +488,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 if (!windowExists || !isExpired)
                     return this.failSync(
                         peerAddress,
-                        "aborted",
+                        "chain-view-mismatch",
                         opts.resumeMode
                     );
 
@@ -343,14 +500,37 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     );
                 if (!isReducedAndFinal) {
                     disputeWindowsThatNeedToBeReducedOnChain.push(dw);
+                    // A2: peer-supplied dispute bytes may not decode. Own
+                    // try/catch (not the outer one) - undecodable bytes are
+                    // unambiguously the peer's fault, unlike the surrounding
+                    // chain-view-dependent checks.
+                    let decodedDisputes;
+                    try {
+                        decodedDisputes = dw.disputeConfirmations.map(
+                            (disputeConfirmation) =>
+                                Codec.decode(
+                                    disputeConfirmation.signedDispute
+                                        .encodedDispute,
+                                    Type.Dispute
+                                )
+                        );
+                    } catch (e) {
+                        this.logger.warn(
+                            "applySyncResponse - malformed dispute payload in reduction window",
+                            {
+                                peerAddress,
+                                error:
+                                    e instanceof Error ? e.message : String(e)
+                            }
+                        );
+                        return this.failSync(
+                            peerAddress,
+                            "malformed-payload",
+                            opts.resumeMode
+                        );
+                    }
                     await diamondStateMachine.localDiamondContract.reduceAndFinalize(
-                        dw.disputeConfirmations.map((disputeConfirmation) =>
-                            Codec.decode(
-                                disputeConfirmation.signedDispute
-                                    .encodedDispute,
-                                Type.Dispute
-                            )
-                        ),
+                        decodedDisputes,
                         dw.latestStateSnapshot,
                         dw.latestEncodedStateMachineState,
                         dw.inboundMessageBlocksAppliedInReduce,
@@ -360,7 +540,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     if (++notReducedCount > 1)
                         return this.failSync(
                             peerAddress,
-                            "aborted",
+                            "chain-view-mismatch",
                             opts.resumeMode
                         );
                 }
@@ -375,7 +555,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 if (_dw.reducedResult.forkId != dw.reducedForkId)
                     return this.failSync(
                         peerAddress,
-                        "aborted",
+                        "chain-view-mismatch",
                         opts.resumeMode
                     );
                 // if the above call fails -> local evm will throw -> catch and abort
@@ -385,8 +565,21 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             // 2.6) verify final genesisSnapshot is correct -> abort otherwise
             // Three checks: forkId resolves to this snapshot, forkId == keccak256(snapshotData)
             // and encoded state matches the declared hash.
+            // Row F split: the fork-match conjunct is chain-view-dependent
+            // (finalForkId is derived from onChainSnapshot and possibly
+            // advanced through the dispute-window reduction loop above), so
+            // it's evaluated - and classified - separately from the
+            // genesis-validity/state-hash conjuncts, which are decidable
+            // purely from the payload.
             const finalForkIdMatchesGenesisForkId =
                 finalForkId === syncPayload.latestForkGenesisSnapshot.forkId;
+            if (!finalForkIdMatchesGenesisForkId)
+                return this.failSync(
+                    peerAddress,
+                    "chain-view-mismatch",
+                    opts.resumeMode
+                );
+
             const isGenesisValid =
                 await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
                     syncPayload.latestForkGenesisSnapshot
@@ -395,13 +588,12 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 syncPayload.latestForkGenesisSnapshot.snapshotData
                     .stateMachineStateHash ===
                 hash(syncPayload.latestForkGenesisEncodedState);
-            const isCorrectGenesis =
-                finalForkIdMatchesGenesisForkId &&
-                isGenesisValid &&
-                stateHashMatch;
-
-            if (!isCorrectGenesis)
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+            if (!(isGenesisValid && stateHashMatch))
+                return this.failSync(
+                    peerAddress,
+                    "invalid-proof",
+                    opts.resumeMode
+                );
 
             // optimization: if the on-chain snapshot is on the same fork but more advanced than what
             // peers proved, reject before running any contract verification.
@@ -418,7 +610,11 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 this.logger.debug(
                     `applySyncResponse - on-chain block height (${onChainSnapshot.blockHeight}) exceeds proved height (${Number(latestFinalizedSnapshot.blockHeight)}); aborting`
                 );
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+                return this.failSync(
+                    peerAddress,
+                    "chain-view-mismatch",
+                    opts.resumeMode
+                );
             }
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
@@ -439,7 +635,11 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 );
 
             if (!areValidExitBlocks)
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+                return this.failSync(
+                    peerAddress,
+                    "chain-view-mismatch",
+                    opts.resumeMode
+                );
 
             // 2.8) Depending are we syncing to the 'latest state' (spectating) or some requested state (forkId,blockHeight), verify that:
             // 2.8.1) (spectating) genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
@@ -454,7 +654,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 if (Number(_timestamp) != 0)
                     return this.failSync(
                         peerAddress,
-                        "aborted",
+                        "chain-view-mismatch",
                         opts.resumeMode
                     );
             } else {
@@ -462,7 +662,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 if (finalForkId != syncRequest.forkId)
                     return this.failSync(
                         peerAddress,
-                        "aborted",
+                        "invalid-proof",
                         opts.resumeMode
                     );
             }
@@ -476,13 +676,21 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     syncPayload.latestForkGenesisSnapshot
                 );
             if (!isValid)
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+                return this.failSync(
+                    peerAddress,
+                    "chain-view-mismatch",
+                    opts.resumeMode
+                );
 
             if (
                 latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
                 hash(syncPayload.latestFinalizedEncodedState)
             )
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+                return this.failSync(
+                    peerAddress,
+                    "invalid-proof",
+                    opts.resumeMode
+                );
 
             // 2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
             areValidExitBlocks =
@@ -492,7 +700,11 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     latestFinalizedSnapshot.snapshotData
                 );
             if (!areValidExitBlocks)
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+                return this.failSync(
+                    peerAddress,
+                    "invalid-proof",
+                    opts.resumeMode
+                );
 
             // 2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
             const isValidBalance =
@@ -502,23 +714,41 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     syncPayload.latestFinalizedEncodedState
                 );
             if (!isValidBalance)
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+                return this.failSync(
+                    peerAddress,
+                    "chain-view-mismatch",
+                    opts.resumeMode
+                );
 
             // 3) Finally - staticcall multicall to deduct failure/success -> on failure abort
-            const isMulticallSuccess = await this.tryMulticallSnapshotUpdate(
+            const multicallResult = await this.tryMulticallSnapshotUpdate(
                 channelId,
                 onChainSnapshot.toStruct(),
                 syncPayload,
                 disputeWindowsThatNeedToBeReducedOnChain
             );
-            if (!isMulticallSuccess)
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+            if (!multicallResult.ok)
+                return this.failSync(
+                    peerAddress,
+                    multicallResult.reason,
+                    opts.resumeMode
+                );
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            const { shouldAbort, localWasAhead } =
-                await this.persistSyncPayload(syncPayload);
-            if (shouldAbort)
-                return this.failSync(peerAddress, "aborted", opts.resumeMode);
+            const persistResult = await this.persistSyncPayload(syncPayload);
+            if (persistResult.outcome === "conflict")
+                return this.failSync(
+                    peerAddress,
+                    "storage-conflict",
+                    opts.resumeMode
+                );
+            if (persistResult.outcome === "incomplete")
+                return this.failSync(
+                    peerAddress,
+                    "internal-error",
+                    opts.resumeMode
+                );
+            const localWasAhead = persistResult.outcome === "already-current";
 
             // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
             const blockConfirmations =
@@ -545,7 +775,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     if (!isOk)
                         return this.failSync(
                             peerAddress,
-                            "aborted",
+                            "pipeline-rejected",
                             opts.resumeMode
                         );
                 } catch (e) {
@@ -555,7 +785,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     );
                     return this.failSync(
                         peerAddress,
-                        "aborted",
+                        "pipeline-rejected",
                         opts.resumeMode
                     );
                 }
@@ -572,7 +802,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 if (!hasBlock)
                     return this.failSync(
                         peerAddress,
-                        "aborted",
+                        "invalid-proof",
                         opts.resumeMode
                     );
                 if (
@@ -581,7 +811,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 )
                     return this.failSync(
                         peerAddress,
-                        "aborted",
+                        "invalid-proof",
                         opts.resumeMode
                     );
             }
@@ -599,7 +829,11 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             };
         } catch (e) {
             this.logger.warn(e);
-            return this.failSync(peerAddress, "aborted", opts.resumeMode);
+            return this.failSync(
+                peerAddress,
+                "internal-error",
+                opts.resumeMode
+            );
         }
     }
 
@@ -869,7 +1103,10 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         onChainSnapshot: StateSnapshotStruct,
         syncPayload: SyncPayload,
         disputeWindowsThatNeedToBeReducedOnChain: DisputeWindowVerification[]
-    ): Promise<boolean> {
+    ): Promise<
+        | { ok: true }
+        | { ok: false; reason: "malformed-payload" | "chain-view-mismatch" }
+    > {
         const stateManager = this.p2pManager.stateManager;
         const stateChannelManagerContract =
             stateManager.stateChannelManagerContract;
@@ -878,13 +1115,23 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // Encode data for multicall
         const calldata: string[] = [];
         for (const dw of disputeWindowsThatNeedToBeReducedOnChain) {
-            const disputes = dw.disputeConfirmations.map(
-                (disputeConfirmation) =>
+            // A3: same peer-supplied-bytes concern as the reduction loop in
+            // applySyncResponse - own try/catch, malformed-payload on failure.
+            let disputes;
+            try {
+                disputes = dw.disputeConfirmations.map((disputeConfirmation) =>
                     Codec.decode(
                         disputeConfirmation.signedDispute.encodedDispute,
                         Type.Dispute
                     )
-            );
+                );
+            } catch (e) {
+                this.logger.warn(
+                    "tryMulticallSnapshotUpdate - malformed dispute payload",
+                    { error: e instanceof Error ? e.message : String(e) }
+                );
+                return { ok: false, reason: "malformed-payload" };
+            }
             const reduceCalldata =
                 stateManager.reductionManager.buildReduceAndFinalizeCalldata(
                     disputes,
@@ -945,15 +1192,15 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     calldata,
                     e
                 );
-                return false;
+                return { ok: false, reason: "chain-view-mismatch" };
             }
         }
-        return true;
+        return { ok: true };
     }
 
     public async persistSyncPayload(
         syncPayload: SyncPayload
-    ): Promise<{ shouldAbort: boolean; localWasAhead: boolean }> {
+    ): Promise<PersistSyncResult> {
         const stateManager = this.p2pManager.stateManager;
         return await stateManager.withMutex(
             async () => {
@@ -973,23 +1220,53 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     storage.blocks.getLatestBlock(finalizedForkId);
                 const localLatestHeight = localLatestBlock?.height ?? -1;
 
+                // "already-current" requires BOTH a block-height check AND
+                // proof that ACTIVE state was actually restored. Stored
+                // block rows alone are NOT proof: a prior attempt can have
+                // written blocks up to (or past) the target height and then
+                // thrown out of unsafeSetLatestState, leaving active state
+                // stale. The active-state-hash match (with matching fork) is
+                // the only path to "already-current" - height-alone must
+                // fall through and redo the writes.
                 if (localLatestHeight >= finalizedHeight) {
+                    const activeForkMatches =
+                        stateManager.forkId === finalizedForkId;
+                    const activeStateHash = activeForkMatches
+                        ? await stateManager.getActiveStateHash()
+                        : undefined;
+                    const activeStateMatches =
+                        activeForkMatches &&
+                        activeStateHash ===
+                            latestFinalizedSnapshot.snapshotData
+                                .stateMachineStateHash;
+
+                    if (activeStateMatches) {
+                        this.logger.info(
+                            "Skipping sync payload persistence: active state already proves the latest finalized snapshot",
+                            {
+                                finalizedForkId,
+                                finalizedHeight,
+                                localLatestHeight
+                            }
+                        );
+                        return { outcome: "already-current" };
+                    }
+
                     this.logger.info(
-                        "Skipping sync payload persistence: local storage is already ahead of latest finalized snapshot",
+                        "Local block rows are at/past target height, but active state does not prove it (prior partial write?) - redoing sync payload persistence",
                         {
                             finalizedForkId,
                             finalizedHeight,
                             localLatestHeight
                         }
                     );
-                    return { shouldAbort: false, localWasAhead: true };
                 }
 
                 const finalizedBlocks = this.getFinalizedBlocksFromStateProof(
                     syncPayload.stateProof
                 );
                 if (this.hasAnyBlockConflict(finalizedBlocks)) {
-                    return { shouldAbort: true, localWasAhead: false };
+                    return { outcome: "conflict" };
                 }
 
                 for (const dw of syncPayload.disputeWindows) {
@@ -1026,12 +1303,37 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
                     storage.outboundMessages.store(omb);
 
-                await stateManager.unsafeSetLatestState(
-                    latestFinalizedSnapshot,
-                    syncPayload.latestFinalizedEncodedState
-                );
+                // All the writes above are content-hash-keyed puts, so
+                // they're idempotent on replay - if unsafeSetLatestState
+                // throws here (e.g. after a partial write), a retry of this
+                // same payload safely redoes them rather than corrupting
+                // anything. This is a local storage/state-machine fault, not
+                // peer fraud - it must be reported distinctly ("incomplete")
+                // rather than propagating to applySyncResponse's outer catch
+                // (which would misclassify it as an internal-error via a
+                // path shared with peer-fraud reasons) or surfacing as
+                // invalid-proof/malformed-payload.
+                try {
+                    await stateManager.unsafeSetLatestState(
+                        latestFinalizedSnapshot,
+                        syncPayload.latestFinalizedEncodedState
+                    );
+                } catch (error) {
+                    this.logger.error(
+                        "persistSyncPayload - unsafeSetLatestState failed after partial writes; local storage/state-machine fault, not peer fraud",
+                        {
+                            finalizedForkId,
+                            finalizedHeight,
+                            error:
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                        }
+                    );
+                    return { outcome: "incomplete", error };
+                }
                 this.logger.debug(`Finished persisting sync payload`);
-                return { shouldAbort: false, localWasAhead: false };
+                return { outcome: "applied" };
             },
             { taskName: "persistSyncPayload" }
         );
@@ -1103,44 +1405,103 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
     /**
      * Fail (and log) a spectate sync, returning the distinguishable outcome
-     * `failSync`'s callers should propagate. Non-resume mode delegates to
-     * `abort()` for its full side effects (hard nuke / blacklist), unchanged
-     * from before this ticket. Resume mode still calls `abort()` so the
-     * failure is logged consistently, but `abort()` itself suppresses every
-     * side effect in that mode - except a "malformed-payload" reason, which
-     * `abort()` never sees blacklist responsibility for: that's punished here
-     * unconditionally, since it's the one reason resume mode can't excuse as a
-     * legitimate on-chain race.
+     * `failSync`'s callers should propagate.
+     *
+     * Punishment asymmetry is not symmetric in cost. False positive
+     * (blacklisting an honest peer during resume): the client burns
+     * candidates from an already-tiny set (MAX_RESUME_SYNC_PEERS=3), can end
+     * up unable to resync at all, and is pushed toward the on-chain dispute
+     * path with stale local state - a funds-adjacent liveness failure and a
+     * self-inflicted eclipse. False negative (a Byzantine peer serving
+     * garbage stays connected): one wasted attempt slot, bounded by the
+     * attempt cap and deadline - the peer is still cut from that attempt.
+     * Therefore: punish only on peer-provable fraud - a contradiction
+     * decidable from the payload itself plus data whose truth we establish
+     * independently (cryptographic hashes, our own request, contract calls
+     * whose inputs AND body touch only payload-supplied data) - and which no
+     * honest peer could produce through a race or a stale view. Anything
+     * time-, chain-view-, or local-state-dependent is ambiguous and never
+     * punished on the resume path.
+     *
+     * Operational test: does this check consume any input we fetched
+     * ourselves, or does its contract body read live chain storage? If yes ->
+     * ambiguous, regardless of how "cryptographic" it looks. A staticcall is
+     * not evidence of fraud if its result depends on when you called it.
+     *
+     * Non-resume mode is unchanged: every failure still routes through
+     * `abort()`, which blacklists/aborts via the existing
+     * PARTICIPATING/PENDING_PARTICIPANT branch. Resume mode never calls
+     * `abort()` - a peer-provable reason disconnects+blacklists directly; an
+     * ambiguous reason is only logged, so a resuming client's already-scarce
+     * peer set survives an honest peer's stale chain view.
      */
     private failSync(
         peerAddress: string,
         reason: SyncFailReason,
         resumeMode: boolean
     ): SyncOutcome {
-        if (resumeMode && reason === "malformed-payload") {
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+        // A reactive (resumeMode:false) sync firing while a resume window is
+        // open (see `enterResumeWindow`/`exitResumeWindow`) must be held to
+        // the same non-destructive policy as a resume-mode failure - local
+        // state may be mid-restore, and this is the path that can never be
+        // allowed to hard-abort the state manager while that's happening.
+        if (resumeMode || this.resumeWindowDepth > 0) {
+            if (PEER_PROVABLE_REASONS.has(reason)) {
+                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                    peerAddress
+                );
+            } else {
+                this.logger.warn(
+                    "applySyncResponse - suppressing punishment for ambiguous resume-sync failure",
+                    { peerAddress, reason }
+                );
+            }
+            return { ok: false, reason };
         }
-        this.abort(peerAddress, { resumeMode });
+        this.abort(peerAddress);
         return { ok: false, reason };
     }
 
-    public abort(peerAddress: string, opts?: { resumeMode?: boolean }) {
-        const resumeMode = opts?.resumeMode ?? false;
+    /**
+     * Opens (or re-enters) the resume window: while depth > 0, ambiguous
+     * spectate-sync failures - including from a reactive (resumeMode:false)
+     * sync racing a resume's transport rejoin - are held to resume's
+     * non-destructive failure policy (warn, never blacklist, never
+     * `abort()`) instead of the destructive non-resume policy. Depth-based
+     * so nested/overlapping resumes can't have the first one's exit reopen
+     * destructive policy while a second is still active. Callers must pair
+     * every call with `exitResumeWindow()`, typically in a `finally`.
+     */
+    public enterResumeWindow(): void {
+        this.resumeWindowDepth++;
+    }
+
+    /**
+     * Closes (or un-nests) the resume window opened by `enterResumeWindow`.
+     * Never decrements below 0.
+     */
+    public exitResumeWindow(): void {
+        if (this.resumeWindowDepth > 0) {
+            this.resumeWindowDepth--;
+        }
+    }
+
+    /**
+     * True if a sync is currently in flight for `peerAddress` (fire-and-forget
+     * `sync()` or an awaitable `syncAwaitable()` that hasn't settled yet).
+     */
+    public isSyncInFlight(peerAddress: Address): boolean {
+        const normalizedPeerAddress = getChecksumAddress(peerAddress);
+        return this.inFlightByPeerAddress.has(normalizedPeerAddress);
+    }
+
+    public abort(peerAddress: string) {
         // HandshakeCompletedGuard guarantees stable peer identity.
         // If we're not actively participating, treat this as a fatal sync failure.
         this.logger.warn(`Aborting spectate sync with peer ${peerAddress}`, {
             peerAddress,
-            resumeMode,
             myStatus: Status[this.p2pManager.stateManager.getStatus()]
         });
-
-        if (resumeMode) {
-            // Resume must never hard-nuke the channel (reachable pre-
-            // PARTICIPATING mid-resume) or blacklist the peer it's trying to
-            // resync through - resumeFromBackground handles a failure by
-            // switching to the next candidate peer instead.
-            return;
-        }
 
         const status = this.p2pManager.stateManager.getStatus();
         if (

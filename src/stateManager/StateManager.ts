@@ -421,6 +421,17 @@ class StateManager<
         this.latestForkId = forkId;
     }
 
+    /**
+     * Hash of the CURRENTLY ACTIVE state machine state (the live EVM state,
+     * not a storage row). Used by callers that must prove a snapshot was
+     * actually restored - `forkId` alone only proves the active fork was
+     * advanced, not that `unsafeSetLatestState` finished setting the state
+     * for it. Local in-process EVM read, not a network call.
+     */
+    public async getActiveStateHash(): Promise<Hash> {
+        return hash(await this.diamondStateMachine.getState());
+    }
+
     public async onInboundMessage(
         messageBlock: MessageBlockStruct,
         messageBlockHash: Hash

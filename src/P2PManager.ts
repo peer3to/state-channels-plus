@@ -23,9 +23,13 @@ import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import type { CustomRpcConstructor } from "./rpc/registry";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { sleep } from "@/utils";
+import type { SyncFailReason } from "@/rpc/services/spectate/SpectateService";
 
 /** Max distinct connected peers tried, one at a time, before giving up. */
 const MAX_RESUME_SYNC_PEERS = 3;
+/** Caps TOTAL attempts (including collision-deferred retries) so a peer that
+ * always collides can't spin the whole budget without progress. */
+const MAX_RESUME_SYNC_ATTEMPTS = MAX_RESUME_SYNC_PEERS * 2;
 /** Fixed delay between peer-switch attempts. */
 const RESUME_PEER_SWITCH_DELAY_MS = 500;
 /**
@@ -36,14 +40,53 @@ const RESUME_PEER_SWITCH_DELAY_MS = 500;
 const RESUME_SYNC_TIMEOUT_MS = 8000;
 /** Resume must leave window for be-03's self-defense/back-off. */
 const RESUME_BUDGET_FRACTION = 0.5;
+/** Share of the total resume budget given to hydrate and to transport rejoin
+ * each; the rest goes to peer rotation. No single correct split - chosen so
+ * neither phase alone can exhaust the budget before rotation gets a turn. */
+const RESUME_HYDRATE_BUDGET_FRACTION = 0.25;
+const RESUME_REJOIN_BUDGET_FRACTION = 0.25;
+
+export type ResumeFailReason =
+    | "transport"
+    | "hydration-failed"
+    | "no-peers"
+    | "deadline-expired"
+    | SyncFailReason;
 
 export type ResumeResult =
-    | { status: "restored"; hydrated: boolean }
-    | {
-          status: "failed";
-          reason: "transport" | "sync-timeout" | "no-peers" | "unknown";
-          retryable: boolean;
-      };
+    | { status: "restored"; localWasAhead: boolean }
+    | { status: "failed"; reason: ResumeFailReason; retryable: boolean };
+
+/** Raised by withDeadline() when the wrapped phase outran its own sub-budget
+ * (not the phase itself failing). */
+class ResumePhaseTimeoutError extends Error {}
+
+/** Races `promise` against `timeoutMs`; on timeout throws
+ * ResumePhaseTimeoutError but does not cancel the underlying operation. */
+function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(
+            () => {
+                reject(
+                    new ResumePhaseTimeoutError(
+                        `resume phase exceeded ${timeoutMs}ms`
+                    )
+                );
+            },
+            Math.max(0, timeoutMs)
+        );
+        promise.then(
+            (value) => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            (error) => {
+                clearTimeout(timer);
+                reject(error);
+            }
+        );
+    });
+}
 
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     implements IOnMessage
@@ -66,6 +109,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     // promise (not a per-channel map) is enough: this P2PManager instance is
     // itself scoped to one channel, via `stateManager`.
     private resumeInFlight?: Promise<ResumeResult>;
+    // Set synchronously by dispose(); the resume path checks this between
+    // every await so it never acts on a torn-down transport/storage.
+    private disposed = false;
 
     private rpcRequestCounter = 0;
     private pendingRpcRequests = new Map<
@@ -121,10 +167,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         if (this.disposalPromise) {
             return this.disposalPromise;
         }
-
-        this.disconnectAll();
-        this.disposalPromise = this.holepunch.dispose();
+        // Flip before awaiting anything so a resume in flight (or one racing
+        // to start) observes disposal and bails instead of acting on
+        // torn-down state.
+        this.disposed = true;
+        this.disposalPromise = this.finishDispose();
         return this.disposalPromise;
+    }
+
+    private async finishDispose(): Promise<void> {
+        // Let an in-flight resume unwind on its own (it self-terminates on
+        // the `disposed` flag) before tearing down connections/swarm.
+        if (this.resumeInFlight) {
+            await this.resumeInFlight.catch(() => undefined);
+        }
+        this.disconnectAll();
+        await this.holepunch.dispose();
     }
     public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
@@ -380,13 +438,18 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     /**
      * Mobile reconnect: recover a backgrounded channel without tearing down
      * the process-global Holepunch swarm (it's shared across every open
-     * channel - see Holepunch.ts/HolepunchRelay.ts). Channel-scoped recovery
-     * is topic rejoin + re-handshake + an awaited resync; no swarm
-     * dispose/destroy/close. Dedups concurrent calls by returning the
-     * in-flight promise.
+     * channel - see Holepunch.ts/HolepunchRelay.ts). Dedups concurrent calls
+     * by returning the in-flight promise.
      */
     public resumeFromBackground(): Promise<ResumeResult> {
         if (this.resumeInFlight) return this.resumeInFlight;
+        if (this.disposed) {
+            return Promise.resolve({
+                status: "failed",
+                reason: "transport",
+                retryable: false
+            });
+        }
 
         const channelId = this.stateManager.getChannelId();
         this.resumeInFlight = this.doResumeFromBackground(channelId).finally(
@@ -397,6 +460,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         return this.resumeInFlight;
     }
 
+    private disposedResumeResult(): ResumeResult {
+        return { status: "failed", reason: "transport", retryable: false };
+    }
+
     private async doResumeFromBackground(
         channelId: ChannelId
     ): Promise<ResumeResult> {
@@ -404,79 +471,244 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         // height-0 evidence grace is deliberately excluded: storage isn't
         // hydrated yet so the in-memory height can't be trusted, and the
         // shorter window is the conservative side for the budget cap.
-        const deadline =
-            Date.now() +
+        const totalBudgetMs =
             this.stateManager.getTimeoutWaitTimeSeconds(1) *
-                1000 *
-                RESUME_BUDGET_FRACTION;
+            1000 *
+            RESUME_BUDGET_FRACTION;
+        const deadline = Date.now() + totalBudgetMs;
 
-        this.stateManager.p2pEventHooks.onResumePhase?.("reconnecting");
-
+        // enterResumeWindow() must precede the transport rejoin: the rejoin
+        // triggers the handshake that fires InitHandshakeService's reactive
+        // sync, which is exactly what the resume window's non-destructive
+        // failure policy exists to tame. exitResumeWindow() runs in finally
+        // so no throw/early-return leaves that policy suppressed forever.
+        //
+        // Exception: `withDeadline` never cancels the operation it wraps -
+        // on a rejoin-phase timeout, the real `holepunch.join(topic)` call
+        // is still running when we return below. If the outer `finally`
+        // closed the window right then, a handshake completing shortly
+        // after (while this method has already returned) could fire a
+        // reactive sync with the window closed - reopening the exact
+        // "reactive sync hard-aborts the state manager mid-restore" race
+        // this window exists to prevent. `deferWindowCloseToRejoinSettle`
+        // lets the rejoin-timeout branch opt the outer `finally` out of
+        // closing the window itself; closing is instead attached directly
+        // to the real (uncancelled) rejoin promise so it only happens once
+        // that promise has genuinely settled - see below.
+        let deferWindowCloseToRejoinSettle = false;
+        this.localRpc.spectateService.enterResumeWindow();
         try {
-            // Topic rejoin (Holepunch.rejoinTopics via join()) + whatever
-            // re-handshake the existing connection flow drives. Never touches
-            // the shared swarm singleton itself.
-            await this.tryOpenConnectionToChannel(String(channelId));
-        } catch (e) {
-            this.logger.warn("resumeFromBackground - transport rejoin failed", {
-                channelId,
-                error: e instanceof Error ? e.message : String(e)
-            });
-            return { status: "failed", reason: "transport", retryable: true };
-        }
+            if (this.disposed) return this.disposedResumeResult();
 
-        try {
-            await this.stateManager.storage.hydrate();
-        } catch (e) {
-            this.logger.warn("resumeFromBackground - storage hydrate failed", {
-                channelId,
-                error: e instanceof Error ? e.message : String(e)
-            });
-            return { status: "failed", reason: "unknown", retryable: true };
-        }
+            this.stateManager.p2pEventHooks.onResumePhase?.("reconnecting");
 
-        this.stateManager.p2pEventHooks.onResumePhase?.("resyncing");
+            // Storage must be hydrated strictly before the transport/topic
+            // join (same ordering Storage.attachPersistence and
+            // P2pRuntimeHost's connect path require) - otherwise a handshake
+            // completing on the rejoined transport can fire a reactive sync
+            // that mutates state on top of a half-replayed store.
+            const hydrateBudgetMs = Math.min(
+                Math.max(0, deadline - Date.now()),
+                totalBudgetMs * RESUME_HYDRATE_BUDGET_FRACTION
+            );
+            try {
+                await withDeadline(
+                    this.stateManager.storage.hydrate(),
+                    hydrateBudgetMs
+                );
+            } catch (e) {
+                if (e instanceof ResumePhaseTimeoutError) {
+                    return {
+                        status: "failed",
+                        reason: "deadline-expired",
+                        retryable: true
+                    };
+                }
+                this.logger.warn(
+                    "resumeFromBackground - storage hydrate failed",
+                    {
+                        channelId,
+                        error: e instanceof Error ? e.message : String(e)
+                    }
+                );
+                return {
+                    status: "failed",
+                    reason: "hydration-failed",
+                    retryable: true
+                };
+            }
 
-        try {
-            return await this.resyncWithPeerSwitch(channelId, deadline);
-        } catch (e) {
-            this.logger.warn("resumeFromBackground - unexpected error", {
-                channelId,
-                error: e instanceof Error ? e.message : String(e)
-            });
-            return { status: "failed", reason: "unknown", retryable: true };
+            if (this.disposed) return this.disposedResumeResult();
+
+            const rejoinBudgetMs = Math.min(
+                Math.max(0, deadline - Date.now()),
+                totalBudgetMs * RESUME_REJOIN_BUDGET_FRACTION
+            );
+            // Held outside the try so the timeout branch below can attach a
+            // settle-time window-close to the REAL promise, not the
+            // withDeadline() wrapper (which already settled via timeout).
+            const rejoinCall = this.tryOpenConnectionToChannel(
+                String(channelId)
+            );
+            try {
+                // Topic rejoin (Holepunch.rejoinTopics via join(), idempotent)
+                // + whatever re-handshake the existing connection flow
+                // drives. Never touches the shared swarm singleton itself.
+                await withDeadline(rejoinCall, rejoinBudgetMs);
+            } catch (e) {
+                if (e instanceof ResumePhaseTimeoutError) {
+                    // rejoinCall is still in flight. Don't let the outer
+                    // finally close the resume window now - defer the close
+                    // to whenever rejoinCall itself actually settles, so a
+                    // handshake that completes after we've already returned
+                    // still lands inside an open window.
+                    deferWindowCloseToRejoinSettle = true;
+                    rejoinCall
+                        .finally(() =>
+                            this.localRpc.spectateService.exitResumeWindow()
+                        )
+                        .catch(() => undefined);
+                    return {
+                        status: "failed",
+                        reason: "deadline-expired",
+                        retryable: true
+                    };
+                }
+                this.logger.warn(
+                    "resumeFromBackground - transport rejoin failed",
+                    {
+                        channelId,
+                        error: e instanceof Error ? e.message : String(e)
+                    }
+                );
+                return {
+                    status: "failed",
+                    reason: "transport",
+                    retryable: true
+                };
+            }
+
+            if (this.disposed) return this.disposedResumeResult();
+
+            this.stateManager.p2pEventHooks.onResumePhase?.("resyncing");
+
+            try {
+                return await this.resyncWithPeerSwitch(channelId, deadline);
+            } catch (e) {
+                this.logger.warn("resumeFromBackground - unexpected error", {
+                    channelId,
+                    error: e instanceof Error ? e.message : String(e)
+                });
+                return {
+                    status: "failed",
+                    reason: "transport",
+                    retryable: true
+                };
+            }
+        } finally {
+            // Skip the normal close if it was handed off to rejoinCall's own
+            // settle-time handler above - otherwise we'd double-decrement
+            // resumeWindowDepth (once here, once when rejoinCall settles).
+            if (!deferWindowCloseToRejoinSettle) {
+                this.localRpc.spectateService.exitResumeWindow();
+            }
         }
     }
 
     /**
-     * Try up to MAX_RESUME_SYNC_PEERS connected peers (one at a time, 500ms
-     * apart) via the awaitable resume sync, within the remaining budget. Also
-     * sidesteps a concurrent reactive (non-resume) sync blacklisting a given
-     * peer - a collision/failure just switches to the next candidate peer.
+     * Rotates connected peers one at a time (never concurrently) via the
+     * awaitable resume sync, within the remaining budget.
+     *
+     * `tryOpenConnectionToChannel` (already awaited before this method runs)
+     * does NOT wait for handshakes to complete - it just fires
+     * `holepunch.join(topic)` and returns. `getConnectedPeers()` only counts
+     * fully-handshaked transports, so a single snapshot taken once at the
+     * start can legitimately be empty even though peers are seconds (or
+     * milliseconds) away from finishing their handshake. So candidates are
+     * NOT queued up once at the start - `getConnectedPeers()` is re-read
+     * fresh whenever the working queue runs dry, and if that fresh read is
+     * STILL empty, we sleep and poll again rather than giving up, until
+     * either a peer becomes available or the deadline is exhausted.
+     *
+     * On "in-flight-collision" the peer is deferred to the back of the
+     * (current) queue (that sync may finish and resync us within a beat)
+     * rather than retried immediately or permanently excluded - so one
+     * perpetually-colliding peer can't starve a healthy peer further back.
+     * Any other failure permanently excludes that peer for this resume
+     * attempt. Distinct peers are capped at MAX_RESUME_SYNC_PEERS; total
+     * attempts (including collision re-tries) are capped at
+     * MAX_RESUME_SYNC_ATTEMPTS.
+     *
+     * "no-peers" is only returned once the deadline is exhausted with zero
+     * attempts EVER launched (i.e. no peer was available to try during the
+     * entire window) - not merely because the queue was momentarily empty.
      */
     private async resyncWithPeerSwitch(
         channelId: ChannelId,
         deadline: number
     ): Promise<ResumeResult> {
-        const attemptedPeers = new Set<Address>();
+        const queue: Address[] = [];
+        const distinctPeers = new Set<Address>();
+        // Peers that failed with a non-collision (permanently-excluding)
+        // reason during this resume attempt; never re-queued even if a
+        // later poll of getConnectedPeers() still reports them connected.
+        const excludedPeers = new Set<Address>();
         let attempts = 0;
+        let lastFailure:
+            | { reason: ResumeFailReason; retryable: boolean }
+            | undefined;
 
-        while (
-            Date.now() < deadline &&
-            attemptedPeers.size < MAX_RESUME_SYNC_PEERS
-        ) {
-            const peer = this.pickNextResumePeer(attemptedPeers);
-            if (!peer) {
+        const isEligibleForQueue = (peer: Address): boolean =>
+            !excludedPeers.has(peer) &&
+            (distinctPeers.has(peer) ||
+                distinctPeers.size < MAX_RESUME_SYNC_PEERS);
+
+        while (Date.now() < deadline && attempts < MAX_RESUME_SYNC_ATTEMPTS) {
+            if (this.disposed) return this.disposedResumeResult();
+
+            if (queue.length === 0) {
+                // Re-read live handshake state fresh on every refill - never
+                // reuse a stale snapshot from an earlier iteration.
+                for (const peer of this.getConnectedPeers()) {
+                    if (isEligibleForQueue(peer)) queue.push(peer);
+                }
+            }
+
+            if (queue.length === 0) {
+                if (distinctPeers.size >= MAX_RESUME_SYNC_PEERS) {
+                    // Distinct-peer cap already reached and nothing is
+                    // queued (no collision-deferred retry pending) - no
+                    // future poll of getConnectedPeers() can ever add a new
+                    // eligible candidate, since isEligibleForQueue() only
+                    // admits already-seen peers once the cap is hit. Further
+                    // polling here would just burn the remaining budget
+                    // sleeping for no possible gain, so stop and report the
+                    // last attempt's failure instead.
+                    break;
+                }
                 const remainingMs = deadline - Date.now();
                 if (remainingMs <= 0) break;
                 await sleep(Math.min(RESUME_PEER_SWITCH_DELAY_MS, remainingMs));
                 continue;
             }
 
+            const peer = queue.shift()!;
+            if (!isEligibleForQueue(peer)) {
+                // Became ineligible (e.g. distinct-cap hit) between being
+                // queued and being picked up; drop and re-poll.
+                continue;
+            }
+            distinctPeers.add(peer);
+
             const remainingMs = deadline - Date.now();
             if (remainingMs <= 0) break;
             attempts++;
 
+            // RESUME MUST REQUEST LATEST STATE: no forkId/blockHeight. A
+            // resuming client has a stale view by definition, and
+            // generateSyncPayload returning undefined for an unprovable
+            // fork/above-latest height gets the RESPONDER to blacklist US -
+            // fork/height targeting here would burn the whole candidate set.
             const outcome = await this.localRpc.spectateService.syncAwaitable(
                 peer,
                 channelId,
@@ -487,39 +719,51 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             );
 
             if (outcome.ok) {
-                return { status: "restored", hydrated: !outcome.localWasAhead };
+                return {
+                    status: "restored",
+                    localWasAhead: outcome.localWasAhead
+                };
             }
 
             this.logger.debug(
                 "resumeFromBackground - peer sync failed; switching peer",
                 { channelId, peer, reason: outcome.reason }
             );
+            lastFailure = { reason: outcome.reason, retryable: true };
 
-            // A collision with an already-running sync to this same peer is
-            // transient - that sync may finish and resync us within a beat.
-            // Don't burn a peer slot on it; retry the same peer after the
-            // delay instead of permanently giving up on it.
-            if (outcome.reason !== "in-flight-collision") {
-                attemptedPeers.add(peer);
-                if (attemptedPeers.size >= MAX_RESUME_SYNC_PEERS) break;
+            if (outcome.reason === "in-flight-collision") {
+                queue.push(peer);
+            } else {
+                excludedPeers.add(peer);
             }
+
             const remainingAfter = deadline - Date.now();
             if (remainingAfter <= 0) break;
-            await sleep(Math.min(RESUME_PEER_SWITCH_DELAY_MS, remainingAfter));
+            // Skip the delay when nothing could possibly benefit from it:
+            // the queue is empty AND the distinct-peer cap is already
+            // reached, so the top-of-loop check will break out immediately
+            // on the next iteration anyway - sleeping here would just burn
+            // budget for a poll we already know is pointless.
+            if (
+                queue.length > 0 ||
+                distinctPeers.size < MAX_RESUME_SYNC_PEERS
+            ) {
+                await sleep(
+                    Math.min(RESUME_PEER_SWITCH_DELAY_MS, remainingAfter)
+                );
+            }
         }
 
-        return {
-            status: "failed",
-            reason: attempts === 0 ? "no-peers" : "sync-timeout",
-            retryable: true
-        };
-    }
-
-    private pickNextResumePeer(attempted: Set<Address>): Address | undefined {
-        for (const peer of this.getConnectedPeers()) {
-            if (!attempted.has(peer)) return peer;
+        if (lastFailure) {
+            return {
+                status: "failed",
+                reason: lastFailure.reason,
+                retryable: lastFailure.retryable
+            };
         }
-        return undefined;
+        // Deadline exhausted (or attempt cap hit) with zero attempts ever
+        // launched: no peer was ever available to try during the window.
+        return { status: "failed", reason: "no-peers", retryable: true };
     }
 }
 
