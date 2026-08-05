@@ -479,6 +479,47 @@ describe("PersistenceController", function () {
         expect(failureCount).to.equal(1);
     });
 
+    it("serializes concurrent binds onto a single hydration run", async () => {
+        const database = createDatabase();
+        // Seed a durable record through a first controller lifetime.
+        const seed = new PersistenceController(createStorageRecordCodec(), {
+            databaseHandle: createHandle(database)
+        });
+        const seedValues = new PersistentCollection<string, number>(
+            "forceJoin",
+            seed
+        );
+        await seed.bind();
+        seedValues.set("value", 21);
+        await seed.close();
+
+        const controller = new PersistenceController(
+            createStorageRecordCodec(),
+            { databaseHandle: createHandle(database) }
+        );
+        const values = new PersistentCollection<string, number>(
+            "forceJoin",
+            controller
+        );
+        let iteratorCalls = 0;
+        const originalIterator = database.iterator.bind(database);
+        database.iterator = ((options: Parameters<Database["iterator"]>[0]) => {
+            iteratorCalls += 1;
+            return originalIterator(options);
+        }) as Database["iterator"];
+
+        // A resume-from-background hydrate racing the connect-path bind must
+        // join the same run, not hydrate twice.
+        await Promise.all([controller.bind(), controller.bind()]);
+        expect(iteratorCalls).to.equal(1);
+        expect(values.get("value")).to.equal(21);
+
+        // Once bound, further binds are no-ops.
+        await controller.bind();
+        expect(iteratorCalls).to.equal(1);
+        await controller.close();
+    });
+
     it("poisons the controller when a commit hangs past its deadline", async () => {
         // A rejecting batch poisons through the retry path; a batch that
         // HANGS would otherwise keep every flush waiter (and thus every

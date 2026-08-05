@@ -70,6 +70,7 @@ export class PersistenceController {
     private poisonedError?: Error;
     private flushTimer?: ReturnType<typeof setTimeout>;
     private drainPromise?: Promise<void>;
+    private bindPromise?: Promise<void>;
     private closePromise?: Promise<void>;
     private nextRevision = 0;
     private persistedRevision = 0;
@@ -120,7 +121,21 @@ export class PersistenceController {
             this.bound = true;
             return;
         }
+        // Serialize concurrent binds (e.g. a resume-from-background hydrate
+        // racing the connect-path bind) onto one hydration run; the memo is
+        // in-flight only, so a handle attached later still re-runs for real.
+        if (this.bindPromise) return this.bindPromise;
+        this.bindPromise = this.runBind().finally(() => {
+            this.bindPromise = undefined;
+        });
+        return this.bindPromise;
+    }
 
+    private async runBind(): Promise<void> {
+        if (!this.databaseHandle) {
+            this.bound = true;
+            return;
+        }
         const hydrated = new Map<CollectionId, Array<[string, unknown]>>();
         for (const collectionId of this.collections.keys()) {
             hydrated.set(collectionId, []);

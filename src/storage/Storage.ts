@@ -137,6 +137,20 @@ export class Storage {
         return this.runtimeMetadata.get("active");
     }
 
+    /**
+     * Ensure the collections are hydrated (resume-from-background entry
+     * point). With write-behind persistence the in-memory caches are
+     * authoritative once bound — they may be AHEAD of disk — so a live
+     * re-read would roll them back; "hydrate on resume" therefore means
+     * hydrate exactly once: an already-bound storage resolves immediately,
+     * a hydrate racing the connect-path bind() joins that same run, and a
+     * storage whose handle isn't attached yet resolves as a no-op (the
+     * handle-attach path re-runs the real hydration).
+     */
+    public hydrate(): Promise<void> {
+        return this.controller.bind();
+    }
+
     public flush(): Promise<void> {
         return this.controller.flush();
     }

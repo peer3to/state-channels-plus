@@ -50,6 +50,48 @@ describe("Storage hydration", function () {
         await storage.close();
     });
 
+    it("hydrate() is a safe resume entry point: no-op when unbound or bound, never rolls back a cache ahead of disk", async () => {
+        // Persistence disabled: hydrate resolves immediately.
+        const unbound = new Storage();
+        await unbound.hydrate();
+        await unbound.close();
+
+        const database = new MemoryLevel<string, string>({
+            keyEncoding: "utf8",
+            valueEncoding: "utf8"
+        });
+        const handle: PersistenceDatabaseHandle = {
+            database,
+            location: "memory:hydration-resume",
+            close: () => database.close(),
+            destroy: () => database.clear()
+        };
+        const storage = new Storage();
+        await storage.bind(handle);
+
+        const forkA = factory.hash() as ForkId;
+        const forkB = factory.hash() as ForkId;
+        const snapshotHash = factory.hash();
+        const stateHash = factory.hash();
+        storage.setRuntimeMetadata({
+            activeForkId: forkA,
+            snapshotHash,
+            stateHash
+        });
+        await storage.flush();
+
+        // Write-behind: memory is now AHEAD of disk. A resume-time hydrate
+        // must not re-read disk and roll the cache back to forkA.
+        storage.setRuntimeMetadata({
+            activeForkId: forkB,
+            snapshotHash,
+            stateHash
+        });
+        await storage.hydrate();
+        expect(storage.getRuntimeMetadata()?.activeForkId).to.equal(forkB);
+        await storage.close();
+    });
+
     it("fails closed for every inconsistent persisted-state shape", async () => {
         const location = "memory:hydration";
         const channelId = factory.hash() as ChannelId;
