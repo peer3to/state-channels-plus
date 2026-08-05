@@ -164,6 +164,7 @@ export type EventSpies = {
     onInitiatingDispute?: sinon.SinonSpy;
     onDisputeUpdate?: sinon.SinonSpy;
     onBlockConfirmationProcessed?: sinon.SinonSpy;
+    onResumePhase?: sinon.SinonSpy;
 
     // EventHandler method spies
     onChannelOpened?: sinon.SinonSpy;

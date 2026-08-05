@@ -10,8 +10,8 @@ import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/
 import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
 import type { StateSnapshot } from "@/models";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { id } from "ethers";
-import type { ForkId, Hash, Timestamp } from "@/types/types";
+import { getBytes, hexlify, id } from "ethers";
+import type { Bytes, ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
     EventSyncFailureProbe,
@@ -20,7 +20,9 @@ import type {
     ConcurrentCalldataRecoveryProbe,
     CleanCommittedDivergenceProbe,
     DisputeStrategyResultMatrix,
-    MissingParticipantSnapshotsProbe
+    MissingParticipantSnapshotsProbe,
+    HeldSpectateRequestStatus,
+    SpectatePayloadCorruption
 } from "./StubService";
 import type { StubService } from "./StubService";
 
@@ -378,6 +380,187 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public restoreCountSpectateRequests(): boolean {
         return this.restoreSpectateStaleProof();
+    }
+
+    /**
+     * Hold an in-flight `onSpectateRequest` at entry (before it returns to its
+     * caller) so a test can deterministically stage "a sync is currently in
+     * flight to this peer" without racing timing/polling. Uses its own
+     * dedicated registry key (distinct from `spectateCreateRpcMethods`) so it
+     * can be installed alongside `stubCountSpectateRequests` (or any other
+     * `onSpectateRequest` wrapper) on the same peer, in either order, without
+     * either wrapper clobbering the other. Releasing lets the real handler run
+     * to completion and answer with the real payload.
+     */
+    public stubHoldSpectateRequest(): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (
+            !this.service.stubOriginals.has(
+                "heldSpectateRequestCreateRpcMethods"
+            )
+        ) {
+            this.service.stubOriginals.set(
+                "heldSpectateRequestCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "heldSpectateRequestCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+
+        const prior = this.service.heldSpectateRequest;
+        if (prior && prior.entered && !prior.settled) prior.release?.();
+
+        this.service.heldSpectateRequest = {
+            entered: false,
+            released: false,
+            settled: false
+        };
+
+        const stubService = this.service;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            const realOnSpectateRequest =
+                methods.onSpectateRequest.bind(methods);
+            methods.onSpectateRequest = async (syncRequest: SyncRequest) => {
+                const state = stubService.heldSpectateRequest;
+                if (state && !state.released) {
+                    state.entered = true;
+                    await new Promise<void>((resolve) => {
+                        state.release = resolve;
+                    });
+                }
+                const result = await realOnSpectateRequest(syncRequest);
+                if (state) state.settled = true;
+                return result;
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public getHeldSpectateRequestStatus(): HeldSpectateRequestStatus {
+        const state = this.service.heldSpectateRequest;
+        return {
+            entered: state?.entered ?? false,
+            released: state?.released ?? false,
+            settled: state?.settled ?? false
+        };
+    }
+
+    public releaseHeldSpectateRequest(): boolean {
+        const state = this.service.heldSpectateRequest;
+        if (!state) return false;
+        state.released = true;
+        state.release?.();
+        return true;
+    }
+
+    public restoreHoldSpectateRequest(): boolean {
+        this.releaseHeldSpectateRequest();
+        const original = this.service.stubOriginals.get(
+            "heldSpectateRequestCreateRpcMethods"
+        );
+        this.service.heldSpectateRequest = undefined;
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.spectateService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete(
+            "heldSpectateRequestCreateRpcMethods"
+        );
+        return true;
+    }
+
+    /**
+     * Make `spectateService.onSpectateRequest` answer with a REAL sync payload
+     * (generated for the requester's own `forkId`/`blockHeight` — nothing about
+     * what's requested is altered) that has exactly one field corrupted, so the
+     * outer `Codec.decode(SyncPayload)` still succeeds but a single named,
+     * peer-provable self-consistency check fails downstream. Uses its own
+     * dedicated registry key (distinct from `spectateCreateRpcMethods` and
+     * `heldSpectateRequestCreateRpcMethods`) so it composes with the hold stub
+     * and the request-counter stub on the same peer, in any install order.
+     */
+    public stubSpectateCorruptPayload(
+        corruption: SpectatePayloadCorruption
+    ): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
+        if (
+            !this.service.stubOriginals.has(
+                "corruptSpectatePayloadCreateRpcMethods"
+            )
+        ) {
+            this.service.stubOriginals.set(
+                "corruptSpectatePayloadCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "corruptSpectatePayloadCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.onSpectateRequest = async function (
+                this: SpectateServiceRpcMethods,
+                syncRequest: SyncRequest
+            ) {
+                const syncPayload = await this.service.generateSyncPayload(
+                    syncRequest.channelId,
+                    syncRequest.forkId,
+                    syncRequest.blockHeight
+                );
+                if (!syncPayload) {
+                    throw new Error("stubSpectateCorruptPayload - no payload");
+                }
+                if (corruption === "finalized-state-hash") {
+                    syncPayload.latestFinalizedEncodedState =
+                        StubRpcMethods.corruptEncodedState(
+                            syncPayload.latestFinalizedEncodedState
+                        );
+                } else {
+                    syncPayload.latestForkGenesisEncodedState =
+                        StubRpcMethods.corruptEncodedState(
+                            syncPayload.latestForkGenesisEncodedState
+                        );
+                }
+                return {
+                    encodedSyncPayload: Codec.encode(
+                        syncPayload,
+                        Type.SyncPayload
+                    )
+                };
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public restoreSpectateCorruptPayload(): boolean {
+        const original = this.service.stubOriginals.get(
+            "corruptSpectatePayloadCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.spectateService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete(
+            "corruptSpectatePayloadCreateRpcMethods"
+        );
+        return true;
+    }
+
+    /**
+     * Flip a byte in the middle of an encoded state so it no longer matches
+     * its own declared hash, while leaving the byte length (and thus any
+     * structural decode) intact.
+     */
+    private static corruptEncodedState(encodedState: Bytes): Bytes {
+        const bytes = getBytes(encodedState);
+        if (bytes.length === 0) {
+            throw new Error("stubSpectateCorruptPayload - empty encoded state");
+        }
+        const index = Math.floor(bytes.length / 2);
+        bytes[index] ^= 0xff;
+        return hexlify(bytes);
     }
 
     /**

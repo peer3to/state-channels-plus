@@ -1,7 +1,11 @@
 import { Logger } from "@/utils";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { ReductionSimulationErrorName } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import type {
+    HeldSpectateRequestStatus,
+    ReductionSimulationErrorName,
+    SpectatePayloadCorruption
+} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 
 /**
  * RPC-method stubs that wrap a service's `createRPCMethods` host-side.
@@ -76,6 +80,40 @@ export class RpcStubActions<
                     this.harness
                         .control(this.harness.getPeer(i))
                         .stub.restoreSpectateJunkPayload()
+                        .request()
+                )
+            );
+        };
+    }
+
+    /**
+     * Make the given peers answer every spectate request with a REAL sync
+     * payload that has exactly one named field corrupted (see
+     * `SpectatePayloadCorruption`), so the outer payload decodes cleanly but
+     * fails a specific, peer-provable self-consistency check downstream.
+     * Returns a teardown.
+     */
+    async stubSpectateCorruptPayload(
+        peerIndices: number[],
+        corruption: SpectatePayloadCorruption
+    ): Promise<() => Promise<void>> {
+        await Promise.all(
+            peerIndices.map((i) =>
+                this.harness
+                    .control(this.harness.getPeer(i))
+                    .stub.stubSpectateCorruptPayload(corruption)
+                    .request()
+            )
+        );
+        this.logger.debug(
+            `Stubbed spectate corrupt payload (${corruption}) on peers [${peerIndices.join(", ")}]`
+        );
+        return async () => {
+            await Promise.all(
+                peerIndices.map((i) =>
+                    this.harness
+                        .control(this.harness.getPeer(i))
+                        .stub.restoreSpectateCorruptPayload()
                         .request()
                 )
             );
@@ -322,5 +360,35 @@ export class RpcStubActions<
             .control(this.harness.getPeer(peerIndex))
             .stub.getSpectateSyncCallCount()
             .request();
+    }
+
+    /**
+     * Hold an in-flight `onSpectateRequest` at entry on a peer so a test can
+     * deterministically stage "a sync is currently in flight to this peer".
+     * Releasing lets the real handler run to completion and answer with the
+     * real payload; `restore` releases (if still held) and removes the stub.
+     */
+    async holdSpectateRequest(peerIndex: number): Promise<{
+        /** Current hold state: entered/released/settled. */
+        status: () => Promise<HeldSpectateRequestStatus>;
+        /** Let the held request proceed to completion. Idempotent. */
+        release: () => Promise<void>;
+        /** Release (if still held) and remove the stub. */
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubHoldSpectateRequest().request();
+        this.logger.debug(`Holding spectate request on peer ${peerIndex}`);
+        return {
+            status: async () =>
+                await ctl().getHeldSpectateRequestStatus().request(),
+            release: async () => {
+                await ctl().releaseHeldSpectateRequest().request();
+            },
+            restore: async () => {
+                await ctl().restoreHoldSpectateRequest().request();
+            }
+        };
     }
 }
