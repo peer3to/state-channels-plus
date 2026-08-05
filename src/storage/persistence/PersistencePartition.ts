@@ -25,6 +25,7 @@ export interface PersistenceOptions {
     location?: string;
     flushIntervalMs?: number;
     maxBatchOperations?: number;
+    commitDeadlineMs?: number;
     reset?: boolean;
 }
 

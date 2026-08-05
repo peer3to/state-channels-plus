@@ -56,7 +56,7 @@ export class Storage {
         logger?: Logger,
         persistenceOptions: Pick<
             PersistenceControllerOptions,
-            "flushIntervalMs" | "maxBatchOperations"
+            "flushIntervalMs" | "maxBatchOperations" | "commitDeadlineMs"
         > = {}
     ) {
         this.controller = new PersistenceController(

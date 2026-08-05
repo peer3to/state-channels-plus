@@ -17,6 +17,7 @@ const RECORD_PREFIX = "records!v1!";
 const DEFAULT_FLUSH_INTERVAL_MS = 50;
 const DEFAULT_MAX_BATCH_OPERATIONS = 500;
 const DEFAULT_PENDING_WARNING_OPERATIONS = 2_000;
+const DEFAULT_COMMIT_DEADLINE_MS = 30_000;
 
 type RegisteredCollection = PersistentCollection<unknown, unknown>;
 type EncodedRecordKey = string;
@@ -37,6 +38,14 @@ export interface PersistenceControllerOptions {
     flushIntervalMs?: number;
     maxBatchOperations?: number;
     pendingWarningOperations?: number;
+    /**
+     * Deadline for a whole drain attempt (the batch write including its
+     * retries). A rejecting batch already poisons the controller through the
+     * retry path; this catches the batch that HANGS instead — without it a
+     * hung database keeps every flush waiter (and thus every durability
+     * barrier) pending forever with no failure-handler teardown. 0 disables.
+     */
+    commitDeadlineMs?: number;
 }
 
 export class PersistenceController {
@@ -51,6 +60,7 @@ export class PersistenceController {
     private readonly flushIntervalMs: number;
     private readonly maxBatchOperations: number;
     private readonly pendingWarningOperations: number;
+    private readonly commitDeadlineMs: number;
     private readonly pendingRecords = new Map<
         EncodedRecordKey,
         PendingRecord
@@ -84,6 +94,8 @@ export class PersistenceController {
         this.pendingWarningOperations =
             options.pendingWarningOperations ??
             DEFAULT_PENDING_WARNING_OPERATIONS;
+        this.commitDeadlineMs =
+            options.commitDeadlineMs ?? DEFAULT_COMMIT_DEADLINE_MS;
         this.bound = !options.databaseHandle;
     }
 
@@ -393,16 +405,44 @@ export class PersistenceController {
         operations: PersistenceBatchOperation[]
     ): Promise<void> {
         if (!operations.length || !this.databaseHandle) return;
-        await retry(() => this.databaseHandle!.database.batch(operations), {
-            maxRetries: this.maxRetries,
-            delayMs: 10,
-            useExponentialBackoff: true,
-            onRetry: (attempt, error) =>
-                this.logger?.warn("Retrying persistence mutation", {
-                    attempt,
-                    error
-                })
+        await this.withCommitDeadline(
+            retry(() => this.databaseHandle!.database.batch(operations), {
+                maxRetries: this.maxRetries,
+                delayMs: 10,
+                useExponentialBackoff: true,
+                onRetry: (attempt, error) =>
+                    this.logger?.warn("Retrying persistence mutation", {
+                        attempt,
+                        error
+                    })
+            })
+        );
+    }
+
+    /**
+     * Rejects when the commit doesn't settle within the deadline, so a HUNG
+     * batch flows into the same poison path as a rejecting one. The late
+     * settlement of the abandoned batch is harmless: waiters were already
+     * rejected by poison() and the drain loop stops on poisonedError.
+     */
+    private withCommitDeadline(commitPromise: Promise<void>): Promise<void> {
+        if (!this.commitDeadlineMs) return commitPromise;
+        let deadlineTimer: ReturnType<typeof setTimeout>;
+        const deadline = new Promise<never>((_, reject) => {
+            deadlineTimer = setTimeout(
+                () =>
+                    reject(
+                        new Error(
+                            `Persistence commit exceeded its ${this.commitDeadlineMs}ms deadline`
+                        )
+                    ),
+                this.commitDeadlineMs
+            );
+            deadlineTimer.unref?.();
         });
+        return Promise.race([commitPromise, deadline]).finally(() =>
+            clearTimeout(deadlineTimer)
+        );
     }
 
     private resolveWaiters(): void {

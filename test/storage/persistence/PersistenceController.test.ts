@@ -105,6 +105,7 @@ async function createSubject(
         maxBatchOperations?: number;
         flushIntervalMs?: number;
         maxRetries?: number;
+        commitDeadlineMs?: number;
     } = {}
 ) {
     const database = options.database ?? createDatabase();
@@ -112,7 +113,8 @@ async function createSubject(
         databaseHandle: createHandle(database),
         maxBatchOperations: options.maxBatchOperations,
         flushIntervalMs: options.flushIntervalMs,
-        maxRetries: options.maxRetries
+        maxRetries: options.maxRetries,
+        commitDeadlineMs: options.commitDeadlineMs
     });
     const values = new PersistentCollection<string, number>(
         "forceJoin",
@@ -475,6 +477,58 @@ describe("PersistenceController", function () {
         }
         expect(laterError).to.equal(firstError);
         expect(failureCount).to.equal(1);
+    });
+
+    it("poisons the controller when a commit hangs past its deadline", async () => {
+        // A rejecting batch poisons through the retry path; a batch that
+        // HANGS would otherwise keep every flush waiter (and thus every
+        // durability barrier) pending forever with no failure-handler
+        // teardown. The commit deadline converts the hang into the same
+        // poison flow.
+        const database = createDatabase();
+        const batches = new BatchControl(database);
+        const hungBatch = batches.holdNext();
+        const { controller, values } = await createSubject({
+            database,
+            maxBatchOperations: 1,
+            commitDeadlineMs: 100
+        });
+        let failureError: Error | undefined;
+        controller.setFailureHandler((error) => {
+            failureError = error;
+        });
+
+        values.set("value", 4);
+        await batches.waitForBatch(1);
+
+        let flushError: Error | undefined;
+        try {
+            await controller.flush();
+        } catch (error) {
+            flushError = error as Error;
+        }
+        expect(flushError?.message).to.include("deadline");
+        expect(failureError?.message).to.include("deadline");
+        // The cache-first write stays visible after the poison, matching the
+        // rejecting-batch behavior.
+        expect(values.get("value")).to.equal(4);
+        // Release the abandoned batch; its late settlement must be a no-op.
+        hungBatch.resolve();
+    });
+
+    it("leaves commits that settle within the deadline unaffected", async () => {
+        const { controller, database, values } = await createSubject({
+            maxBatchOperations: 1,
+            commitDeadlineMs: 1_000
+        });
+
+        values.set("value", 11);
+        await controller.flush();
+
+        expect(await database.get("records!v1!forceJoin!value")).to.not.equal(
+            undefined
+        );
+        await controller.close();
     });
 
     it("separates close from scoped failure-handler cache cleanup", async () => {
