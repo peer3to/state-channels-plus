@@ -397,13 +397,13 @@ export class TransitionActions<
     }
     /**
      * White-box: run `tryMergeStoredBlockConfirmation` on the host, under the
-     * peer's live block strategy or a fabricated dispute strategy. Returns the
-     * merge result and the persisted signature set.
+     * peer's live, spectating, calldata, or a fabricated dispute strategy.
+     * Returns the merge result and the persisted signature set.
      */
     async runStoredBlockMerge(options: {
         peerIndex: number;
         confirmation: { signedBlock: unknown; signatures: string[] };
-        strategy?: "active" | "dispute";
+        strategy?: "active" | "dispute" | "spectating" | "calldata";
     }): Promise<{
         result: number | null;
         persistedSignatures: string[] | null;

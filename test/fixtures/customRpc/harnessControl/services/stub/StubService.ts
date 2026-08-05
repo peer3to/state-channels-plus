@@ -22,6 +22,7 @@ import {
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
+import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
@@ -1039,13 +1040,15 @@ export class StubService extends ARpcService<
 
     /**
      * White-box: run `tryMergeStoredBlockConfirmation` against the entry built
-     * from the confirmation, under the live block strategy or a fabricated
-     * dispute strategy. Returns the merge result and the persisted signature
-     * set for the block's hash.
+     * from the confirmation, under the peer's live, spectating, calldata, or a
+     * fabricated dispute strategy. Returns the merge result and the persisted
+     * signature set for the block's hash.
      */
     public async runStoredBlockMerge(
         encodedBlockConfirmation: string,
-        options?: { strategy?: "active" | "dispute" }
+        options?: {
+            strategy?: "active" | "dispute" | "spectating" | "calldata";
+        }
     ): Promise<{
         result: number | null;
         persistedSignatures: string[] | null;
@@ -1057,10 +1060,26 @@ export class StubService extends ARpcService<
         );
         const block = Block.fromBlockConfirmation(blockConfirmation);
         const entry = sm.storage.queues.createEntry(block);
-        const strategy =
-            options?.strategy === "dispute"
-                ? this.createDisputeValidationStrategy(factory.dispute())
-                : sm.blockValidationStrategy;
+        let strategy: AValidationStrategy;
+        switch (options?.strategy) {
+            case "dispute":
+                strategy = this.createDisputeValidationStrategy(
+                    factory.dispute()
+                );
+                break;
+            case "spectating":
+                strategy = sm.spectatingValidationStrategy;
+                break;
+            case "calldata":
+                // built as EventHandler builds it for a CalldataPosted event
+                strategy = new CalldataCommittedStrategy(
+                    sm.disputeManager,
+                    sm.blockValidationStrategy
+                );
+                break;
+            default:
+                strategy = sm.blockValidationStrategy;
+        }
         const result =
             await sm.storedBlockMergeService.tryMergeStoredBlockConfirmation(
                 entry,
