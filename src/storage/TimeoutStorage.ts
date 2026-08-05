@@ -13,6 +13,15 @@ export class TimeoutStorage {
     }
 
     // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /** The persistence engine's view of this store's PRIMARY map. */
+    *persistableEntries(): Iterable<[ForkId, TimeoutStruct]> {
+        yield* this.timeouts;
+    }
+
+    // ====================================
     // CREATE & UPDATE
     // ====================================
 

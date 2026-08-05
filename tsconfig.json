@@ -31,6 +31,9 @@
             "@platform/moduleLoader": [
                 "src/utils/moduleLoader/node/importModuleFromManifest"
             ],
+            "@platform/persistence": [
+                "src/storage/persistence/node/createPersistencePort"
+            ],
             "@test/*": ["test/*"],
             "@typechain-types/*": ["typechain-types/*"],
             "@typechain-types": ["typechain-types/index"]
@@ -43,6 +46,7 @@
         "src/evm/browser",
         "src/evm/contractExecutor/browser",
         "src/evm/p2pRuntime/browser",
+        "src/storage/persistence/browser",
         "src/utils/browser",
         "src/utils/logging/browser"
     ],

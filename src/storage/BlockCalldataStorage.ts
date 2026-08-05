@@ -14,6 +14,15 @@ export class BlockCalldataStorage {
     }
 
     // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /** The persistence engine's view of this store's PRIMARY map. */
+    *persistableEntries(): Iterable<[CalldataCoordinateKey, BlockCalldata]> {
+        yield* this.coordinatesToBlockMap;
+    }
+
+    // ====================================
     // CREATE
     // ====================================
 

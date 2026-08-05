@@ -120,6 +120,13 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // Store new signatures and broadcast
         this.storage.blocks.storeBlock(block);
+        // Durability barrier: this runs outside any mutex as a detached
+        // macrotask (StateManager.tryMergeStoredBlockConfirmation's stored-merge
+        // re-gossip), so the flush must be awaited at THIS write-site before the
+        // signature is gossiped (slashing vector). If it never resolves the
+        // broadcast simply never fires (withhold) — teardown comes from the
+        // engine's onFatal watchdog, not from an await throwing here.
+        await this.storage.awaitDurable();
         this.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(block.blockConfirmationStruct)
             .broadcast();

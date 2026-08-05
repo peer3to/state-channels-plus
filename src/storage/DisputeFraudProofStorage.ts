@@ -15,6 +15,15 @@ export class DisputeFraudProofStorage {
     constructor() {}
 
     // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /** The persistence engine's view of this store's PRIMARY map. */
+    *persistableEntries(): Iterable<[DisputeHash, DisputeFraudProofStruct]> {
+        yield* this.disputeFraudProofs;
+    }
+
+    // ====================================
     // CREATE
     // ====================================
 

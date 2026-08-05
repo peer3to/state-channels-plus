@@ -6,6 +6,15 @@ type BlockNumber = number;
 export class EventSyncStorage {
     private readonly latestProcessedBlocks = new Map<ChannelKey, BlockNumber>();
 
+    // ====================================
+    // PERSISTENCE
+    // ====================================
+
+    /** The persistence engine's view of this store's PRIMARY map. */
+    *persistableEntries(): Iterable<[ChannelKey, BlockNumber]> {
+        yield* this.latestProcessedBlocks;
+    }
+
     getLatestProcessedBlock(channelId: ChannelId): BlockNumber | undefined {
         return this.latestProcessedBlocks.get(this.getChannelKey(channelId));
     }

@@ -27,6 +27,12 @@ export type Config = {
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
     CRASH_LOG_MAX_SIZE_MB: number;
+    // Explicit kill-switch for the durable persistence engine (attach/hydrate/
+    // background flush). false reverts a channel's runtime to exactly the
+    // pre-persistence behavior (default in-memory Storage, no attach, no
+    // hydrate, no flush interval) - a code-free rollback if a real backend
+    // (be-04/be-05) misbehaves in production.
+    PERSISTENCE_ENABLED: boolean;
 };
 
 const DEFAULT_CONFIG: Config = {
@@ -50,7 +56,8 @@ const DEFAULT_CONFIG: Config = {
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
-    CRASH_LOG_MAX_SIZE_MB: 10
+    CRASH_LOG_MAX_SIZE_MB: 10,
+    PERSISTENCE_ENABLED: true
 };
 
 export function isNodeRuntime() {

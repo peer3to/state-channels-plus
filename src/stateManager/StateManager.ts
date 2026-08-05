@@ -860,7 +860,19 @@ class StateManager<
             }
         }
 
-        this.storage.blocks.storeBlock(block);
+        // Store + durability-barrier + broadcast policy is strategy-owned
+        // (see AGENTS.md "Block-validation deviations go through the
+        // strategy"): BlockValidationStrategy awaits a barrier before
+        // broadcasting (this signer's own signature is at risk),
+        // DisputeValidationStrategy stores and returns DUPLICATE with no
+        // broadcast (replay is read-only/crash-consistent),
+        // SpectatingValidationStrategy broadcasts with no barrier (no own
+        // signature at risk), CalldataCommittedStrategy throws (impossible
+        // here). The call site only computes inputs and interprets the
+        // result — it never re-implements a strategy's policy inline.
+        const validationResult =
+            await strategy.goodNewSignaturesOnExistingBlock(block);
+
         const persisted = this.storage.blocks.getBlock(block.hash);
         if (persisted) {
             P2pEventHooksUtils.maybeNotifyBlockFinalized({
@@ -871,14 +883,7 @@ class StateManager<
             });
         }
 
-        if (!(strategy instanceof DisputeValidationStrategy)) {
-            this.p2pManager.remoteRpc.stateTransitionService
-                .onBlockConfirmation(block.blockConfirmationStruct)
-                .broadcast();
-            return BlockValidationResult.BROADCAST;
-        }
-
-        return BlockValidationResult.DUPLICATE;
+        return validationResult;
     }
 
     /**
@@ -2370,6 +2375,11 @@ class StateManager<
                 block.height
             );
         }
+
+        // Durability barrier: block gossip until every storage write in this
+        // mutex section is durable, so we never release a signature before the
+        // just-signed state can survive a crash (slashing vector).
+        await this.storage.awaitDurable();
 
         // step 7 - gossip after local persistence, so echoed confirmations are
         // recognized as duplicates/signature updates instead of being replayed.
