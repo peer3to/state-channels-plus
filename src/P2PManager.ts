@@ -503,10 +503,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             this.stateManager.p2pEventHooks.onResumePhase?.("reconnecting");
 
             // Storage must be hydrated strictly before the transport/topic
-            // join (same ordering Storage.attachPersistence and
-            // P2pRuntimeHost's connect path require) - otherwise a handshake
-            // completing on the rejoined transport can fire a reactive sync
-            // that mutates state on top of a half-replayed store.
+            // join (same ordering Storage.bind and P2pRuntimeHost's connect
+            // path require) - otherwise a handshake completing on the
+            // rejoined transport can fire a reactive sync that mutates state
+            // on top of a half-replayed store.
             const hydrateBudgetMs = Math.min(
                 Math.max(0, deadline - Date.now()),
                 totalBudgetMs * RESUME_HYDRATE_BUDGET_FRACTION

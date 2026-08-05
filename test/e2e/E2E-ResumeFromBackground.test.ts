@@ -36,7 +36,7 @@ import { expect } from "chai";
  * Every scenario below runs inside ONE harness session/`it`: this sandbox
  * cannot stand up a second full peer session in the same mocha process (a
  * second session hangs at a deploy-transaction timeout) - see
- * test/e2e/persistence/hydrateRoundtrip.test.ts and
+ * test/e2e/persistence/durabilityBarrier.test.ts and
  * test/e2e/E2E-ResumePeerRotation.test.ts for the same constraint and the
  * same single-session-for-everything structure.
  */
@@ -113,10 +113,10 @@ describe("E2E: resume from background", function () {
         // FR1 ordering instrumentation, installed AFTER the harness's own
         // reconnect (which itself calls tryOpenConnectionToChannel once, a
         // no-op) so only resumeFromBackground's OWN calls are recorded.
-        // Mirrors test/e2e/persistence/hydrateRoundtrip.test.ts's technique:
-        // wrap both methods, push into a per-signer-keyed array on
-        // globalThis (inline mode shares one process/globalThis across
-        // peers), read it back host-side.
+        // Mirrors test/e2e/persistence/durabilityBarrier.test.ts's technique
+        // (host-side method wrapping): wrap both methods, push into a
+        // per-signer-keyed array on globalThis (inline mode shares one
+        // process/globalThis across peers), read it back host-side.
         await h.execOnHost(resuming, (sm) => {
             const g = globalThis as unknown as {
                 __resumeOrder?: Record<string, string[]>;
