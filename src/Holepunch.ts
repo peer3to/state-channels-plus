@@ -11,7 +11,9 @@ import { config } from "@/utils/config";
 class Holepunch {
     swarm: any;
     p2pManager: P2PManager;
-    topics: Buffer[] = [];
+    // Keyed by topic.toString("hex") so byte-identical topics from separate
+    // Buffer instances dedupe instead of accumulating on every join() call.
+    topics: Map<string, Buffer> = new Map();
     connectionCount = 0;
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -72,7 +74,9 @@ class Holepunch {
         }
     }
     public async join(topic: Buffer) {
-        this.topics.push(topic);
+        // Re-register on every call (harmless-but-safe) since rejoinTopics
+        // already re-registers everything on every relay update anyway.
+        this.topics.set(topic.toString("hex"), topic);
         this.swarm.join(topic, {
             server: true,
             client: true
@@ -84,7 +88,7 @@ class Holepunch {
     }
 
     private rejoinTopics() {
-        for (const topic of this.topics) {
+        for (const topic of this.topics.values()) {
             this.swarm.join(topic, {
                 server: true,
                 client: true
@@ -96,13 +100,13 @@ class Holepunch {
     }
 
     private leaveTopics() {
-        for (const topic of this.topics) {
+        for (const topic of this.topics.values()) {
             this.swarm.leave(topic);
             this.p2pManager.logger.debug("Left holepunch topic", {
                 topic: topic.toString("hex")
             });
         }
-        this.topics = [];
+        this.topics.clear();
     }
 }
 
