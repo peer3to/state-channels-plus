@@ -428,6 +428,88 @@ describe("Storage persistence", function () {
         await second.close();
     });
 
+    it("a justPersist merge cannot demote the tip, and a justPersist-only block stays off the tip across a restart", async () => {
+        const database = new MemoryLevel<string, string>({
+            keyEncoding: "utf8",
+            valueEncoding: "utf8"
+        });
+        const first = new Storage();
+        await first.bind(createHandle(database));
+
+        // Normal store, then a justPersist merge of the SAME block: the merge
+        // must not demote the already-advancing record off the tip.
+        const advancing = factory.block();
+        first.blocks.storeBlock(advancing);
+        expect(first.blocks.getLatestBlock(advancing.forkId)?.hash).to.equal(
+            advancing.hash
+        );
+        first.blocks.storeBlock(advancing, { justPersist: true });
+        expect(first.blocks.getLatestBlock(advancing.forkId)?.hash).to.equal(
+            advancing.hash
+        );
+
+        // A justPersist-only block at a greater height must not advance the
+        // tip (same fork by factory default).
+        const parked = factory.block({
+            transaction: factory.transaction({
+                header: factory.transactionHeader({ transactionCnt: 5 })
+            })
+        });
+        first.blocks.storeBlock(parked, { justPersist: true });
+        expect(first.blocks.getLatestBlock(advancing.forkId)?.hash).to.equal(
+            advancing.hash
+        );
+        await first.flush();
+        await first.close();
+
+        // The restart must agree: advancesTip is persisted, not re-inferred,
+        // so rehydration cannot resurrect the parked block as the tip.
+        const second = new Storage();
+        await second.bind(createHandle(database));
+        expect(second.blocks.getBlock(parked.hash)?.equals(parked)).to.be.true;
+        expect(second.blocks.getLatestBlock(advancing.forkId)?.hash).to.equal(
+            advancing.hash
+        );
+
+        // A later normal store of the parked block promotes it.
+        second.blocks.storeBlock(parked);
+        expect(second.blocks.getLatestBlock(advancing.forkId)?.hash).to.equal(
+            parked.hash
+        );
+        await second.close();
+    });
+
+    it("fails hydration closed on a corrupt record value in a known collection", async () => {
+        const database = new MemoryLevel<string, string>({
+            keyEncoding: "utf8",
+            valueEncoding: "utf8"
+        });
+        const first = new Storage();
+        await first.bind(createHandle(database));
+        const block = factory.block();
+        first.blocks.storeBlock(block);
+        await first.flush();
+        await first.close();
+
+        // Corrupt the persisted block record in place (a known-collection
+        // key, unlike the unknown-collection case the controller suite
+        // covers).
+        await database.open();
+        await database.put(`records!v1!blocks!${block.hash}`, "0xdeadbeef");
+
+        const second = new Storage();
+        let bindError: Error | undefined;
+        try {
+            await second.bind(createHandle(database));
+        } catch (error) {
+            bindError = error as Error;
+        }
+        expect(bindError, "hydration must fail closed on a corrupt record").to
+            .not.be.undefined;
+        // Fail-closed also means no partial state leaks into the caches.
+        expect(second.blocks.getBlock(block.hash)).to.be.undefined;
+    });
+
     it("makes flush immediate when persistence is disabled", async () => {
         const storage = new Storage();
         const block = factory.block();
