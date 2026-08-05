@@ -3,6 +3,7 @@ import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import { Codec, Type } from "@/utils";
 import type { SyncPayload } from "@/types/spectate";
+import type { Address } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import SpectateControlRpcMethods from "./SpectateControlRpcMethods";
 
@@ -40,6 +41,11 @@ export class SpectateControlService extends ARpcService<
     /** The SDK's live spectate service on this peer's local RPC. */
     get spectate() {
         return this.p2pManager.localRpc.spectateService;
+    }
+
+    /** Whether a sync is currently held in-flight for this peer (guard state). */
+    isSyncInFlight(peerAddress: Address): boolean {
+        return this.spectate.isSyncInFlight(peerAddress);
     }
 
     public createRPCMethods(transport: ATransport): SpectateControlRpcMethods {

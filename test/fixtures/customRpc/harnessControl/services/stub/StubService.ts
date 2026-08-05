@@ -39,7 +39,21 @@ export type StubKey =
     | "finalDisputePreparation"
     | "spectateSync"
     | "pausedReduction"
-    | "pausedReductionKillPeriod";
+    | "pausedReductionKillPeriod"
+    | "heldSpectateRequestCreateRpcMethods"
+    | "corruptSpectatePayloadCreateRpcMethods";
+
+/**
+ * Which single field of a real `SyncPayload` to corrupt for
+ * `stubSpectateCorruptPayload`. Each variant targets one peer-provable,
+ * self-consistency check in `applySyncResponse` (the declared snapshot hash
+ * no longer matches `keccak256` of its paired encoded state) — deliberately
+ * NOT chain-view-dependent checks (those are unpunished on resume) or checks
+ * that need state/contract setup beyond a field mutation.
+ */
+export type SpectatePayloadCorruption =
+    | "finalized-state-hash"
+    | "genesis-state-hash";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -58,6 +72,16 @@ export type PausedReductionState = PausedReductionStatus & {
     inside: boolean;
     release?: () => void;
     promise?: Promise<unknown>;
+};
+
+export type HeldSpectateRequestStatus = {
+    entered: boolean;
+    released: boolean;
+    settled: boolean;
+};
+
+export type HeldSpectateRequestState = HeldSpectateRequestStatus & {
+    release?: () => void;
 };
 
 export type EventSyncFailureProbe = {
@@ -138,6 +162,8 @@ export class StubService extends ARpcService<
     spectateSyncCallCount = 0;
     /** State for the already-entered old-fork reduction race stub. */
     pausedReduction?: PausedReductionState;
+    /** State for the held-in-flight onSpectateRequest stub. */
+    heldSpectateRequest?: HeldSpectateRequestState;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(

@@ -3,7 +3,7 @@ import { ZeroHash } from "ethers";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import { Codec, getChecksumAddress, Type } from "@/utils";
+import { Codec, Type } from "@/utils";
 import Block from "@/models/Block";
 import type { Address, ChannelId, ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
@@ -68,12 +68,22 @@ export class SpectateControlRpcMethods extends ARpcMethods<
         return true;
     }
 
-    /** Persist an encoded sync payload; returns whether spectating aborted. */
+    /**
+     * Persist an encoded sync payload; returns whether spectating aborted.
+     * Maps `SpectateService.persistSyncPayload`'s `PersistSyncResult` union
+     * onto the RPC-boundary `{ shouldAbort }` shape: "conflict" (peer-provable
+     * divergence) and "incomplete" (local fault after partial writes) both
+     * abort; "applied" and "already-current" don't.
+     */
     public async persistSyncPayload(
         encodedSyncPayload: string
     ): Promise<{ shouldAbort: boolean }> {
         const payload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
-        return this.service.spectate.persistSyncPayload(payload);
+        const result = await this.service.spectate.persistSyncPayload(payload);
+        return {
+            shouldAbort:
+                result.outcome === "conflict" || result.outcome === "incomplete"
+        };
     }
 
     /** Store a block straight into storage (`justPersist`); returns its hash. */
@@ -88,18 +98,9 @@ export class SpectateControlRpcMethods extends ARpcMethods<
         );
     }
 
-    /** Kick off the fire-and-forget `sync()` (the reactive path) - test-only trigger. */
-    public triggerSync(peerAddress: Address, channelId: ChannelId): void {
-        this.service.spectate.sync(peerAddress, channelId);
-    }
-
     /** Whether a sync is currently held in-flight for this peer (guard state). */
     public isSyncInFlight(peerAddress: Address): boolean {
-        return (
-            this.service.spectate as unknown as {
-                inFlightByPeerAddress: Set<string>;
-            }
-        ).inFlightByPeerAddress.has(getChecksumAddress(peerAddress));
+        return this.service.isSyncInFlight(peerAddress);
     }
 }
 

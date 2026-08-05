@@ -579,6 +579,7 @@ export class PeerTestHarness<
             onInitiatingDispute: sinon.spy(),
             onDisputeUpdate: sinon.spy(),
             onBlockConfirmationProcessed: sinon.spy(),
+            onResumePhase: sinon.spy(),
 
             // EventHandler method spies
             onChannelOpened: sinon.spy(),
@@ -718,6 +719,14 @@ export class PeerTestHarness<
                     blockHash,
                     keepConnection
                 );
+                void this.eventCountsBarrier.signal();
+            },
+            onResumePhase: (phase: "reconnecting" | "resyncing") => {
+                peerLogger.debug("Resume phase changed", {
+                    component: "P2pEventHooks",
+                    phase
+                });
+                eventSpies.onResumePhase?.(phase);
                 void this.eventCountsBarrier.signal();
             }
         };
