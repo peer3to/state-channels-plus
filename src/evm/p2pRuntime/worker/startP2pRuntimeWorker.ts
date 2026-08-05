@@ -3,7 +3,8 @@ import { createConfig } from "@/utils/config";
 import {
     onWorkerBootstrap,
     adaptTransferredPort,
-    onUnhandledWorkerError
+    onUnhandledWorkerError,
+    closeWorkerBootstrapPort
 } from "@platform/p2pRuntimeWorkerRuntime";
 import { startP2pRuntimeHost, serializeError } from "../P2pRuntimeHost";
 
@@ -30,7 +31,8 @@ export function startP2pRuntimeWorker(): void {
         });
 
         await startP2pRuntimeHost(runtimePort, payload, {
-            threadLabel: "sdk"
+            threadLabel: "sdk",
+            onDisposed: closeWorkerBootstrapPort
         });
     });
 }

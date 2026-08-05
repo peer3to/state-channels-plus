@@ -13,22 +13,9 @@ class Holepunch {
     p2pManager: P2PManager;
     topics: Buffer[] = [];
     connectionCount = 0;
+    private readonly isBrowserRuntime: boolean;
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
-        const setup = () => {
-            this.swarm.removeAllListeners(["connection"]); // since hyperwarm is injected into the runtime, creating a new Holepunch object still holds the same refrence to hyperwarm
-            this.swarm.on("connection", (socket: any, info: any) => {
-                this.p2pManager.logger.info("New holepunch peer connection", {
-                    connectionCount: ++this.connectionCount,
-                    transportType: "HOLEPUNCH"
-                });
-                this.p2pManager.logger.debug("Holepunch peer info", {
-                    peerInfo: info
-                });
-                new HolepunchTransport(socket, info, this.p2pManager);
-            });
-            this.rejoinTopics();
-        };
 
         // `window` is absent in a Web Worker, so RUN_SDK_IN_THREAD (Holepunch
         // running inside the SDK's browser worker) must also detect the worker
@@ -36,29 +23,52 @@ class Holepunch {
         // `@hyperswarm/dht` throws "not supported in browsers". Mirrors
         // isWorkerRuntime() in WebRTCSetup/connection/WebRTCProvider.ts.
         const browserGlobal = globalThis as any;
-        const isBrowserRuntime =
+        this.isBrowserRuntime =
             typeof window !== "undefined" ||
             (typeof browserGlobal.WorkerGlobalScope !== "undefined" &&
                 browserGlobal instanceof browserGlobal.WorkerGlobalScope);
-        if (isBrowserRuntime) {
+        if (this.isBrowserRuntime) {
             this.p2pManager.logger.info("Using browser Hyperswarm relay");
             p2pManager.preferredTransport = TransportType.WEBRTC;
             const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
             const relayerUpdateCallback = () => {
                 const swarm = HolepunchRelay.getInstance().getSwarm();
                 this.swarm = browserGlobal.Hyperswarm || swarm;
-                setup();
+                this.setupSwarm();
             };
             HolepunchRelay.init(
                 relayerUrls,
                 relayerUpdateCallback,
                 this.p2pManager.logger
             );
-        } else {
-            // @ts-ignore
-            this.swarm = global.Hyperswarm || new Hyperswarm();
-            setup();
         }
+        // Node: the swarm is created lazily on the first join(). An eagerly
+        // created Hyperswarm owns a live DHT socket (native utp udp/poll
+        // handles) even when the local debug transport is active and no topic
+        // is ever joined — and unclosed native handles abort worker teardown
+        // at uv_loop_close (see evm/node/workerShutdown.ts).
+    }
+
+    private setupSwarm() {
+        this.swarm.removeAllListeners(["connection"]); // since hyperwarm is injected into the runtime, creating a new Holepunch object still holds the same refrence to hyperwarm
+        this.swarm.on("connection", (socket: any, info: any) => {
+            this.p2pManager.logger.info("New holepunch peer connection", {
+                connectionCount: ++this.connectionCount,
+                transportType: "HOLEPUNCH"
+            });
+            this.p2pManager.logger.debug("Holepunch peer info", {
+                peerInfo: info
+            });
+            new HolepunchTransport(socket, info, this.p2pManager);
+        });
+        this.rejoinTopics();
+    }
+
+    private ensureNodeSwarm() {
+        if (this.swarm || this.isBrowserRuntime) return;
+        // @ts-ignore
+        this.swarm = global.Hyperswarm || new Hyperswarm();
+        this.setupSwarm();
     }
     //Mark resources for garbage collection
     public async dispose() {
@@ -72,6 +82,7 @@ class Holepunch {
         }
     }
     public async join(topic: Buffer) {
+        this.ensureNodeSwarm();
         this.topics.push(topic);
         this.swarm.join(topic, {
             server: true,

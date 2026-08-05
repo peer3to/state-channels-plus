@@ -12,5 +12,6 @@ startContractExecutorWorkerHost(
         globalThis.onmessage = (event: MessageEvent<WorkerRequestMessage>) => {
             handler(event.data);
         };
-    }
+    },
+    () => globalThis.close()
 );

@@ -15,7 +15,7 @@ import {
     getErrorPeerAddress,
     Type
 } from "@/utils";
-import { config } from "@/utils/config";
+import { config, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import MainRpcService from "@/rpc/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
@@ -39,6 +39,7 @@ import {
 
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
 import type { Logger } from "@/utils/logging/Logger";
+import { LocalDiscoveryServer } from "@/utils";
 import type {
     HostRpcRequest,
     RuntimeClientRequest,
@@ -65,6 +66,8 @@ export interface HostContext {
      * thread runs exactly one peer's host, so no disambiguation is needed.
      */
     handlerExecutionContext?: HostHandlerExecutionContext;
+    /** Release worker-only bootstrap resources after replying to dispose. */
+    onDisposed?: () => void | Promise<void>;
 }
 
 /** Live runtime graph while the host is running. */
@@ -240,6 +243,16 @@ export async function startP2pRuntimeHost<
             // removing listeners first leaves eth_unsubscribe requests that
             // destroy then rejects as unhandled.
             if (!Clock.ownsProvider(provider)) await provider.destroy();
+            // TODO: Delegate cleanup through the shared Holepunch/local
+            // discovery lifecycle API once the backend is injected.
+            if (
+                ctx.onDisposed &&
+                config.DEBUG_LOCAL_TRANSPORT &&
+                isNodeRuntime() &&
+                config.LOCAL_DISCOVERY_REGISTRY_URL
+            ) {
+                await LocalDiscoveryServer.cleanup();
+            }
         }
     };
 
@@ -399,6 +412,7 @@ export async function startP2pRuntimeHost<
         const handleRequest = async (
             request: RuntimeClientRequest
         ): Promise<void> => {
+            const shouldCloseAfterResponse = request.type === "dispose";
             try {
                 let result: unknown;
                 switch (request.type) {
@@ -612,6 +626,10 @@ export async function startP2pRuntimeHost<
                     ok: false,
                     error: serializeError(error)
                 });
+            }
+            if (shouldCloseAfterResponse) {
+                port.close();
+                await ctx.onDisposed?.();
             }
         };
 

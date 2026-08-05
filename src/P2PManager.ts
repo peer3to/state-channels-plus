@@ -248,6 +248,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
     public async tryOpenConnectionToChannel(channelId: string) {
+        // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
+        // and inject the selected backend so P2PManager does not know which
+        // discovery implementation it is using.
         if (config.DEBUG_LOCAL_TRANSPORT) {
             // In the browser there's no harness fixture to drive discovery, so
             // form the local mesh here via the relay hub. In node the harness

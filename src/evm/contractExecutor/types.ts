@@ -14,7 +14,7 @@ export type {
 
 export type WorkerLike = {
     postMessage(message: WorkerRequestMessage): void;
-    terminate?: () => Promise<unknown> | unknown;
+    shutdown?: () => Promise<void>;
 };
 
 export type ContractExecutorWorkerMessageHandler = (

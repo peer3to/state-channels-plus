@@ -540,7 +540,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             };
             worker.postMessage(bootstrap, [transferablePort]);
             clientPort = localPort;
-            onClose = () => worker.terminate();
+            onClose = () => worker.shutdown();
         } else {
             const channel = createRuntimeChannel();
             clientPort = channel.port1;

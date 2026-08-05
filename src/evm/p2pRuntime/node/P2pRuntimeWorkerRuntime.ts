@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import { startCpuProfilerIfEnabled } from "../../node/workerCpuProfiler";
+import { createWorkerShutdown } from "../../node/workerShutdown";
 import type {
     P2pRuntimeWorker,
     RuntimePort,
@@ -43,6 +44,7 @@ export function createP2pRuntimeWorker(): P2pRuntimeWorker {
         execArgv,
         resourceLimits: resolveWorkerResourceLimits("sdk")
     });
+    const shutdownWorker = createWorkerShutdown(worker);
     instrumentWorkerStartup(
         worker,
         "sdk",
@@ -50,7 +52,13 @@ export function createP2pRuntimeWorker(): P2pRuntimeWorker {
             ? "ts-node-swc-transpile-only"
             : "compiled-js"
     );
-    return worker as unknown as P2pRuntimeWorker;
+    return {
+        postMessage: (value, transfer) =>
+            worker.postMessage(value, transfer as readonly MessagePort[]),
+        shutdown: async () => {
+            await shutdownWorker();
+        }
+    };
 }
 
 /**
@@ -67,7 +75,55 @@ export function onWorkerBootstrap(
         );
     }
     startCpuProfilerIfEnabled("sdk");
-    parentPort.on("message", (data) => handler(data as WorkerBootstrapMessage));
+    parentPort.once("message", (data) =>
+        handler(data as WorkerBootstrapMessage)
+    );
+}
+
+/** Initiate closing a lingering handle; the loop drain awaits completion. */
+function closeHandle(handle: any): void {
+    // Sockets and streams (provider keep-alive sockets, torn-transport WS).
+    if (typeof handle.destroy === "function") return void handle.destroy();
+    // Timers — clearTimeout accepts a Timeout from setInterval too.
+    if (typeof handle.refresh === "function") return clearTimeout(handle);
+    // Servers, message ports, and other closeables.
+    if (typeof handle.close === "function") return void handle.close();
+    handle.unref?.();
+}
+
+/**
+ * Close the worker's remaining handles after disposal so its event loop can
+ * drain and the thread exits on its own (see workerShutdown.ts for why the
+ * loop must never be force-stopped).
+ */
+export async function closeWorkerBootstrapPort(): Promise<void> {
+    const port = parentPort;
+    if (!port) return;
+
+    // The worker realm is disposed, but torn-down transports/providers can
+    // leave referenced handles behind (idle keep-alive sockets, reconnect
+    // timers of a cut connection, …). Any one of them stalls the drain — and
+    // with it the whole teardown — so close everything still keeping the loop
+    // alive except stdio and the bootstrap port itself. Iterate: a close
+    // callback may schedule follow-up work that arms new handles.
+    const keep = new Set<unknown>([
+        process.stdout,
+        process.stderr,
+        process.stdin,
+        port
+    ]);
+    for (let pass = 0; pass < 10; pass++) {
+        const held = (process as any)
+            ._getActiveHandles()
+            .filter(
+                (handle: any) =>
+                    !keep.has(handle) && handle.hasRef?.() !== false
+            );
+        if (held.length === 0) break;
+        held.forEach(closeHandle);
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+    port.close();
 }
 
 /** Adapt the transferred raw port to the platform-neutral surface. */
