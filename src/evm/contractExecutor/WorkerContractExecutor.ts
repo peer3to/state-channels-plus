@@ -12,10 +12,8 @@ import type {
     WorkerCustomPrecompile,
     WorkerResponseMessage
 } from "./worker/protocol";
-import {
-    createContractExecutorWorker,
-    type WorkerLike
-} from "@platform/contractExecutorWorkerRuntime";
+import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
+import type { WorkerLike } from "./types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 type ContractExecutorOperation =
@@ -129,7 +127,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
                 new Error("Contract executor worker disposed"),
                 false
             );
-            await this.worker.terminate?.();
+            await this.worker.shutdown?.();
         }
     }
 
@@ -147,6 +145,11 @@ export default class WorkerContractExecutor extends AContractExecutor {
     }
 
     private request(message: ContractExecutorRequestPayload) {
+        if (this.disposed && message.type !== "dispose") {
+            return Promise.reject(
+                new Error("Contract executor worker disposed")
+            );
+        }
         const request = {
             type: "request" as const,
             requestId: this.nextRequestId++,

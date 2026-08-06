@@ -73,7 +73,7 @@ export interface RuntimeRequest<TType extends string = string> {
  */
 export interface P2pRuntimeWorker {
     postMessage(value: unknown, transfer?: unknown[]): void;
-    terminate(): unknown;
+    shutdown(): Promise<void>;
 }
 
 /** `Omit` that distributes over unions (preserves discriminated members). */

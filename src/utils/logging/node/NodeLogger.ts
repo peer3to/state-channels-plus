@@ -171,7 +171,7 @@ export class NodeLogger extends Logger {
                 // Report the running event-loop-delay peak for this thread to the
                 // parallel test runner (a ##E2E_TIMING## marker on stdout, which
                 // it prints per test). Emit on each increase because SDK/VM worker
-                // threads are force-terminated. Enabled whenever the event-loop
+                // threads may exit before the next sample. Enabled whenever the event-loop
                 // monitor threshold is configured (tests only), so production is
                 // unaffected.
                 const emitTiming =

@@ -124,11 +124,15 @@ class ContractExecutorWorkerHost {
 
     start(
         post: (response: WorkerHostMessage) => void,
-        onMessage: (handler: (message: WorkerRequestMessage) => void) => void
+        onMessage: (handler: (message: WorkerRequestMessage) => void) => void,
+        onDisposed?: () => void
     ): void {
         onMessage((message) => {
             if (message.type !== "request") return;
-            void this.handleRequest(message).then(post);
+            void this.handleRequest(message).then((response) => {
+                post(response);
+                if (message.payload.type === "dispose") onDisposed?.();
+            });
         });
 
         post({ type: "ready" });
@@ -137,7 +141,8 @@ class ContractExecutorWorkerHost {
 
 export function startContractExecutorWorkerHost(
     post: (response: WorkerHostMessage) => void,
-    onMessage: (handler: (message: WorkerRequestMessage) => void) => void
+    onMessage: (handler: (message: WorkerRequestMessage) => void) => void,
+    onDisposed?: () => void
 ): void {
-    new ContractExecutorWorkerHost().start(post, onMessage);
+    new ContractExecutorWorkerHost().start(post, onMessage, onDisposed);
 }

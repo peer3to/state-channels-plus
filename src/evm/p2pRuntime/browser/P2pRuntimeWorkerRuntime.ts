@@ -6,12 +6,22 @@ import type {
 import { adaptPort } from "./P2pRuntimeChannel";
 
 export function createP2pRuntimeWorker(): P2pRuntimeWorker {
-    return new Worker(
+    const worker = new Worker(
         new URL("../worker/P2pRuntimeWorkerEntry.js", import.meta.url),
         {
             type: "module"
         }
-    ) as unknown as P2pRuntimeWorker;
+    );
+    return {
+        postMessage: (value, transfer) => {
+            if (transfer) {
+                worker.postMessage(value, transfer as Transferable[]);
+                return;
+            }
+            worker.postMessage(value);
+        },
+        shutdown: async () => worker.terminate()
+    };
 }
 
 /**
@@ -31,6 +41,11 @@ export function onWorkerBootstrap(
     scope.addEventListener("message", (event: MessageEvent) => {
         handler(event.data as WorkerBootstrapMessage);
     });
+}
+
+/** Close a disposed browser worker after its response has been posted. */
+export function closeWorkerBootstrapPort(): void {
+    self.close();
 }
 
 /** Adapt the transferred raw port to the platform-neutral surface. */

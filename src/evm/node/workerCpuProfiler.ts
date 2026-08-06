@@ -4,11 +4,11 @@ import * as path from "node:path";
 // Env-gated V8 CPU profiler for worker threads (diagnostics only). Enabled by
 // setting SCP_CPU_PROFILE_DIR; profiles land there as .cpuprofile files.
 //
-// Worker threads are force-terminated by the test harness, so a profile that
-// only writes on clean exit would be lost. Instead the profile is flushed in
+// A failed worker may still require forced shutdown, so a profile that only
+// writes on clean exit could be lost. Instead the profile is flushed in
 // chunks (SCP_CPU_PROFILE_FLUSH_MS, default 5s) and once more on
 // uncaughtException — the event-loop starvation watchdog throws, so the chunk
-// containing the stall is written before the parent terminates the thread.
+// containing the stall is written before the worker exits.
 export function startCpuProfilerIfEnabled(label: string): void {
     const dir = process.env.SCP_CPU_PROFILE_DIR;
     if (!dir) return;

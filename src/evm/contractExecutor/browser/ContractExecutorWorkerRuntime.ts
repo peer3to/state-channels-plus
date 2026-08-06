@@ -2,11 +2,7 @@ import type {
     WorkerRequestMessage,
     WorkerResponseMessage
 } from "../worker/protocol";
-
-export type WorkerLike = {
-    postMessage(message: WorkerRequestMessage): void;
-    terminate?: () => Promise<unknown> | unknown;
-};
+import type { WorkerLike } from "../types";
 
 export type ContractExecutorWorkerMessageHandler = (
     message: WorkerResponseMessage
@@ -40,5 +36,8 @@ export function createContractExecutorWorker(
             new Error("Contract executor worker message could not be cloned")
         );
     };
-    return worker;
+    return {
+        postMessage: (message) => worker.postMessage(message),
+        shutdown: async () => worker.terminate()
+    };
 }

@@ -15,5 +15,8 @@ startContractExecutorWorkerHost(
     (response: WorkerHostMessage) => port.postMessage(response),
     (handler: (message: WorkerRequestMessage) => void) => {
         port.on("message", handler);
-    }
+    },
+    // Close the port so the drained loop can exit naturally (see
+    // workerShutdown.ts for why the loop must never be force-stopped).
+    () => port.close()
 );

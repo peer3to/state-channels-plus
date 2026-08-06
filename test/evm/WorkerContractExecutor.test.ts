@@ -103,6 +103,25 @@ describe("WorkerContractExecutor", function () {
         await executor.dispose();
     });
 
+    it("should reject calls immediately after disposal", async function () {
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true
+        });
+        await executor.dispose();
+
+        try {
+            await executor.executeCall(
+                "0x",
+                "0x0000000000000000000000000000000000000001"
+            );
+            expect.fail("executeCall should reject after disposal");
+        } catch (error) {
+            expect((error as Error).message).to.equal(
+                "Contract executor worker disposed"
+            );
+        }
+    });
+
     for (const dedicatedThread of [false, true]) {
         it(`should serialize simulations with local writes (${dedicatedThread ? "worker" : "inline"})`, async function () {
             const customAddress = Address.fromString(

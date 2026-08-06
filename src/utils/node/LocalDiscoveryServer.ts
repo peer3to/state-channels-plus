@@ -1060,7 +1060,15 @@ export class LocalDiscoveryServer {
         });
 
         // 2. Close all discovery connections (outgoing from peers)
-        this.activeDiscoveryConnections.forEach((ws) => ws.terminate());
+        this.activeDiscoveryConnections.forEach((ws) => {
+            if (ws.readyState === WebSocket.CLOSED) return;
+            closePromises.push(
+                new Promise<void>((resolve) => {
+                    ws.once("close", () => resolve());
+                    ws.terminate();
+                })
+            );
+        });
         this.activeDiscoveryConnections.clear();
 
         for (const timer of this.pendingTimers) {
