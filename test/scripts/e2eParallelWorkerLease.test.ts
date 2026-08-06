@@ -12,8 +12,22 @@ const {
 const {
     acquireHostLock
 } = require("../../scripts/e2e-parallel/distributed/hostLock.js");
+const {
+    progressElapsedMs
+} = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed worker lease", function () {
+    it("reports finite progress while the leased workspace is still preparing", function () {
+        expect(progressElapsedMs({ leaseStartedAt: 1000 }, 1750)).to.equal(750);
+        expect(
+            progressElapsedMs(
+                { leaseStartedAt: 1000, runStartedAt: 1600 },
+                1750
+            )
+        ).to.equal(150);
+        expect(progressElapsedMs({}, 1750)).to.equal(0);
+    });
+
     it("grants one active lease and queued waiters in FIFO order", async function () {
         const granted: string[] = [];
         const manager = new WorkerLeaseManager({
