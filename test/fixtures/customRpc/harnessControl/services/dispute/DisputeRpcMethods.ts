@@ -14,7 +14,11 @@ import {
     DISPUTE_TAMPER_STRATEGIES,
     type DisputeTamperStrategy
 } from "./tamperStrategies";
-import type { DisputeService } from "./DisputeService";
+import type {
+    DisputeService,
+    DisputeValidationRun,
+    PersistDisputeDataProjection
+} from "./DisputeService";
 
 /** Spec for installing a `constructDispute` tamper (named strategy or shipped body). */
 export interface ConstructDisputeStubSpec {
@@ -93,6 +97,28 @@ export class DisputeRpcMethods extends ARpcMethods {
                 Type.DisputeAuditingData
             ) as string
         };
+    }
+
+    /** Run the real dispute audit on this peer; verdict + stored-proof projection. */
+    public runDisputeValidation(
+        encodedDispute: string,
+        options?: { encodedAuditingData?: string }
+    ): Promise<DisputeValidationRun> {
+        return this.service.runDisputeValidation(encodedDispute, options);
+    }
+
+    /** Run the real persistDisputeDataWithoutAudit; storage presence projection. */
+    public persistDisputeDataWithoutAudit(
+        encodedDispute: string,
+        options: {
+            encodedAuditingData?: string;
+            includeUnfinalizedBlocks: boolean;
+        }
+    ): PersistDisputeDataProjection {
+        return this.service.persistDisputeDataWithoutAudit(
+            encodedDispute,
+            options
+        );
     }
 
     /** Recompute auditing data for a (tampered) state proof; ABI-encoded. */

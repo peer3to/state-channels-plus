@@ -728,6 +728,22 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
+    /** Park the dispute audit at its on-chain-slashes query until released. */
+    public stubHoldOnChainSlashesQuery(): boolean {
+        this.service.installOnChainSlashesQueryHold();
+        return true;
+    }
+
+    /** Release parked audits and restore the real query. */
+    public restoreOnChainSlashesQuery(): boolean {
+        return this.service.releaseOnChainSlashesQueryHold();
+    }
+
+    /** Resolves once a caller is parked at the hold; parked count. */
+    public waitForHeldOnChainSlashesQuery(): Promise<number> {
+        return this.service.waitForHeldOnChainSlashesQuery();
+    }
+
     public getHeldReductionTaskCount(): number {
         return this.service.heldReductionTasks.length;
     }

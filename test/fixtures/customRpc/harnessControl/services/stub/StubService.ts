@@ -69,7 +69,8 @@ export type StubKey =
     | "disputeKill"
     | "timeoutCheck"
     | "scheduledTasks"
-    | "ingestConfirmations";
+    | "ingestConfirmations"
+    | "onChainSlashesQuery";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -127,6 +128,14 @@ export type DisputeSubmissionHold = {
     release: () => void;
     /** Sends parked at the hold so far. */
     held: number;
+};
+
+export type HeldOnChainSlashesQueryState = {
+    /** Callers parked at the hold so far. */
+    entered: number;
+    released: boolean;
+    gate: Promise<void>;
+    release: () => void;
 };
 
 export type RecordedFraudProofApply = {
@@ -339,6 +348,10 @@ export class StubService extends ARpcService<
     fraudProofApplyFailure?: DisputeSubmissionFailureSpec;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
+    /** State for the dispute-audit hold at the on-chain-slashes query. */
+    heldOnChainSlashesQuery?: HeldOnChainSlashesQueryState;
+    /** Resolvers waiting for the first parked slashes query. */
+    private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     /**
      * Serializes runBlockValidation/runBlockIngest's record-only
      * patch/restore region. The
@@ -448,6 +461,79 @@ export class StubService extends ARpcService<
         } finally {
             localDiamond.isForkDisputed = original;
         }
+    }
+
+    /**
+     * Park `localDiamondContract.getOnChainSlashedParticipants` callers until
+     * released - the dispute audit's first await after it captured auditing
+     * data, so a test can mutate real state mid-audit deterministically. Both
+     * live call sites invoke the method plainly, so a plain async replacement
+     * is faithful.
+     */
+    public installOnChainSlashesQueryHold(): void {
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        if (!this.stubOriginals.has("onChainSlashesQuery")) {
+            this.stubOriginals.set(
+                "onChainSlashesQuery",
+                localDiamond.getOnChainSlashedParticipants
+            );
+        }
+        const original = this.stubOriginals.get(
+            "onChainSlashesQuery"
+        ) as typeof localDiamond.getOnChainSlashedParticipants;
+        let releaseGate!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            releaseGate = resolve;
+        });
+        const held: HeldOnChainSlashesQueryState = {
+            entered: 0,
+            released: false,
+            gate,
+            release: () => {
+                held.released = true;
+                releaseGate();
+            }
+        };
+        this.heldOnChainSlashesQuery = held;
+        localDiamond.getOnChainSlashedParticipants = (async (
+            ...args: Parameters<typeof original>
+        ) => {
+            held.entered += 1;
+            this.heldOnChainSlashesQueryWaiters
+                .splice(0)
+                .forEach((resolve) => resolve());
+            await gate;
+            return original(...args);
+        }) as typeof localDiamond.getOnChainSlashedParticipants;
+    }
+
+    /** Release parked callers and reinstall the real query. */
+    public releaseOnChainSlashesQueryHold(): boolean {
+        this.heldOnChainSlashesQuery?.release();
+        this.heldOnChainSlashesQuery = undefined;
+        const original = this.stubOriginals.get("onChainSlashesQuery");
+        if (original === undefined) return false;
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.getOnChainSlashedParticipants =
+            original as typeof localDiamond.getOnChainSlashedParticipants;
+        this.stubOriginals.delete("onChainSlashesQuery");
+        return true;
+    }
+
+    /** Resolve with the parked-caller count once at least one is held. */
+    public waitForHeldOnChainSlashesQuery(): Promise<number> {
+        const held = this.heldOnChainSlashesQuery;
+        if (!held) {
+            return Promise.reject(
+                new Error("onChainSlashesQuery hold not installed")
+            );
+        }
+        if (held.entered > 0) return Promise.resolve(held.entered);
+        return new Promise((resolve) =>
+            this.heldOnChainSlashesQueryWaiters.push(() =>
+                resolve(held.entered)
+            )
+        );
     }
 
     /**

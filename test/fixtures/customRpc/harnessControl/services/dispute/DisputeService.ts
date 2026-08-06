@@ -7,7 +7,7 @@ import Clock from "@/Clock";
 import { SignatureUtils, Codec, Type, hash as keccakHash } from "@/utils";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { ForkId, Hash } from "@/types/types";
+import type { Address, Bytes, ForkId, Hash } from "@/types/types";
 import type {
     DisputeStruct,
     DisputeConfirmationStruct,
@@ -21,6 +21,7 @@ import type {
     TransactionHeaderStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { ConstructDisputeResult } from "@/disputeManager/DisputeManager";
+import { DisputeFraudProofType } from "@/types/sol-enums";
 import {
     hash as randomHashFactory,
     blockStructWithTransactionHeader as factoryBlockStructWithHeader
@@ -33,6 +34,64 @@ import type { SignerService } from "../signer/SignerService";
 import DisputeRpcMethods from "./DisputeRpcMethods";
 
 type BlockTransform = (bs: BlockStruct) => BlockStruct;
+
+// inverse of src's toSolidityDisputeFraudProofType (value % 200)
+const fromSolidityDisputeFraudProofType = (
+    value: number
+): DisputeFraudProofType => {
+    const tsValue = value + 200;
+    if (DisputeFraudProofType[tsValue] === undefined) {
+        throw new Error(
+            `Unknown solidity DisputeFraudProofType value: ${value}`
+        );
+    }
+    return tsValue;
+};
+
+/** Projection of the dispute fraud proof stored for the audited dispute. */
+export type StoredDisputeFraudProof = {
+    disputeFraudProofType: DisputeFraudProofType;
+    /** Participant the proof accuses. */
+    proofParticipant: Address;
+    /** Evidence struct, encoded per its proof type. */
+    encodedProof: Bytes;
+};
+
+/** Outcome of one real `validateDispute` run plus the stored-proof projection. */
+export type DisputeValidationRun = {
+    /** Proof stored for this dispute; absent when none was stored. */
+    storedProof?: StoredDisputeFraudProof;
+    /** All dispute fraud proofs in storage (backs replay/idempotency counts). */
+    disputeFraudProofCount: number;
+} & (
+    | { outcome: "returned"; isValid: boolean }
+    | { outcome: "threw"; threwMessage: string }
+);
+
+/** Presence of one persisted item in storage before/after the persist call. */
+export type PersistedItemProjection = {
+    /** Blocks: `forkId:height:hash`; snapshots/messages/state: the hash. */
+    key: string;
+    storedBefore: boolean;
+    storedAfter: boolean;
+};
+
+export type PersistDisputeDataProjection = {
+    /** Message of a thrown persist error; absent when it returned. */
+    threwMessage?: string;
+    /** Per decodable milestone confirmation block, state-proof order. */
+    milestoneBlocks: PersistedItemProjection[];
+    undecodableMilestoneBlockCount: number;
+    /** Per decodable `stateProof.signedBlocks` entry, proof order. */
+    signedBlocks: PersistedItemProjection[];
+    undecodableSignedBlockCount: number;
+    /** Auditing-data snapshots: latest first, then milestone snapshots. */
+    snapshots: PersistedItemProjection[];
+    /** Keyed by the latest finalized snapshot's stateMachineStateHash; absent without auditing data. */
+    stateMachineState?: PersistedItemProjection;
+    inboundMessages: PersistedItemProjection[];
+    outboundMessages: PersistedItemProjection[];
+};
 
 /**
  * Dispute construction / auditing / tampering for the test harness. Accessors,
@@ -69,6 +128,9 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
     }
     get disputeManager() {
         return this.sm.disputeManager;
+    }
+    get agreementManager() {
+        return this.sm.agreementManager;
     }
 
     // ===== Callback utilities (reached via the injected stateManager) =====
@@ -505,6 +567,208 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         this.disputeManager.constructDispute = this.originalConstructDispute;
         this.originalConstructDispute = undefined;
         return true;
+    }
+
+    /** Run the real dispute audit; project verdict + the stored fraud proof. */
+    async runDisputeValidation(
+        encodedDispute: string,
+        options?: { encodedAuditingData?: string }
+    ): Promise<DisputeValidationRun> {
+        const dispute = Codec.decode(encodedDispute, Type.Dispute);
+        const auditingData = options?.encodedAuditingData
+            ? Codec.decode(
+                  options.encodedAuditingData,
+                  Type.DisputeAuditingData
+              )
+            : undefined;
+        let outcome:
+            | { outcome: "returned"; isValid: boolean }
+            | { outcome: "threw"; threwMessage: string };
+        try {
+            outcome = {
+                outcome: "returned",
+                isValid: await this.sm.disputeValidationService.validateDispute(
+                    dispute,
+                    auditingData
+                )
+            };
+        } catch (error) {
+            outcome = {
+                outcome: "threw",
+                threwMessage:
+                    error instanceof Error ? error.message : String(error)
+            };
+        }
+        const proof =
+            this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                dispute
+            );
+        return {
+            ...outcome,
+            storedProof: proof
+                ? {
+                      // stored proofType is the solidity value
+                      disputeFraudProofType: fromSolidityDisputeFraudProofType(
+                          Number(proof.proofType)
+                      ),
+                      proofParticipant: String(proof.participant),
+                      encodedProof: String(proof.encodedProof)
+                  }
+                : undefined,
+            disputeFraudProofCount:
+                this.storage.disputeFraudProofs.getDisputeFraudProofs().length
+        };
+    }
+
+    /** Run the real persist; project each item's storage presence before/after. */
+    persistDisputeDataWithoutAudit(
+        encodedDispute: string,
+        options: {
+            encodedAuditingData?: string;
+            includeUnfinalizedBlocks: boolean;
+        }
+    ): PersistDisputeDataProjection {
+        const dispute = Codec.decode(encodedDispute, Type.Dispute);
+        const auditingData = options.encodedAuditingData
+            ? Codec.decode(
+                  options.encodedAuditingData,
+                  Type.DisputeAuditingData
+              )
+            : undefined;
+
+        const milestoneBlocks: Block[] = [];
+        let undecodableMilestoneBlockCount = 0;
+        for (const milestone of dispute.input.stateProof.milestones) {
+            for (const bc of milestone.blockConfirmations) {
+                const block = Block.tryFromBlockConfirmation(bc);
+                if (block) milestoneBlocks.push(block);
+                else undecodableMilestoneBlockCount++;
+            }
+        }
+        const signedBlocks: Block[] = [];
+        let undecodableSignedBlockCount = 0;
+        for (const sb of dispute.input.stateProof.signedBlocks) {
+            const block = Block.tryFromSignedBlock(sb);
+            if (block) signedBlocks.push(block);
+            else undecodableSignedBlockCount++;
+        }
+        const snapshots = auditingData
+            ? [
+                  auditingData.latestStateSnapshot,
+                  ...auditingData.milestoneSnapshots
+              ].map((struct) => StateSnapshot.from(struct))
+            : [];
+        const inboundHashes = (auditingData?.inboundMessageBlocks ?? []).map(
+            (mb) => keccakHash(Codec.encode(mb, Type.MessageBlock)) as Hash
+        );
+        const outboundHashes = (auditingData?.outboundMessageBlocks ?? []).map(
+            (mb) => keccakHash(Codec.encode(mb, Type.MessageBlock)) as Hash
+        );
+        // same lookup the real persist uses for the state-machine-state key;
+        // it can throw on partial storage, so retry after the persist ran
+        const resolveStateKey = (): Hash | undefined => {
+            try {
+                return this.agreementManager.getLatestFinalizedSnapshot(
+                    dispute.input.stateProof,
+                    dispute.input.forkId as ForkId
+                ).stateMachineStateHash as Hash;
+            } catch {
+                return undefined;
+            }
+        };
+        let stateKey = auditingData ? resolveStateKey() : undefined;
+
+        const blockStored = (block: Block) =>
+            !!this.storage.blocks.getBlock(block.hash);
+        const snapshotStored = (snapshot: StateSnapshot) =>
+            !!this.storage.stateSnapshots.getStateSnapshotByHash(snapshot.hash);
+        const stateStored = (key: Hash | undefined) =>
+            key !== undefined &&
+            this.storage.stateMachineStates.getStateMachineState(key) !==
+                undefined;
+
+        const before = {
+            milestoneBlocks: milestoneBlocks.map(blockStored),
+            signedBlocks: signedBlocks.map(blockStored),
+            snapshots: snapshots.map(snapshotStored),
+            inbound: inboundHashes.map(
+                (h) => !!this.storage.inboundMessages.getMessageBlock(h)
+            ),
+            outbound: outboundHashes.map(
+                (h) => !!this.storage.outboundMessages.getMessageBlock(h)
+            ),
+            state: stateStored(stateKey)
+        };
+
+        let threwMessage: string | undefined;
+        try {
+            this.sm.disputeValidationService.persistDisputeDataWithoutAudit(
+                dispute,
+                auditingData,
+                { includeUnfinalizedBlocks: options.includeUnfinalizedBlocks }
+            );
+        } catch (error) {
+            threwMessage =
+                error instanceof Error ? error.message : String(error);
+        }
+        if (auditingData && stateKey === undefined)
+            stateKey = resolveStateKey();
+
+        const blockKey = (block: Block) =>
+            `${block.forkId}:${block.height}:${block.hash}`;
+        const project = (
+            keys: string[],
+            storedBefore: boolean[],
+            storedAfter: boolean[]
+        ): PersistedItemProjection[] =>
+            keys.map((key, i) => ({
+                key,
+                storedBefore: storedBefore[i],
+                storedAfter: storedAfter[i]
+            }));
+
+        return {
+            threwMessage,
+            milestoneBlocks: project(
+                milestoneBlocks.map(blockKey),
+                before.milestoneBlocks,
+                milestoneBlocks.map(blockStored)
+            ),
+            undecodableMilestoneBlockCount,
+            signedBlocks: project(
+                signedBlocks.map(blockKey),
+                before.signedBlocks,
+                signedBlocks.map(blockStored)
+            ),
+            undecodableSignedBlockCount,
+            snapshots: project(
+                snapshots.map((s) => String(s.hash)),
+                before.snapshots,
+                snapshots.map(snapshotStored)
+            ),
+            stateMachineState:
+                auditingData && stateKey !== undefined
+                    ? {
+                          key: String(stateKey),
+                          storedBefore: before.state,
+                          storedAfter: stateStored(stateKey)
+                      }
+                    : undefined,
+            inboundMessages: project(
+                inboundHashes.map(String),
+                before.inbound,
+                inboundHashes.map(
+                    (h) => !!this.storage.inboundMessages.getMessageBlock(h)
+                )
+            ),
+            outboundMessages: project(
+                outboundHashes.map(String),
+                before.outbound,
+                outboundHashes.map(
+                    (h) => !!this.storage.outboundMessages.getMessageBlock(h)
+                )
+            )
+        };
     }
 
     async recoverCommittedDisputes(forkId: ForkId): Promise<number> {
