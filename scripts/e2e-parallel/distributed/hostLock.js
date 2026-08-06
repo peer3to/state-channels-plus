@@ -18,9 +18,11 @@ function acquireHostLock(options = {}) {
     let fsExt;
     try {
         fsExt = require("fs-ext");
-    } catch {
+    } catch (error) {
+        // Keep the underlying loader error: "module not found" vs a native
+        // ABI mismatch vs an unbuilt binding need different fixes.
         throw new Error(
-            "fs-ext is required for the distributed worker host lock"
+            `fs-ext is required for the distributed worker host lock: ${error.message}`
         );
     }
     const lockPath = options.lockPath || HOST_LOCK_PATH;

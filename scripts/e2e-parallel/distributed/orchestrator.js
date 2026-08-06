@@ -171,6 +171,11 @@ async function runDistributed(options) {
     const workers = new Map();
     const connectingWorkers = new Set();
     const workerLabelById = new Map();
+    // Completed-task counts and a lease registry keyed by worker id. Both
+    // survive a worker drop so the final summary describes every worker that
+    // served the run, not only those still connected at the end.
+    const completedByWorker = new Map();
+    const leasedWorkers = new Map();
     const ignoredWorkers = new Set();
     const logStore = new OrchestratorLogStore(options.logDir);
     const committedOutput = new Map();
@@ -225,6 +230,10 @@ async function runDistributed(options) {
             const { assignment, attempt, code, parsed } = result;
             const worker = workers.get(assignment.workerId);
             if (result.disposition === "complete") {
+                completedByWorker.set(
+                    assignment.workerId,
+                    (completedByWorker.get(assignment.workerId) || 0) + 1
+                );
                 promoteAttemptLog(options.logDir, assignment, worker, code);
                 logging.result({
                     completed: coordinator.completed,
@@ -375,6 +384,7 @@ async function runDistributed(options) {
     async function handleMessage(worker, message) {
         if (message.kind === "LEASE_GRANTED") {
             worker.leased = true;
+            leasedWorkers.set(worker.id, worker);
             if (finishing) {
                 await worker.peer.send("RELEASE");
                 return;
@@ -574,10 +584,10 @@ async function runDistributed(options) {
         clearTimeout(discoveryTimeout);
         clearRediscoveryTimeout();
         await completed;
-        usedWorkers = [...workers.values()].filter((worker) => worker.leased);
+        usedWorkers = [...leasedWorkers.values()];
         workerLabels = usedWorkers.map(
             (worker) =>
-                `${workerName(worker)} (${worker.capabilities.slots} slots, ${worker.capabilities.workers} workers, ${worker.capabilities.memoryGb}GB)`
+                `${workerName(worker)} (${worker.capabilities.slots} slots, ${worker.capabilities.workers} workers, ${worker.capabilities.memoryGb}GB) · ${completedByWorker.get(worker.id) || 0} tests`
         );
     } finally {
         clearTimeout(discoveryTimeout);

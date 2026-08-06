@@ -447,6 +447,10 @@ async function main(options = {}) {
                 message.kind === "CANCEL" ||
                 message.kind === "RELEASE"
             ) {
+                // A stop can reach a test worker that is still booting (the
+                // run finished on other workers first); its clean exit must
+                // not be reported as a startup failure.
+                connection.stopRequested = true;
                 await reportStatus(connection, "Cleaning completed lease");
                 sendToWorker(connection, { kind: message.kind });
                 if (message.kind === "RUN_COMPLETE") {
@@ -502,6 +506,7 @@ async function main(options = {}) {
         });
         connection.worker = worker;
         connection.workerReady = false;
+        connection.stopRequested = false;
         connection.workerComplete = new Promise((resolve) => {
             connection.resolveWorkerComplete = resolve;
         });
@@ -517,7 +522,11 @@ async function main(options = {}) {
             console.log(
                 `Test worker exited (${code === null ? signal : `code ${code}`})`
             );
-            if (!connection.closing && !connection.workerReady) {
+            if (
+                !connection.closing &&
+                !connection.stopRequested &&
+                !connection.workerReady
+            ) {
                 connection.peer
                     .send("WORKER_ERROR", {
                         message: `Test worker exited before becoming ready (${code === null ? signal : `code ${code}`})`
