@@ -42,17 +42,43 @@ function discoveryConfigurations(options) {
     ];
 }
 
+function shortKey(publicKey) {
+    return publicKey ? publicKey.toString("hex").slice(0, 12) : "unknown";
+}
+
 async function createPool(options) {
     const dht = options.dht;
     const swarm = new Hyperswarm({
         ...(dht ? { dht } : {}),
         ...(options.keyPair ? { keyPair: options.keyPair } : {})
     });
+    // Dial diagnostics: report every peer this swarm discovers, each dial
+    // attempt it makes, and the direction of every established connection, so
+    // an asymmetric NAT/firewall path is visible from both terminals.
+    const logDial = options.onDialActivity;
+    const peerAttempts = new Map();
+    const logPeerActivity = () => {
+        if (!logDial) return;
+        for (const [hex, peerInfo] of swarm.peers) {
+            const state = `attempts ${peerInfo.attempts}${peerInfo.banned ? ", banned" : ""}`;
+            const previous = peerAttempts.get(hex);
+            if (previous === undefined) {
+                logDial(`discovered peer ${hex.slice(0, 12)} (${state})`);
+            } else if (previous !== peerInfo.attempts || peerInfo.banned) {
+                logDial(`dialing peer ${hex.slice(0, 12)} (${state})`);
+            }
+            peerAttempts.set(hex, peerInfo.attempts);
+        }
+    };
+    if (logDial) swarm.on("update", logPeerActivity);
     const connections = [];
     const events = new EventEmitter();
     let listening = false;
     swarm.on("connection", (stream, info) => {
         guardConnectionErrors(stream);
+        logDial?.(
+            `${info.client ? "dialed out to" : "accepted dial from"} ${shortKey(info.publicKey)}`
+        );
         if (listening) events.emit("connection", stream, info);
         else connections.push([stream, info]);
     });
@@ -74,6 +100,7 @@ async function createPool(options) {
               for (const discovery of discoveries) {
                   discovery.refresh().catch(() => {});
               }
+              logPeerActivity();
           }, options.refreshIntervalMs)
         : null;
     refreshTimer?.unref();

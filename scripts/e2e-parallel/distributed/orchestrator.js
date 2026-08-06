@@ -166,7 +166,8 @@ async function runDistributed(options) {
         lookupTopics: [keys.workerTopic],
         dht: options.dht,
         keyPair: options.keyPair,
-        refreshIntervalMs: options.discoveryRefreshMs || DISCOVERY_REFRESH_MS
+        refreshIntervalMs: options.discoveryRefreshMs || DISCOVERY_REFRESH_MS,
+        onDialActivity: (line) => console.log(`[dial] ${line}`)
     });
     console.log(
         `Orchestrator identity ${pool.publicKey.toString("hex").slice(0, 12)}${options.keyPair ? " (persistent)" : ""}`

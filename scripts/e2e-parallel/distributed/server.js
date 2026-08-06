@@ -93,7 +93,8 @@ async function main(options = {}) {
         announceTopics: [keys.workerTopic],
         lookupTopics: [keys.orchestratorTopic],
         dht: config.dht,
-        refreshIntervalMs: DISCOVERY_REFRESH_MS
+        refreshIntervalMs: DISCOVERY_REFRESH_MS,
+        onDialActivity: (line) => console.log(`[dial] ${line}`)
     });
     let shuttingDown = false;
     let removeSignalHandlers = () => {};
