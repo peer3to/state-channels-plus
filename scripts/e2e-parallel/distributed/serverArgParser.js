@@ -16,7 +16,6 @@ const DEFAULTS = {
     maxCompressedBytes: 2 * 1024 ** 3,
     maxExpandedBytes: 4 * 1024 ** 3,
     maxAttemptSpoolBytes: 512 * 1024 ** 2,
-    maxLeaseSpoolBytes: 2 * 1024 ** 3,
     heartbeatTimeoutMs: 15000,
     slots: 1,
     workers: MAX_SLOTS_FROM_POOL,
@@ -33,7 +32,6 @@ const VALUE_FLAGS = {
     "--max-compressed-bytes": "maxCompressedBytes",
     "--max-expanded-bytes": "maxExpandedBytes",
     "--max-attempt-spool-bytes": "maxAttemptSpoolBytes",
-    "--max-lease-spool-bytes": "maxLeaseSpoolBytes",
     "--heartbeat-timeout": "heartbeatTimeoutMs",
     "--slots": "slots",
     "--workers": "workers",
@@ -63,10 +61,18 @@ function parseServerArgs(argv) {
     for (const [key, value] of Object.entries(result)) {
         if (
             typeof value === "number" &&
-            (!Number.isFinite(value) || value <= 0)
+            (!Number.isFinite(value) ||
+                value < 0 ||
+                (value === 0 && key !== "slots"))
         ) {
             throw new Error(`Invalid server limit ${key}`);
         }
+    }
+    if (result.workers > MAX_SLOTS_FROM_POOL) {
+        console.warn(
+            `Clamping workers from ${result.workers} to funded-account capacity ${MAX_SLOTS_FROM_POOL}`
+        );
+        result.workers = MAX_SLOTS_FROM_POOL;
     }
     if (!/^[a-z0-9-]{1,48}$/.test(result.name)) {
         throw new Error(

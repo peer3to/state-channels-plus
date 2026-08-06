@@ -6,12 +6,14 @@ class WorkerLeaseManager {
         this.queueLength = options.queueLength || 8;
         this.onGrant = options.onGrant || (() => {});
         this.onQueueStatus = options.onQueueStatus || (() => {});
+        this.onFault = options.onFault || (() => {});
         this.activeProgress = null;
         this.activeStatus = null;
     }
 
     request(connection) {
         if (this.state === "faulted") return { kind: "FAULTED" };
+        if (this.active === connection) return { kind: "LEASE_GRANTED" };
         if (!this.active && this.state === "idle") {
             this.active = connection;
             this.state = "preparing";
@@ -20,10 +22,9 @@ class WorkerLeaseManager {
         }
         if (this.waiters.length >= this.queueLength)
             return { kind: "QUEUE_FULL" };
-        const existing = this.waiters.findIndex(
-            (waiter) => waiter.sessionId === connection.sessionId
-        );
-        if (existing >= 0) this.waiters.splice(existing, 1);
+        if (this.waiters.includes(connection)) {
+            return this.busyStatus(connection);
+        }
         this.waiters.push(connection);
         return this.busyStatus(connection);
     }
@@ -64,6 +65,7 @@ class WorkerLeaseManager {
             await cleanup();
         } catch (error) {
             this.state = "faulted";
+            this.onFault(error);
             throw error;
         }
         this.active = null;

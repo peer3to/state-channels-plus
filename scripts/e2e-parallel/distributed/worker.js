@@ -10,6 +10,7 @@ const { fromWireTask } = require("./taskWire");
 const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { ResourceGate } = require("../shared/resourceGate");
 const { HARDHAT_CLI } = require("../shared/constants");
+const { buildSlotEnv, holdReason } = require("../shared/scheduling");
 const logging = require("../shared/logging");
 const {
     provisionSlots,
@@ -29,9 +30,33 @@ const cancellation = new AbortController();
 function request(kind, payload = {}) {
     return new Promise((resolve, reject) => {
         const id = requestId++;
-        pending.set(id, { resolve, reject });
-        process.send({ kind, requestId: id, ...payload });
+        const timeoutMs = Math.max(
+            1000,
+            (configuration?.heartbeatTimeoutMs || 15000) * 2
+        );
+        const timeout = setTimeout(() => {
+            if (!pending.delete(id)) return;
+            reject(new Error(`${kind} request timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        timeout.unref();
+        pending.set(id, { resolve, reject, timeout });
+        process.send({ kind, requestId: id, ...payload }, (error) => {
+            if (!error) return;
+            const waiter = pending.get(id);
+            if (!waiter) return;
+            pending.delete(id);
+            clearTimeout(waiter.timeout);
+            reject(error);
+        });
     });
+}
+
+function rejectPending(error) {
+    for (const waiter of pending.values()) {
+        clearTimeout(waiter.timeout);
+        waiter.reject(error);
+    }
+    pending.clear();
 }
 
 async function start(config) {
@@ -63,15 +88,18 @@ async function start(config) {
         retryMs: config.schedulerTickMs,
         prefetch: true,
         canRun: async (running) => {
-            const allowed = resources.allows(running, config.concurrencyCap);
+            const allowed = await resources.allows(
+                running,
+                config.concurrencyCap
+            );
             if (!allowed) {
-                const reason =
-                    running >= config.concurrencyCap
-                        ? `cap (running ${running}/${config.concurrencyCap})`
-                        : resources.occupiedGb + resources.avgPerTestGb >=
-                            config.memBoundGb
-                          ? `memory (owned ${resources.occupiedGb.toFixed(1)}+${resources.avgPerTestGb.toFixed(1)}≥${config.memBoundGb.toFixed(1)}GB)`
-                          : `cpu ${(resources.cpuUtil * 100).toFixed(0)}%>=${(config.targetLoad * 100).toFixed(0)}%`;
+                const reason = holdReason({
+                    running,
+                    concurrencyCap: config.concurrencyCap,
+                    resourceGate: resources,
+                    memBoundGb: config.memBoundGb,
+                    targetLoad: config.targetLoad
+                });
                 logging.hold({
                     seq: scheduler?.bufferedAssignment?.seq || 1,
                     total: config.taskCount,
@@ -116,22 +144,15 @@ async function start(config) {
                     [HARDHAT_CLI, ...task.args],
                     {
                         ...config.baseEnv,
-                        ...(slot
-                            ? {
-                                  PROVIDER_URL: slot.nodeUrl,
-                                  HARDHAT_NODE_URL: slot.nodeUrl,
-                                  LOCAL_DISCOVERY_REGISTRY_URL:
-                                      slot.discoveryUrl,
-                                  E2E_MANAGER_CACHE_DIR: slot.cacheDir
-                              }
-                            : {}),
-                        E2E_SLOT_INDEX: String(
+                        ...buildSlotEnv(
+                            slot,
                             accountPartitionFor(slot, accountPartition)
                         )
                     },
                     task.label,
                     spool,
-                    cancellation.signal
+                    cancellation.signal,
+                    { captureOutput: false }
                 );
             } finally {
                 accountPartitions.release(accountPartition);
@@ -155,6 +176,7 @@ async function start(config) {
 async function stop(exitCode = 0, reportStats = false) {
     scheduler?.stop();
     cancellation.abort();
+    rejectPending(new Error("Distributed worker stopped"));
     if (reportStats && process.connected) {
         completionExitCode = exitCode;
         process.send({ kind: "WORKER_COMPLETE", stats: resources?.stats() });
@@ -175,6 +197,7 @@ process.on("message", (message) => {
         const waiter = pending.get(message.requestId);
         if (!waiter) return;
         pending.delete(message.requestId);
+        clearTimeout(waiter.timeout);
         if (message.error) waiter.reject(new Error(message.error));
         else waiter.resolve(message.value);
     } else if (message.kind === "WORK_AVAILABLE") scheduler?.workAvailable();
@@ -193,4 +216,4 @@ function stopWithError(error) {
     stop(1);
 }
 
-module.exports = { start };
+module.exports = { rejectPending, request, start };

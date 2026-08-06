@@ -171,6 +171,27 @@ class TaskCoordinator {
     }
 
     finish() {
+        const queued = new Set(this.queue.map((entry) => String(entry.seq)));
+        const assigned = new Set(
+            [...this.assignments.values()].map((entry) => entry.taskId)
+        );
+        const orphaned = [];
+        const conflicting = [];
+        for (let index = 0; index < this.tasks.length; index++) {
+            const taskId = String(index + 1);
+            const memberships = [
+                queued.has(taskId),
+                assigned.has(taskId),
+                this.completedTaskIds.has(taskId)
+            ].filter(Boolean).length;
+            if (memberships === 0) orphaned.push(taskId);
+            else if (memberships > 1) conflicting.push(taskId);
+        }
+        if (orphaned.length || conflicting.length) {
+            throw new Error(
+                `Task coordinator invariant failed; orphaned=[${orphaned.join(",")}], conflicting=[${conflicting.join(",")}]`
+            );
+        }
         return {
             done:
                 this.completed === this.tasks.length &&

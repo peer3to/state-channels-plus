@@ -55,6 +55,24 @@ describe("distributed worker lease", function () {
         expect(manager.active).to.equal(c);
     });
 
+    it("keeps duplicate requests on one connection idempotent", function () {
+        const manager = new WorkerLeaseManager();
+        const active = { sessionId: "active" };
+        const waiting = { sessionId: "waiting" };
+
+        expect(manager.request(active).kind).to.equal("LEASE_GRANTED");
+        expect(manager.request(active).kind).to.equal("LEASE_GRANTED");
+        expect(manager.request(waiting)).to.deep.include({
+            kind: "BUSY",
+            position: 1
+        });
+        expect(manager.request(waiting)).to.deep.include({
+            kind: "BUSY",
+            position: 1
+        });
+        expect(manager.waiters).to.deep.equal([waiting]);
+    });
+
     it("publishes queue progress, wait estimates, and updated positions", function () {
         const statuses: Array<{
             sessionId: string;

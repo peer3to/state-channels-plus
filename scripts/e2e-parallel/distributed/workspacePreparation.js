@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const { buildWorkerEnvironment } = require("./remoteEnvironment");
 
 function run(command, args, options) {
     return new Promise((resolve, reject) => {
@@ -29,8 +30,11 @@ function run(command, args, options) {
 async function prepareWorkspace(workspaceRoot, manifest, options) {
     const storeDir = path.join(options.workRoot, "pnpm-store");
     fs.mkdirSync(storeDir, { recursive: true });
-    const env = { ...process.env, ...options.env, HUSKY: "0" };
-    delete env.SCP_TEST_POOL_SECRET;
+    const env = {
+        ...buildWorkerEnvironment(process.env),
+        ...options.env,
+        HUSKY: "0"
+    };
     for (const repository of manifest.repositories) {
         const cwd = path.join(workspaceRoot, repository.path);
         const install = options.shouldInstall?.(repository) !== false;

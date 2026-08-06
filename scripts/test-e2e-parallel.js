@@ -210,7 +210,8 @@ async function main(options = {}) {
             try {
                 const manifest = await buildRuntimeBundle(
                     process.cwd(),
-                    archivePath
+                    archivePath,
+                    console.log
                 );
                 const stats = await runDistributed({
                     tasks,
@@ -241,6 +242,13 @@ async function main(options = {}) {
                         }
                     )
                 });
+                if (signalExitCode) {
+                    console.error(
+                        `Distributed run cancelled by ${signalExitCode === 130 ? "SIGINT" : "SIGTERM"}; ${stats.completed}/${tasks.length} tasks completed`
+                    );
+                    process.exitCode = signalExitCode;
+                    return;
+                }
                 logging.summary({
                     tasks,
                     failed: stats.failed,
@@ -252,13 +260,10 @@ async function main(options = {}) {
                     peakOccupiedGb: stats.peakOccupiedGb,
                     avgPerTestGb: stats.avgPerTestGb,
                     memBoundGb: stats.memBoundGb,
-                    targetLoad,
-                    gasPeak: new Map(),
                     workers: stats.workers
                 });
                 logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
-                process.exitCode =
-                    signalExitCode || (stats.failed.length ? 1 : 0);
+                process.exitCode = stats.failed.length ? 1 : 0;
                 return;
             } finally {
                 fs.rmSync(transferRoot, { recursive: true, force: true });

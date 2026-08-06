@@ -3,10 +3,17 @@ const { PROTOCOL_VERSION, waitForMessage } = require("./protocol");
 
 function derivePoolKeys(secret) {
     if (!secret) throw new Error("SCP_TEST_POOL_SECRET is required");
+    const workerTopic = crypto
+        .createHash("sha256")
+        .update(`peer3:test-pool:topic:v${PROTOCOL_VERSION}\0${secret}`)
+        .digest();
     return {
-        topic: crypto
+        workerTopic,
+        orchestratorTopic: crypto
             .createHash("sha256")
-            .update(`peer3:test-pool:topic:v${PROTOCOL_VERSION}\0${secret}`)
+            .update(
+                `peer3:test-pool:orchestrator:v${PROTOCOL_VERSION}\0${secret}`
+            )
             .digest(),
         authKey: crypto
             .createHash("sha256")

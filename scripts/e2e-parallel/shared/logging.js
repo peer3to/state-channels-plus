@@ -430,7 +430,7 @@ function summary({
     avgPerTestGb,
     memBoundGb,
     targetLoad,
-    gasPeak,
+    gasPeak = new Map(),
     workers = []
 }) {
     const counts = summaryCounts(tasks.length, failed.length, completed);
@@ -509,7 +509,7 @@ function summary({
         `  mem: peak owned ${peakOccupiedGb.toFixed(1)}GB, avg/process ${avgPerTestGb.toFixed(2)}GB (bound ${memBoundGb.toFixed(1)}GB)`
     );
     console.log(
-        `  cpu: avg ${(avgCpu * 100).toFixed(0)}% · peak ${(peakCpu * 100).toFixed(0)}% (target ${(targetLoad * 100).toFixed(0)}%)`
+        `  cpu: avg ${(avgCpu * 100).toFixed(0)}% · peak ${(peakCpu * 100).toFixed(0)}%${targetLoad === undefined ? "" : ` (target ${(targetLoad * 100).toFixed(0)}%)`}`
     );
     for (const worker of workers) console.log(`  worker: ${worker}`);
     const elPeak = tasks.reduce(

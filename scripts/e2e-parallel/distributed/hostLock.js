@@ -1,7 +1,12 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
-const HOST_LOCK_PATH = "/tmp/peer3-test-pool-server-v8.lock";
+const HOST_LOCK_DIR = path.join(
+    os.tmpdir(),
+    `peer3-pool-${process.getuid?.() ?? "user"}`
+);
+const HOST_LOCK_PATH = path.join(HOST_LOCK_DIR, "server-v8.lock");
 
 function acquireHostLock(options = {}) {
     if (options.allowSharedHost) return { release() {} };
@@ -19,8 +24,25 @@ function acquireHostLock(options = {}) {
         );
     }
     const lockPath = options.lockPath || HOST_LOCK_PATH;
-    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-    const fd = fs.openSync(lockPath, "a", 0o600);
+    fs.mkdirSync(path.dirname(lockPath), {
+        recursive: true,
+        mode: options.lockPath ? undefined : 0o700
+    });
+    try {
+        if (fs.lstatSync(lockPath).isSymbolicLink()) {
+            throw new Error(
+                `Host lock must not be a symbolic link: ${lockPath}`
+            );
+        }
+    } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+    }
+    const flags =
+        fs.constants.O_CREAT |
+        fs.constants.O_APPEND |
+        fs.constants.O_RDWR |
+        (fs.constants.O_NOFOLLOW || 0);
+    const fd = fs.openSync(lockPath, flags, 0o600);
     try {
         fsExt.flockSync(fd, "exnb");
     } catch (error) {
@@ -41,4 +63,4 @@ function acquireHostLock(options = {}) {
     };
 }
 
-module.exports = { HOST_LOCK_PATH, acquireHostLock };
+module.exports = { HOST_LOCK_DIR, HOST_LOCK_PATH, acquireHostLock };

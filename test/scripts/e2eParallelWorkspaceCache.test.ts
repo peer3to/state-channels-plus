@@ -28,7 +28,7 @@ describe("distributed workspace cache", function () {
         });
     });
 
-    it("persists source and preparation state outside a lease", function () {
+    it("persists source and preparation state outside a lease", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
         const manifest = {
             workspaceId: "1".repeat(64),
@@ -36,7 +36,7 @@ describe("distributed workspace cache", function () {
             files: first
         };
         try {
-            let cache = inspectWorkspace(root, manifest);
+            let cache = await inspectWorkspace(root, manifest);
             expect(cache.changed).to.deep.equal(["repo/a.ts", "repo/old.ts"]);
             fs.mkdirSync(path.join(cache.workspace, "repo"), {
                 recursive: true
@@ -46,7 +46,7 @@ describe("distributed workspace cache", function () {
             commitSourceManifest(cache, manifest);
             markPrepared(cache, manifest);
 
-            cache = inspectWorkspace(root, manifest);
+            cache = await inspectWorkspace(root, manifest);
             expect(cache.changed).to.deep.equal([]);
             expect(cache.deleted).to.deep.equal([]);
             expect(cache.prepared).to.equal(true);
@@ -61,7 +61,7 @@ describe("distributed workspace cache", function () {
         }
     });
 
-    it("requests a cached source file again after its disk contents drift", function () {
+    it("requests a cached source file again after its disk contents drift", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
         const contents = "source";
         const manifest = {
@@ -80,7 +80,7 @@ describe("distributed workspace cache", function () {
             ]
         };
         try {
-            const cache = inspectWorkspace(root, manifest);
+            const cache = await inspectWorkspace(root, manifest);
             fs.mkdirSync(
                 path.dirname(path.join(cache.workspace, "repo/a.ts")),
                 {
@@ -91,15 +91,15 @@ describe("distributed workspace cache", function () {
             commitSourceManifest(cache, manifest);
             fs.writeFileSync(path.join(cache.workspace, "repo/a.ts"), "poison");
 
-            expect(inspectWorkspace(root, manifest).changed).to.deep.equal([
-                "repo/a.ts"
-            ]);
+            expect(
+                (await inspectWorkspace(root, manifest)).changed
+            ).to.deep.equal(["repo/a.ts"]);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
-    it("invalidates dependency preparation from an older worker policy", function () {
+    it("invalidates dependency preparation from an older worker policy", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
         try {
             const manifest = {
@@ -107,14 +107,14 @@ describe("distributed workspace cache", function () {
                 sourceDigest: "source-three",
                 files: []
             };
-            const cache = inspectWorkspace(root, manifest);
+            const cache = await inspectWorkspace(root, manifest);
             fs.mkdirSync(cache.root, { recursive: true });
             fs.writeFileSync(
                 cache.preparedState,
                 JSON.stringify({ sourceDigest: manifest.sourceDigest })
             );
 
-            const stale = inspectWorkspace(root, manifest);
+            const stale = await inspectWorkspace(root, manifest);
             expect(stale.prepared).to.equal(false);
             expect(stale.preparationChanged).to.equal(true);
         } finally {
@@ -122,12 +122,12 @@ describe("distributed workspace cache", function () {
         }
     });
 
-    it("normalizes a relative worker root before building cached paths", function () {
+    it("normalizes a relative worker root before building cached paths", async function () {
         const relativeRoot = path.relative(
             process.cwd(),
             path.join(os.tmpdir(), "relative-workspace-cache")
         );
-        const cache = inspectWorkspace(relativeRoot, {
+        const cache = await inspectWorkspace(relativeRoot, {
             workspaceId: "2".repeat(64),
             sourceDigest: "source-two",
             files: []

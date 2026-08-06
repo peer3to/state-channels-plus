@@ -9,11 +9,14 @@ class WorkerScheduler {
     }
 
     start() {
-        this.requestWhenAvailable();
+        this.requestWhenAvailable().catch((error) => this.requestFailed(error));
     }
 
     workAvailable() {
-        if (!this.stopped && !this.retryTimer) this.requestWhenAvailable();
+        if (!this.stopped && !this.retryTimer)
+            this.requestWhenAvailable().catch((error) =>
+                this.requestFailed(error)
+            );
     }
 
     get bufferedCount() {
@@ -78,6 +81,8 @@ class WorkerScheduler {
         this.requestPending = true;
         try {
             this.bufferedAssignment = await this.options.requestTask();
+        } catch (error) {
+            this.requestFailed(error);
         } finally {
             this.requestPending = false;
         }
@@ -88,8 +93,16 @@ class WorkerScheduler {
         if (this.stopped || this.retryTimer) return;
         this.retryTimer = setTimeout(() => {
             this.retryTimer = null;
-            this.requestWhenAvailable();
+            this.requestWhenAvailable().catch((error) =>
+                this.requestFailed(error)
+            );
         }, this.options.retryMs);
+    }
+
+    requestFailed(error) {
+        if (this.stopped) return;
+        this.options.onError?.(error);
+        this.scheduleRetry();
     }
 }
 

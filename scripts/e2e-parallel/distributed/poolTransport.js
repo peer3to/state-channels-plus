@@ -3,8 +3,28 @@ const { EventEmitter } = require("events");
 
 const DISCOVERY_REFRESH_MS = 5000;
 
-function matchesConnectionRole(info, expectedClient) {
-    return typeof info?.client !== "boolean" || info.client === expectedClient;
+function discoveryConfigurations(options) {
+    if (options.announceTopics || options.lookupTopics) {
+        return [
+            ...(options.announceTopics || []).map((topic) => ({
+                topic,
+                server: true,
+                client: false
+            })),
+            ...(options.lookupTopics || []).map((topic) => ({
+                topic,
+                server: false,
+                client: true
+            }))
+        ];
+    }
+    return [
+        {
+            topic: options.topic,
+            server: options.server,
+            client: options.client
+        }
+    ];
 }
 
 async function createPool(options) {
@@ -17,21 +37,25 @@ async function createPool(options) {
         if (listening) events.emit("connection", stream, info);
         else connections.push([stream, info]);
     });
-    const discovery = swarm.join(options.topic, {
-        server: options.server,
-        client: options.client
-    });
-    await discovery.flushed();
+    const discoveries = discoveryConfigurations(options).map((config) =>
+        swarm.join(config.topic, {
+            server: config.server,
+            client: config.client
+        })
+    );
+    await Promise.all(discoveries.map((discovery) => discovery.flushed()));
     const refreshTimer = options.refreshIntervalMs
-        ? setInterval(
-              () => discovery.refresh().catch(() => {}),
-              options.refreshIntervalMs
-          )
+        ? setInterval(() => {
+              for (const discovery of discoveries) {
+                  discovery.refresh().catch(() => {});
+              }
+          }, options.refreshIntervalMs)
         : null;
     refreshTimer?.unref();
     return {
         swarm,
-        discovery,
+        discovery: discoveries[0],
+        discoveries,
         publicKey: swarm.keyPair.publicKey,
         onConnection(listener) {
             listening = true;
@@ -42,7 +66,9 @@ async function createPool(options) {
         },
         async close() {
             if (refreshTimer) clearInterval(refreshTimer);
-            await discovery.destroy();
+            await Promise.allSettled(
+                discoveries.map((discovery) => discovery.destroy())
+            );
             await swarm.destroy();
         }
     };
@@ -51,5 +77,5 @@ async function createPool(options) {
 module.exports = {
     DISCOVERY_REFRESH_MS,
     createPool,
-    matchesConnectionRole
+    discoveryConfigurations
 };

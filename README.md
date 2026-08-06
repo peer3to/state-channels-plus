@@ -92,7 +92,8 @@ The worker and orchestrator can run on different devices. They do not need a
 direct IP address for each other when the default Hyperswarm DHT is reachable.
 The orchestrator sends source files, not `node_modules` or local build output.
 
-Put the same secret in the ignored `.env` file on every device:
+Put the same long, randomly generated secret in the ignored `.env` file on
+every device:
 
 ```dotenv
 SCP_TEST_POOL_SECRET=<the-same-random-secret-on-every-device>
@@ -150,10 +151,12 @@ temp/distributed-worker/
         └── spool/
 ```
 
-- `/tmp/peer3-test-pool-server-v8.lock` is the one host-scoped file outside the
-  worker root. Its OS-held lock prevents servers using different clones or
-  `--work-root` values from oversubscribing the same machine. The file may
-  remain after shutdown, but its lock is released.
+- The per-user runtime directory under the OS temporary directory contains the
+  one host-scoped `server-v8.lock` file outside the worker root. The directory
+  is private to the current user and the lock refuses symbolic links. Its
+  OS-held lock prevents servers using different clones or `--work-root` values
+  from oversubscribing the same machine. The file may remain after shutdown,
+  but its lock is released.
 - `pnpm-store/` is the persistent dependency cache shared by later runs.
 - `workspaces/<project-id>/` is the persistent reconstructed source tree. It
   keeps `node_modules`, generated files, and successful build output.
@@ -209,9 +212,12 @@ After the smoke run, remove `--test-pattern` to run the whole suite. The worker
 reports ready, busy, and queued states and remains announced for later runs.
 
 Discovery always uses the public Hyperswarm network. There is no bootstrap
-server or port to configure. While a run is active, both commands print their
-current stage: discovery, connection, lease, source upload, pnpm progress,
-build output, test execution, and cleanup. Use repeatable `--forward-env
+server or port to configure. Workers and orchestrators announce on separate
+role-specific topics and look up the opposite role, so either side can establish
+the authenticated connection without workers connecting to other workers.
+While a run is active, both commands print their current stage: discovery,
+connection, lease, source upload, pnpm progress, build output, test execution,
+and cleanup. Use repeatable `--forward-env
 <NAME>` flags for required test settings. The pool secret and the rest of the
 orchestrator environment are never forwarded. Stop a server with SIGINT or
 SIGTERM. Canonical task and failure logs remain on the orchestrator under

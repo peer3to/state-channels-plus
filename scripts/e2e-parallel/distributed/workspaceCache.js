@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
+const { assertContained } = require("../shared/paths");
+const { sha256File } = require("../shared/fileHash");
 
 const PREPARATION_VERSION = 2;
 
@@ -55,7 +56,7 @@ function diffSourceFiles(previousFiles, nextFiles) {
     return { changed, deleted };
 }
 
-function inspectWorkspace(workRoot, manifest) {
+async function inspectWorkspace(workRoot, manifest) {
     const paths = workspacePaths(workRoot, manifest.workspaceId);
     const previous = readJson(paths.sourceManifest, { files: [] });
     const diff = diffSourceFiles(previous.files, manifest.files);
@@ -83,10 +84,7 @@ function inspectWorkspace(workRoot, manifest) {
             continue;
         }
         if (stat.mtimeMs !== cached.cachedMtimeMs) {
-            const digest = crypto
-                .createHash("sha256")
-                .update(fs.readFileSync(target))
-                .digest("hex");
+            const digest = await sha256File(target);
             if (digest !== entry.sha256) changed.add(entry.path);
         }
     }
@@ -104,11 +102,9 @@ function inspectWorkspace(workRoot, manifest) {
 
 function resolveWorkspaceFile(workspaceRoot, relative) {
     const root = path.resolve(workspaceRoot);
-    const resolved = path.resolve(root, relative);
-    if (resolved === root || !resolved.startsWith(root + path.sep)) {
-        throw new Error(`Workspace path escapes root: ${relative}`);
-    }
-    return resolved;
+    return assertContained(root, path.resolve(root, relative), {
+        message: `Workspace path escapes root: ${relative}`
+    });
 }
 
 function removeDeletedFiles(workspaceRoot, deleted) {

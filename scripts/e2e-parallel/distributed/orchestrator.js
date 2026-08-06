@@ -8,11 +8,7 @@ const {
     ProtocolPeer,
     waitForMessage
 } = require("./protocol");
-const {
-    DISCOVERY_REFRESH_MS,
-    createPool,
-    matchesConnectionRole
-} = require("./poolTransport");
+const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
 const { sendBundle } = require("./artifactTransfer");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { toWireTask } = require("./taskWire");
@@ -163,12 +159,11 @@ function aggregateWorkerStats(workers) {
 async function runDistributed(options) {
     const keys = derivePoolKeys(options.poolSecret);
     console.log(
-        `Discovering workers on topic ${keys.topic.toString("hex").slice(0, 12)}`
+        `Discovering workers on topic ${keys.workerTopic.toString("hex").slice(0, 12)}`
     );
     const pool = await createPool({
-        topic: keys.topic,
-        server: false,
-        client: true,
+        announceTopics: [keys.orchestratorTopic],
+        lookupTopics: [keys.workerTopic],
         dht: options.dht,
         refreshIntervalMs: options.discoveryRefreshMs || DISCOVERY_REFRESH_MS
     });
@@ -184,17 +179,36 @@ async function runDistributed(options) {
         if (workers.size) return;
         const seconds = Math.round((Date.now() - discoveryStartedAt) / 1000);
         console.log(
-            `Still discovering workers on topic ${keys.topic.toString("hex").slice(0, 12)} (${seconds}s)`
+            `Still discovering workers on topic ${keys.workerTopic.toString("hex").slice(0, 12)} (${seconds}s)`
         );
     }, DISCOVERY_REFRESH_MS);
     let resolveFirst;
     const firstWorker = new Promise((resolve) => (resolveFirst = resolve));
     let completedResolve;
     let completedReject;
+    let rediscoveryTimeout;
     const completed = new Promise((resolve, reject) => {
         completedResolve = resolve;
         completedReject = reject;
     });
+
+    function clearRediscoveryTimeout() {
+        if (rediscoveryTimeout) clearTimeout(rediscoveryTimeout);
+        rediscoveryTimeout = null;
+    }
+
+    function armRediscoveryTimeout() {
+        clearRediscoveryTimeout();
+        rediscoveryTimeout = setTimeout(
+            () =>
+                completedReject(
+                    new Error(
+                        `Lost all distributed workers; none reconnected within ${options.discoveryTimeoutMs}ms`
+                    )
+                ),
+            options.discoveryTimeoutMs
+        );
+    }
     for (const publicKey of options.peerPublicKeys || []) {
         pool.swarm.joinPeer(publicKey);
     }
@@ -255,13 +269,11 @@ async function runDistributed(options) {
     if (options.signal?.aborted) cancel();
 
     pool.onConnection(async (stream, info) => {
-        if (!matchesConnectionRole(info, true)) {
-            stream.destroy();
-            return;
-        }
         const peer = new ProtocolPeer(stream);
         const workerId =
             info?.publicKey?.toString("hex") || crypto.randomUUID();
+        // Hyperswarm deduplicates simultaneous dual-topic dials by Noise key.
+        // Keep this guard so a duplicate event cannot create a second lease.
         if (workers.has(workerId) || connectingWorkers.has(workerId))
             return peer.close();
         connectingWorkers.add(workerId);
@@ -302,6 +314,7 @@ async function runDistributed(options) {
                 leased: false,
                 failure: null,
                 memoryGb: ready.header.capabilities.memoryGb,
+                capabilities: ready.header.capabilities,
                 heartbeatTimeoutMs:
                     ready.header.capabilities.heartbeatTimeoutMs || 15000,
                 heartbeat: null
@@ -317,6 +330,7 @@ async function runDistributed(options) {
                 }
             );
             workers.set(workerId, worker);
+            clearRediscoveryTimeout();
             workerLabelById.set(workerId, worker.label);
             console.log(
                 `Connected to worker ${workerName(worker)}; requesting lease`
@@ -337,6 +351,7 @@ async function runDistributed(options) {
                 workers.delete(workerId);
                 if (!workers.size && coordinator.finish().pending) {
                     discoveryStartedAt = Date.now();
+                    armRediscoveryTimeout();
                     console.log(
                         "No workers connected; waiting for a worker to become available"
                     );
@@ -541,9 +556,13 @@ async function runDistributed(options) {
     try {
         await Promise.race([firstWorker, timeout, completed]);
         clearTimeout(discoveryTimeout);
+        clearRediscoveryTimeout();
         await completed;
         usedWorkers = [...workers.values()].filter((worker) => worker.leased);
-        workerLabels = usedWorkers.map((worker) => workerName(worker));
+        workerLabels = usedWorkers.map(
+            (worker) =>
+                `${workerName(worker)} (${worker.capabilities.slots} slots, ${worker.capabilities.workers} workers, ${worker.capabilities.memoryGb}GB)`
+        );
     } finally {
         clearTimeout(discoveryTimeout);
         clearInterval(discoveryProgress);

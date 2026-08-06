@@ -3,13 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const tar = require("tar");
-
-function sha256File(filePath) {
-    return crypto
-        .createHash("sha256")
-        .update(fs.readFileSync(filePath))
-        .digest("hex");
-}
+const { sha256File } = require("../shared/fileHash");
 
 function readPackageJson(root) {
     return JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -111,7 +105,11 @@ function gitSourceFiles(repositoryRoot) {
     return files;
 }
 
-async function buildRuntimeBundle(projectRoot, outputFile) {
+async function buildRuntimeBundle(
+    projectRoot,
+    outputFile,
+    onProgress = () => {}
+) {
     const repositories = discoverRepositories(projectRoot);
     const repositoryRoots = repositories.map((entry) => entry.root);
     let workspaceRoot = commonAncestor(repositoryRoots);
@@ -148,7 +146,7 @@ async function buildRuntimeBundle(projectRoot, outputFile) {
             sourceFilesManifest.push({
                 path: workspacePath,
                 bytes: stat.size,
-                sha256: sha256File(source),
+                sha256: await sha256File(source),
                 mode: stat.mode & 0o777
             });
         }
@@ -166,7 +164,7 @@ async function buildRuntimeBundle(projectRoot, outputFile) {
 
     files.sort();
     fs.mkdirSync(path.dirname(outputFile), { recursive: true });
-    console.log(
+    onProgress(
         `Packaging ${files.length} source file(s) from ${repositories.length} repository(s)`
     );
     await tar.c(
@@ -224,7 +222,7 @@ async function buildRuntimeBundle(projectRoot, outputFile) {
         fileCount: files.length,
         expandedBytes,
         archiveBytes,
-        archiveSha256: sha256File(outputFile)
+        archiveSha256: await sha256File(outputFile)
     };
     Object.defineProperty(manifest, "localWorkspaceRoot", {
         value: workspaceRoot,
@@ -234,6 +232,9 @@ async function buildRuntimeBundle(projectRoot, outputFile) {
 }
 
 async function buildDeltaBundle(manifest, relativeFiles, outputFile) {
+    if (!manifest.localWorkspaceRoot) {
+        throw new Error("Source manifest is missing its local workspace root");
+    }
     fs.mkdirSync(path.dirname(outputFile), { recursive: true });
     fs.rmSync(outputFile, { force: true });
     if (relativeFiles.length) {
@@ -268,7 +269,7 @@ async function buildDeltaBundle(manifest, relativeFiles, outputFile) {
         fileCount: files.length,
         expandedBytes: files.reduce((sum, entry) => sum + entry.bytes, 0),
         archiveBytes: fs.statSync(outputFile).size,
-        archiveSha256: sha256File(outputFile)
+        archiveSha256: await sha256File(outputFile)
     };
 }
 

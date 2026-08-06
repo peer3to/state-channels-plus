@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import crypto from "crypto";
+import { setImmediate } from "node:timers";
 import { createSocketPair } from "../fixtures/distributed/testTransport";
 
 const {
@@ -12,7 +13,7 @@ const {
     authenticateServer
 } = require("../../scripts/e2e-parallel/distributed/authentication.js");
 const {
-    matchesConnectionRole
+    discoveryConfigurations
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 const {
     formatBusyStatus,
@@ -23,12 +24,26 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed protocol", function () {
-    it("rejects Hyperswarm connections opened in the wrong local role", function () {
-        expect(matchesConnectionRole({ client: true }, true)).to.equal(true);
-        expect(matchesConnectionRole({ client: false }, false)).to.equal(true);
-        expect(matchesConnectionRole({ client: false }, true)).to.equal(false);
-        expect(matchesConnectionRole({ client: true }, false)).to.equal(false);
-        expect(matchesConnectionRole({}, true)).to.equal(true);
+    it("keeps worker and orchestrator discovery roles on separate topics", function () {
+        const keys = derivePoolKeys("role-specific-topics");
+        expect(keys.workerTopic.equals(keys.orchestratorTopic)).to.equal(false);
+        expect(
+            discoveryConfigurations({
+                announceTopics: [keys.workerTopic],
+                lookupTopics: [keys.orchestratorTopic]
+            })
+        ).to.deep.equal([
+            {
+                topic: keys.workerTopic,
+                server: true,
+                client: false
+            },
+            {
+                topic: keys.orchestratorTopic,
+                server: false,
+                client: true
+            }
+        ]);
     });
 
     it("silences abandoned discovery authentication handshakes", function () {

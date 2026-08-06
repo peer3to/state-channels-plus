@@ -12,6 +12,7 @@ const {
 const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { WorkerScheduler } = require("../shared/workerScheduler");
+const { buildSlotEnv, holdReason } = require("../shared/scheduling");
 const logging = require("../shared/logging");
 
 function resolveMode(flag, envVar, fallback) {
@@ -51,6 +52,7 @@ async function runScheduler({
         targetLoad,
         memBoundGb
     });
+    let rejectRun;
 
     let scheduler;
     const coordinator = new TaskCoordinator(tasks, {
@@ -78,16 +80,16 @@ async function runScheduler({
         retryMs: tickMs,
         canRun: async (running) => {
             if (coordinator.queue.length === 0) return false;
-            const allowed = resources.allows(running, concurrencyCap);
+            const allowed = await resources.allows(running, concurrencyCap);
             if (!allowed && coordinator.finish().pending) {
-                const { cpuUtil, occupiedGb, avgPerTestGb } = resources;
                 const next = coordinator.queue[0];
-                const reason =
-                    running >= concurrencyCap
-                        ? `cap (running ${running}/${concurrencyCap})`
-                        : occupiedGb + avgPerTestGb >= memBoundGb
-                          ? `memory (owned ${occupiedGb.toFixed(1)}+${avgPerTestGb.toFixed(1)}≥${memBoundGb.toFixed(1)}GB)`
-                          : `cpu ${(cpuUtil * 100).toFixed(0)}%>=${(targetLoad * 100).toFixed(0)}%`;
+                const reason = holdReason({
+                    running,
+                    concurrencyCap,
+                    resourceGate: resources,
+                    memBoundGb,
+                    targetLoad
+                });
                 logging.hold({
                     seq: next?.seq || tasks.length,
                     total: tasks.length,
@@ -97,26 +99,12 @@ async function runScheduler({
             return allowed;
         },
         requestTask: async () => coordinator.requestTask("local"),
+        onError: (error) => rejectRun?.(error),
         runTask: async (assignment) => {
             sequence++;
             const account = accountPartitions.acquire();
             const slot =
                 slotCount > 0 ? slots[(sequence - 1) % slotCount] : null;
-            const infraEnv = slot
-                ? {
-                      PROVIDER_URL: slot.nodeUrl,
-                      HARDHAT_NODE_URL: slot.nodeUrl,
-                      LOCAL_DISCOVERY_REGISTRY_URL: slot.discoveryUrl,
-                      E2E_MANAGER_CACHE_DIR: slot.cacheDir,
-                      E2E_INTERVAL_MINING: undefined
-                  }
-                : {
-                      PROVIDER_URL: undefined,
-                      HARDHAT_NODE_URL: undefined,
-                      LOCAL_DISCOVERY_REGISTRY_URL: undefined,
-                      E2E_MANAGER_CACHE_DIR: undefined,
-                      E2E_INTERVAL_MINING: undefined
-                  };
             logging.admission({
                 seq: assignment.seq,
                 total: tasks.length,
@@ -136,8 +124,8 @@ async function runScheduler({
                     [HARDHAT_CLI, ...assignment.task.args],
                     {
                         ...baseEnv,
-                        ...infraEnv,
-                        E2E_SLOT_INDEX: String(
+                        ...buildSlotEnv(
+                            slot,
                             accountPartitionFor(slot, account)
                         )
                     },
@@ -163,6 +151,11 @@ async function runScheduler({
     });
 
     await new Promise((resolve, reject) => {
+        rejectRun = (error) => {
+            clearInterval(monitor);
+            scheduler.stop();
+            reject(error);
+        };
         const monitor = setInterval(
             () => {
                 if (coordinator.finish().done) {
@@ -174,11 +167,6 @@ async function runScheduler({
             Math.min(tickMs, 100)
         );
         scheduler.start();
-        scheduler.options.onError = (error) => {
-            clearInterval(monitor);
-            scheduler.stop();
-            reject(error);
-        };
     });
 
     const resourceStats = resources.stats();

@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { killProcessGroup } = require("../shared/processGroup");
 
 class LeaseRuntime {
     constructor(workRoot) {
@@ -21,11 +22,7 @@ class LeaseRuntime {
     cancel() {
         this.abortController.abort();
         for (const child of this.children) {
-            if (!child.pid) continue;
-            try {
-                if (process.platform === "win32") child.kill("SIGTERM");
-                else process.kill(-child.pid, "SIGTERM");
-            } catch {}
+            killProcessGroup(child, "SIGTERM");
         }
     }
 
@@ -38,11 +35,7 @@ class LeaseRuntime {
                 await new Promise((resolve) => setTimeout(resolve, 25));
             }
             for (const child of this.children) {
-                if (!child.pid) continue;
-                try {
-                    if (process.platform === "win32") child.kill("SIGKILL");
-                    else process.kill(-child.pid, "SIGKILL");
-                } catch {}
+                killProcessGroup(child, "SIGKILL");
             }
             fs.rmSync(this.root, { recursive: true, force: true });
             if (fs.existsSync(this.root))

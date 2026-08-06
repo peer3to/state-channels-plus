@@ -3,6 +3,42 @@ const fs = require("fs");
 const { waitForMessage } = require("./protocol");
 const { buildDeltaBundle } = require("./runtimeBundle");
 
+function waitForIdleMessage(
+    peer,
+    kind,
+    idleTimeoutMs,
+    activityKinds = new Set()
+) {
+    const pending = peer.takePending(kind);
+    if (pending) return Promise.resolve(pending);
+    return new Promise((resolve, reject) => {
+        let timer;
+        const arm = () => {
+            clearTimeout(timer);
+            timer = setTimeout(
+                () => done(new Error(`Timed out waiting for ${kind}`)),
+                idleTimeoutMs
+            );
+        };
+        const onMessage = (message) => {
+            if (message.kind === kind) done(null, message);
+            else if (activityKinds.has(message.kind)) arm();
+        };
+        const onClose = () =>
+            done(new Error(`Connection closed waiting for ${kind}`));
+        const done = (error, message) => {
+            clearTimeout(timer);
+            peer.off("message", onMessage);
+            peer.off("close", onClose);
+            if (error) reject(error);
+            else resolve(message);
+        };
+        peer.on("message", onMessage);
+        peer.once("close", onClose);
+        arm();
+    });
+}
+
 async function sendBundle(
     peer,
     archivePath,
@@ -46,7 +82,12 @@ async function sendBundle(
         byteCount,
         sha256: delta.archiveSha256
     });
-    return waitForMessage(peer, "PREPARED", 120000);
+    return waitForIdleMessage(
+        peer,
+        "PREPARED",
+        120000,
+        new Set(["INFRA_LOG", "WORKER_STATUS"])
+    );
 }
 
 function receiveBundle(
@@ -58,6 +99,22 @@ function receiveBundle(
     onError = () => {}
 ) {
     let transfer = null;
+    let finished = false;
+    const closeTransfer = () => {
+        peer.off("message", onMessage);
+        peer.off("close", onClose);
+        if (transfer?.fd === undefined || transfer.fd === null) return;
+        try {
+            fs.closeSync(transfer.fd);
+        } catch {}
+        transfer.fd = null;
+    };
+    const onClose = () => {
+        if (finished) return;
+        finished = true;
+        closeTransfer();
+        onError(new Error("Bundle connection closed during transfer"));
+    };
     const onMessage = async (message) => {
         try {
             if (message.kind === "BUNDLE_META") {
@@ -91,31 +148,30 @@ function receiveBundle(
                     throw new Error("Bundle transfer was not started");
                 fs.fsyncSync(transfer.fd);
                 fs.closeSync(transfer.fd);
+                transfer.fd = null;
                 const digest = transfer.hash.digest("hex");
                 if (
                     message.header.byteCount !== transfer.bytes ||
                     message.header.sha256 !== digest
                 )
                     throw new Error("Transferred bundle checksum mismatch");
-                peer.off("message", onMessage);
+                finished = true;
+                closeTransfer();
                 await onComplete(transfer.manifest);
                 await peer.send("PREPARED");
             }
         } catch (error) {
             onError(error);
-            peer.off("message", onMessage);
-            if (transfer?.fd !== undefined) {
-                try {
-                    fs.closeSync(transfer.fd);
-                } catch {}
-            }
+            finished = true;
+            closeTransfer();
             peer.send("WORKER_ERROR", { message: error.message }).finally(() =>
                 setTimeout(() => peer.close(), 250)
             );
         }
     };
     peer.on("message", onMessage);
+    peer.once("close", onClose);
     if (initialMessage) onMessage(initialMessage);
 }
 
-module.exports = { sendBundle, receiveBundle };
+module.exports = { receiveBundle, sendBundle, waitForIdleMessage };

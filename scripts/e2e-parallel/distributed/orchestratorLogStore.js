@@ -1,6 +1,20 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { assertContained } = require("../shared/paths");
+
+const RESULT_OUTPUT_TAIL_BYTES = 4 * 1024 * 1024;
+
+function appendTail(chunks, body) {
+    chunks.push(body);
+    let bytes = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    while (bytes > RESULT_OUTPUT_TAIL_BYTES && chunks.length > 1) {
+        bytes -= chunks.shift().length;
+    }
+    if (bytes > RESULT_OUTPUT_TAIL_BYTES) {
+        chunks[0] = chunks[0].subarray(bytes - RESULT_OUTPUT_TAIL_BYTES);
+    }
+}
 
 function sanitizeWorkerLabel(name, used = new Set()) {
     const base = String(name || "")
@@ -17,15 +31,14 @@ function sanitizeWorkerLabel(name, used = new Set()) {
 }
 
 function containedPath(root, ...segments) {
-    const resolvedRoot = path.resolve(root);
-    const resolved = path.resolve(resolvedRoot, ...segments);
-    if (
-        resolved !== resolvedRoot &&
-        !resolved.startsWith(resolvedRoot + path.sep)
-    ) {
-        throw new Error("Resolved log path leaves run directory");
-    }
-    return resolved;
+    return assertContained(
+        path.resolve(root),
+        path.resolve(root, ...segments),
+        {
+            allowRoot: true,
+            message: "Resolved log path leaves run directory"
+        }
+    );
 }
 
 class OrchestratorLogStore {
@@ -74,12 +87,12 @@ class OrchestratorLogStore {
         if (!attempt) throw new Error(`Unknown attempt log: ${key}`);
         if (sequence !== attempt.sequence)
             throw new Error("Out-of-order log chunk");
-        fs.writeSync(attempt.fd, body);
-        attempt.hash.update(body);
         if (stream !== "stdout" && stream !== "stderr") {
             throw new Error(`Unknown attempt stream: ${stream}`);
         }
-        attempt[stream].push(body);
+        fs.writeSync(attempt.fd, body);
+        attempt.hash.update(body);
+        appendTail(attempt[stream], body);
         attempt.byteCount += body.length;
         attempt.sequence++;
     }
@@ -87,22 +100,25 @@ class OrchestratorLogStore {
     commit(key, end) {
         const attempt = this.attempts.get(key);
         if (!attempt) throw new Error(`Unknown attempt log: ${key}`);
-        const digest = attempt.hash.digest("hex");
-        if (
-            end.sequence !== attempt.sequence ||
-            end.byteCount !== attempt.byteCount ||
-            end.sha256 !== digest
-        ) {
-            throw new Error("Attempt log checksum mismatch");
+        try {
+            const digest = attempt.hash.digest("hex");
+            if (
+                end.sequence !== attempt.sequence ||
+                end.byteCount !== attempt.byteCount ||
+                end.sha256 !== digest
+            ) {
+                throw new Error("Attempt log checksum mismatch");
+            }
+            fs.fsyncSync(attempt.fd);
+            return {
+                filePath: attempt.filePath,
+                stdout: Buffer.concat(attempt.stdout).toString(),
+                stderr: Buffer.concat(attempt.stderr).toString()
+            };
+        } finally {
+            fs.closeSync(attempt.fd);
+            this.attempts.delete(key);
         }
-        fs.fsyncSync(attempt.fd);
-        fs.closeSync(attempt.fd);
-        this.attempts.delete(key);
-        return {
-            filePath: attempt.filePath,
-            stdout: Buffer.concat(attempt.stdout).toString(),
-            stderr: Buffer.concat(attempt.stderr).toString()
-        };
     }
 
     abort(key) {

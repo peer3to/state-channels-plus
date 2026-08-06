@@ -37,7 +37,8 @@ cleared) as-is; dirs outside `./logs` additionally need
 
 Distributed runs use `yarn test:parallel:server` on each worker and
 `yarn test:parallel:distributed` on the orchestrator. Both require the same
-`SCP_TEST_POOL_SECRET`. The orchestrator still owns `logs/run-N`, error-log
+`SCP_TEST_POOL_SECRET`, which must be a long randomly generated secret rather
+than a memorable password. The orchestrator still owns `logs/run-N`, error-log
 renaming, and the final summary. Servers stay available after lease cleanup;
 one server per physical host is the supported default. Workers install the
 git-aware source workspace with pnpm under `temp/distributed-worker`; linked
@@ -45,11 +46,11 @@ repositories retain their relative paths and the pnpm store persists between
 runs. Distributed runs do not replace the local `yarn test:parallel` landing
 gate.
 
-Hyperswarm may surface connections opened in either local role when several
-pool members share a topic. The orchestrator must authenticate only connections
-where it is the client, and servers must authenticate only connections where
-they are the server. Close other connections without logging authentication
-timeouts.
+Workers and orchestrators use separate role-specific topics. Each announces its
+own role and discovers the opposite role, so either side may establish the
+transport without workers connecting to workers or orchestrators connecting to
+orchestrators. Application authentication follows the process role, not
+Hyperswarm's transport-direction flag.
 
 Worker loss must not terminate an orchestrator run. Return that worker's live
 assignments to the shared queue, keep public discovery active, and wait for an

@@ -8,8 +8,12 @@ const {
     accountPartitionFor
 } = require("../../scripts/e2e-parallel/shared/accountPartitionPool.js");
 const {
+    resetResourceGateWarnings,
     ResourceGate
 } = require("../../scripts/e2e-parallel/shared/resourceGate.js");
+const {
+    buildSlotEnv
+} = require("../../scripts/e2e-parallel/shared/scheduling.js");
 const {
     DEFAULTS: SERVER_DEFAULTS,
     parseServerArgs
@@ -48,7 +52,7 @@ describe("distributed worker scheduler", function () {
         expect(accountPartitionFor(null, second)).to.equal(0);
     });
 
-    it("uses the shared always-one and process-cap admission rules", function () {
+    it("uses the shared always-one and process-cap admission rules", async function () {
         const resources = new ResourceGate({
             testPids: () => [],
             infraPids: () => [],
@@ -56,9 +60,56 @@ describe("distributed worker scheduler", function () {
             memBoundGb: Number.MAX_SAFE_INTEGER
         });
 
-        expect(resources.allows(0, 1)).to.equal(true);
-        expect(resources.allows(1, 1)).to.equal(false);
+        expect(await resources.allows(0, 1)).to.equal(true);
+        expect(await resources.allows(1, 1)).to.equal(false);
         expect(resources.stats().peakCpu).to.be.a("number");
+    });
+
+    it("falls back conservatively and warns once when ps fails", async function () {
+        resetResourceGateWarnings();
+        const warnings: string[] = [];
+        const resources = new ResourceGate({
+            testPids: () => [process.pid],
+            infraPids: () => [],
+            targetLoad: 1,
+            memBoundGb: 0,
+            sampleOptions: {
+                execFile: async () => {
+                    throw new Error("ps unavailable");
+                },
+                warn: (message: string) => warnings.push(message)
+            }
+        });
+
+        expect(await resources.allows(1, 2)).to.equal(false);
+        expect(await resources.allows(1, 2)).to.equal(false);
+        expect(resources.occupiedGb).to.be.greaterThan(0);
+        expect(warnings).to.have.length(1);
+    });
+
+    it("builds the same complete slot environment for every scheduler", function () {
+        expect(
+            buildSlotEnv(
+                {
+                    nodeUrl: "node",
+                    discoveryUrl: "discovery",
+                    cacheDir: "cache"
+                },
+                3
+            )
+        ).to.deep.equal({
+            PROVIDER_URL: "node",
+            HARDHAT_NODE_URL: "node",
+            LOCAL_DISCOVERY_REGISTRY_URL: "discovery",
+            E2E_MANAGER_CACHE_DIR: "cache",
+            E2E_INTERVAL_MINING: undefined,
+            E2E_SLOT_INDEX: "3"
+        });
+        expect(buildSlotEnv(null, 0)).to.include({
+            PROVIDER_URL: undefined,
+            E2E_INTERVAL_MINING: undefined,
+            E2E_SLOT_INDEX: "0"
+        });
     });
 
     it("keeps capacity alive after no work and accepts a nudge", async function () {
@@ -111,6 +162,8 @@ describe("distributed worker scheduler", function () {
         expect(requests).to.equal(1);
         release();
         scheduler.stop();
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        expect(requests).to.equal(1);
     });
 
     it("buffers the next distributed assignment before capacity opens", async function () {

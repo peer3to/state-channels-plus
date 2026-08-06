@@ -37,8 +37,67 @@ const {
 const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
 
 describe("distributed parallel runner", function () {
+    it("authenticates when the worker establishes the transport connection", async function () {
+        const network = await createLocalDhtNetwork();
+        const keys = derivePoolKeys(`reverse-dial-${process.pid}`);
+        const pools: Array<{ close: () => Promise<void> }> = [];
+        try {
+            const orchestrator = await createPool({
+                announceTopics: [keys.orchestratorTopic],
+                lookupTopics: [],
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.push(orchestrator);
+            let orchestratorWasTransportClient: boolean | undefined;
+            const orchestratorAuthenticated = new Promise<void>(
+                (resolve, reject) => {
+                    orchestrator.onConnection(
+                        (stream: unknown, info: { client?: boolean }) => {
+                            orchestratorWasTransportClient = info.client;
+                            authenticateClient(
+                                new ProtocolPeer(stream),
+                                keys.authKey,
+                                { local: orchestrator.publicKey },
+                                1000
+                            ).then(() => resolve(), reject);
+                        }
+                    );
+                }
+            );
+
+            const worker = await createPool({
+                announceTopics: [],
+                lookupTopics: [keys.orchestratorTopic],
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.push(worker);
+            let workerWasTransportClient: boolean | undefined;
+            const workerAuthenticated = new Promise<void>((resolve, reject) => {
+                worker.onConnection(
+                    (stream: unknown, info: { client?: boolean }) => {
+                        workerWasTransportClient = info.client;
+                        authenticateServer(
+                            new ProtocolPeer(stream),
+                            keys.authKey,
+                            { local: worker.publicKey },
+                            1000
+                        ).then(() => resolve(), reject);
+                    }
+                );
+            });
+
+            await Promise.all([orchestratorAuthenticated, workerAuthenticated]);
+            expect(orchestratorWasTransportClient).to.equal(false);
+            expect(workerWasTransportClient).to.equal(true);
+        } finally {
+            await Promise.allSettled(pools.map((pool) => pool.close()));
+            await network.close();
+        }
+    });
+
     it("keeps discovering and connects to worker servers that appear later", async function () {
-        this.timeout(10000);
         const network = await createLocalDhtNetwork();
         const topic = crypto.randomBytes(32);
         const pools: Array<{ close: () => Promise<void> }> = [];
@@ -101,7 +160,6 @@ describe("distributed parallel runner", function () {
     });
 
     it("cancels while discovering before any worker connects", async function () {
-        this.timeout(10000);
         const network = await createLocalDhtNetwork();
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "distributed-cancel-")
@@ -133,7 +191,6 @@ describe("distributed parallel runner", function () {
     });
 
     it("kills infrastructure grandchildren after a test process exits", async function () {
-        this.timeout(10000);
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-group-"));
         let grandchildPid: number | undefined;
         try {
@@ -168,7 +225,9 @@ describe("distributed parallel runner", function () {
             if (grandchildPid) {
                 try {
                     process.kill(grandchildPid, "SIGKILL");
-                } catch {}
+                } catch {
+                    // The process already exited.
+                }
             }
             fs.rmSync(root, { recursive: true, force: true });
         }

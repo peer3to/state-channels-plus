@@ -7,11 +7,7 @@ const { DEFAULTS, parseServerArgs } = require("./serverArgParser");
 const { acquireHostLock } = require("./hostLock");
 const { derivePoolKeys, authenticateServer } = require("./authentication");
 const { DISTRIBUTED_PROTOCOL_VERSION, ProtocolPeer } = require("./protocol");
-const {
-    DISCOVERY_REFRESH_MS,
-    createPool,
-    matchesConnectionRole
-} = require("./poolTransport");
+const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
 const { WorkerLeaseManager } = require("./workerLeaseManager");
 const { LeaseRuntime } = require("./leaseRuntime");
 const { receiveBundle } = require("./artifactTransfer");
@@ -67,6 +63,7 @@ async function main(options = {}) {
     const keys = derivePoolKeys(process.env.SCP_TEST_POOL_SECRET);
     const hostLock = acquireHostLock(config);
     const connections = new Set();
+    const connectionsByPeerId = new Map();
     const manager = new WorkerLeaseManager({
         queueLength: config.queueLength,
         onGrant(connection) {
@@ -79,12 +76,18 @@ async function main(options = {}) {
         onQueueStatus(connection, status) {
             const { kind, ...header } = status;
             connection.peer.send(kind, header).catch(() => {});
+        },
+        onFault(error) {
+            console.error(
+                `Worker lease cleanup failed: ${error.stack || error}`
+            );
+            const exitProcess = config.exitProcess || process.exit;
+            exitProcess(1);
         }
     });
     const pool = await createPool({
-        topic: keys.topic,
-        server: true,
-        client: false,
+        announceTopics: [keys.workerTopic],
+        lookupTopics: [keys.orchestratorTopic],
         dht: config.dht,
         refreshIntervalMs: DISCOVERY_REFRESH_MS
     });
@@ -117,6 +120,9 @@ async function main(options = {}) {
         if (connection.closing) return;
         connection.closing = true;
         connections.delete(connection);
+        if (connectionsByPeerId.get(connection.peerId) === connection) {
+            connectionsByPeerId.delete(connection.peerId);
+        }
         clearInterval(connection.heartbeat);
         if (manager.active === connection) {
             await manager.release(connection, async () =>
@@ -127,13 +133,20 @@ async function main(options = {}) {
     }
 
     pool.onConnection(async (stream, info) => {
-        if (!matchesConnectionRole(info, false)) {
-            stream.destroy();
-            return;
+        const peerId = info?.publicKey?.toString("hex");
+        // Hyperswarm normally exposes only its canonical connection after a
+        // simultaneous dial. Reject any duplicate event before lease handling.
+        if (peerId && connectionsByPeerId.has(peerId)) {
+            closeConnection(connectionsByPeerId.get(peerId)).catch((error) =>
+                console.error(
+                    `Stale worker connection cleanup failed: ${error.stack || error}`
+                )
+            );
         }
         const peer = new ProtocolPeer(stream);
         const connection = {
             peer,
+            peerId,
             sessionId: null,
             runtime: null,
             worker: null,
@@ -141,6 +154,7 @@ async function main(options = {}) {
             closing: false
         };
         connections.add(connection);
+        if (peerId) connectionsByPeerId.set(peerId, connection);
         try {
             await authenticateServer(
                 peer,
@@ -180,7 +194,7 @@ async function main(options = {}) {
             await peer
                 .send("AUTH_ERROR", { message: error.message })
                 .catch(() => {});
-            peer.close();
+            await closeConnection(connection);
         }
     });
 
@@ -225,7 +239,7 @@ async function main(options = {}) {
                 connection.runtime = new LeaseRuntime(config.workRoot);
                 connection.workspaceOffer = {
                     manifest,
-                    cache: inspectWorkspace(config.workRoot, manifest)
+                    cache: await inspectWorkspace(config.workRoot, manifest)
                 };
                 const { changed, deleted } = connection.workspaceOffer.cache;
                 await connection.peer.send(
@@ -554,6 +568,7 @@ async function main(options = {}) {
                 targetLoad: config.targetLoad,
                 memBoundGb: config.memLimitGb,
                 maxAttemptSpoolBytes: config.maxAttemptSpoolBytes,
+                heartbeatTimeoutMs: config.heartbeatTimeoutMs,
                 taskCount: runConfig.taskCount,
                 baseEnv: runConfig.baseEnv || {}
             }
@@ -584,7 +599,7 @@ async function main(options = {}) {
         process.off("SIGTERM", onSigterm);
     };
     console.log(
-        `Worker ${config.name} ready on topic ${keys.topic.toString("hex").slice(0, 12)} ` +
+        `Worker ${config.name} ready on topic ${keys.workerTopic.toString("hex").slice(0, 12)} ` +
             `(peer ${pool.publicKey.toString("hex").slice(0, 12)})`
     );
     return { pool, manager, shutdown };

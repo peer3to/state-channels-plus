@@ -1,4 +1,5 @@
 const path = require("path");
+const { assertContained } = require("../shared/paths");
 
 function toWireTask(task, projectRoot) {
     const root = path.resolve(projectRoot);
@@ -7,14 +8,10 @@ function toWireTask(task, projectRoot) {
         logName: task.logName,
         args: task.args.map((arg) => {
             if (!path.isAbsolute(arg)) return arg;
-            const relative = path.relative(root, arg);
-            if (
-                !relative ||
-                relative === ".." ||
-                relative.startsWith(`..${path.sep}`)
-            ) {
-                throw new Error(`Task path leaves project: ${arg}`);
-            }
+            const contained = assertContained(root, arg, {
+                message: `Task path leaves project: ${arg}`
+            });
+            const relative = path.relative(root, contained);
             return { projectPath: relative.split(path.sep).join("/") };
         })
     };
@@ -26,13 +23,9 @@ function fromWireTask(task, projectRoot) {
         ...task,
         args: task.args.map((arg) => {
             if (typeof arg === "string") return arg;
-            const resolved = path.resolve(root, arg.projectPath);
-            if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-                throw new Error(
-                    `Task path leaves extracted project: ${arg.projectPath}`
-                );
-            }
-            return resolved;
+            return assertContained(root, path.resolve(root, arg.projectPath), {
+                message: `Task path leaves extracted project: ${arg.projectPath}`
+            });
         })
     };
 }

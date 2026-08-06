@@ -2,8 +2,27 @@ import { expect } from "chai";
 import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
 
 describe("distributed worker pool lifecycle", function () {
+    it("deduplicates simultaneous bidirectional discovery into one lease", async function () {
+        const pool = await LeasePoolHarness.create();
+        try {
+            const worker = await pool.startServer("worker-a");
+            const orchestrator = await pool.startOrchestrator("run-one");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+
+            expect(orchestrator.connectedWorkerCount()).to.equal(1);
+            expect(worker.connectionCount()).to.equal(1);
+            expect(
+                (worker.manager.active as { sessionId: string }).sessionId
+            ).to.equal("run-one");
+
+            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("keeps the orchestrator and surviving server active while a replacement server rejoins", async function () {
-        this.timeout(15000);
         const pool = await LeasePoolHarness.create();
         try {
             const workerA = await pool.startServer("worker-a");
@@ -41,7 +60,6 @@ describe("distributed worker pool lifecycle", function () {
     });
 
     it("keeps a second orchestrator connected with progress and promotes it on every server", async function () {
-        this.timeout(15000);
         const pool = await LeasePoolHarness.create();
         try {
             const workerA = await pool.startServer("worker-a");
@@ -122,7 +140,6 @@ describe("distributed worker pool lifecycle", function () {
     });
 
     it("promotes the waiting orchestrator when the lease owner is killed", async function () {
-        this.timeout(10000);
         const pool = await LeasePoolHarness.create();
         try {
             const worker = await pool.startServer("worker-a");
@@ -147,7 +164,6 @@ describe("distributed worker pool lifecycle", function () {
     });
 
     it("grants a new orchestrator immediately after the previous run finishes", async function () {
-        this.timeout(10000);
         const pool = await LeasePoolHarness.create();
         try {
             const worker = await pool.startServer("worker-a");

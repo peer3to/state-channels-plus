@@ -1,14 +1,8 @@
-const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const tar = require("tar");
-
-function sha256File(filePath) {
-    return crypto
-        .createHash("sha256")
-        .update(fs.readFileSync(filePath))
-        .digest("hex");
-}
+const { sha256File } = require("../shared/fileHash");
+const { assertContained } = require("../shared/paths");
 
 function assertCompatible(manifest) {
     if (manifest.version !== 3 || manifest.packageManager !== "pnpm") {
@@ -30,7 +24,7 @@ async function extractRuntimeBundle(
     ) {
         throw new Error("Source workspace exceeds worker limits");
     }
-    if (sha256File(archivePath) !== manifest.archiveSha256) {
+    if ((await sha256File(archivePath)) !== manifest.archiveSha256) {
         throw new Error("Source archive checksum mismatch");
     }
     const seen = new Set();
@@ -77,16 +71,17 @@ async function extractRuntimeBundle(
         strict: true
     });
     for (const expected of expectedFiles) {
-        const filePath = path.resolve(destination, expected.path);
-        if (!filePath.startsWith(path.resolve(destination) + path.sep)) {
-            throw new Error(`Source file escapes workspace: ${expected.path}`);
-        }
+        const filePath = assertContained(
+            destination,
+            path.resolve(destination, expected.path),
+            { message: `Source file escapes workspace: ${expected.path}` }
+        );
         const stat = fs.statSync(filePath);
         if (
             !stat.isFile() ||
             stat.size !== expected.bytes ||
             (stat.mode & 0o777) !== expected.mode ||
-            sha256File(filePath) !== expected.sha256
+            (await sha256File(filePath)) !== expected.sha256
         ) {
             throw new Error(
                 `Source file verification failed: ${expected.path}`
@@ -94,10 +89,11 @@ async function extractRuntimeBundle(
         }
     }
     for (const repository of manifest.repositories) {
-        const resolved = path.resolve(destination, repository.path);
-        if (!resolved.startsWith(path.resolve(destination) + path.sep)) {
-            throw new Error("Repository path escapes workspace");
-        }
+        const resolved = assertContained(
+            destination,
+            path.resolve(destination, repository.path),
+            { message: "Repository path escapes workspace" }
+        );
         if (!fs.existsSync(path.join(resolved, "package.json"))) {
             throw new Error(`Repository is incomplete: ${repository.path}`);
         }

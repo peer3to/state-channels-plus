@@ -1,6 +1,10 @@
-const { execFileSync } = require("child_process");
+const { execFile } = require("child_process");
 const os = require("os");
+const { promisify } = require("util");
 const { PER_TEST_MEM_GB } = require("./constants");
+
+const execFileAsync = promisify(execFile);
+let warnedAboutPs = false;
 
 function cpuTimes() {
     let idle = 0;
@@ -12,31 +16,62 @@ function cpuTimes() {
     return { idle, total };
 }
 
-function rssGbForPids(pids) {
-    if (!pids.length) return 0;
+function systemOccupiedGb() {
+    return (os.totalmem() - os.freemem()) / 1024 ** 3;
+}
+
+async function rssByPid(pids, options = {}) {
+    const unique = [...new Set(pids.filter(Boolean))];
+    if (!unique.length) return new Map();
     try {
-        const output = execFileSync(
-            "ps",
-            ["-o", "rss=", "-p", pids.join(",")],
-            { encoding: "utf8" }
+        const run = options.execFile || execFileAsync;
+        const result = await run("ps", [
+            "-o",
+            "pid=,rss=",
+            "-p",
+            unique.join(",")
+        ]);
+        const output = typeof result === "string" ? result : result.stdout;
+        return new Map(
+            output
+                .split("\n")
+                .map((line) => line.trim().split(/\s+/).map(Number))
+                .filter(
+                    ([pid, rss]) =>
+                        Number.isInteger(pid) && Number.isFinite(rss)
+                )
+                .map(([pid, rss]) => [pid, rss / 1024 / 1024])
         );
-        const kb = output
-            .split("\n")
-            .map((value) => Number.parseInt(value.trim(), 10))
-            .filter(Number.isFinite)
-            .reduce((sum, value) => sum + value, 0);
-        return kb / 1024 / 1024;
-    } catch {
-        return 0;
+    } catch (error) {
+        if (!warnedAboutPs) {
+            warnedAboutPs = true;
+            (options.warn || console.warn)(
+                `Unable to sample process RSS with ps; using system memory: ${error.message}`
+            );
+        }
+        return null;
     }
 }
 
+async function rssGbForPids(pids, options = {}) {
+    const samples = await rssByPid(pids, options);
+    if (!samples) return systemOccupiedGb();
+    return [...samples.values()].reduce((sum, value) => sum + value, 0);
+}
+
 class ResourceGate {
-    constructor({ testPids, infraPids, targetLoad, memBoundGb }) {
+    constructor({
+        testPids,
+        infraPids,
+        targetLoad,
+        memBoundGb,
+        sampleOptions
+    }) {
         this.testPids = testPids;
         this.infraPids = infraPids;
         this.targetLoad = targetLoad;
         this.memBoundGb = memBoundGb;
+        this.sampleOptions = sampleOptions;
         this.lastCpu = cpuTimes();
         this.cpuUtil = 0;
         this.peakCpu = 0;
@@ -44,11 +79,11 @@ class ResourceGate {
         this.avgPerTestGb = PER_TEST_MEM_GB;
         this.memSampleSum = 0;
         this.memSampleCount = 0;
-        this.occupiedGb = rssGbForPids(this.infraPids());
-        this.peakOccupiedGb = this.occupiedGb;
+        this.occupiedGb = 0;
+        this.peakOccupiedGb = 0;
     }
 
-    sample() {
+    async sample() {
         const now = cpuTimes();
         const idleDelta = now.idle - this.lastCpu.idle;
         const totalDelta = now.total - this.lastCpu.total;
@@ -58,11 +93,29 @@ class ResourceGate {
         }
         this.peakCpu = Math.max(this.peakCpu, this.cpuUtil);
         this.cpuSamples.push(this.cpuUtil);
+
         const testPids = this.testPids();
-        const testGb = rssGbForPids(testPids);
-        this.occupiedGb = testGb + rssGbForPids(this.infraPids());
+        const infraPids = this.infraPids();
+        const samples = await rssByPid(
+            [...testPids, ...infraPids],
+            this.sampleOptions
+        );
+        let testGb = 0;
+        if (samples) {
+            testGb = testPids.reduce(
+                (sum, pid) => sum + (samples.get(pid) || 0),
+                0
+            );
+            const infraGb = infraPids.reduce(
+                (sum, pid) => sum + (samples.get(pid) || 0),
+                0
+            );
+            this.occupiedGb = testGb + infraGb;
+        } else {
+            this.occupiedGb = systemOccupiedGb();
+        }
         this.peakOccupiedGb = Math.max(this.peakOccupiedGb, this.occupiedGb);
-        if (testPids.length) {
+        if (samples && testPids.length) {
             this.memSampleSum += testGb / testPids.length;
             this.memSampleCount++;
             this.avgPerTestGb = Math.max(
@@ -72,8 +125,8 @@ class ResourceGate {
         }
     }
 
-    allows(running, concurrencyCap) {
-        this.sample();
+    async allows(running, concurrencyCap) {
+        await this.sample();
         return (
             running === 0 ||
             (running < concurrencyCap &&
@@ -98,4 +151,15 @@ class ResourceGate {
     }
 }
 
-module.exports = { cpuTimes, rssGbForPids, ResourceGate };
+function resetResourceGateWarnings() {
+    warnedAboutPs = false;
+}
+
+module.exports = {
+    cpuTimes,
+    resetResourceGateWarnings,
+    ResourceGate,
+    rssByPid,
+    rssGbForPids,
+    systemOccupiedGb
+};

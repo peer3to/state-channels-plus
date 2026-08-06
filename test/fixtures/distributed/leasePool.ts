@@ -58,6 +58,7 @@ type LeaseWorkerServer = {
         ) => void;
         updateStatus: (connection: unknown, status: string) => void;
     };
+    connectionCount: () => number;
     shutdown: () => Promise<void>;
 };
 
@@ -94,9 +95,8 @@ export class LeaseOrchestrator {
     }): Promise<LeaseOrchestrator> {
         const keys = derivePoolKeys(options.poolSecret);
         const pool = await createPool({
-            topic: keys.topic,
-            server: false,
-            client: true,
+            announceTopics: [keys.orchestratorTopic],
+            lookupTopics: [keys.workerTopic],
             dht: options.dht,
             refreshIntervalMs: options.refreshIntervalMs || 25
         });
@@ -264,10 +264,11 @@ export async function startLeaseWorkerServer(options: {
         ) => void;
         updateStatus: (connection: unknown, status: string) => void;
     };
+    connectionCount: () => number;
     shutdown: () => Promise<void>;
 }> {
     process.env.SCP_TEST_POOL_SECRET = options.poolSecret;
-    return startServer({
+    const server = await startServer({
         ...DEFAULTS,
         name: options.name,
         workRoot: options.workRoot,
@@ -275,6 +276,11 @@ export async function startLeaseWorkerServer(options: {
         allowSharedHost: true,
         heartbeatTimeoutMs: 1000
     });
+    return {
+        manager: server.manager,
+        shutdown: server.shutdown,
+        connectionCount: () => server.pool.swarm.connections.size
+    };
 }
 
 export class LeasePoolHarness {
