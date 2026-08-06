@@ -4,7 +4,7 @@ import os from "os";
 import path from "path";
 
 const { discoverTasks } =
-    require("../../scripts/e2e-parallel/taskDiscovery.js") as {
+    require("../../scripts/e2e-parallel/shared/taskDiscovery.js") as {
         discoverTasks: (
             testDir: string,
             grep?: string,
@@ -19,8 +19,47 @@ const { discoverTasks } =
             }>;
         };
     };
+const {
+    toWireTask,
+    fromWireTask
+} = require("../../scripts/e2e-parallel/distributed/taskWire.js");
 
 describe("parallel Mocha task discovery", function () {
+    it("round-trips task paths under the project and rejects escapes", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-wire-"));
+        try {
+            const nested = path.join(root, "test", "nested file.test.ts");
+            fs.mkdirSync(path.dirname(nested), { recursive: true });
+            fs.writeFileSync(nested, "");
+            const wire = toWireTask(
+                { label: "nested", logName: "nested", args: ["test", nested] },
+                root
+            );
+            expect(wire.args[1]).to.deep.equal({
+                projectPath: "test/nested file.test.ts"
+            });
+            expect(fromWireTask(wire, root).args[1]).to.equal(nested);
+            expect(() =>
+                toWireTask(
+                    {
+                        label: "bad",
+                        logName: "bad",
+                        args: [path.dirname(root)]
+                    },
+                    root
+                )
+            ).to.throw(/leaves project/);
+            expect(() =>
+                fromWireTask(
+                    { ...wire, args: [{ projectPath: "../bad" }] },
+                    root
+                )
+            ).to.throw(/leaves extracted/);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("discovers ordinary and E2E tests and marks only E2E tasks for shared infra", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "mocha-discovery-"));
         const testDir = path.join(root, "test");

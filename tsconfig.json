@@ -39,6 +39,7 @@
     "exclude": [
         "examples",
         "dist",
+        "temp",
         "node_modules",
         "src/evm/browser",
         "src/evm/contractExecutor/browser",

@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { DEFAULT_LOG_DIR } = require("./constants");
@@ -302,21 +303,28 @@ function admission({
     cpuUtil,
     targetLoad,
     occupiedGb,
-    memBoundGb
+    memBoundGb,
+    worker,
+    buffered
 }) {
     const cpuStr = `${(cpuUtil * 100).toFixed(0)}%<${(targetLoad * 100).toFixed(0)}%`;
     const memStr = `${occupiedGb.toFixed(1)}/${memBoundGb.toFixed(1)}GB`;
     console.log(
         colorize(
             "blue",
-            `[${seq}/${total}] ${where} · running ${running}/${concurrencyCap} · acct ${acct} · cpu ${cpuStr} · mem ${memStr}`
+            `[${seq}/${total}]${worker ? ` ${worker} ·` : ""} ${where} · running ${running}/${concurrencyCap}${buffered === undefined ? "" : ` · buffer ${buffered}`} · acct ${acct} · cpu ${cpuStr} · mem ${memStr}`
         )
     );
 }
 
 // Orange: scheduler declined to admit this tick.
-function hold({ seq, total, reason }) {
-    console.log(colorize("orange", `[${seq}/${total}] holding — ${reason}`));
+function hold({ seq, total, reason, buffered }) {
+    console.log(
+        colorize(
+            "orange",
+            `[${seq}/${total}] holding — ${reason}${buffered === undefined ? "" : ` · buffer ${buffered}`}`
+        )
+    );
 }
 
 // Light yellow: a starved task gets its single clean retry.
@@ -339,9 +347,10 @@ function result({
     oomCount,
     starveCount,
     timing,
-    repeatedStarvation = false
+    repeatedStarvation = false,
+    worker
 }) {
-    const tag = `[${completed}/${total}]`;
+    const tag = `[${completed}/${total}]${worker ? ` ${worker} ·` : ""}`;
     const duration = formatDurationMs(durationMs);
     const timingStr = timing.found
         ? ` · startup ${formatDurationMs(timing.startupMs)} · deploy ${formatDurationMs(timing.deployMs)}`
@@ -399,9 +408,20 @@ function getStarvationSummary(tasks) {
     };
 }
 
+function summaryCounts(total, failed, completed = total) {
+    const boundedCompleted = Math.max(0, Math.min(total, completed));
+    const boundedFailed = Math.max(0, Math.min(boundedCompleted, failed));
+    return {
+        passing: boundedCompleted - boundedFailed,
+        failing: boundedFailed,
+        notRun: total - boundedCompleted
+    };
+}
+
 function summary({
     tasks,
     failed,
+    completed = tasks.length,
     wallMs,
     sumDurationMs,
     peakCpu,
@@ -410,10 +430,12 @@ function summary({
     avgPerTestGb,
     memBoundGb,
     targetLoad,
-    gasPeak
+    gasPeak,
+    workers = []
 }) {
-    const totalFailing = failed.length;
-    const totalPassing = tasks.length - totalFailing;
+    const counts = summaryCounts(tasks.length, failed.length, completed);
+    const totalFailing = counts.failing;
+    const totalPassing = counts.passing;
     const speedup = wallMs > 0 ? sumDurationMs / wallMs : 0;
     const oomTasks = tasks.filter((t) => (t.oomCount || 0) > 0);
     const starvation = getStarvationSummary(tasks);
@@ -435,6 +457,9 @@ function summary({
     }
     if (totalFailing > 0) {
         console.log(colorize("red", `  ${totalFailing} failing`));
+    }
+    if (counts.notRun > 0) {
+        console.log(colorize("yellow", `  ${counts.notRun} not run`));
     }
     if (oomTasks.length > 0) {
         const totalOom = oomTasks.reduce((s, t) => s + t.oomCount, 0);
@@ -486,6 +511,7 @@ function summary({
     console.log(
         `  cpu: avg ${(avgCpu * 100).toFixed(0)}% · peak ${(peakCpu * 100).toFixed(0)}% (target ${(targetLoad * 100).toFixed(0)}%)`
     );
+    for (const worker of workers) console.log(`  worker: ${worker}`);
     const elPeak = tasks.reduce(
         (best, t) =>
             (t.maxEventLoopDelayMs || 0) > (best?.maxEventLoopDelayMs || 0)
@@ -522,13 +548,50 @@ function summary({
     }
 }
 
+function boundedLogFileName(logName, prefix = "", suffix = "") {
+    const extension = ".ansi";
+    const fileName = `${prefix}${logName}${suffix}${extension}`;
+    if (Buffer.byteLength(fileName) <= 255) return fileName;
+    const hash = crypto
+        .createHash("sha256")
+        .update(logName)
+        .digest("hex")
+        .slice(0, 8);
+    const decorationBytes = Buffer.byteLength(
+        `${prefix}_${hash}${suffix}${extension}`
+    );
+    const availableBytes = 255 - decorationBytes;
+    if (availableBytes < 1) {
+        throw new Error("Log filename decorations exceed the filesystem limit");
+    }
+    const boundedName = Buffer.from(logName)
+        .subarray(0, availableBytes)
+        .toString("utf8")
+        .replace(/[^\x00-\x7F]+$/u, "");
+    return `${prefix}${boundedName}_${hash}${suffix}${extension}`;
+}
+
+function getDecoratedLogPath(logDir, logName, prefix = "", suffix = "") {
+    return path.resolve(
+        path.join(logDir, boundedLogFileName(logName, prefix, suffix))
+    );
+}
+
 function getLogPath(logDir, logName) {
-    return path.resolve(path.join(logDir, `${logName}.ansi`));
+    return getDecoratedLogPath(logDir, logName);
+}
+
+function getAttemptLogPath(logDir, logName, attemptId) {
+    return getDecoratedLogPath(logDir, logName, "", `.attempt-${attemptId}`);
+}
+
+function getErrorLogPath(logDir, logName) {
+    return getDecoratedLogPath(logDir, logName, "error_");
 }
 
 function markLogAsError(logDir, logName) {
     const src = getLogPath(logDir, logName);
-    const dst = path.resolve(path.join(logDir, `error_${logName}.ansi`));
+    const dst = getErrorLogPath(logDir, logName);
     if (!fs.existsSync(src)) return;
     try {
         fs.renameSync(src, dst);
@@ -549,7 +612,10 @@ module.exports = {
     safeEmptyDir,
     cleanupNonErrorLogs,
     nextRunDir,
+    boundedLogFileName,
     getLogPath,
+    getAttemptLogPath,
+    getErrorLogPath,
     markLogAsError,
     runHeader,
     dryRun,
@@ -559,5 +625,6 @@ module.exports = {
     result,
     gasPeakLine,
     getStarvationSummary,
+    summaryCounts,
     summary
 };

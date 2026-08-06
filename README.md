@@ -86,6 +86,138 @@ Compile the contracts and run tests
 yarn testc
 ```
 
+### Distributed parallel tests
+
+The worker and orchestrator can run on different devices. They do not need a
+direct IP address for each other when the default Hyperswarm DHT is reachable.
+The orchestrator sends source files, not `node_modules` or local build output.
+
+Put the same secret in the ignored `.env` file on every device:
+
+```dotenv
+SCP_TEST_POOL_SECRET=<the-same-random-secret-on-every-device>
+```
+
+Both runner entry points load `.env` automatically. On the worker device,
+check out this SDK version, install its dependencies, and start the persistent
+server:
+
+```shell
+pnpm install
+pnpm test:parallel:server --name worker-one
+```
+
+Each server controls its own capacity. It uses the same defaults as the local
+parallel runner: one infrastructure slot, up to 40 test processes, and one
+admission attempt every 1000 ms. Use `--slots <count>`, `-w <count>`, and
+`-i <ms>` on the server command to override them for that device. The
+orchestrator does not set worker capacity or timing.
+
+On the orchestrator device, start with a small smoke run from the project being
+tested:
+
+```shell
+yarn test:parallel:distributed \
+  --test-pattern 'scripts/e2eParallelDistributedE2E.test.ts' \
+  --discovery-timeout 60000
+```
+
+The source archive contains tracked and non-ignored files from the test
+repository and every recursive `link:` or `file:` dependency. Their relative
+filesystem layout is preserved, so links such as
+`poker -> ../state-channels-plus` resolve after extraction. The
+worker installs each repository with pnpm, using a persistent pnpm store, then
+builds linked repositories before the test repository.
+
+#### Distributed storage and cleanup
+
+`distributed-worker` is the default directory for worker-managed data, not a
+separate process. When the server starts from this repository without an
+explicit work root, its layout is:
+
+```text
+temp/distributed-worker/
+├── pnpm-store/
+├── workspaces/
+│   └── <project-id>/
+│       ├── source-manifest.json
+│       ├── prepared.json
+│       └── workspace/
+└── leases/
+    └── lease-*/
+        ├── runtime.tgz
+        ├── infra/
+        └── spool/
+```
+
+- `/tmp/peer3-test-pool-server-v7.lock` is the one host-scoped file outside the
+  worker root. Its OS-held lock prevents servers using different clones or
+  `--work-root` values from oversubscribing the same machine. The file may
+  remain after shutdown, but its lock is released.
+- `pnpm-store/` is the persistent dependency cache shared by later runs.
+- `workspaces/<project-id>/` is the persistent reconstructed source tree. It
+  keeps `node_modules`, generated files, and successful build output.
+- `source-manifest.json` records source hashes and cached file metadata. Before
+  each run, the worker checks the cached files on disk, re-hashes anything
+  whose size or modification time drifted, and asks the orchestrator only for
+  changed files and deletion paths.
+- `prepared.json` records the last source version that installed and built
+  successfully. An unchanged prepared workspace skips upload, installation,
+  and build. Source-only changes reuse `node_modules`; package or lockfile
+  changes rerun pnpm installation.
+- `leases/lease-*` is one temporary orchestrator lease.
+- `runtime.tgz` contains only source files missing or changed in the persistent
+  workspace. A first run contains every source file; an unchanged run contains
+  no source files.
+- A poker-contracts workspace has sibling `poker-contracts/` and
+  `state-channels-plus/` directories inside its persistent `workspace/`.
+- `infra/` contains temporary Hardhat and discovery infrastructure data.
+- `spool/` temporarily holds test stdout and stderr before it is committed to
+  the orchestrator.
+
+The orchestrator creates the sending copy here:
+
+```text
+logs/run-N/distributed-transfer/source.tgz
+```
+
+This archive and its `distributed-transfer/` directory are deleted when the
+distributed command finishes or fails. Canonical summaries and test logs stay
+under `logs/run-N/`.
+
+The worker deletes the complete `leases/lease-*` tree when the run completes,
+fails, is cancelled, or loses its orchestrator. This removes the received
+delta archive, infrastructure data, and spooled output. The worker root remains
+with empty `leases/`, `pnpm-store/`, and prepared `workspaces/` so later runs can
+reuse them.
+
+Use `--work-root <path>` to replace the default root completely:
+
+```shell
+pnpm test:parallel:server \
+  --name worker-one \
+  --work-root /your/chosen/directory
+```
+
+All worker-managed files then live under `/your/chosen/directory`; nothing is
+written to `temp/distributed-worker/`. Use an empty, writable directory on fast
+local storage, and do not share one work root between worker servers. Real
+distributed runs do not store package data in random OS temporary directories.
+Unit tests may use OS temporary directories and remove them during teardown.
+
+After the smoke run, remove `--test-pattern` to run the whole suite. The worker
+reports ready, busy, and queued states and remains announced for later runs.
+
+Discovery always uses the public Hyperswarm network. There is no bootstrap
+server or port to configure. While a run is active, both commands print their
+current stage: discovery, connection, lease, source upload, pnpm progress,
+build output, test execution, and cleanup. Use repeatable `--forward-env
+<NAME>` flags for required test settings. The pool secret and the rest of the
+orchestrator environment are never forwarded. Stop a server with SIGINT or
+SIGTERM. Canonical task and failure logs remain on the orchestrator under
+`logs/run-N/`, including `error_*.ansi` files and worker infrastructure
+diagnostics.
+
 ## Code Formatting
 
 This repository uses [Prettier](https://prettier.io/) for code formatting with configuration in `.prettierrc`. Formatting is automatically enforced using [Husky](https://typicode.github.io/husky/) and [lint-staged](https://github.com/lint-staged/lint-staged) to ensure consistent code style across all contributions.

@@ -1,6 +1,8 @@
 /* eslint-disable no-console */
+require("dotenv").config({ quiet: true });
 const os = require("os");
 const path = require("path");
+const fs = require("fs");
 
 const {
     DEFAULT_SLOTS,
@@ -9,21 +11,31 @@ const {
     MEM_LIMIT_FRACTION,
     MAX_SLOTS_FROM_POOL,
     DEFAULT_STREAM_CHILD_OUTPUT
-} = require("./e2e-parallel/constants");
+} = require("./e2e-parallel/shared/constants");
 
-const { getHelpText, parseCliArgs } = require("./e2e-parallel/argParser");
-const { discoverTasks } = require("./e2e-parallel/taskDiscovery");
+const {
+    getHelpText,
+    parseCliArgs
+} = require("./e2e-parallel/shared/argParser");
+const { discoverTasks } = require("./e2e-parallel/shared/taskDiscovery");
 const {
     resolveThreadModes,
     runScheduler
-} = require("./e2e-parallel/scheduler");
+} = require("./e2e-parallel/local/scheduler");
 const {
     provisionSlots,
     teardownInfra,
     startGasMonitor
 } = require("../test/utils/nodeInfra");
-const { teardownTaskChildren } = require("./e2e-parallel/runTask");
-const logging = require("./e2e-parallel/logging");
+const { teardownTaskChildren } = require("./e2e-parallel/shared/runTask");
+const logging = require("./e2e-parallel/shared/logging");
+const {
+    buildRuntimeBundle
+} = require("./e2e-parallel/distributed/runtimeBundle");
+const {
+    buildRemoteEnvironment
+} = require("./e2e-parallel/distributed/remoteEnvironment");
+const { runDistributed } = require("./e2e-parallel/distributed/orchestrator");
 
 // Module-level teardown ref so main().catch can tear down infra on any throw.
 let _teardown = () => {};
@@ -162,10 +174,17 @@ async function main(options = {}) {
     _teardown = teardown;
 
     let shuttingDown = false;
+    let signalExitCode = 0;
+    const distributedCancellation = new AbortController();
     for (const signal of ["SIGINT", "SIGTERM"]) {
         process.on(signal, () => {
             if (shuttingDown) return;
             shuttingDown = true;
+            if (cli.distributed) {
+                signalExitCode = signal === "SIGINT" ? 130 : 143;
+                distributedCancellation.abort();
+                return;
+            }
             teardown();
             process.exit(signal === "SIGINT" ? 130 : 143);
         });
@@ -173,6 +192,72 @@ async function main(options = {}) {
 
     const startTime = Date.now();
     try {
+        if (cli.distributed) {
+            const poolSecret = process.env.SCP_TEST_POOL_SECRET;
+            if (!poolSecret)
+                throw new Error(
+                    "SCP_TEST_POOL_SECRET is required for --distributed"
+                );
+            const transferRoot = path.join(logDir, "distributed-transfer");
+            const archivePath = path.join(transferRoot, "source.tgz");
+            try {
+                const manifest = await buildRuntimeBundle(
+                    process.cwd(),
+                    archivePath
+                );
+                const stats = await runDistributed({
+                    tasks,
+                    projectRoot: process.cwd(),
+                    archivePath,
+                    manifest,
+                    logDir,
+                    poolSecret,
+                    discoveryTimeoutMs: cli.discoveryTimeoutMs,
+                    signal: distributedCancellation.signal,
+                    baseEnv: buildRemoteEnvironment(
+                        process.env,
+                        cli.forwardEnv,
+                        {
+                            LOG_LEVEL: process.env.LOG_LEVEL || "verbose",
+                            CRASH_LOG_UPLOAD_ENDPOINT: "",
+                            NODE_OPTIONS:
+                                "--enable-source-maps --stack-trace-limit=1000",
+                            STREAM_PARALLEL_CHILD_OUTPUT: "0",
+                            FORCE_COLOR: "1",
+                            TERM: process.env.TERM || "xterm-256color",
+                            RUN_SDK_IN_THREAD: threadModes.sdkThread
+                                ? "true"
+                                : "false",
+                            VM_DEDICATED_THREAD: threadModes.vmThread
+                                ? "true"
+                                : "false"
+                        }
+                    )
+                });
+                logging.summary({
+                    tasks,
+                    failed: stats.failed,
+                    completed: stats.completed,
+                    wallMs: Date.now() - startTime,
+                    sumDurationMs: stats.sumDurationMs,
+                    peakCpu: stats.peakCpu,
+                    avgCpu: stats.avgCpu,
+                    peakOccupiedGb: stats.peakOccupiedGb,
+                    avgPerTestGb: stats.avgPerTestGb,
+                    memBoundGb: stats.memBoundGb,
+                    targetLoad,
+                    gasPeak: new Map(),
+                    workers: stats.workers
+                });
+                logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
+                process.exitCode =
+                    signalExitCode || (stats.failed.length ? 1 : 0);
+                return;
+            } finally {
+                fs.rmSync(transferRoot, { recursive: true, force: true });
+            }
+        }
+
         const provisioned = await provisionSlots(slotCount, logDir);
         infra = provisioned.infra;
         const slots = provisioned.slots;
@@ -208,6 +293,7 @@ async function main(options = {}) {
         logging.summary({
             tasks,
             failed: stats.failed,
+            completed: stats.completed,
             wallMs: Date.now() - startTime,
             sumDurationMs: stats.sumDurationMs,
             peakCpu: stats.peakCpu,

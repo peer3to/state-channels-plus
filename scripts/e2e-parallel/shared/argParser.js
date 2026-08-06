@@ -25,6 +25,9 @@ Options:
       --vm-thread                Run the VM executor in a worker thread
       --no-vm-thread             Run the VM executor on the main thread
       --dry-run                  Print resolved scheduling configuration only
+      --distributed              Run tasks on authenticated remote workers
+      --discovery-timeout <ms>   Time to wait for the first worker
+      --forward-env <name>       Environment variable to forward (repeatable)
 
 By default all tests under test/ are discovered and logs are written to a new
 logs/run-N directory. Use --e2e-only only when the ordinary Mocha tier is not
@@ -67,7 +70,11 @@ function parseCliArgs(argv) {
         memLimitGb: undefined,
         // Thread-mode toggles: undefined = fall back to env/default.
         sdkThread: undefined,
-        vmThread: undefined
+        vmThread: undefined,
+        distributed: false,
+        discoveryTimeoutMs: 10000,
+        forwardEnv: [],
+        distributedOptionsProvided: false
     };
 
     // Positive number, or 0 only when allowZero (used by --slots).
@@ -263,6 +270,36 @@ function parseCliArgs(argv) {
             options.dryRun = true;
             continue;
         }
+        if (arg === "--distributed") {
+            options.distributed = true;
+            continue;
+        }
+        if (arg === "--discovery-timeout") {
+            const value = takeNumber(argv[++i], (raw) =>
+                Number.parseInt(raw, 10)
+            );
+            if (value === undefined)
+                throw new Error(
+                    "--discovery-timeout requires a positive integer"
+                );
+            options.discoveryTimeoutMs = value;
+            options.distributedOptionsProvided = true;
+            continue;
+        }
+        if (arg === "--forward-env") {
+            const value = argv[++i];
+            if (!value || value.startsWith("--"))
+                throw new Error(`${arg} requires a value`);
+            options.forwardEnv.push(value);
+            options.distributedOptionsProvided = true;
+            continue;
+        }
+        if (/^-?\d+(?:\.\d+)?$/.test(arg)) continue;
+        throw new Error(`Unknown option: ${arg}`);
+    }
+
+    if (!options.distributed && options.distributedOptionsProvided) {
+        throw new Error("Distributed-only options require --distributed");
     }
 
     return options;

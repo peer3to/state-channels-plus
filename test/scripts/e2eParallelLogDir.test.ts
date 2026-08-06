@@ -7,7 +7,7 @@ import path from "path";
 // destructive-tooling guards: a mis-resolved / symlinked log dir must never
 // wipe the working tree.
 const { getHelpText, parseCliArgs } =
-    require("../../scripts/e2e-parallel/argParser.js") as {
+    require("../../scripts/e2e-parallel/shared/argParser.js") as {
         getHelpText: () => string;
         parseCliArgs: (argv: string[]) => {
             logDir: string;
@@ -26,8 +26,9 @@ const {
     isDangerousPurgeTarget,
     isWithinDefaultLogDir,
     safeEmptyDir,
-    nextRunDir
-} = require("../../scripts/e2e-parallel/logging.js") as {
+    nextRunDir,
+    summaryCounts
+} = require("../../scripts/e2e-parallel/shared/logging.js") as {
     colorize: (color: string, text: string) => string;
     countStarvation: (text: string) => number;
     getStarvationSummary: (tasks: Array<Record<string, unknown>>) => {
@@ -42,13 +43,14 @@ const {
     isWithinDefaultLogDir: (resolved: string) => boolean;
     safeEmptyDir: (dirPath: string, allow: boolean) => void;
     nextRunDir: (baseDir: string) => string;
+    summaryCounts: (
+        total: number,
+        failed: number,
+        completed?: number
+    ) => { passing: number; failing: number; notRun: number };
 };
-const { getStarvationDisposition, accountPartitionFor } =
-    require("../../scripts/e2e-parallel/scheduler.js") as {
-        getStarvationDisposition: (
-            starveCount: number,
-            starvationRetryCount: number
-        ) => "complete" | "retry" | "fail";
+const { accountPartitionFor } =
+    require("../../scripts/e2e-parallel/local/scheduler.js") as {
         accountPartitionFor: (
             slot: { id: number } | null,
             accountPartition: number
@@ -66,6 +68,19 @@ const { buildBaseEnv, main } =
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
 describe("e2e-parallel argParser - logDir validation", function () {
+    it("does not count interrupted tasks as passing", function () {
+        expect(summaryCounts(789, 32, 100)).to.deep.equal({
+            passing: 68,
+            failing: 32,
+            notRun: 689
+        });
+        expect(summaryCounts(789, 32)).to.deep.equal({
+            passing: 757,
+            failing: 32,
+            notRun: 0
+        });
+    });
+
     it("exports the runner entry point for package consumers", function () {
         expect(main).to.be.a("function");
     });
@@ -91,10 +106,35 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--no-sdk-thread",
             "--vm-thread",
             "--no-vm-thread",
-            "--dry-run"
+            "--dry-run",
+            "--distributed",
+            "--discovery-timeout",
+            "--forward-env"
         ]) {
             expect(help).to.include(option);
         }
+    });
+
+    it("parses distributed options and rejects them in local mode", function () {
+        const parsed = parseCliArgs(
+            argv(
+                "--distributed",
+                "--discovery-timeout",
+                "2500",
+                "--forward-env",
+                "CI"
+            )
+        ) as unknown as {
+            distributed: boolean;
+            discoveryTimeoutMs: number;
+            forwardEnv: string[];
+        };
+        expect(parsed.distributed).to.equal(true);
+        expect(parsed.discoveryTimeoutMs).to.equal(2500);
+        expect(parsed.forwardEnv).to.deep.equal(["CI"]);
+        expect(() => parseCliArgs(argv("--forward-env", "CI"))).to.throw(
+            /require --distributed/
+        );
     });
 
     it("accepts a consumer test filename pattern", function () {
@@ -229,12 +269,6 @@ describe("e2e-parallel logging - starvation diagnostics", function () {
     it("uses account partitions only when tests share an infrastructure slot", function () {
         expect(accountPartitionFor({ id: 1 }, 23)).to.equal(23);
         expect(accountPartitionFor(null, 23)).to.equal(0);
-    });
-
-    it("retries the first starved attempt and fails a second starved attempt", function () {
-        expect(getStarvationDisposition(1, 0)).to.equal("retry");
-        expect(getStarvationDisposition(1, 1)).to.equal("fail");
-        expect(getStarvationDisposition(0, 1)).to.equal("complete");
     });
 
     it("uses light yellow for rescheduling and dark yellow for repeated starvation", function () {
