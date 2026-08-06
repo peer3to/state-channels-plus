@@ -164,9 +164,9 @@ function receiveBundle(
             onError(error);
             finished = true;
             closeTransfer();
-            peer.send("WORKER_ERROR", { message: error.message }).finally(() =>
-                setTimeout(() => peer.close(), 250)
-            );
+            peer.send("PREPARATION_ERROR", {
+                message: error.message
+            }).finally(() => setTimeout(() => peer.close(), 250));
         }
     };
     peer.on("message", onMessage);

@@ -486,6 +486,22 @@ async function runDistributed(options) {
             workerStatus(worker, message.header.status);
         } else if (message.kind === "WORKER_STATS") {
             worker.stats = validateWorkerStats(message.header.stats);
+        } else if (message.kind === "PREPARATION_ERROR") {
+            const error = new Error(
+                `Worker ${workerName(worker)} could not prepare the workspace: ${message.header.message}`
+            );
+            worker.failure = error;
+            fs.appendFileSync(
+                logStore.infrastructurePath(worker.id, worker.label),
+                `${error.message}\n`
+            );
+            workerStatus(
+                worker,
+                `Preparation failed: ${message.header.message}`,
+                process.stderr
+            );
+            completedReject(error);
+            worker.peer.close();
         } else if (message.kind === "WORKER_ERROR") {
             const error = new Error(
                 `Worker ${workerName(worker)} failed: ${message.header.message}`

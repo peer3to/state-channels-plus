@@ -109,9 +109,11 @@ async function main(options = {}) {
         if (shuttingDown) return;
         shuttingDown = true;
         try {
-            for (const connection of connections) {
-                await closeConnection(connection);
-            }
+            await Promise.allSettled(
+                [...connections].map((connection) =>
+                    closeConnection(connection)
+                )
+            );
             await pool.close();
         } finally {
             hostLock.release();
@@ -137,6 +139,10 @@ async function main(options = {}) {
     }
 
     pool.onConnection(async (stream, info) => {
+        if (shuttingDown) {
+            stream.destroy();
+            return;
+        }
         const peerId = info?.publicKey?.toString("hex");
         // Hyperswarm normally exposes only its canonical connection after a
         // simultaneous dial. Reject any duplicate event before lease handling.
@@ -166,6 +172,10 @@ async function main(options = {}) {
                 { local: pool.publicKey },
                 10000
             );
+            if (shuttingDown) {
+                await closeConnection(connection);
+                return;
+            }
             await peer.send("SERVER_READY", {
                 name: config.name,
                 capabilities: capabilities(config)
@@ -204,6 +214,10 @@ async function main(options = {}) {
 
     async function handleMessage(connection, message) {
         try {
+            if (shuttingDown) {
+                await closeConnection(connection);
+                return;
+            }
             if (message.kind === "HEARTBEAT") {
                 connection.lastHeartbeat = Date.now();
                 return;
@@ -383,6 +397,10 @@ async function main(options = {}) {
                         "RUN_CONFIG is invalid in the current lease state"
                     );
                 }
+                if (shuttingDown) {
+                    await closeConnection(connection);
+                    return;
+                }
                 spawnWorker(
                     connection,
                     connection.prepared.workspaceRoot,
@@ -446,7 +464,12 @@ async function main(options = {}) {
         } catch (error) {
             console.error(`Lease failed: ${error.stack || error}`);
             await connection.peer
-                .send("WORKER_ERROR", { message: error.message })
+                .send(
+                    connection.worker ? "WORKER_ERROR" : "PREPARATION_ERROR",
+                    {
+                        message: error.message
+                    }
+                )
                 .catch(() => {});
             await closeConnection(connection);
         }

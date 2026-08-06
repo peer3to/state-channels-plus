@@ -231,6 +231,32 @@ describe("distributed protocol", function () {
         }
     });
 
+    it("transfers workspace preparation failures explicitly", async function () {
+        const pair = await createSocketPair();
+        try {
+            const sender = new ProtocolPeer(pair.client);
+            const receiver = new ProtocolPeer(pair.server);
+            const received = new Promise<{
+                kind: string;
+                header: { message: string };
+            }>((resolve) => receiver.once("message", resolve));
+
+            await sender.send("PREPARATION_ERROR", {
+                message: "TypeScript compilation failed"
+            });
+
+            const message = await received;
+            expect(message).to.deep.include({
+                kind: "PREPARATION_ERROR"
+            });
+            expect(message.header.message).to.equal(
+                "TypeScript compilation failed"
+            );
+        } finally {
+            await pair.close();
+        }
+    });
+
     it("formats queued progress and its estimated wait", function () {
         expect(
             formatBusyStatus({

@@ -36,6 +36,7 @@ const MESSAGE_KINDS = new Set([
     "INFRA_LOG",
     "WORKER_STATUS",
     "WORKER_STATS",
+    "PREPARATION_ERROR",
     "WORKER_ERROR",
     "RUN_COMPLETE",
     "CANCEL",
@@ -88,6 +89,7 @@ const HEADER_FIELDS = {
     INFRA_LOG: ["stream"],
     WORKER_STATUS: ["status"],
     WORKER_STATS: ["stats"],
+    PREPARATION_ERROR: ["message"],
     WORKER_ERROR: ["message"]
 };
 
