@@ -129,11 +129,7 @@ contract UtilityFacet {
                 result[actualCount++] = array1[i];
             }
         }
-        address[] memory finalResult = new address[](actualCount);
-        for (uint256 i = 0; i < actualCount; i++) {
-            finalResult[i] = result[i];
-        }
-        return finalResult;
+        return _shrinkAddressArray(result, actualCount);
     }
 
     function concatBytesArrays(bytes[] memory array1, bytes[] memory array2) public pure returns (bytes[] memory) {
@@ -204,13 +200,8 @@ contract UtilityFacet {
             return result;
         }
 
-        // Otherwise we need to create a sized-down copy
-        address[] memory finalResult = new address[](uniqueCount);
-        for (uint256 i = 0; i < uniqueCount; i++) {
-            finalResult[i] = result[i];
-        }
-
-        return finalResult;
+        // Otherwise shrink to the deduplicated size
+        return _shrinkAddressArray(result, uniqueCount);
     }
 
     function insertIntoAddressArrayNoDuplicates(address[] memory array, address newAddress)

@@ -170,14 +170,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
         }
         // allocate correct size arrays
-        reducedOutput.slashedParticipants = new address[](slashCount);
-        for (uint256 i = 0; i < slashCount; i++) {
-            reducedOutput.slashedParticipants[i] = slashParticipants[i];
-        }
-        reducedOutput.selfRemovals = new address[](selfRemovalCount);
-        for (uint256 i = 0; i < selfRemovalCount; i++) {
-            reducedOutput.selfRemovals[i] = selfRemovalParticipants[i];
-        }
+        reducedOutput.slashedParticipants = _shrinkAddressArray(slashParticipants, slashCount);
+        reducedOutput.selfRemovals = _shrinkAddressArray(selfRemovalParticipants, selfRemovalCount);
     }
 
     /**
@@ -547,11 +541,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             _removals[removalCount++] = disputeInput.timeout.participant;
         }
 
-        removals = new address[](removalCount);
-        for (uint256 i = 0; i < removalCount; i++) {
-            removals[i] = _removals[i];
-        }
-        return removals;
+        return _shrinkAddressArray(_removals, removalCount);
     }
 
     function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -649,10 +639,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
         }
 
-        exitChannels = new ExitChannel[](slashCount);
-        for (uint256 i = 0; i < slashCount; i++) {
-            exitChannels[i] = _exitChannels[i];
-        }
+        exitChannels = _shrinkExitChannelArray(_exitChannels, slashCount);
 
         return (stateMachineImplementation.getState(), exitChannels);
     }
@@ -673,10 +660,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
         }
 
-        ExitChannel[] memory exitChannels = new ExitChannel[](removalCount);
-        for (uint256 i = 0; i < removalCount; i++) {
-            exitChannels[i] = _exitChannels[i];
-        }
+        ExitChannel[] memory exitChannels = _shrinkExitChannelArray(_exitChannels, removalCount);
 
         return (stateMachineImplementation.getState(), exitChannels);
     }
