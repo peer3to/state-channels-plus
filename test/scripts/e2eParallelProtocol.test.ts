@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import { EventEmitter } from "events";
 import crypto from "crypto";
 import { setImmediate } from "node:timers";
 import { createSocketPair } from "../fixtures/distributed/testTransport";
@@ -7,6 +8,10 @@ const {
     ProtocolPeer,
     waitForMessage
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const {
+    flushAnnouncements,
+    guardConnectionErrors
+} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 const {
     derivePoolKeys,
     authenticateClient,
@@ -24,6 +29,45 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed protocol", function () {
+    it("tolerates a transport reset before protocol ownership is installed", function () {
+        const stream = new EventEmitter();
+        guardConnectionErrors(stream);
+
+        expect(() =>
+            stream.emit(
+                "error",
+                Object.assign(new Error("reset"), {
+                    code: "ECONNRESET"
+                })
+            )
+        ).not.to.throw();
+    });
+
+    it("gates readiness on announcements without waiting for lookups", async function () {
+        let announcementFlushed = false;
+        let lookupFlushed = false;
+        await flushAnnouncements([
+            {
+                config: { server: true },
+                discovery: {
+                    flushed: async () => {
+                        announcementFlushed = true;
+                    }
+                }
+            },
+            {
+                config: { server: false },
+                discovery: {
+                    flushed: async () => {
+                        lookupFlushed = true;
+                    }
+                }
+            }
+        ]);
+
+        expect(announcementFlushed).to.equal(true);
+        expect(lookupFlushed).to.equal(false);
+    });
     it("keeps worker and orchestrator discovery roles on separate topics", function () {
         const keys = derivePoolKeys("role-specific-topics");
         expect(keys.workerTopic.equals(keys.orchestratorTopic)).to.equal(false);

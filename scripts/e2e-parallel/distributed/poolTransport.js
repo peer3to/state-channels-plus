@@ -3,6 +3,21 @@ const { EventEmitter } = require("events");
 
 const DISCOVERY_REFRESH_MS = 5000;
 
+function guardConnectionErrors(stream) {
+    // A connection can close while createPool is still flushing discovery and
+    // before its ProtocolPeer owner is installed. Keep transport resets from
+    // becoming fatal unhandled EventEmitter errors during that handoff.
+    stream.on("error", () => {});
+}
+
+function flushAnnouncements(configuredDiscoveries) {
+    return Promise.all(
+        configuredDiscoveries
+            .filter(({ config }) => config.server)
+            .map(({ discovery }) => discovery.flushed())
+    );
+}
+
 function discoveryConfigurations(options) {
     if (options.announceTopics || options.lookupTopics) {
         return [
@@ -34,16 +49,23 @@ async function createPool(options) {
     const events = new EventEmitter();
     let listening = false;
     swarm.on("connection", (stream, info) => {
+        guardConnectionErrors(stream);
         if (listening) events.emit("connection", stream, info);
         else connections.push([stream, info]);
     });
-    const discoveries = discoveryConfigurations(options).map((config) =>
-        swarm.join(config.topic, {
-            server: config.server,
-            client: config.client
+    const configuredDiscoveries = discoveryConfigurations(options).map(
+        (config) => ({
+            config,
+            discovery: swarm.join(config.topic, {
+                server: config.server,
+                client: config.client
+            })
         })
     );
-    await Promise.all(discoveries.map((discovery) => discovery.flushed()));
+    const discoveries = configuredDiscoveries.map(({ discovery }) => discovery);
+    // Only announcements gate readiness. Client lookups continue in the
+    // background and may legitimately take a long time with no matching peer.
+    await flushAnnouncements(configuredDiscoveries);
     const refreshTimer = options.refreshIntervalMs
         ? setInterval(() => {
               for (const discovery of discoveries) {
@@ -77,5 +99,7 @@ async function createPool(options) {
 module.exports = {
     DISCOVERY_REFRESH_MS,
     createPool,
-    discoveryConfigurations
+    discoveryConfigurations,
+    flushAnnouncements,
+    guardConnectionErrors
 };

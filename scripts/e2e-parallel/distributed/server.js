@@ -13,7 +13,10 @@ const { LeaseRuntime } = require("./leaseRuntime");
 const { receiveBundle } = require("./artifactTransfer");
 const { extractRuntimeBundle } = require("./runtimeExtractor");
 const { WorkerAttemptSpool } = require("./workerAttemptSpool");
-const { prepareWorkspace } = require("./workspacePreparation");
+const {
+    prepareWorkspace,
+    selectPrepareScript
+} = require("./workspacePreparation");
 const { buildWorkerEnvironment } = require("./remoteEnvironment");
 const {
     inspectWorkspace,
@@ -85,6 +88,7 @@ async function main(options = {}) {
             exitProcess(1);
         }
     });
+    console.log(`Starting worker ${config.name}; announcing availability`);
     const pool = await createPool({
         announceTopics: [keys.workerTopic],
         lookupTopics: [keys.orchestratorTopic],
@@ -329,6 +333,8 @@ async function main(options = {}) {
                                         )
                                     );
                                 },
+                                selectPrepareScript: (repository) =>
+                                    selectPrepareScript(repository, cache),
                                 onStage(status) {
                                     reportStatus(connection, status).catch(
                                         () => {}

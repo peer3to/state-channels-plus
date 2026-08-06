@@ -153,10 +153,18 @@ async function buildRuntimeBundle(
         const prepareScript =
             repository.packageJson.peer3TestDistribution?.prepareScript ||
             (repository.packageJson.scripts?.compile ? "compile" : null);
+        const cachedPrepareScript =
+            repository.packageJson.peer3TestDistribution?.cachedPrepareScript ||
+            null;
+        const contractCompileInputs =
+            repository.packageJson.peer3TestDistribution
+                ?.contractCompileInputs || [];
         repositoryManifest.push({
             path: repositoryPath.split(path.sep).join("/"),
             name: repository.packageJson.name || path.basename(repository.root),
             prepareScript,
+            cachedPrepareScript,
+            contractCompileInputs,
             hasPnpmLock: sourceFiles.includes("pnpm-lock.yaml"),
             hasYarnLock: sourceFiles.includes("yarn.lock")
         });

@@ -27,6 +27,27 @@ function run(command, args, options) {
     });
 }
 
+function selectPrepareScript(repository, cache) {
+    if (cache.preparationChanged || !repository.cachedPrepareScript) {
+        return repository.prepareScript;
+    }
+    const prefix = `${repository.path}/`;
+    const compileInputs = repository.contractCompileInputs || [];
+    const contractsChanged = [...cache.changed, ...cache.deleted].some(
+        (entry) =>
+            compileInputs.some((input) => {
+                const target = `${prefix}${input}`;
+                return (
+                    entry === target ||
+                    (input.endsWith("/") && entry.startsWith(target))
+                );
+            })
+    );
+    return contractsChanged
+        ? repository.prepareScript
+        : repository.cachedPrepareScript;
+}
+
 async function prepareWorkspace(workspaceRoot, manifest, options) {
     const storeDir = path.join(options.workRoot, "pnpm-store");
     fs.mkdirSync(storeDir, { recursive: true });
@@ -78,13 +99,18 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
                 Buffer.from(`Reusing dependencies for ${repository.name}\n`)
             );
         }
-        if (repository.prepareScript) {
+        const prepareScript =
+            options.selectPrepareScript?.(repository) ||
+            repository.prepareScript;
+        if (prepareScript) {
             options.onStage?.(`Building ${repository.name}`);
             options.onOutput(
                 "stdout",
-                Buffer.from(`Preparing ${repository.name}\n`)
+                Buffer.from(
+                    `Preparing ${repository.name} with ${prepareScript}\n`
+                )
             );
-            await run("pnpm", ["run", repository.prepareScript], {
+            await run("pnpm", ["run", prepareScript], {
                 ...options,
                 cwd,
                 env
@@ -93,4 +119,4 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
     }
 }
 
-module.exports = { prepareWorkspace };
+module.exports = { prepareWorkspace, selectPrepareScript };

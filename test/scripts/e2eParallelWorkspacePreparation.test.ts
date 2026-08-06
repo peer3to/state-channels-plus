@@ -8,10 +8,54 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/remoteEnvironment.js");
 
 const {
-    prepareWorkspace
+    prepareWorkspace,
+    selectPrepareScript
 } = require("../../scripts/e2e-parallel/distributed/workspacePreparation.js");
 
 describe("distributed workspace preparation", function () {
+    const repository = {
+        path: "state-channels-plus",
+        prepareScript: "full",
+        cachedPrepareScript: "cached",
+        contractCompileInputs: [
+            "contracts/",
+            "hardhat.config.ts",
+            "package.json"
+        ]
+    };
+
+    it("reuses compiled contracts for non-contract source changes", function () {
+        expect(
+            selectPrepareScript(repository, {
+                preparationChanged: false,
+                changed: ["state-channels-plus/src/index.ts"],
+                deleted: []
+            })
+        ).to.equal("cached");
+    });
+
+    it("recompiles when Solidity inputs change or preparation is stale", function () {
+        for (const changed of [
+            "state-channels-plus/contracts/Channel.sol",
+            "state-channels-plus/hardhat.config.ts",
+            "state-channels-plus/package.json"
+        ]) {
+            expect(
+                selectPrepareScript(repository, {
+                    preparationChanged: false,
+                    changed: [changed],
+                    deleted: []
+                })
+            ).to.equal("full");
+        }
+        expect(
+            selectPrepareScript(repository, {
+                preparationChanged: true,
+                changed: ["state-channels-plus/src/index.ts"],
+                deleted: []
+            })
+        ).to.equal("full");
+    });
     it("does not pass unrelated server secrets into uploaded code", function () {
         const env = buildWorkerEnvironment({
             PATH: "/bin",

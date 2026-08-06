@@ -119,7 +119,8 @@
     "test:parallel": "node scripts/test-e2e-parallel.js",
     "test:parallel:distributed": "node scripts/test-e2e-parallel.js --distributed",
     "test:parallel:server": "node scripts/e2e-parallel/distributed/server.js",
-    "test:parallel:prepare": "hardhat clean && hardhat compile --force && hardhat typechain && ts-node scripts/generate-enums.ts && node scripts/generate-artifacts.js && rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js",
+    "test:parallel:prepare": "hardhat clean && hardhat compile --force && hardhat typechain && node scripts/generate-artifacts.js && yarn test:parallel:prepare:cached-contracts",
+    "test:parallel:prepare:cached-contracts": "ts-node scripts/generate-enums.ts && rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js",
     "test:parallel:debug": "LOG_LEVEL=debug node scripts/test-e2e-parallel.js",
     "test:parallel:verbose": "LOG_LEVEL=verbose node scripts/test-e2e-parallel.js",
     "test:coverage": "nyc --reporter=html yarn test",
@@ -186,6 +187,15 @@
   },
   "author": "",
   "peer3TestDistribution": {
-    "prepareScript": "test:parallel:prepare"
+    "prepareScript": "test:parallel:prepare",
+    "cachedPrepareScript": "test:parallel:prepare:cached-contracts",
+    "contractCompileInputs": [
+      "contracts/",
+      "hardhat.config.ts",
+      "package.json",
+      "pnpm-lock.yaml",
+      "yarn.lock",
+      "scripts/generate-artifacts.js"
+    ]
   }
 }
