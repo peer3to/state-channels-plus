@@ -44,7 +44,10 @@ function discoveryConfigurations(options) {
 
 async function createPool(options) {
     const dht = options.dht;
-    const swarm = new Hyperswarm(dht ? { dht } : undefined);
+    const swarm = new Hyperswarm({
+        ...(dht ? { dht } : {}),
+        ...(options.keyPair ? { keyPair: options.keyPair } : {})
+    });
     const connections = [];
     const events = new EventEmitter();
     let listening = false;

@@ -72,7 +72,7 @@ function parseCliArgs(argv) {
         sdkThread: undefined,
         vmThread: undefined,
         distributed: false,
-        discoveryTimeoutMs: 10000,
+        discoveryTimeoutMs: 30000,
         forwardEnv: [],
         distributedOptionsProvided: false
     };

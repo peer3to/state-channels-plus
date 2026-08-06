@@ -132,6 +132,11 @@ describe("e2e-parallel argParser - logDir validation", function () {
         expect(parsed.distributed).to.equal(true);
         expect(parsed.discoveryTimeoutMs).to.equal(2500);
         expect(parsed.forwardEnv).to.deep.equal(["CI"]);
+
+        const defaults = parseCliArgs(argv()) as unknown as {
+            discoveryTimeoutMs: number;
+        };
+        expect(defaults.discoveryTimeoutMs).to.equal(30000);
         expect(() => parseCliArgs(argv("--forward-env", "CI"))).to.throw(
             /require --distributed/
         );

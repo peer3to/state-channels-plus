@@ -28,6 +28,9 @@ const {
     startGasMonitor
 } = require("../test/utils/nodeInfra");
 const { teardownTaskChildren } = require("./e2e-parallel/shared/runTask");
+const {
+    loadOrchestratorKeyPair
+} = require("./e2e-parallel/distributed/orchestratorIdentity");
 const logging = require("./e2e-parallel/shared/logging");
 const {
     buildRuntimeBundle
@@ -220,6 +223,13 @@ async function main(options = {}) {
                     manifest,
                     logDir,
                     poolSecret,
+                    keyPair: loadOrchestratorKeyPair(
+                        path.join(
+                            process.cwd(),
+                            "temp",
+                            "distributed-orchestrator"
+                        )
+                    ),
                     discoveryTimeoutMs: cli.discoveryTimeoutMs,
                     signal: distributedCancellation.signal,
                     baseEnv: buildRemoteEnvironment(

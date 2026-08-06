@@ -1,9 +1,15 @@
 import { expect } from "chai";
 import { EventEmitter } from "events";
 import crypto from "crypto";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { setImmediate } from "node:timers";
 import { createSocketPair } from "../fixtures/distributed/testTransport";
 
+const {
+    loadOrchestratorKeyPair
+} = require("../../scripts/e2e-parallel/distributed/orchestratorIdentity.js");
 const {
     ProtocolPeer,
     waitForMessage
@@ -88,6 +94,33 @@ describe("distributed protocol", function () {
                 client: true
             }
         ]);
+    });
+
+    it("persists one orchestrator identity per state directory", function () {
+        const stateDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-identity-")
+        );
+        try {
+            const first = loadOrchestratorKeyPair(stateDir);
+            const second = loadOrchestratorKeyPair(stateDir);
+            expect(second.publicKey.equals(first.publicKey)).to.equal(true);
+            expect(second.secretKey.equals(first.secretKey)).to.equal(true);
+
+            // A corrupt seed regenerates a fresh identity instead of throwing.
+            fs.writeFileSync(
+                path.join(stateDir, "orchestrator-seed"),
+                "not-hex"
+            );
+            const third = loadOrchestratorKeyPair(stateDir);
+            expect(third.publicKey.equals(first.publicKey)).to.equal(false);
+            expect(
+                loadOrchestratorKeyPair(stateDir).publicKey.equals(
+                    third.publicKey
+                )
+            ).to.equal(true);
+        } finally {
+            fs.rmSync(stateDir, { recursive: true, force: true });
+        }
     });
 
     it("silences abandoned discovery authentication handshakes", function () {

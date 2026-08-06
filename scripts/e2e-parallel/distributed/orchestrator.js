@@ -165,8 +165,12 @@ async function runDistributed(options) {
         announceTopics: [keys.orchestratorTopic],
         lookupTopics: [keys.workerTopic],
         dht: options.dht,
+        keyPair: options.keyPair,
         refreshIntervalMs: options.discoveryRefreshMs || DISCOVERY_REFRESH_MS
     });
+    console.log(
+        `Orchestrator identity ${pool.publicKey.toString("hex").slice(0, 12)}${options.keyPair ? " (persistent)" : ""}`
+    );
     const sessionId = crypto.randomUUID();
     const workers = new Map();
     const connectingWorkers = new Set();
