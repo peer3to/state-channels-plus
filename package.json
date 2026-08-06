@@ -186,9 +186,17 @@
     "test": "test"
   },
   "author": "",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "fs-ext"
+    ]
+  },
   "peer3TestDistribution": {
     "prepareScript": "test:parallel:prepare",
     "cachedPrepareScript": "test:parallel:prepare:cached-contracts",
+    "verifyNativeModules": [
+      "fs-ext"
+    ],
     "contractCompileInputs": [
       "contracts/",
       "hardhat.config.ts",

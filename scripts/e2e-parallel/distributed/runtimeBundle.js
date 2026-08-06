@@ -159,12 +159,16 @@ async function buildRuntimeBundle(
         const contractCompileInputs =
             repository.packageJson.peer3TestDistribution
                 ?.contractCompileInputs || [];
+        const verifyNativeModules =
+            repository.packageJson.peer3TestDistribution?.verifyNativeModules ||
+            [];
         repositoryManifest.push({
             path: repositoryPath.split(path.sep).join("/"),
             name: repository.packageJson.name || path.basename(repository.root),
             prepareScript,
             cachedPrepareScript,
             contractCompileInputs,
+            verifyNativeModules,
             hasPnpmLock: sourceFiles.includes("pnpm-lock.yaml"),
             hasYarnLock: sourceFiles.includes("yarn.lock")
         });

@@ -66,6 +66,71 @@ describe("distributed workspace preparation", function () {
         expect(env).to.deep.equal({ PATH: "/bin", HOME: "/tmp/home" });
     });
 
+    it("rebuilds missing native modules once and fails the preparation loudly", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "workspace-native-")
+        );
+        const workspace = path.join(root, "workspace");
+        const bin = path.join(root, "bin");
+        const calls = path.join(root, "calls.jsonl");
+        try {
+            fs.mkdirSync(path.join(workspace, "project"), { recursive: true });
+            fs.mkdirSync(bin);
+            const pnpm = path.join(bin, "pnpm");
+            fs.writeFileSync(
+                pnpm,
+                `#!${process.execPath}\nconst fs=require("fs"); fs.appendFileSync(process.env.CALLS, JSON.stringify({args:process.argv.slice(2)})+"\\n");\n`
+            );
+            fs.chmodSync(pnpm, 0o755);
+            let failure: Error | null = null;
+            try {
+                await prepareWorkspace(
+                    workspace,
+                    {
+                        repositories: [
+                            {
+                                path: "project",
+                                name: "project",
+                                prepareScript: null,
+                                hasPnpmLock: true,
+                                hasYarnLock: false,
+                                verifyNativeModules: [
+                                    "scp-missing-native-module"
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        workRoot: path.join(root, "worker"),
+                        runtime: { addChild() {} },
+                        shouldInstall: () => false,
+                        env: {
+                            PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+                            CALLS: calls
+                        },
+                        onOutput() {}
+                    }
+                );
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include(
+                "Native modules failed to load after rebuild in project"
+            );
+            expect(failure?.message).to.include("scp-missing-native-module");
+            const recorded = fs
+                .readFileSync(calls, "utf8")
+                .trim()
+                .split("\n")
+                .map((line) => JSON.parse(line));
+            expect(recorded.map((entry) => entry.args)).to.deep.equal([
+                ["rebuild", "scp-missing-native-module"]
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("installs and prepares linked repositories in dependency order", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "workspace-prepare-")

@@ -27,6 +27,24 @@ function run(command, args, options) {
     });
 }
 
+async function nativeModulesLoad(repository, cwd, options, env) {
+    const modules = repository.verifyNativeModules || [];
+    if (!modules.length) return true;
+    try {
+        await run(
+            "node",
+            [
+                "-e",
+                `for (const name of ${JSON.stringify(modules)}) require(name)`
+            ],
+            { ...options, cwd, env }
+        );
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 function selectPrepareScript(repository, cache) {
     if (cache.preparationChanged || !repository.cachedPrepareScript) {
         return repository.prepareScript;
@@ -98,6 +116,32 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
                 "stdout",
                 Buffer.from(`Reusing dependencies for ${repository.name}\n`)
             );
+        }
+        // A pnpm that skipped approved build scripts (or a cached workspace
+        // installed by one) leaves script-built native modules without their
+        // binding. Verify the declared ones load; rebuild once before failing
+        // the preparation loudly.
+        if (!(await nativeModulesLoad(repository, cwd, options, env))) {
+            const modules = repository.verifyNativeModules;
+            options.onStage?.(
+                `Rebuilding native modules for ${repository.name}`
+            );
+            options.onOutput(
+                "stdout",
+                Buffer.from(
+                    `Rebuilding native modules for ${repository.name}: ${modules.join(", ")}\n`
+                )
+            );
+            await run("pnpm", ["rebuild", ...modules], {
+                ...options,
+                cwd,
+                env
+            });
+            if (!(await nativeModulesLoad(repository, cwd, options, env))) {
+                throw new Error(
+                    `Native modules failed to load after rebuild in ${repository.name}: ${modules.join(", ")}`
+                );
+            }
         }
         const prepareScript =
             options.selectPrepareScript?.(repository) ||
