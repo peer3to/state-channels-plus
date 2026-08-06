@@ -11,8 +11,19 @@ const {
     authenticateClient,
     authenticateServer
 } = require("../../scripts/e2e-parallel/distributed/authentication.js");
+const {
+    matchesConnectionRole
+} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 
 describe("distributed protocol", function () {
+    it("rejects Hyperswarm connections opened in the wrong local role", function () {
+        expect(matchesConnectionRole({ client: true }, true)).to.equal(true);
+        expect(matchesConnectionRole({ client: false }, false)).to.equal(true);
+        expect(matchesConnectionRole({ client: false }, true)).to.equal(false);
+        expect(matchesConnectionRole({ client: true }, false)).to.equal(false);
+        expect(matchesConnectionRole({}, true)).to.equal(true);
+    });
+
     it("preserves framed binary messages over a real fragmented socket", async function () {
         const pair = await createSocketPair();
         try {

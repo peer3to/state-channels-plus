@@ -45,6 +45,12 @@ repositories retain their relative paths and the pnpm store persists between
 runs. Distributed runs do not replace the local `yarn test:parallel` landing
 gate.
 
+Hyperswarm may surface connections opened in either local role when several
+pool members share a topic. The orchestrator must authenticate only connections
+where it is the client, and servers must authenticate only connections where
+they are the server. Close other connections without logging authentication
+timeouts.
+
 After the unassigned distributed queue is empty, a worker may speculatively run
 an unfinished test assigned to another worker to cover a slow or dead attempt.
 The same worker must never receive two copies of one task. The first successful

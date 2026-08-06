@@ -1,6 +1,10 @@
 const Hyperswarm = require("hyperswarm");
 const { EventEmitter } = require("events");
 
+function matchesConnectionRole(info, expectedClient) {
+    return typeof info?.client !== "boolean" || info.client === expectedClient;
+}
+
 async function createPool(options) {
     const dht = options.dht;
     const swarm = new Hyperswarm(dht ? { dht } : undefined);
@@ -34,4 +38,4 @@ async function createPool(options) {
     };
 }
 
-module.exports = { createPool };
+module.exports = { createPool, matchesConnectionRole };

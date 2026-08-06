@@ -7,7 +7,7 @@ const { DEFAULTS, parseServerArgs } = require("./serverArgParser");
 const { acquireHostLock } = require("./hostLock");
 const { derivePoolKeys, authenticateServer } = require("./authentication");
 const { ProtocolPeer } = require("./protocol");
-const { createPool } = require("./poolTransport");
+const { createPool, matchesConnectionRole } = require("./poolTransport");
 const { WorkerLeaseManager } = require("./workerLeaseManager");
 const { LeaseRuntime } = require("./leaseRuntime");
 const { receiveBundle } = require("./artifactTransfer");
@@ -88,7 +88,11 @@ async function main(options = {}) {
         connection.peer.close();
     }
 
-    pool.onConnection(async (stream) => {
+    pool.onConnection(async (stream, info) => {
+        if (!matchesConnectionRole(info, false)) {
+            stream.destroy();
+            return;
+        }
         const peer = new ProtocolPeer(stream);
         const connection = {
             peer,

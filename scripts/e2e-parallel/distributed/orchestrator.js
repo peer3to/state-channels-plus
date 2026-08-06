@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const { derivePoolKeys, authenticateClient } = require("./authentication");
 const { ProtocolPeer, waitForMessage } = require("./protocol");
-const { createPool } = require("./poolTransport");
+const { createPool, matchesConnectionRole } = require("./poolTransport");
 const { sendBundle } = require("./artifactTransfer");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { toWireTask } = require("./taskWire");
@@ -206,6 +206,10 @@ async function runDistributed(options) {
     });
 
     pool.onConnection(async (stream, info) => {
+        if (!matchesConnectionRole(info, true)) {
+            stream.destroy();
+            return;
+        }
         const peer = new ProtocolPeer(stream);
         const workerId =
             info?.publicKey?.toString("hex") || crypto.randomUUID();
