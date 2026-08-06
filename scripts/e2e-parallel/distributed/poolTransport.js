@@ -76,9 +76,27 @@ async function createPool(options) {
     let listening = false;
     swarm.on("connection", (stream, info) => {
         guardConnectionErrors(stream);
-        logDial?.(
-            `${info.client ? "dialed out to" : "accepted dial from"} ${shortKey(info.publicKey)}`
-        );
+        if (logDial) {
+            const key = shortKey(info.publicKey);
+            const openedAt = Date.now();
+            logDial(
+                `${info.client ? "dialed out to" : "accepted dial from"} ${key}`
+            );
+            stream.once("error", (error) =>
+                logDial(
+                    `connection ${key} error: ${error.code || error.message}`
+                )
+            );
+            // Zero bytes received on a connection that lived for seconds means
+            // the handshake completed via a DHT relay but the punched data
+            // path never carried traffic (firewall/NAT drop).
+            stream.once("close", () =>
+                logDial(
+                    `connection ${key} closed after ${((Date.now() - openedAt) / 1000).toFixed(1)}s ` +
+                        `(sent ${stream.rawBytesWritten ?? "?"} bytes, received ${stream.rawBytesRead ?? "?"} bytes)`
+                )
+            );
+        }
         if (listening) events.emit("connection", stream, info);
         else connections.push([stream, info]);
     });

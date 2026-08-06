@@ -155,6 +155,11 @@ async function main(options = {}) {
             );
         }
         const peer = new ProtocolPeer(stream);
+        peer.on("protocolError", (error) =>
+            console.log(
+                `[dial] protocol error from ${peerId ? peerId.slice(0, 12) : "unknown"}: ${error.message}`
+            )
+        );
         const connection = {
             peer,
             peerId,

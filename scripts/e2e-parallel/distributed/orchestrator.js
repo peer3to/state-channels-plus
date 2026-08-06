@@ -284,6 +284,11 @@ async function runDistributed(options) {
 
     pool.onConnection(async (stream, info) => {
         const peer = new ProtocolPeer(stream);
+        peer.on("protocolError", (error) =>
+            console.log(
+                `[dial] protocol error from ${workerId.slice(0, 12)}: ${error.message}`
+            )
+        );
         const workerId =
             info?.publicKey?.toString("hex") || crypto.randomUUID();
         // Hyperswarm deduplicates simultaneous dual-topic dials by Noise key.
