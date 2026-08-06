@@ -415,6 +415,10 @@ export class Codec {
     ): StateProofStruct;
     public static decode(
         encoded: Bytes,
+        type: DisputeFraudProofType.DisputeNotLatestState
+    ): DisputeNotLatestStateStruct;
+    public static decode(
+        encoded: Bytes,
         type: DisputeFraudProofType.DisputeInvalidBlockStructure
     ): DisputeInvalidBlockStructureStruct;
     public static decode(

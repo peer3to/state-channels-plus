@@ -1,15 +1,20 @@
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { CreateAndResolveDisputeResult } from "../core/types";
-import { Logger } from "@/utils";
+import { Codec, Logger, Type } from "@/utils";
 import { ForkId } from "@/types/types";
 import { ZeroHash } from "ethers";
 import { Status } from "@/types";
 import { FraudProofType } from "@/types/sol-enums";
 import type {
+    DisputeAuditingDataStruct,
     DisputeConfirmationStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type {
+    DisputeValidationRun,
+    PersistDisputeDataProjection
+} from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
 import type { FinalDisputeResolution } from "./DisputeTamperingActions";
 
 export type SubmittedFinalDispute = {
@@ -38,6 +43,96 @@ export class DisputeOrchestrator<
         protected harness: PeerTestHarness<TCustomRpc>,
         protected logger: Logger
     ) {}
+
+    /**
+     * Construct a dispute host-side on `peerIndex` and return its structs.
+     * They come back ABI-encoded (raw ethers structs don't survive JSON across
+     * the port), decoded here to plain mutable structs.
+     */
+    async fetchConstructedDispute(
+        peerIndex: number,
+        forkId?: ForkId
+    ): Promise<{
+        dispute: DisputeStruct;
+        disputeConfirmation: DisputeConfirmationStruct;
+        auditingData: DisputeAuditingDataStruct;
+    }> {
+        const targetForkId = forkId ?? this.harness.activeForkId;
+        if (!targetForkId) {
+            throw new Error("fetchConstructedDispute: no active fork ID");
+        }
+        const {
+            encodedDispute,
+            encodedDisputeConfirmation,
+            encodedAuditingData
+        } = await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .dispute.constructDispute(targetForkId)
+            .request();
+        return {
+            dispute: Codec.decode(encodedDispute, Type.Dispute),
+            disputeConfirmation: Codec.decode(
+                encodedDisputeConfirmation,
+                Type.DisputeConfirmation
+            ),
+            auditingData: Codec.decode(
+                encodedAuditingData,
+                Type.DisputeAuditingData
+            )
+        };
+    }
+
+    /** Run the real dispute audit on `auditorIndex`; decoded seam projection. */
+    async auditDispute(
+        auditorIndex: number,
+        dispute: DisputeStruct,
+        auditingData?: DisputeAuditingDataStruct
+    ): Promise<DisputeValidationRun> {
+        return (
+            this.harness
+                .control(this.harness.getPeer(auditorIndex))
+                .dispute.runDisputeValidation(
+                    Codec.encode(dispute, Type.Dispute) as string,
+                    auditingData
+                        ? {
+                              encodedAuditingData: Codec.encode(
+                                  auditingData,
+                                  Type.DisputeAuditingData
+                              ) as string
+                          }
+                        : undefined
+                )
+                // audits replay blocks + several staticCalls; the default RPC
+                // budget is sized for quick reads
+                .request({ timeoutMs: 60_000 })
+        );
+    }
+
+    /** Run the real persistDisputeDataWithoutAudit on `peerIndex`. */
+    async persistDisputeData(
+        peerIndex: number,
+        dispute: DisputeStruct,
+        options: {
+            auditingData?: DisputeAuditingDataStruct;
+            includeUnfinalizedBlocks: boolean;
+        }
+    ): Promise<PersistDisputeDataProjection> {
+        return this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .dispute.persistDisputeDataWithoutAudit(
+                Codec.encode(dispute, Type.Dispute) as string,
+                {
+                    encodedAuditingData: options.auditingData
+                        ? (Codec.encode(
+                              options.auditingData,
+                              Type.DisputeAuditingData
+                          ) as string)
+                        : undefined,
+                    includeUnfinalizedBlocks: options.includeUnfinalizedBlocks
+                }
+            )
+            .request();
+    }
 
     async submitFinalDispute(options: {
         maliciousPeerIndex: number;
