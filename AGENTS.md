@@ -51,6 +51,11 @@ where it is the client, and servers must authenticate only connections where
 they are the server. Close other connections without logging authentication
 timeouts.
 
+Worker loss must not terminate an orchestrator run. Return that worker's live
+assignments to the shared queue, keep public discovery active, and wait for an
+available worker. Abandoned and duplicate discovery handshakes are routine and
+must not fill either terminal with authentication timeout stacks.
+
 After the unassigned distributed queue is empty, a worker may speculatively run
 an unfinished test assigned to another worker to cover a slow or dead attempt.
 The same worker must never receive two copies of one task. The first successful

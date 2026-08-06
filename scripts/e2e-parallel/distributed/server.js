@@ -25,6 +25,12 @@ const {
 const BABY_BLUE = "\x1b[38;5;117m";
 const RESET = "\x1b[0m";
 
+function isRoutineDiscoveryFailure(error) {
+    return /^(Connection closed|Timed out) waiting for AUTH_(HELLO|CHALLENGE|PROOF|OK)$/.test(
+        error?.message || ""
+    );
+}
+
 function logOrchestratorRequest(message) {
     console.log(`${BABY_BLUE}${message}${RESET}`);
 }
@@ -134,7 +140,11 @@ async function main(options = {}) {
                 closeConnection(connection).catch(() => {})
             );
         } catch (error) {
-            console.error(`Worker connection failed: ${error.stack || error}`);
+            if (!isRoutineDiscoveryFailure(error)) {
+                console.error(
+                    `Worker connection failed: ${error.stack || error}`
+                );
+            }
             await peer
                 .send("AUTH_ERROR", { message: error.message })
                 .catch(() => {});
@@ -516,4 +526,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { main, capabilities };
+module.exports = { main, capabilities, isRoutineDiscoveryFailure };

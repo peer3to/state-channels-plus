@@ -45,6 +45,12 @@ function workerStatus(worker, status, target = process.stdout) {
     target.write(`${worker.color}[${worker.label}] ${status}${RESET}\n`);
 }
 
+function isRoutineDiscoveryFailure(error) {
+    return /^(Connection closed|Timed out) waiting for AUTH_(HELLO|CHALLENGE|PROOF|OK)$/.test(
+        error?.message || ""
+    );
+}
+
 function promoteAttemptLog(logDir, assignment, worker, code) {
     const attemptPath =
         worker?.attemptPaths.get(assignment.attemptId) ||
@@ -149,12 +155,14 @@ async function runDistributed(options) {
     });
     const sessionId = crypto.randomUUID();
     const workers = new Map();
+    const connectingWorkers = new Set();
     const workerLabelById = new Map();
     const ignoredWorkers = new Set();
     const logStore = new OrchestratorLogStore(options.logDir);
     const committedOutput = new Map();
-    const discoveryStartedAt = Date.now();
+    let discoveryStartedAt = Date.now();
     const discoveryProgress = setInterval(() => {
+        if (workers.size) return;
         const seconds = Math.round((Date.now() - discoveryStartedAt) / 1000);
         console.log(
             `Still discovering workers on topic ${keys.topic.toString("hex").slice(0, 12)} (${seconds}s)`
@@ -175,10 +183,10 @@ async function runDistributed(options) {
     const coordinator = new TaskCoordinator(options.tasks, {
         speculative: true,
         onWorkAvailable(workerId) {
-            workers
-                .get(workerId)
-                ?.peer.send("WORK_AVAILABLE")
-                .catch(completedReject);
+            const worker = workers.get(workerId);
+            worker?.peer
+                .send("WORK_AVAILABLE")
+                .catch((error) => dropWorker(worker, error));
         },
         onResult(result) {
             const { assignment, attempt, code, parsed } = result;
@@ -213,7 +221,9 @@ async function runDistributed(options) {
         const peer = new ProtocolPeer(stream);
         const workerId =
             info?.publicKey?.toString("hex") || crypto.randomUUID();
-        if (workers.has(workerId)) return peer.close();
+        if (workers.has(workerId) || connectingWorkers.has(workerId))
+            return peer.close();
+        connectingWorkers.add(workerId);
         try {
             await authenticateClient(
                 peer,
@@ -264,14 +274,15 @@ async function runDistributed(options) {
             );
             workers.set(workerId, worker);
             workerLabelById.set(workerId, worker.label);
-            clearInterval(discoveryProgress);
             console.log(
                 `Connected to worker ${workerName(worker)}; requesting lease`
             );
             coordinator.registerWorker(workerId);
             peer.on("message", (message) => {
                 worker.heartbeat.received();
-                handleMessage(worker, message).catch(completedReject);
+                handleMessage(worker, message).catch((error) =>
+                    dropWorker(worker, error)
+                );
             });
             peer.once("close", () => {
                 worker.heartbeat.stop();
@@ -280,31 +291,25 @@ async function runDistributed(options) {
                 }
                 coordinator.disconnectWorker(workerId);
                 workers.delete(workerId);
-                if (finishing && worker.leased && !worker.clean) {
-                    completedReject(
-                        worker.failure ||
-                            new Error(
-                                `Worker ${worker.label} disconnected before lease cleanup`
-                            )
+                if (!workers.size && coordinator.finish().pending) {
+                    discoveryStartedAt = Date.now();
+                    console.log(
+                        "No workers connected; waiting for a worker to become available"
                     );
-                    return;
                 }
-                if (!workers.size && coordinator.finish().pending)
-                    completedReject(
-                        worker.failure ||
-                            new Error(
-                                "All workers disconnected with tasks pending"
-                            )
-                    );
-                else settleCleanup();
+                settleCleanup();
             });
             await peer.send("LEASE_REQUEST", { sessionId });
             resolveFirst();
         } catch (error) {
-            console.warn(
-                `Rejected worker connection: ${error.message || error}`
-            );
+            if (!isRoutineDiscoveryFailure(error)) {
+                console.warn(
+                    `Rejected worker connection: ${error.message || error}`
+                );
+            }
             peer.close();
+        } finally {
+            connectingWorkers.delete(workerId);
         }
     });
 
@@ -422,12 +427,17 @@ async function runDistributed(options) {
                 `Failed: ${message.header.message}`,
                 process.stderr
             );
-            completedReject(error);
+            worker.peer.close();
         } else if (message.kind === "LEASE_CLEAN") {
             worker.clean = true;
             workerStatus(worker, "Lease cleaned; ready for another run");
             settleCleanup();
         }
+    }
+
+    function dropWorker(worker, error) {
+        worker.failure ||= error;
+        worker.peer.close();
     }
 
     let finishing = false;
@@ -449,8 +459,13 @@ async function runDistributed(options) {
         if (!used.length)
             return completedReject(new Error("Run completed without a worker"));
         await Promise.all(
-            used.map((worker) => worker.peer.send("RUN_COMPLETE"))
+            used.map((worker) =>
+                worker.peer
+                    .send("RUN_COMPLETE")
+                    .catch((error) => dropWorker(worker, error))
+            )
         );
+        settleCleanup();
     }
 
     const timeout = new Promise((_, reject) =>
@@ -495,6 +510,7 @@ async function runDistributed(options) {
 module.exports = {
     aggregateWorkerStats,
     createHeartbeatMonitor,
+    isRoutineDiscoveryFailure,
     promoteAttemptLog,
     runDistributed,
     validateWorkerStats

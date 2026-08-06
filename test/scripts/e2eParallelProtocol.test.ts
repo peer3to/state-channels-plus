@@ -14,6 +14,12 @@ const {
 const {
     matchesConnectionRole
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+const {
+    isRoutineDiscoveryFailure: isRoutineOrchestratorFailure
+} = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
+const {
+    isRoutineDiscoveryFailure: isRoutineServerFailure
+} = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed protocol", function () {
     it("rejects Hyperswarm connections opened in the wrong local role", function () {
@@ -22,6 +28,25 @@ describe("distributed protocol", function () {
         expect(matchesConnectionRole({ client: false }, true)).to.equal(false);
         expect(matchesConnectionRole({ client: true }, false)).to.equal(false);
         expect(matchesConnectionRole({}, true)).to.equal(true);
+    });
+
+    it("silences abandoned discovery authentication handshakes", function () {
+        for (const message of [
+            "Connection closed waiting for AUTH_HELLO",
+            "Timed out waiting for AUTH_CHALLENGE",
+            "Timed out waiting for AUTH_PROOF",
+            "Connection closed waiting for AUTH_OK"
+        ]) {
+            expect(isRoutineOrchestratorFailure(new Error(message))).to.equal(
+                true
+            );
+            expect(isRoutineServerFailure(new Error(message))).to.equal(true);
+        }
+        expect(
+            isRoutineOrchestratorFailure(
+                new Error("Pool server authentication failed")
+            )
+        ).to.equal(false);
     });
 
     it("preserves framed binary messages over a real fragmented socket", async function () {
