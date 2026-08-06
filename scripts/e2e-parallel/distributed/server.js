@@ -36,6 +36,12 @@ function isRoutineDiscoveryFailure(error) {
     );
 }
 
+function progressElapsedMs(connection, now = Date.now()) {
+    const startedAt =
+        connection.runStartedAt || connection.leaseStartedAt || now;
+    return Math.max(0, now - startedAt);
+}
+
 function logOrchestratorRequest(message) {
     console.log(`${BABY_BLUE}${message}${RESET}`);
 }
@@ -187,6 +193,9 @@ async function main(options = {}) {
             if (message.kind === "LEASE_REQUEST") {
                 connection.sessionId = message.header.sessionId;
                 const response = manager.request(connection);
+                if (response.kind === "LEASE_GRANTED") {
+                    connection.leaseStartedAt = Date.now();
+                }
                 console.log(
                     response.kind === "LEASE_GRANTED"
                         ? `Lease granted to ${connection.sessionId}`
@@ -373,7 +382,7 @@ async function main(options = {}) {
                 manager.updateProgress(connection, {
                     completedTasks: message.header.completedTasks,
                     totalTasks: message.header.totalTasks,
-                    elapsedMs: Date.now() - connection.runStartedAt
+                    elapsedMs: progressElapsedMs(connection)
                 });
             } else if (message.kind === "TASK_ASSIGNMENT") {
                 sendToWorker(connection, {
@@ -485,7 +494,20 @@ async function main(options = {}) {
                 .send("INFRA_LOG", { stream: "stderr" }, data)
                 .catch(() => {});
         });
-        worker.on("message", async (message) => {
+        worker.on("message", (message) => {
+            handleWorkerMessage(message).catch((error) => {
+                if (connection.closing) return;
+                console.error(
+                    `Test worker message failed: ${error.stack || error}`
+                );
+                connection.peer
+                    .send("WORKER_ERROR", { message: error.message })
+                    .catch(() => {});
+                closeConnection(connection).catch(() => {});
+            });
+        });
+
+        async function handleWorkerMessage(message) {
             if (message.kind === "WORKER_READY") {
                 connection.workerReady = true;
                 await reportStatus(connection, "Ready");
@@ -519,7 +541,7 @@ async function main(options = {}) {
                 connection.resolveWorkerComplete?.(message.stats);
                 worker.send({ kind: "WORKER_COMPLETE_ACK" });
             }
-        });
+        }
         worker.send({
             kind: "START",
             config: {
@@ -585,4 +607,9 @@ if (require.main === module) {
     });
 }
 
-module.exports = { main, capabilities, isRoutineDiscoveryFailure };
+module.exports = {
+    main,
+    capabilities,
+    isRoutineDiscoveryFailure,
+    progressElapsedMs
+};

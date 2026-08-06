@@ -148,7 +148,7 @@ class ProtocolPeer extends EventEmitter {
         const frame = Buffer.allocUnsafe(4 + payload.length);
         frame.writeUInt32BE(payload.length, 0);
         payload.copy(frame, 4);
-        this.writeChain = this.writeChain.then(
+        const write = this.writeChain.then(
             () =>
                 new Promise((resolve, reject) => {
                     if (this.stream.destroyed) {
@@ -168,7 +168,8 @@ class ProtocolPeer extends EventEmitter {
                     else this.stream.once("drain", onDrain);
                 })
         );
-        return this.writeChain;
+        this.writeChain = write.catch(() => {});
+        return write;
     }
 
     close() {
