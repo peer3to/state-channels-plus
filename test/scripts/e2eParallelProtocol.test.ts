@@ -15,6 +15,7 @@ const {
     matchesConnectionRole
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 const {
+    formatBusyStatus,
     isRoutineDiscoveryFailure: isRoutineOrchestratorFailure
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
@@ -169,6 +170,21 @@ describe("distributed protocol", function () {
         } finally {
             await pair.close();
         }
+    });
+
+    it("formats queued progress and its estimated wait", function () {
+        expect(
+            formatBusyStatus({
+                state: "running",
+                position: 1,
+                status: "Running tests",
+                completedTasks: 4,
+                totalTasks: 10,
+                estimatedWaitMs: 30000
+            })
+        ).to.equal(
+            "Busy (Running tests; queue position 1; progress 4/10; estimated wait 30s)"
+        );
     });
 
     it("rejects oversized and truncated frames", async function () {

@@ -1,6 +1,7 @@
 const { EventEmitter } = require("events");
 
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
+const DISTRIBUTED_PROTOCOL_VERSION = 8;
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const MESSAGE_KINDS = new Set([
     "AUTH_HELLO",
@@ -22,6 +23,7 @@ const MESSAGE_KINDS = new Set([
     "BUNDLE_END",
     "PREPARED",
     "RUN_CONFIG",
+    "RUN_PROGRESS",
     "WORKER_READY",
     "TASK_REQUEST",
     "TASK_ASSIGNMENT",
@@ -47,12 +49,20 @@ const HEADER_FIELDS = {
     SERVER_READY: ["name", "capabilities"],
     LEASE_REQUEST: ["sessionId"],
     LEASE_GRANTED: ["capabilities"],
-    BUSY: ["state", "position"],
+    BUSY: [
+        "state",
+        "position",
+        "status",
+        "completedTasks",
+        "totalTasks",
+        "estimatedWaitMs"
+    ],
     WORKSPACE_OFFER: ["manifest"],
     BUNDLE_META: ["manifest"],
     BUNDLE_CHUNK: ["sequence"],
     BUNDLE_END: ["byteCount", "sha256"],
     RUN_CONFIG: ["baseEnv", "taskCount"],
+    RUN_PROGRESS: ["completedTasks", "totalTasks"],
     TASK_REQUEST: ["requestId"],
     TASK_ASSIGNMENT: ["requestId", "assignment"],
     NO_TASK_AVAILABLE: ["requestId"],
@@ -252,6 +262,7 @@ function waitForMessage(peer, kind, timeoutMs = 10000) {
 }
 
 module.exports = {
+    DISTRIBUTED_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
     MESSAGE_KINDS,
     ProtocolPeer,

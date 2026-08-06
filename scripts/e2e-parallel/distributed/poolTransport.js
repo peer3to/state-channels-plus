@@ -1,6 +1,8 @@
 const Hyperswarm = require("hyperswarm");
 const { EventEmitter } = require("events");
 
+const DISCOVERY_REFRESH_MS = 5000;
+
 function matchesConnectionRole(info, expectedClient) {
     return typeof info?.client !== "boolean" || info.client === expectedClient;
 }
@@ -20,6 +22,13 @@ async function createPool(options) {
         client: options.client
     });
     await discovery.flushed();
+    const refreshTimer = options.refreshIntervalMs
+        ? setInterval(
+              () => discovery.refresh().catch(() => {}),
+              options.refreshIntervalMs
+          )
+        : null;
+    refreshTimer?.unref();
     return {
         swarm,
         discovery,
@@ -32,10 +41,15 @@ async function createPool(options) {
             }
         },
         async close() {
+            if (refreshTimer) clearInterval(refreshTimer);
             await discovery.destroy();
             await swarm.destroy();
         }
     };
 }
 
-module.exports = { createPool, matchesConnectionRole };
+module.exports = {
+    DISCOVERY_REFRESH_MS,
+    createPool,
+    matchesConnectionRole
+};

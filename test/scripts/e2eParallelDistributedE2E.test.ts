@@ -3,7 +3,10 @@ import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { createSocketPair } from "../fixtures/distributed/testTransport";
+import {
+    createLocalDhtNetwork,
+    createSocketPair
+} from "../fixtures/distributed/testTransport";
 
 const {
     ProtocolPeer
@@ -25,8 +28,152 @@ const {
 const {
     sendBundle
 } = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
+const {
+    createPool
+} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+const {
+    runDistributed
+} = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
+const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
 
 describe("distributed parallel runner", function () {
+    it("keeps discovering and connects to worker servers that appear later", async function () {
+        this.timeout(10000);
+        const network = await createLocalDhtNetwork();
+        const topic = crypto.randomBytes(32);
+        const pools: Array<{ close: () => Promise<void> }> = [];
+        try {
+            const firstServer = await createPool({
+                topic,
+                server: true,
+                client: false,
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.push(firstServer);
+            firstServer.onConnection(
+                (stream: unknown) => new ProtocolPeer(stream)
+            );
+
+            let connectionCount = 0;
+            let resolveFirst!: () => void;
+            let resolveSecond!: () => void;
+            const connectedToFirst = new Promise<void>(
+                (resolve) => (resolveFirst = resolve)
+            );
+            const connectedToBoth = new Promise<void>(
+                (resolve) => (resolveSecond = resolve)
+            );
+            const client = await createPool({
+                topic,
+                server: false,
+                client: true,
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.unshift(client);
+            client.onConnection((stream: unknown) => {
+                new ProtocolPeer(stream);
+                connectionCount++;
+                if (connectionCount === 1) resolveFirst();
+                if (connectionCount === 2) resolveSecond();
+            });
+            await connectedToFirst;
+
+            const secondServer = await createPool({
+                topic,
+                server: true,
+                client: false,
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.push(secondServer);
+            secondServer.onConnection(
+                (stream: unknown) => new ProtocolPeer(stream)
+            );
+
+            await connectedToBoth;
+            expect(connectionCount).to.equal(2);
+        } finally {
+            await Promise.allSettled(pools.map((pool) => pool.close()));
+            await network.close();
+        }
+    });
+
+    it("cancels while discovering before any worker connects", async function () {
+        this.timeout(10000);
+        const network = await createLocalDhtNetwork();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "distributed-cancel-")
+        );
+        try {
+            const cancellation = new AbortController();
+            const startedAt = Date.now();
+            const run = runDistributed({
+                tasks: [{ label: "not-run", logName: "not-run" }],
+                projectRoot: root,
+                archivePath: path.join(root, "unused.tgz"),
+                manifest: {},
+                logDir: root,
+                poolSecret: `cancel-${process.pid}`,
+                discoveryTimeoutMs: 5000,
+                discoveryRefreshMs: 25,
+                signal: cancellation.signal,
+                baseEnv: {},
+                dht: network.createNode()
+            });
+            setTimeout(() => cancellation.abort(), 50);
+            const result = await run;
+            expect(result.completed).to.equal(0);
+            expect(Date.now() - startedAt).to.be.lessThan(2000);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+            await network.close();
+        }
+    });
+
+    it("kills infrastructure grandchildren after a test process exits", async function () {
+        this.timeout(10000);
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-group-"));
+        let grandchildPid: number | undefined;
+        try {
+            const result = await runTask(
+                process.execPath,
+                [
+                    "-e",
+                    [
+                        'const { spawn } = require("child_process");',
+                        "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
+                        "process.stdout.write(String(child.pid), () => process.exit(0));"
+                    ].join(" ")
+                ],
+                {},
+                "process-group-cleanup",
+                path.join(root, "task.log")
+            );
+            grandchildPid = Number(result.stdout.trim());
+            expect(grandchildPid).to.be.greaterThan(0);
+
+            let alive = true;
+            for (let attempt = 0; attempt < 20 && alive; attempt++) {
+                try {
+                    process.kill(grandchildPid, 0);
+                    await new Promise((resolve) => setTimeout(resolve, 25));
+                } catch {
+                    alive = false;
+                }
+            }
+            expect(alive).to.equal(false);
+        } finally {
+            if (grandchildPid) {
+                try {
+                    process.kill(grandchildPid, "SIGKILL");
+                } catch {}
+            }
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("rejects a wrong-secret client before it can request a lease", async function () {
         const pair = await createSocketPair();
         try {
@@ -156,6 +303,10 @@ describe("distributed parallel runner", function () {
             const received = path.join(root, "attempt.ansi");
             const store = new OrchestratorLogStore(root);
             store.begin("attempt", received);
+            let resolveCommitted!: () => void;
+            const committed = new Promise<void>(
+                (resolve) => (resolveCommitted = resolve)
+            );
             server.on(
                 "message",
                 (message: {
@@ -172,6 +323,7 @@ describe("distributed parallel runner", function () {
                         );
                     } else if (message.kind === "LOG_END") {
                         store.commit("attempt", message.header);
+                        resolveCommitted();
                     }
                 }
             );
@@ -186,7 +338,7 @@ describe("distributed parallel runner", function () {
                 Buffer.from("\u001b[31mdiagnostic\u001b[0m\n")
             );
             await spool.send(client, { taskId: "1", attemptId: "1" }, 4);
-            await new Promise((resolve) => setTimeout(resolve, 20));
+            await committed;
             expect(fs.readFileSync(received, "utf8")).to.equal(
                 "pass\n\u001b[31mdiagnostic\u001b[0m\n"
             );

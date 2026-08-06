@@ -6,8 +6,12 @@ const { fork } = require("child_process");
 const { DEFAULTS, parseServerArgs } = require("./serverArgParser");
 const { acquireHostLock } = require("./hostLock");
 const { derivePoolKeys, authenticateServer } = require("./authentication");
-const { ProtocolPeer } = require("./protocol");
-const { createPool, matchesConnectionRole } = require("./poolTransport");
+const { DISTRIBUTED_PROTOCOL_VERSION, ProtocolPeer } = require("./protocol");
+const {
+    DISCOVERY_REFRESH_MS,
+    createPool,
+    matchesConnectionRole
+} = require("./poolTransport");
 const { WorkerLeaseManager } = require("./workerLeaseManager");
 const { LeaseRuntime } = require("./leaseRuntime");
 const { receiveBundle } = require("./artifactTransfer");
@@ -24,6 +28,7 @@ const {
 
 const BABY_BLUE = "\x1b[38;5;117m";
 const RESET = "\x1b[0m";
+const SHUTDOWN_TIMEOUT_MS = 5000;
 
 function isRoutineDiscoveryFailure(error) {
     return /^(Connection closed|Timed out) waiting for AUTH_(HELLO|CHALLENGE|PROOF|OK)$/.test(
@@ -35,7 +40,7 @@ function logOrchestratorRequest(message) {
     console.log(`${BABY_BLUE}${message}${RESET}`);
 }
 
-function sendStatus(connection, status) {
+function sendStatusMessage(connection, status) {
     return connection.peer.send("WORKER_STATUS", { status });
 }
 
@@ -59,26 +64,47 @@ async function main(options = {}) {
     const manager = new WorkerLeaseManager({
         queueLength: config.queueLength,
         onGrant(connection) {
-            connection.peer.send("LEASE_GRANTED", {
-                capabilities: capabilities(config)
-            });
+            connection.peer
+                .send("LEASE_GRANTED", {
+                    capabilities: capabilities(config)
+                })
+                .catch(() => {});
+        },
+        onQueueStatus(connection, status) {
+            const { kind, ...header } = status;
+            connection.peer.send(kind, header).catch(() => {});
         }
     });
     const pool = await createPool({
         topic: keys.topic,
         server: true,
         client: false,
-        dht: config.dht
+        dht: config.dht,
+        refreshIntervalMs: DISCOVERY_REFRESH_MS
     });
     let shuttingDown = false;
+    let removeSignalHandlers = () => {};
+
+    function reportStatus(connection, status) {
+        if (manager.active === connection) {
+            manager.updateStatus(connection, status);
+        }
+        return sendStatusMessage(connection, status);
+    }
 
     const shutdown = async (code = 0) => {
         if (shuttingDown) return;
         shuttingDown = true;
-        for (const connection of connections) await closeConnection(connection);
-        await pool.close();
-        hostLock.release();
-        process.exitCode = code;
+        try {
+            for (const connection of connections) {
+                await closeConnection(connection);
+            }
+            await pool.close();
+        } finally {
+            hostLock.release();
+            removeSignalHandlers();
+            process.exitCode = code;
+        }
     };
 
     async function closeConnection(connection) {
@@ -201,7 +227,7 @@ async function main(options = {}) {
                 console.log(
                     `Workspace diff: ${changed.length} changed, ${deleted.length} deleted`
                 );
-                await sendStatus(
+                await reportStatus(
                     connection,
                     changed.length || deleted.length
                         ? `Syncing ${changed.length} changed and ${deleted.length} deleted source files`
@@ -227,7 +253,7 @@ async function main(options = {}) {
                         console.log(
                             `Source received: ${deltaManifest.fileCount} changed file(s), applying`
                         );
-                        await sendStatus(
+                        await reportStatus(
                             connection,
                             deltaManifest.fileCount
                                 ? `Applying ${deltaManifest.fileCount} changed source files`
@@ -281,7 +307,7 @@ async function main(options = {}) {
                                     );
                                 },
                                 onStage(status) {
-                                    sendStatus(connection, status).catch(
+                                    reportStatus(connection, status).catch(
                                         () => {}
                                     );
                                 },
@@ -311,7 +337,7 @@ async function main(options = {}) {
                         console.log(
                             "Workspace prepared; waiting for run configuration"
                         );
-                        await sendStatus(
+                        await reportStatus(
                             connection,
                             "Workspace prepared; waiting to start tests"
                         );
@@ -335,8 +361,20 @@ async function main(options = {}) {
                     connection.prepared.manifest,
                     message.header
                 );
+                connection.runStartedAt = Date.now();
+                manager.updateProgress(connection, {
+                    completedTasks: 0,
+                    totalTasks: message.header.taskCount,
+                    elapsedMs: 0
+                });
                 console.log("Test worker started");
-                await sendStatus(connection, "Starting test infrastructure");
+                await reportStatus(connection, "Starting test infrastructure");
+            } else if (message.kind === "RUN_PROGRESS") {
+                manager.updateProgress(connection, {
+                    completedTasks: message.header.completedTasks,
+                    totalTasks: message.header.totalTasks,
+                    elapsedMs: Date.now() - connection.runStartedAt
+                });
             } else if (message.kind === "TASK_ASSIGNMENT") {
                 sendToWorker(connection, {
                     kind: "RESPONSE",
@@ -362,7 +400,7 @@ async function main(options = {}) {
                 message.kind === "CANCEL" ||
                 message.kind === "RELEASE"
             ) {
-                await sendStatus(connection, "Cleaning completed lease");
+                await reportStatus(connection, "Cleaning completed lease");
                 sendToWorker(connection, { kind: message.kind });
                 if (message.kind === "RUN_COMPLETE") {
                     const stats = await connection.workerComplete;
@@ -450,7 +488,7 @@ async function main(options = {}) {
         worker.on("message", async (message) => {
             if (message.kind === "WORKER_READY") {
                 connection.workerReady = true;
-                await sendStatus(connection, "Ready");
+                await reportStatus(connection, "Ready");
                 await connection.peer.send("WORKER_READY");
             } else if (message.kind === "TASK_REQUEST") {
                 await connection.peer.send("TASK_REQUEST", {
@@ -500,8 +538,29 @@ async function main(options = {}) {
         });
     }
 
-    process.on("SIGINT", () => shutdown(130));
-    process.on("SIGTERM", () => shutdown(143));
+    const handleSignal = (code) => {
+        if (shuttingDown) process.exit(code);
+        const forcedExit = setTimeout(
+            () => process.exit(code),
+            SHUTDOWN_TIMEOUT_MS
+        );
+        forcedExit.unref();
+        shutdown(code).then(
+            () => process.exit(code),
+            (error) => {
+                console.error(error.stack || error);
+                process.exit(code);
+            }
+        );
+    };
+    const onSigint = () => handleSignal(130);
+    const onSigterm = () => handleSignal(143);
+    process.on("SIGINT", onSigint);
+    process.on("SIGTERM", onSigterm);
+    removeSignalHandlers = () => {
+        process.off("SIGINT", onSigint);
+        process.off("SIGTERM", onSigterm);
+    };
     console.log(
         `Worker ${config.name} ready on topic ${keys.topic.toString("hex").slice(0, 12)} ` +
             `(peer ${pool.publicKey.toString("hex").slice(0, 12)})`
@@ -511,7 +570,7 @@ async function main(options = {}) {
 
 function capabilities(config) {
     return {
-        distributedProtocol: 7,
+        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
         slots: config.slots,
         workers: config.workers,
         memoryGb: config.memLimitGb,

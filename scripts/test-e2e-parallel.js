@@ -178,11 +178,18 @@ async function main(options = {}) {
     const distributedCancellation = new AbortController();
     for (const signal of ["SIGINT", "SIGTERM"]) {
         process.on(signal, () => {
-            if (shuttingDown) return;
+            if (shuttingDown) {
+                process.exit(signal === "SIGINT" ? 130 : 143);
+            }
             shuttingDown = true;
             if (cli.distributed) {
                 signalExitCode = signal === "SIGINT" ? 130 : 143;
                 distributedCancellation.abort();
+                const forcedExit = setTimeout(
+                    () => process.exit(signalExitCode),
+                    5000
+                );
+                forcedExit.unref();
                 return;
             }
             teardown();

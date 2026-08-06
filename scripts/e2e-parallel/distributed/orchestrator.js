@@ -3,8 +3,16 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { derivePoolKeys, authenticateClient } = require("./authentication");
-const { ProtocolPeer, waitForMessage } = require("./protocol");
-const { createPool, matchesConnectionRole } = require("./poolTransport");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION,
+    ProtocolPeer,
+    waitForMessage
+} = require("./protocol");
+const {
+    DISCOVERY_REFRESH_MS,
+    createPool,
+    matchesConnectionRole
+} = require("./poolTransport");
 const { sendBundle } = require("./artifactTransfer");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { toWireTask } = require("./taskWire");
@@ -43,6 +51,16 @@ function workerStatus(worker, status, target = process.stdout) {
     if (worker.lastStatus === status) return;
     worker.lastStatus = status;
     target.write(`${worker.color}[${worker.label}] ${status}${RESET}\n`);
+}
+
+function formatBusyStatus(status) {
+    const progress = status.totalTasks
+        ? `; progress ${status.completedTasks}/${status.totalTasks}`
+        : "";
+    const estimate = Number.isFinite(status.estimatedWaitMs)
+        ? `; estimated wait ${Math.max(1, Math.ceil(status.estimatedWaitMs / 1000))}s`
+        : "";
+    return `Busy (${status.status || status.state}; queue position ${status.position}${progress}${estimate})`;
 }
 
 function isRoutineDiscoveryFailure(error) {
@@ -151,7 +169,8 @@ async function runDistributed(options) {
         topic: keys.topic,
         server: false,
         client: true,
-        dht: options.dht
+        dht: options.dht,
+        refreshIntervalMs: options.discoveryRefreshMs || DISCOVERY_REFRESH_MS
     });
     const sessionId = crypto.randomUUID();
     const workers = new Map();
@@ -167,7 +186,7 @@ async function runDistributed(options) {
         console.log(
             `Still discovering workers on topic ${keys.topic.toString("hex").slice(0, 12)} (${seconds}s)`
         );
-    }, 5000);
+    }, DISCOVERY_REFRESH_MS);
     let resolveFirst;
     const firstWorker = new Promise((resolve) => (resolveFirst = resolve));
     let completedResolve;
@@ -209,9 +228,31 @@ async function runDistributed(options) {
                           assignment.workerId
                 });
             }
-            if (coordinator.finish().done) finishRun().catch(completedReject);
+            if (coordinator.finish().done) {
+                queueMicrotask(() => finishRun().catch(completedReject));
+            }
         }
     });
+
+    let finishing = false;
+
+    async function cancelRun() {
+        if (finishing) return;
+        finishing = true;
+        const leased = [...workers.values()].filter((worker) => worker.leased);
+        if (!leased.length) {
+            completedResolve();
+            return;
+        }
+        await Promise.all(
+            leased.map((worker) => worker.peer.send("CANCEL").catch(() => {}))
+        );
+        settleCleanup();
+    }
+
+    const cancel = () => cancelRun().catch(completedReject);
+    options.signal?.addEventListener("abort", cancel, { once: true });
+    if (options.signal?.aborted) cancel();
 
     pool.onConnection(async (stream, info) => {
         if (!matchesConnectionRole(info, true)) {
@@ -232,7 +273,10 @@ async function runDistributed(options) {
                 10000
             );
             const ready = await waitForMessage(peer, "SERVER_READY", 10000);
-            if (ready.header.capabilities.distributedProtocol !== 7) {
+            if (
+                ready.header.capabilities.distributedProtocol !==
+                DISTRIBUTED_PROTOCOL_VERSION
+            ) {
                 if (!ignoredWorkers.has(workerId)) {
                     ignoredWorkers.add(workerId);
                     console.warn(
@@ -346,6 +390,8 @@ async function runDistributed(options) {
                 baseEnv: options.baseEnv,
                 taskCount: options.tasks.length
             });
+        } else if (message.kind === "BUSY") {
+            workerStatus(worker, formatBusyStatus(message.header));
         } else if (message.kind === "WORKER_READY") {
             workerStatus(worker, "Ready");
         } else if (message.kind === "TASK_REQUEST") {
@@ -403,6 +449,18 @@ async function runDistributed(options) {
                 stderr: output.stderr,
                 attemptId: message.header.assignment.attemptId
             });
+            await Promise.all(
+                [...workers.values()]
+                    .filter((entry) => entry.leased)
+                    .map((entry) =>
+                        entry.peer
+                            .send("RUN_PROGRESS", {
+                                completedTasks: coordinator.completed,
+                                totalTasks: options.tasks.length
+                            })
+                            .catch((error) => dropWorker(entry, error))
+                    )
+            );
         } else if (message.kind === "INFRA_LOG") {
             const filePath = logStore.infrastructurePath(
                 worker.id,
@@ -440,7 +498,6 @@ async function runDistributed(options) {
         worker.peer.close();
     }
 
-    let finishing = false;
     function settleCleanup() {
         if (
             finishing &&
@@ -468,29 +525,27 @@ async function runDistributed(options) {
         settleCleanup();
     }
 
-    const timeout = new Promise((_, reject) =>
-        setTimeout(
-            () => reject(new Error("No distributed workers discovered")),
-            options.discoveryTimeoutMs
-        )
+    let rejectDiscoveryTimeout;
+    const timeout = new Promise((_, reject) => {
+        rejectDiscoveryTimeout = reject;
+    });
+    const discoveryTimeout = setTimeout(
+        () =>
+            rejectDiscoveryTimeout(
+                new Error("No distributed workers discovered")
+            ),
+        options.discoveryTimeoutMs
     );
-    await Promise.race([firstWorker, timeout]);
-
-    const cancel = async () => {
-        await Promise.all(
-            [...workers.values()].map((worker) =>
-                worker.peer.send("CANCEL").catch(() => {})
-            )
-        );
-    };
-    options.signal?.addEventListener("abort", cancel, { once: true });
     let workerLabels = [];
     let usedWorkers = [];
     try {
+        await Promise.race([firstWorker, timeout, completed]);
+        clearTimeout(discoveryTimeout);
         await completed;
         usedWorkers = [...workers.values()].filter((worker) => worker.leased);
         workerLabels = usedWorkers.map((worker) => workerName(worker));
     } finally {
+        clearTimeout(discoveryTimeout);
         clearInterval(discoveryProgress);
         options.signal?.removeEventListener("abort", cancel);
         for (const worker of workers.values()) worker.heartbeat.stop();
@@ -510,6 +565,7 @@ async function runDistributed(options) {
 module.exports = {
     aggregateWorkerStats,
     createHeartbeatMonitor,
+    formatBusyStatus,
     isRoutineDiscoveryFailure,
     promoteAttemptLog,
     runDistributed,

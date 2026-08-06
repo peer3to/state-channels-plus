@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const HOST_LOCK_PATH = "/tmp/peer3-test-pool-server-v7.lock";
+const HOST_LOCK_PATH = "/tmp/peer3-test-pool-server-v8.lock";
 
 function acquireHostLock(options = {}) {
     if (options.allowSharedHost) return { release() {} };

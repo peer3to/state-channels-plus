@@ -150,7 +150,7 @@ temp/distributed-worker/
         └── spool/
 ```
 
-- `/tmp/peer3-test-pool-server-v7.lock` is the one host-scoped file outside the
+- `/tmp/peer3-test-pool-server-v8.lock` is the one host-scoped file outside the
   worker root. Its OS-held lock prevents servers using different clones or
   `--work-root` values from oversubscribing the same machine. The file may
   remain after shutdown, but its lock is released.

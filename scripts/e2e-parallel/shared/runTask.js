@@ -106,6 +106,9 @@ async function runTask(cmd, args, env, label, output, cancellationSignal) {
         const finish = async (code) => {
             if (settled) return;
             settled = true;
+            // The test owns its detached process group. If its leader crashes,
+            // remove any infrastructure grandchildren it left behind.
+            killTaskProcess(child, "SIGKILL");
             liveTaskChildren.delete(child);
             clearTimeout(killTimer);
             cancellationSignal?.removeEventListener("abort", onAbort);

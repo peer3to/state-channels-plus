@@ -36,6 +36,70 @@ describe("distributed worker lease", function () {
         await manager.release(a, async () => {});
         expect(granted).to.deep.equal(["a", "b"]);
         expect(manager.active).to.equal(b);
+        await manager.release(b, async () => {});
+        expect(granted).to.deep.equal(["a", "b", "c"]);
+        expect(manager.active).to.equal(c);
+    });
+
+    it("publishes queue progress, wait estimates, and updated positions", function () {
+        const statuses: Array<{
+            sessionId: string;
+            position: number;
+            completedTasks: number;
+            totalTasks: number;
+            estimatedWaitMs: number | null;
+        }> = [];
+        const manager = new WorkerLeaseManager({
+            onQueueStatus: (
+                connection: { sessionId: string },
+                status: {
+                    position: number;
+                    completedTasks: number;
+                    totalTasks: number;
+                    estimatedWaitMs: number | null;
+                }
+            ) => statuses.push({ sessionId: connection.sessionId, ...status })
+        });
+        const active = { sessionId: "active" };
+        const next = { sessionId: "next" };
+        const later = { sessionId: "later" };
+        manager.request(active);
+        manager.request(next);
+        manager.request(later);
+        manager.markRunning(active);
+        manager.updateStatus(active, "Running tests");
+        manager.updateProgress(active, {
+            completedTasks: 5,
+            totalTasks: 20,
+            elapsedMs: 10000
+        });
+
+        expect(statuses[statuses.length - 2]).to.deep.include({
+            sessionId: "next",
+            position: 1,
+            completedTasks: 5,
+            totalTasks: 20,
+            estimatedWaitMs: 30000
+        });
+        expect(statuses[statuses.length - 1]).to.deep.include({
+            sessionId: "later",
+            position: 2,
+            estimatedWaitMs: null
+        });
+
+        manager.remove(next);
+        expect(statuses[statuses.length - 1]).to.deep.include({
+            sessionId: "later",
+            position: 1,
+            estimatedWaitMs: 30000
+        });
+        expect(() =>
+            manager.updateProgress(active, {
+                completedTasks: 21,
+                totalTasks: 20,
+                elapsedMs: 10000
+            })
+        ).to.throw("Invalid worker progress");
     });
 
     it("removes the complete lease tree and makes cleanup idempotent", async function () {
