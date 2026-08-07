@@ -2,7 +2,7 @@ const { EventEmitter } = require("events");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-const DISTRIBUTED_PROTOCOL_VERSION = 10;
+const DISTRIBUTED_PROTOCOL_VERSION = 11;
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const MESSAGE_KINDS = new Set([
     "AUTH_HELLO",
@@ -35,7 +35,7 @@ const MESSAGE_KINDS = new Set([
     "LOG_COMMITTED",
     "ATTEMPT_RESULT",
     "INFRA_LOG",
-    "DISCOVERY_LOG",
+    "INFRA_PROCESS_LOG",
     "WORKER_STATUS",
     "WORKER_STATS",
     "PREPARATION_ERROR",
@@ -89,7 +89,8 @@ const HEADER_FIELDS = {
     LOG_COMMITTED: ["requestId", "attemptId"],
     ATTEMPT_RESULT: ["requestId", "assignment", "result", "logTransferred"],
     INFRA_LOG: ["stream"],
-    DISCOVERY_LOG: [
+    INFRA_PROCESS_LOG: [
+        "processKind",
         "slotId",
         "trigger",
         "processFailure",

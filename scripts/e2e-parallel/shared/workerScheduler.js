@@ -42,6 +42,7 @@ class WorkerScheduler {
         } finally {
             this.requestPending = false;
         }
+        if (this.stopped) return;
         this.running++;
         this.run(assignment);
         this.scheduleRetry();

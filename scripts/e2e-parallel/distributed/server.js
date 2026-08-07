@@ -39,7 +39,7 @@ const {
 const BABY_BLUE = "\x1b[38;5;117m";
 const RESET = "\x1b[0m";
 const SHUTDOWN_TIMEOUT_MS = 5000;
-const DISCOVERY_LOG_CHUNK_BYTES = 512 * 1024;
+const INFRA_PROCESS_LOG_CHUNK_BYTES = 512 * 1024;
 
 function isRoutineDiscoveryFailure(error) {
     return isDiscoveryAuthenticationFailure(error);
@@ -656,17 +656,18 @@ async function main(options = {}) {
                     message.requestId,
                     logTransferred
                 );
-            } else if (message.kind === "DISCOVERY_DIAGNOSTIC") {
+            } else if (message.kind === "INFRA_PROCESS_DIAGNOSTIC") {
                 const log = Buffer.from(message.log);
                 const chunkCount = Math.max(
                     1,
-                    Math.ceil(log.length / DISCOVERY_LOG_CHUNK_BYTES)
+                    Math.ceil(log.length / INFRA_PROCESS_LOG_CHUNK_BYTES)
                 );
                 for (let sequence = 0; sequence < chunkCount; sequence++) {
-                    const offset = sequence * DISCOVERY_LOG_CHUNK_BYTES;
+                    const offset = sequence * INFRA_PROCESS_LOG_CHUNK_BYTES;
                     await connection.peer.send(
-                        "DISCOVERY_LOG",
+                        "INFRA_PROCESS_LOG",
                         {
+                            processKind: message.processKind,
                             slotId: message.slotId,
                             trigger: message.trigger,
                             processFailure: message.processFailure,
@@ -678,11 +679,16 @@ async function main(options = {}) {
                             offset,
                             Math.min(
                                 log.length,
-                                offset + DISCOVERY_LOG_CHUNK_BYTES
+                                offset + INFRA_PROCESS_LOG_CHUNK_BYTES
                             )
                         )
                     );
                 }
+                sendToWorker(connection, {
+                    kind: "RESPONSE",
+                    requestId: message.requestId,
+                    value: true
+                });
             } else if (message.kind === "WORKER_ERROR") {
                 logOrchestratorRequest(
                     "Reporting worker failure to orchestrator"

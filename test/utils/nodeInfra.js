@@ -108,17 +108,27 @@ async function startHardhatNode({
             stdio: ["ignore", "pipe", "pipe"]
         }
     );
+    let resolveExit;
+    const exited = new Promise((resolve) => {
+        resolveExit = resolve;
+    });
+    proc.once("exit", (code, signal) => resolveExit({ code, signal }));
     const logStream = pipeLogs(proc, logPath);
+    const logClosed = logStream
+        ? new Promise((resolve) => {
+              if (logStream.closed) resolve();
+              else logStream.once("close", resolve);
+          })
+        : Promise.resolve();
+    proc.once("close", () => logStream?.end());
     const url = `http://127.0.0.1:${nodePort}`;
     const stop = () => {
         if (!proc.killed) proc.kill("SIGTERM");
-        logStream?.end();
     };
 
     return new Promise((resolve, reject) => {
         let settled = false;
         proc.on("exit", (code) => {
-            logStream?.end();
             if (!settled) {
                 settled = true;
                 reject(
@@ -126,9 +136,18 @@ async function startHardhatNode({
                 );
             }
         });
-        proc.on("error", (err) => settled || (reject(err), (settled = true)));
+        proc.on("error", (err) => {
+            logStream?.end();
+            if (!settled) {
+                settled = true;
+                reject(err);
+            }
+        });
         waitForHardhatNode(url).then(
-            () => settled || ((settled = true), resolve({ proc, url, stop })),
+            () =>
+                settled ||
+                ((settled = true),
+                resolve({ proc, url, stop, exited, logClosed })),
             (err) => {
                 if (!settled) {
                     settled = true;
@@ -171,6 +190,7 @@ async function startDiscoveryRegistry({
               else logStream.once("close", resolve);
           })
         : Promise.resolve();
+    child.once("close", () => logStream?.end());
     const stop = () => {
         if (!child.killed) child.kill("SIGTERM");
     };
@@ -197,7 +217,6 @@ async function startDiscoveryRegistry({
         });
         child.on("exit", (code) => {
             clearTimeout(timer);
-            logStream?.end();
             if (!settled) {
                 settled = true;
                 reject(
@@ -314,6 +333,8 @@ async function provisionSlots(slotCount, logDir) {
             env: { E2E_INTERVAL_MINING: "1" }
         });
         node.label = `slot ${id} hardhat node`;
+        node.slotId = id;
+        node.logPath = infraPath(`hardhat-node-slot${id}.log`);
         infra.nodes.push(node);
         return node;
     };

@@ -8,6 +8,10 @@ export interface NodeHandle {
     stop: () => void;
     /** Set by the runner's slot pool for teardown logging. */
     label?: string;
+    slotId?: number;
+    logPath?: string;
+    exited?: Promise<{ code: number | null; signal: string | null }>;
+    logClosed?: Promise<void>;
 }
 
 export interface DiscoveryHandle {

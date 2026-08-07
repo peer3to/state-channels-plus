@@ -4,6 +4,10 @@ const path = require("path");
 const { assertContained } = require("../shared/paths");
 
 const RESULT_OUTPUT_TAIL_BYTES = 4 * 1024 * 1024;
+const INFRA_PROCESS_FILES = {
+    discovery: "discovery-server.ansi",
+    hardhat: "hardhat-node.ansi"
+};
 
 function appendTail(chunks, body) {
     chunks.push(body);
@@ -47,8 +51,8 @@ class OrchestratorLogStore {
         this.attempts = new Map();
         this.labels = new Set();
         this.workerLabels = new Map();
-        this.discoverySnapshots = new Map();
-        this.discoveryUploads = new Map();
+        this.infrastructureProcessSnapshots = new Map();
+        this.infrastructureProcessUploads = new Map();
     }
 
     workerLabel(workerId, suppliedName) {
@@ -68,32 +72,35 @@ class OrchestratorLogStore {
         return containedPath(dir, path.basename(fileName));
     }
 
-    writeDiscoverySnapshot(
+    writeInfrastructureProcessSnapshot(
         workerId,
         suppliedName,
+        processKind,
         slotId,
         trigger,
         processFailure,
         body
     ) {
+        const fileName = INFRA_PROCESS_FILES[processKind];
+        if (!fileName) {
+            throw new Error(`Unknown infrastructure process: ${processKind}`);
+        }
         const worker = this.workerLabel(workerId, suppliedName);
-        const key = `${workerId}:${slotId}`;
-        const previous = this.discoverySnapshots.get(key);
+        const key = `${workerId}:${processKind}:${slotId}`;
+        const previous = this.infrastructureProcessSnapshots.get(key);
         const reasons = previous?.reasons || [];
         reasons.push({ trigger, processFailure });
-        this.discoverySnapshots.set(key, {
+        this.infrastructureProcessSnapshots.set(key, {
             worker,
+            processKind,
             slotId,
             reasons,
             body: Buffer.from(body)
         });
-        const filePath = containedPath(
-            this.runDir,
-            "infra",
-            "discovery-server.ansi"
-        );
+        const filePath = containedPath(this.runDir, "infra", fileName);
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        const sections = [...this.discoverySnapshots.values()]
+        const sections = [...this.infrastructureProcessSnapshots.values()]
+            .filter((snapshot) => snapshot.processKind === processKind)
             .sort(
                 (left, right) =>
                     left.worker.localeCompare(right.worker) ||
@@ -108,7 +115,7 @@ class OrchestratorLogStore {
                     .join("\n");
                 return Buffer.concat([
                     Buffer.from(
-                        `=== ${snapshot.worker} slot ${snapshot.slotId} ===\n${reasonsText}\n--- discovery output ---\n`
+                        `=== ${snapshot.worker} slot ${snapshot.slotId} ===\n${reasonsText}\n--- ${snapshot.processKind} output ---\n`
                     ),
                     snapshot.body,
                     Buffer.from("\n")
@@ -118,9 +125,10 @@ class OrchestratorLogStore {
         return filePath;
     }
 
-    writeDiscoveryChunk(
+    writeInfrastructureProcessChunk(
         workerId,
         suppliedName,
+        processKind,
         slotId,
         trigger,
         processFailure,
@@ -136,16 +144,24 @@ class OrchestratorLogStore {
             chunkCount < 1 ||
             sequence >= chunkCount
         ) {
-            throw new Error("Invalid discovery log chunk position");
+            throw new Error(
+                "Invalid infrastructure process log chunk position"
+            );
         }
-        const key = `${workerId}:${uploadId}`;
-        let upload = this.discoveryUploads.get(key);
+        if (!INFRA_PROCESS_FILES[processKind]) {
+            throw new Error(`Unknown infrastructure process: ${processKind}`);
+        }
+        const key = `${workerId}:${processKind}:${uploadId}`;
+        let upload = this.infrastructureProcessUploads.get(key);
         if (!upload) {
             if (sequence !== 0) {
-                throw new Error("Discovery log upload did not start at zero");
+                throw new Error(
+                    "Infrastructure process log upload did not start at zero"
+                );
             }
             upload = {
                 suppliedName,
+                processKind,
                 slotId,
                 trigger,
                 processFailure,
@@ -153,25 +169,27 @@ class OrchestratorLogStore {
                 chunkCount,
                 chunks: []
             };
-            this.discoveryUploads.set(key, upload);
+            this.infrastructureProcessUploads.set(key, upload);
         }
         if (
             upload.nextSequence !== sequence ||
             upload.chunkCount !== chunkCount ||
             upload.suppliedName !== suppliedName ||
+            upload.processKind !== processKind ||
             upload.slotId !== slotId ||
             upload.trigger !== trigger ||
             upload.processFailure !== processFailure
         ) {
-            throw new Error("Out-of-order discovery log chunk");
+            throw new Error("Out-of-order infrastructure process log chunk");
         }
         upload.chunks.push(Buffer.from(body));
         upload.nextSequence++;
         if (upload.nextSequence !== chunkCount) return undefined;
-        this.discoveryUploads.delete(key);
-        return this.writeDiscoverySnapshot(
+        this.infrastructureProcessUploads.delete(key);
+        return this.writeInfrastructureProcessSnapshot(
             workerId,
             upload.suppliedName,
+            upload.processKind,
             upload.slotId,
             upload.trigger,
             upload.processFailure,

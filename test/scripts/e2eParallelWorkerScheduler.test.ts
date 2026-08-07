@@ -166,6 +166,32 @@ describe("distributed worker scheduler", function () {
         expect(requests).to.equal(1);
     });
 
+    it("does not start an assignment returned after the scheduler stops", async function () {
+        let release!: (assignment: { id: string }) => void;
+        const assignment = new Promise<{ id: string }>(
+            (resolve) => (release = resolve)
+        );
+        let ran = false;
+        const scheduler = new WorkerScheduler({
+            concurrencyCap: 1,
+            retryMs: 5,
+            canRun: async () => true,
+            requestTask: async () => assignment,
+            runTask: async () => {
+                ran = true;
+            }
+        });
+
+        scheduler.start();
+        await new Promise((resolve) => setImmediate(resolve));
+        scheduler.stop();
+        release({ id: "assigned-before-infra-failure" });
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(ran).to.equal(false);
+        expect(scheduler.running).to.equal(0);
+    });
+
     it("buffers the next distributed assignment before capacity opens", async function () {
         const requested: string[] = [];
         const releases: Array<() => void> = [];

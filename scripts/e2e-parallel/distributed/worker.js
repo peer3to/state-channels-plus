@@ -25,10 +25,10 @@ let configuration;
 let resources;
 let completionExitCode;
 let requestId = 1;
-let discoveryUploadId = 1;
+let infrastructureUploadId = 1;
+let infrastructureFailed = false;
 const pending = new Map();
 const cancellation = new AbortController();
-const discoveryExitReasons = new Map();
 
 function processFailureReason(label, code, signal) {
     return `${label} exited (${code === null ? `signal ${signal || "unknown"}` : `code ${code}`})`;
@@ -44,36 +44,54 @@ function sendToServer(message) {
     });
 }
 
-async function reportDiscoveryDiagnostics(trigger, processFailure, slotId) {
-    const discoveries =
-        slotId === undefined
-            ? infra.discoveries
-            : infra.discoveries.filter(
-                  (discovery) => discovery.slotId === slotId
-              );
-    await Promise.all(
-        discoveries.map(async (discovery) => {
-            let log = "";
-            try {
-                log = discovery.logPath
-                    ? fs.readFileSync(discovery.logPath, "utf8")
-                    : "";
-            } catch (error) {
-                log = `Could not read discovery log: ${error.message}\n`;
-            }
-            await sendToServer({
-                kind: "DISCOVERY_DIAGNOSTIC",
-                uploadId: `${process.pid}-${discoveryUploadId++}`,
-                slotId: discovery.slotId,
-                trigger,
-                processFailure:
-                    processFailure ||
-                    discoveryExitReasons.get(discovery.slotId) ||
-                    null,
-                log
-            });
-        })
-    );
+async function reportInfrastructureProcessFailure(
+    processKind,
+    processHandle,
+    processFailure
+) {
+    let log = "";
+    try {
+        log = processHandle.logPath
+            ? fs.readFileSync(processHandle.logPath, "utf8")
+            : "";
+    } catch (error) {
+        log = `Could not read ${processKind} log: ${error.message}\n`;
+    }
+    await request("INFRA_PROCESS_DIAGNOSTIC", {
+        uploadId: `${process.pid}-${infrastructureUploadId++}`,
+        processKind,
+        slotId: processHandle.slotId,
+        trigger: `${processKind} process exited`,
+        processFailure,
+        log
+    });
+}
+
+function monitorInfrastructureProcess(processKind, processHandle) {
+    processHandle.exited.then(async ({ code, signal }) => {
+        if (cancellation.signal.aborted) return;
+        const reason = processFailureReason(processHandle.label, code, signal);
+        infrastructureFailed = true;
+        scheduler?.stop();
+        cancellation.abort();
+        await processHandle.logClosed;
+        try {
+            await reportInfrastructureProcessFailure(
+                processKind,
+                processHandle,
+                reason
+            );
+        } catch (error) {
+            console.error(
+                `Could not report ${processKind} process failure: ${error.message}`
+            );
+        }
+        try {
+            await sendToServer({ kind: "WORKER_ERROR", message: reason });
+        } catch (error) {
+            console.error(`Could not report worker failure: ${error.message}`);
+        }
+    });
 }
 
 function request(kind, payload = {}) {
@@ -117,24 +135,11 @@ async function start(config) {
     infra = provisioned.infra;
     slots = provisioned.slots;
     for (const discovery of infra.discoveries) {
-        discovery.exited.then(async ({ code, signal }) => {
-            if (cancellation.signal.aborted) return;
-            const reason = processFailureReason(discovery.label, code, signal);
-            discoveryExitReasons.set(discovery.slotId, reason);
-            await discovery.logClosed;
-            if (cancellation.signal.aborted) return;
-            reportDiscoveryDiagnostics(
-                "discovery process exited",
-                undefined,
-                discovery.slotId
-            ).catch((error) =>
-                console.error(
-                    `Could not report discovery failure: ${error.message}`
-                )
-            );
-        });
+        monitorInfrastructureProcess("discovery", discovery);
     }
-    await reportDiscoveryDiagnostics("discovery process ready");
+    for (const node of infra.nodes) {
+        monitorInfrastructureProcess("hardhat", node);
+    }
     let slotSequence = 0;
     const accountPartitions = new AccountPartitionPool();
     resources = new ResourceGate({
@@ -226,24 +231,9 @@ async function start(config) {
                 accountPartitions.release(accountPartition);
             }
             const { stdout: _stdout, stderr: _stderr, ...wireResult } = result;
-            if (result.code !== 0 || result.infrastructureFailure) {
-                const processFailure = [
-                    processFailureReason(
-                        "test process",
-                        result.code,
-                        result.signal
-                    ),
-                    result.infrastructureFailure
-                        ? `infrastructure failure: ${result.infrastructureFailure}`
-                        : null
-                ]
-                    .filter(Boolean)
-                    .join("; ");
-                await reportDiscoveryDiagnostics(
-                    `test failed: ${task.label}`,
-                    processFailure,
-                    slot?.id
-                );
+            if (infrastructureFailed) {
+                spool.remove();
+                return;
             }
             await request("ATTEMPT_READY", {
                 assignment: { ...assignment, task },

@@ -203,69 +203,69 @@ describe("distributed orchestrator logs", function () {
         }
     });
 
-    it("refreshes discovery logs while retaining every upload reason", function () {
+    it("writes failed discovery and hardhat process logs separately", function () {
         const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "orchestrator-discovery-log-")
+            path.join(os.tmpdir(), "orchestrator-process-log-")
         );
         try {
             const store = new OrchestratorLogStore(root);
-            store.writeDiscoverySnapshot(
-                "worker-id",
-                "worker-one",
-                0,
-                "discovery process ready",
-                null,
-                Buffer.from("old discovery output\n")
-            );
             expect(
-                store.writeDiscoveryChunk(
+                store.writeInfrastructureProcessChunk(
                     "worker-id",
                     "worker-one",
+                    "discovery",
                     0,
-                    "test failed: test/example.test.ts:case",
-                    "test process exited (code 1)",
+                    "discovery process exited",
+                    "slot 0 discovery exited (code 1)",
                     "upload-1",
                     0,
                     2,
                     Buffer.from("latest \u001b[31mdiscovery ")
                 )
             ).to.equal(undefined);
-            const filePath = store.writeDiscoveryChunk(
+            const discoveryPath = store.writeInfrastructureProcessChunk(
                 "worker-id",
                 "worker-one",
+                "discovery",
                 0,
-                "test failed: test/example.test.ts:case",
-                "test process exited (code 1)",
+                "discovery process exited",
+                "slot 0 discovery exited (code 1)",
                 "upload-1",
                 1,
                 2,
                 Buffer.from("output\u001b[0m\n")
             );
-            store.writeDiscoverySnapshot(
+            const hardhatPath = store.writeInfrastructureProcessSnapshot(
                 "second-worker-id",
                 "worker-two",
+                "hardhat",
                 1,
-                "discovery process exited",
-                "slot 1 discovery exited (signal SIGKILL)",
-                Buffer.from("second worker output\n")
+                "hardhat process exited",
+                "slot 1 hardhat node exited (signal SIGKILL)",
+                Buffer.from("hardhat fatal output\n")
             );
 
-            expect(filePath).to.equal(
+            expect(discoveryPath).to.equal(
                 path.join(root, "infra", "discovery-server.ansi")
             );
-            const contents = fs.readFileSync(filePath, "utf8");
-            expect(contents).to.include("=== worker-one slot 0 ===");
-            expect(contents).to.include("trigger: discovery process ready");
-            expect(contents).to.include(
-                "trigger: test failed: test/example.test.ts:case; process failure: test process exited (code 1)"
+            expect(hardhatPath).to.equal(
+                path.join(root, "infra", "hardhat-node.ansi")
             );
-            expect(contents).to.include(
-                "trigger: discovery process exited; process failure: slot 1 discovery exited (signal SIGKILL)"
+            const discovery = fs.readFileSync(discoveryPath, "utf8");
+            const hardhat = fs.readFileSync(hardhatPath, "utf8");
+            expect(discovery).to.include("=== worker-one slot 0 ===");
+            expect(discovery).to.include(
+                "trigger: discovery process exited; process failure: slot 0 discovery exited (code 1)"
             );
-            expect(contents).to.include(
+            expect(discovery).to.include(
                 "latest \u001b[31mdiscovery output\u001b[0m"
             );
-            expect(contents).to.not.include("old discovery output");
+            expect(discovery).to.not.include("hardhat fatal output");
+            expect(hardhat).to.include("=== worker-two slot 1 ===");
+            expect(hardhat).to.include(
+                "trigger: hardhat process exited; process failure: slot 1 hardhat node exited (signal SIGKILL)"
+            );
+            expect(hardhat).to.include("hardhat fatal output");
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -300,6 +300,17 @@ describe("distributed orchestrator logs", function () {
             ).to.equal(true);
             expect(path.basename(diagnostic)).to.equal("outside");
             expect(() => sanitizeWorkerLabel("😈")).to.throw(/empty/);
+            expect(() =>
+                store.writeInfrastructureProcessSnapshot(
+                    "id",
+                    "worker",
+                    "../outside",
+                    0,
+                    "process exited",
+                    "code 1",
+                    Buffer.alloc(0)
+                )
+            ).to.throw(/Unknown infrastructure process/);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

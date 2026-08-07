@@ -559,10 +559,11 @@ async function runDistributed(options) {
                 worker.label
             );
             fs.appendFileSync(filePath, message.body);
-        } else if (message.kind === "DISCOVERY_LOG") {
-            logStore.writeDiscoveryChunk(
+        } else if (message.kind === "INFRA_PROCESS_LOG") {
+            logStore.writeInfrastructureProcessChunk(
                 worker.id,
                 worker.label,
+                message.header.processKind,
                 message.header.slotId,
                 message.header.trigger,
                 message.header.processFailure,

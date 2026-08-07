@@ -314,34 +314,41 @@ describe("distributed protocol", function () {
         }
     });
 
-    it("transfers discovery diagnostics with their process failure", async function () {
+    it("transfers infrastructure diagnostics with their process failure", async function () {
         const pair = await createSocketPair();
         try {
             const sender = new ProtocolPeer(pair.client);
             const receiver = new ProtocolPeer(pair.server);
-            const received = waitForMessage(receiver, "DISCOVERY_LOG", 1000);
+            const received = waitForMessage(
+                receiver,
+                "INFRA_PROCESS_LOG",
+                1000
+            );
             await sender.send(
-                "DISCOVERY_LOG",
+                "INFRA_PROCESS_LOG",
                 {
+                    processKind: "hardhat",
                     slotId: 2,
-                    trigger: "discovery process exited",
-                    processFailure: "slot 2 discovery exited (signal SIGKILL)",
+                    trigger: "hardhat process exited",
+                    processFailure:
+                        "slot 2 hardhat node exited (signal SIGKILL)",
                     uploadId: "upload-1",
                     sequence: 0,
                     chunkCount: 1
                 },
-                Buffer.from("discovery output\n")
+                Buffer.from("hardhat output\n")
             );
             const message = await received;
             expect(message.header).to.deep.include({
+                processKind: "hardhat",
                 slotId: 2,
-                trigger: "discovery process exited",
-                processFailure: "slot 2 discovery exited (signal SIGKILL)",
+                trigger: "hardhat process exited",
+                processFailure: "slot 2 hardhat node exited (signal SIGKILL)",
                 uploadId: "upload-1",
                 sequence: 0,
                 chunkCount: 1
             });
-            expect(message.body.toString()).to.equal("discovery output\n");
+            expect(message.body.toString()).to.equal("hardhat output\n");
         } finally {
             await pair.close();
         }
