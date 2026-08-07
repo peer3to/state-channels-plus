@@ -210,10 +210,10 @@ describe("distributed workspace preparation", function () {
             ]);
             expect(recorded[0].args).to.include("--no-frozen-lockfile");
             expect(recorded[3].args).to.include("--frozen-lockfile");
-            expect(recorded[0].args).to.include(
+            expect(recorded[0].args).not.to.include(
                 "--config.dangerously-allow-all-builds=true"
             );
-            expect(recorded[3].args).to.include(
+            expect(recorded[3].args).not.to.include(
                 "--config.dangerously-allow-all-builds=true"
             );
             expect(recorded[0].args).not.to.include("--ignore-scripts");

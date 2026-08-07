@@ -100,7 +100,6 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
                 "pnpm",
                 [
                     "install",
-                    "--config.dangerously-allow-all-builds=true",
                     "--store-dir",
                     storeDir,
                     repository.hasPnpmLock
