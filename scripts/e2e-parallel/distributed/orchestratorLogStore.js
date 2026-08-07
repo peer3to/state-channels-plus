@@ -47,6 +47,8 @@ class OrchestratorLogStore {
         this.attempts = new Map();
         this.labels = new Set();
         this.workerLabels = new Map();
+        this.discoverySnapshots = new Map();
+        this.discoveryUploads = new Map();
     }
 
     workerLabel(workerId, suppliedName) {
@@ -64,6 +66,117 @@ class OrchestratorLogStore {
         const dir = containedPath(this.runDir, "infra", label);
         fs.mkdirSync(dir, { recursive: true });
         return containedPath(dir, path.basename(fileName));
+    }
+
+    writeDiscoverySnapshot(
+        workerId,
+        suppliedName,
+        slotId,
+        trigger,
+        processFailure,
+        body
+    ) {
+        const worker = this.workerLabel(workerId, suppliedName);
+        const key = `${workerId}:${slotId}`;
+        const previous = this.discoverySnapshots.get(key);
+        const reasons = previous?.reasons || [];
+        reasons.push({ trigger, processFailure });
+        this.discoverySnapshots.set(key, {
+            worker,
+            slotId,
+            reasons,
+            body: Buffer.from(body)
+        });
+        const filePath = containedPath(
+            this.runDir,
+            "infra",
+            "discovery-server.ansi"
+        );
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        const sections = [...this.discoverySnapshots.values()]
+            .sort(
+                (left, right) =>
+                    left.worker.localeCompare(right.worker) ||
+                    left.slotId - right.slotId
+            )
+            .map((snapshot) => {
+                const reasonsText = snapshot.reasons
+                    .map(
+                        (reason) =>
+                            `trigger: ${reason.trigger}${reason.processFailure ? `; process failure: ${reason.processFailure}` : ""}`
+                    )
+                    .join("\n");
+                return Buffer.concat([
+                    Buffer.from(
+                        `=== ${snapshot.worker} slot ${snapshot.slotId} ===\n${reasonsText}\n--- discovery output ---\n`
+                    ),
+                    snapshot.body,
+                    Buffer.from("\n")
+                ]);
+            });
+        fs.writeFileSync(filePath, Buffer.concat(sections));
+        return filePath;
+    }
+
+    writeDiscoveryChunk(
+        workerId,
+        suppliedName,
+        slotId,
+        trigger,
+        processFailure,
+        uploadId,
+        sequence,
+        chunkCount,
+        body
+    ) {
+        if (
+            !Number.isInteger(sequence) ||
+            !Number.isInteger(chunkCount) ||
+            sequence < 0 ||
+            chunkCount < 1 ||
+            sequence >= chunkCount
+        ) {
+            throw new Error("Invalid discovery log chunk position");
+        }
+        const key = `${workerId}:${uploadId}`;
+        let upload = this.discoveryUploads.get(key);
+        if (!upload) {
+            if (sequence !== 0) {
+                throw new Error("Discovery log upload did not start at zero");
+            }
+            upload = {
+                suppliedName,
+                slotId,
+                trigger,
+                processFailure,
+                nextSequence: 0,
+                chunkCount,
+                chunks: []
+            };
+            this.discoveryUploads.set(key, upload);
+        }
+        if (
+            upload.nextSequence !== sequence ||
+            upload.chunkCount !== chunkCount ||
+            upload.suppliedName !== suppliedName ||
+            upload.slotId !== slotId ||
+            upload.trigger !== trigger ||
+            upload.processFailure !== processFailure
+        ) {
+            throw new Error("Out-of-order discovery log chunk");
+        }
+        upload.chunks.push(Buffer.from(body));
+        upload.nextSequence++;
+        if (upload.nextSequence !== chunkCount) return undefined;
+        this.discoveryUploads.delete(key);
+        return this.writeDiscoverySnapshot(
+            workerId,
+            upload.suppliedName,
+            upload.slotId,
+            upload.trigger,
+            upload.processFailure,
+            Buffer.concat(upload.chunks)
+        );
     }
 
     begin(key, filePath) {

@@ -39,6 +39,7 @@ const {
 const BABY_BLUE = "\x1b[38;5;117m";
 const RESET = "\x1b[0m";
 const SHUTDOWN_TIMEOUT_MS = 5000;
+const DISCOVERY_LOG_CHUNK_BYTES = 512 * 1024;
 
 function isRoutineDiscoveryFailure(error) {
     return isDiscoveryAuthenticationFailure(error);
@@ -655,6 +656,33 @@ async function main(options = {}) {
                     message.requestId,
                     logTransferred
                 );
+            } else if (message.kind === "DISCOVERY_DIAGNOSTIC") {
+                const log = Buffer.from(message.log);
+                const chunkCount = Math.max(
+                    1,
+                    Math.ceil(log.length / DISCOVERY_LOG_CHUNK_BYTES)
+                );
+                for (let sequence = 0; sequence < chunkCount; sequence++) {
+                    const offset = sequence * DISCOVERY_LOG_CHUNK_BYTES;
+                    await connection.peer.send(
+                        "DISCOVERY_LOG",
+                        {
+                            slotId: message.slotId,
+                            trigger: message.trigger,
+                            processFailure: message.processFailure,
+                            uploadId: message.uploadId,
+                            sequence,
+                            chunkCount
+                        },
+                        log.subarray(
+                            offset,
+                            Math.min(
+                                log.length,
+                                offset + DISCOVERY_LOG_CHUNK_BYTES
+                            )
+                        )
+                    );
+                }
             } else if (message.kind === "WORKER_ERROR") {
                 logOrchestratorRequest(
                     "Reporting worker failure to orchestrator"

@@ -2,7 +2,10 @@ import { EventEmitter } from "events";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { createLocalDhtNetwork } from "./testTransport";
+import {
+    createLocalDhtNetwork,
+    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+} from "./testTransport";
 
 const {
     authenticateClient,
@@ -201,9 +204,13 @@ export class LeaseOrchestrator {
             peer,
             this.authKey,
             { local: this.pool.publicKey },
-            1000
+            TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
         );
-        const ready = await waitForMessage(peer, "SERVER_READY", 1000);
+        const ready = await waitForMessage(
+            peer,
+            "SERVER_READY",
+            TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+        );
         const workerId = info.publicKey?.toString("hex") || ready.header.name;
         const heartbeat = setInterval(
             () => peer.send("HEARTBEAT").catch(() => {}),

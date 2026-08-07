@@ -159,10 +159,20 @@ async function startDiscoveryRegistry({
         },
         stdio: ["ignore", "pipe", "pipe"]
     });
+    let resolveExit;
+    const exited = new Promise((resolve) => {
+        resolveExit = resolve;
+    });
+    child.once("exit", (code, signal) => resolveExit({ code, signal }));
     const logStream = pipeLogs(child, logPath);
+    const logClosed = logStream
+        ? new Promise((resolve) => {
+              if (logStream.closed) resolve();
+              else logStream.once("close", resolve);
+          })
+        : Promise.resolve();
     const stop = () => {
         if (!child.killed) child.kill("SIGTERM");
-        logStream?.end();
     };
 
     return new Promise((resolve, reject) => {
@@ -182,7 +192,7 @@ async function startDiscoveryRegistry({
             if (m && !settled) {
                 settled = true;
                 clearTimeout(timer);
-                resolve({ child, url: m[1], stop });
+                resolve({ child, url: m[1], stop, exited, logClosed });
             }
         });
         child.on("exit", (code) => {
@@ -197,6 +207,7 @@ async function startDiscoveryRegistry({
         });
         child.on("error", (err) => {
             clearTimeout(timer);
+            logStream?.end();
             if (!settled) {
                 settled = true;
                 reject(err);
@@ -315,6 +326,8 @@ async function provisionSlots(slotCount, logDir) {
             label: `slot ${id} discovery`
         });
         disc.label = `slot ${id} discovery`;
+        disc.slotId = id;
+        disc.logPath = infraPath(`discovery-slot${id}.log`);
         infra.discoveries.push(disc);
         return disc;
     };

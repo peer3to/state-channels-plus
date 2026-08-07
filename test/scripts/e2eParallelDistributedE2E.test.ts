@@ -3,9 +3,11 @@ import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import WebSocket from "ws";
 import {
     createLocalDhtNetwork,
-    createSocketPair
+    createSocketPair,
+    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
 } from "../fixtures/distributed/testTransport";
 
 const {
@@ -40,8 +42,57 @@ const {
     runDistributed
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
+const { startDiscoveryRegistry } = require("../utils/nodeInfra.js");
 
 describe("distributed parallel runner", function () {
+    it("records the discovery server lifecycle before closing its log", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "discovery-lifecycle-")
+        );
+        const logPath = path.join(root, "discovery.ansi");
+        const discovery = await startDiscoveryRegistry({ logPath });
+        try {
+            const client = new WebSocket(discovery.url);
+            await new Promise<void>((resolve, reject) => {
+                client.once("open", resolve);
+                client.once("error", reject);
+            });
+            client.send(
+                JSON.stringify({
+                    port: 12345,
+                    channelId: "test-channel",
+                    peerAddress: "test-peer"
+                })
+            );
+            await new Promise<void>((resolve, reject) => {
+                client.once("message", () => resolve());
+                client.once("error", reject);
+            });
+            client.close();
+            await new Promise<void>((resolve) => client.once("close", resolve));
+            discovery.stop();
+            const exit = await discovery.exited;
+            await discovery.logClosed;
+
+            expect(exit).to.deep.equal({ code: 0, signal: null });
+            const log = fs.readFileSync(logPath, "utf8");
+            expect(log).to.include("LocalDiscovery registry listening on");
+            expect(log).to.include("connection 1 opened");
+            expect(log).to.include(
+                "connection 1 registered test-peer:12345 channel=test-channel"
+            );
+            expect(log).to.include("connection 1 closed with code");
+            expect(log).to.include(
+                "LocalDiscovery registry shutting down after SIGTERM"
+            );
+        } finally {
+            discovery.stop();
+            await discovery.exited;
+            await discovery.logClosed;
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("yields a failed outgoing dial so the peer can reverse the connection", async function () {
         const network = await createLocalDhtNetwork();
         const keys = derivePoolKeys(`dial-fallback-${process.pid}`);
@@ -163,7 +214,7 @@ describe("distributed parallel runner", function () {
                                 new ProtocolPeer(stream),
                                 keys.authKey,
                                 { local: orchestrator.publicKey },
-                                1000
+                                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
                             ).then(() => resolve(), reject);
                         }
                     );
@@ -186,7 +237,7 @@ describe("distributed parallel runner", function () {
                             new ProtocolPeer(stream),
                             keys.authKey,
                             { local: worker.publicKey },
-                            1000
+                            TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
                         ).then(() => resolve(), reject);
                     }
                 );
@@ -333,6 +384,23 @@ describe("distributed parallel runner", function () {
                     // The process already exited.
                 }
             }
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("retains the test process termination signal", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-signal-"));
+        try {
+            const result = await runTask(
+                process.execPath,
+                ["-e", 'process.kill(process.pid, "SIGTERM")'],
+                {},
+                "process-signal",
+                path.join(root, "task.log")
+            );
+            expect(result.code).to.equal(1);
+            expect(result.signal).to.equal("SIGTERM");
+        } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });

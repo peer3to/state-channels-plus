@@ -15,6 +15,10 @@ export interface DiscoveryHandle {
     url: string;
     stop: () => void;
     label?: string;
+    slotId?: number;
+    logPath?: string;
+    exited?: Promise<{ code: number | null; signal: string | null }>;
+    logClosed?: Promise<void>;
 }
 
 export interface StartInfraOptions {

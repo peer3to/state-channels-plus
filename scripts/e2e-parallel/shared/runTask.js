@@ -122,7 +122,7 @@ async function runTask(
         child.stdout.on("data", onStdout);
         child.stderr.on("data", onStderr);
 
-        const finish = async (code) => {
+        const finish = async (code, signal) => {
             if (settled) return;
             settled = true;
             child.stdout.off("data", onStdout);
@@ -141,11 +141,12 @@ async function runTask(
                 stdout,
                 stderr,
                 durationMs,
+                signal,
                 infrastructureFailure
             });
         };
 
-        child.on("exit", (code) => finish(code));
+        child.on("exit", (code, signal) => finish(code, signal));
 
         child.on("error", (err) => {
             stderr += String(err);

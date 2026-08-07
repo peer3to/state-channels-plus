@@ -2,6 +2,8 @@ import net from "net";
 
 const DHT = require("@hyperswarm/dht");
 
+export const TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS = 5_000;
+
 export async function createLocalDhtNetwork(): Promise<{
     createNode: () => unknown;
     close: () => Promise<void>;

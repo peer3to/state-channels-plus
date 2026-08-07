@@ -203,6 +203,74 @@ describe("distributed orchestrator logs", function () {
         }
     });
 
+    it("refreshes discovery logs while retaining every upload reason", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-discovery-log-")
+        );
+        try {
+            const store = new OrchestratorLogStore(root);
+            store.writeDiscoverySnapshot(
+                "worker-id",
+                "worker-one",
+                0,
+                "discovery process ready",
+                null,
+                Buffer.from("old discovery output\n")
+            );
+            expect(
+                store.writeDiscoveryChunk(
+                    "worker-id",
+                    "worker-one",
+                    0,
+                    "test failed: test/example.test.ts:case",
+                    "test process exited (code 1)",
+                    "upload-1",
+                    0,
+                    2,
+                    Buffer.from("latest \u001b[31mdiscovery ")
+                )
+            ).to.equal(undefined);
+            const filePath = store.writeDiscoveryChunk(
+                "worker-id",
+                "worker-one",
+                0,
+                "test failed: test/example.test.ts:case",
+                "test process exited (code 1)",
+                "upload-1",
+                1,
+                2,
+                Buffer.from("output\u001b[0m\n")
+            );
+            store.writeDiscoverySnapshot(
+                "second-worker-id",
+                "worker-two",
+                1,
+                "discovery process exited",
+                "slot 1 discovery exited (signal SIGKILL)",
+                Buffer.from("second worker output\n")
+            );
+
+            expect(filePath).to.equal(
+                path.join(root, "infra", "discovery-server.ansi")
+            );
+            const contents = fs.readFileSync(filePath, "utf8");
+            expect(contents).to.include("=== worker-one slot 0 ===");
+            expect(contents).to.include("trigger: discovery process ready");
+            expect(contents).to.include(
+                "trigger: test failed: test/example.test.ts:case; process failure: test process exited (code 1)"
+            );
+            expect(contents).to.include(
+                "trigger: discovery process exited; process failure: slot 1 discovery exited (signal SIGKILL)"
+            );
+            expect(contents).to.include(
+                "latest \u001b[31mdiscovery output\u001b[0m"
+            );
+            expect(contents).to.not.include("old discovery output");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("rejects duplicate sequences, bad checksums, and hostile worker paths", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "orchestrator-log-")

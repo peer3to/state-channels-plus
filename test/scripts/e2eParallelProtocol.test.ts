@@ -314,6 +314,39 @@ describe("distributed protocol", function () {
         }
     });
 
+    it("transfers discovery diagnostics with their process failure", async function () {
+        const pair = await createSocketPair();
+        try {
+            const sender = new ProtocolPeer(pair.client);
+            const receiver = new ProtocolPeer(pair.server);
+            const received = waitForMessage(receiver, "DISCOVERY_LOG", 1000);
+            await sender.send(
+                "DISCOVERY_LOG",
+                {
+                    slotId: 2,
+                    trigger: "discovery process exited",
+                    processFailure: "slot 2 discovery exited (signal SIGKILL)",
+                    uploadId: "upload-1",
+                    sequence: 0,
+                    chunkCount: 1
+                },
+                Buffer.from("discovery output\n")
+            );
+            const message = await received;
+            expect(message.header).to.deep.include({
+                slotId: 2,
+                trigger: "discovery process exited",
+                processFailure: "slot 2 discovery exited (signal SIGKILL)",
+                uploadId: "upload-1",
+                sequence: 0,
+                chunkCount: 1
+            });
+            expect(message.body.toString()).to.equal("discovery output\n");
+        } finally {
+            await pair.close();
+        }
+    });
+
     it("transfers workspace preparation failures explicitly", async function () {
         const pair = await createSocketPair();
         try {

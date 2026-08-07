@@ -559,6 +559,18 @@ async function runDistributed(options) {
                 worker.label
             );
             fs.appendFileSync(filePath, message.body);
+        } else if (message.kind === "DISCOVERY_LOG") {
+            logStore.writeDiscoveryChunk(
+                worker.id,
+                worker.label,
+                message.header.slotId,
+                message.header.trigger,
+                message.header.processFailure,
+                message.header.uploadId,
+                message.header.sequence,
+                message.header.chunkCount,
+                message.body
+            );
         } else if (message.kind === "WORKER_STATUS") {
             workerStatus(worker, message.header.status);
         } else if (message.kind === "WORKER_STATS") {
