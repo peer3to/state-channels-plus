@@ -73,6 +73,31 @@ describe("distributed worker lease", function () {
         expect(manager.waiters).to.deep.equal([waiting]);
     });
 
+    it("returns to service when lease cleanup fails", async function () {
+        const faults: Error[] = [];
+        const granted: string[] = [];
+        const manager = new WorkerLeaseManager({
+            onFault: (error: Error) => faults.push(error),
+            onGrant: (connection: { sessionId: string }) =>
+                granted.push(connection.sessionId)
+        });
+        const failed = { sessionId: "failed" };
+        const next = { sessionId: "next" };
+
+        manager.request(failed);
+        manager.request(next);
+        await manager.release(failed, async () => {
+            throw new Error("cleanup failed");
+        });
+
+        expect(faults.map((error) => error.message)).to.deep.equal([
+            "cleanup failed"
+        ]);
+        expect(manager.active).to.equal(next);
+        expect(manager.state).to.equal("preparing");
+        expect(granted).to.deep.equal(["failed", "next"]);
+    });
+
     it("publishes queue progress, wait estimates, and updated positions", function () {
         const statuses: Array<{
             sessionId: string;

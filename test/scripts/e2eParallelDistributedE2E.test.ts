@@ -26,6 +26,7 @@ const {
     OrchestratorLogStore
 } = require("../../scripts/e2e-parallel/distributed/orchestratorLogStore.js");
 const {
+    receiveBundle,
     sendBundle
 } = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
 const {
@@ -427,6 +428,50 @@ describe("distributed parallel runner", function () {
                 error = caught as Error;
             }
             expect(error?.message).to.include("outside the offered manifest");
+        } finally {
+            await pair.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("contains a preparation failure after the orchestrator disconnects", async function () {
+        const pair = await createSocketPair();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "closed-preparation-peer-")
+        );
+        try {
+            const orchestrator = new ProtocolPeer(pair.client);
+            const worker = new ProtocolPeer(pair.server);
+            let resolveFailure!: (error: Error) => void;
+            const failure = new Promise<Error>(
+                (resolve) => (resolveFailure = resolve)
+            );
+            receiveBundle(
+                worker,
+                path.join(root, "runtime.tgz"),
+                { maxCompressedBytes: 1024 },
+                async () => {
+                    const workerClosed = new Promise<void>((resolve) =>
+                        worker.once("close", resolve)
+                    );
+                    orchestrator.close("simulated orchestrator disconnect");
+                    await workerClosed;
+                    throw new Error("pnpm install failed");
+                },
+                undefined,
+                resolveFailure
+            );
+
+            await orchestrator.send("BUNDLE_META", {
+                manifest: { archiveBytes: 0 }
+            });
+            await orchestrator.send("BUNDLE_END", {
+                byteCount: 0,
+                sha256: crypto.createHash("sha256").digest("hex")
+            });
+
+            expect((await failure).message).to.equal("pnpm install failed");
+            await new Promise((resolve) => setTimeout(resolve, 25));
         } finally {
             await pair.close();
             fs.rmSync(root, { recursive: true, force: true });

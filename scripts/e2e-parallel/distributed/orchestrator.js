@@ -15,6 +15,7 @@ const {
 } = require("./protocol");
 const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
 const {
+    closeStream,
     connectionHash,
     selectLowerHash,
     shortConnectionHash
@@ -290,14 +291,18 @@ async function runDistributed(options) {
     if (options.signal?.aborted) cancel();
 
     pool.onConnection(async (stream, info) => {
+        if (finishing) {
+            closeStream(stream, "orchestrator run is finishing");
+            return;
+        }
+        const workerId =
+            info?.publicKey?.toString("hex") || crypto.randomUUID();
         const peer = new ProtocolPeer(stream);
         peer.on("protocolError", (error) =>
             console.log(
                 `[dial] protocol error from ${workerId.slice(0, 12)}: ${error.message}`
             )
         );
-        const workerId =
-            info?.publicKey?.toString("hex") || crypto.randomUUID();
         try {
             await authenticateClient(
                 peer,
@@ -310,6 +315,10 @@ async function runDistributed(options) {
                 "SERVER_READY",
                 DISCOVERY_AUTH_TIMEOUT_MS
             );
+            if (finishing) {
+                peer.close("orchestrator run finished during authentication");
+                return;
+            }
             if (
                 ready.header.capabilities.distributedProtocol !==
                 DISTRIBUTED_PROTOCOL_VERSION
@@ -540,6 +549,8 @@ async function runDistributed(options) {
                 `Preparation failed: ${message.header.message}`,
                 process.stderr
             );
+            finishing = true;
+            clearRediscoveryTimeout();
             completedReject(error);
             retireWorker(worker, "workspace preparation failed");
         } else if (message.kind === "WORKER_ERROR") {
@@ -580,7 +591,12 @@ async function runDistributed(options) {
         const wasCurrent = workers.get(worker.id) === worker;
         if (wasCurrent) workers.delete(worker.id);
         if (closeReason) worker.peer.close(closeReason);
-        if (wasCurrent && !workers.size && coordinator.finish().pending) {
+        if (
+            !finishing &&
+            wasCurrent &&
+            !workers.size &&
+            coordinator.finish().pending
+        ) {
             discoveryStartedAt = Date.now();
             armRediscoveryTimeout();
             console.log(

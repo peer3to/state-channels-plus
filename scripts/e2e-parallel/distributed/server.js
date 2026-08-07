@@ -93,8 +93,9 @@ async function main(options = {}) {
             console.error(
                 `Worker lease cleanup failed: ${error.stack || error}`
             );
-            const exitProcess = config.exitProcess || process.exit;
-            exitProcess(1);
+            console.log(
+                "Cleanup was incomplete; worker remains available with a fresh lease directory"
+            );
         }
     });
     console.log(`Starting worker ${config.name}; announcing availability`);
@@ -147,6 +148,7 @@ async function main(options = {}) {
             await manager.release(connection, async () =>
                 connection.runtime?.cleanup()
             );
+            console.log("Lease ended; worker is ready for another run");
         } else manager.remove(connection);
         connection.peer.close(reason);
     }
@@ -221,7 +223,11 @@ async function main(options = {}) {
             console.log("Orchestrator connected and authenticated");
             peer.on("message", (message) => {
                 connection.lastHeartbeat = Date.now();
-                handleMessage(connection, message);
+                handleMessage(connection, message).catch((error) =>
+                    console.error(
+                        `Lease message cleanup failed: ${error.stack || error}`
+                    )
+                );
             });
             connection.heartbeat = setInterval(
                 () => {

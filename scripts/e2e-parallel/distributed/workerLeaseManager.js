@@ -64,9 +64,7 @@ class WorkerLeaseManager {
         try {
             await cleanup();
         } catch (error) {
-            this.state = "faulted";
             this.onFault(error);
-            throw error;
         }
         this.active = null;
         this.state = "idle";
