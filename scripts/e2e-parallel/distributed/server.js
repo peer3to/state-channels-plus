@@ -8,6 +8,12 @@ const { acquireHostLock } = require("./hostLock");
 const { derivePoolKeys, authenticateServer } = require("./authentication");
 const { DISTRIBUTED_PROTOCOL_VERSION, ProtocolPeer } = require("./protocol");
 const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
+const {
+    closeStream,
+    connectionHash,
+    selectLowerHash,
+    shortConnectionHash
+} = require("./connectionLifecycle");
 const { WorkerLeaseManager } = require("./workerLeaseManager");
 const { LeaseRuntime } = require("./leaseRuntime");
 const { receiveBundle } = require("./artifactTransfer");
@@ -112,7 +118,7 @@ async function main(options = {}) {
         try {
             await Promise.allSettled(
                 [...connections].map((connection) =>
-                    closeConnection(connection)
+                    closeConnection(connection, "worker server shutting down")
                 )
             );
             await pool.close();
@@ -123,7 +129,10 @@ async function main(options = {}) {
         }
     };
 
-    async function closeConnection(connection) {
+    async function closeConnection(
+        connection,
+        reason = "connection cleanup after remote or transport close"
+    ) {
         if (connection.closing) return;
         connection.closing = true;
         connections.delete(connection);
@@ -136,24 +145,15 @@ async function main(options = {}) {
                 connection.runtime?.cleanup()
             );
         } else manager.remove(connection);
-        connection.peer.close();
+        connection.peer.close(reason);
     }
 
     pool.onConnection(async (stream, info) => {
         if (shuttingDown) {
-            stream.destroy();
+            closeStream(stream, "worker server is shutting down");
             return;
         }
         const peerId = info?.publicKey?.toString("hex");
-        // Hyperswarm normally exposes only its canonical connection after a
-        // simultaneous dial. Reject any duplicate event before lease handling.
-        if (peerId && connectionsByPeerId.has(peerId)) {
-            closeConnection(connectionsByPeerId.get(peerId)).catch((error) =>
-                console.error(
-                    `Stale worker connection cleanup failed: ${error.stack || error}`
-                )
-            );
-        }
         const peer = new ProtocolPeer(stream);
         peer.on("protocolError", (error) =>
             console.log(
@@ -167,10 +167,11 @@ async function main(options = {}) {
             runtime: null,
             worker: null,
             lastHeartbeat: Date.now(),
+            connectionHash: connectionHash(stream),
+            authenticated: false,
             closing: false
         };
         connections.add(connection);
-        if (peerId) connectionsByPeerId.set(peerId, connection);
         try {
             await authenticateServer(
                 peer,
@@ -178,8 +179,36 @@ async function main(options = {}) {
                 { local: pool.publicKey },
                 10000
             );
+            connection.authenticated = true;
+            const existing = peerId ? connectionsByPeerId.get(peerId) : null;
+            if (existing) {
+                const winner = selectLowerHash(existing, connection);
+                const loser = winner === existing ? connection : existing;
+                console.log(
+                    `[dedup] authenticated duplicate from ${peerId.slice(0, 12)}: ` +
+                        `keeping lower stream ${shortConnectionHash(winner.connectionHash)}, ` +
+                        `closing ${shortConnectionHash(loser.connectionHash)}`
+                );
+                if (winner === existing) {
+                    await closeConnection(
+                        connection,
+                        `protocol deduplication kept lower authenticated stream ${shortConnectionHash(existing.connectionHash)}`
+                    );
+                    return;
+                }
+                connectionsByPeerId.set(peerId, connection);
+                await closeConnection(
+                    existing,
+                    `protocol deduplication selected lower authenticated stream ${shortConnectionHash(connection.connectionHash)}`
+                );
+            } else if (peerId) {
+                connectionsByPeerId.set(peerId, connection);
+            }
             if (shuttingDown) {
-                await closeConnection(connection);
+                await closeConnection(
+                    connection,
+                    "worker server shut down after authentication"
+                );
                 return;
             }
             await peer.send("SERVER_READY", {
@@ -197,7 +226,10 @@ async function main(options = {}) {
                         Date.now() - connection.lastHeartbeat >
                         config.heartbeatTimeoutMs
                     ) {
-                        closeConnection(connection).catch(() => {});
+                        closeConnection(
+                            connection,
+                            `worker heartbeat timed out after ${config.heartbeatTimeoutMs}ms`
+                        ).catch(() => {});
                     } else peer.send("HEARTBEAT").catch(() => {});
                 },
                 Math.max(250, config.heartbeatTimeoutMs / 3)
@@ -214,7 +246,10 @@ async function main(options = {}) {
             await peer
                 .send("AUTH_ERROR", { message: error.message })
                 .catch(() => {});
-            await closeConnection(connection);
+            await closeConnection(
+                connection,
+                `authentication or connection setup failed: ${error.message}`
+            );
         }
     });
 

@@ -224,6 +224,12 @@ SIGTERM. Canonical task and failure logs remain on the orchestrator under
 `logs/run-N/`, including `error_*.ansi` files and worker infrastructure
 diagnostics.
 
+Dial diagnostics include the Noise handshake hash for each stream. Close lines
+state whether this application closed the stream, Hyperswarm reported duplicate
+deduplication, the transport failed, or no local application close was recorded.
+Application duplicate handling runs only after authentication and keeps the
+stream with the lower handshake hash.
+
 ## Code Formatting
 
 This repository uses [Prettier](https://prettier.io/) for code formatting with configuration in `.prettierrc`. Formatting is automatically enforced using [Husky](https://typicode.github.io/husky/) and [lint-staged](https://github.com/lint-staged/lint-staged) to ensure consistent code style across all contributions.

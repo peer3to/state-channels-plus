@@ -9,6 +9,11 @@ const {
     waitForMessage
 } = require("./protocol");
 const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
+const {
+    connectionHash,
+    selectLowerHash,
+    shortConnectionHash
+} = require("./connectionLifecycle");
 const { sendBundle } = require("./artifactTransfer");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { toWireTask } = require("./taskWire");
@@ -174,7 +179,6 @@ async function runDistributed(options) {
     );
     const sessionId = crypto.randomUUID();
     const workers = new Map();
-    const connectingWorkers = new Set();
     const workerLabelById = new Map();
     // Completed-task counts and a lease registry keyed by worker id. Both
     // survive a worker drop so the final summary describes every worker that
@@ -291,11 +295,6 @@ async function runDistributed(options) {
         );
         const workerId =
             info?.publicKey?.toString("hex") || crypto.randomUUID();
-        // Hyperswarm deduplicates simultaneous dual-topic dials by Noise key.
-        // Keep this guard so a duplicate event cannot create a second lease.
-        if (workers.has(workerId) || connectingWorkers.has(workerId))
-            return peer.close();
-        connectingWorkers.add(workerId);
         try {
             await authenticateClient(
                 peer,
@@ -336,7 +335,9 @@ async function runDistributed(options) {
                 capabilities: ready.header.capabilities,
                 heartbeatTimeoutMs:
                     ready.header.capabilities.heartbeatTimeoutMs || 15000,
-                heartbeat: null
+                heartbeat: null,
+                connectionHash: connectionHash(stream),
+                retired: false
             };
             worker.heartbeat = createHeartbeatMonitor(
                 peer,
@@ -345,10 +346,36 @@ async function runDistributed(options) {
                     worker.failure = new Error(
                         `Worker ${worker.label} heartbeat timed out`
                     );
-                    peer.close();
+                    retireWorker(
+                        worker,
+                        `worker heartbeat timed out after ${worker.heartbeatTimeoutMs}ms`
+                    );
                 }
             );
-            workers.set(workerId, worker);
+            const existing = workers.get(workerId);
+            if (existing) {
+                const winner = selectLowerHash(existing, worker);
+                const loser = winner === existing ? worker : existing;
+                console.log(
+                    `[dedup] authenticated duplicate from ${workerId.slice(0, 12)}: ` +
+                        `keeping lower stream ${shortConnectionHash(winner.connectionHash)}, ` +
+                        `closing ${shortConnectionHash(loser.connectionHash)}`
+                );
+                if (winner === existing) {
+                    worker.heartbeat.stop();
+                    peer.close(
+                        `protocol deduplication kept lower authenticated stream ${shortConnectionHash(existing.connectionHash)}`
+                    );
+                    return;
+                }
+                workers.set(workerId, worker);
+                retireWorker(
+                    existing,
+                    `protocol deduplication selected lower authenticated stream ${shortConnectionHash(worker.connectionHash)}`
+                );
+            } else {
+                workers.set(workerId, worker);
+            }
             clearRediscoveryTimeout();
             workerLabelById.set(workerId, worker.label);
             console.log(
@@ -361,22 +388,7 @@ async function runDistributed(options) {
                     dropWorker(worker, error)
                 );
             });
-            peer.once("close", () => {
-                worker.heartbeat.stop();
-                for (const attemptId of worker.attemptPaths.keys()) {
-                    logStore.abort(`${workerId}:${attemptId}`);
-                }
-                coordinator.disconnectWorker(workerId);
-                workers.delete(workerId);
-                if (!workers.size && coordinator.finish().pending) {
-                    discoveryStartedAt = Date.now();
-                    armRediscoveryTimeout();
-                    console.log(
-                        "No workers connected; waiting for a worker to become available"
-                    );
-                }
-                settleCleanup();
-            });
+            peer.once("close", () => retireWorker(worker));
             await peer.send("LEASE_REQUEST", { sessionId });
             resolveFirst();
         } catch (error) {
@@ -385,9 +397,9 @@ async function runDistributed(options) {
                     `Rejected worker connection: ${error.message || error}`
                 );
             }
-            peer.close();
-        } finally {
-            connectingWorkers.delete(workerId);
+            peer.close(
+                `authentication or worker setup failed: ${error.message}`
+            );
         }
     });
 
@@ -521,7 +533,7 @@ async function runDistributed(options) {
                 process.stderr
             );
             completedReject(error);
-            worker.peer.close();
+            retireWorker(worker, "workspace preparation failed");
         } else if (message.kind === "WORKER_ERROR") {
             const error = new Error(
                 `Worker ${workerName(worker)} failed: ${message.header.message}`
@@ -536,7 +548,7 @@ async function runDistributed(options) {
                 `Failed: ${message.header.message}`,
                 process.stderr
             );
-            worker.peer.close();
+            retireWorker(worker, "test worker reported a fatal error");
         } else if (message.kind === "LEASE_CLEAN") {
             worker.clean = true;
             workerStatus(worker, "Lease cleaned; ready for another run");
@@ -546,7 +558,28 @@ async function runDistributed(options) {
 
     function dropWorker(worker, error) {
         worker.failure ||= error;
-        worker.peer.close();
+        retireWorker(worker, `worker protocol failed: ${error.message}`);
+    }
+
+    function retireWorker(worker, closeReason = null) {
+        if (worker.retired) return;
+        worker.retired = true;
+        worker.heartbeat?.stop();
+        for (const attemptId of worker.attemptPaths.keys()) {
+            logStore.abort(`${worker.id}:${attemptId}`);
+        }
+        coordinator.disconnectWorker(worker.id);
+        const wasCurrent = workers.get(worker.id) === worker;
+        if (wasCurrent) workers.delete(worker.id);
+        if (closeReason) worker.peer.close(closeReason);
+        if (wasCurrent && !workers.size && coordinator.finish().pending) {
+            discoveryStartedAt = Date.now();
+            armRediscoveryTimeout();
+            console.log(
+                "No workers connected; waiting for a worker to become available"
+            );
+        }
+        settleCleanup();
     }
 
     function settleCleanup() {

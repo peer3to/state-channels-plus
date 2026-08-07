@@ -1,4 +1,5 @@
 const { EventEmitter } = require("events");
+const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
 const DISTRIBUTED_PROTOCOL_VERSION = 8;
@@ -119,7 +120,7 @@ class ProtocolPeer extends EventEmitter {
             else this.emit("close");
         });
         stream.on("close", () => this.emit("close"));
-        stream.on("error", (error) => this.fail(error));
+        stream.on("error", (error) => this.emit("protocolError", error));
     }
 
     send(kind, header = {}, body = Buffer.alloc(0)) {
@@ -174,8 +175,8 @@ class ProtocolPeer extends EventEmitter {
         return write;
     }
 
-    close() {
-        this.stream.destroy();
+    close(reason = "protocol peer closed by application") {
+        closeStream(this.stream, reason);
     }
 
     consume(chunk) {
@@ -235,7 +236,7 @@ class ProtocolPeer extends EventEmitter {
 
     fail(error) {
         this.emit("protocolError", error);
-        this.stream.destroy();
+        closeStream(this.stream, `protocol rejected stream: ${error.message}`);
     }
 }
 

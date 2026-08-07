@@ -206,4 +206,7 @@ with the suite still green.
   `./logs/run-N/`; earlier run dirs (and their `error_*` logs) are retained
   for cross-run comparison. Only the current run's dir is cleared. See root
   `AGENTS.md` ("Canonical test command and parallel run logs").
+- Distributed runner: start workers with `yarn test:parallel:server` and run the
+  orchestrator with `yarn test:parallel:distributed`. See the "Distributed
+  parallel tests" section in `README.md` for setup and options.
 - Narrow first: run the single `*.test.ts` you touched before the suite.

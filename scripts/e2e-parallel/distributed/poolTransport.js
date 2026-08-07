@@ -1,5 +1,10 @@
 const Hyperswarm = require("hyperswarm");
 const { EventEmitter } = require("events");
+const {
+    closeStream,
+    localCloseReason,
+    shortConnectionHash
+} = require("./connectionLifecycle");
 
 const DISCOVERY_REFRESH_MS = 5000;
 
@@ -46,6 +51,20 @@ function shortKey(publicKey) {
     return publicKey ? publicKey.toString("hex").slice(0, 12) : "unknown";
 }
 
+function closeOwner(localReason, transportError) {
+    if (localReason) return `application closed: ${localReason}`;
+    if (transportError?.message === "Duplicate connection") {
+        return "Hyperswarm deduplicated";
+    }
+    if (transportError?.code === "ETIMEDOUT") {
+        return "Hyperswarm/UDX transport timed out; no local application close";
+    }
+    if (transportError) {
+        return `transport reported ${transportError.code || transportError.message}; no local application close`;
+    }
+    return "remote peer or Hyperswarm closed; no local application close";
+}
+
 async function createPool(options) {
     const dht = options.dht;
     const swarm = new Hyperswarm({
@@ -72,30 +91,46 @@ async function createPool(options) {
     };
     if (logDial) swarm.on("update", logPeerActivity);
     const connections = [];
+    const activeStreams = new Set();
     const events = new EventEmitter();
     let listening = false;
     swarm.on("connection", (stream, info) => {
         guardConnectionErrors(stream);
+        activeStreams.add(stream);
+        stream.once("close", () => activeStreams.delete(stream));
         if (logDial) {
             const key = shortKey(info.publicKey);
+            const connection = shortConnectionHash(stream);
             const openedAt = Date.now();
+            let transportError = null;
             logDial(
-                `${info.client ? "dialed out to" : "accepted dial from"} ${key}`
+                `${info.client ? "dialed out to" : "accepted dial from"} ${key} ` +
+                    `(stream ${connection})`
             );
-            stream.once("error", (error) =>
-                logDial(
-                    `connection ${key} error: ${error.code || error.message}`
-                )
-            );
+            stream.once("error", (error) => {
+                transportError = error;
+                if (error.message === "Duplicate connection") {
+                    logDial(
+                        `Hyperswarm deduplicated stream ${connection} to ${key}`
+                    );
+                } else {
+                    logDial(
+                        `${error.code === "ETIMEDOUT" ? "Hyperswarm/UDX timeout" : "transport error"} ` +
+                            `on stream ${connection} to ${key}: ${error.code || error.message}`
+                    );
+                }
+            });
             // Zero bytes received on a connection that lived for seconds means
             // the handshake completed via a DHT relay but the punched data
             // path never carried traffic (firewall/NAT drop).
-            stream.once("close", () =>
+            stream.once("close", () => {
+                const localReason = localCloseReason(stream);
+                const owner = closeOwner(localReason, transportError);
                 logDial(
-                    `connection ${key} closed after ${((Date.now() - openedAt) / 1000).toFixed(1)}s ` +
-                        `(sent ${stream.rawBytesWritten ?? "?"} bytes, received ${stream.rawBytesRead ?? "?"} bytes)`
-                )
-            );
+                    `stream ${connection} to ${key} closed after ${((Date.now() - openedAt) / 1000).toFixed(1)}s ` +
+                        `(sent ${stream.rawBytesWritten ?? "?"} bytes, received ${stream.rawBytesRead ?? "?"} bytes; ${owner})`
+                );
+            });
         }
         if (listening) events.emit("connection", stream, info);
         else connections.push([stream, info]);
@@ -136,6 +171,9 @@ async function createPool(options) {
         },
         async close() {
             if (refreshTimer) clearInterval(refreshTimer);
+            for (const stream of activeStreams) {
+                closeStream(stream, "connection pool shutting down");
+            }
             await Promise.allSettled(
                 discoveries.map((discovery) => discovery.destroy())
             );
@@ -146,6 +184,7 @@ async function createPool(options) {
 
 module.exports = {
     DISCOVERY_REFRESH_MS,
+    closeOwner,
     createPool,
     discoveryConfigurations,
     flushAnnouncements,

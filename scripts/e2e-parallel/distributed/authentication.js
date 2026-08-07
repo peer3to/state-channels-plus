@@ -63,7 +63,7 @@ async function authenticateClient(peer, authKey, keys, timeoutMs) {
         serverKey
     );
     if (!matchesProof(challenge.header.proof, expectedServerProof)) {
-        peer.close();
+        peer.close("client rejected invalid server authentication proof");
         throw new Error("Pool server authentication failed");
     }
     await peer.send("AUTH_PROOF", {

@@ -15,9 +15,16 @@ const {
     waitForMessage
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
+    closeOwner,
     flushAnnouncements,
     guardConnectionErrors
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+const {
+    closeStream,
+    connectionHash,
+    localCloseReason,
+    selectLowerHash
+} = require("../../scripts/e2e-parallel/distributed/connectionLifecycle.js");
 const {
     derivePoolKeys,
     authenticateClient,
@@ -35,6 +42,49 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed protocol", function () {
+    it("selects the lower authenticated Noise handshake hash", function () {
+        const higher = { connectionHash: "f".repeat(64) };
+        const lower = { connectionHash: "0".repeat(64) };
+        expect(selectLowerHash(higher, lower)).to.equal(lower);
+        expect(selectLowerHash(lower, higher)).to.equal(lower);
+        expect(
+            connectionHash({ handshakeHash: Buffer.from("shared-session") })
+        ).to.equal(Buffer.from("shared-session").toString("hex"));
+    });
+
+    it("attributes local, Hyperswarm, and transport closes", function () {
+        const stream = {
+            destroyed: false,
+            destroying: false,
+            destroy() {
+                this.destroyed = true;
+            }
+        };
+        expect(closeStream(stream, "protocol deduplication")).to.equal(true);
+        expect(localCloseReason(stream)).to.equal("protocol deduplication");
+        expect(closeOwner(localCloseReason(stream), null)).to.equal(
+            "application closed: protocol deduplication"
+        );
+        expect(closeOwner(null, new Error("Duplicate connection"))).to.equal(
+            "Hyperswarm deduplicated"
+        );
+        expect(
+            closeOwner(
+                null,
+                Object.assign(new Error("timed out"), { code: "ETIMEDOUT" })
+            )
+        ).to.equal(
+            "Hyperswarm/UDX transport timed out; no local application close"
+        );
+        expect(
+            closeOwner(
+                null,
+                Object.assign(new Error("reset"), { code: "ECONNRESET" })
+            )
+        ).to.equal("transport reported ECONNRESET; no local application close");
+        expect(closeOwner(null, null)).to.include("no local application close");
+    });
+
     it("tolerates a transport reset before protocol ownership is installed", function () {
         const stream = new EventEmitter();
         guardConnectionErrors(stream);
@@ -152,7 +202,7 @@ describe("distributed protocol", function () {
             await sender.send("LOG_CHUNK", { sequence: 0 }, body);
             const message = await received;
             expect(message.header.sequence).to.equal(0);
-            expect(Buffer.compare(message.body, body)).to.equal(0);
+            expect([...message.body]).to.deep.equal([...body]);
         } finally {
             await pair.close();
         }
@@ -312,8 +362,7 @@ describe("distributed protocol", function () {
             const error = new Promise<Error>((resolve) =>
                 receiver.once("protocolError", resolve)
             );
-            const prefix = Buffer.alloc(4);
-            prefix.writeUInt32BE(9);
+            const prefix = new Uint8Array([0, 0, 0, 9]);
             pair.client.write(prefix);
             expect((await error).message).to.include("too large");
         } finally {

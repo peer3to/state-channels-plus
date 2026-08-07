@@ -138,18 +138,21 @@ describe("distributed orchestrator logs", function () {
         try {
             const store = new OrchestratorLogStore(root);
             const filePath = path.join(root, "attempt.ansi");
-            const first = Buffer.from("\u001b[31mred");
-            const second = Buffer.from(" output\u001b[0m\n");
+            const encoder = new TextEncoder();
+            const first = encoder.encode("\u001b[31mred");
+            const second = encoder.encode(" output\u001b[0m\n");
             store.begin("attempt", filePath);
             store.append("attempt", 0, first);
             store.append("attempt", 1, second);
-            const bytes = Buffer.concat([first, second]);
+            const bytes = new Uint8Array(first.length + second.length);
+            bytes.set(first);
+            bytes.set(second, first.length);
             store.commit("attempt", {
                 sequence: 2,
                 byteCount: bytes.length,
                 sha256: crypto.createHash("sha256").update(bytes).digest("hex")
             });
-            expect(fs.readFileSync(filePath).equals(bytes)).to.equal(true);
+            expect([...fs.readFileSync(filePath)]).to.deep.equal([...bytes]);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

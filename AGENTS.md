@@ -35,40 +35,6 @@ run's dir is cleared/cleaned. An explicit `--logDir <dir>` is used (and
 cleared) as-is; dirs outside `./logs` additionally need
 `--allow-logdir-purge`. Prune old `run-*` dirs manually when done comparing.
 
-Distributed runs use `yarn test:parallel:server` on each worker and
-`yarn test:parallel:distributed` on the orchestrator. Both require the same
-`SCP_TEST_POOL_SECRET`, which must be a long randomly generated secret rather
-than a memorable password. The orchestrator still owns `logs/run-N`, error-log
-renaming, and the final summary. Servers stay available after lease cleanup;
-one server per physical host is the supported default. Workers install the
-git-aware source workspace with pnpm under `temp/distributed-worker`; linked
-repositories retain their relative paths and the pnpm store persists between
-runs. Distributed runs do not replace the local `yarn test:parallel` landing
-gate.
-
-Workers and orchestrators use separate role-specific topics. Each announces its
-own role and discovers the opposite role, so either side may establish the
-transport without workers connecting to workers or orchestrators connecting to
-orchestrators. Application authentication follows the process role, not
-Hyperswarm's transport-direction flag.
-
-Worker loss must not terminate an orchestrator run. Return that worker's live
-assignments to the shared queue, keep public discovery active, and wait for an
-available worker. Abandoned and duplicate discovery handshakes are routine and
-must not fill either terminal with authentication timeout stacks.
-
-Global run progress may reach a leased server while it is still preparing its
-workspace. Use lease age until its test worker has a run start time; never reject
-valid global progress because a local worker has not started yet. Async child
-IPC handlers must catch network-send failures so a closed orchestrator stream
-cannot crash the persistent server.
-
-After the unassigned distributed queue is empty, a worker may speculatively run
-an unfinished test assigned to another worker to cover a slow or dead attempt.
-The same worker must never receive two copies of one task. The first successful
-copy wins. A failed copy stays provisional while another copy is live, and tests
-must remain safe under isolated duplicate execution.
-
 ### Test timeouts
 
 - **Never set `this.timeout(...)` in a test.** The global `timeout` in
