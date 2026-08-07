@@ -2,7 +2,12 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { derivePoolKeys, authenticateClient } = require("./authentication");
+const {
+    DISCOVERY_AUTH_TIMEOUT_MS,
+    derivePoolKeys,
+    authenticateClient,
+    isDiscoveryAuthenticationFailure
+} = require("./authentication");
 const {
     DISTRIBUTED_PROTOCOL_VERSION,
     ProtocolPeer,
@@ -65,9 +70,7 @@ function formatBusyStatus(status) {
 }
 
 function isRoutineDiscoveryFailure(error) {
-    return /^(Connection closed|Timed out) waiting for AUTH_(HELLO|CHALLENGE|PROOF|OK)$/.test(
-        error?.message || ""
-    );
+    return isDiscoveryAuthenticationFailure(error);
 }
 
 function promoteAttemptLog(logDir, assignment, worker, code) {
@@ -300,9 +303,13 @@ async function runDistributed(options) {
                 peer,
                 keys.authKey,
                 { local: pool.publicKey },
-                10000
+                DISCOVERY_AUTH_TIMEOUT_MS
             );
-            const ready = await waitForMessage(peer, "SERVER_READY", 10000);
+            const ready = await waitForMessage(
+                peer,
+                "SERVER_READY",
+                DISCOVERY_AUTH_TIMEOUT_MS
+            );
             if (
                 ready.header.capabilities.distributedProtocol !==
                 DISTRIBUTED_PROTOCOL_VERSION
@@ -392,6 +399,7 @@ async function runDistributed(options) {
             await peer.send("LEASE_REQUEST", { sessionId });
             resolveFirst();
         } catch (error) {
+            await pool.yieldFailedOutgoingDial(stream, info, error);
             if (!isRoutineDiscoveryFailure(error)) {
                 console.warn(
                     `Rejected worker connection: ${error.message || error}`

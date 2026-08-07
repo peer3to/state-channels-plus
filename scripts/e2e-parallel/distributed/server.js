@@ -5,7 +5,12 @@ const path = require("path");
 const { fork } = require("child_process");
 const { DEFAULTS, parseServerArgs } = require("./serverArgParser");
 const { acquireHostLock } = require("./hostLock");
-const { derivePoolKeys, authenticateServer } = require("./authentication");
+const {
+    DISCOVERY_AUTH_TIMEOUT_MS,
+    derivePoolKeys,
+    authenticateServer,
+    isDiscoveryAuthenticationFailure
+} = require("./authentication");
 const { DISTRIBUTED_PROTOCOL_VERSION, ProtocolPeer } = require("./protocol");
 const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
 const {
@@ -36,9 +41,7 @@ const RESET = "\x1b[0m";
 const SHUTDOWN_TIMEOUT_MS = 5000;
 
 function isRoutineDiscoveryFailure(error) {
-    return /^(Connection closed|Timed out) waiting for AUTH_(HELLO|CHALLENGE|PROOF|OK)$/.test(
-        error?.message || ""
-    );
+    return isDiscoveryAuthenticationFailure(error);
 }
 
 function progressElapsedMs(connection, now = Date.now()) {
@@ -177,7 +180,7 @@ async function main(options = {}) {
                 peer,
                 keys.authKey,
                 { local: pool.publicKey },
-                10000
+                DISCOVERY_AUTH_TIMEOUT_MS
             );
             connection.authenticated = true;
             const existing = peerId ? connectionsByPeerId.get(peerId) : null;
@@ -238,6 +241,7 @@ async function main(options = {}) {
                 closeConnection(connection).catch(() => {})
             );
         } catch (error) {
+            await pool.yieldFailedOutgoingDial(stream, info, error);
             if (!isRoutineDiscoveryFailure(error)) {
                 console.error(
                     `Worker connection failed: ${error.stack || error}`

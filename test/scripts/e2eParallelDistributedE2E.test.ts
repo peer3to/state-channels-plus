@@ -32,11 +32,114 @@ const {
     createPool
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 const {
+    closeStream,
+    connectionHash
+} = require("../../scripts/e2e-parallel/distributed/connectionLifecycle.js");
+const {
     runDistributed
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
 
 describe("distributed parallel runner", function () {
+    it("yields a failed outgoing dial so the peer can reverse the connection", async function () {
+        const network = await createLocalDhtNetwork();
+        const keys = derivePoolKeys(`dial-fallback-${process.pid}`);
+        const pools: Array<{ close: () => Promise<void> }> = [];
+        const observed: Array<{
+            side: "orchestrator" | "worker";
+            pool: {
+                yieldFailedOutgoingDial: (
+                    stream: unknown,
+                    info: { client?: boolean },
+                    error: Error
+                ) => Promise<boolean>;
+            };
+            stream: { handshakeHash?: Uint8Array };
+            info: { client?: boolean };
+            hash: string;
+        }> = [];
+        try {
+            const orchestrator = await createPool({
+                announceTopics: [keys.orchestratorTopic],
+                lookupTopics: [keys.workerTopic],
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.push(orchestrator);
+            orchestrator.onConnection(
+                (
+                    stream: { handshakeHash?: Uint8Array },
+                    info: { client?: boolean }
+                ) =>
+                    observed.push({
+                        side: "orchestrator",
+                        pool: orchestrator,
+                        stream,
+                        info,
+                        hash: connectionHash(stream)
+                    })
+            );
+
+            const worker = await createPool({
+                announceTopics: [keys.workerTopic],
+                lookupTopics: [keys.orchestratorTopic],
+                dht: network.createNode(),
+                refreshIntervalMs: 25
+            });
+            pools.push(worker);
+            worker.onConnection(
+                (
+                    stream: { handshakeHash?: Uint8Array },
+                    info: { client?: boolean }
+                ) =>
+                    observed.push({
+                        side: "worker",
+                        pool: worker,
+                        stream,
+                        info,
+                        hash: connectionHash(stream)
+                    })
+            );
+
+            for (
+                let attempt = 0;
+                attempt < 80 && observed.length < 2;
+                attempt++
+            ) {
+                await new Promise((resolve) => setTimeout(resolve, 25));
+            }
+            const outgoing = observed.find((entry) => entry.info.client);
+            expect(outgoing, "missing initial outgoing connection").not.to.be
+                .undefined;
+            const firstHash = outgoing!.hash;
+            await outgoing!.pool.yieldFailedOutgoingDial(
+                outgoing!.stream,
+                outgoing!.info,
+                new Error("Timed out waiting for AUTH_CHALLENGE")
+            );
+            closeStream(outgoing!.stream, "simulated authentication timeout");
+
+            let reverse;
+            for (let attempt = 0; attempt < 120 && !reverse; attempt++) {
+                reverse = observed.find(
+                    (entry) =>
+                        entry.hash !== firstHash &&
+                        entry.info.client &&
+                        entry.side !== outgoing!.side
+                );
+                if (!reverse) {
+                    await new Promise((resolve) => setTimeout(resolve, 25));
+                }
+            }
+            expect(reverse, "peer did not establish the reverse connection").not
+                .to.be.undefined;
+            expect(reverse!.side).not.to.equal(outgoing!.side);
+        } finally {
+            await Promise.allSettled(pools.map((pool) => pool.close()));
+            await network.close();
+        }
+    });
+
     it("authenticates when the worker establishes the transport connection", async function () {
         const network = await createLocalDhtNetwork();
         const keys = derivePoolKeys(`reverse-dial-${process.pid}`);

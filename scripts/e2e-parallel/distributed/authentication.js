@@ -1,6 +1,14 @@
 const crypto = require("crypto");
 const { PROTOCOL_VERSION, waitForMessage } = require("./protocol");
 
+const DISCOVERY_AUTH_TIMEOUT_MS = 5000;
+
+function isDiscoveryAuthenticationFailure(error) {
+    return /^(Connection closed|Timed out) waiting for AUTH_(HELLO|CHALLENGE|PROOF|OK)$/.test(
+        error?.message || ""
+    );
+}
+
 function derivePoolKeys(secret) {
     if (!secret) throw new Error("SCP_TEST_POOL_SECRET is required");
     const workerTopic = crypto
@@ -114,4 +122,10 @@ async function authenticateServer(peer, authKey, keys, timeoutMs) {
     return { remotePublicKey: clientKey };
 }
 
-module.exports = { derivePoolKeys, authenticateClient, authenticateServer };
+module.exports = {
+    DISCOVERY_AUTH_TIMEOUT_MS,
+    derivePoolKeys,
+    authenticateClient,
+    authenticateServer,
+    isDiscoveryAuthenticationFailure
+};

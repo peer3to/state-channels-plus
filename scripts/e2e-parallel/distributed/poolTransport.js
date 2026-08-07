@@ -1,5 +1,6 @@
 const Hyperswarm = require("hyperswarm");
 const { EventEmitter } = require("events");
+const { isDiscoveryAuthenticationFailure } = require("./authentication");
 const {
     closeStream,
     localCloseReason,
@@ -7,6 +8,7 @@ const {
 } = require("./connectionLifecycle");
 
 const DISCOVERY_REFRESH_MS = 5000;
+const REVERSE_DIAL_WINDOW_MS = 10000;
 
 function guardConnectionErrors(stream) {
     // A connection can close while createPool is still flushing discovery and
@@ -144,13 +146,91 @@ async function createPool(options) {
             })
         })
     );
-    const discoveries = configuredDiscoveries.map(({ discovery }) => discovery);
     // Only announcements gate readiness. Client lookups continue in the
     // background and may legitimately take a long time with no matching peer.
     await flushAnnouncements(configuredDiscoveries);
+    let closing = false;
+    let outgoingYieldUntil = 0;
+    let outgoingYieldTimer = null;
+    let outgoingYieldChain = Promise.resolve();
+
+    function activeDiscoveries() {
+        return configuredDiscoveries
+            .map(({ discovery }) => discovery)
+            .filter(Boolean);
+    }
+
+    function resumeOutgoingDiscovery() {
+        if (closing) return;
+        const remaining = outgoingYieldUntil - Date.now();
+        if (remaining > 0) {
+            outgoingYieldTimer = setTimeout(resumeOutgoingDiscovery, remaining);
+            outgoingYieldTimer.unref();
+            return;
+        }
+        for (const entry of configuredDiscoveries) {
+            if (
+                entry.discovery ||
+                !entry.config.client ||
+                entry.config.server
+            ) {
+                continue;
+            }
+            entry.discovery = swarm.join(entry.config.topic, {
+                server: false,
+                client: true
+            });
+        }
+        logDial?.("resumed outgoing discovery after reverse-dial window");
+    }
+
+    function yieldOutgoingDials(reason, durationMs = REVERSE_DIAL_WINDOW_MS) {
+        outgoingYieldUntil = Math.max(
+            outgoingYieldUntil,
+            Date.now() + durationMs
+        );
+        outgoingYieldChain = outgoingYieldChain
+            .catch(() => {})
+            .then(async () => {
+                const lookups = configuredDiscoveries.filter(
+                    (entry) =>
+                        entry.discovery &&
+                        entry.config.client &&
+                        !entry.config.server
+                );
+                if (lookups.length) {
+                    const closingDiscoveries = [];
+                    for (const entry of lookups) {
+                        const discovery = entry.discovery;
+                        entry.discovery = null;
+                        closingDiscoveries.push(discovery.destroy());
+                    }
+                    await Promise.allSettled(closingDiscoveries);
+                    logDial?.(
+                        `yielding outgoing discovery for ${Math.ceil(
+                            (outgoingYieldUntil - Date.now()) / 1000
+                        )}s so the peer can reverse dial (${reason})`
+                    );
+                }
+                if (outgoingYieldTimer) clearTimeout(outgoingYieldTimer);
+                resumeOutgoingDiscovery();
+            });
+        return outgoingYieldChain;
+    }
+
+    function yieldFailedOutgoingDial(stream, info, error) {
+        if (!info?.client || !isDiscoveryAuthenticationFailure(error)) {
+            return Promise.resolve(false);
+        }
+        const connection = shortConnectionHash(stream);
+        return yieldOutgoingDials(
+            `stream ${connection} did not complete authentication`
+        ).then(() => true);
+    }
+
     const refreshTimer = options.refreshIntervalMs
         ? setInterval(() => {
-              for (const discovery of discoveries) {
+              for (const discovery of activeDiscoveries()) {
                   discovery.refresh().catch(() => {});
               }
               logPeerActivity();
@@ -159,9 +239,15 @@ async function createPool(options) {
     refreshTimer?.unref();
     return {
         swarm,
-        discovery: discoveries[0],
-        discoveries,
+        get discovery() {
+            return activeDiscoveries()[0];
+        },
+        get discoveries() {
+            return activeDiscoveries();
+        },
         publicKey: swarm.keyPair.publicKey,
+        yieldFailedOutgoingDial,
+        yieldOutgoingDials,
         onConnection(listener) {
             listening = true;
             events.on("connection", listener);
@@ -170,12 +256,15 @@ async function createPool(options) {
             }
         },
         async close() {
+            closing = true;
             if (refreshTimer) clearInterval(refreshTimer);
+            if (outgoingYieldTimer) clearTimeout(outgoingYieldTimer);
+            await outgoingYieldChain;
             for (const stream of activeStreams) {
                 closeStream(stream, "connection pool shutting down");
             }
             await Promise.allSettled(
-                discoveries.map((discovery) => discovery.destroy())
+                activeDiscoveries().map((discovery) => discovery.destroy())
             );
             await swarm.destroy();
         }
@@ -184,6 +273,7 @@ async function createPool(options) {
 
 module.exports = {
     DISCOVERY_REFRESH_MS,
+    REVERSE_DIAL_WINDOW_MS,
     closeOwner,
     createPool,
     discoveryConfigurations,
