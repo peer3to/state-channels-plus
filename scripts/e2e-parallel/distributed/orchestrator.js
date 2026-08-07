@@ -34,8 +34,30 @@ const WORKER_COLORS = [
     "\x1b[38;5;221m",
     "\x1b[38;5;141m",
     "\x1b[38;5;87m",
-    "\x1b[38;5;208m"
+    "\x1b[38;5;208m",
+    "\x1b[38;5;75m",
+    "\x1b[38;5;203m",
+    "\x1b[38;5;228m",
+    "\x1b[38;5;111m",
+    "\x1b[38;5;177m"
 ];
+
+function createWorkerColorRegistry(colors = WORKER_COLORS) {
+    const byId = new Map();
+    const byName = new Map();
+    let next = 0;
+    return {
+        colorFor(id, name) {
+            const color =
+                byId.get(id) ||
+                byName.get(name) ||
+                colors[next++ % colors.length];
+            byId.set(id, color);
+            byName.set(name, color);
+            return color;
+        }
+    };
+}
 
 function workerName(worker) {
     return `${worker.color}${worker.label}${RESET}`;
@@ -184,6 +206,7 @@ async function runDistributed(options) {
     const sessionId = crypto.randomUUID();
     const workers = new Map();
     const workerLabelById = new Map();
+    const workerColors = createWorkerColorRegistry();
     // Completed-task counts and a lease registry keyed by worker id. Both
     // survive a worker drop so the final summary describes every worker that
     // served the run, not only those still connected at the end.
@@ -341,7 +364,7 @@ async function runDistributed(options) {
                 id: workerId,
                 peer,
                 label: ready.header.name,
-                color: WORKER_COLORS[workers.size % WORKER_COLORS.length],
+                color: workerColors.colorFor(workerId, ready.header.name),
                 lastStatus: null,
                 attemptPaths: new Map(),
                 clean: false,
@@ -680,7 +703,9 @@ async function runDistributed(options) {
 }
 
 module.exports = {
+    WORKER_COLORS,
     aggregateWorkerStats,
+    createWorkerColorRegistry,
     createHeartbeatMonitor,
     formatBusyStatus,
     isRoutineDiscoveryFailure,

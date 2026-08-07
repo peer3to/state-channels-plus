@@ -72,6 +72,15 @@ function sendToWorker(connection, message) {
     });
 }
 
+function acknowledgeLoglessAttempt(connection, requestId, logTransferred) {
+    if (logTransferred) return;
+    sendToWorker(connection, {
+        kind: "RESPONSE",
+        requestId,
+        value: true
+    });
+}
+
 async function main(options = {}) {
     const config = Object.keys(options).length
         ? { ...DEFAULTS, ...options }
@@ -641,6 +650,11 @@ async function main(options = {}) {
                     result: message.result,
                     logTransferred
                 });
+                acknowledgeLoglessAttempt(
+                    connection,
+                    message.requestId,
+                    logTransferred
+                );
             } else if (message.kind === "WORKER_ERROR") {
                 logOrchestratorRequest(
                     "Reporting worker failure to orchestrator"
@@ -720,6 +734,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    acknowledgeLoglessAttempt,
     main,
     capabilities,
     isRoutineDiscoveryFailure,

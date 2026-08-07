@@ -18,16 +18,29 @@ const {
     getLogPath
 } = require("../../scripts/e2e-parallel/shared/logging.js");
 const {
+    WORKER_COLORS,
     aggregateWorkerStats,
+    createWorkerColorRegistry,
     createHeartbeatMonitor,
     promoteAttemptLog,
     validateWorkerStats
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
+    acknowledgeLoglessAttempt,
     shouldTransferAttemptLog
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed orchestrator logs", function () {
+    it("keeps worker colors stable across reconnects", function () {
+        const registry = createWorkerColorRegistry(["one", "two", "three"]);
+        expect(registry.colorFor("id-a", "worker-a")).to.equal("one");
+        expect(registry.colorFor("id-b", "worker-b")).to.equal("two");
+        expect(registry.colorFor("id-a", "worker-a")).to.equal("one");
+        expect(registry.colorFor("new-id-a", "worker-a")).to.equal("one");
+        expect(registry.colorFor("id-c", "worker-c")).to.equal("three");
+        expect(WORKER_COLORS.length).to.be.at.least(10);
+    });
+
     it("transfers attempt logs only for failures", function () {
         expect(shouldTransferAttemptLog({ code: 0 })).to.equal(false);
         expect(shouldTransferAttemptLog({ code: 1 })).to.equal(true);
@@ -37,6 +50,24 @@ describe("distributed orchestrator logs", function () {
                 infrastructureFailure: "output spool failed"
             })
         ).to.equal(true);
+    });
+
+    it("acknowledges a successful attempt without waiting for a log", function () {
+        const sent: Array<Record<string, unknown>> = [];
+        const connection = {
+            worker: {
+                connected: true,
+                send(message: Record<string, unknown>, done: () => void) {
+                    sent.push(message);
+                    done();
+                }
+            }
+        };
+        acknowledgeLoglessAttempt(connection, 17, false);
+        acknowledgeLoglessAttempt(connection, 18, true);
+        expect(sent).to.deep.equal([
+            { kind: "RESPONSE", requestId: 17, value: true }
+        ]);
     });
 
     it("promotes a provisional failure after its worker disconnects", function () {
