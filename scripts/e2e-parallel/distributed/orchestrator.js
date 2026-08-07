@@ -499,19 +499,24 @@ async function runDistributed(options) {
                 attemptId: message.header.attemptId
             });
         } else if (message.kind === "ATTEMPT_RESULT") {
-            const output = committedOutput.get(
-                message.header.assignment.attemptId
-            );
-            if (!output)
+            const attemptId = message.header.assignment.attemptId;
+            const output = committedOutput.get(attemptId);
+            if (message.header.logTransferred && !output)
                 throw new Error(
                     "Attempt result arrived before its log was committed"
                 );
-            committedOutput.delete(message.header.assignment.attemptId);
+            if (!message.header.logTransferred) {
+                const key = `${worker.id}:${attemptId}`;
+                logStore.abort(key);
+                const attemptPath = worker.attemptPaths.get(attemptId);
+                if (attemptPath) fs.rmSync(attemptPath, { force: true });
+            }
+            committedOutput.delete(attemptId);
             coordinator.completeAttempt(worker.id, {
                 ...message.header.result,
-                stdout: output.stdout,
-                stderr: output.stderr,
-                attemptId: message.header.assignment.attemptId
+                stdout: output?.stdout || "",
+                stderr: output?.stderr || "",
+                attemptId
             });
             await Promise.all(
                 [...workers.values()]

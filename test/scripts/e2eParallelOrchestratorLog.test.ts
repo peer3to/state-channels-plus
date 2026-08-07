@@ -23,8 +23,22 @@ const {
     promoteAttemptLog,
     validateWorkerStats
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
+const {
+    shouldTransferAttemptLog
+} = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed orchestrator logs", function () {
+    it("transfers attempt logs only for failures", function () {
+        expect(shouldTransferAttemptLog({ code: 0 })).to.equal(false);
+        expect(shouldTransferAttemptLog({ code: 1 })).to.equal(true);
+        expect(
+            shouldTransferAttemptLog({
+                code: 0,
+                infrastructureFailure: "output spool failed"
+            })
+        ).to.equal(true);
+    });
+
     it("promotes a provisional failure after its worker disconnects", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "orchestrator-result-")

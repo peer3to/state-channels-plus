@@ -2,7 +2,7 @@ const { EventEmitter } = require("events");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-const DISTRIBUTED_PROTOCOL_VERSION = 8;
+const DISTRIBUTED_PROTOCOL_VERSION = 9;
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const MESSAGE_KINDS = new Set([
     "AUTH_HELLO",
@@ -86,7 +86,7 @@ const HEADER_FIELDS = {
         "sha256"
     ],
     LOG_COMMITTED: ["requestId", "attemptId"],
-    ATTEMPT_RESULT: ["requestId", "assignment", "result"],
+    ATTEMPT_RESULT: ["requestId", "assignment", "result", "logTransferred"],
     INFRA_LOG: ["stream"],
     WORKER_STATUS: ["status"],
     WORKER_STATS: ["stats"],

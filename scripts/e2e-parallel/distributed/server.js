@@ -50,6 +50,10 @@ function progressElapsedMs(connection, now = Date.now()) {
     return Math.max(0, now - startedAt);
 }
 
+function shouldTransferAttemptLog(result) {
+    return result.code !== 0 || Boolean(result.infrastructureFailure);
+}
+
 function logOrchestratorRequest(message) {
     console.log(`${BABY_BLUE}${message}${RESET}`);
 }
@@ -620,18 +624,22 @@ async function main(options = {}) {
                     requestId: message.requestId
                 });
             } else if (message.kind === "ATTEMPT_READY") {
-                const spool = WorkerAttemptSpool.openExisting(
-                    message.spoolPath
-                );
-                await spool.send(connection.peer, {
-                    taskId: message.assignment.taskId,
-                    attemptId: message.assignment.attemptId,
-                    requestId: message.requestId
-                });
+                const logTransferred = shouldTransferAttemptLog(message.result);
+                if (logTransferred) {
+                    const spool = WorkerAttemptSpool.openExisting(
+                        message.spoolPath
+                    );
+                    await spool.send(connection.peer, {
+                        taskId: message.assignment.taskId,
+                        attemptId: message.assignment.attemptId,
+                        requestId: message.requestId
+                    });
+                }
                 await connection.peer.send("ATTEMPT_RESULT", {
                     requestId: message.requestId,
                     assignment: message.assignment,
-                    result: message.result
+                    result: message.result,
+                    logTransferred
                 });
             } else if (message.kind === "WORKER_ERROR") {
                 logOrchestratorRequest(
@@ -715,5 +723,6 @@ module.exports = {
     main,
     capabilities,
     isRoutineDiscoveryFailure,
-    progressElapsedMs
+    progressElapsedMs,
+    shouldTransferAttemptLog
 };
