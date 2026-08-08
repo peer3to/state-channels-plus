@@ -130,6 +130,73 @@ describe("Unit: DisputeManager", function () {
             expect(r.inboundHeight).to.equal(r.storedInboundHeight);
         });
 
+        it("inbound chain event lagging the pinned snapshot → the anchor comes from the snapshot, not the stale store head", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3);
+            // held from before the channel opens -> peer 2's inbound store head
+            // never moves while ingest advances its snapshot to inbound block 2
+            const lagging = 2;
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            await h.lifecycle.openChannel();
+            const forkId = h.activeForkId!;
+
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            // writers are peers 0 and 1 -> the lagging peer only ingests
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const r = await h.execOnHost(
+                h.getPeer(lagging),
+                async (sm, args) => {
+                    const { dispute, auditingData } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    // real oracle: the honest peer's own dispute must not be
+                    // provably slashable by the proof the auditors run
+                    const slashable =
+                        await sm.diamondStateMachine.localDiamondContract.isDisputeInboundAnchorBehindLatestState.staticCall(
+                            dispute,
+                            auditingData.latestStateSnapshot
+                        );
+                    const snapshotData =
+                        auditingData.latestStateSnapshot.snapshotData;
+                    return {
+                        slashable,
+                        inboundHash:
+                            dispute.input.latestInboundMessageBlockHash,
+                        inboundHeight: Number(
+                            dispute.input.lastInboundMessageBlockHeight
+                        ),
+                        snapshotInboundHash:
+                            snapshotData.latestInboundMessageBlockHash,
+                        snapshotInboundHeight: Number(
+                            snapshotData.latestInboundMessageBlockHeight
+                        ),
+                        storedInboundHash:
+                            sm.storage.inboundMessages.getLatestBlockHash() ??
+                            null
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // premise - the chain event never landed, so the store head is
+            // behind the snapshot the dispute pins
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(r.storedInboundHash).to.equal(null);
+            expect(r.snapshotInboundHeight).to.equal(2);
+            expect(r.slashable).to.equal(false);
+            // getAuditingData walked the gapped store without throwing
+            expect(r.inboundHash).to.equal(r.snapshotInboundHash);
+            expect(r.inboundHeight).to.equal(r.snapshotInboundHeight);
+        });
+
         // no test: `createDispute - isPartial auditingData` is unreachable from
         // constructDispute. a peer's own proof only spans data it stored - a
         // missing milestone snapshot already throws inside getStateProof

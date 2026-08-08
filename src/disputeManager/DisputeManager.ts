@@ -404,6 +404,17 @@ class DisputeManager {
         // selfRemoval
         const selfRemoval = this.storage.forceExit.getForceExit();
 
+        // inbound anchor - latestStateSnapshot already proves its own inbound
+        // head, so an anchor below it is self-incriminating
+        // (DisputeInboundAnchorBehindLatestState). inboundMessages lags that
+        // head whenever ingest verified a block's carried inbound blocks
+        // against the chain -> anchor on whichever head is further ahead
+        const storedInboundHeight =
+            this.storage.inboundMessages.getLatestBlockHeight() || 0;
+        const useStoredInboundHead =
+            storedInboundHeight >=
+            latestStateSnapshot.latestInboundMessageBlockHeight;
+
         const disputeInput: DisputeInputStruct = {
             channelId: this.channelId,
             forkId: forkId,
@@ -414,11 +425,13 @@ class DisputeManager {
             disputer: disputer,
             timeout: timeoutStruct,
             selfRemoval: selfRemoval,
-            latestInboundMessageBlockHash:
-                this.storage.inboundMessages.getLatestBlockHash() ||
-                ethers.ZeroHash,
-            lastInboundMessageBlockHeight:
-                this.storage.inboundMessages.getLatestBlockHeight() || 0
+            latestInboundMessageBlockHash: useStoredInboundHead
+                ? this.storage.inboundMessages.getLatestBlockHash() ||
+                  ethers.ZeroHash
+                : latestStateSnapshot.latestInboundMessageBlockHash,
+            lastInboundMessageBlockHeight: useStoredInboundHead
+                ? storedInboundHeight
+                : latestStateSnapshot.latestInboundMessageBlockHeight
         };
         let outputSnapshotData: SnapshotDataStruct;
         try {
