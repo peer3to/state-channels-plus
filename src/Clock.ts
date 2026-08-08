@@ -1,5 +1,18 @@
 import { ethers } from "ethers";
 
+// The latest block's timestamp trails chain time by up to one block interval,
+// so a skew within one averageBlockTime is explained by block production alone,
+// not by a wrong local clock. One interval is the tightest threshold that still
+// covers that natural lag: below it we would chase block quantization (and each
+// correction re-syncs recursively), above it we would tolerate real skew. Hence
+// 1x, not 2x.
+export function isClockSkewBeyondBlockInterval(
+    differenceSeconds: number,
+    averageBlockTimeSeconds: number
+): boolean {
+    return Math.abs(differenceSeconds) > averageBlockTimeSeconds;
+}
+
 class Clock {
     private static instance: Clock | undefined;
     private static initialization: Promise<void> | undefined;
@@ -96,17 +109,11 @@ class Clock {
         const pastTimestamp = pastBlock.timestamp;
 
         this.averageBlockTime = (latestTimestamp - pastTimestamp) / blockCnt;
-        // console.log(
-        //     `Average block time calculated: ${this.averageBlockTime}s over ${blockCnt} blocks`,
-        //     `past block timestamp: ${pastTimestamp}, latest block timestamp: ${latestTimestamp}`,
-        //     `current time: ${currentTime}, difference: ${difference}s`
-        // );
         if (!this.averageBlockTime) {
             this.clockAdjustmentSeconds += difference;
             return;
         }
-        //TODO - think - should it be 2* or 1* or something else?
-        if (Math.abs(difference) > this.averageBlockTime) {
+        if (isClockSkewBeyondBlockInterval(difference, this.averageBlockTime)) {
             this.clockAdjustmentSeconds += difference;
             await this.syncClock(); // Recursively call syncClock until condition is satisfied
         }

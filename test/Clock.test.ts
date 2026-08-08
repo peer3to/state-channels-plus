@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { BrowserProvider } from "ethers";
 import { ethers, network } from "hardhat";
 
-import Clock from "@/Clock";
+import Clock, { isClockSkewBeyondBlockInterval } from "@/Clock";
 
 // A second real ethers provider over the same in-process hardhat network:
 // distinct instance, live chain reads, no mocking.
@@ -73,5 +73,38 @@ describe("Clock", () => {
         ).to.equal(true);
         const time = await Clock.getBlockchainTime();
         expect(time.blockNumber).to.be.greaterThanOrEqual(0);
+    });
+});
+
+describe("Clock resync threshold", () => {
+    it("holds the clock when local and chain time agree", () => {
+        expect(isClockSkewBeyondBlockInterval(0, 12)).to.equal(false);
+    });
+
+    it("holds the clock when the chain leads by less than one block interval", () => {
+        expect(isClockSkewBeyondBlockInterval(11, 12)).to.equal(false);
+    });
+
+    it("holds the clock when the chain lags by less than one block interval", () => {
+        expect(isClockSkewBeyondBlockInterval(-11, 12)).to.equal(false);
+    });
+
+    it("holds the clock when the skew is exactly one block interval", () => {
+        expect(isClockSkewBeyondBlockInterval(12, 12)).to.equal(false);
+        expect(isClockSkewBeyondBlockInterval(-12, 12)).to.equal(false);
+    });
+
+    it("resyncs when the chain leads by more than one block interval", () => {
+        expect(isClockSkewBeyondBlockInterval(13, 12)).to.equal(true);
+    });
+
+    it("resyncs when the chain lags by more than one block interval", () => {
+        expect(isClockSkewBeyondBlockInterval(-13, 12)).to.equal(true);
+    });
+
+    it("compares against a fractional block interval", () => {
+        // averageBlockTime comes from a division, so it is rarely a whole second.
+        expect(isClockSkewBeyondBlockInterval(2.5, 2.5)).to.equal(false);
+        expect(isClockSkewBeyondBlockInterval(2.6, 2.5)).to.equal(true);
     });
 });
