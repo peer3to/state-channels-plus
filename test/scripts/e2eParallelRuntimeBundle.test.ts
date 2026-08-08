@@ -4,6 +4,7 @@ import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { createSocketPair } from "../fixtures/distributed/testTransport";
 
 const {
     buildRuntimeBundle,
@@ -13,6 +14,13 @@ const {
     extractRuntimeBundle,
     assertCompatible
 } = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
+const {
+    ProtocolPeer
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const {
+    sendBundle,
+    receiveBundle
+} = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
 
 function initializeRepository(root: string): void {
     fs.mkdirSync(root, { recursive: true });
@@ -196,12 +204,15 @@ describe("distributed source workspace", function () {
         }
     });
 
-    it("keeps concurrent delta bundles intact when each target path is distinct", async function () {
-        const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "delta-concurrent-")
-        );
+    it("leaves the caller's archive untouched and delivers a valid bundle to each concurrent peer", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "send-bundle-"));
         const project = path.join(root, "project");
         const archive = path.join(root, "transfer", "source.tgz");
+        const openPairs: Array<{ close: () => Promise<void> }> = [];
+        const limits = {
+            maxCompressedBytes: 64 * 1024 * 1024,
+            maxExpandedBytes: 256 * 1024 * 1024
+        };
         try {
             initializeRepository(project);
             fs.writeFileSync(
@@ -229,39 +240,85 @@ describe("distributed source workspace", function () {
             const changed = manifest.files.map(
                 (entry: { path: string }) => entry.path
             );
+            const archiveBefore = crypto
+                .createHash("sha256")
+                .update(fs.readFileSync(archive))
+                .digest("hex");
 
-            // One delta per peer, mirroring sendBundle. A shared target path
-            // lets one build truncate an archive another peer is still reading.
-            const deltas = await Promise.all(
-                Array.from({ length: 6 }, (_unused, index) =>
-                    buildDeltaBundle(
-                        manifest,
-                        changed,
-                        `${archive}.peer-${index}`
-                    ).then((delta: { archiveSha256: string }) => ({
-                        delta,
-                        deltaPath: `${archive}.peer-${index}`
-                    }))
-                )
+            // Two peers onboarded at once, both handed the same archive path —
+            // exactly how the orchestrator drives sendBundle.
+            const transfers = await Promise.all(
+                [0, 1].map(async (index) => {
+                    const pair = await createSocketPair();
+                    openPairs.push(pair);
+                    const sender = new ProtocolPeer(pair.client);
+                    const receiver = new ProtocolPeer(pair.server);
+                    const receivedPath = path.join(
+                        root,
+                        `received-${index}.tgz`
+                    );
+                    const delivered = new Promise<Record<string, unknown>>(
+                        (resolve, reject) => {
+                            receiver.on(
+                                "message",
+                                (message: {
+                                    kind: string;
+                                    header: Record<string, unknown>;
+                                }) => {
+                                    if (message.kind === "WORKSPACE_OFFER") {
+                                        receiver
+                                            .send(
+                                                "WORKSPACE_NEED",
+                                                {},
+                                                Buffer.from(
+                                                    JSON.stringify({
+                                                        changed,
+                                                        deleted: []
+                                                    })
+                                                )
+                                            )
+                                            .catch(reject);
+                                    } else if (message.kind === "BUNDLE_META") {
+                                        receiveBundle(
+                                            receiver,
+                                            receivedPath,
+                                            limits,
+                                            resolve,
+                                            message,
+                                            reject
+                                        );
+                                    }
+                                }
+                            );
+                        }
+                    );
+                    await sendBundle(sender, archive, manifest, 16 * 1024);
+                    return { receivedPath, delivered: await delivered };
+                })
             );
 
-            for (const { delta, deltaPath } of deltas) {
-                const written = crypto
-                    .createHash("sha256")
-                    .update(fs.readFileSync(deltaPath))
-                    .digest("hex");
-                expect(written).to.equal(delta.archiveSha256);
+            // The shared path holds the full bundle the caller built; sendBundle
+            // must not write through it.
+            const archiveAfter = crypto
+                .createHash("sha256")
+                .update(fs.readFileSync(archive))
+                .digest("hex");
+            expect(
+                archiveAfter,
+                "sendBundle wrote through the caller's archive path"
+            ).to.equal(archiveBefore);
+
+            // Each peer's archive must be intact gzip, not merely checksum-consistent.
+            for (const [index, transfer] of transfers.entries()) {
                 await extractRuntimeBundle(
-                    deltaPath,
-                    path.join(root, path.basename(deltaPath, ".tgz")),
-                    { ...manifest, ...delta },
-                    {
-                        maxCompressedBytes: 8 * 1024 * 1024,
-                        maxExpandedBytes: 32 * 1024 * 1024
-                    }
+                    transfer.receivedPath,
+                    path.join(root, `extracted-${index}`),
+                    { ...manifest, ...transfer.delivered },
+                    limits
                 );
             }
         } finally {
+            for (const pair of openPairs) await pair.close();
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
