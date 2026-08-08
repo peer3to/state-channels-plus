@@ -67,8 +67,12 @@ export default class DisputeValidationService {
                 dispute: LoggerUtils.getDisputeMetadata(dispute)
             });
             if (!dispute.postedAuditingData) {
+                // an undecodable block is never final by everyone -> the empty
+                // proof is fireable here too
+                if (await this.tryCreateLastMilestoneNotFinalProof(dispute))
+                    return false;
                 this.logger.error(
-                    "Skipping dispute audit: undecodable state proof block with no posted auditing data, no fireable fraud proof",
+                    "Skipping dispute audit: undecodable state proof block with no milestones, no fireable fraud proof",
                     { dispute: LoggerUtils.getDisputeMetadata(dispute) }
                 );
                 return true;
@@ -147,16 +151,8 @@ export default class DisputeValidationService {
                 { includeUnfinalizedBlocks: false }
             );
         } else {
-            const milestoneFinalityResult =
-                await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
-                    dispute
-                );
-            if (!milestoneFinalityResult) {
-                this.disputeFraudProofService.createDisputeLastMilestoneNotFinalAndNoAuditingData(
-                    dispute
-                );
+            if (await this.tryCreateLastMilestoneNotFinalProof(dispute))
                 return false;
-            }
 
             const isLastMilestoneInStorage =
                 this.isLastMilestoneStoredLocally(dispute);
@@ -190,20 +186,16 @@ export default class DisputeValidationService {
                 );
             }
 
-            const latestFinalizedSnapshot =
-                this.agreementManager.getLatestFinalizedSnapshot(
-                    dispute.input.stateProof,
-                    dispute.input.forkId
-                );
-
+            // disputeAuditingData.latestFinalizedStateStateMachineState is
+            // authored by the disputer and verifyStateProof never binds it to
+            // anything. key it by its own keccak256 -> forged bytes cannot land
+            // under the finalized snapshot's stateMachineStateHash, where every
+            // later read of that snapshot would return them as its state
             if (
                 disputeAuditingData.latestFinalizedStateStateMachineState !== ""
             ) {
                 this.storage.stateMachineStates.storeStateMachineState(
-                    disputeAuditingData.latestFinalizedStateStateMachineState,
-                    {
-                        hash: latestFinalizedSnapshot.stateMachineStateHash
-                    }
+                    disputeAuditingData.latestFinalizedStateStateMachineState
                 );
             }
 
@@ -244,6 +236,19 @@ export default class DisputeValidationService {
                 justPersist: true
             });
         }
+    }
+    private async tryCreateLastMilestoneNotFinalProof(
+        dispute: DisputeStruct
+    ): Promise<boolean> {
+        const isFinal =
+            await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
+                dispute
+            );
+        if (isFinal) return false;
+        this.disputeFraudProofService.createDisputeLastMilestoneNotFinalAndNoAuditingData(
+            dispute
+        );
+        return true;
     }
 
     private async tryVerifyStateProof(
@@ -649,7 +654,36 @@ export default class DisputeValidationService {
         );
 
         if (!isInputLinked) {
-            this.logger.error(
+            const isInboundAnchorBehind =
+                await this.diamondStateMachine.localDiamondContract.isDisputeInboundAnchorBehindLatestState.staticCall(
+                    dispute,
+                    disputeAuditingData.latestStateSnapshot
+                );
+
+            if (isInboundAnchorBehind) {
+                // the forward walk from snapshotData.latestInboundMessageBlockHash
+                // can't reach a dispute.input.lastInboundMessageBlockHeight below
+                // the pinned snapshot's latestInboundMessageBlockHeight ->
+                // objective fraud
+                this.logger.warn(
+                    "Dispute lastInboundMessageBlockHeight is behind its pinned snapshot's latestInboundMessageBlockHeight",
+                    {
+                        dispute: LoggerUtils.getDisputeMetadata(dispute),
+                        auditingData:
+                            LoggerUtils.getAuditingMetadata(disputeAuditingData)
+                    }
+                );
+                this.disputeFraudProofService.createDisputeInboundAnchorBehindLatestState(
+                    dispute,
+                    disputeAuditingData.latestStateSnapshot
+                );
+                return false;
+            }
+
+            // the residual: inboundMessageBlocks don't bridge the gap, or the
+            // snapshot isn't linked to the latest block. no fraud proof matches
+            // it -> skip the output check rather than submit an unprovable one
+            this.logger.warn(
                 "Skipping dispute output verification because auditing input is not linked to dispute input",
                 {
                     dispute: LoggerUtils.getDisputeMetadata(dispute),
@@ -657,9 +691,7 @@ export default class DisputeValidationService {
                         LoggerUtils.getAuditingMetadata(disputeAuditingData)
                 }
             );
-            throw new Error(
-                "Verify Dispute Output - sanity check - is data linked - failed"
-            );
+            return true;
         }
 
         // verify dispute output
