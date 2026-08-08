@@ -28,6 +28,8 @@ describe("distributed worker scheduler", function () {
             parseServerArgs([
                 "node",
                 "server.js",
+                "--name",
+                "server-1",
                 "--slots",
                 "3",
                 "-w",
@@ -35,6 +37,22 @@ describe("distributed worker scheduler", function () {
                 "-i=250"
             ])
         ).to.include({ slots: 3, workers: 6, schedulerTickMs: 250 });
+    });
+
+    it("loads the worker name from the environment and lets the flag override it", function () {
+        expect(
+            parseServerArgs(["node", "server.js"], {
+                SCP_TEST_WORKER_NAME: "server-1"
+            }).name
+        ).to.equal("server-1");
+        expect(
+            parseServerArgs(["node", "server.js", "--name", "server-2"], {
+                SCP_TEST_WORKER_NAME: "server-1"
+            }).name
+        ).to.equal("server-2");
+        expect(() => parseServerArgs(["node", "server.js"], {})).to.throw(
+            "Worker name is required"
+        );
     });
 
     it("reuses only funded account partitions", function () {

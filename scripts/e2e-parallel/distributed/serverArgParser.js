@@ -6,11 +6,6 @@ const {
 } = require("../shared/constants");
 
 const DEFAULTS = {
-    name: os
-        .hostname()
-        .toLowerCase()
-        .replace(/[^a-z0-9-]/g, "-")
-        .slice(0, 48),
     workRoot: path.resolve("temp", "distributed-worker"),
     queueLength: 8,
     maxCompressedBytes: 2 * 1024 ** 3,
@@ -42,8 +37,11 @@ const VALUE_FLAGS = {
     "-i": "schedulerTickMs"
 };
 
-function parseServerArgs(argv) {
-    const result = { ...DEFAULTS };
+function parseServerArgs(argv, env = process.env) {
+    const result = {
+        ...DEFAULTS,
+        name: env.SCP_TEST_WORKER_NAME
+    };
     for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];
         if (arg === "--allow-shared-host") {
@@ -73,6 +71,11 @@ function parseServerArgs(argv) {
             `Clamping workers from ${result.workers} to funded-account capacity ${MAX_SLOTS_FROM_POOL}`
         );
         result.workers = MAX_SLOTS_FROM_POOL;
+    }
+    if (!result.name) {
+        throw new Error(
+            "Worker name is required; set SCP_TEST_WORKER_NAME in .env or pass --name"
+        );
     }
     if (!/^[a-z0-9-]{1,48}$/.test(result.name)) {
         throw new Error(
