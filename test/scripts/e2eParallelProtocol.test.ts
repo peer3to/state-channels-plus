@@ -11,6 +11,9 @@ const {
     loadOrchestratorKeyPair
 } = require("../../scripts/e2e-parallel/distributed/orchestratorIdentity.js");
 const {
+    loadWorkerKeyPair
+} = require("../../scripts/e2e-parallel/distributed/workerIdentity.js");
+const {
     ProtocolPeer,
     waitForMessage
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
@@ -170,6 +173,25 @@ describe("distributed protocol", function () {
             ).to.equal(true);
         } finally {
             fs.rmSync(stateDir, { recursive: true, force: true });
+        }
+    });
+
+    it("persists one transport identity per worker name", function () {
+        const workRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), "worker-identity-")
+        );
+        try {
+            const first = loadWorkerKeyPair(workRoot, "server-1");
+            const restarted = loadWorkerKeyPair(workRoot, "server-1");
+            const otherWorker = loadWorkerKeyPair(workRoot, "server-2");
+
+            expect(restarted.publicKey.equals(first.publicKey)).to.equal(true);
+            expect(restarted.secretKey.equals(first.secretKey)).to.equal(true);
+            expect(otherWorker.publicKey.equals(first.publicKey)).to.equal(
+                false
+            );
+        } finally {
+            fs.rmSync(workRoot, { recursive: true, force: true });
         }
     });
 

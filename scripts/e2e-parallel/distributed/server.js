@@ -29,6 +29,7 @@ const {
     selectPrepareScript
 } = require("./workspacePreparation");
 const { buildWorkerEnvironment } = require("./remoteEnvironment");
+const { loadWorkerKeyPair } = require("./workerIdentity");
 const {
     inspectWorkspace,
     removeDeletedFiles,
@@ -117,6 +118,7 @@ async function main(options = {}) {
         announceTopics: [keys.workerTopic],
         lookupTopics: [keys.orchestratorTopic],
         dht: config.dht,
+        keyPair: loadWorkerKeyPair(config.workRoot, config.name),
         refreshIntervalMs: DISCOVERY_REFRESH_MS,
         onDialActivity: (line) => console.log(`[dial] ${line}`)
     });
