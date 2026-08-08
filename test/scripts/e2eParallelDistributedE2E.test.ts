@@ -32,6 +32,9 @@ const {
     sendBundle
 } = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
 const {
+    extractRuntimeBundle
+} = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
+const {
     createPool
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 const {
@@ -518,6 +521,101 @@ describe("distributed parallel runner", function () {
             expect(error?.message).to.include("outside the offered manifest");
         } finally {
             await pair.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("isolates concurrent worker delta archives", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "bundle-race-"));
+        const pairs = await Promise.all([
+            createSocketPair(),
+            createSocketPair()
+        ]);
+        const sourceArchive = path.join(root, "source.tgz");
+        const sourceContents = "source";
+        const sourcePath = path.join(root, "source.ts");
+        const limits = {
+            maxCompressedBytes: 1024 * 1024,
+            maxExpandedBytes: 1024 * 1024
+        };
+        const manifest = {
+            version: 3,
+            packageManager: "pnpm",
+            workspaceId: "1".repeat(64),
+            sourceDigest: "source",
+            rootProjectPath: ".",
+            runnerEntry: "runner.js",
+            repositories: [],
+            files: [
+                {
+                    path: "source.ts",
+                    bytes: Buffer.byteLength(sourceContents),
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update(sourceContents)
+                        .digest("hex"),
+                    mode: 420
+                }
+            ],
+            fileCount: 1,
+            expandedBytes: Buffer.byteLength(sourceContents)
+        };
+        Object.defineProperty(manifest, "localWorkspaceRoot", { value: root });
+        fs.writeFileSync(sourcePath, sourceContents);
+        fs.writeFileSync(sourceArchive, "original archive");
+
+        try {
+            const sends = pairs.map((pair, index) => {
+                const orchestrator = new ProtocolPeer(pair.client);
+                const worker = new ProtocolPeer(pair.server);
+                const changed = index === 0 ? ["source.ts"] : [];
+                worker.on("message", (message: { kind: string }) => {
+                    if (message.kind !== "WORKSPACE_OFFER") return;
+                    worker
+                        .send(
+                            "WORKSPACE_NEED",
+                            {},
+                            Buffer.from(
+                                JSON.stringify({ changed, deleted: [] })
+                            )
+                        )
+                        .catch(() => {});
+                });
+                const receivedArchive = path.join(root, `worker-${index}.tgz`);
+                receiveBundle(
+                    worker,
+                    receivedArchive,
+                    limits,
+                    async (deltaManifest: { fileCount: number }) => {
+                        await extractRuntimeBundle(
+                            receivedArchive,
+                            path.join(root, `worker-${index}`),
+                            { ...manifest, ...deltaManifest },
+                            limits,
+                            changed.length ? manifest.files : []
+                        );
+                    }
+                );
+                return sendBundle(orchestrator, sourceArchive, manifest, 1);
+            });
+
+            await Promise.all(sends);
+            expect(fs.readFileSync(sourceArchive, "utf8")).to.equal(
+                "original archive"
+            );
+            expect(
+                fs.existsSync(path.join(root, "worker-0", "source.ts"))
+            ).to.equal(true);
+            expect(
+                fs.existsSync(path.join(root, "worker-1", "source.ts"))
+            ).to.equal(false);
+            expect(
+                fs
+                    .readdirSync(root)
+                    .filter((entry) => entry.startsWith("source.tgz."))
+            ).to.deep.equal([]);
+        } finally {
+            await Promise.allSettled(pairs.map((pair) => pair.close()));
             fs.rmSync(root, { recursive: true, force: true });
         }
     });

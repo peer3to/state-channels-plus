@@ -46,39 +46,47 @@ async function sendBundle(
     chunkBytes = 256 * 1024,
     onNeed = () => {}
 ) {
-    const { files, ...wireManifest } = manifest;
-    await peer.send(
-        "WORKSPACE_OFFER",
-        { manifest: wireManifest },
-        Buffer.from(JSON.stringify(files))
-    );
-    const needMessage = await waitForMessage(peer, "WORKSPACE_NEED", 10000);
-    const need = JSON.parse(needMessage.body.toString("utf8"));
-    if (!Array.isArray(need.changed) || !Array.isArray(need.deleted)) {
-        throw new Error("Worker returned an invalid workspace diff");
-    }
-    const offered = new Set(manifest.files.map((entry) => entry.path));
-    if (
-        need.changed.some(
-            (entry) => typeof entry !== "string" || !offered.has(entry)
-        )
-    ) {
-        throw new Error("Worker requested a file outside the offered manifest");
-    }
+    // Concurrent workers request different deltas, so they cannot share one
+    // archive path without overwriting each other's metadata and bytes.
     // Each peer gets its own delta file. Workers are onboarded concurrently and
     // a shared path would be rebuilt underneath another peer's in-flight read,
     // producing an archive that still matches its own manifest checksum but is
     // truncated gzip.
-    const deltaPath = `${archivePath}.${crypto.randomUUID()}`;
+    const transferArchivePath = `${archivePath}.${crypto.randomUUID()}.delta.tgz`;
+    const { files, ...wireManifest } = manifest;
     try {
-        const delta = await buildDeltaBundle(manifest, need.changed, deltaPath);
+        await peer.send(
+            "WORKSPACE_OFFER",
+            { manifest: wireManifest },
+            Buffer.from(JSON.stringify(files))
+        );
+        const needMessage = await waitForMessage(peer, "WORKSPACE_NEED", 10000);
+        const need = JSON.parse(needMessage.body.toString("utf8"));
+        if (!Array.isArray(need.changed) || !Array.isArray(need.deleted)) {
+            throw new Error("Worker returned an invalid workspace diff");
+        }
+        const offered = new Set(manifest.files.map((entry) => entry.path));
+        if (
+            need.changed.some(
+                (entry) => typeof entry !== "string" || !offered.has(entry)
+            )
+        ) {
+            throw new Error(
+                "Worker requested a file outside the offered manifest"
+            );
+        }
+        const delta = await buildDeltaBundle(
+            manifest,
+            need.changed,
+            transferArchivePath
+        );
         onNeed({ ...need, ...delta });
         await peer.send("BUNDLE_META", {
             manifest: { ...wireManifest, ...delta }
         });
         let sequence = 0;
         let byteCount = 0;
-        for await (const chunk of fs.createReadStream(deltaPath, {
+        for await (const chunk of fs.createReadStream(transferArchivePath, {
             highWaterMark: chunkBytes
         })) {
             byteCount += chunk.length;
@@ -88,15 +96,15 @@ async function sendBundle(
             byteCount,
             sha256: delta.archiveSha256
         });
+        return await waitForIdleMessage(
+            peer,
+            "PREPARED",
+            120000,
+            new Set(["INFRA_LOG", "WORKER_STATUS"])
+        );
     } finally {
-        fs.rmSync(deltaPath, { force: true });
+        fs.rmSync(transferArchivePath, { force: true });
     }
-    return waitForIdleMessage(
-        peer,
-        "PREPARED",
-        120000,
-        new Set(["INFRA_LOG", "WORKER_STATUS"])
-    );
 }
 
 function receiveBundle(
