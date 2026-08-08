@@ -20,7 +20,8 @@ contract DisputeFraudProofTypes {
         DisputeStateProofHeaderMismatch memory q,
         DisputeInboundHashNotInChain memory r,
         DisputeInvalidBlockStructure memory s,
-        DisputeBlockAuthorNotParticipant memory t
+        DisputeBlockAuthorNotParticipant memory t,
+        DisputeInboundAnchorBehindLatestState memory u
     ) {}
 }
 
@@ -104,6 +105,12 @@ struct DisputeStateProofHeaderMismatch {
 
 struct DisputeInboundHashNotInChain {
     bool __;
+}
+
+// dispute.input.lastInboundMessageBlockHeight is not ahead of
+// latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight
+struct DisputeInboundAnchorBehindLatestState {
+    StateSnapshot latestStateSnapshot;
 }
 
 struct DisputeInvalidBlockStructure {

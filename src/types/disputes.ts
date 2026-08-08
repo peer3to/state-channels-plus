@@ -192,6 +192,10 @@ export const DisputeInboundHashNotInChainProofEthersType = `tuple(
     bool __
 )`;
 
+export const DisputeInboundAnchorBehindLatestStateProofEthersType = `tuple(
+    ${StateSnapshotEthersType} latestStateSnapshot
+)`;
+
 export const InvalidDisputeReasonProofEthersType = `tuple(
     ${StateSnapshotEthersType} latestStateSnapshot
 )`;

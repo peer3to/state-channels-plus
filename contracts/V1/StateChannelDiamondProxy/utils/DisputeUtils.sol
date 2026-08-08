@@ -146,6 +146,39 @@ function _hasDisputeReason(DisputeInput memory input, StateSnapshot memory lates
         input.timeout.participant != address(0) || hasValidOnChainSlash || input.selfRemoval || isForcedInboundMessage;
 }
 
+function _isSnapshotLinkedToLatestBlock(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
+    pure
+    returns (bool)
+{
+    bytes32 snapshotHash = keccak256(abi.encode(latestStateSnapshot));
+
+    (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+    if (hasBlock) {
+        return latestBlock.stateSnapshotHash == snapshotHash;
+    }
+
+    return dispute.input.forkId == keccak256(abi.encode(latestStateSnapshot.snapshotData));
+}
+
+function _isDisputeInboundAnchorBehindLatestState(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
+    pure
+    returns (bool)
+{
+    // pin latestStateSnapshot to dispute.input.latestStateSnapshotHash -> both
+    // heights come from the signed dispute, so a supplied latestStateSnapshot
+    // can't frame an honest disputer
+    if (keccak256(abi.encode(latestStateSnapshot)) != dispute.input.latestStateSnapshotHash) return false;
+    if (!_isSnapshotLinkedToLatestBlock(dispute, latestStateSnapshot)) return false;
+
+    uint256 snapshotHeight = latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight;
+    bytes32 snapshotInboundHash = latestStateSnapshot.snapshotData.latestInboundMessageBlockHash;
+    if (dispute.input.lastInboundMessageBlockHeight < snapshotHeight) return true;
+    // equal heights but a different latestInboundMessageBlockHash -> a block the
+    // walk from snapshotData.latestInboundMessageBlockHash never reaches
+    return dispute.input.lastInboundMessageBlockHeight == snapshotHeight
+        && dispute.input.latestInboundMessageBlockHash != snapshotInboundHash;
+}
+
 function _hasStateProofHeaderMismatch(Dispute memory dispute) pure returns (bool) {
     bytes32 channelId = dispute.input.channelId;
     bytes32 forkId = dispute.input.forkId;
