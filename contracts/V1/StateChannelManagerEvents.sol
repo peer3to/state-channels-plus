@@ -46,8 +46,4 @@ interface StateChannelManagerEvents {
     event DisputeKilled(bytes32 indexed channelId, bytes32 forkId, address disputer, bytes32 disputeHash);
 
     event InboundMessagesProcessed(bytes32 indexed channelId, MessageBlock messageBlock);
-
-    event OutboundMessagesProcessed(
-        bytes32 indexed channelId, MessageBlock messageBlock, uint256 timestamp, Balance totalWithdrawals
-    );
 }

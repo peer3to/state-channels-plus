@@ -113,9 +113,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory thresholdStateSnapshot
     ) internal returns (bool) {
-        bool isValid = StateChannelManagerProxy(address(this)).verifyMilestones(
-            forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot
-        );
+        bool isValid = StateChannelManagerProxy(address(this))
+            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot);
         return isValid;
     }
 
@@ -140,8 +139,6 @@ contract StateSnapshotFacet is StateChannelCommon {
                 bool isEqual = stateMachineImplementation.areBalancesEqual(totalWithdrawals, totalDeposits);
                 require(isLessThan || isEqual, CantWithdrawMoreThanDeposits());
             }
-            // TODO - this event is not used
-            emit OutboundMessagesProcessed(channelId, outboundMessageBlocks[i], block.timestamp, totalWithdrawals);
         }
         cb.totalWithdrawals = totalWithdrawals;
         cb.latestOutboundMessageBlockHeight = newSnapshotData.latestOutboundMessageBlockHeight;
