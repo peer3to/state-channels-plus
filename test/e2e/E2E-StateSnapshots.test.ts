@@ -40,6 +40,30 @@ describe("E2E: State Snapshots", function () {
             10000,
             { mode: "atLeast" }
         );
+        await h.event.waitForEventCounts(
+            "onWithdrawalsUpdated",
+            h.peers.map((peer) => ({ peerId: peer.index, expectedCount: 1 })),
+            10000,
+            { mode: "atLeast" }
+        );
+        const channelBalanceAfter = await h.channelManager.getChannelBalance(
+            h.channelId
+        );
+        const totalWithdrawals = channelBalanceAfter.totalWithdrawals;
+        expect(channelBalanceAfter.latestOutboundMessageBlockHeight).to.equal(
+            h.context.lastMilestoneSnapshot!.snapshotData
+                .latestOutboundMessageBlockHeight
+        );
+        for (const peer of h.peers) {
+            const call = peer.eventSpies.onWithdrawalsUpdated?.lastCall;
+            expect(call).to.not.be.undefined;
+            const [eventChannelId, eventTotalWithdrawals] = call!.args;
+            expect(eventChannelId).to.equal(h.channelId);
+            expect(eventTotalWithdrawals.amount).to.equal(
+                totalWithdrawals.amount
+            );
+            expect(eventTotalWithdrawals.data).to.equal(totalWithdrawals.data);
+        }
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.snapshotMatchesLocal();
