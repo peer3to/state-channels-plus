@@ -25,10 +25,18 @@ export async function createLocalDhtNetwork(): Promise<{
     const port = address.port;
     await new Promise<void>((resolve) => listener.close(() => resolve()));
 
-    const bootstrap = DHT.bootstrapper(port, "127.0.0.1");
+    const bootstrap = DHT.bootstrapper(port, "127.0.0.1", {
+        host: "127.0.0.1"
+    });
     await bootstrap.ready();
     return {
-        createNode: () => new DHT({ bootstrap: [`127.0.0.1:${String(port)}`] }),
+        createNode: () =>
+            new DHT({
+                host: "127.0.0.1",
+                ephemeral: false,
+                firewalled: false,
+                bootstrap: [`127.0.0.1:${String(port)}`]
+            }),
         close: () => bootstrap.destroy({ force: true })
     };
 }

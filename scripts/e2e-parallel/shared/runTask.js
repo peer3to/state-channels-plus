@@ -69,7 +69,13 @@ async function runTask(
                 ? createFileOutputSink(output, failOutput)
                 : output;
 
-        const childEnv = { ...process.env, ...env };
+        const childEnv = {
+            ...process.env,
+            ...env,
+            // Parallel Hardhat processes can read v8-compile-cache's shared
+            // BLOB/MAP files while another process rewrites them, crashing V8.
+            DISABLE_V8_COMPILE_CACHE: "1"
+        };
         for (const [key, value] of Object.entries(childEnv)) {
             if (value === undefined || value === null) {
                 delete childEnv[key];

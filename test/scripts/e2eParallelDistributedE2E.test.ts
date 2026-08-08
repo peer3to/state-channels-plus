@@ -388,6 +388,26 @@ describe("distributed parallel runner", function () {
         }
     });
 
+    it("disables the shared V8 compile cache in test children", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-env-"));
+        try {
+            const result = await runTask(
+                process.execPath,
+                [
+                    "-e",
+                    'process.stdout.write(process.env.DISABLE_V8_COMPILE_CACHE ?? "missing")'
+                ],
+                { DISABLE_V8_COMPILE_CACHE: "0" },
+                "process-environment",
+                path.join(root, "task.log")
+            );
+            expect(result.code).to.equal(0);
+            expect(result.stdout).to.equal("1");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("retains the test process termination signal", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-signal-"));
         try {
