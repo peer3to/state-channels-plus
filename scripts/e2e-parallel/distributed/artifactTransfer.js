@@ -65,23 +65,32 @@ async function sendBundle(
     ) {
         throw new Error("Worker requested a file outside the offered manifest");
     }
-    const delta = await buildDeltaBundle(manifest, need.changed, archivePath);
-    onNeed({ ...need, ...delta });
-    await peer.send("BUNDLE_META", {
-        manifest: { ...wireManifest, ...delta }
-    });
-    let sequence = 0;
-    let byteCount = 0;
-    for await (const chunk of fs.createReadStream(archivePath, {
-        highWaterMark: chunkBytes
-    })) {
-        byteCount += chunk.length;
-        await peer.send("BUNDLE_CHUNK", { sequence: sequence++ }, chunk);
+    // Each peer gets its own delta file. Workers are onboarded concurrently and
+    // a shared path would be rebuilt underneath another peer's in-flight read,
+    // producing an archive that still matches its own manifest checksum but is
+    // truncated gzip.
+    const deltaPath = `${archivePath}.${crypto.randomUUID()}`;
+    try {
+        const delta = await buildDeltaBundle(manifest, need.changed, deltaPath);
+        onNeed({ ...need, ...delta });
+        await peer.send("BUNDLE_META", {
+            manifest: { ...wireManifest, ...delta }
+        });
+        let sequence = 0;
+        let byteCount = 0;
+        for await (const chunk of fs.createReadStream(deltaPath, {
+            highWaterMark: chunkBytes
+        })) {
+            byteCount += chunk.length;
+            await peer.send("BUNDLE_CHUNK", { sequence: sequence++ }, chunk);
+        }
+        await peer.send("BUNDLE_END", {
+            byteCount,
+            sha256: delta.archiveSha256
+        });
+    } finally {
+        fs.rmSync(deltaPath, { force: true });
     }
-    await peer.send("BUNDLE_END", {
-        byteCount,
-        sha256: delta.archiveSha256
-    });
     return waitForIdleMessage(
         peer,
         "PREPARED",

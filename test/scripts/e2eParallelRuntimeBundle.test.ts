@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { execFileSync } from "child_process";
+import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -190,6 +191,76 @@ describe("distributed source workspace", function () {
                 error = caught as Error;
             }
             expect(error?.message).to.include("checksum");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps concurrent delta bundles intact when each target path is distinct", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "delta-concurrent-")
+        );
+        const project = path.join(root, "project");
+        const archive = path.join(root, "transfer", "source.tgz");
+        try {
+            initializeRepository(project);
+            fs.writeFileSync(
+                path.join(project, "package.json"),
+                JSON.stringify({
+                    name: "project",
+                    scripts: { compile: "true" }
+                })
+            );
+            const runner = path.join(
+                project,
+                "scripts",
+                "e2e-parallel",
+                "distributed"
+            );
+            fs.mkdirSync(runner, { recursive: true });
+            fs.writeFileSync(path.join(runner, "worker.js"), "// worker\n");
+            for (let index = 0; index < 40; index++) {
+                fs.writeFileSync(
+                    path.join(project, `file-${index}.js`),
+                    `module.exports = ${index};\n`.repeat(400)
+                );
+            }
+            const manifest = await buildRuntimeBundle(project, archive);
+            const changed = manifest.files.map(
+                (entry: { path: string }) => entry.path
+            );
+
+            // One delta per peer, mirroring sendBundle. A shared target path
+            // lets one build truncate an archive another peer is still reading.
+            const deltas = await Promise.all(
+                Array.from({ length: 6 }, (_unused, index) =>
+                    buildDeltaBundle(
+                        manifest,
+                        changed,
+                        `${archive}.peer-${index}`
+                    ).then((delta: { archiveSha256: string }) => ({
+                        delta,
+                        deltaPath: `${archive}.peer-${index}`
+                    }))
+                )
+            );
+
+            for (const { delta, deltaPath } of deltas) {
+                const written = crypto
+                    .createHash("sha256")
+                    .update(fs.readFileSync(deltaPath))
+                    .digest("hex");
+                expect(written).to.equal(delta.archiveSha256);
+                await extractRuntimeBundle(
+                    deltaPath,
+                    path.join(root, path.basename(deltaPath, ".tgz")),
+                    { ...manifest, ...delta },
+                    {
+                        maxCompressedBytes: 8 * 1024 * 1024,
+                        maxExpandedBytes: 32 * 1024 * 1024
+                    }
+                );
+            }
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
