@@ -483,6 +483,9 @@ function summary({
                 `  ${starvation.recovered.length} test(s) recovered from starvation on their second run`
             )
         );
+        for (const task of starvation.recovered) {
+            console.log(`    - ${task.label}: starved x${task.starveCount}`);
+        }
     }
     if (starvation.repeated.length > 0) {
         const totalStarve = starvation.repeated.reduce(

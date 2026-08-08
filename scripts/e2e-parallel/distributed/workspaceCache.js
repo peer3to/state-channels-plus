@@ -61,9 +61,6 @@ async function inspectWorkspace(workRoot, manifest) {
     const previous = readJson(paths.sourceManifest, { files: [] });
     const diff = diffSourceFiles(previous.files, manifest.files);
     const changed = new Set(diff.changed);
-    const previousByPath = new Map(
-        (previous.files || []).map((entry) => [entry.path, entry])
-    );
     for (const entry of manifest.files) {
         if (changed.has(entry.path)) continue;
         const target = resolveWorkspaceFile(paths.workspace, entry.path);
@@ -74,7 +71,6 @@ async function inspectWorkspace(workRoot, manifest) {
             changed.add(entry.path);
             continue;
         }
-        const cached = previousByPath.get(entry.path);
         if (
             !stat.isFile() ||
             stat.size !== entry.bytes ||
@@ -83,10 +79,8 @@ async function inspectWorkspace(workRoot, manifest) {
             changed.add(entry.path);
             continue;
         }
-        if (stat.mtimeMs !== cached.cachedMtimeMs) {
-            const digest = await sha256File(target);
-            if (digest !== entry.sha256) changed.add(entry.path);
-        }
+        const digest = await sha256File(target);
+        if (digest !== entry.sha256) changed.add(entry.path);
     }
     const prepared = readJson(paths.preparedState, null);
     return {
@@ -130,15 +124,7 @@ function commitSourceManifest(cache, manifest) {
         JSON.stringify(
             {
                 sourceDigest: manifest.sourceDigest,
-                files: manifest.files.map((entry) => {
-                    const stat = fs.statSync(
-                        resolveWorkspaceFile(cache.workspace, entry.path)
-                    );
-                    return {
-                        ...entry,
-                        cachedMtimeMs: stat.mtimeMs
-                    };
-                })
+                files: manifest.files
             },
             null,
             2

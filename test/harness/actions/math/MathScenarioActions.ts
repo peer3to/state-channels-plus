@@ -133,6 +133,7 @@ export class MathScenarioActions extends ScenarioActions {
 
     async preDisputeSetup(options?: {
         peerCount?: number;
+        transitionCount?: number;
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -142,7 +143,7 @@ export class MathScenarioActions extends ScenarioActions {
     }) {
         await this.harness.lifecycle.timeoutSetup(
             options?.peerCount ?? 3,
-            2,
+            options?.transitionCount ?? 2,
             options
         );
         await this.harness.assert.sync.peersInSyncWait();
@@ -216,8 +217,14 @@ export class MathScenarioActions extends ScenarioActions {
             ...options?.timeConfig
         };
 
-        await this.preDisputeSetup({ peerCount: 4, timeConfig });
-        await this.harness.join.forceInboundJoinWait();
+        await this.preDisputeSetup({
+            peerCount: 4,
+            transitionCount: 0,
+            timeConfig
+        });
+        const forceJoin = await this.harness.join.prepareForceInboundJoinWait();
+        await this.harness.transition.advanceState({ count: 2 });
+        await this.harness.join.submitPreparedForceInboundJoinWait(forceJoin);
 
         this.harness.contextApi.captureOriginalFork();
         this.harness.event.resetEventSpies();

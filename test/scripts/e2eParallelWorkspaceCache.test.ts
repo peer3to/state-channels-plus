@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -30,10 +31,16 @@ describe("distributed workspace cache", function () {
 
     it("persists source and preparation state outside a lease", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
+        const contents = "x";
+        const sha256 = crypto
+            .createHash("sha256")
+            .update(contents)
+            .digest("hex");
+        const files = first.map((entry) => ({ ...entry, sha256 }));
         const manifest = {
             workspaceId: "1".repeat(64),
             sourceDigest: "source-one",
-            files: first
+            files
         };
         try {
             let cache = await inspectWorkspace(root, manifest);
@@ -41,8 +48,14 @@ describe("distributed workspace cache", function () {
             fs.mkdirSync(path.join(cache.workspace, "repo"), {
                 recursive: true
             });
-            fs.writeFileSync(path.join(cache.workspace, "repo", "a.ts"), "x");
-            fs.writeFileSync(path.join(cache.workspace, "repo", "old.ts"), "x");
+            fs.writeFileSync(
+                path.join(cache.workspace, "repo", "a.ts"),
+                contents
+            );
+            fs.writeFileSync(
+                path.join(cache.workspace, "repo", "old.ts"),
+                contents
+            );
             commitSourceManifest(cache, manifest);
             markPrepared(cache, manifest);
 

@@ -156,7 +156,7 @@ export class LeaseOrchestrator {
             const timeout = setTimeout(() => {
                 cleanup();
                 reject(new Error(`Timed out waiting for ${label} ${kind}`));
-            }, options.timeoutMs || 5000);
+            }, options.timeoutMs || TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS);
             const onEvent = (event: LeaseEvent) => {
                 if (!matches(event)) return;
                 cleanup();

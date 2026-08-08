@@ -5,12 +5,21 @@ import type { Hash } from "@/types/types";
 import { addressesEqual, DetachedPromises } from "@/utils";
 import { TestPeer } from "@test/harness/core/types";
 import Clock from "@/Clock";
+import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
 
 export type ForceInboundJoinOptions = {
     deposit?: bigint;
     timeoutMs?: number;
     waitForHonestPeersObserve?: boolean;
     participant?: string;
+};
+
+export type PreparedForceInboundJoin = {
+    participant: string;
+    participantSigner: Signer;
+    prepared: PreparedJoinChannelConfirmation;
+    isTopUp: boolean;
+    submissionPeerIndex?: number;
 };
 
 export class MathJoinActions extends JoinActions {
@@ -55,12 +64,60 @@ export class MathJoinActions extends JoinActions {
         return best;
     }
 
-    private async submitForceInboundJoinTxWait(
-        options?: ForceInboundJoinOptions
+    private async submitPreparedForceInboundJoinTxWait(
+        forceJoin: PreparedForceInboundJoin
     ): Promise<{
         participant: string;
         previousLatestHash: Hash | undefined;
     }> {
+        const submitter = await this.pickSubmitterWithLatestInbound();
+        const previousLatestHash =
+            ((await this.harness
+                .control(submitter)
+                .query.getLatestInboundMessageHash()
+                .request()) as Hash | null) ?? undefined;
+        const { participant, prepared, isTopUp, submissionPeerIndex } =
+            forceJoin;
+
+        if (submissionPeerIndex !== undefined) {
+            const peer = this.harness.getPeer(submissionPeerIndex);
+            if (isTopUp) {
+                await peer.p2pInstance.p2pSigner.topUpBalance(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
+            } else {
+                await peer.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
+            }
+        } else {
+            const channelManager = this.harness.channelManager.connect(
+                forceJoin.participantSigner
+            );
+            const tx = isTopUp
+                ? await channelManager.topUpBalance(
+                      prepared.confirmation,
+                      prepared.expectedSnapshotHash,
+                      prepared.expectedForkId
+                  )
+                : await channelManager.joinChannel(
+                      prepared.confirmation,
+                      prepared.expectedSnapshotHash,
+                      prepared.expectedForkId
+                  );
+            await tx.wait();
+        }
+
+        return { participant, previousLatestHash };
+    }
+
+    async prepareForceInboundJoinWait(
+        options?: ForceInboundJoinOptions
+    ): Promise<PreparedForceInboundJoin> {
         const deposit = options?.deposit ?? 250n;
         const submitter = await this.pickSubmitterWithLatestInbound();
         const peer = options?.participant
@@ -82,12 +139,6 @@ export class MathJoinActions extends JoinActions {
         if (randomWallet) {
             this.retainedJoinWallets.set(randomWallet.address, randomWallet);
         }
-        const previousLatestHash =
-            ((await this.harness
-                .control(submitter)
-                .query.getLatestInboundMessageHash()
-                .request()) as Hash | null) ?? undefined;
-
         const participantUnion = await this.harness
             .control(submitter)
             .query.getOnChainParticipantUnion()
@@ -95,6 +146,9 @@ export class MathJoinActions extends JoinActions {
         const isTopUp = participantUnion.some((address) =>
             addressesEqual(address, participant)
         );
+        let participantSigner: Signer;
+        let prepared: PreparedJoinChannelConfirmation;
+        let submissionPeerIndex: number | undefined;
         if (
             peer &&
             this.harness
@@ -102,7 +156,9 @@ export class MathJoinActions extends JoinActions {
                 .some((candidate) => candidate.index === peer.index)
         ) {
             const chainTime = await Clock.getBlockchainTime();
-            const prepared =
+            participantSigner = peer.signer;
+            submissionPeerIndex = peer.index;
+            prepared =
                 await peer.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
                     {
                         participant,
@@ -111,19 +167,6 @@ export class MathJoinActions extends JoinActions {
                         deadlineTimestamp: BigInt(chainTime.timestamp + 120)
                     }
                 );
-            if (isTopUp) {
-                await peer.p2pInstance.p2pSigner.topUpBalance(
-                    prepared.confirmation,
-                    prepared.expectedSnapshotHash,
-                    prepared.expectedForkId
-                );
-            } else {
-                await peer.p2pInstance.p2pSigner.joinChannel(
-                    prepared.confirmation,
-                    prepared.expectedSnapshotHash,
-                    prepared.expectedForkId
-                );
-            }
         } else {
             if (randomWallet) {
                 await (
@@ -133,54 +176,57 @@ export class MathJoinActions extends JoinActions {
                     })
                 ).wait();
             }
-            const participantSigner = peer?.signer ?? randomWallet!;
-            const prepared = await this.buildJoinChannelConfirmation({
+            participantSigner = peer?.signer ?? randomWallet!;
+            prepared = await this.buildJoinChannelConfirmation({
                 joiner: { address: participant, signer: participantSigner },
                 channelId: this.harness.channelId,
                 jcOverrides: {
                     balance: { amount: deposit, data: "0x00" }
                 }
             });
-            const channelManager =
-                this.harness.channelManager.connect(participantSigner);
-            const tx = isTopUp
-                ? await channelManager.topUpBalance(
-                      prepared.confirmation,
-                      prepared.expectedSnapshotHash,
-                      prepared.expectedForkId
-                  )
-                : await channelManager.joinChannel(
-                      prepared.confirmation,
-                      prepared.expectedSnapshotHash,
-                      prepared.expectedForkId
-                  );
-            await tx.wait();
         }
 
-        return { participant, previousLatestHash };
+        return {
+            participant,
+            participantSigner,
+            prepared,
+            isTopUp,
+            submissionPeerIndex
+        };
     }
 
-    async forceInboundJoinWait(options?: ForceInboundJoinOptions): Promise<{
-        participant: string;
-    }> {
+    async submitPreparedForceInboundJoinWait(
+        forceJoin: PreparedForceInboundJoin,
+        options?: Pick<
+            ForceInboundJoinOptions,
+            "timeoutMs" | "waitForHonestPeersObserve"
+        >
+    ): Promise<{ participant: string }> {
         const timeoutMs =
             options?.timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
         const waitForHonestPeersObserve =
             options?.waitForHonestPeersObserve ?? true;
 
         const { participant, previousLatestHash } =
-            await this.submitForceInboundJoinTxWait(options);
+            await this.submitPreparedForceInboundJoinTxWait(forceJoin);
 
         if (waitForHonestPeersObserve) {
             await this.harness.assert.storage.honestPeersObserveInboundMessageWait(
                 {
-                    previousLatestHash: previousLatestHash ?? undefined,
+                    previousLatestHash,
                     timeoutMs
                 }
             );
         }
 
         return { participant };
+    }
+
+    async forceInboundJoinWait(options?: ForceInboundJoinOptions): Promise<{
+        participant: string;
+    }> {
+        const forceJoin = await this.prepareForceInboundJoinWait(options);
+        return this.submitPreparedForceInboundJoinWait(forceJoin, options);
     }
     async forceInboundJoinObserveDetached(
         options?: ForceInboundJoinOptions
@@ -190,8 +236,9 @@ export class MathJoinActions extends JoinActions {
         const waitForHonestPeersObserve =
             options?.waitForHonestPeersObserve ?? true;
 
+        const forceJoin = await this.prepareForceInboundJoinWait(options);
         const { participant, previousLatestHash } =
-            await this.submitForceInboundJoinTxWait(options);
+            await this.submitPreparedForceInboundJoinTxWait(forceJoin);
 
         if (waitForHonestPeersObserve) {
             const promise =

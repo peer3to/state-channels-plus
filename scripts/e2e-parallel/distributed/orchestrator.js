@@ -535,12 +535,20 @@ async function runDistributed(options) {
                 if (attemptPath) fs.rmSync(attemptPath, { force: true });
             }
             committedOutput.delete(attemptId);
-            coordinator.completeAttempt(worker.id, {
+            const completion = coordinator.completeAttempt(worker.id, {
                 ...message.header.result,
                 stdout: output?.stdout || "",
                 stderr: output?.stderr || "",
                 attemptId
             });
+            if (completion.disposition === "retry-starvation") {
+                logging.starvationRetry({
+                    seq: message.header.assignment.seq,
+                    total: options.tasks.length,
+                    label: message.header.result.label,
+                    starveCount: completion.parsed.starveCount
+                });
+            }
             await Promise.all(
                 [...workers.values()]
                     .filter((entry) => entry.leased)
