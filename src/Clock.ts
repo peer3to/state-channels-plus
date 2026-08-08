@@ -1,12 +1,14 @@
 import { ethers } from "ethers";
 
-// The latest block's timestamp trails chain time by up to one block interval,
-// so a skew within one averageBlockTime is explained by block production alone,
-// not by a wrong local clock. One interval is the tightest threshold that still
-// covers that natural lag: below it we would chase block quantization (and each
-// correction re-syncs recursively), above it we would tolerate real skew. Hence
-// 1x, not 2x.
-export function isClockSkewBeyondBlockInterval(
+// Re-adjust only when local time and the latest block timestamp disagree by more
+// than one averageBlockTime. One interval, not two: averageBlockTime is the
+// trailing mean gap, so a smaller disagreement is the ordinary "no block yet"
+// lag rather than clock skew, and correcting there chases block quantization.
+// Known limit: the trailing mean does not bound the currently open gap, so an
+// unusually late block still reads as a disagreement and snaps local time back
+// to that block's timestamp. Narrowing that needs an asymmetric or gap-aware
+// rule — a behaviour change, out of scope for this decision record.
+export function isBeyondBlockIntervalTolerance(
     differenceSeconds: number,
     averageBlockTimeSeconds: number
 ): boolean {
@@ -113,7 +115,7 @@ class Clock {
             this.clockAdjustmentSeconds += difference;
             return;
         }
-        if (isClockSkewBeyondBlockInterval(difference, this.averageBlockTime)) {
+        if (isBeyondBlockIntervalTolerance(difference, this.averageBlockTime)) {
             this.clockAdjustmentSeconds += difference;
             await this.syncClock(); // Recursively call syncClock until condition is satisfied
         }
