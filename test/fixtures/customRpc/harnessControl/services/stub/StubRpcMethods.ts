@@ -728,6 +728,37 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
+    /**
+     * Stop applying processed inbound messages to the local diamond -> its
+     * in-memory EVM falls behind the RPC node while storage stays whole.
+     */
+    public stubLocalDiamondInboundMessages(): boolean {
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        if (!this.service.stubOriginals.has("localDiamondInboundMessages")) {
+            this.service.stubOriginals.set(
+                "localDiamondInboundMessages",
+                localDiamond.onInboundMessagesProcessed
+            );
+        }
+        localDiamond.onInboundMessagesProcessed = (async () =>
+            undefined) as unknown as typeof localDiamond.onInboundMessagesProcessed;
+        return true;
+    }
+
+    public restoreLocalDiamondInboundMessages(): boolean {
+        const original = this.service.stubOriginals.get(
+            "localDiamondInboundMessages"
+        );
+        if (original === undefined) return false;
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.onInboundMessagesProcessed =
+            original as typeof localDiamond.onInboundMessagesProcessed;
+        this.service.stubOriginals.delete("localDiamondInboundMessages");
+        return true;
+    }
+
     /** Park the dispute audit at its on-chain-slashes query until released. */
     public stubHoldOnChainSlashesQuery(): boolean {
         this.service.installOnChainSlashesQueryHold();
@@ -1210,6 +1241,45 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public getHeldSnapshotUpdatedCount(): number {
         return this.service.heldSnapshotUpdatedArgs.length;
+    }
+
+    /** Hold InboundMessagesProcessed events instead of handling them. */
+    public stubHoldInboundMessageEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("inboundMessageEvents")) {
+            this.service.stubOriginals.set(
+                "inboundMessageEvents",
+                eventHandler.onInboundMessagesProcessed.bind(eventHandler)
+            );
+        }
+        eventHandler.onInboundMessagesProcessed = (async (
+            ...args: unknown[]
+        ) => {
+            this.service.heldInboundMessageArgs.push(args);
+        }) as typeof eventHandler.onInboundMessagesProcessed;
+        return true;
+    }
+
+    /** Restore the handler; optionally replay the held events through it. */
+    public restoreInboundMessageEvents(replay: boolean): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        const original = this.service.stubOriginals.get("inboundMessageEvents");
+        if (original === undefined) return false;
+        const restored =
+            original as typeof eventHandler.onInboundMessagesProcessed;
+        eventHandler.onInboundMessagesProcessed = restored;
+        this.service.stubOriginals.delete("inboundMessageEvents");
+        const held = this.service.heldInboundMessageArgs.splice(0);
+        if (replay) {
+            for (const args of held) {
+                void (restored as (...a: unknown[]) => Promise<void>)(...args);
+            }
+        }
+        return true;
+    }
+
+    public getHeldInboundMessageCount(): number {
+        return this.service.heldInboundMessageArgs.length;
     }
 
     /** Drop subscribed dispute logs before the scheduler records their key. */

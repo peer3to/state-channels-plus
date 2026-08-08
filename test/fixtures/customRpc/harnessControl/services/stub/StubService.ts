@@ -52,6 +52,7 @@ export type StubKey =
     | "spectateAbort"
     | "reductionTasks"
     | "snapshotUpdatedEvents"
+    | "inboundMessageEvents"
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
     | "disputeInitiation"
@@ -70,7 +71,8 @@ export type StubKey =
     | "timeoutCheck"
     | "scheduledTasks"
     | "ingestConfirmations"
-    | "onChainSlashesQuery";
+    | "onChainSlashesQuery"
+    | "localDiamondInboundMessages";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -310,6 +312,7 @@ export class StubService extends ARpcService<
     /** Event arg-tuples captured by the hold-event stubs. */
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
     readonly heldDisputeCommittedArgs: unknown[][] = [];
+    readonly heldInboundMessageArgs: unknown[][] = [];
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
     /** Subscribed calldata logs the hold stub has already lost once. */

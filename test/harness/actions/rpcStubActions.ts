@@ -297,6 +297,33 @@ export class RpcStubActions<
     }
 
     /**
+     * Hold a peer's InboundMessagesProcessed handler -> its chain view of the
+     * inbound chain stops advancing while block ingest keeps running. Models a
+     * lagging chain event: everything downstream of the handler is unapplied.
+     */
+    async holdInboundMessageEvents(peerIndex: number): Promise<{
+        /** Chain events held so far. */
+        heldCount: () => Promise<number>;
+        /** Restore the handler; held events replay unless `replay: false`. */
+        release: (options?: { replay?: boolean }) => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubHoldInboundMessageEvents().request();
+        this.logger.debug(
+            `Holding InboundMessagesProcessed on peer ${peerIndex}`
+        );
+        return {
+            heldCount: async () =>
+                await ctl().getHeldInboundMessageCount().request(),
+            release: async (options = {}) => {
+                const { replay = true } = options;
+                await ctl().restoreInboundMessageEvents(replay).request();
+            }
+        };
+    }
+
+    /**
      * Record what `dispute()` uploads on a peer without sending it. With
      * `hold: true` every recorded send parks until `release`, so a second
      * `dispute()` can be observed queueing behind the dispute mutex.
