@@ -115,6 +115,8 @@ export class DisputeOrchestrator<
         options: {
             auditingData?: DisputeAuditingDataStruct;
             includeUnfinalizedBlocks: boolean;
+            /** Applied host-side after decode; "" is not ABI-encodable. */
+            latestFinalizedStateStateMachineStateOverride?: string;
         }
     ): Promise<PersistDisputeDataProjection> {
         return this.harness
@@ -128,7 +130,9 @@ export class DisputeOrchestrator<
                               Type.DisputeAuditingData
                           ) as string)
                         : undefined,
-                    includeUnfinalizedBlocks: options.includeUnfinalizedBlocks
+                    includeUnfinalizedBlocks: options.includeUnfinalizedBlocks,
+                    latestFinalizedStateStateMachineStateOverride:
+                        options.latestFinalizedStateStateMachineStateOverride
                 }
             )
             .request();

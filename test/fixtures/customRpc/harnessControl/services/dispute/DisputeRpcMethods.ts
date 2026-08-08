@@ -99,6 +99,13 @@ export class DisputeRpcMethods extends ARpcMethods {
         };
     }
 
+    /** Inbound-hash verdicts from this peer's local diamond and its RPC node. */
+    public probeDisputeInboundHashSources(
+        encodedDispute: string
+    ): Promise<{ local: boolean; rpc: boolean }> {
+        return this.service.probeDisputeInboundHashSources(encodedDispute);
+    }
+
     /** Run the real dispute audit on this peer; verdict + stored-proof projection. */
     public runDisputeValidation(
         encodedDispute: string,
@@ -113,6 +120,8 @@ export class DisputeRpcMethods extends ARpcMethods {
         options: {
             encodedAuditingData?: string;
             includeUnfinalizedBlocks: boolean;
+            /** Post-decode override; "" is not ABI-encodable (see service). */
+            latestFinalizedStateStateMachineStateOverride?: string;
         }
     ): PersistDisputeDataProjection {
         return this.service.persistDisputeDataWithoutAudit(

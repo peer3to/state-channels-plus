@@ -152,6 +152,34 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     /**
+     * preDisputeSetup + a top-up of an existing participant, consumed by later
+     * blocks -> snapshotData.latestInboundMessageBlockHeight sits on inbound
+     * block 2 with the channel-open block still a real ancestor. Topping up an
+     * existing participant keeps the participant set (and block turns) intact.
+     */
+    async preDisputeSetupConsumedInboundTopUp(options?: {
+        peerCount?: number;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        await this.preDisputeSetup(options);
+        await this.harness.join.forceInboundJoinWait({
+            participant: this.harness.getPeer(0).address
+        });
+        await this.harness.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await this.harness.assert.sync.peersInSyncWait();
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+    }
+
+    /**
      * A committed spam dispute (internally valid, no enforcement basis) that
      * every peer audit-failed, with every peer's `killDispute` suppressed while
      * it happened. `killerIndex` therefore holds a real dispute fraud proof

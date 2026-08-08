@@ -344,6 +344,24 @@ export class QueryRpcMethods extends ARpcMethods {
             : null;
     }
 
+    /** Encoded (`Type.MessageBlock`) inbound message block, or null. */
+    public getInboundMessageBlock(
+        messageBlockHash: Hash
+    ): { encodedMessageBlock: string } | null {
+        const block =
+            this.service.storage.inboundMessages.getMessageBlock(
+                messageBlockHash
+            );
+        return block
+            ? {
+                  encodedMessageBlock: Codec.encode(
+                      block,
+                      Type.MessageBlock
+                  ) as string
+              }
+            : null;
+    }
+
     /** Encoded (`Type.MessageBlock`) outbound message block, or null. */
     public getOutboundMessageBlock(
         messageBlockHash: Hash

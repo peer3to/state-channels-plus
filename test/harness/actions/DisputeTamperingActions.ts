@@ -519,7 +519,8 @@ export class DisputeTamperingActions<
         return peer;
     }
 
-    private async resignDispute(
+    /** Re-sign `dispute` into `disputeConfirmation`, dropping co-signatures. */
+    async resignDispute(
         signer: Signer,
         dispute: DisputeStruct,
         disputeConfirmation: DisputeConfirmationStruct

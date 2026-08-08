@@ -87,7 +87,10 @@ export type PersistDisputeDataProjection = {
     undecodableSignedBlockCount: number;
     /** Auditing-data snapshots: latest first, then milestone snapshots. */
     snapshots: PersistedItemProjection[];
-    /** Keyed by the latest finalized snapshot's stateMachineStateHash; absent without auditing data. */
+    /**
+     * Keyed by keccak256 of the finalized state; absent without auditing data
+     * and for the "" sentinel.
+     */
     stateMachineState?: PersistedItemProjection;
     inboundMessages: PersistedItemProjection[];
     outboundMessages: PersistedItemProjection[];
@@ -569,6 +572,21 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         return true;
     }
 
+    /** Both sources the audit's inbound-hash check consults, read separately. */
+    async probeDisputeInboundHashSources(
+        encodedDispute: string
+    ): Promise<{ local: boolean; rpc: boolean }> {
+        const dispute = Codec.decode(encodedDispute, Type.Dispute);
+        return {
+            local: await this.sm.diamondStateMachine.localDiamondContract.isDisputeInboundHashValid.staticCall(
+                dispute
+            ),
+            rpc: await this.sm.stateChannelManagerContract.isDisputeInboundHashValid.staticCall(
+                dispute
+            )
+        };
+    }
+
     /** Run the real dispute audit; project verdict + the stored fraud proof. */
     async runDisputeValidation(
         encodedDispute: string,
@@ -626,6 +644,12 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         options: {
             encodedAuditingData?: string;
             includeUnfinalizedBlocks: boolean;
+            /**
+             * Applied after decode: DisputeManager emits "" in-memory for a
+             * missing finalized state, but "" is not ABI-encodable, so it
+             * cannot cross the port inside encodedAuditingData.
+             */
+            latestFinalizedStateStateMachineStateOverride?: string;
         }
     ): PersistDisputeDataProjection {
         const dispute = Codec.decode(encodedDispute, Type.Dispute);
@@ -635,6 +659,13 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
                   Type.DisputeAuditingData
               )
             : undefined;
+        if (
+            auditingData &&
+            options.latestFinalizedStateStateMachineStateOverride !== undefined
+        ) {
+            auditingData.latestFinalizedStateStateMachineState =
+                options.latestFinalizedStateStateMachineStateOverride;
+        }
 
         const milestoneBlocks: Block[] = [];
         let undecodableMilestoneBlockCount = 0;
@@ -664,19 +695,15 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         const outboundHashes = (auditingData?.outboundMessageBlocks ?? []).map(
             (mb) => keccakHash(Codec.encode(mb, Type.MessageBlock)) as Hash
         );
-        // same lookup the real persist uses for the state-machine-state key;
-        // it can throw on partial storage, so retry after the persist ran
-        const resolveStateKey = (): Hash | undefined => {
-            try {
-                return this.agreementManager.getLatestFinalizedSnapshot(
-                    dispute.input.stateProof,
-                    dispute.input.forkId as ForkId
-                ).stateMachineStateHash as Hash;
-            } catch {
-                return undefined;
-            }
-        };
-        let stateKey = auditingData ? resolveStateKey() : undefined;
+        // oracle computed here, not read back from storage: the persist key is
+        // the state's own hash, and the "" sentinel has no key
+        const stateKey =
+            auditingData &&
+            auditingData.latestFinalizedStateStateMachineState !== ""
+                ? (keccakHash(
+                      auditingData.latestFinalizedStateStateMachineState
+                  ) as Hash)
+                : undefined;
 
         const blockStored = (block: Block) =>
             !!this.storage.blocks.getBlock(block.hash);
@@ -711,8 +738,6 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
             threwMessage =
                 error instanceof Error ? error.message : String(error);
         }
-        if (auditingData && stateKey === undefined)
-            stateKey = resolveStateKey();
 
         const blockKey = (block: Block) =>
             `${block.forkId}:${block.height}:${block.hash}`;
