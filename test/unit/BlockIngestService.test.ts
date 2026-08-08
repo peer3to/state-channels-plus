@@ -278,6 +278,125 @@ describe("Unit: BlockIngestService", function () {
         });
     });
 
+    describe("onBlockConfirmation → carried inbound message blocks", function () {
+        it("a run linked to a held inbound block → the store head advances with the snapshot", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const forkId = h.activeForkId!;
+
+            // held after the channel-open inbound block landed -> peer 2 holds
+            // inbound block 1, only the top-up chain event is withheld
+            const lagging = 2;
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            // two writers -> at least one non-lagging author carries the top-up
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const r = await h.execOnHost(
+                h.getPeer(lagging),
+                async (sm, args) => {
+                    const next = sm.storage.blocks.getNextBlockHeight(
+                        args.forkId
+                    );
+                    const snapshot =
+                        sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
+                            { forkId: args.forkId, height: next }
+                        );
+                    return {
+                        storedHash:
+                            sm.storage.inboundMessages.getLatestBlockHash() ??
+                            null,
+                        storedHeight: Number(
+                            sm.storage.inboundMessages.getLatestBlockHeight() ??
+                                0
+                        ),
+                        snapshotHash: snapshot.latestInboundMessageBlockHash,
+                        snapshotHeight: Number(
+                            snapshot.latestInboundMessageBlockHeight
+                        )
+                    };
+                },
+                { forkId }
+            );
+
+            // premise - the chain event really never landed on this peer
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            // premise - the blocks it ingested carried the top-up
+            expect(r.snapshotHeight).to.equal(2);
+            expect(r.storedHash).to.equal(r.snapshotHash);
+            expect(r.storedHeight).to.equal(r.snapshotHeight);
+        });
+
+        it("a run with no held ancestor → persisted, store head stays put", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3);
+            // held from before the channel opens -> peer 2 never stores inbound
+            // block 1, so a run starting at block 2 links to nothing it holds
+            const lagging = 2;
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            await h.lifecycle.openChannel();
+            const forkId = h.activeForkId!;
+
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const r = await h.execOnHost(
+                h.getPeer(lagging),
+                async (sm, args) => {
+                    const next = sm.storage.blocks.getNextBlockHeight(
+                        args.forkId
+                    );
+                    const snapshot =
+                        sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
+                            { forkId: args.forkId, height: next }
+                        );
+                    return {
+                        storedHash:
+                            sm.storage.inboundMessages.getLatestBlockHash() ??
+                            null,
+                        snapshotHash: snapshot.latestInboundMessageBlockHash,
+                        snapshotHeight: Number(
+                            snapshot.latestInboundMessageBlockHeight
+                        ),
+                        // the carried run is looked up by hash even though the
+                        // head did not move to it
+                        carriedRunPersisted:
+                            sm.storage.inboundMessages.getMessageBlock(
+                                snapshot.latestInboundMessageBlockHash
+                            ) !== undefined,
+                        // walking back from the head must not hit the gap
+                        rangeLength:
+                            sm.storage.inboundMessages.getMessageBlocksInRange()
+                                .length
+                    };
+                },
+                { forkId }
+            );
+
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(r.snapshotHeight).to.equal(2);
+            expect(r.carriedRunPersisted).to.equal(true);
+            // moving the head over the missing block 1 would make every later
+            // getMessageBlocksInRange throw
+            expect(r.storedHash).to.equal(null);
+            expect(r.rangeLength).to.equal(0);
+        });
+    });
+
     describe("onBlockConfirmation → reject paths (full pipeline probe)", function () {
         it("a linked writer block with a wrong snapshot hash → invalid transition, VM turn restored", async function () {
             const h = TestSession.getHarness();

@@ -49,6 +49,22 @@ export class MessageBlockStorage {
         return blockHash;
     }
 
+    // a chain-verified run, ordered ascending, linked to previousBlockHash.
+    // the latest pointers only move when that link is a block we hold ->
+    // getIterator can always walk back from the head without hitting a gap
+    storeVerifiedRun(
+        messageBlocks: MessageBlockStruct[],
+        previousBlockHash: Hash
+    ): void {
+        const isLinkedToHeldBlock =
+            previousBlockHash === ZeroHash ||
+            this.blockMap.has(previousBlockHash);
+
+        for (const messageBlock of messageBlocks) {
+            this.store(messageBlock, { justPersist: !isLinkedToHeldBlock });
+        }
+    }
+
     // ====================================
     // READ
     // ====================================

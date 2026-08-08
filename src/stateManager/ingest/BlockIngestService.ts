@@ -203,6 +203,14 @@ export default class BlockIngestService {
                 return keepConnection;
             }
 
+            // both inbound checks passed -> the carried blocks are chain
+            // authentic and linked to previousStateSnapshot. record them, the
+            // chain event that would otherwise be their only writer can lag
+            sm.storage.inboundMessages.storeVerifiedRun(
+                inboundMessageBlocks,
+                previousStateSnapshot.latestInboundMessageBlockHash
+            );
+
             stateBeforeTransitionValidation =
                 await sm.diamondStateMachine.getState();
 
