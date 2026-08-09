@@ -661,10 +661,9 @@ export default class DisputeValidationService {
                 );
 
             if (isInboundAnchorBehind) {
-                // the forward walk from snapshotData.latestInboundMessageBlockHash
-                // can't reach a dispute.input.lastInboundMessageBlockHeight below
-                // the pinned snapshot's latestInboundMessageBlockHeight ->
-                // objective fraud
+                // the forward walk can never reach a
+                // lastInboundMessageBlockHeight below the pinned snapshot's
+                // -> objective fraud
                 this.logger.warn(
                     "Dispute lastInboundMessageBlockHeight is behind its pinned snapshot's latestInboundMessageBlockHeight",
                     {
@@ -680,9 +679,9 @@ export default class DisputeValidationService {
                 return false;
             }
 
-            // the residual: inboundMessageBlocks don't bridge the gap, or the
-            // snapshot isn't linked to the latest block. no fraud proof matches
-            // it -> skip the output check rather than submit an unprovable one
+            // inboundMessageBlocks don't bridge the gap, or the snapshot isn't
+            // linked to the latest block. no fraud proof matches -> skip the
+            // output check rather than submit an unprovable one
             this.logger.warn(
                 "Skipping dispute output verification because auditing input is not linked to dispute input",
                 {
