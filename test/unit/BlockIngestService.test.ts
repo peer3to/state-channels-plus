@@ -1,12 +1,59 @@
 import { expect } from "chai";
 import { Codec, Type } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathPeerTestHarness,
+    MathTestSession as TestSession
+} from "@test/harness";
 import * as factory from "../factory";
-import type { Address } from "@/types/types";
+import type { Address, ForkId, Hash } from "@/types/types";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // the pipeline is entered the way production does: through the queue
 // (transition.ingestBlockConfirmation) or, for callers with no transport, by
 // handing a confirmation straight to onBlockConfirmationStruct.
+
+// a genuinely authored, linked next block - only its stateSnapshotHash (the
+// factory's random default) is wrong, so it dies at the state-transition gate
+async function encodeLinkedNextBlock(
+    h: MathPeerTestHarness,
+    writerIndex: number,
+    observerIndex: number,
+    forkId: ForkId,
+    messageBlocks?: MessageBlockStruct[]
+) {
+    const writer = h.getPeer(writerIndex);
+    const observer = h.getPeer(observerIndex);
+    const bundle = await h
+        .control(observer)
+        .query.getLatestBlockBundle(forkId)
+        .request();
+    const height = await h
+        .control(observer)
+        .query.getNextBlockHeight(forkId)
+        .request();
+    const call =
+        await writer.p2pInstance.p2pContractInstance.add.populateTransaction(1);
+
+    return factory.buildAndEncodeBlock(writer.signer, {
+        header: {
+            channelId: h.channelId,
+            forkId,
+            transactionCnt: height,
+            participant: writer.address as Address,
+            // inside the previous block's p2pTime window regardless of how
+            // long the test staging took
+            timestamp: bundle!.timestamp + 1
+        },
+        transaction: factory.transaction({
+            body: {
+                encodedData: call.data,
+                data: call.data
+            }
+        }),
+        previousBlockHash: bundle!.hash,
+        ...(messageBlocks ? { messageBlocks } : {})
+    });
+}
 
 describe("Unit: BlockIngestService", function () {
     describe("isKnownStaleFork", function () {
@@ -334,7 +381,7 @@ describe("Unit: BlockIngestService", function () {
             expect(r.storedHeight).to.equal(r.snapshotHeight);
         });
 
-        it("a run with no held ancestor → persisted, store head stays put", async function () {
+        it("runs with no reachable ancestor → persisted, the head never moves above the gap", async function () {
             const h = TestSession.getHarness();
             await h.setup(3);
             // held from before the channel opens -> peer 2 never stores inbound
@@ -343,11 +390,32 @@ describe("Unit: BlockIngestService", function () {
             const held = await h.rpcStub.holdInboundMessageEvents(lagging);
             await h.lifecycle.openChannel();
             const forkId = h.activeForkId!;
+            const synced = h.control(h.getPeer(0));
 
+            // round 1 - a run linked to inbound block 1, which the gapped peer
+            // does not hold at all
             await h.join.forceInboundJoinWait({
                 participant: h.getPeer(0).address,
                 observePeerIndices: [0, 1]
             });
+            const firstTopUpHash = (await synced.query
+                .getLatestInboundMessageHash()
+                .request()) as Hash;
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            // round 2 - a run linked to the block round 1 just persisted: held
+            // in the map, but itself sitting above the missing block 1
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            const secondTopUpHash = (await synced.query
+                .getLatestInboundMessageHash()
+                .request()) as Hash;
             await h.transition.advanceState({
                 count: 2,
                 waitForFinalization: true
@@ -372,11 +440,15 @@ describe("Unit: BlockIngestService", function () {
                         snapshotHeight: Number(
                             snapshot.latestInboundMessageBlockHeight
                         ),
-                        // the carried run is looked up by hash even though the
-                        // head did not move to it
-                        carriedRunPersisted:
+                        // both carried runs are looked up by hash even though
+                        // the head did not move to either
+                        firstRunPersisted:
                             sm.storage.inboundMessages.getMessageBlock(
-                                snapshot.latestInboundMessageBlockHash
+                                args.firstTopUpHash
+                            ) !== undefined,
+                        secondRunPersisted:
+                            sm.storage.inboundMessages.getMessageBlock(
+                                args.secondTopUpHash
                             ) !== undefined,
                         // walking back from the head must not hit the gap
                         rangeLength:
@@ -384,14 +456,19 @@ describe("Unit: BlockIngestService", function () {
                                 .length
                     };
                 },
-                { forkId }
+                { forkId, firstTopUpHash, secondTopUpHash }
             );
 
             expect(await held.heldCount()).to.be.greaterThan(0);
-            expect(r.snapshotHeight).to.equal(2);
-            expect(r.carriedRunPersisted).to.equal(true);
-            // moving the head over the missing block 1 would make every later
-            // getMessageBlocksInRange throw
+            // premise - two distinct top-ups, and the pinned snapshot sits on
+            // the second one
+            expect(firstTopUpHash).to.not.equal(secondTopUpHash);
+            expect(r.snapshotHash).to.equal(secondTopUpHash);
+            expect(r.snapshotHeight).to.equal(3);
+            expect(r.firstRunPersisted).to.equal(true);
+            expect(r.secondRunPersisted).to.equal(true);
+            // holding the link block is not reaching it -> moving the head
+            // onto either run puts it above the missing block 1
             expect(r.storedHash).to.equal(null);
             expect(r.rangeLength).to.equal(0);
         });
@@ -405,40 +482,11 @@ describe("Unit: BlockIngestService", function () {
             const writer = await h.query.getNextPeerToWrite();
             const observer = h.peers.find((p) => p.index !== writer.index)!;
 
-            const bundle = await h
-                .control(observer)
-                .query.getLatestBlockBundle(forkId)
-                .request();
-            const height = await h
-                .control(observer)
-                .query.getNextBlockHeight(forkId)
-                .request();
-            // inside the previous block's p2pTime window regardless of how
-            // long the test staging took
-            const timestamp = bundle!.timestamp + 1;
-            const call = await h
-                .getPeer(writer.index)
-                .p2pInstance.p2pContractInstance.add.populateTransaction(1);
-            // a genuinely authored, linked next block - only its
-            // stateSnapshotHash (the factory's random default) is wrong
-            const encoded = await factory.buildAndEncodeBlock(
-                h.getPeer(writer.index).signer,
-                {
-                    header: {
-                        channelId: h.channelId,
-                        forkId,
-                        transactionCnt: height,
-                        participant: writer.address as Address,
-                        timestamp
-                    },
-                    transaction: factory.transaction({
-                        body: {
-                            encodedData: call.data,
-                            data: call.data
-                        }
-                    }),
-                    previousBlockHash: bundle!.hash
-                }
+            const encoded = await encodeLinkedNextBlock(
+                h,
+                writer.index,
+                observer.index,
+                forkId
             );
 
             const turnBefore = await h
@@ -538,6 +586,86 @@ describe("Unit: BlockIngestService", function () {
             expect(probe.firedHooks).to.include(
                 "forgedInboundMessageBlockDetected"
             );
+        });
+
+        it("a rejected block carrying a real inbound run → the run is not stored, the head stays put", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+            const writer = await h.query.getNextPeerToWrite();
+            const observer = h.peers.find((p) => p.index !== writer.index)!;
+            const synced = h.peers.find(
+                (p) => p.index !== observer.index && p.index !== writer.index
+            )!;
+
+            // the observer stops learning inbound blocks from the chain -> the
+            // top-up reaches it only via the block it is about to reject
+            const held = await h.rpcStub.holdInboundMessageEvents(
+                observer.index
+            );
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [writer.index, synced.index]
+            });
+            const topUpHash = (await h
+                .control(synced)
+                .query.getLatestInboundMessageHash()
+                .request()) as Hash;
+            const topUp = Codec.decode(
+                (await h
+                    .control(synced)
+                    .query.getInboundMessageBlock(topUpHash)
+                    .request())!.encodedMessageBlock,
+                Type.MessageBlock
+            );
+
+            const headBefore = await h
+                .control(observer)
+                .query.getLatestInboundMessageHash()
+                .request();
+            // premise - the observer's head is the channel-open block, and the
+            // top-up is a real on-chain block it does not hold
+            expect(headBefore).to.not.equal(null);
+            expect(headBefore).to.not.equal(topUpHash);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getInboundMessageBlock(topUpHash)
+                    .request()
+            ).to.equal(null);
+
+            // carries the chain's real top-up
+            const encoded = await encodeLinkedNextBlock(
+                h,
+                writer.index,
+                observer.index,
+                forkId,
+                [topUp]
+            );
+
+            const probe = await h
+                .control(observer)
+                .stub.runBlockIngest(encoded)
+                .request();
+            const headAfter = await h
+                .control(observer)
+                .query.getLatestInboundMessageHash()
+                .request();
+            const runStored = await h
+                .control(observer)
+                .query.getInboundMessageBlock(topUpHash)
+                .request();
+
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(probe.keepConnection).to.equal(false);
+            expect(probe.firedHooks).to.include(
+                "invalidStateTransitionDetected"
+            );
+            // a rejected block leaves no trace: nothing to move the head onto,
+            // and nothing for detectForgedInboundMessageBlock to accept later
+            // as "already in our store"
+            expect(headAfter).to.equal(headBefore);
+            expect(runStored).to.equal(null);
         });
     });
 });

@@ -49,25 +49,39 @@ export class MessageBlockStorage {
         return blockHash;
     }
 
-    // a chain-verified run, ordered ascending, linked to previousBlockHash.
-    // the latest pointers only move when that link is a block we hold ->
-    // getIterator can always walk back from the head without hitting a gap
+    // a chain-verified run, ordered ascending. the pointers only move when the
+    // run extends the current head exactly - a merely-held previousBlockHash
+    // can itself sit above a gap, and getIterator throws walking into one
     storeVerifiedRun(
         messageBlocks: MessageBlockStruct[],
         previousBlockHash: Hash
     ): void {
-        const isLinkedToHeldBlock =
-            previousBlockHash === ZeroHash ||
-            this.blockMap.has(previousBlockHash);
+        const extendsHead =
+            this.latestBlockHash === undefined
+                ? previousBlockHash === ZeroHash
+                : previousBlockHash === this.latestBlockHash;
 
         for (const messageBlock of messageBlocks) {
-            this.store(messageBlock, { justPersist: !isLinkedToHeldBlock });
+            this.store(messageBlock, { justPersist: !extendsHead });
         }
     }
 
     // ====================================
     // READ
     // ====================================
+
+    // the local head, or the snapshot's own head while the store still lags it
+    // -> callers never walk from a point below the snapshot they work against
+    headNotBehind(
+        snapshotHash: Hash,
+        snapshotHeight: BlockHeight
+    ): { hash: Hash; height: BlockHeight } {
+        const height = this.latestBlockHeight ?? 0;
+        if (this.latestBlockHash === undefined || height < snapshotHeight) {
+            return { hash: snapshotHash, height: snapshotHeight };
+        }
+        return { hash: this.latestBlockHash, height };
+    }
 
     getMessageBlock(blockHash: Hash): MessageBlockStruct | undefined {
         return this.blockMap.get(blockHash);
