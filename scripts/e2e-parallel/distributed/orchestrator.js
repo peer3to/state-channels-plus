@@ -31,15 +31,15 @@ const WORKER_COLORS = [
     "\x1b[38;5;117m",
     "\x1b[38;5;213m",
     "\x1b[38;5;120m",
-    "\x1b[38;5;221m",
     "\x1b[38;5;141m",
     "\x1b[38;5;87m",
-    "\x1b[38;5;208m",
     "\x1b[38;5;75m",
-    "\x1b[38;5;203m",
-    "\x1b[38;5;228m",
     "\x1b[38;5;111m",
-    "\x1b[38;5;177m"
+    "\x1b[38;5;177m",
+    "\x1b[38;5;159m",
+    "\x1b[38;5;183m",
+    "\x1b[38;5;123m",
+    "\x1b[38;5;219m"
 ];
 
 function createWorkerColorRegistry(colors = WORKER_COLORS) {

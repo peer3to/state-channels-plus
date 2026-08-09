@@ -44,6 +44,14 @@ describe("distributed orchestrator logs", function () {
         expect(registry.colorFor("new-id-a", "worker-a")).to.equal("one");
         expect(registry.colorFor("id-c", "worker-c")).to.equal("three");
         expect(WORKER_COLORS.length).to.be.at.least(10);
+        for (const warningColor of [
+            "\x1b[38;5;203m",
+            "\x1b[38;5;208m",
+            "\x1b[38;5;221m",
+            "\x1b[38;5;228m"
+        ]) {
+            expect(WORKER_COLORS).not.to.include(warningColor);
+        }
     });
 
     it("transfers attempt logs only for failures", function () {
