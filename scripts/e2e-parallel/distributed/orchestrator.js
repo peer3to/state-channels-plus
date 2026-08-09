@@ -109,6 +109,14 @@ function promoteAttemptLog(logDir, assignment, worker, code) {
     if (code !== 0) logging.markLogAsError(logDir, assignment.task.logName);
 }
 
+function coordinatorResultActions(disposition) {
+    const completesTask = disposition === "complete";
+    return {
+        countCompletion: completesTask,
+        report: completesTask || disposition === "late-failure"
+    };
+}
+
 function createHeartbeatMonitor(peer, timeoutMs, onTimeout) {
     let lastReceivedAt = Date.now();
     const timer = setInterval(
@@ -294,11 +302,14 @@ async function runDistributed(options) {
         onResult(result) {
             const { assignment, attempt, code, parsed } = result;
             const worker = workers.get(assignment.workerId);
-            if (result.disposition === "complete") {
+            const actions = coordinatorResultActions(result.disposition);
+            if (actions.countCompletion) {
                 completedByWorker.set(
                     assignment.workerId,
                     (completedByWorker.get(assignment.workerId) || 0) + 1
                 );
+            }
+            if (actions.report) {
                 promoteAttemptLog(options.logDir, assignment, worker, code);
                 logging.result({
                     completed: coordinator.completed,
@@ -779,6 +790,7 @@ async function runDistributed(options) {
 module.exports = {
     WORKER_COLORS,
     aggregateWorkerStats,
+    coordinatorResultActions,
     createWorkerColorRegistry,
     createHeartbeatMonitor,
     formatBusyStatus,

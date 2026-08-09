@@ -23,6 +23,7 @@ const {
 const {
     WORKER_COLORS,
     aggregateWorkerStats,
+    coordinatorResultActions,
     createWorkerColorRegistry,
     createHeartbeatMonitor,
     formatWorkerSummary,
@@ -140,6 +141,21 @@ describe("distributed orchestrator logs", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it("reports a late speculative failure without counting it twice", function () {
+        expect(coordinatorResultActions("complete")).to.deep.equal({
+            countCompletion: true,
+            report: true
+        });
+        expect(coordinatorResultActions("late-failure")).to.deep.equal({
+            countCompletion: false,
+            report: true
+        });
+        expect(coordinatorResultActions("retry-starvation")).to.deep.equal({
+            countCompletion: false,
+            report: false
+        });
     });
 
     it("expires a server that stops sending application frames", async function () {
