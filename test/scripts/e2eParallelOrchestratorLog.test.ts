@@ -29,7 +29,8 @@ const {
     formatWorkerSummary,
     promoteAttemptLog,
     recordWorkerFailure,
-    validateWorkerStats
+    validateWorkerStats,
+    workerFaultStatus
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
     acknowledgeLoglessAttempt,
@@ -53,6 +54,16 @@ describe("distributed orchestrator logs", function () {
         ]) {
             expect(WORKER_COLORS).not.to.include(warningColor);
         }
+    });
+
+    it("prints worker faults in red with the worker name", function () {
+        let output = "";
+        workerFaultStatus({ label: "server-3" }, "FAULTED: restart required", {
+            write: (chunk: string) => (output += chunk)
+        });
+        expect(output).to.equal(
+            "\u001b[31m[server-3] FAULTED: restart required\u001b[0m\n"
+        );
     });
 
     it("transfers attempt logs only for failures", function () {

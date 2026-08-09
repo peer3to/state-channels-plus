@@ -52,6 +52,7 @@ const HEADER_FIELDS = {
     SERVER_READY: ["name", "capabilities"],
     LEASE_REQUEST: ["sessionId"],
     LEASE_GRANTED: ["capabilities"],
+    FAULTED: ["message"],
     BUSY: [
         "state",
         "position",

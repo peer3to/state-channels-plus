@@ -76,29 +76,46 @@ describe("distributed worker lease", function () {
         expect(manager.waiters).to.deep.equal([waiting]);
     });
 
-    it("returns to service when lease cleanup fails", async function () {
+    it("faults permanently when lease cleanup fails", async function () {
         const faults: Error[] = [];
         const granted: string[] = [];
+        const statuses: Array<{ sessionId: string; status: object }> = [];
         const manager = new WorkerLeaseManager({
             onFault: (error: Error) => faults.push(error),
             onGrant: (connection: { sessionId: string }) =>
-                granted.push(connection.sessionId)
+                granted.push(connection.sessionId),
+            onQueueStatus: (
+                connection: { sessionId: string },
+                status: object
+            ) => statuses.push({ sessionId: connection.sessionId, status })
         });
         const failed = { sessionId: "failed" };
         const next = { sessionId: "next" };
 
         manager.request(failed);
         manager.request(next);
-        await manager.release(failed, async () => {
+        const release = await manager.release(failed, async () => {
             throw new Error("cleanup failed");
         });
 
         expect(faults.map((error) => error.message)).to.deep.equal([
             "cleanup failed"
         ]);
-        expect(manager.active).to.equal(next);
-        expect(manager.state).to.equal("preparing");
-        expect(granted).to.deep.equal(["failed", "next"]);
+        expect(release).to.deep.include({ faulted: true });
+        expect(release.message).to.include("administrator must restart it");
+        expect(manager.active).to.equal(null);
+        expect(manager.state).to.equal("faulted");
+        expect(manager.waiters).to.be.empty;
+        expect(granted).to.deep.equal(["failed"]);
+        expect(statuses.at(-1)).to.deep.include({ sessionId: "next" });
+        expect(statuses.at(-1)?.status).to.deep.include({
+            kind: "FAULTED",
+            message: release.message
+        });
+        expect(manager.request({ sessionId: "future" })).to.deep.equal({
+            kind: "FAULTED",
+            message: release.message
+        });
     });
 
     it("publishes queue progress, wait estimates, and updated positions", function () {

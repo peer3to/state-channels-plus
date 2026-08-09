@@ -9,10 +9,11 @@ class WorkerLeaseManager {
         this.onFault = options.onFault || (() => {});
         this.activeProgress = null;
         this.activeStatus = null;
+        this.faultMessage = null;
     }
 
     request(connection) {
-        if (this.state === "faulted") return { kind: "FAULTED" };
+        if (this.state === "faulted") return this.faultStatus();
         if (this.active === connection) return { kind: "LEASE_GRANTED" };
         if (!this.active && this.state === "idle") {
             this.active = connection;
@@ -64,13 +65,26 @@ class WorkerLeaseManager {
         try {
             await cleanup();
         } catch (error) {
+            this.active = null;
+            this.state = "faulted";
+            this.activeProgress = null;
+            this.activeStatus = null;
+            this.faultMessage =
+                `Cleanup failed (${error.message}); this worker is unsafe to reuse ` +
+                "and its administrator must restart it";
             this.onFault(error);
+            const waiters = this.waiters.splice(0);
+            for (const waiter of waiters) {
+                this.onQueueStatus(waiter, this.faultStatus());
+            }
+            return { faulted: true, message: this.faultMessage };
         }
         this.active = null;
         this.state = "idle";
         this.activeProgress = null;
         this.activeStatus = null;
         this.grantNext();
+        return { faulted: false };
     }
 
     remove(connection) {
@@ -111,6 +125,10 @@ class WorkerLeaseManager {
         for (const connection of this.waiters) {
             this.onQueueStatus(connection, this.busyStatus(connection));
         }
+    }
+
+    faultStatus() {
+        return { kind: "FAULTED", message: this.faultMessage };
     }
 
     assertActive(connection) {

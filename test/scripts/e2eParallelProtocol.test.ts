@@ -402,6 +402,25 @@ describe("distributed protocol", function () {
         }
     });
 
+    it("transfers a faulted worker restart reason", async function () {
+        const pair = await createSocketPair();
+        try {
+            const sender = new ProtocolPeer(pair.client);
+            const receiver = new ProtocolPeer(pair.server);
+            const received = waitForMessage(receiver, "FAULTED", 1000);
+
+            await sender.send("FAULTED", {
+                message: "administrator must restart this worker"
+            });
+
+            expect((await received).header.message).to.equal(
+                "administrator must restart this worker"
+            );
+        } finally {
+            await pair.close();
+        }
+    });
+
     it("formats queued progress and its estimated wait", function () {
         expect(
             formatBusyStatus({

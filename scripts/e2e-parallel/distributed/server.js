@@ -116,8 +116,8 @@ async function main(options = {}) {
             console.error(
                 `Worker lease cleanup failed: ${error.stack || error}`
             );
-            console.log(
-                "Cleanup was incomplete; worker remains available with a fresh lease directory"
+            console.error(
+                "Worker is disabled until its administrator restarts this server"
             );
         }
     });
@@ -157,6 +157,17 @@ async function main(options = {}) {
         }
     };
 
+    async function releaseLease(connection) {
+        const result = await manager.release(connection, async () =>
+            connection.runtime?.cleanup()
+        );
+        if (!result.faulted) return true;
+        await connection.peer
+            .send("FAULTED", { message: result.message })
+            .catch(() => {});
+        return false;
+    }
+
     async function closeConnection(
         connection,
         reason = "connection cleanup after remote or transport close"
@@ -169,10 +180,12 @@ async function main(options = {}) {
         }
         clearInterval(connection.heartbeat);
         if (manager.active === connection) {
-            await manager.release(connection, async () =>
-                connection.runtime?.cleanup()
+            const reusable = await releaseLease(connection);
+            console.log(
+                reusable
+                    ? "Lease ended; worker is ready for another run"
+                    : "Lease ended; worker is faulted and requires administrator restart"
             );
-            console.log("Lease ended; worker is ready for another run");
         } else manager.remove(connection);
         connection.peer.close(reason);
     }
@@ -542,11 +555,13 @@ async function main(options = {}) {
                         await connection.peer.send("WORKER_STATS", { stats });
                     }
                 }
-                await manager.release(connection, async () =>
-                    connection.runtime?.cleanup()
-                );
-                await connection.peer.send("LEASE_CLEAN");
-                console.log("Lease cleaned; worker is ready for another run");
+                const reusable = await releaseLease(connection);
+                if (reusable) {
+                    await connection.peer.send("LEASE_CLEAN");
+                    console.log(
+                        "Lease cleaned; worker is ready for another run"
+                    );
+                }
             }
         } catch (error) {
             console.error(`Lease failed: ${error.stack || error}`);

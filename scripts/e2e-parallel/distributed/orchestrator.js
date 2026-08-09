@@ -27,6 +27,7 @@ const { OrchestratorLogStore } = require("./orchestratorLogStore");
 const logging = require("../shared/logging");
 
 const RESET = "\x1b[0m";
+const ERROR_RED = "\x1b[31m";
 const WORKER_COLORS = [
     "\x1b[38;5;117m",
     "\x1b[38;5;213m",
@@ -80,6 +81,10 @@ function workerStatus(worker, status, target = process.stdout) {
     if (worker.lastStatus === status) return;
     worker.lastStatus = status;
     target.write(`${worker.color}[${worker.label}] ${status}${RESET}\n`);
+}
+
+function workerFaultStatus(worker, status, target = process.stderr) {
+    target.write(`${ERROR_RED}[${worker.label}] ${status}${RESET}\n`);
 }
 
 function formatBusyStatus(status) {
@@ -523,6 +528,21 @@ async function runDistributed(options) {
             });
         } else if (message.kind === "BUSY") {
             workerStatus(worker, formatBusyStatus(message.header));
+        } else if (message.kind === "FAULTED") {
+            const error = new Error(
+                `Worker ${worker.label} is faulted: ${message.header.message}`
+            );
+            worker.failure = error;
+            fs.appendFileSync(
+                logStore.infrastructurePath(worker.id, worker.label),
+                `${error.message}\n`
+            );
+            workerFaultStatus(worker, `FAULTED: ${message.header.message}`);
+            quarantinedWorkers.add(worker.id);
+            retireWorker(
+                worker,
+                "worker server requires administrator restart"
+            );
         } else if (message.kind === "WORKER_READY") {
             workerStatus(worker, "Ready");
         } else if (message.kind === "TASK_REQUEST") {
@@ -799,5 +819,6 @@ module.exports = {
     promoteAttemptLog,
     recordWorkerFailure,
     runDistributed,
-    validateWorkerStats
+    validateWorkerStats,
+    workerFaultStatus
 };
