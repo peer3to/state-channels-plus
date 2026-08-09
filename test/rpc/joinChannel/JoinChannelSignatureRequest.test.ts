@@ -4,12 +4,17 @@ import assert from "node:assert/strict";
 import Clock from "@/Clock";
 import { Status } from "@/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    IDLE_CHANNEL_TIME_CONFIG,
+    MathTestSession as TestSession
+} from "@test/harness";
 
 describe("JoinChannel signature requests", function () {
     it("validates requests, signs exact joins, and fails fast when a threshold transport is missing", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 1);
+        await h.lifecycle.start(2, 1, {
+            timeConfig: IDLE_CHANNEL_TIME_CONFIG
+        });
         const joiner = await h.join.addSpectatorWait();
         const nonUnionSigner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();

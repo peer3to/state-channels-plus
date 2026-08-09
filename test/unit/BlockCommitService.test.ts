@@ -1,7 +1,10 @@
 import { expect } from "chai";
 import { Status } from "@/types";
 import { addressesEqual } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    JOIN_STAGING_TIME_CONFIG,
+    MathTestSession as TestSession
+} from "@test/harness";
 
 // shouldSignBlock is the commit step's sign/no-sign policy; its arms are
 // driven directly (bracket access - the method is private) against real
@@ -91,12 +94,7 @@ describe("Unit: BlockCommitService", function () {
         it("a participant that joined after the block → outside its union, not signed", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2, {
-                timeConfig: {
-                    p2pTime: 2,
-                    agreementTime: 4,
-                    chainFallbackTime: 4,
-                    evidenceTime: 6
-                }
+                timeConfig: JOIN_STAGING_TIME_CONFIG
             });
             const forkId = h.activeForkId!;
             const joiner = await h.join.addSpectatorWait();
@@ -176,12 +174,7 @@ describe("Unit: BlockCommitService", function () {
         it("a PENDING joiner's first committed block includes it → PARTICIPATING and the recorded forceJoin height cleared", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2, {
-                timeConfig: {
-                    p2pTime: 2,
-                    agreementTime: 4,
-                    chainFallbackTime: 4,
-                    evidenceTime: 6
-                }
+                timeConfig: JOIN_STAGING_TIME_CONFIG
             });
             const joiner = await h.join.addSpectatorWait();
             await h.assert.sync.peersInSyncWait();

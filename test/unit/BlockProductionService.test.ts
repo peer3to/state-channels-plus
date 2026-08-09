@@ -2,7 +2,10 @@ import { expect } from "chai";
 import { Codec, Type } from "@/utils";
 import { Block } from "@/models";
 import { Status } from "@/types";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    JOIN_STAGING_TIME_CONFIG,
+    MathTestSession as TestSession
+} from "@test/harness";
 import { sleep } from "@/utils";
 
 // authoring is driven through the real client entry point
@@ -53,15 +56,10 @@ describe("Unit: BlockProductionService", function () {
 
         it("inbound arrived but not yet consumed → returned; once consumed → empty", async function () {
             const h = TestSession.getHarness();
-            // the timeConfig is the one the promotion scenario needs to keep a
-            // 2-peer channel serving the spectator's sync
+            // the promotion scenario keeps a 2-peer channel serving the
+            // spectator's sync, and the write window has to span the join
             await h.lifecycle.start(2, 2, {
-                timeConfig: {
-                    p2pTime: 2,
-                    agreementTime: 4,
-                    chainFallbackTime: 4,
-                    evidenceTime: 6
-                }
+                timeConfig: JOIN_STAGING_TIME_CONFIG
             });
             const forkId = h.activeForkId!;
 

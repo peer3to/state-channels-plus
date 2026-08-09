@@ -236,8 +236,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
 
             await h.byzantine.submitDoubleSignBlock(1);
             await h.event.waitForPeers("onDisputeKilled", [auditor.index], 1, {
-                mode: "atLeast",
-                timeoutMs: 15000
+                mode: "atLeast"
             });
 
             // Peer 0 could only acquire this timestamp by recovering the

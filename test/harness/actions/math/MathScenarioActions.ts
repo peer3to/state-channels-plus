@@ -7,6 +7,7 @@ import {
     TestPeer
 } from "@test/harness/core/types";
 import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
+import { JOIN_STAGING_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
 import { MathPeerTestHarness } from "test-harness";
 import type { MathStateMachine } from "@typechain-types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -347,12 +348,7 @@ export class MathScenarioActions extends ScenarioActions {
         const initialPeers = options?.initialPeers ?? 2;
         const initialTransitions = options?.initialTransitions ?? 2;
         const postPromotionTransitions = options?.postPromotionTransitions ?? 2;
-        const timeConfig = options?.timeConfig ?? {
-            p2pTime: 2,
-            agreementTime: 4,
-            chainFallbackTime: 4,
-            evidenceTime: 6
-        };
+        const timeConfig = options?.timeConfig ?? JOIN_STAGING_TIME_CONFIG;
 
         await this.harness.lifecycle.start(initialPeers, initialTransitions, {
             timeConfig

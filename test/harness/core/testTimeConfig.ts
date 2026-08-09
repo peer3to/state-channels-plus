@@ -7,6 +7,24 @@ export const MIN_TEST_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
     evidenceTime: 6
 });
 
+// join staging runs for seconds between two authored blocks -> the write
+// window has to cover it or the block is clamped and rejected. worst gap 12s
+export const JOIN_STAGING_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
+    p2pTime: 12,
+    agreementTime: 4,
+    chainFallbackTime: 4,
+    evidenceTime: 6
+});
+
+// same overrun for a test that holds the channel open without authoring ->
+// the next writer gets timed out and the fork disputed. worst stretch 22s
+export const IDLE_CHANNEL_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
+    p2pTime: 15,
+    agreementTime: 8,
+    chainFallbackTime: 4,
+    evidenceTime: 6
+});
+
 export function resolveTestTimeConfig(
     overrides: Partial<TimeConfig> = {}
 ): TimeConfig {

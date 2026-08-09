@@ -1,4 +1,7 @@
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    JOIN_STAGING_TIME_CONFIG,
+    MathTestSession as TestSession
+} from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
 
@@ -6,7 +9,9 @@ describe("E2E: Force Join Dispute", function () {
     it("should trigger force-join dispute after N turns of non-inclusion, then resolve with joiner PARTICIPATING", async function () {
         const h = TestSession.getHarness();
 
-        await h.lifecycle.start(2, 2);
+        await h.lifecycle.start(2, 2, {
+            timeConfig: JOIN_STAGING_TIME_CONFIG
+        });
 
         const joiner = await h.join.addSpectatorWait({
             statusTimeoutMs: 5000,
