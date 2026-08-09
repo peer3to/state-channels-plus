@@ -73,22 +73,19 @@ async function createPool(options) {
         ...(dht ? { dht } : {}),
         ...(options.keyPair ? { keyPair: options.keyPair } : {})
     });
-    // Dial diagnostics: report every peer this swarm discovers, each dial
-    // attempt it makes, and the direction of every established connection, so
-    // an asymmetric NAT/firewall path is visible from both terminals.
+    // Dial diagnostics report discoveries and actual connection lifecycle
+    // events. Hyperswarm's attempts counter is retry state, not a dial event;
+    // logging its resets as "dialing" made active connections look unhealthy.
     const logDial = options.onDialActivity;
-    const peerAttempts = new Map();
+    const discoveredPeers = new Set();
     const logPeerActivity = () => {
         if (!logDial) return;
         for (const [hex, peerInfo] of swarm.peers) {
-            const state = `attempts ${peerInfo.attempts}${peerInfo.banned ? ", banned" : ""}`;
-            const previous = peerAttempts.get(hex);
-            if (previous === undefined) {
-                logDial(`discovered peer ${hex.slice(0, 12)} (${state})`);
-            } else if (previous !== peerInfo.attempts || peerInfo.banned) {
-                logDial(`dialing peer ${hex.slice(0, 12)} (${state})`);
-            }
-            peerAttempts.set(hex, peerInfo.attempts);
+            if (discoveredPeers.has(hex)) continue;
+            discoveredPeers.add(hex);
+            logDial(
+                `discovered peer ${hex.slice(0, 12)}${peerInfo.banned ? " (banned)" : ""}`
+            );
         }
     };
     if (logDial) swarm.on("update", logPeerActivity);

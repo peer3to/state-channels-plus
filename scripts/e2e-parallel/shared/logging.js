@@ -458,6 +458,10 @@ function summary({
     }
     if (totalFailing > 0) {
         console.log(colorize("red", `  ${totalFailing} failing`));
+        console.log(colorize("red", "  Failed tasks:"));
+        for (const task of failed) {
+            console.log(colorize("red", `    - ${task.label}`));
+        }
     }
     if (counts.notRun > 0) {
         console.log(colorize("yellow", `  ${counts.notRun} not run`));

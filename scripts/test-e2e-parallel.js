@@ -337,9 +337,6 @@ async function main(options = {}) {
 
         if (stats.failed.length > 0) {
             logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
-            console.error(
-                `\nFailed tasks:\n- ${stats.failed.map((t) => t.label).join("\n- ")}\n`
-            );
             process.exitCode = 1;
             return;
         }

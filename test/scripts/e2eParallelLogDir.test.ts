@@ -27,6 +27,7 @@ const {
     isWithinDefaultLogDir,
     safeEmptyDir,
     nextRunDir,
+    summary,
     summaryCounts
 } = require("../../scripts/e2e-parallel/shared/logging.js") as {
     colorize: (color: string, text: string) => string;
@@ -43,6 +44,7 @@ const {
     isWithinDefaultLogDir: (resolved: string) => boolean;
     safeEmptyDir: (dirPath: string, allow: boolean) => void;
     nextRunDir: (baseDir: string) => string;
+    summary: (options: Record<string, unknown>) => void;
     summaryCounts: (
         total: number,
         failed: number,
@@ -314,6 +316,29 @@ describe("e2e-parallel logging - purge guards", function () {
 });
 
 describe("e2e-parallel logging - starvation diagnostics", function () {
+    it("includes every failed task label in the shared final summary", function () {
+        const lines: string[] = [];
+        const original = console.log;
+        console.log = (line = "") => lines.push(line);
+        try {
+            summary({
+                tasks: [{ label: "passes" }, { label: "fails" }],
+                failed: [{ label: "fails" }],
+                wallMs: 1000,
+                sumDurationMs: 1000,
+                peakCpu: 0,
+                avgCpu: 0,
+                peakOccupiedGb: 0,
+                avgPerTestGb: 0,
+                memBoundGb: 1
+            });
+        } finally {
+            console.log = original;
+        }
+        expect(lines.join("\n")).to.include("Failed tasks:");
+        expect(lines.join("\n")).to.include("- fails");
+    });
+
     it("uses account partitions only when tests share an infrastructure slot", function () {
         expect(accountPartitionFor({ id: 1 }, 23)).to.equal(23);
         expect(accountPartitionFor(null, 23)).to.equal(0);

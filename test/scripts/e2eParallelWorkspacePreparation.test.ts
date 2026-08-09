@@ -102,7 +102,12 @@ describe("distributed workspace preparation", function () {
                     },
                     {
                         workRoot: path.join(root, "worker"),
-                        runtime: { addChild() {} },
+                        runtime: {
+                            addChild() {},
+                            inheritedFileDescriptors() {
+                                return [];
+                            }
+                        },
                         shouldInstall: () => false,
                         env: {
                             PATH: `${bin}${path.delimiter}${process.env.PATH}`,
@@ -175,6 +180,9 @@ describe("distributed workspace preparation", function () {
                     runtime: {
                         addChild(child: unknown) {
                             children.add(child);
+                        },
+                        inheritedFileDescriptors() {
+                            return [];
                         }
                     },
                     env: {

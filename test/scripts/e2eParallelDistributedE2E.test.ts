@@ -275,6 +275,7 @@ describe("distributed parallel runner", function () {
             let connectionCount = 0;
             let resolveFirst!: () => void;
             let resolveSecond!: () => void;
+            const dialActivity: string[] = [];
             const connectedToFirst = new Promise<void>(
                 (resolve) => (resolveFirst = resolve)
             );
@@ -286,7 +287,8 @@ describe("distributed parallel runner", function () {
                 server: false,
                 client: true,
                 dht: network.createNode(),
-                refreshIntervalMs: 25
+                refreshIntervalMs: 25,
+                onDialActivity: (line: string) => dialActivity.push(line)
             });
             pools.unshift(client);
             client.onConnection((stream: unknown) => {
@@ -311,6 +313,9 @@ describe("distributed parallel runner", function () {
 
             await connectedToBoth;
             expect(connectionCount).to.equal(2);
+            expect(
+                dialActivity.some((line) => line.startsWith("dialing peer"))
+            ).to.equal(false);
         } finally {
             await Promise.allSettled(pools.map((pool) => pool.close()));
             await network.close();
