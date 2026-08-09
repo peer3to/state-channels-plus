@@ -143,22 +143,22 @@ export default class BlockProductionService {
     private getPendingInboundMessageBlocks(
         previousStateSnapshot: StateSnapshot
     ): MessageBlockStruct[] {
-        const latestStoredHash =
-            this.stateManager.storage.inboundMessages.getLatestBlockHash();
-        if (!latestStoredHash) {
-            return [];
-        }
-
         const previousHash =
-            previousStateSnapshot.snapshotData.latestInboundMessageBlockHash;
+            previousStateSnapshot.latestInboundMessageBlockHash;
 
-        if (previousHash && latestStoredHash === previousHash) {
+        // a store still behind the snapshot has nothing pending - walking from
+        // its head would run past previousHash and return the whole chain
+        const head = this.stateManager.storage.inboundMessages.headNotBehind(
+            previousHash,
+            previousStateSnapshot.latestInboundMessageBlockHeight
+        );
+        if (head.hash === previousHash) {
             return [];
         }
 
         return this.stateManager.storage.inboundMessages.getMessageBlocksInRange(
             {
-                upperBlockHash: latestStoredHash,
+                upperBlockHash: head.hash,
                 lowerBlockHash: previousHash ?? ethers.ZeroHash
             }
         );
