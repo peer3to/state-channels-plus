@@ -29,13 +29,14 @@ export async function startLogReceiver(): Promise<LogReceiver> {
     const waiters: Array<{ count: number; resolve: () => void }> = [];
 
     const server = http.createServer((req, res) => {
-        const chunks: Buffer[] = [];
-        req.on("data", (chunk) => chunks.push(chunk as Buffer));
+        let body = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk) => {
+            body += chunk;
+        });
         req.on("end", () => {
             try {
-                requests.push(
-                    JSON.parse(Buffer.concat(chunks).toString("utf8"))
-                );
+                requests.push(JSON.parse(body));
             } catch {
                 // ignore non-JSON probes
             }

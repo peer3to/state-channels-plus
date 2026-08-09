@@ -172,7 +172,7 @@ describe("E2E: BlockQueueManager", function () {
                     .query.isConnectedTo(victim.address)
                     .request()),
             {
-                timeoutMs: h.event.protocolEventTimeoutMs(1),
+                timeoutMs: h.event.protocolEventTimeoutMs(),
                 timeoutMessage: "relayer/author never both connected to victim"
             }
         );

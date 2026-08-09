@@ -35,6 +35,8 @@
     "exclude": [
         "examples",
         "dist",
+        "logs",
+        "temp",
         "node_modules",
         "src/evm/node",
         "src/evm/contractExecutor/node",

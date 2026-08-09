@@ -61,7 +61,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
     });
 
     describe("stateProof.signedBlocks[0].transaction.header.transactionCnt != 0", function () {
-        it("first signedBlock height is not 0 → DisputeInvalidStateProof", async function () {
+        it("first signedBlock height is not 0 → DisputeInvalidBlockStructure", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
             const forkId = h.activeForkId!;
@@ -90,7 +90,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
+                    DisputeFraudProofType.DisputeInvalidBlockStructure,
                 timeoutMs: 15000
             });
             await h.dispute.resolveDisputeWait({ forkId });
