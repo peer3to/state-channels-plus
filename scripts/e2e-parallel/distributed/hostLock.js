@@ -15,6 +15,17 @@ function acquireHostLock(options = {}) {
             "Host locking is unsupported; pass --allow-shared-host to bypass it"
         );
     }
+    return acquireOsFileLock(
+        options.lockPath || HOST_LOCK_PATH,
+        "Another test:parallel:server owns this host",
+        { mode: options.lockPath ? undefined : 0o700 }
+    );
+}
+
+function acquireOsFileLock(lockPath, contentionMessage, options = {}) {
+    if (process.platform !== "darwin" && process.platform !== "linux") {
+        throw new Error("OS-held file locking is unsupported on this platform");
+    }
     let fsExt;
     try {
         fsExt = require("fs-ext");
@@ -22,13 +33,12 @@ function acquireHostLock(options = {}) {
         // Keep the underlying loader error: "module not found" vs a native
         // ABI mismatch vs an unbuilt binding need different fixes.
         throw new Error(
-            `fs-ext is required for the distributed worker host lock: ${error.message}`
+            `fs-ext is required for distributed worker locking: ${error.message}`
         );
     }
-    const lockPath = options.lockPath || HOST_LOCK_PATH;
     fs.mkdirSync(path.dirname(lockPath), {
         recursive: true,
-        mode: options.lockPath ? undefined : 0o700
+        mode: options.mode
     });
     try {
         if (fs.lstatSync(lockPath).isSymbolicLink()) {
@@ -50,12 +60,13 @@ function acquireHostLock(options = {}) {
     } catch (error) {
         fs.closeSync(fd);
         if (error.code === "EAGAIN" || error.code === "EWOULDBLOCK") {
-            throw new Error("Another test:parallel:server owns this host");
+            throw new Error(contentionMessage);
         }
         throw error;
     }
     let released = false;
     return {
+        fd,
         release() {
             if (released) return;
             released = true;
@@ -65,4 +76,9 @@ function acquireHostLock(options = {}) {
     };
 }
 
-module.exports = { HOST_LOCK_DIR, HOST_LOCK_PATH, acquireHostLock };
+module.exports = {
+    HOST_LOCK_DIR,
+    HOST_LOCK_PATH,
+    acquireHostLock,
+    acquireOsFileLock
+};

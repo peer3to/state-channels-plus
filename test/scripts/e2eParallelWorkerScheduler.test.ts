@@ -55,6 +55,30 @@ describe("distributed worker scheduler", function () {
         );
     });
 
+    it("requires a unique work root when host sharing is enabled", function () {
+        expect(() =>
+            parseServerArgs(["node", "server.js", "--allow-shared-host"], {
+                SCP_TEST_WORKER_NAME: "server-1"
+            })
+        ).to.throw("requires an explicit unique --work-root");
+        expect(
+            parseServerArgs(
+                [
+                    "node",
+                    "server.js",
+                    "--allow-shared-host",
+                    "--work-root",
+                    "/tmp/server-1"
+                ],
+                { SCP_TEST_WORKER_NAME: "server-1" }
+            )
+        ).to.include({
+            allowSharedHost: true,
+            workRoot: "/tmp/server-1",
+            workRootProvided: true
+        });
+    });
+
     it("reuses only funded account partitions", function () {
         const pool = new AccountPartitionPool(2);
         const first = pool.acquire();

@@ -8,7 +8,14 @@ function run(command, args, options) {
         const child = spawn(command, args, {
             cwd: options.cwd,
             env: options.env,
-            stdio: ["ignore", "pipe", "pipe"],
+            // Inherit workspace-lock descriptors so an abruptly killed server
+            // cannot release ownership while this detached child still writes.
+            stdio: [
+                "ignore",
+                "pipe",
+                "pipe",
+                ...options.runtime.inheritedFileDescriptors()
+            ],
             detached: process.platform !== "win32"
         });
         options.runtime.addChild(child);

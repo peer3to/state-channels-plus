@@ -15,11 +15,11 @@ Options:
                                   Use and clear this exact log directory
   -p, --allow-logdir-purge, --allowLogdirPurge, --purge
                                   Allow clearing an explicit dir outside logs/
-      --slots <count>            Warm E2E infrastructure slots (0 disables)
-  -w, --workers <count>          Maximum concurrent test processes
-      --target-load <number>     Maximum average system load per CPU core
-  -i, --interval <ms>            Scheduler admission interval
-      --mem-limit-gb <gb>        Memory budget for owned test processes
+      --slots <count>            Local warm E2E infrastructure slots (0 disables)
+  -w, --workers <count>          Local maximum concurrent test processes
+      --target-load <number>     Local maximum average load per CPU core
+  -i, --interval <ms>            Local scheduler admission interval
+      --mem-limit-gb <gb>        Local memory budget for test processes
       --sdk-thread               Run the SDK host in a worker thread
       --no-sdk-thread            Run the SDK host on the main thread
       --vm-thread                Run the VM executor in a worker thread
@@ -74,7 +74,8 @@ function parseCliArgs(argv) {
         distributed: false,
         discoveryTimeoutMs: 30000,
         forwardEnv: [],
-        distributedOptionsProvided: false
+        distributedOptionsProvided: false,
+        localCapacityOptionsProvided: []
     };
 
     // Positive number, or 0 only when allowZero (used by --slots).
@@ -175,6 +176,7 @@ function parseCliArgs(argv) {
             );
             if (v !== undefined) {
                 options.slots = v;
+                options.localCapacityOptionsProvided.push("--slots");
                 i++;
             }
             continue;
@@ -185,7 +187,10 @@ function parseCliArgs(argv) {
                 (s) => Number.parseInt(s, 10),
                 true
             );
-            if (v !== undefined) options.slots = v;
+            if (v !== undefined) {
+                options.slots = v;
+                options.localCapacityOptionsProvided.push("--slots");
+            }
             continue;
         }
 
@@ -193,6 +198,7 @@ function parseCliArgs(argv) {
             const v = takeNumber(argv[i + 1], (s) => Number.parseInt(s, 10));
             if (v !== undefined) {
                 options.workers = v;
+                options.localCapacityOptionsProvided.push("--workers");
                 i++;
             }
             continue;
@@ -201,7 +207,10 @@ function parseCliArgs(argv) {
             const v = takeNumber(arg.split("=").slice(1).join("="), (s) =>
                 Number.parseInt(s, 10)
             );
-            if (v !== undefined) options.workers = v;
+            if (v !== undefined) {
+                options.workers = v;
+                options.localCapacityOptionsProvided.push("--workers");
+            }
             continue;
         }
 
@@ -209,13 +218,17 @@ function parseCliArgs(argv) {
             const v = takeNumber(argv[i + 1], Number.parseFloat);
             if (v !== undefined) {
                 options.targetLoad = v;
+                options.localCapacityOptionsProvided.push("--target-load");
                 i++;
             }
             continue;
         }
         if (arg.startsWith("--target-load=")) {
             const v = takeNumber(arg.split("=")[1], Number.parseFloat);
-            if (v !== undefined) options.targetLoad = v;
+            if (v !== undefined) {
+                options.targetLoad = v;
+                options.localCapacityOptionsProvided.push("--target-load");
+            }
             continue;
         }
 
@@ -223,6 +236,7 @@ function parseCliArgs(argv) {
             const v = takeNumber(argv[i + 1], (s) => Number.parseInt(s, 10));
             if (v !== undefined) {
                 options.schedulerTickMs = v;
+                options.localCapacityOptionsProvided.push("--interval");
                 i++;
             }
             continue;
@@ -231,7 +245,10 @@ function parseCliArgs(argv) {
             const v = takeNumber(arg.split("=").slice(1).join("="), (s) =>
                 Number.parseInt(s, 10)
             );
-            if (v !== undefined) options.schedulerTickMs = v;
+            if (v !== undefined) {
+                options.schedulerTickMs = v;
+                options.localCapacityOptionsProvided.push("--interval");
+            }
             continue;
         }
 
@@ -239,13 +256,17 @@ function parseCliArgs(argv) {
             const v = takeNumber(argv[i + 1], Number.parseFloat);
             if (v !== undefined) {
                 options.memLimitGb = v;
+                options.localCapacityOptionsProvided.push("--mem-limit-gb");
                 i++;
             }
             continue;
         }
         if (arg.startsWith("--mem-limit-gb=")) {
             const v = takeNumber(arg.split("=")[1], Number.parseFloat);
-            if (v !== undefined) options.memLimitGb = v;
+            if (v !== undefined) {
+                options.memLimitGb = v;
+                options.localCapacityOptionsProvided.push("--mem-limit-gb");
+            }
             continue;
         }
 
@@ -300,6 +321,14 @@ function parseCliArgs(argv) {
 
     if (!options.distributed && options.distributedOptionsProvided) {
         throw new Error("Distributed-only options require --distributed");
+    }
+    if (options.distributed && options.localCapacityOptionsProvided.length) {
+        const flags = [...new Set(options.localCapacityOptionsProvided)].join(
+            ", "
+        );
+        throw new Error(
+            `${flags} configure only local execution; pass the corresponding flags to test:parallel:server`
+        );
     }
 
     return options;

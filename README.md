@@ -141,6 +141,7 @@ temp/distributed-worker/
 ├── pnpm-store/
 ├── workspaces/
 │   └── <project-id>/
+│       ├── workspace.lock
 │       ├── source-manifest.json
 │       ├── prepared.json
 │       └── workspace/
@@ -160,6 +161,9 @@ temp/distributed-worker/
 - `pnpm-store/` is the persistent dependency cache shared by later runs.
 - `workspaces/<project-id>/` is the persistent reconstructed source tree. It
   keeps `node_modules`, generated files, and successful build output.
+- `workspace.lock` is held across synchronization, preparation, testing, and
+  cleanup. Preparation and test children inherit it, so another server cannot
+  mutate the same workspace after an abrupt parent-process exit.
 - `source-manifest.json` records source hashes and cached file metadata. Before
   each run, the worker checks the cached files on disk, re-hashes anything
   whose size or modification time drifted, and asks the orchestrator only for
@@ -178,15 +182,11 @@ temp/distributed-worker/
 - `spool/` temporarily holds test stdout and stderr before it is committed to
   the orchestrator.
 
-The orchestrator creates the sending copy here:
-
-```text
-logs/run-N/distributed-transfer/source.tgz
-```
-
-This archive and its `distributed-transfer/` directory are deleted when the
-distributed command finishes or fails. Canonical summaries and test logs stay
-under `logs/run-N/`.
+The orchestrator manifests the source once, then creates an isolated delta
+archive only when a worker requests changed files. Each delta is removed after
+that transfer. The temporary `distributed-transfer/` directory is deleted when
+the distributed command finishes or fails. Canonical summaries and test logs
+stay under `logs/run-N/`.
 
 The worker deletes the complete `leases/lease-*` tree when the run completes,
 fails, is cancelled, or loses its orchestrator. This removes the received
@@ -204,7 +204,8 @@ pnpm test:parallel:server \
 
 All worker-managed files then live under `/your/chosen/directory`; nothing is
 written to `temp/distributed-worker/`. Use an empty, writable directory on fast
-local storage, and do not share one work root between worker servers. Real
+local storage. `--allow-shared-host` requires an explicit, unique `--work-root`;
+do not share one work root between worker servers. Real
 distributed runs do not store package data in random OS temporary directories.
 Unit tests may use OS temporary directories and remove them during teardown.
 

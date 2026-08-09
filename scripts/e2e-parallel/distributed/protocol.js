@@ -2,7 +2,7 @@ const { EventEmitter } = require("events");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-const DISTRIBUTED_PROTOCOL_VERSION = 11;
+const DISTRIBUTED_PROTOCOL_VERSION = 12;
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const MESSAGE_KINDS = new Set([
     "AUTH_HELLO",

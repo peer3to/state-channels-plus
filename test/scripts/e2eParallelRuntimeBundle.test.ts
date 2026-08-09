@@ -1,12 +1,12 @@
 import { expect } from "chai";
 import { execFileSync } from "child_process";
-import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
 import { createSocketPair } from "../fixtures/distributed/testTransport";
 
 const {
+    buildRuntimeManifest,
     buildRuntimeBundle,
     buildDeltaBundle
 } = require("../../scripts/e2e-parallel/distributed/runtimeBundle.js");
@@ -204,7 +204,7 @@ describe("distributed source workspace", function () {
         }
     });
 
-    it("leaves the caller's archive untouched and delivers a valid bundle to each concurrent peer", async function () {
+    it("creates only requested deltas and delivers a valid bundle to concurrent peers", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "send-bundle-"));
         const project = path.join(root, "project");
         const archive = path.join(root, "transfer", "source.tgz");
@@ -236,17 +236,13 @@ describe("distributed source workspace", function () {
                     `module.exports = ${index};\n`.repeat(400)
                 );
             }
-            const manifest = await buildRuntimeBundle(project, archive);
+            const manifest = await buildRuntimeManifest(project);
+            expect(fs.existsSync(archive)).to.equal(false);
             const changed = manifest.files.map(
                 (entry: { path: string }) => entry.path
             );
-            const archiveBefore = crypto
-                .createHash("sha256")
-                .update(fs.readFileSync(archive))
-                .digest("hex");
-
-            // Two peers onboarded at once, both handed the same archive path —
-            // exactly how the orchestrator drives sendBundle.
+            // Two peers onboarded at once use the same path only as a stem for
+            // isolated, on-demand delta archives.
             const transfers = await Promise.all(
                 [0, 1].map(async (index) => {
                     const pair = await createSocketPair();
@@ -297,16 +293,7 @@ describe("distributed source workspace", function () {
                 })
             );
 
-            // The shared path holds the full bundle the caller built; sendBundle
-            // must not write through it.
-            const archiveAfter = crypto
-                .createHash("sha256")
-                .update(fs.readFileSync(archive))
-                .digest("hex");
-            expect(
-                archiveAfter,
-                "sendBundle wrote through the caller's archive path"
-            ).to.equal(archiveBefore);
+            expect(fs.existsSync(archive)).to.equal(false);
 
             // Each peer's archive must be intact gzip, not merely checksum-consistent.
             for (const [index, transfer] of transfers.entries()) {
@@ -319,6 +306,44 @@ describe("distributed source workspace", function () {
             }
         } finally {
             for (const pair of openPairs) await pair.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("rejects source changes after manifest creation", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "source-change-"));
+        const project = path.join(root, "project");
+        const delta = path.join(root, "transfer", "delta.tgz");
+        try {
+            initializeRepository(project);
+            fs.writeFileSync(
+                path.join(project, "package.json"),
+                JSON.stringify({ name: "project" })
+            );
+            const runner = path.join(
+                project,
+                "scripts",
+                "e2e-parallel",
+                "distributed"
+            );
+            fs.mkdirSync(runner, { recursive: true });
+            fs.writeFileSync(path.join(runner, "worker.js"), "// original\n");
+            const manifest = await buildRuntimeManifest(project);
+            const relative = manifest.files.find((entry: { path: string }) =>
+                entry.path.endsWith("worker.js")
+            ).path;
+            fs.writeFileSync(path.join(root, relative), "// changed\n");
+
+            let error: Error | undefined;
+            try {
+                await buildDeltaBundle(manifest, [relative], delta);
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error?.message).to.equal(
+                `Source changed after manifest creation: ${relative}`
+            );
+        } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });

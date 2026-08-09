@@ -33,7 +33,7 @@ const {
 } = require("./e2e-parallel/distributed/orchestratorIdentity");
 const logging = require("./e2e-parallel/shared/logging");
 const {
-    buildRuntimeBundle
+    buildRuntimeManifest
 } = require("./e2e-parallel/distributed/runtimeBundle");
 const {
     buildRemoteEnvironment
@@ -132,6 +132,12 @@ async function main(options = {}) {
     );
 
     if (cli.dryRun) {
+        if (cli.distributed) {
+            console.log(
+                `Distributed dry run: ${tasks.length} task(s); capacity is configured by test:parallel:server`
+            );
+            return;
+        }
         logging.dryRun({
             taskCount: tasks.length,
             slotCount,
@@ -145,17 +151,19 @@ async function main(options = {}) {
         return;
     }
 
-    logging.runHeader({
-        taskCount: tasks.length,
-        grep: cli.grep,
-        e2eOnly: cli.e2eOnly,
-        slotCount,
-        threadModes,
-        targetLoad,
-        tickMs: schedulerTickMs,
-        memBoundGb,
-        concurrencyCap
-    });
+    if (!cli.distributed) {
+        logging.runHeader({
+            taskCount: tasks.length,
+            grep: cli.grep,
+            e2eOnly: cli.e2eOnly,
+            slotCount,
+            threadModes,
+            targetLoad,
+            tickMs: schedulerTickMs,
+            memBoundGb,
+            concurrencyCap
+        });
+    }
 
     // Default: a fresh run-N dir per run (./logs/run-0, ./logs/run-1, ...)
     // so earlier runs' error logs survive for cross-run comparison. An
@@ -211,9 +219,8 @@ async function main(options = {}) {
             const transferRoot = path.join(logDir, "distributed-transfer");
             const archivePath = path.join(transferRoot, "source.tgz");
             try {
-                const manifest = await buildRuntimeBundle(
+                const manifest = await buildRuntimeManifest(
                     process.cwd(),
-                    archivePath,
                     console.log
                 );
                 const stats = await runDistributed({
@@ -267,7 +274,8 @@ async function main(options = {}) {
                     sumDurationMs: stats.sumDurationMs,
                     peakCpu: stats.peakCpu,
                     avgCpu: stats.avgCpu,
-                    peakOccupiedGb: stats.peakOccupiedGb,
+                    peakOccupiedGb: stats.sumPeakOccupiedGb,
+                    memoryPeakLabel: "sum of worker peaks",
                     avgPerTestGb: stats.avgPerTestGb,
                     memBoundGb: stats.memBoundGb,
                     workers: stats.workers

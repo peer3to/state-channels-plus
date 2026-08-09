@@ -4,11 +4,50 @@ const {
     TaskCoordinator
 } = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
 
-function task(label: string) {
+function task(label: string): {
+    label: string;
+    logName: string;
+    args: string[];
+    startupMs?: number;
+    repeatedStarvation?: boolean;
+} {
     return { label, logName: label, args: [] };
 }
 
 describe("distributed task coordinator", function () {
+    it("uses worker-reduced metadata when successful output is not uploaded", function () {
+        const firstTask = task("starved");
+        const coordinator = new TaskCoordinator([firstTask]);
+        const first = coordinator.requestTask("remote");
+        const timing = {
+            startupMs: 11,
+            deployMs: 7,
+            workerBootMs: 3,
+            maxEventLoopDelayMs: 1200,
+            el: { main: 0, sdk: 0, vm: 0, watchdog: 1200 },
+            found: true
+        };
+        const retried = coordinator.completeAttempt("remote", {
+            attemptId: first.attemptId,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            reduced: { oomCount: 0, starveCount: 1, timing }
+        });
+        expect(retried.disposition).to.equal("retry-starvation");
+        expect(firstTask.startupMs).to.equal(11);
+
+        const second = coordinator.requestTask("remote");
+        coordinator.completeAttempt("remote", {
+            attemptId: second.attemptId,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            reduced: { oomCount: 0, starveCount: 1, timing }
+        });
+        expect(coordinator.finish().failed).to.deep.equal([firstTask]);
+        expect(firstTask.repeatedStarvation).to.equal(true);
+    });
     it("wakes an idle worker when the last assignment is reissued", function () {
         const nudged: string[] = [];
         const coordinator = new TaskCoordinator([task("one")], {

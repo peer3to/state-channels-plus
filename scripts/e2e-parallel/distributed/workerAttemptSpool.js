@@ -99,6 +99,27 @@ class WorkerAttemptSpool {
         return { byteCount: outputBytes, sequence };
     }
 
+    readOutput() {
+        this.close();
+        const output = { stdout: "", stderr: "" };
+        const contents = fs.readFileSync(this.filePath);
+        let offset = 0;
+        while (offset < contents.length) {
+            if (offset + 5 > contents.length)
+                throw new Error("Corrupt attempt spool");
+            const stream = STREAM_NAMES[contents.readUInt8(offset)];
+            const length = contents.readUInt32BE(offset + 1);
+            offset += 5;
+            if (!stream || offset + length > contents.length)
+                throw new Error("Corrupt attempt spool");
+            output[stream] += contents
+                .subarray(offset, offset + length)
+                .toString();
+            offset += length;
+        }
+        return output;
+    }
+
     remove() {
         this.close();
         fs.rmSync(this.filePath, { force: true });

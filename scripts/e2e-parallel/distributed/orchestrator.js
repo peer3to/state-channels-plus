@@ -168,7 +168,7 @@ function aggregateWorkerStats(workers) {
                   0
               ) / cpuSamples
             : 0,
-        peakOccupiedGb: stats.reduce(
+        sumPeakOccupiedGb: stats.reduce(
             (sum, entry) => sum + entry.peakOccupiedGb,
             0
         ),
@@ -185,6 +185,31 @@ function aggregateWorkerStats(workers) {
             0
         )
     };
+}
+
+function recordPreparationFailure(
+    preparationFailures,
+    quarantinedWorkers,
+    workerId,
+    limit = 2
+) {
+    const failures = (preparationFailures.get(workerId) || 0) + 1;
+    preparationFailures.set(workerId, failures);
+    if (failures >= limit) quarantinedWorkers.add(workerId);
+    return { failures, quarantined: quarantinedWorkers.has(workerId) };
+}
+
+function formatWorkerSummary(worker, completed) {
+    const capacity = `${worker.capabilities.slots} slots, ${worker.capabilities.workers} workers, ${worker.capabilities.memoryGb}GB`;
+    if (!worker.stats) {
+        return `${workerName(worker)} (${capacity}) · ${completed} tests · resource stats unavailable`;
+    }
+    const stats = worker.stats;
+    return (
+        `${workerName(worker)} (${capacity}) · ${completed} tests · ` +
+        `cpu avg ${(stats.avgCpu * 100).toFixed(0)}% / peak ${(stats.peakCpu * 100).toFixed(0)}% · ` +
+        `mem peak ${stats.peakOccupiedGb.toFixed(1)}GB / bound ${stats.memBoundGb.toFixed(1)}GB, avg/process ${stats.avgPerTestGb.toFixed(2)}GB`
+    );
 }
 
 async function runDistributed(options) {
@@ -212,7 +237,11 @@ async function runDistributed(options) {
     // served the run, not only those still connected at the end.
     const completedByWorker = new Map();
     const leasedWorkers = new Map();
-    const ignoredWorkers = new Set();
+    // Stable transport identity -> compatibility/preparation disposition for
+    // this run, so reconnecting the same host cannot reset its failure budget.
+    const warnedIncompatibleWorkers = new Set();
+    const quarantinedWorkers = new Set();
+    const preparationFailures = new Map();
     const logStore = new OrchestratorLogStore(options.logDir);
     const committedOutput = new Map();
     let discoveryStartedAt = Date.now();
@@ -342,12 +371,16 @@ async function runDistributed(options) {
                 peer.close("orchestrator run finished during authentication");
                 return;
             }
+            if (quarantinedWorkers.has(workerId)) {
+                peer.close("worker is quarantined for this run");
+                return;
+            }
             if (
                 ready.header.capabilities.distributedProtocol !==
                 DISTRIBUTED_PROTOCOL_VERSION
             ) {
-                if (!ignoredWorkers.has(workerId)) {
-                    ignoredWorkers.add(workerId);
+                if (!warnedIncompatibleWorkers.has(workerId)) {
+                    warnedIncompatibleWorkers.add(workerId);
                     console.warn(
                         `Ignoring worker ${ready.header.name}: restart it with the current code`
                     );
@@ -598,9 +631,18 @@ async function runDistributed(options) {
                 `Preparation failed: ${message.header.message}`,
                 process.stderr
             );
-            finishing = true;
-            clearRediscoveryTimeout();
-            completedReject(error);
+            const failure = recordPreparationFailure(
+                preparationFailures,
+                quarantinedWorkers,
+                worker.id
+            );
+            if (failure.quarantined) {
+                workerStatus(
+                    worker,
+                    `Quarantined after ${failure.failures} workspace preparation failures`,
+                    process.stderr
+                );
+            }
             retireWorker(worker, "workspace preparation failed");
         } else if (message.kind === "WORKER_ERROR") {
             const error = new Error(
@@ -701,9 +743,8 @@ async function runDistributed(options) {
         clearRediscoveryTimeout();
         await completed;
         usedWorkers = [...leasedWorkers.values()];
-        workerLabels = usedWorkers.map(
-            (worker) =>
-                `${workerName(worker)} (${worker.capabilities.slots} slots, ${worker.capabilities.workers} workers, ${worker.capabilities.memoryGb}GB) · ${completedByWorker.get(worker.id) || 0} tests`
+        workerLabels = usedWorkers.map((worker) =>
+            formatWorkerSummary(worker, completedByWorker.get(worker.id) || 0)
         );
     } finally {
         clearTimeout(discoveryTimeout);
@@ -729,8 +770,10 @@ module.exports = {
     createWorkerColorRegistry,
     createHeartbeatMonitor,
     formatBusyStatus,
+    formatWorkerSummary,
     isRoutineDiscoveryFailure,
     promoteAttemptLog,
+    recordPreparationFailure,
     runDistributed,
     validateWorkerStats
 };

@@ -62,7 +62,11 @@ const { buildBaseEnv, main } =
             sdkThread: boolean;
             vmThread: boolean;
         }) => NodeJS.ProcessEnv;
-        main: (options?: { testPattern?: string }) => Promise<void>;
+        main: (options?: {
+            testPattern?: string;
+            dryRun?: boolean;
+            distributed?: boolean;
+        }) => Promise<void>;
     };
 
 const argv = (...args: string[]) => ["node", "runner", ...args];
@@ -140,6 +144,45 @@ describe("e2e-parallel argParser - logDir validation", function () {
         expect(() => parseCliArgs(argv("--forward-env", "CI"))).to.throw(
             /require --distributed/
         );
+    });
+
+    it("rejects local capacity flags in distributed mode", function () {
+        for (const [flag, value] of [
+            ["--slots", "2"],
+            ["--workers", "3"],
+            ["--target-load", "0.5"],
+            ["--interval", "250"],
+            ["--mem-limit-gb", "4"]
+        ]) {
+            expect(() =>
+                parseCliArgs(argv("--distributed", flag, value))
+            ).to.throw(
+                new RegExp(`${flag}.*test:parallel:server`.replace("-", "\\-"))
+            );
+        }
+    });
+
+    it("does not resolve local capacity for a distributed dry run", async function () {
+        const lines: string[] = [];
+        const original = console.log;
+        const originalArgv = process.argv;
+        console.log = (line: string) => lines.push(line);
+        process.argv = ["node", "runner"];
+        try {
+            await main({
+                dryRun: true,
+                distributed: true,
+                testPattern: "scripts/e2eParallelProtocol.test.ts"
+            });
+        } finally {
+            console.log = original;
+            process.argv = originalArgv;
+        }
+        expect(lines).to.have.length(1);
+        expect(lines[0]).to.match(
+            /^Distributed dry run: \d+ task\(s\); capacity is configured by test:parallel:server$/
+        );
+        expect(lines[0]).to.not.include("slots=");
     });
 
     it("accepts a consumer test filename pattern", function () {

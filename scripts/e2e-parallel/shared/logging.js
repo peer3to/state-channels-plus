@@ -427,6 +427,7 @@ function summary({
     peakCpu,
     avgCpu,
     peakOccupiedGb,
+    memoryPeakLabel = "peak owned",
     avgPerTestGb,
     memBoundGb,
     targetLoad,
@@ -509,7 +510,7 @@ function summary({
         `  startup sum ${formatDurationMs(totalStartupMs)} (worker-boot ${formatDurationMs(totalWorkerBootMs)}) · deploy sum ${formatDurationMs(totalDeployMs)}`
     );
     console.log(
-        `  mem: peak owned ${peakOccupiedGb.toFixed(1)}GB, avg/process ${avgPerTestGb.toFixed(2)}GB (bound ${memBoundGb.toFixed(1)}GB)`
+        `  mem: ${memoryPeakLabel} ${peakOccupiedGb.toFixed(1)}GB, avg/process ${avgPerTestGb.toFixed(2)}GB (bound ${memBoundGb.toFixed(1)}GB)`
     );
     console.log(
         `  cpu: avg ${(avgCpu * 100).toFixed(0)}% · peak ${(peakCpu * 100).toFixed(0)}%${targetLoad === undefined ? "" : ` (target ${(targetLoad * 100).toFixed(0)}%)`}`

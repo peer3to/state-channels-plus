@@ -13,6 +13,7 @@ const { ResourceGate } = require("../shared/resourceGate");
 const { HARDHAT_CLI } = require("../shared/constants");
 const { buildSlotEnv, holdReason } = require("../shared/scheduling");
 const logging = require("../shared/logging");
+const { reduceAttemptOutput } = require("../shared/taskCoordinator");
 const {
     provisionSlots,
     teardownInfra
@@ -32,6 +33,10 @@ const cancellation = new AbortController();
 
 function processFailureReason(label, code, signal) {
     return `${label} exited (${code === null ? `signal ${signal || "unknown"}` : `code ${code}`})`;
+}
+
+function workerErrorMessage(message) {
+    return { kind: "WORKER_ERROR", message, stats: resources?.stats() };
 }
 
 function sendToServer(message) {
@@ -87,7 +92,7 @@ function monitorInfrastructureProcess(processKind, processHandle) {
             );
         }
         try {
-            await sendToServer({ kind: "WORKER_ERROR", message: reason });
+            await sendToServer(workerErrorMessage(reason));
         } catch (error) {
             console.error(`Could not report worker failure: ${error.message}`);
         }
@@ -231,19 +236,23 @@ async function start(config) {
                 accountPartitions.release(accountPartition);
             }
             const { stdout: _stdout, stderr: _stderr, ...wireResult } = result;
+            const output = spool.readOutput();
             if (infrastructureFailed) {
                 spool.remove();
                 return;
             }
             await request("ATTEMPT_READY", {
                 assignment: { ...assignment, task },
-                result: wireResult,
+                result: {
+                    ...wireResult,
+                    reduced: reduceAttemptOutput(output.stdout, output.stderr)
+                },
                 spoolPath
             });
             spool.remove();
         },
         onError(error) {
-            process.send({ kind: "WORKER_ERROR", message: error.message });
+            process.send(workerErrorMessage(error.message));
         }
     });
     process.send({ kind: "WORKER_READY" });
@@ -289,7 +298,7 @@ process.on("SIGTERM", () => stop(143));
 
 function stopWithError(error) {
     console.error(error.stack || error);
-    process.send?.({ kind: "WORKER_ERROR", message: error.message });
+    process.send?.(workerErrorMessage(error.message));
     stop(1);
 }
 

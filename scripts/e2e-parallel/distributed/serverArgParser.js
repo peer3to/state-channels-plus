@@ -17,7 +17,8 @@ const DEFAULTS = {
     targetLoad: 0.8,
     memLimitGb: (os.totalmem() / 1024 ** 3) * 0.8,
     schedulerTickMs: SCHEDULER_TICK_MS,
-    allowSharedHost: false
+    allowSharedHost: false,
+    workRootProvided: false
 };
 
 const VALUE_FLAGS = {
@@ -55,6 +56,7 @@ function parseServerArgs(argv, env = process.env) {
         if (!raw || raw.startsWith("--"))
             throw new Error(`${flag} requires a value`);
         result[key] = key === "name" || key === "workRoot" ? raw : Number(raw);
+        if (key === "workRoot") result.workRootProvided = true;
     }
     for (const [key, value] of Object.entries(result)) {
         if (
@@ -75,6 +77,11 @@ function parseServerArgs(argv, env = process.env) {
     if (!result.name) {
         throw new Error(
             "Worker name is required; set SCP_TEST_WORKER_NAME in .env or pass --name"
+        );
+    }
+    if (result.allowSharedHost && !result.workRootProvided) {
+        throw new Error(
+            "--allow-shared-host requires an explicit unique --work-root"
         );
     }
     if (!/^[a-z0-9-]{1,48}$/.test(result.name)) {

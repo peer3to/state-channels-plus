@@ -1,10 +1,52 @@
 const logging = require("./logging");
 
+function reduceAttemptOutput(stdout = "", stderr = "") {
+    const combined = `${stdout}${stderr}`;
+    return {
+        oomCount: logging.countOomEvents(combined),
+        starveCount: logging.countStarvation(combined),
+        timing: logging.parseTimings(combined)
+    };
+}
+
+function validateReducedAttempt(reduced) {
+    const timingFields = [
+        "startupMs",
+        "deployMs",
+        "workerBootMs",
+        "maxEventLoopDelayMs"
+    ];
+    const roles = ["main", "sdk", "vm", "watchdog"];
+    if (
+        !reduced ||
+        !Number.isInteger(reduced.oomCount) ||
+        reduced.oomCount < 0 ||
+        !Number.isInteger(reduced.starveCount) ||
+        reduced.starveCount < 0 ||
+        !reduced.timing ||
+        typeof reduced.timing.found !== "boolean" ||
+        timingFields.some(
+            (field) =>
+                !Number.isFinite(reduced.timing[field]) ||
+                reduced.timing[field] < 0
+        ) ||
+        !reduced.timing.el ||
+        roles.some(
+            (role) =>
+                !Number.isFinite(reduced.timing.el[role]) ||
+                reduced.timing.el[role] < 0
+        )
+    ) {
+        throw new Error("Worker returned invalid attempt metadata");
+    }
+    return reduced;
+}
+
 function reduceAttempt(task, attempt) {
     const combined = `${attempt.stdout || ""}${attempt.stderr || ""}`;
-    const oomCount = logging.countOomEvents(combined);
-    const starveCount = logging.countStarvation(combined);
-    const timing = logging.parseTimings(combined);
+    const { oomCount, starveCount, timing } = attempt.reduced
+        ? validateReducedAttempt(attempt.reduced)
+        : reduceAttemptOutput(attempt.stdout, attempt.stderr);
     task.oomCount = (task.oomCount || 0) + oomCount;
     task.starveCount = (task.starveCount || 0) + starveCount;
     task.startupMs = (task.startupMs || 0) + timing.startupMs;
@@ -95,6 +137,7 @@ class TaskCoordinator {
         if (!assignment || assignment.workerId !== workerId) {
             return { accepted: false, reason: "stale-or-wrong-worker" };
         }
+        if (attempt.reduced) validateReducedAttempt(attempt.reduced);
         this.assignments.delete(assignment.attemptId);
         if (this.completedTaskIds.has(assignment.taskId)) {
             return { accepted: false, reason: "redundant-attempt" };
@@ -273,4 +316,9 @@ class TaskCoordinator {
     }
 }
 
-module.exports = { TaskCoordinator, reduceAttempt };
+module.exports = {
+    TaskCoordinator,
+    reduceAttempt,
+    reduceAttemptOutput,
+    validateReducedAttempt
+};

@@ -105,11 +105,7 @@ function gitSourceFiles(repositoryRoot) {
     return files;
 }
 
-async function buildRuntimeBundle(
-    projectRoot,
-    outputFile,
-    onProgress = () => {}
-) {
+async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
     const repositories = discoverRepositories(projectRoot);
     const repositoryRoots = repositories.map((entry) => entry.root);
     let workspaceRoot = commonAncestor(repositoryRoots);
@@ -175,21 +171,9 @@ async function buildRuntimeBundle(
     }
 
     files.sort();
-    fs.mkdirSync(path.dirname(outputFile), { recursive: true });
     onProgress(
-        `Packaging ${files.length} source file(s) from ${repositories.length} repository(s)`
+        `Manifesting ${files.length} source file(s) from ${repositories.length} repository(s)`
     );
-    await tar.c(
-        {
-            cwd: workspaceRoot,
-            file: outputFile,
-            gzip: true,
-            portable: true,
-            follow: false
-        },
-        files
-    );
-    const archiveBytes = fs.statSync(outputFile).size;
     const rootProjectPath = path
         .relative(workspaceRoot, fs.realpathSync(projectRoot))
         .split(path.sep)
@@ -232,9 +216,7 @@ async function buildRuntimeBundle(
         repositories: repositoryManifest,
         files: sourceFilesManifest,
         fileCount: files.length,
-        expandedBytes,
-        archiveBytes,
-        archiveSha256: await sha256File(outputFile)
+        expandedBytes
     };
     Object.defineProperty(manifest, "localWorkspaceRoot", {
         value: workspaceRoot,
@@ -243,9 +225,103 @@ async function buildRuntimeBundle(
     return manifest;
 }
 
+async function buildRuntimeBundle(
+    projectRoot,
+    outputFile,
+    onProgress = () => {}
+) {
+    const manifest = await buildRuntimeManifest(projectRoot, onProgress);
+    fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+    onProgress(`Packaging ${manifest.files.length} source file(s)`);
+    await tar.c(
+        {
+            cwd: manifest.localWorkspaceRoot,
+            file: outputFile,
+            gzip: true,
+            portable: true,
+            follow: false
+        },
+        manifest.files.map((entry) => entry.path)
+    );
+    manifest.archiveBytes = fs.statSync(outputFile).size;
+    manifest.archiveSha256 = await sha256File(outputFile);
+    return manifest;
+}
+
+async function inspectDeltaArchive(archivePath, expectedFiles) {
+    const entries = [];
+    const reads = [];
+    await tar.t({
+        file: archivePath,
+        onentry(entry) {
+            if (entry.type !== "File" && entry.type !== "OldFile") return;
+            const expected = expectedFiles.get(entry.path);
+            const hash = crypto.createHash("sha256");
+            let bytes = 0;
+            const read = new Promise((resolve, reject) => {
+                entry.on("data", (chunk) => {
+                    bytes += chunk.length;
+                    hash.update(chunk);
+                });
+                entry.once("error", reject);
+                entry.once("end", () => {
+                    const actual = {
+                        path: entry.path,
+                        bytes,
+                        mode: entry.mode & 0o777,
+                        sha256: hash.digest("hex")
+                    };
+                    if (
+                        !expected ||
+                        actual.bytes !== expected.bytes ||
+                        actual.mode !== expected.mode ||
+                        actual.sha256 !== expected.sha256
+                    ) {
+                        reject(
+                            new Error(
+                                `Source changed after manifest creation: ${entry.path}`
+                            )
+                        );
+                        return;
+                    }
+                    entries.push(actual);
+                    resolve();
+                });
+            });
+            reads.push(read);
+        }
+    });
+    await Promise.all(reads);
+    if (
+        entries.length !== expectedFiles.size ||
+        entries.some(
+            (entry, index) =>
+                index > 0 &&
+                entries.findIndex(
+                    (candidate) => candidate.path === entry.path
+                ) !== index
+        )
+    ) {
+        throw new Error(
+            "Delta archive does not match the requested source files"
+        );
+    }
+    return {
+        fileCount: entries.length,
+        expandedBytes: entries.reduce((sum, entry) => sum + entry.bytes, 0)
+    };
+}
+
 async function buildDeltaBundle(manifest, relativeFiles, outputFile) {
     if (!manifest.localWorkspaceRoot) {
         throw new Error("Source manifest is missing its local workspace root");
+    }
+    const offered = new Map(manifest.files.map((entry) => [entry.path, entry]));
+    const expectedFiles = new Map(
+        relativeFiles.map((relative) => [relative, offered.get(relative)])
+    );
+    if ([...expectedFiles.values()].some((entry) => !entry)) {
+        throw new Error("Delta contains a file outside the source manifest");
     }
     fs.mkdirSync(path.dirname(outputFile), { recursive: true });
     fs.rmSync(outputFile, { force: true });
@@ -275,11 +351,9 @@ async function buildDeltaBundle(manifest, relativeFiles, outputFile) {
             ["."]
         );
     }
-    const selected = new Set(relativeFiles);
-    const files = manifest.files.filter((entry) => selected.has(entry.path));
+    const archive = await inspectDeltaArchive(outputFile, expectedFiles);
     return {
-        fileCount: files.length,
-        expandedBytes: files.reduce((sum, entry) => sum + entry.bytes, 0),
+        ...archive,
         archiveBytes: fs.statSync(outputFile).size,
         archiveSha256: await sha256File(outputFile)
     };
@@ -289,6 +363,7 @@ module.exports = {
     linkedRepositoryPaths,
     discoverRepositories,
     gitSourceFiles,
+    buildRuntimeManifest,
     buildRuntimeBundle,
     buildDeltaBundle
 };

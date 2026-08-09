@@ -5,6 +5,7 @@ const path = require("path");
 const { fork } = require("child_process");
 const { DEFAULTS, parseServerArgs } = require("./serverArgParser");
 const { acquireHostLock } = require("./hostLock");
+const { acquireWorkspaceLock } = require("./workspaceLock");
 const {
     DISCOVERY_AUTH_TIMEOUT_MS,
     derivePoolKeys,
@@ -87,6 +88,13 @@ async function main(options = {}) {
     const config = Object.keys(options).length
         ? { ...DEFAULTS, ...options }
         : parseServerArgs(process.argv);
+    if (
+        config.allowSharedHost &&
+        !config.workRootProvided &&
+        path.resolve(config.workRoot) === path.resolve(DEFAULTS.workRoot)
+    ) {
+        throw new Error("allowSharedHost requires an explicit unique workRoot");
+    }
     const keys = derivePoolKeys(process.env.SCP_TEST_POOL_SECRET);
     const hostLock = acquireHostLock(config);
     const connections = new Set();
@@ -307,6 +315,11 @@ async function main(options = {}) {
             }
             manager.assertActive(connection);
             if (message.kind === "WORKSPACE_OFFER") {
+                if (connection.runtime) {
+                    throw new Error(
+                        "Workspace offer is invalid after preparation has started"
+                    );
+                }
                 const manifest = {
                     ...message.header.manifest,
                     files: JSON.parse(message.body.toString("utf8"))
@@ -322,6 +335,9 @@ async function main(options = {}) {
                     throw new Error("Invalid source file manifest");
                 }
                 connection.runtime = new LeaseRuntime(config.workRoot);
+                connection.runtime.holdLock(
+                    acquireWorkspaceLock(config.workRoot, manifest.workspaceId)
+                );
                 connection.workspaceOffer = {
                     manifest,
                     cache: await inspectWorkspace(config.workRoot, manifest)
@@ -568,7 +584,15 @@ async function main(options = {}) {
         const worker = fork(entry, [], {
             cwd: projectRoot,
             env: buildWorkerEnvironment(process.env),
-            stdio: ["ignore", "pipe", "pipe", "ipc"],
+            // The child keeps the workspace lock alive if this server exits
+            // abruptly; the descriptor itself is intentionally unused.
+            stdio: [
+                "ignore",
+                "pipe",
+                "pipe",
+                "ipc",
+                ...connection.runtime.inheritedFileDescriptors()
+            ],
             detached: process.platform !== "win32"
         });
         connection.worker = worker;
@@ -695,6 +719,11 @@ async function main(options = {}) {
                 logOrchestratorRequest(
                     "Reporting worker failure to orchestrator"
                 );
+                if (message.stats) {
+                    await connection.peer.send("WORKER_STATS", {
+                        stats: message.stats
+                    });
+                }
                 await connection.peer.send("WORKER_ERROR", {
                     message: message.message
                 });

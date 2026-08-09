@@ -13,6 +13,9 @@ const {
     WorkerAttemptSpool
 } = require("../../scripts/e2e-parallel/distributed/workerAttemptSpool.js");
 const {
+    reduceAttemptOutput
+} = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
+const {
     getAttemptLogPath,
     getErrorLogPath,
     getLogPath
@@ -22,7 +25,9 @@ const {
     aggregateWorkerStats,
     createWorkerColorRegistry,
     createHeartbeatMonitor,
+    formatWorkerSummary,
     promoteAttemptLog,
+    recordPreparationFailure,
     validateWorkerStats
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
@@ -68,6 +73,35 @@ describe("distributed orchestrator logs", function () {
         expect(sent).to.deep.equal([
             { kind: "RESPONSE", requestId: 17, value: true }
         ]);
+    });
+
+    it("reduces successful spooled output without uploading it", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "spool-reduce-"));
+        try {
+            const spool = new WorkerAttemptSpool(
+                path.join(root, "attempt.spool"),
+                1024 * 1024
+            );
+            spool.write(
+                "stdout",
+                '##E2E_TIMING## {"startupMs":12,"deployMs":4}\n'
+            );
+            spool.write(
+                "stderr",
+                "Event loop delay 1200ms exceeded configured threshold 1000ms\n"
+            );
+            const output = spool.readOutput();
+            const reduced = reduceAttemptOutput(output.stdout, output.stderr);
+            expect(reduced.starveCount).to.equal(1);
+            expect(reduced.timing).to.include({
+                startupMs: 12,
+                deployMs: 4,
+                found: true
+            });
+            spool.remove();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("promotes a provisional failure after its worker disconnects", function () {
@@ -142,7 +176,7 @@ describe("distributed orchestrator logs", function () {
         expect(stats).to.deep.equal({
             peakCpu: 0.8,
             avgCpu: 0.425,
-            peakOccupiedGb: 7,
+            sumPeakOccupiedGb: 7,
             avgPerTestGb: 1.5,
             memBoundGb: 14
         });
@@ -150,6 +184,41 @@ describe("distributed orchestrator logs", function () {
         expect(() => validateWorkerStats({ peakCpu: "not-a-number" })).to.throw(
             "invalid resource statistics"
         );
+    });
+
+    it("quarantines only a repeatedly failing worker", function () {
+        const failures = new Map();
+        const ignored = new Set();
+        expect(
+            recordPreparationFailure(failures, ignored, "bad-worker")
+        ).to.deep.equal({ failures: 1, quarantined: false });
+        expect(ignored.has("healthy-worker")).to.equal(false);
+        expect(
+            recordPreparationFailure(failures, ignored, "bad-worker")
+        ).to.deep.equal({ failures: 2, quarantined: true });
+        expect(ignored.has("bad-worker")).to.equal(true);
+    });
+
+    it("prints per-worker resource peaks and bounds", function () {
+        const line = formatWorkerSummary(
+            {
+                color: "",
+                label: "server-2",
+                capabilities: { slots: 1, workers: 4, memoryGb: 12 },
+                stats: {
+                    peakCpu: 0.9,
+                    avgCpu: 0.6,
+                    peakOccupiedGb: 8,
+                    avgPerTestGb: 1.25,
+                    memBoundGb: 10
+                }
+            },
+            17
+        );
+        expect(line).to.include("server-2");
+        expect(line).to.include("17 tests");
+        expect(line).to.include("cpu avg 60% / peak 90%");
+        expect(line).to.include("mem peak 8.0GB / bound 10.0GB");
     });
 
     it("keeps canonical, failure, and attempt filenames within filesystem limits", function () {

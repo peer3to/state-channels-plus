@@ -13,6 +13,9 @@ const {
     acquireHostLock
 } = require("../../scripts/e2e-parallel/distributed/hostLock.js");
 const {
+    acquireWorkspaceLock
+} = require("../../scripts/e2e-parallel/distributed/workspaceLock.js");
+const {
     progressElapsedMs
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 
@@ -192,5 +195,26 @@ describe("distributed worker lease", function () {
         const afterRelease = acquireHostLock({ lockPath });
         afterRelease.release();
         fs.rmSync(lockPath, { force: true });
+    });
+
+    it("holds workspace ownership until lease cleanup", async function () {
+        if (process.platform !== "darwin" && process.platform !== "linux")
+            this.skip();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "workspace-lock-test-")
+        );
+        const workspaceId = "a".repeat(64);
+        try {
+            const runtime = new LeaseRuntime(root);
+            runtime.holdLock(acquireWorkspaceLock(root, workspaceId));
+            expect(() => acquireWorkspaceLock(root, workspaceId)).to.throw(
+                /already owned/
+            );
+            await runtime.cleanup();
+            const next = acquireWorkspaceLock(root, workspaceId);
+            next.release();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 });
