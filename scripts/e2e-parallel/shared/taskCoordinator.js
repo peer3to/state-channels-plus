@@ -77,8 +77,9 @@ class TaskCoordinator {
         this.sumDurationMs = 0;
         this.nextAttemptId = 1;
         this.completedTaskIds = new Set();
+        this.failedTaskIds = new Set();
         this.replications = new Set();
-        this.provisionalFailures = new Map();
+        this.settledSpeculativeAssignments = new Map();
         this.speculative = options.speculative === true;
         this.onWorkAvailable = options.onWorkAvailable || (() => {});
         this.onResult = options.onResult || (() => {});
@@ -105,8 +106,7 @@ class TaskCoordinator {
             attemptId: String(this.nextAttemptId++),
             workerId
         };
-        if (queued.speculative)
-            this.replications.add(`${assignment.taskId}:${workerId}`);
+        this.replications.add(`${assignment.taskId}:${workerId}`);
         this.assignments.set(assignment.attemptId, assignment);
         return assignment;
     }
@@ -135,6 +135,13 @@ class TaskCoordinator {
     completeAttempt(workerId, attempt) {
         const assignment = this.assignments.get(String(attempt.attemptId));
         if (!assignment || assignment.workerId !== workerId) {
+            const settled = this.settledSpeculativeAssignments.get(
+                String(attempt.attemptId)
+            );
+            if (settled?.workerId === workerId) {
+                this.settledSpeculativeAssignments.delete(settled.attemptId);
+                return this.completeSettledAttempt(settled, attempt);
+            }
             return { accepted: false, reason: "stale-or-wrong-worker" };
         }
         if (attempt.reduced) validateReducedAttempt(attempt.reduced);
@@ -186,6 +193,12 @@ class TaskCoordinator {
 
     disconnectWorker(workerId) {
         this.workers.delete(workerId);
+        for (const [attemptId, assignment] of this
+            .settledSpeculativeAssignments) {
+            if (assignment.workerId === workerId) {
+                this.settledSpeculativeAssignments.delete(attemptId);
+            }
+        }
         const lost = [...this.assignments.values()].filter(
             (assignment) => assignment.workerId === workerId
         );
@@ -199,16 +212,7 @@ class TaskCoordinator {
             ) {
                 continue;
             }
-            const provisional = this.provisionalFailures.get(assignment.taskId);
-            if (provisional) {
-                this.provisionalFailures.delete(assignment.taskId);
-                this.finalize(
-                    provisional.assignment,
-                    provisional.attempt,
-                    provisional.code,
-                    provisional.parsed
-                );
-            } else this.requeue(assignment);
+            this.requeue(assignment);
         }
         return lost.length;
     }
@@ -248,14 +252,18 @@ class TaskCoordinator {
     }
 
     finalize(assignment, attempt, code, parsed) {
-        this.provisionalFailures.delete(assignment.taskId);
         this.completedTaskIds.add(assignment.taskId);
         for (const [attemptId, other] of this.assignments) {
-            if (other.taskId === assignment.taskId)
+            if (other.taskId === assignment.taskId) {
+                this.settledSpeculativeAssignments.set(attemptId, other);
                 this.assignments.delete(attemptId);
+            }
         }
         this.completed++;
-        if (code !== 0) this.failed.push(assignment.task);
+        if (code !== 0) {
+            this.failedTaskIds.add(assignment.taskId);
+            this.failed.push(assignment.task);
+        }
         const result = {
             accepted: true,
             disposition: "complete",
@@ -269,39 +277,35 @@ class TaskCoordinator {
     }
 
     finalizeOrDefer(assignment, attempt, code, parsed) {
-        const hasLiveCopy = [...this.assignments.values()].some(
-            (other) => other.taskId === assignment.taskId
-        );
-        if (code !== 0 && hasLiveCopy) {
-            if (!this.provisionalFailures.has(assignment.taskId)) {
-                this.provisionalFailures.set(assignment.taskId, {
-                    assignment,
-                    attempt,
-                    code,
-                    parsed
-                });
-            }
-            return {
-                accepted: true,
-                disposition: "provisional-failure",
-                assignment,
-                attempt,
-                code,
-                parsed
-            };
-        }
-        if (code !== 0) {
-            const provisional = this.provisionalFailures.get(assignment.taskId);
-            if (provisional) {
-                return this.finalize(
-                    provisional.assignment,
-                    provisional.attempt,
-                    provisional.code,
-                    provisional.parsed
-                );
-            }
-        }
         return this.finalize(assignment, attempt, code, parsed);
+    }
+
+    completeSettledAttempt(assignment, attempt) {
+        if (attempt.reduced) validateReducedAttempt(attempt.reduced);
+        this.sumDurationMs += attempt.durationMs || 0;
+        if (
+            attempt.code === 0 ||
+            attempt.infrastructureFailure ||
+            this.failedTaskIds.has(assignment.taskId)
+        ) {
+            return { accepted: false, reason: "redundant-attempt" };
+        }
+        const parsed = reduceAttempt(assignment.task, attempt);
+        if (parsed.starveCount > 0) {
+            return { accepted: false, reason: "redundant-starvation" };
+        }
+        this.failedTaskIds.add(assignment.taskId);
+        this.failed.push(assignment.task);
+        const result = {
+            accepted: true,
+            disposition: "late-failure",
+            assignment,
+            attempt,
+            code: attempt.code,
+            parsed
+        };
+        this.onResult(result);
+        return result;
     }
 
     requeue(assignment) {

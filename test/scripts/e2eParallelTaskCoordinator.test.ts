@@ -170,7 +170,7 @@ describe("distributed task coordinator", function () {
         expect(two.task.label).to.equal("two");
     });
 
-    it("keeps a speculative failure provisional while another copy can pass", function () {
+    it("fails immediately when the first speculative result fails", function () {
         const results: number[] = [];
         const coordinator = new TaskCoordinator([task("one")], {
             speculative: true,
@@ -179,31 +179,30 @@ describe("distributed task coordinator", function () {
         const original = coordinator.requestTask("slow");
         const copy = coordinator.requestTask("fast");
 
-        expect(
-            coordinator.completeAttempt("fast", {
-                attemptId: copy.attemptId,
-                code: 1,
-                stdout: "",
-                stderr: "failed",
-                durationMs: 1
-            }).disposition
-        ).to.equal("provisional-failure");
-        expect(coordinator.finish().done).to.equal(false);
-        expect(results).to.be.empty;
-
-        coordinator.completeAttempt("slow", {
-            attemptId: original.attemptId,
-            code: 0,
-            stdout: "passed",
-            stderr: "",
-            durationMs: 2
+        const failure = coordinator.completeAttempt("fast", {
+            attemptId: copy.attemptId,
+            code: 1,
+            stdout: "",
+            stderr: "failed",
+            durationMs: 1
         });
+        expect(failure.disposition).to.equal("complete");
         expect(coordinator.finish().done).to.equal(true);
-        expect(coordinator.finish().failed).to.be.empty;
-        expect(results).to.deep.equal([0]);
+        expect(coordinator.finish().failed).to.have.length(1);
+        expect(results).to.deep.equal([1]);
+
+        expect(
+            coordinator.completeAttempt("slow", {
+                attemptId: original.attemptId,
+                code: 0,
+                stdout: "passed",
+                stderr: "",
+                durationMs: 2
+            })
+        ).to.deep.include({ accepted: false });
     });
 
-    it("finalizes a disconnected worker's provisional failure when the last copy fails", function () {
+    it("fails when a sibling reports failure after the first copy succeeds", function () {
         const results: Array<{ workerId: string; code: number }> = [];
         const coordinator = new TaskCoordinator([task("one")], {
             speculative: true,
@@ -219,26 +218,89 @@ describe("distributed task coordinator", function () {
         const onA = coordinator.requestTask("a");
         const onB = coordinator.requestTask("b");
 
-        coordinator.completeAttempt("a", {
+        const success = coordinator.completeAttempt("a", {
             attemptId: onA.attemptId,
-            code: 1,
-            stdout: "",
-            stderr: "a failed",
+            code: 0,
+            stdout: "a passed",
+            stderr: "",
             durationMs: 1
         });
-        coordinator.disconnectWorker("a");
-        expect(() =>
+        expect(success.disposition).to.equal("complete");
+        expect(coordinator.finish().done).to.equal(true);
+        expect(coordinator.finish().failed).to.be.empty;
+        expect(results).to.deep.equal([{ workerId: "a", code: 0 }]);
+
+        expect(
             coordinator.completeAttempt("b", {
                 attemptId: onB.attemptId,
                 code: 1,
                 stdout: "",
                 stderr: "b failed",
                 durationMs: 1
-            })
-        ).to.not.throw();
-        expect(results).to.deep.equal([{ workerId: "a", code: 1 }]);
-        expect(coordinator.finish().done).to.equal(true);
+            }).disposition
+        ).to.equal("late-failure");
+        expect(results).to.deep.equal([
+            { workerId: "a", code: 0 },
+            { workerId: "b", code: 1 }
+        ]);
         expect(coordinator.finish().failed).to.have.length(1);
+    });
+
+    it("does not wait for an unfinished speculative worker to disconnect", function () {
+        const results: number[] = [];
+        const coordinator = new TaskCoordinator([task("one")], {
+            speculative: true,
+            onResult: (result: { code: number }) => results.push(result.code)
+        });
+        const passed = coordinator.requestTask("a");
+        coordinator.requestTask("b");
+
+        expect(
+            coordinator.completeAttempt("a", {
+                attemptId: passed.attemptId,
+                code: 0,
+                stdout: "passed",
+                stderr: "",
+                durationMs: 1
+            }).disposition
+        ).to.equal("complete");
+        expect(coordinator.finish().done).to.equal(true);
+        coordinator.disconnectWorker("b");
+
+        expect(coordinator.finish().done).to.equal(true);
+        expect(coordinator.finish().failed).to.be.empty;
+        expect(results).to.deep.equal([0]);
+    });
+
+    it("ignores a later successful speculative result", function () {
+        const results: number[] = [];
+        const coordinator = new TaskCoordinator([task("one")], {
+            speculative: true,
+            onResult: (result: { code: number }) => results.push(result.code)
+        });
+        const original = coordinator.requestTask("a");
+        const copy = coordinator.requestTask("b");
+
+        const success = coordinator.completeAttempt("a", {
+            attemptId: original.attemptId,
+            code: 0,
+            stdout: "passed",
+            stderr: "",
+            durationMs: 1
+        });
+        expect(success.disposition).to.equal("complete");
+        expect(coordinator.finish().done).to.equal(true);
+        expect(
+            coordinator.completeAttempt("b", {
+                attemptId: copy.attemptId,
+                code: 0,
+                stdout: "also passed",
+                stderr: "",
+                durationMs: 1
+            })
+        ).to.deep.include({ accepted: false });
+        expect(coordinator.finish().failed).to.be.empty;
+        expect(results).to.deep.equal([0]);
     });
 
     it("never assigns the same task twice to one worker", function () {
