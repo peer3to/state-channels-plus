@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
 import { Codec, hash, Type } from "@/utils";
+import type { Hash } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("Unit: DisputeManager", function () {
@@ -192,9 +193,101 @@ describe("Unit: DisputeManager", function () {
             expect(r.storedInboundHash).to.equal(null);
             expect(r.snapshotInboundHeight).to.equal(2);
             expect(r.slashable).to.equal(false);
-            // getAuditingData walked the gapped store without throwing
+            // the anchor is copied from the pinned snapshot, not defaulted to
+            // zero by the empty store
             expect(r.inboundHash).to.equal(r.snapshotInboundHash);
             expect(r.inboundHeight).to.equal(r.snapshotInboundHeight);
+        });
+
+        it("a fork reduced past a lagging inbound store head → the auditing data still matches what an auditor recomputes", async function () {
+            const h = TestSession.getHarness();
+            const lagging = 3;
+            const attacker = 1;
+            await h.scenario.preDisputeSetup({
+                peerCount: 4,
+                timeConfig: { evidenceTime: 12 }
+            });
+            const forkId = h.activeForkId!;
+
+            // held after the channel-open inbound block landed -> the lagging
+            // peer keeps that block as its store head and learns nothing after it
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            // no block consumes the join -> only the reduce moves the inbound
+            // head, into a genesis snapshot the lagging peer never ingested.
+            // a pending joiner also keeps the head not-final-by-everyone, so
+            // disputes post auditing data and the lagging peer can still audit
+            await h.join.forceInboundJoinWait({
+                observePeerIndices: [0, 1, 2]
+            });
+
+            // the invalid block carries no inbound run of its own, so the only
+            // inbound movement in this scenario is the reduce's
+            await h.byzantine.submitInvalidStateTransitionBlock(attacker);
+            const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 20000,
+                // the pending joiner the reduce admits is not one of the peers
+                syntheticOnChainParticipants: 1
+            });
+
+            const disputer = h.control(h.getPeer(lagging));
+            const genesis = Codec.decode(
+                (await disputer.dispute
+                    .getGenesisSnapshotStruct(newForkId)
+                    .request())!.encodedSnapshot,
+                Type.StateSnapshot
+            );
+            const storedHead = await disputer.query
+                .getLatestInboundMessageHash()
+                .request();
+            const storedHeight = await disputer.query
+                .getInboundLatestHeight()
+                .request();
+
+            // premise - a non-empty store head, strictly below the inbound head
+            // the new fork's genesis snapshot sits on. an empty store hides the
+            // divergence: both bounds yield []
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(storedHead).to.not.equal(null);
+            expect(storedHeight).to.equal(1);
+            expect(
+                Number(genesis.snapshotData.latestInboundMessageBlockHeight)
+            ).to.equal(2);
+
+            const { encodedDispute } = await disputer.dispute
+                .constructDispute(newForkId)
+                .request();
+            const dispute = Codec.decode(encodedDispute, Type.Dispute);
+            const encodedStateProof = Codec.encode(
+                dispute.input.stateProof,
+                Type.StateProof
+            ) as string;
+            const statedInboundHash = dispute.input
+                .latestInboundMessageBlockHash as Hash;
+            expect(statedInboundHash).to.equal(
+                genesis.snapshotData.latestInboundMessageBlockHash
+            );
+
+            // a synced auditor recomputes from the hash the dispute states
+            const audited = await h
+                .control(h.getPeer(0))
+                .dispute.getAuditingData(newForkId, encodedStateProof, {
+                    disputeLatestInboundMessageBlockHash: statedInboundHash
+                })
+                .request();
+            expect(audited.isPartial).to.equal(false);
+            expect(hash(audited.encodedAuditingData)).to.equal(
+                dispute.input.disputeAuditingDataHash
+            );
+
+            // unbounded falls back to the raw store head -> different bytes.
+            // the stated hash is what keeps disputer and auditors agreeing
+            const unbounded = await disputer.dispute
+                .getAuditingData(newForkId, encodedStateProof)
+                .request();
+            expect(hash(unbounded.encodedAuditingData)).to.not.equal(
+                dispute.input.disputeAuditingDataHash
+            );
         });
 
         // no test: `createDispute - isPartial auditingData` is unreachable from

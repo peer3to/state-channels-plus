@@ -4,7 +4,7 @@ import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import Clock from "@/Clock";
 import { Codec, Type } from "@/utils";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
 import type {
     DisputeStruct,
     DisputeConfirmationStruct,
@@ -130,15 +130,21 @@ export class DisputeRpcMethods extends ARpcMethods {
         );
     }
 
-    /** Recompute auditing data for a (tampered) state proof; ABI-encoded. */
+    /**
+     * Recompute auditing data for a (tampered) state proof; ABI-encoded.
+     * `disputeLatestInboundMessageBlockHash` is the anchor an auditor bounds
+     * the inbound range with (`DisputeValidationService.continueOtherChecks`).
+     */
     public getAuditingData(
         forkId: ForkId,
-        encodedStateProof: string
+        encodedStateProof: string,
+        options?: { disputeLatestInboundMessageBlockHash?: Hash }
     ): { isPartial: boolean; encodedAuditingData: string } {
         const { isPartial, auditingData } =
             this.service.disputeManager.getAuditingData(
                 forkId,
-                Codec.decode(encodedStateProof, Type.StateProof)
+                Codec.decode(encodedStateProof, Type.StateProof),
+                options
             );
         return {
             isPartial,

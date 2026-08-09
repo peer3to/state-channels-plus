@@ -386,10 +386,18 @@ class DisputeManager {
             this.storage.timeout.getTimeout(forkId) ||
             this.getEmptyTimeoutStruct();
 
-        // AuditingData
+        // latestStateSnapshot proves its own inbound head -> naming anything
+        // below it is objective fraud against ourselves
+        const inboundHead = this.storage.inboundMessages.headNotBehind(
+            latestStateSnapshot.latestInboundMessageBlockHash,
+            latestStateSnapshot.latestInboundMessageBlockHeight
+        );
+
+        // the bound every auditor recomputes with
         const { isPartial, auditingData } = this.getAuditingData(
             forkId,
-            stateProof
+            stateProof,
+            { disputeLatestInboundMessageBlockHash: inboundHead.hash }
         );
         if (isPartial)
             throw new Error("createDispute - isPartial auditingData");
@@ -404,17 +412,6 @@ class DisputeManager {
         // selfRemoval
         const selfRemoval = this.storage.forceExit.getForceExit();
 
-        // inbound anchor - latestStateSnapshot already proves its own inbound
-        // head, so an anchor below it is self-incriminating
-        // (DisputeInboundAnchorBehindLatestState). inboundMessages lags that
-        // head whenever ingest verified a block's carried inbound blocks
-        // against the chain -> anchor on whichever head is further ahead
-        const storedInboundHeight =
-            this.storage.inboundMessages.getLatestBlockHeight() || 0;
-        const useStoredInboundHead =
-            storedInboundHeight >=
-            latestStateSnapshot.latestInboundMessageBlockHeight;
-
         const disputeInput: DisputeInputStruct = {
             channelId: this.channelId,
             forkId: forkId,
@@ -425,13 +422,8 @@ class DisputeManager {
             disputer: disputer,
             timeout: timeoutStruct,
             selfRemoval: selfRemoval,
-            latestInboundMessageBlockHash: useStoredInboundHead
-                ? this.storage.inboundMessages.getLatestBlockHash() ||
-                  ethers.ZeroHash
-                : latestStateSnapshot.latestInboundMessageBlockHash,
-            lastInboundMessageBlockHeight: useStoredInboundHead
-                ? storedInboundHeight
-                : latestStateSnapshot.latestInboundMessageBlockHeight
+            latestInboundMessageBlockHash: inboundHead.hash,
+            lastInboundMessageBlockHeight: inboundHead.height
         };
         let outputSnapshotData: SnapshotDataStruct;
         try {
