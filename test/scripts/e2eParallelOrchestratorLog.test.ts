@@ -27,7 +27,7 @@ const {
     createHeartbeatMonitor,
     formatWorkerSummary,
     promoteAttemptLog,
-    recordPreparationFailure,
+    recordWorkerFailure,
     validateWorkerStats
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
@@ -194,15 +194,15 @@ describe("distributed orchestrator logs", function () {
         );
     });
 
-    it("quarantines only a repeatedly failing worker", function () {
+    it("quarantines a stable worker identity after repeated failures", function () {
         const failures = new Map();
         const ignored = new Set();
         expect(
-            recordPreparationFailure(failures, ignored, "bad-worker")
+            recordWorkerFailure(failures, ignored, "bad-worker")
         ).to.deep.equal({ failures: 1, quarantined: false });
         expect(ignored.has("healthy-worker")).to.equal(false);
         expect(
-            recordPreparationFailure(failures, ignored, "bad-worker")
+            recordWorkerFailure(failures, ignored, "bad-worker")
         ).to.deep.equal({ failures: 2, quarantined: true });
         expect(ignored.has("bad-worker")).to.equal(true);
     });

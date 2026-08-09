@@ -187,14 +187,14 @@ function aggregateWorkerStats(workers) {
     };
 }
 
-function recordPreparationFailure(
-    preparationFailures,
+function recordWorkerFailure(
+    workerFailures,
     quarantinedWorkers,
     workerId,
     limit = 2
 ) {
-    const failures = (preparationFailures.get(workerId) || 0) + 1;
-    preparationFailures.set(workerId, failures);
+    const failures = (workerFailures.get(workerId) || 0) + 1;
+    workerFailures.set(workerId, failures);
     if (failures >= limit) quarantinedWorkers.add(workerId);
     return { failures, quarantined: quarantinedWorkers.has(workerId) };
 }
@@ -237,11 +237,11 @@ async function runDistributed(options) {
     // served the run, not only those still connected at the end.
     const completedByWorker = new Map();
     const leasedWorkers = new Map();
-    // Stable transport identity -> compatibility/preparation disposition for
+    // Stable transport identity -> compatibility/failure disposition for
     // this run, so reconnecting the same host cannot reset its failure budget.
     const warnedIncompatibleWorkers = new Set();
     const quarantinedWorkers = new Set();
-    const preparationFailures = new Map();
+    const workerFailures = new Map();
     const logStore = new OrchestratorLogStore(options.logDir);
     const committedOutput = new Map();
     let discoveryStartedAt = Date.now();
@@ -631,8 +631,8 @@ async function runDistributed(options) {
                 `Preparation failed: ${message.header.message}`,
                 process.stderr
             );
-            const failure = recordPreparationFailure(
-                preparationFailures,
+            const failure = recordWorkerFailure(
+                workerFailures,
                 quarantinedWorkers,
                 worker.id
             );
@@ -658,6 +658,18 @@ async function runDistributed(options) {
                 `Failed: ${message.header.message}`,
                 process.stderr
             );
+            const failure = recordWorkerFailure(
+                workerFailures,
+                quarantinedWorkers,
+                worker.id
+            );
+            if (failure.quarantined) {
+                workerStatus(
+                    worker,
+                    `Quarantined after ${failure.failures} fatal worker failures`,
+                    process.stderr
+                );
+            }
             retireWorker(worker, "test worker reported a fatal error");
         } else if (message.kind === "LEASE_CLEAN") {
             worker.clean = true;
@@ -773,7 +785,7 @@ module.exports = {
     formatWorkerSummary,
     isRoutineDiscoveryFailure,
     promoteAttemptLog,
-    recordPreparationFailure,
+    recordWorkerFailure,
     runDistributed,
     validateWorkerStats
 };
