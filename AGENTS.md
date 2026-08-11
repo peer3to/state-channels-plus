@@ -23,6 +23,18 @@ testing-changes rule above (unit + e2e in the same pass), the strategy-pattern
 rules, the type-safety rules, and the test-harness rules (no mocks, fixtures
 trigger src code).
 
+### Specification traceability
+
+For any design, source, contract, or test change that affects specified
+behavior, follow `docs/spec/claude/AGENTS.md` in the same pass. Identify and
+cite the affected `REQ-*` / `INV-*` IDs, update their implementation and unit/e2e
+evidence dispositions, rerun the related evidence, regenerate the traceability
+artifacts, and record the PR or standalone code review. PR reviews must verify
+this cross-reference and report specification drift, missing links, stale
+evidence, incomplete black-box/e2e verification matrices, unclear test names,
+and unresolved design questions as findings. Reviews propose concrete names for
+tests whose current names do not identify their condition and observable result.
+
 ### Canonical test command and parallel run logs
 
 `yarn test:parallel` is the canonical full test gate and runs all Mocha tests;

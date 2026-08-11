@@ -75,7 +75,7 @@
 | [`OpenChannelNegotiationService`](../../../../src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts) | Open-terms negotiation      | Exported for integrator wiring; **not** instantiated by `MainRpcService`.                                                                                                                                                                                                                                                                                  |
 
 - **Non-guarantees.** No delivery ordering across peers, no retry, no gossip
-  rate limiting (**Open question:** review §41 — policy undesigned).
+  rate limiting ([OQ-6](../open-questions.md) — policy undesigned).
 - **Verification.** [test/rpc](../../../../test/rpc),
   [E2E-InitHandshake](../../../../test/e2e/E2E-InitHandshake.test.ts),
   [E2E-CustomRpcRequestResponse](../../../../test/e2e/E2E-CustomRpcRequestResponse.test.ts),
@@ -243,7 +243,7 @@ singleton set by `createConfig` during `p2pSetup`; precedence overrides >
   ([../security/trust-model.md](../security/trust-model.md)).
 - Full-mesh topology: every participant connects to every other; message cost
   is quadratic, so the design target is small partitions (~≤10 participants;
-  review §14).
+  [security/trust-model.md](../security/trust-model.md)).
 
 ## Future Work
 
@@ -253,16 +253,17 @@ _Non-normative._
 - Route `WebRTCSetupService` and local-discovery scans through
   `ProfileManager` (code TODO); unified discovery lifecycle API.
 - Continuous clock re-sync and skew telemetry.
-- Gossip rate limiting at the P2PManager/transport boundary (review §41).
+- Gossip rate limiting at the P2PManager/transport boundary
+  ([OQ-6](../open-questions.md)).
 - Wire `OpenChannelNegotiationService` into the default RPC root or document
   the integrator wiring pattern as the supported path.
 
 ## Traceability
 
-| ID        | Statement                                                                                                         | Implementation                                                                                                                                    | Verification evidence                                                                                                                                                |
-| --------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| REQ-SDK-3 | Handshake signatures are domain-tagged and cannot collide with block signatures.                                  | [src/rpc/services/initHandshake/InitHandshakeService.ts](../../../../src/rpc/services/initHandshake/InitHandshakeService.ts) (`HANDSHAKE_DOMAIN`) | [test/e2e/E2E-InitHandshake.test.ts](../../../../test/e2e/E2E-InitHandshake.test.ts), [test/rpc/initHandshake](../../../../test/rpc/initHandshake)                   |
-| REQ-SDK-4 | Only the addressed peer may settle an RPC request; oversized/undecodable frames disconnect.                       | [src/P2PManager.ts](../../../../src/P2PManager.ts) (`handleRpcResponse`, `onRpc`)                                                                 | [test/rpc/Rpc.test.ts](../../../../test/rpc/Rpc.test.ts), [test/e2e/E2E-CustomRpcRequestResponse.test.ts](../../../../test/e2e/E2E-CustomRpcRequestResponse.test.ts) |
-| INV-SDK-4 | `BlockStorage` never overwrites a stored block with a conflicting body; `justPersist` never advances live height. | [src/storage/BlockStorage.ts](../../../../src/storage/BlockStorage.ts)                                                                            | [test/storage/BlockStorage.test.ts](../../../../test/storage/BlockStorage.test.ts)                                                                                   |
-| INV-SDK-5 | The event pipeline's processed-block watermark never advances past an incomplete or failed log.                   | [src/stateManager/EventSyncService.ts](../../../../src/stateManager/EventSyncService.ts) (`publishCompletedBlocks`)                               | [test/stateManager/EventSyncService.test.ts](../../../../test/stateManager/EventSyncService.test.ts)                                                                 |
-| INV-SDK-6 | Blacklisting is peer-identity-keyed and survives transport replacement.                                           | [src/ProfileManager.ts](../../../../src/ProfileManager.ts), [src/P2PManager.ts](../../../../src/P2PManager.ts)                                    | [test/e2e/E2E-ByzantineErrorAttribution.test.ts](../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts); none — gap (no dedicated upgrade-blacklist test)       |
+| ID        | State          | Statement                                                                                                         | Implementation                                                                                                                                    | Verification evidence                                                                                                                                                |
+| --------- | -------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| REQ-SDK-3 | Design pending | Handshake signatures are domain-tagged and cannot collide with block signatures.                                  | [src/rpc/services/initHandshake/InitHandshakeService.ts](../../../../src/rpc/services/initHandshake/InitHandshakeService.ts) (`HANDSHAKE_DOMAIN`) | [test/e2e/E2E-InitHandshake.test.ts](../../../../test/e2e/E2E-InitHandshake.test.ts), [test/rpc/initHandshake](../../../../test/rpc/initHandshake)                   |
+| REQ-SDK-4 | Design pending | Only the addressed peer may settle an RPC request; oversized/undecodable frames disconnect.                       | [src/P2PManager.ts](../../../../src/P2PManager.ts) (`handleRpcResponse`, `onRpc`)                                                                 | [test/rpc/Rpc.test.ts](../../../../test/rpc/Rpc.test.ts), [test/e2e/E2E-CustomRpcRequestResponse.test.ts](../../../../test/e2e/E2E-CustomRpcRequestResponse.test.ts) |
+| INV-SDK-4 | Design pending | `BlockStorage` never overwrites a stored block with a conflicting body; `justPersist` never advances live height. | [src/storage/BlockStorage.ts](../../../../src/storage/BlockStorage.ts)                                                                            | [test/storage/BlockStorage.test.ts](../../../../test/storage/BlockStorage.test.ts)                                                                                   |
+| INV-SDK-5 | Design pending | The event pipeline's processed-block watermark never advances past an incomplete or failed log.                   | [src/stateManager/EventSyncService.ts](../../../../src/stateManager/EventSyncService.ts) (`publishCompletedBlocks`)                               | [test/stateManager/EventSyncService.test.ts](../../../../test/stateManager/EventSyncService.test.ts)                                                                 |
+| INV-SDK-6 | Design pending | Blacklisting is peer-identity-keyed and survives transport replacement.                                           | [src/ProfileManager.ts](../../../../src/ProfileManager.ts), [src/P2PManager.ts](../../../../src/P2PManager.ts)                                    | [test/e2e/E2E-ByzantineErrorAttribution.test.ts](../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts); none — gap (no dedicated upgrade-blacklist test)       |

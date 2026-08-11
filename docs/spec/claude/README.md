@@ -72,12 +72,12 @@ that calling it executes p2p instead of on-chain, preserving the original TypeCh
 stateDiagram-v2
     [*] --> Opening
     Opening --> Executing: openChannel succeeds on-chain (tx 1)
-    Executing --> Executing: continuous block production; finality trails via thresholds / virtual votes
+    Executing --> Executing: continuous block production — finality trails via thresholds or virtual votes
     Executing --> Disputing: timeout, slashes, self-removal, or forced inbound inclusion
-    Disputing --> Executing: dispute reduces to a canonical successor fork; valid state carried forward
+    Disputing --> Executing: dispute reduces to a canonical successor fork — valid state carried forward
     Executing --> Settling: finalized snapshot submitted on-chain (tx 2)
     Disputing --> Settling: successor-fork snapshot adopted after challenge period
-    Settling --> [*]: outbound stream processed incrementally; withdrawals released
+    Settling --> [*]: outbound stream processed incrementally — withdrawals released
 ```
 
 Fraud proofs run on a separate, immediate path beside this lifecycle: an objective violation
@@ -115,10 +115,12 @@ are consulted as needed.
 | SDK | [sdk/runtime-and-concurrency.md](./sdk/runtime-and-concurrency.md) | Transport-neutral worker/port architecture: inline-vs-worker equivalence, cross-boundary ownership/ordering/lifecycle/disposal/serialization rules. |
 | Reference | [reference/data-types.md](./reference/data-types.md) | Field-level reference for shared structs. |
 | Reference | [reference/configuration.md](./reference/configuration.md) | Configuration, precedence, operations, build/test workflow. |
-| Reference | [reference/traceability-index.md](./reference/traceability-index.md) | Generated index of every `INV-*`/`REQ-*` ID: defining document and reverse references. |
+| Generated | [generated/traceability-index.md](./generated/traceability-index.md) | Generated index of every `INV-*`/`REQ-*` ID: lifecycle state, defining document, and reverse references. |
+| Generated | [generated/traceability-audit.md](./generated/traceability-audit.md) | Generated static audit of lifecycle, implementation, unit/e2e evidence, broken links, and repository source. |
+| Generated | [generated/source-coverage.md](./generated/source-coverage.md) | Synchronized review queue for every source file not directly referenced by the specification. |
+| Generated | [generated/test-coverage.md](./generated/test-coverage.md) | Generated accounting of every automated test declaration and the specification verification that owns it. |
 | Examples | [examples.md](./examples.md) | Example integrations and their status (legacy vs. current-capability). |
 | Register | [open-questions.md](./open-questions.md) | Consolidated register of unresolved design decisions awaiting engineer resolution. |
-| Register | [traceability/review-coverage.md](./traceability/review-coverage.md) | Per-note map of every review section to its owning documents and dispositions. |
 
 ## 5. Conventions used throughout
 
@@ -133,20 +135,174 @@ are consulted as needed.
 - **Future Work.** Every technical document ends with a **Future Work** section. Its content is
   non-normative: ideas, extensions, and questions that are not approved requirements.
 - **Section template.** Every subsystem section states its assumptions, constraints, limitations,
-  dependencies, and verification strategy. The template is defined in
+  dependencies, and in-depth verification specification. The template is defined in
   [governance.md](./governance.md#section-template).
 - **Traceability.** Important invariants and requirements carry stable IDs (e.g. `INV-FIN-2`,
   `REQ-MSG-4`) that link specification → implementation → verification evidence. The scheme is
   defined in [governance.md](./governance.md#traceability); all IDs are collected with reverse
-  references in the generated [traceability index](./reference/traceability-index.md).
+  references in the generated [traceability index](./generated/traceability-index.md).
 - **Code links.** Links into the repository point at the areas that implement a concept. The tree
   mirrors stable architectural boundaries, not individual source files, so routine refactors do not
   churn the documentation.
 
-## 6. Scope and maturity
+## 6. Maintaining this specification
+
+Agents editing this tree MUST follow [AGENTS.md](./AGENTS.md). The full governance model remains in
+[governance.md](./governance.md); `AGENTS.md` turns it into an operational maintenance checklist.
+
+All durable references must resolve inside the Git repository: this specification tree, source,
+contracts, scripts, tests, and other tracked project files. Do not cite ignored/private generation
+artifacts or unavailable external inputs. Preserve their useful conclusions directly in the owning
+specification or open-question register so a fresh clone is self-contained.
+
+### 6.1 Required traceability for every specification
+
+Every normative requirement or invariant has one owning traceability row. That row must make five
+things explicit:
+
+1. **Lifecycle state.** Record the next unresolved gate: `Design pending`, `Specified`,
+   `Implementation missing`, `Verification gap`, `Audit pending`, or `Audited`. The generated audit
+   derives every structurally provable state from the remaining columns, owning-document approval,
+   and verification matrices, then reports mismatches. Only substantive review can distinguish
+   `Audit pending` from `Audited`.
+2. **Specified behavior.** The stable `REQ-*` / `INV-*` ID and its normative statement.
+3. **Implementation disposition.** Use `Current implementation:` with links to the implementing source,
+   `Pending implementation:` when no conforming implementation exists, or `Not applicable:` for a
+   process/design-only requirement with an explanation. When current and intended behavior differ,
+   record both, link the owning open question, and state the future work needed to converge them.
+4. **Unit verification.** Under `Unit:`, map every existing unit/component/contract test declaration
+   needed as evidence using `[test](path/to/file#L<declaration-line>)`, or write
+   `Pending implementation:`, `none — gap`, or `Not applicable:` with a reason.
+5. **End-to-end verification.** Do the same under `E2E:`. A file or directory link does not map any
+   individual test declaration.
+
+Each technical document also contains a dedicated `## Verification specification` with two
+machine-checked case matrices: `### Unit / component black-box cases` and
+`### Integration and end-to-end scenarios`. These matrices define the theoretical tests independently
+of current implementation: preconditions, public stimulus/trigger, exact observable oracle, required
+normal/boundary/failure/recovery/race/adversarial variations, and evidence or an explicit gap. Every
+owned ID appears in both matrices or has a reasoned `Not applicable:` row. See
+[governance.md §3](./governance.md#3-verification-model) for the required tables and depth.
+
+The links are claims to audit, not proof by themselves. An agent must inspect the linked code and
+tests to determine whether they actually satisfy the normative statement. Additional implementation-
+specific tests may be added without changing the specification, but the owning row must continue to
+list the complete evidence set required by the specification.
+
+The current lifecycle state is read from these records:
+
+| Stage | Authoritative record |
+| --- | --- |
+| Design / review | The row's lifecycle `State`, the owning document's `Status:` (`Draft`, `In review`, or `Approved`), plus any linked open question or decision record. |
+| Implementation | The owning traceability row's `Current implementation:`, `Intended implementation:`, or `Pending implementation:` disposition. |
+| Verification | The same row's explicit `Unit:` and `E2E:` evidence or gap dispositions. |
+| Audit | The owning row's current lifecycle state; Git and the PR retain historical review context. |
+
+### 6.2 Change and review workflow
+
+For every design, source-code, contract, or test change that affects specified behavior:
+
+1. Identify the affected `REQ-*` / `INV-*` IDs before implementation. Add a requirement or open
+   question when no existing ID owns the behavior.
+2. Update and obtain approval for the specified/intended behavior. Resolve every affected open
+   question with its decision, provenance, rejected alternative, consequences, and affected layers
+   recorded in both owning locations. If it cannot be resolved, the implementation change remains
+   blocked rather than selecting an interpretation.
+3. Implement the approved behavior and update the implementation disposition and source links.
+4. Add or update the necessary unit and e2e tests, update both evidence dispositions, and rerun all
+   tests related to the affected IDs using the repository's canonical commands.
+5. Audit the implementation and evidence against the specification and regenerate the artifacts
+   below. PR descriptions and review findings cite the affected IDs. The review contains a dedicated
+   verification assessment covering the black-box case matrix, implementation-specific
+   integration/e2e levels, exact reruns, remaining gaps, and concrete rename suggestions for tests
+   whose names do not state their behavior and oracle.
+
+An implementation PR is accepted only as an atomic specification-to-code-to-test change. Its review
+must establish that the documentation remains complete, no new traceability or source-coverage gaps
+were introduced, the implementation conforms to every affected normative requirement and
+theoretical case, and the documented unit/e2e evidence actually tests the current implementation.
+All findings, open questions, links, lifecycle states, and generated artifacts are resolved in the
+same PR. Git and the PR provide history; this tree stores only current specification truth, not a
+duplicate review ledger.
+
+### 6.3 Generated traceability artifacts
+
+The [traceability index](./generated/traceability-index.md),
+[traceability audit](./generated/traceability-audit.md), and synchronized
+[source-coverage review](./generated/source-coverage.md), together with the generated
+[test-coverage review](./generated/test-coverage.md), all live under `generated/`:
+
+```bash
+yarn spec:refresh
+```
+
+Refresh all generated review artifacts whenever a change:
+
+- adds, removes, renames, moves, or changes a traceability-table definition for an `INV-*` or
+  `REQ-*` ID;
+- adds or removes an `INV-*` or `REQ-*` reference anywhere in this specification tree;
+- moves or renames a document containing an ID definition or reference; or
+- changes a traceability table, including its implementation or verification evidence;
+- adds, removes, renames, or moves an automated test; or
+- adds, removes, renames, or moves a file under `src/` or `contracts/`; or
+- changes source or tests in a way that affects a specified requirement or its evidence.
+
+The refresh command owns both reports and the source-coverage file list; commit all updated artifacts
+with the documentation change. Do not edit or format the index or audit by hand because `--check`
+compares deterministic output. In `source-coverage.md`, agents edit only the `Classification` and
+`Rationale` cells; refresh preserves those decisions while synchronizing the file list.
+Resolve every duplicate
+definition and every ID reported as mentioned but not defined. The audit report lists incomplete
+implementation dispositions, missing unit/e2e dispositions, absent or incomplete in-depth
+verification matrices, broken/ignored/external documentation references, automated test declarations
+that no traceability row or verification specification maps, and repository source files not directly referenced anywhere in
+the maintained specification. Its lifecycle dashboard shows how many requirements remain at each
+gate and validates every declared row state against the available structural evidence. It also flags
+potentially vague linked-test names and
+supplies a requirement-derived rename form for review; an engineer/agent replaces that heuristic
+with a concrete name based on the real setup and oracle. Its generated matrix links every ID to its
+claimed source and test evidence.
+Existing debt remains visible in that generated report;
+every change must fix the affected rows and must not introduce new gaps.
+`yarn spec:refresh:strict` regenerates everything and fails while any reported issue remains; it is
+the eventual clean-tree gate.
+
+The command chains these tools; do not invoke them through another wrapper:
+
+| Tool | Responsibility |
+| --- | --- |
+| `tools/gen-traceability-index.js` | Indexes every `REQ-*` / `INV-*` definition and reverse reference, and rejects duplicate definitions or undefined mentions. |
+| `tools/audit-test-coverage.js` | Extracts individual automated test declarations, maps their exact source lines to specification verification evidence, and writes the unaccounted-test queue. |
+| `tools/audit-traceability.js` | Validates lifecycle/evidence structure and links, audits source coverage, and writes the overall audit and source-review queue. |
+| `tools/shared/traceability-utils.js` | Provides the shared Markdown, path, table, ID, and file-walking primitives used by the three tools; it is not run directly. |
+
+For source coverage, a direct file link is required; a directory link does not silently cover every
+descendant. An unreferenced `src/` TypeScript/JavaScript or `contracts/` Solidity file is a
+specification gap until it is inspected. If it contains protocol behavior, add or update its owning
+specification and link the file. If it is genuinely generated, non-protocol, or mechanically trivial
+support code, classify it and explain the decision in
+[source-coverage.md](./generated/source-coverage.md). Static analysis adds every new unreferenced file
+as `Missing review`, which is an unresolved review finding, and removes entries only when the file is
+referenced by the specification or no longer exists.
+
+Every test declaration in a conventionally named test/spec file under `test/`, plus test entrypoints
+invoked directly by a `test` package script, must map from an owning traceability row's verification
+evidence or a dedicated `## Verification specification` section. Use an exact declaration anchor:
+`[test](path/to/file#L<declaration-line>)`. Use `[test family](...#L...)` for dynamic/fuzz declarations
+and enumerate the generated permutations and expected oracles in the verification plan. File-only
+links map no tests. The generated [test-coverage.md](./generated/test-coverage.md) lists every mapping
+and every unaccounted declaration. Only an entire file containing no specification verification may
+opt out, using `// @spec-test-coverage-ignore: <reason>` within its first ten lines. The reason is
+mandatory, and an ignore becomes stale once any case in the file is mapped.
+
+A successful generation only proves structural consistency. It does not prove that linked code
+implements a requirement or that linked tests provide sufficient evidence. Those checks remain part
+of the human/agent audit described in [governance.md](./governance.md#traceability).
+
+## 7. Scope and maturity
 
 This specification describes the near-production version of State Channels Plus. The initial
-content was reverse-engineered from the implementation and from engineering review notes; each
+content was reverse-engineered from the repository implementation; each
 document distinguishes settled behavior from open questions. The system is not yet recommended for
 production use: the [open security review](./security/open-security-review.md) and the
 [open questions register](./open-questions.md) list the work that gates that recommendation.
