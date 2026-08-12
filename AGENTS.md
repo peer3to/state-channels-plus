@@ -26,14 +26,26 @@ trigger src code).
 ### Specification traceability
 
 For any design, source, contract, or test change that affects specified
-behavior, follow `docs/spec/claude/AGENTS.md` in the same pass. Identify and
-cite the affected `REQ-*` / `INV-*` IDs, update their implementation and unit/e2e
-evidence dispositions, rerun the related evidence, regenerate the traceability
-artifacts, and record the PR or standalone code review. PR reviews must verify
-this cross-reference and report specification drift, missing links, stale
-evidence, incomplete black-box/e2e verification matrices, unclear test names,
-and unresolved design questions as findings. Reviews propose concrete names for
-tests whose current names do not identify their condition and observable result.
+behavior, follow `docs/spec/claude/AGENTS.md` in the same pass. Identify affected
+requirements, planned tests, matching implementation subjects and source inventories, conformance traceability,
+test traceability, individual test declarations, questions, findings, and audit
+approvals. Planned tests preserve the owning requirement ID, for example
+`INV-DA-1.T1`; exact tests map to permutation IDs such as `INV-DA-1.T1.P1`. Update all affected layers, rerun related evidence, and
+preserve the forward-only subject chain: neutral `specification/A`, concrete
+`implementation/A`, then evidence-owning `verification/A`. Verification has
+only its overview and the specification/implementation traceability matrices;
+exact test links and coverage judgments belong in those rows. Regenerate all
+six inverse reports with `yarn spec:refresh` (the command never authors the
+maintained subject documents). Before a commit run
+`yarn spec:impact` and `yarn spec:impact --staged`; during PR review run
+`yarn spec:impact --base <merge-base-ref>` and semantically recheck every
+reported path. PR reviews report specification drift,
+missing mirrors or links, stale approvals, incomplete black-box/system matrices,
+unclear test names, and unresolved decisions as findings. Agents must not edit
+the engineer-owned approvals register or invoke its approval command. Linked
+changes make the aggregate approval `Reverification required` automatically;
+ask the engineer for clarification only when intent, an oracle, or risk is
+uncertain, and leave final fingerprint approval to the engineer.
 
 ### Canonical test command and parallel run logs
 

@@ -1,5 +1,9 @@
 # State Channels Plus specification
 
+> **Frozen legacy tree:** Do not maintain or treat this directory as authoritative. The actively
+> maintained four-layer specification is [`docs/spec/claude/`](../claude/README.md). This tree remains
+> temporarily available only for comparison while the new strict traceability queues are drained.
+
 ## Status and authority
 
 This is a reverse-engineered design draft for engineer review. It combines the intended design in `temp/SPECIFICATION-REVIEW.md` with current repository behavior. It is not a summary of the code. It records decisions needed to implement, test, operate, and audit the system.

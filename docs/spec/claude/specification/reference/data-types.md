@@ -1,0 +1,251 @@
+# Data Types Reference
+
+> **Agent status:** Maintained reverse-engineered draft.
+> **Engineer verification:** Pending.
+> **Status:** Draft; pending engineer verification.
+> **Scope:** Defines the implementation-neutral data types reference behavior, assumptions, constraints, security properties, and black-box test plan.
+
+## Contents
+
+- [Purpose and observable contract](#purpose-and-observable-contract)
+- [Transactions and blocks](#1-transactions-and-blocks)
+- [Cross-layer messages](#2-cross-layer-messages)
+- [Channel setup and membership](#3-channel-setup-and-membership)
+- [Exits](#4-exits)
+- [Balances](#5-balances)
+- [Snapshots](#6-snapshots)
+- [Dispute and proof types](#7-dispute-and-proof-types)
+- [Assumptions and constraints](#assumptions-and-constraints)
+- [Security considerations](#security-considerations)
+- [Requirements and invariants](#requirements-and-invariants)
+- [Verification and test plan](#verification-and-test-plan)
+- [Future Work](#future-work)
+
+## Purpose and observable contract
+
+These structures are the neutral wire and commitment vocabulary shared by independent implementations. For
+the same logical value, implementations must agree on field meaning, ordering, optionality, canonical encoding,
+hashing input, and rejection of malformed or out-of-range values. Owning mechanism documents define behavior;
+this reference defines the interoperable shape they exchange.
+
+## 1. Transactions and blocks
+
+Semantics: [../concepts/history-and-commitments.md](../concepts/history-and-commitments.md) (data
+model), [../protocol/finality.md](../protocol/finality.md) (signing, virtual voting, agreement).
+
+| Struct              | Fields                                                                     | Role                                                                                                                                                                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TransactionHeader` | `channelId`, `participant`, `forkId`, `transactionCnt`, `timestamp`        | Identifies the author, the fork, the position (`transactionCnt`), and the claimed time of a transition. `participant` is the protocol's logical author identity (never `msg.sender` — see [../concepts/state-machines.md](../concepts/state-machines.md)). |
+| `TransactionBody`   | `encodedData`, `data`                                                      | The transition to execute; `data` is the EVM calldata run by `stateTransition`.                                                                                                                                                                            |
+| `Transaction`       | `header`, `body`                                                           | One proposed state transition.                                                                                                                                                                                                                             |
+| `Block`             | `transaction`, `stateSnapshotHash`, `previousBlockHash`, `messageBlocks[]` | A committed transition, hash-linked to its predecessor. `messageBlocks` carries cross-layer message blocks produced or consumed by this block.                                                                                                             |
+| `SignedBlock`       | `encodedBlock`, `signature`                                                | A block signed by its author. Signing is a non-equivocating commitment ([../protocol/finality.md](../protocol/finality.md)).                                                                                                                               |
+| `BlockConfirmation` | `signedBlock`, `signatures[]`                                              | A block plus collected participant signatures; the building unit of milestones ([../protocol/state-proofs.md](../protocol/state-proofs.md)).                                                                                                               |
+
+### 1.1 The commitment hierarchy
+
+A block does **not** commit directly to the serialized state-machine state. The commitment is
+layered:
+
+1. `Block.stateSnapshotHash` = `hash(StateSnapshot)` — the block commits to a **state snapshot**.
+2. `StateSnapshot.snapshotData.stateMachineStateHash` = `hash(serialized state-machine state)` —
+   the snapshot commits to the encoded state returned by the state machine's `getState()`.
+3. The snapshot additionally commits to the participant set, the inbound and outbound
+   message-stream tips, and the deposit/withdrawal totals (§6).
+
+The serialized state is therefore committed **indirectly, through the snapshot hierarchy**.
+Agreement checks and dispute verification MUST compare at the correct level: block-level checks
+compare snapshot hashes; state re-execution checks compare `stateMachineStateHash` inside the
+snapshot. See [../concepts/history-and-commitments.md](../concepts/history-and-commitments.md).
+
+## 2. Cross-layer messages
+
+Semantics: [../protocol/cross-layer-messages.md](../protocol/cross-layer-messages.md).
+
+| Struct         | Fields                                                                        | Role                                                                                                                                                                                                                                                                  |
+| -------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Message`      | `messageType`, `participant`, `balance`, `data`                               | One cross-layer instruction. `messageType` is a hashed constant: `MESSAGE_TYPE_JOIN` = `keccak256("JOIN_CHANNEL_MESSAGE")`, `MESSAGE_TYPE_EXIT` = `keccak256("EXIT_CHANNEL_MESSAGE")`; integrators may define custom types handled by `_processCustomInboundMessage`. |
+| `MessageBlock` | `previousBlockHash`, `blockHeight`, `messages[]`, `totalBalance`, `timestamp` | A hash-linked batch of messages forming one link of an ordered stream (inbound L1→L2 or outbound L2→L1). `blockHeight` is only relevant to dispute reduction for inbound blocks. `totalBalance` aggregates the batch's balances for incremental accounting.           |
+
+Both directions form recursive hash-linked streams whose tips are committed by snapshots (§6);
+the chain processes only the newly proven range on each snapshot advance.
+
+## 3. Channel setup and membership
+
+Semantics: [../protocol/lifecycle.md](../protocol/lifecycle.md) (opening),
+[../protocol/cross-layer-messages.md](../protocol/cross-layer-messages.md) (joins as inbound
+messages).
+
+| Struct                    | Fields                                                                               | Role                                                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OpenChannel`             | `channelId`, `participants[]`, `balances[]`, `deadlineTimestamp`, `isAtomic`, `data` | Terms for opening a channel. `balances` is parallel to `participants`. `isAtomic` selects all-or-nothing deposits versus opening with only the successful ones. |
+| `OpenChannelConfirmation` | `encodedOpenChannel`, `signatures[]`                                                 | Open terms plus the participants' signatures.                                                                                                                   |
+| `JoinChannel`             | `channelId`, `participant`, `deadlineTimestamp`, `balance`                           | One participant's join (or top-up for an existing participant) with its balance commitment.                                                                     |
+| `JoinChannelBlock`        | `previousBlockHash`, `joinChannels[]`                                                | A hash-linked batch of joins.                                                                                                                                   |
+| `SignedJoinChannel`       | `encodedJoinChannel`, `signature`                                                    | A join signed by the joining participant.                                                                                                                       |
+| `JoinChannelConfirmation` | `signedJoinChannel`, `signatures[]`                                                  | A join with the required threshold signatures (unanimous authorization — every current participant plus the joiner).                                            |
+
+## 4. Exits
+
+Semantics: [../protocol/cross-layer-messages.md](../protocol/cross-layer-messages.md) — an exit is
+an outbound message processed incrementally during a snapshot update, not a standalone withdrawal.
+
+| Struct             | Fields                                | Role                                                                                                                                                                  |
+| ------------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExitChannel`      | `participant`, `balance`              | A participant leaving with a resulting balance. Produced as a byproduct of a state transition, or enforced on-chain through a dispute (removal, slash, self-removal). |
+| `ExitChannelBlock` | `exitChannels[]`, `previousBlockHash` | A hash-linked batch of exits.                                                                                                                                         |
+
+## 5. Balances
+
+Semantics: [../concepts/state-machines.md](../concepts/state-machines.md) — the state machine
+defines the balance algebra (`addBalance`, `subtractBalance`, comparisons, totals).
+
+| Struct    | Fields           | Role                                                                                                                                                                                                                                      |
+| --------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Balance` | `amount`, `data` | Abstract value. `amount` covers the common integer case; `data` carries application-defined encoding for composite, multi-asset, or non-fungible models. Membership (`getParticipants`) and balance representation are separate concerns. |
+
+## 6. Snapshots
+
+Semantics: [../concepts/history-and-commitments.md](../concepts/history-and-commitments.md)
+(commitment hierarchy), [../protocol/cross-layer-messages.md](../protocol/cross-layer-messages.md)
+(stream tips, channel-balance invariant),
+Persistent adjudication storage uses the same canonical field meanings.
+
+| Struct           | Fields                                                                                                                                                                                                                                   | Role                                                                                                                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SnapshotData`   | `originForkId`, `stateMachineStateHash`, `participants[]`, `latestInboundMessageBlockHash`, `latestInboundMessageBlockHeight`, `latestOutboundMessageBlockHash`, `latestOutboundMessageBlockHeight`, `totalDeposits`, `totalWithdrawals` | The committed content of a channel at a point in history: origin fork, state-machine state commitment, participant set, both stream tips (hash + height), and aggregate deposit/withdrawal balances. |
+| `StateSnapshot`  | `snapshotData`, `forkId`, `blockHeight`, `timestamp`                                                                                                                                                                                     | A `SnapshotData` bound to a fork and height. `forkId` = `hash(genesisSnapshotData)` of the fork the snapshot belongs to; `blockHeight` is the height of the block that committed to this snapshot.   |
+| `ChannelBalance` | `latestInboundMessageBlockHash`, `latestInboundMessageBlockHeight`, `latestOutboundMessageBlockHeight`, `totalDeposits`, `totalWithdrawals`                                                                                              | The chain's per-channel accounting: its processed inbound tip (hash + height), its processed outbound **height** (no outbound hash is stored on-chain), and running deposit/withdrawal totals.       |
+
+## 7. Dispute and proof types
+
+Semantics: [../protocol/disputes.md](../protocol/disputes.md) (dispute inputs, windows,
+reduction), [../protocol/fraud-proofs.md](../protocol/fraud-proofs.md) (fraud-proof families and
+the on-chain slash set), [../protocol/state-proofs.md](../protocol/state-proofs.md) (milestones and
+state proofs).
+
+### 7.1 Disputes
+
+| Struct                | Fields                                                                                                                                                                                                                                          | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DisputeInput`        | `channelId`, `forkId`, `latestStateSnapshotHash`, `latestInboundMessageBlockHash`, `lastInboundMessageBlockHeight`, `stateProof`, `onChainSlashes[]`, `disputeAuditingDataHash`, `disputer`, `timeout` _(optional)_, `selfRemoval` _(optional)_ | The dispute claim. `forkId` is the hash of the disputed fork's genesis state (previous dispute output or latest on-chain state). `stateProof` proves the claimed latest state (§7.3). `onChainSlashes` is the consumed subset of the on-chain slash set. `disputeAuditingDataHash` = `hash(DisputeAuditingData)`, keeping uploads cheap. `disputer` MUST be the submitting `msg.sender`. `timeout` and `selfRemoval` are the optional timeout and voluntary-self-removal inputs. |
+| `Dispute`             | `input`, `postedAuditingData`, `outputSnapshotDataHash`                                                                                                                                                                                         | The dispute record: the input claim, whether auditing data was posted as calldata, and the hash of the output state produced by dispute resolution.                                                                                                                                                                                                                                                                                                                              |
+| `SignedDispute`       | `encodedDispute`, `signature`                                                                                                                                                                                                                   | A dispute signed by its author.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `DisputeConfirmation` | `signedDispute`, `signatures[]`                                                                                                                                                                                                                 | A dispute with collected signatures; full-threshold confirmation lets a window finalize immediately.                                                                                                                                                                                                                                                                                                                                                                             |
+| `Timeout`             | `participant`, `blockHeight`, `minTimeStamp`, `isForced`, and optional `previousBlockProducer`, `previousBlockProducerPostedCalldata`, `participantSignatureOnPreviousBlock`                                                                    | A claim to remove an unavailable participant at a block height, invalid before `minTimeStamp`. `isForced` skips on-chain race-condition checks when the target committed to a block not linked to the latest state but deviation cannot be proven directly. The optional fields carry evidence about the previous block producer used by the timeout dispute fraud proofs. Precedence and ordering rules: [../protocol/disputes.md](../protocol/disputes.md).                    |
+
+### 7.2 Windows, reduction, and storage
+
+| Struct                          | Fields                                                                                                                                                                  | Role                                                                                                                                                                                                                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DisputeWindow`                 | `forkId`, `evidence`, `reducedResult`                                                                                                                                   | Per-fork dispute window state.                                                                                                                                                                                                                                   |
+| `DisputeWindowEvidence`         | `creationTimestamp`, `lastEvidenceSubmissionTimestamp`, `disputeCommitments[]`, `hasPosted[]`                                                                           | The evidence phase: timing, committed dispute hashes, and who has posted.                                                                                                                                                                                        |
+| `DisputeWindowReducedResult`    | `forkId`, `timestamp`, `reducer`                                                                                                                                        | The committed reduced result: the successor `forkId`, when it was reduced, and by whom.                                                                                                                                                                          |
+| `ReduceOutput`                  | `latestBlock`, `slashedParticipants[]`, `latestInboundMessageBlockHash`, `latestInboundMessageBlockHeight`, `timeout`, `selfRemovals[]`                                 | The canonical outcome of order-independently reducing a fork's disputes: the latest valid carried-forward block, the slashes to apply, the inbound tip, at most one timeout, and voluntary self-removals.                                                        |
+| `OnChainSlash`                  | `participant`, `timestamp`                                                                                                                                              | One entry of the on-chain slash set consumed by later disputes ([../protocol/fraud-proofs.md](../protocol/fraud-proofs.md)).                                                                                                                                     |
+| `DisputeAuditingData`           | `genesisStateSnapshotData`, `latestStateSnapshot`, `milestoneSnapshots[]`, `latestFinalizedStateStateMachineState`, `inboundMessageBlocks[]`, `outboundMessageBlocks[]` | The heavy data backing a dispute, referenced by hash from `DisputeInput`. For K milestones there are K−1 snapshots (the first milestone is the genesis snapshot). `outboundMessageBlocks` covers the outbound chain segment proven up to the challenge deadline. |
+| `DisputeData`                   | `onChainSlashes[]`, `disputeWindowMap` (`forkId → DisputeWindow`), `disputedForks[]`                                                                                    | Per-channel on-chain dispute storage.                                                                                                                                                                                                                            |
+| `DisputeOutputState`            | `encodedModifiedState`, `outboundMessageBlock`, `totalDeposits`, `totalWithdrawals`                                                                                     | The state resulting from applying a dispute's transition (removals, slashes, exits) — the material behind `Dispute.outputSnapshotDataHash`.                                                                                                                      |
+| `FraudProofVerificationContext` | `channelId`                                                                                                                                                             | Experimental context passed to fraud-proof verification; its final shape is undecided in the unresolved design.                                                                                                                                                  |
+
+### 7.3 State proofs
+
+Semantics: [../protocol/state-proofs.md](../protocol/state-proofs.md).
+
+| Struct           | Fields                           | Role                                                                                                                                                  |
+| ---------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MilestoneProof` | `blockConfirmations[]`           | One milestone: a finality anchor proven directly by threshold signatures or virtually by later linked confirmations.                                  |
+| `StateProof`     | `milestones[]`, `signedBlocks[]` | A chain of milestone anchors plus a trailing, cryptographically linked, possibly non-final suffix of signed blocks reaching the claimed latest state. |
+
+### 7.4 Fraud proofs
+
+Semantics: [../protocol/fraud-proofs.md](../protocol/fraud-proofs.md).
+
+| Struct              | Fields                                                | Role                                                                                                                      |
+| ------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `FraudProof`        | `proofType`, `participant`, `encodedProof`            | A block-level fraud claim. `participant` is the address to slash; running the encoded proof must return the same address. |
+| `DisputeFraudProof` | `proofType`, `participant`, `dispute`, `encodedProof` | A dispute-level fraud claim; carries the accused `Dispute` itself.                                                        |
+
+`FraudProofType` (block-level): `BlockDoubleSign`, `BlockInvalidStateTransition`, `WrongGenesis`,
+`InvalidTimestamp`, `ForgedInboundMessageBlock`. Payload structs:
+`BlockDoubleSignProof`, `BlockInvalidStateTransitionProof`, `WrongGenesisProof`,
+`InvalidTimestampProof`, `ForgedInboundMessageBlockProof`, plus `BlockEmptyProof` (marked in the unresolved design
+for removal in favor of requiring transitions to actually change state).
+
+`DisputeFraudProofType` (dispute-level), each with a matching payload struct:
+
+| Value                                                                                                                        | Proves the dispute …                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `DisputeNotLatestState`                                                                                                      | claimed a latest state that is not the latest.                                                                         |
+| `DisputeInvalidOutputState`                                                                                                  | computed an incorrect output state.                                                                                    |
+| `DisputeInvalidStateProof`                                                                                                   | carried an unverifiable state proof.                                                                                   |
+| `DisputeInvalidBalanceInvariant`                                                                                             | violated the channel-balance invariant.                                                                                |
+| `DisputeOnChainSlashesNotSubset`                                                                                             | listed on-chain slashes that are not a valid subset.                                                                   |
+| `TimeoutThreshold`, `TimeoutCalldataPosted`, `TimeoutNotLinkedToLatestState`, `TimeoutParticipantNotNext`, `TimeoutTooEarly` | asserted an invalid timeout (contradicted by a threshold block or posted calldata, unlinked, wrong target, premature). |
+| `DisputeInvalidBlockInStateProofApplyFraudProof`                                                                             | included a block in its state proof that is itself provably fraudulent.                                                |
+| `DisputeLastMilestoneNotFinalAndNoAuditingData`                                                                              | ended its milestones on a non-final anchor without supplying auditing data.                                            |
+| `InvalidDisputeReason`                                                                                                       | had no valid dispute input at all.                                                                                     |
+| `DisputeStateProofHeaderMismatch`                                                                                            | carried a state proof whose headers do not match the claim.                                                            |
+| `DisputeInboundHashNotInChain`                                                                                               | referenced an inbound message-block hash not in the on-chain inbound chain.                                            |
+| `DisputeInvalidBlockStructure`                                                                                               | contained a structurally invalid block.                                                                                |
+| `DisputeBlockAuthorNotParticipant`                                                                                           | contained a block authored by a non-participant.                                                                       |
+
+## Assumptions and constraints
+
+All cross-boundary values use canonical ABI-compatible encodings and fixed-width contract runtime semantics where
+declared. Bytes fields containing nested structures must name and apply one canonical codec before hashing or
+transport. Arrays preserve defined order unless their owning type explicitly defines set semantics. Size,
+participant-count, proof-depth, and nested-payload limits are currently not uniformly specified; absence of a
+limit is a gap, not permission for unbounded production input.
+
+## Security considerations
+
+Type confusion, ambiguous encoding, truncation, integer overflow, reordered fields or arrays, duplicate set
+members, malformed nested bytes, and replay of a correctly encoded value in the wrong channel/fork/domain can
+invalidate commitments or misattribute value. Decoders must fail closed, hashes/signatures must bind the
+required domain coordinates, and structures crossing JSON/RPC boundaries must retain bigint and byte-string
+semantics without lossy coercion.
+
+## Requirements and invariants
+
+This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
+
+| Requirement / invariant | Statement                                                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `INV-DATA-1`            | Equal logical values have one canonical encoding and decode identically in every conforming implementation.          |
+| `REQ-DATA-1`            | Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and non-canonical encodings before effects. |
+| `REQ-DATA-2`            | Field and collection ordering, duplicate policy, optionality, and nested-byte codecs are explicit and canonical.     |
+| `REQ-DATA-3`            | Encoded and signed values bind every domain coordinate required by their owning protocol operation.                  |
+| `REQ-DATA-4`            | Integers and bytes cross ABI, off-chain runtime, worker, RPC, and persistence boundaries losslessly.                 |
+
+## Verification and test plan
+
+Every type requires round-trip and cross-language vectors: minimum/default and maximum valid values, each
+optional/variant branch, empty/single/multiple arrays, malformed/truncated/trailing data, one-above-boundary
+integers and lengths, duplicate/reordered collection members, wrong enum/type tags, and wrong-domain replay.
+Oracles compare decoded logical fields, canonical re-encoding bytes, commitment hashes, and failure
+classification across contract runtime and off-chain runtime. Existing model/codec tests must be linked to individual type
+families; unlinked structures and boundary vectors remain required downstream coverage.
+
+### Requirement test matrix
+
+Each row is a planned black-box test obligation, not an additional specification requirement. The requirement remains the authority. Execute the row through public protocol inputs from every applicable pre-state defined by this document. Every required permutation has a stable `P1`…`PN` suffix under its plan item. The list is exhaustive unless it explicitly says that boundary or pairwise representatives are sufficient; an omitted permutation needs an engineer-approved rationale.
+
+| Plan item       | Requirements / invariants | Setup and stimulus                                                                                                                                    | Expected result                                                                                                                       | Required permutations                                                                                                                                                                                                                                                       |
+| --------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INV-DATA-1.T1` | `INV-DATA-1`              | Use the applicable black-box method in the verification strategy above; exercise the behavior through public inputs without implementation internals. | Equal logical values encode to identical canonical bytes and decode to equal fields in every conforming implementation.               | `INV-DATA-1.T1.P1` — Every struct and enum<br>`INV-DATA-1.T1.P2` — empty/single/multiple arrays<br>`INV-DATA-1.T1.P3` — every optional branch<br>`INV-DATA-1.T1.P4` — nested bytes<br>`INV-DATA-1.T1.P5` — contract runtime↔off-chain runtime vectors.                     |
+| `REQ-DATA-1.T1` | `REQ-DATA-1`              | Use the applicable black-box method in the verification strategy above; exercise the behavior through public inputs without implementation internals. | Malformed, truncated, trailing, out-of-range, wrong-tag, or otherwise non-canonical values are rejected deterministically.            | `REQ-DATA-1.T1.P1` — One mutation per field and container boundary<br>`REQ-DATA-1.T1.P2` — minimum/maximum/one-beyond lengths and integers<br>`REQ-DATA-1.T1.P3` — unknown enum tags.                                                                                       |
+| `REQ-DATA-2.T1` | `REQ-DATA-2`              | Use the applicable black-box method in the verification strategy above; exercise the behavior through public inputs without implementation internals. | Field order and ordered collections are preserved; set-like collections use their specified canonical order and duplicate policy.     | `REQ-DATA-2.T1.P1` — Original/reversed/permuted arrays<br>`REQ-DATA-2.T1.P2` — duplicate members<br>`REQ-DATA-2.T1.P3` — equal sets in different insertion orders<br>`REQ-DATA-2.T1.P4` — missing and extra fields.                                                         |
+| `REQ-DATA-3.T1` | `REQ-DATA-3`              | Use the applicable black-box method in the verification strategy above; exercise the behavior through public inputs without implementation internals. | A correctly encoded value cannot be replayed where its required channel, fork, participant, height, or signature domain differs.      | `REQ-DATA-3.T1.P1` — Same/wrong channel and fork<br>`REQ-DATA-3.T1.P2` — stale/current height<br>`REQ-DATA-3.T1.P3` — correct/wrong participant<br>`REQ-DATA-3.T1.P4` — correct/wrong signature domain.                                                                     |
+| `REQ-DATA-4.T1` | `REQ-DATA-4`              | Use the applicable black-box method in the verification strategy above; exercise the behavior through public inputs without implementation internals. | Integer and byte values cross ABI, off-chain runtime, worker, and RPC boundaries without truncation, coercion, or byte-shape changes. | `REQ-DATA-4.T1.P1` — Zero and maximum integers<br>`REQ-DATA-4.T1.P2` — values above JavaScript safe integer<br>`REQ-DATA-4.T1.P3` — empty/large bytes<br>`REQ-DATA-4.T1.P4` — `Uint8Array`/hex representation<br>`REQ-DATA-4.T1.P5` — structured-clone and JSON boundaries. |
+
+## Future Work
+
+_Non-normative._
+
+- Document the exact ABI-encoding and hashing rules (`encodedBlock`, `encodedDispute`,
+  `encodedProof`) alongside each struct once the serialization document exists.
+- `FraudProofVerificationContext` is experimental in the unresolved design; specify or remove it when the
+  fraud-proof interface settles.
+- `DisputeWindowEvidence.hasPosted` is noted in the unresolved design as a candidate for a participant bitmask;
+  reflect the change here if adopted.

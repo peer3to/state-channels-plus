@@ -1,213 +1,170 @@
 # Specification maintenance instructions
 
-These instructions apply to every file under `docs/spec/claude/`. Read
-[README.md](./README.md) and [governance.md](./governance.md) before making a substantive change,
-then read the owning technical document and its directly linked dependencies.
+These rules apply to every file under `docs/spec/claude/`. Read [README.md](./README.md) and
+[governance.md](./governance.md), then the owning layer README and directly linked documents.
 
-## Preserve specification authority
+## Agent authority
 
-- Treat only engineer-approved content as normative. Do not silently resolve ambiguity or infer a
-  design decision from current code.
-- Separate observed behavior, inferred concerns, and proposed amendments. When implementation and
-  intended behavior disagree, use an explicit `Current:` / `Intended:` pair and classify the
-  divergence as `bug`, `missing`, `decision pending`, or `documentation debt`.
-- Mirror every unresolved `**Open question:**` in [open-questions.md](./open-questions.md). When an
-  engineer resolves one, update both locations, preserve the question ID, and record the decision
-  provenance required by governance.
-- Do not mark a document `Approved` without explicit engineer approval. Keep its `Status:` line
-  accurate when an engineer places it in review or approves it.
-- Keep `Future Work` non-normative. Do not present proposed behavior as an accepted requirement.
+- Author and maintain specification, implementation, verification, and audit prose and mappings.
+- Never infer intended behavior from current code. Raise the layer-owned open question when a decision is
+  missing.
+- Never mark engineer approval, edit [audit/approvals.md](./audit/approvals.md), or invoke
+  `tools/approve.js`. Only explicit engineer action records approval.
+- Keep future work non-normative. Keep questions separate from demonstrated findings.
+- Preserve all stable `REQ-*`, `INV-*`, planned-test, `OQ-*`, and `DEF-*` IDs; never renumber on move.
 
-## Maintain document structure
+## Maintain all four layers
 
-- Keep the root README's overview and document map consistent with the authoritative focused
-  documents.
-- Organize the tree around stable architectural domains, not individual source files. Prefer links
-  to stable directories and entry points over line-number links.
-- At a depth proportional to risk and complexity, document purpose and observable contract;
-  assumptions, constraints, and dependencies; invariants and failure behavior; verification; and
-  future work.
-- Preserve requirement and invariant IDs. Never reuse a withdrawn ID; mark it withdrawn.
-- Give each important `INV-*` / `REQ-*` one owning traceability-table row containing its lifecycle
-  state, normative statement, implementation disposition, and separate unit and e2e verification
-  dispositions.
-- Treat `State` as the next unresolved lifecycle gate, using exactly one of:
-    - `Design pending` while the owning specification is not engineer-approved;
-    - `Specified` when the specification is approved but its implementation disposition has not yet
-      been reconciled;
-    - `Implementation missing` when approved behavior lacks a conforming linked implementation;
-    - `Verification gap` when implementation exists but the required unit/e2e evidence or dedicated
-      verification matrices are incomplete;
-    - `Audit pending` when design, implementation, and verification are complete but the current
-      atomic PR/code review has not accepted them; or
-    - `Audited` when that review has accepted the current specification, implementation, and tests.
-- Update the state whenever its evidence changes. Do not advance it based on intention or a passing
-  test alone; downgrade it when an affected spec, implementation, or test changes after its last
-  passing audit. The generated audit recomputes every structurally provable prerequisite and reports
-  mismatches. It permits either `Audit pending` or `Audited` after those prerequisites are complete,
-  because static analysis cannot decide whether the substantive review passed.
-- In the implementation cell, use one or more of these explicit labels:
-    - `Current implementation:` followed by direct source links;
-    - `Intended implementation:` when it differs from current behavior, together with the owning open
-      question and future work;
-    - `Pending implementation:` when the specified behavior has no conforming implementation; or
-    - `Not applicable:` with a reason for a process/design-only requirement.
-- In the verification cell, include both `Unit:` and `E2E:`. For each layer, map every individual
-  test declaration required as specification evidence with `[test](path/to/file#L<declaration-line>)`,
-  or state `Pending implementation:`, `none — gap`, or `Not applicable:` with a reason. A file or
-  directory link does not establish which tests are evidence.
-- Never leave an implementation or verification gap implicit or use an empty traceability cell.
-  Additional implementation-specific tests may exist, but the traceability row must map the complete
-  set of test declarations required to establish the specified behavior.
-- Account for every extracted test declaration through an exact line-anchored `[test](...#L...)`
-  link from an owning row's verification cell or a dedicated `## Verification specification`
-  section. Use `[test family](...#L...)` for a dynamic or fuzz declaration and enumerate its generated
-  permutations and expected oracles in the verification plan. A file containing no specification
-  verification may opt out with `// @spec-test-coverage-ignore: <reason>` within its first ten lines.
-  The reason is mandatory. Never use it to hide a missing specification, unmodelled permutation, or
-  incomplete test family; those require updating the verification model.
+For every affected behavior:
 
-## Maintain the verification specification
+1. update the neutral requirement/invariant and its planned tests in `specification/`;
+2. update the matching implementation subject's exhaustive source inventory, design analysis,
+   implementation-specific test obligations, and conformance traceability;
+3. update the matching verification subject's specification-test and implementation-test traceability;
+4. update the current semantic/security assessment, findings, and questions in `audit/`; and
+5. allow changed graph fingerprints to make affected approvals stale until an engineer reapproves.
 
-Every technical document has a dedicated `## Verification specification` section using the exact
-subsections and table columns defined in [governance.md §3](./governance.md#3-verification-model):
+Every `src/`/`contracts/` file appears in at least one implementation subject inventory. Every
+specification subject has the same relative path in `implementation/` and `verification/`. Every
+extracted test declaration maps at least once to a planned-test permutation. Never clear a generated gap with a broad directory link,
+an unexplained `Not applicable`, or a file-level ignore that hides specification evidence.
 
-- `### Unit / component black-box cases`
-- `### Integration and end-to-end scenarios`
+Every implementation document is either the matching primary subject or explicitly names exactly one
+`Specification subject` owner near its title. Detailed architecture, service, pipeline, runtime, example,
+and operations reports are concrete children of that neutral owner; they are never free-standing design
+authority. If concrete documentation exposes behavior with no neutral requirement, add or amend the
+specification first, then its matching implementation and verification subjects.
 
-Every owned `REQ-*` / `INV-*` appears in both matrices, including a reasoned `Not applicable:` row
-when a layer genuinely does not apply. A file link by itself is insufficient. Each theoretical case
-states:
+Specification test plans preserve their owning requirement ID: `INV-DA-1.T1`, with required
+permutations `INV-DA-1.T1.P1`, `.P2`, and so on. Implementation tests use independent identities:
+`UNIT-TEST-*` for one inventoried source file and `INTEGRATION-TEST-*` for interactions among the
+files of one subsystem. Their requirement and specification-test mappings are optional; do not
+force an implementation-only behavior under an unrelated requirement. Each row states all inputs,
+boundaries, failures, retries, relevant interleavings, and the observable oracle. Exact repository
+test declarations map to the applicable specification and implementation permutations in the
+verification layer. Number every independently coverable implementation variation as
+`<UNIT-TEST-ID>.P1`…`.PN` or `<INTEGRATION-TEST-ID>.P1`…`.PN`; never map evidence only to the
+parent test ID.
 
-- the public behavior or cross-component workflow;
-- preconditions/environment and valid domain setup;
-- public stimulus or trigger;
-- exact observable oracle and required absence of side effects; and
-- meaningful normal, no-op, boundary, invalid/missing-state, failure, retry/recovery, ordering,
-  concurrency/race, idempotence/replay, adversarial, and platform/runtime variations.
+Every normative specification document has a compact `## Contents` menu linking every top-level section and
+dedicated top-level `## Assumptions and constraints`, `## Security considerations`, and
+`## Verification and test plan` sections. Keep them mechanism-specific and substantive: state exactly when the
+guarantee holds, what is bounded or unsupported, which assets and trust boundaries are involved, which attacks
+and residual risks remain, and the theoretical black-box/unit/integration/e2e/race/recovery/adversarial cases
+with concrete oracles and explicit `none — gap` evidence. The system-level owners live in
+`specification/README.md`. Never rely on scattered paragraphs to satisfy these sections.
 
-Derive unit/component cases from the public black-box contract, not private branches. Use real domain
-objects and repository-approved collaborator boundaries. Derive integration/e2e scenarios from every
-materially affected system boundary and observable workflow; do not duplicate unit permutations that
-are indistinguishable at system level.
+Specification documents must contain no source links, concrete implementation status, repository
+defects, concrete test evidence, or references to implementation, verification, generated, or audit
+documents. Their only downstream-facing identity is the stable requirement and permutation IDs.
 
-Compare existing tests against the theoretical matrices. Link every sufficient test directly and
-mark absent or insufficient cases as `Pending implementation` or `none — gap`. Inspect the test body;
-never infer coverage from a filename. Test names state condition/action and observable outcome. Flag
-vague or misleading names such as “works,” “handles duplicates,” or “success,” and propose a concrete
-replacement matching the actual setup and oracle.
+Each matching implementation document owns `## Implementation overview`, `## Assumptions and constraints`,
+`## System design`, one `## System integration test plan`, a two-column
+`## Source inventory` (`Source file | Specification IDs`), and bottom
+`## Conformance traceability`, in that order. The overview has a `Status` field and dedicated
+`### Specification adherence`, `### Specification contradiction`, and `### Missing` subsections.
+It distinguishes contradiction from missing implementation and states each required resolution
+beside its issue; never duplicate the issues in a separate remaining-work list. The assumptions section defines the
+conditions and limits under which the concrete implementation operates. Inventory only files
+where the listed IDs can actually be audited; do not add generic role/status columns or repeat
+symbol dumps.
 
-## Keep documentation synchronized
+Use this top-down order so readers see the implemented system and its interaction guarantees
+before descending into individual files. Nest every inventory item in the contents menu and give it one matching
+`### Source report: <filename>` section. Each report links the exact source, lists the IDs actually
+auditable there, explains that file's responsibility, design decisions, assumptions and constraints,
+and contains an exhaustive `#### Unit tests` table for that file's public boundary. Give every row a
+stable `UNIT-TEST-*` ID. Give every internal system-composition case above the inventory a stable
+`INTEGRATION-TEST-*` ID. Do not define cross-subsystem or E2E
+cases in implementation documents; verification owns those. Link conformance evidence to the
+narrowest relevant source line (`#L…`). If a requirement is integrator-owned or cannot be enforced
+generically, say so.
 
-- Update [open-questions.md](./open-questions.md) when an open question is added, changed, resolved,
-  or moved.
-- Update affected cross-references when a document, section, requirement, or invariant moves.
-- Documentation references must resolve to files available in the repository: this specification
-  tree, tracked source, contracts, scripts, and tests. Never cite or link ignored files, private
-  generation notes, or an unavailable review artifact. Preserve durable conclusions by
-  stating them in the owning document or open-question register.
+Make every requirement, plan, and permutation reference navigable without losing its code styling:
+use linked inline-code labels and stable explicit anchors at maintained definitions. Do not use line
+numbers as identity anchors; formatting and nearby documentation edits make them stale.
 
-## Follow the change loop
+Each matching verification document owns `## Verification overview` and bottom
+`## Specification test traceability` plus `## Implementation test traceability`.
+Do not add an upstream-dependency section: the mirrored subject already defines its specification
+and implementation inputs. The overview has a `Status` field and dedicated
+`### Specification-test adherence`, `### Implementation-test adherence`, `### Contradictions`, and
+`### Missing` subsections. Inspect the real test body for every traceability row and state whether its
+setup and oracle give good, partial, wrong/misleading, adjacent-only, or missing coverage, with a
+specific explanation. One declaration may appear in multiple rows when it genuinely covers multiple
+cases; the case is the unit of traceability. Broad file links, filenames, and adjacent tests are not
+evidence. Exact test links exist only here. Generated reports project these maintained layers; never
+repair a generated table directly.
 
-For a design, implementation, contract, or test change affecting specified behavior:
+Use [verification/concepts/state-machines.md](./verification/concepts/state-machines.md) as the canonical
+worked example. Do not add `Upstream dependencies`, `Test declaration inventory`, `Combined verification
+strategy`, or `Consolidated test evidence`: they duplicate information owned by the mirrored path and the two
+traceability matrices. Put the coverage judgment beside the case it evaluates.
 
-1. Identify all affected `REQ-*` / `INV-*` IDs before implementation. If no ID owns the behavior,
-   add one or raise an open question.
-2. Update the intended specification first and obtain engineer approval. Resolve every affected open
-   question with the required decision record; if it cannot be resolved, stop the implementation as
-   blocked rather than selecting an interpretation.
-3. Update the code and the owning row's lifecycle state, implementation disposition, and links.
-4. Add or update all necessary unit and e2e tests, update both evidence dispositions, and rerun the
-   narrowest affected tests followed by the required repository gates.
-5. Audit the linked implementation and test behavior against each normative statement and its full
-   verification matrices. The PR/code review has a dedicated verification assessment covering
-   black-box completeness, every affected integration/e2e boundary, execution evidence, gaps, and
-   test-name improvements. Refresh all generated review artifacts below.
+## Questions and findings
 
-Every implementation PR is one atomic specification-to-code-to-test change. Before acceptance, its
-reviewer must identify the affected IDs; verify that the specification is complete and introduces no
-new documentation or source-coverage gaps; test the implementation against the normative behavior
-and theoretical cases; inspect the linked tests for sufficient unit and e2e coverage; run the
-affected verification; resolve every finding and open question; update all current-state links and
-lifecycle states; and regenerate the static artifacts. An implementation PR with any unresolved
-specification, implementation, verification, or audit gap is not acceptable. Git and the PR retain
-the historical change; do not create a second in-tree review-history ledger.
+- Put protocol behavior, assumptions, limits, and invariants in `specification/open-questions.md`.
+- Put mechanism, conformance, and platform choices in `implementation/open-questions.md`.
+- Put oracle, environment, permutation, and evidence questions in `verification/open-questions.md`.
+- Put residual-risk, classification, and readiness questions in `audit/open-questions.md`.
+- Put known defects and omissions in `audit/open-findings.md`.
+- Give one layer primary ownership and link other affected layers; do not duplicate entries.
 
-PR descriptions and code reviews cite the affected IDs. Treat undocumented behavior, stale
-source/test links, missing evidence, regressions, and unresolved specification drift as findings.
-When resolving an affected open question, update both owning locations and record the decision
-provenance, strongest rejected alternative, consequences, and affected layers.
+## Tests and verification
 
-## Regenerate traceability artifacts
+- Specify planned tests before crediting evidence. Inspect every test body, setup, trigger, oracle, and forbidden effects.
+- Unit cases exhaust normal, no-op, both boundary sides, invalid/missing state, failures, recovery/retry, and
+  relevant interleavings through the real public component surface.
+- System scenarios cover each materially distinct external boundary and success/failure/recovery/race or
+  adversarial workflow without duplicating invisible unit permutations.
+- Link static declarations as `[test](...#L<declaration>)`; link dynamic/fuzz declarations as
+  `[test family](...)` and enumerate dimensions and oracles.
+- Use `node docs/spec/claude/tools/audit-test-coverage.js --fix` only to repair a uniquely matched shifted
+  anchor. Never guess an ambiguous or vanished mapping.
 
-[generated/traceability-index.md](./generated/traceability-index.md),
-[generated/traceability-audit.md](./generated/traceability-audit.md), and
-[generated/source-coverage.md](./generated/source-coverage.md), plus
-[generated/test-coverage.md](./generated/test-coverage.md), are the generated review workspace.
-Never edit the index or audit by hand; in source coverage, edit only classifications and rationales.
-Run every generator and consistency check together from anywhere in the repository:
+## Change and review loop
+
+Before implementation, identify affected IDs and resolve required engineer decisions. In the same change,
+update code, mirrors, planned tests, exact test evidence, questions/findings, and audit assessment. Rerun
+the narrowest mapped tests and repository gates. Reviews inspect semantic behavior and real test bodies; a
+generated link is a claim, not proof.
+
+Run `yarn spec:impact` before committing, `yarn spec:impact --staged` against the proposed commit, and
+`yarn spec:impact --base <merge-base-ref>` when reviewing a PR. Semantically recheck every reported invariant
+across its local specification, implementation mirrors/source, verification scenarios, and exact mapped tests.
+Update the current audit with the result. Ask an engineer only when protocol intent, an oracle, or risk
+acceptance is uncertain; never guess. Fingerprints automatically turn changed approved paths into
+`Reverification required`; do not edit the engineer approval register.
+
+Agents and PR/review skills must reject new structural gaps, semantic drift, incomplete test-plan/oracle coverage,
+stale approvals, and unresolved blocking questions. Existing queues may remain only when the change does not
+worsen them and the generated reports state them honestly.
+
+## Regeneration
+
+Run after any documentation ID/mapping/status change, source/contract addition or move, test declaration
+change, question/finding change, or audit disposition change:
 
 ```bash
 yarn spec:refresh
 ```
 
-Do not format the generated audit report; its `--check` mode compares the deterministic raw output.
+This command runs every generator and schema audit in dependency order, formats the six reports, and then
+reruns each generator in check mode. It never authors or repairs a specification, implementation, or
+verification subject. Agents must resolve each reported gap in the correct maintained layer or leave the
+genuine missing behavior/evidence explicit.
 
-Refresh and commit all changed generated files whenever a change:
+Inspect all six files under `generated/`:
 
-- adds, removes, renames, moves, or changes an `INV-*` / `REQ-*` definition;
-- adds or removes an `INV-*` / `REQ-*` mention anywhere in the tree;
-- moves or renames a document containing an ID definition or mention; or
-- changes a traceability table, including implementation or verification evidence;
-- adds, removes, renames, or moves an automated test; or
-- adds, removes, renames, or moves a file under `src/` or `contracts/`; or
-- changes source or tests in a way that affects a specified requirement or its evidence.
+- `specification-index.md`: requirements and planned permutations missing or malformed in neutral specs;
+- `implementation-coverage.md`: unowned source, missing source reports/test plans, and conformance gaps;
+- `test-coverage.md`: real test declarations without an exact planned-case owner;
+- `verification-coverage.md`: planned specification/implementation permutations without adequate evidence;
+- `open-questions-index.md`: unresolved decisions and malformed ownership;
+- `audit-summary.md`: the joined current readiness and blocking queues.
 
-Every scanned `src/` TypeScript/JavaScript file and `contracts/` Solidity file must have one of two
-dispositions:
+Run `yarn spec:refresh:strict` when evaluating full completeness;
+while the initial queues are being drained, its nonzero exit is expected and must match the dashboard.
 
-- a direct file link from a maintained specification document; or
-- an exact entry in
-  [source-coverage.md](./generated/source-coverage.md), classified as
-  `generated`, `non-protocol`, or `trivial-support`, with a concrete rationale.
-
-Directory links do not establish file coverage. Never add a broad pattern or classify a file as
-trivial merely to clear the report. Inspect an unreferenced file first: protocol behavior means the
-owning specification is missing or stale; only genuinely generated, non-protocol, or mechanically
-trivial support code receives an omission classification. The refresh command adds newly
-unreferenced files as `Missing review`, preserves agent-edited classifications and rationales, and
-removes entries that become directly referenced or disappear. A `Missing review` row is an
-unresolved review finding.
-
-Resolve duplicate definitions and every reported "mentioned but not defined" ID before handing off
-the change. The audit report identifies missing explicit implementation states, missing unit/e2e
-dispositions, missing/incomplete dedicated verification matrices, broken local links, and automated
-test declarations not mapped as evidence. Test discovery includes conventional test/spec filenames
-and test files invoked directly by `test` package scripts; extraction covers Mocha-style declarations,
-Foundry test/fuzz functions, and package-script test entrypoints. Existing debt must remain visible;
-fix every affected row and do not add new gaps. The refresh command performs the audit's stale-output
-check. `node docs/spec/claude/tools/audit-traceability.js --check` checks only the main audit for stale
-generated output.
-`yarn spec:refresh:strict` regenerates everything and fails on every reported issue; it becomes the
-clean-tree gate once the existing report is cleared.
-
-The tools validate structure only. They do not inspect runtime behavior, run tests, or prove that
-implementation and evidence satisfy the specification.
-
-## Validate documentation changes
-
-Before handing off:
-
-1. Run the unified refresh command when any trigger above applies.
-2. Inspect the generated diffs and confirm ownership, statements, reverse references, implementation
-   states, evidence dispositions, unreferenced-test findings, and every source-coverage review row
-   are correct.
-3. Check every changed relative link and every implementation/test evidence link.
-4. Confirm open questions, `Current:` / `Intended:` divergences, lifecycle states, and document
-   statuses remain synchronized.
-5. Rerun the unit/e2e evidence affected by the changed IDs and record the exact commands/results.
-6. Run `git diff --check`.
-
-When auditing a requirement, read its normative definition, inspect the linked implementation, and
-evaluate the linked tests against the required behavior. Do not infer `implemented`, `verified`, or
-`audited` merely because a traceability cell contains a link.
+Generated files are deterministic and never hand-edited. A second refresh must be byte-identical. Run
+`git diff --check` before handoff.
