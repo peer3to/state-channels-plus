@@ -75,11 +75,10 @@ Generated files contain current structural facts only and are never hand-edited:
 
 | Generated file | Meaning |
 | --- | --- |
-| [Specification index](./generated/specification-index.md) | The neutral requirement inventory, each requirement's planned black-box tests and numbered permutations, and specification-only structural gaps. |
-| [Implementation coverage](./generated/implementation-coverage.md) | Every specification subject versus its matching implementation document, plus whether every real source/contract file has at least one owning source-inventory row. Detailed evidence remains in the implementation documents. |
-| [Test coverage](./generated/test-coverage.md) | Every individual test declaration versus its owning permutation IDs; stale mappings and unaccounted tests remain explicit. |
-| [Verification coverage](./generated/verification-coverage.md) | Every specification and implementation permutation versus exact test-declaration evidence, runtime classification, missing coverage, and approval. |
-| [Open-question index](./generated/open-questions-index.md) | Every layer-owned unresolved decision, its owner, affected paths, requested decision, and blocking effect. |
+| [Specification index](./generated/specification-index.md) | Specification IDs that do not appear in any specification test plan, with a link to the specification that defines each ID. |
+| [Implementation coverage](./generated/implementation-coverage.md) | Missing specification/implementation counterparts and source or contract files that no implementation inventory references. |
+| [Verification coverage](./generated/verification-coverage.md) | Missing verification rows, planned tests without exact repository-test references, document mismatches across the three subject layers, and repository tests that verification does not reference. |
+| [Open-question index](./generated/open-questions-index.md) | Unresolved questions from the specification, implementation, verification, and audit question registers. |
 | [Audit summary](./generated/audit-summary.md) | Compact requirement readiness with direct links to the authoritative specification, implementation, and verification rows, plus structural, semantic, security, and final status. |
 
 Run all generators and schema checks together:
@@ -89,7 +88,7 @@ yarn spec:refresh
 ```
 
 Run it after changing a requirement, planned permutation, source inventory/report, implementation test plan,
-verification mapping, test declaration, open question, finding, or audit state. Review all six generated
+verification mapping, test declaration, open question, finding, or audit state. Review all five generated
 files; a successful refresh means the documents are parseable and the reports are deterministic, not that
 the system is complete. Run the command a second time when changing the generators and confirm it produces no
 further diff. Never hand-edit `generated/`.

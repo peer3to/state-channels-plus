@@ -1,229 +1,276 @@
 #!/usr/bin/env node
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 const {
     buildDocumentationGraph,
-    missingSections,
-    planRequirementId,
     sorted
 } = require("./shared/documentation-graph");
+const { localTargets } = require("./shared/traceability-utils");
 const {
+    escapeCell,
     parseReportArgs,
     relativeLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
 
-function cell(item, header) {
-    const index = item?.headers?.indexOf(header) ?? -1;
-    return index < 0 ? "" : item.cells[index];
+function isSubjectDocument(document) {
+    return !/(?:^|\/)(?:README|open-questions)\.md$/.test(document);
+}
+
+function traceRows(collection) {
+    const rows = new Map();
+    for (const [id, item] of collection.definitions) rows.set(id, [item]);
+    for (const [, duplicate] of collection.duplicates) {
+        if (!rows.has(duplicate.id)) rows.set(duplicate.id, []);
+        rows.get(duplicate.id).push(duplicate);
+    }
+    return rows;
+}
+
+function declaredSpecificationOwners(document, specificationDocuments) {
+    const ownerField = fs
+        .readFileSync(document, "utf8")
+        .match(/^> \*\*Specification subject:\*\*.*$/m)?.[0];
+    if (!ownerField) return [];
+    return localTargets(ownerField, document).filter((target) =>
+        specificationDocuments.has(target)
+    );
+}
+
+function inline(value) {
+    const runs = value.match(/`+/g) || [];
+    const fence = "`".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
+    return `${fence}${value}${fence}`;
 }
 
 function generateVerificationCoverage(graph = buildDocumentationGraph()) {
     const output = path.join(graph.roots.generated, "verification-coverage.md");
-    const plans = new Map([
-        ...graph.planItems.specification.definitions,
-        ...graph.planItems.implementation.definitions
-    ]);
-    const permutations = graph.permutations.specification.definitions;
-    const implementationTests = graph.planItems.implementation.definitions;
-    const implementationPermutations =
-        graph.permutations.implementation.definitions;
-    const missingTrace = [...permutations.values()].filter(
-        ({ id }) => !graph.testTrace.definitions.has(id)
+    const specificationRoot = path.join(graph.roots.spec, "specification");
+    const implementationRoot = path.join(graph.roots.spec, "implementation");
+    const verificationRoot = path.join(graph.roots.spec, "verification");
+    const specificationDocuments = new Set(
+        graph.documents.specificationDocs.filter(isSubjectDocument)
     );
-    const missingExactEvidence = [...permutations.values()].filter(({ id }) => {
-        const trace = graph.testTrace.definitions.get(id);
-        return (
-            !trace || !/\[(?:test|test family)\]\([^)]+#L\d+\)/i.test(trace.raw)
+    const implementationDocuments =
+        graph.documents.implementationDocs.filter(isSubjectDocument);
+    const verificationDocuments =
+        graph.documents.verificationDocs.filter(isSubjectDocument);
+    const verificationDocumentSet = new Set(verificationDocuments);
+
+    function expectedVerification(document) {
+        if (document.startsWith(`${specificationRoot}${path.sep}`)) {
+            return path.join(
+                verificationRoot,
+                path.relative(specificationRoot, document)
+            );
+        }
+        const matchingSpecification = path.join(
+            specificationRoot,
+            path.relative(implementationRoot, document)
         );
-    });
-    const pendingApprovals = [...permutations.values()].filter(
-        ({ id }) => graph.approvalStates.get(id) !== "Approved"
+        const owners = specificationDocuments.has(matchingSpecification)
+            ? [matchingSpecification]
+            : declaredSpecificationOwners(document, specificationDocuments);
+        const owner = owners.length === 1 ? owners[0] : matchingSpecification;
+        return path.join(
+            verificationRoot,
+            path.relative(specificationRoot, owner)
+        );
+    }
+
+    const specificationTraceRows = traceRows(graph.testTrace);
+    const implementationTraceRows = traceRows(graph.implementationTestTrace);
+    const specificationPermutations = [
+        ...graph.permutations.specification.definitions.values()
+    ];
+    const implementationPermutations = [
+        ...graph.permutations.implementation.definitions.values()
+    ];
+
+    const requiredCases = [
+        ...specificationPermutations.map((item) => ({
+            type: "Specification test",
+            item,
+            rows: specificationTraceRows.get(item.id) || []
+        })),
+        ...implementationPermutations.map((item) => ({
+            type: "Implementation test",
+            item,
+            rows: implementationTraceRows.get(item.id) || []
+        }))
+    ].map((entry) => ({
+        ...entry,
+        expected: expectedVerification(entry.item.document)
+    }));
+
+    const testsMissingFromVerification = requiredCases.filter(
+        ({ rows, expected }) =>
+            !rows.some(({ document }) => document === expected)
     );
-    const missingImplementationTrace = [
-        ...implementationPermutations.values()
-    ].filter(({ id }) => !graph.implementationTestTrace.definitions.has(id));
-    const missingImplementationEvidence = [
-        ...implementationPermutations.values()
-    ].filter(({ id }) => {
-        const trace = graph.implementationTestTrace.definitions.get(id);
-        return (
-            !trace || !/\[(?:test|test family)\]\([^)]+#L\d+\)/i.test(trace.raw)
+
+    function mappedTests(id, verification) {
+        return graph.tests.tests.filter((test) =>
+            (
+                graph.tests.mappings.get(`${test.target}\0${test.line}`) || []
+            ).some(
+                ({ owner, document }) =>
+                    owner === id && document === verification
+            )
         );
-    });
-    const pendingImplementationApprovals = [
-        ...implementationPermutations.values()
-    ].filter(({ id }) => graph.approvalStates.get(id) !== "Approved");
-    const verificationDocuments = new Set(graph.documents.verificationDocs);
-    const missingSubjects = graph.subjects.filter(
-        ({ verificationExists }) => !verificationExists
+    }
+
+    const testsWithoutEvidence = requiredCases.filter(
+        ({ item, rows, expected }) =>
+            rows.some(({ document }) => document === expected) &&
+            mappedTests(item.id, expected).length === 0
     );
-    const malformedSubjects = graph.subjects
-        .filter(({ verificationExists }) => verificationExists)
-        .flatMap((subject) =>
-            missingSections(subject.verification, [
-                /^> \*\*Agent (?:authoring )?status:/i,
-                /^> \*\*Engineer verification:/i,
-                /^## Contents$/i,
-                /^## Verification overview$/i,
-                /^\*\*Status:\*\*/i,
-                /^### Specification-test adherence$/i,
-                /^### Implementation-test adherence$/i,
-                /^### Contradictions$/i,
-                /^### Missing$/i,
-                /^## Specification test traceability$/i,
-                /^## Implementation test traceability$/i,
-                /^\|\s*Permutation\s*\|\s*Behavior\s*\|\s*Implementation obligations\s*\|\s*Test status\s*\|\s*Exact test evidence\s*\|\s*Runtime coverage\s*\|\s*Missing coverage\s*\|$/i,
-                /^\|\s*Implementation permutation\s*\|\s*Level\s*\|\s*Test status\s*\|\s*Exact test evidence\s*\|\s*Runtime coverage\s*\|\s*Missing coverage\s*\|$/i
-            ]).map((pattern) => ({
-                document: subject.verification,
-                pattern: pattern.source
-            }))
-        );
-    const brokenLinks = graph.validation.linkIssues.filter(({ document }) =>
-        verificationDocuments.has(document)
+
+    const primaryImplementationDocuments = implementationDocuments.filter(
+        (document) => {
+            const matchingSpecification = path.join(
+                specificationRoot,
+                path.relative(implementationRoot, document)
+            );
+            return (
+                specificationDocuments.has(matchingSpecification) ||
+                declaredSpecificationOwners(document, specificationDocuments)
+                    .length === 0
+            );
+        }
+    );
+    const documentMismatches = [];
+    for (const document of specificationDocuments) {
+        const verification = expectedVerification(document);
+        if (!verificationDocumentSet.has(verification)) {
+            documentMismatches.push({
+                type: "Specification without verification",
+                document,
+                missing: `verification/${path.relative(verificationRoot, verification)}`
+            });
+        }
+    }
+    for (const document of primaryImplementationDocuments) {
+        const verification = expectedVerification(document);
+        if (!verificationDocumentSet.has(verification)) {
+            documentMismatches.push({
+                type: "Implementation without verification",
+                document,
+                missing: `verification/${path.relative(verificationRoot, verification)}`
+            });
+        }
+    }
+    for (const document of verificationDocuments) {
+        const relative = path.relative(verificationRoot, document);
+        const specification = path.join(specificationRoot, relative);
+        const implementation = path.join(implementationRoot, relative);
+        const missing = [
+            !specificationDocuments.has(specification) ? "specification" : null,
+            !fs.existsSync(implementation) ? "implementation" : null
+        ].filter(Boolean);
+        if (missing.length) {
+            documentMismatches.push({
+                type: "Verification without counterpart",
+                document,
+                missing: missing.join(" and ")
+            });
+        }
+    }
+
+    const unreferencedTests = graph.tests.tests.filter(
+        (test) => !graph.tests.mappings.has(`${test.target}\0${test.line}`)
     );
     const issueCount =
-        graph.planItems.specification.duplicates.length +
-        graph.planItems.implementation.duplicates.length +
-        graph.permutations.specification.duplicates.length +
-        graph.permutations.implementation.duplicates.length +
-        missingTrace.length +
-        missingExactEvidence.length +
-        pendingApprovals.length +
-        missingImplementationTrace.length +
-        missingImplementationEvidence.length +
-        pendingImplementationApprovals.length +
-        missingSubjects.length +
-        malformedSubjects.length +
-        brokenLinks.length;
+        testsMissingFromVerification.length +
+        testsWithoutEvidence.length +
+        documentMismatches.length +
+        unreferencedTests.length;
     const lines = [
         "# Verification Coverage",
         "",
-        "> **Generated—do not edit.** Sources: specification test plans, matching implementation obligations, maintained `verification/` subject inventories, and exact test mappings. Command: `yarn spec:refresh`.",
+        "> **Generated—do not edit.** Sources: specification tests, implementation tests, verification traceability tables, and repository test declarations. Command: `yarn spec:refresh`.",
         "",
-        "## What this report tracks",
+        "This report checks that planned tests reach the correct verification document and then reach an exact repository test declaration. It performs static analysis only; it does not judge test quality or runtime behavior.",
         "",
-        "This is the forward coverage matrix from planned behavior to real evidence. It answers: **for every required specification and implementation permutation, is there an exact test whose setup and oracle actually prove it, in every required runtime?**",
+        "## Contents",
         "",
-        "- **Permutation inventory** covers every neutral specification `.T*.P*` case.",
-        "- **Implementation test inventory** covers every `UNIT-TEST-*.P*` and `INTEGRATION-TEST-*.P*` case defined by implementation subjects.",
-        "- A traceability row may classify evidence as good, partial, misleading/adjacent, or missing after inspecting the real test body.",
-        "- **Missing evidence** means no exact declaration currently proves that permutation; it does not necessarily mean no related test exists.",
-        "- **Pending approval** is counted separately for every permutation because agents may assemble evidence but only an engineer approves its sufficiency.",
+        "- [Specification/Implementation tests missing in their Verification](#specificationimplementation-tests-missing-in-their-verification)",
+        "- [Specification and implementation tests without repository test references](#specification-and-implementation-tests-without-repository-test-references)",
+        "- [verification files missing specification/implementation](#verification-files-missing-specificationimplementation)",
+        "- [Repository tests not referenced by verification](#repository-tests-not-referenced-by-verification)",
         "",
-        "The total gap count adds missing exact evidence and pending/stale approval for specification and implementation permutations. The same permutation can therefore contribute two blockers: one evidence blocker and one approval blocker.",
+        "## Specification/Implementation tests missing in their Verification",
         "",
-        "## Summary",
-        "",
-        `- Planned specification and implementation tests: ${plans.size}`,
-        `- Required permutations: ${permutations.size}`,
-        `- Required implementation unit/integration tests: ${implementationTests.size}`,
-        `- Required implementation permutations: ${implementationPermutations.size}`,
-        `- Matching verification subjects: ${graph.subjects.length - missingSubjects.length}/${graph.subjects.length}`,
-        `- Permutations missing test-traceability rows: ${missingTrace.length}`,
-        `- Permutations without exact test-declaration evidence: ${missingExactEvidence.length}`,
-        `- Permutations pending engineer approval: ${pendingApprovals.length}`,
-        `- Implementation tests missing traceability rows: ${missingImplementationTrace.length}`,
-        `- Implementation tests without exact test-declaration evidence: ${missingImplementationEvidence.length}`,
-        `- Implementation tests pending engineer approval: ${pendingImplementationApprovals.length}`,
-        "",
-        "## Permutation inventory",
-        "",
-        "| Permutation | Required behavior | Plan item | Requirement | Plan | Test status | Exact mapped tests | Missing coverage |",
-        "| --- | --- | --- | --- | --- | --- | ---: | --- |"
+        "This section lists specification-test and implementation-test permutations that do not have a traceability row in the verification document for their owning subject.",
+        ""
     ];
-    for (const id of sorted(permutations.keys())) {
-        const permutation = permutations.get(id);
-        const planId = id.replace(/\.P\d+$/, "");
-        const plan = plans.get(planId);
-        const trace = graph.testTrace.definitions.get(id);
-        const mapped = graph.tests.tests.filter((test) =>
-            (
-                graph.tests.mappings.get(`${test.target}\0${test.line}`) || []
-            ).some(({ owner }) => owner === id)
-        );
+
+    function appendCaseTable(items) {
+        if (!items.length) {
+            lines.push("None.");
+            return;
+        }
         lines.push(
-            `| \`${id}\` | ${trace ? cell(trace, "behavior") : "Missing"} | \`${planId}\` | \`${planRequirementId(planId)}\` | ${relativeLink(output, plan?.document || permutation.document, path.relative(graph.roots.spec, plan?.document || permutation.document), plan?.line || permutation.line)} | ${trace ? cell(trace, "test status") : "Missing"} | ${mapped.length} | ${trace ? cell(trace, "missing coverage") : "Missing traceability"} |`
+            "| Type | Test ID | Defined in | Expected verification |",
+            "| --- | --- | --- | --- |"
         );
+        for (const { type, item, expected } of items.sort((left, right) =>
+            left.item.id.localeCompare(right.item.id)
+        )) {
+            const expectedLabel = path.relative(graph.roots.spec, expected);
+            lines.push(
+                `| ${type} | \`${item.id}\` | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document), item.line)} | ${fs.existsSync(expected) ? relativeLink(output, expected, expectedLabel) : `\`${expectedLabel}\``} |`
+            );
+        }
+    }
+
+    appendCaseTable(testsMissingFromVerification);
+    lines.push(
+        "",
+        "## Specification and implementation tests without repository test references",
+        "",
+        "This section lists test permutations that have a row in the correct verification document but do not reference an exact, existing repository test declaration.",
+        ""
+    );
+    appendCaseTable(testsWithoutEvidence);
+    lines.push(
+        "",
+        "## verification files missing specification/implementation",
+        "",
+        "This section reports missing documents across the three subject layers. Supporting verification documents without same-path specification or implementation counterparts are also listed.",
+        ""
+    );
+    if (!documentMismatches.length) {
+        lines.push("None.");
+    } else {
+        lines.push("| Type | Document | Missing |", "| --- | --- | --- |");
+        for (const item of documentMismatches.sort((left, right) =>
+            left.document.localeCompare(right.document)
+        )) {
+            lines.push(
+                `| ${item.type} | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document))} | \`${item.missing}\` |`
+            );
+        }
     }
     lines.push(
         "",
-        "## Implementation test inventory",
+        "## Repository tests not referenced by verification",
         "",
-        "| Implementation permutation | Definition | Level | Test status | Exact mapped tests | Missing coverage |",
-        "| --- | --- | --- | --- | ---: | --- |"
+        "This section lists extracted test declarations that are not referenced by any verification traceability row.",
+        ""
     );
-    for (const id of sorted(implementationPermutations.keys())) {
-        const permutation = implementationPermutations.get(id);
-        const test = implementationTests.get(id.replace(/\.P\d+$/, ""));
-        const trace = graph.implementationTestTrace.definitions.get(id);
-        const mapped = graph.tests.tests.filter((candidate) =>
-            (
-                graph.tests.mappings.get(
-                    `${candidate.target}\0${candidate.line}`
-                ) || []
-            ).some(({ owner }) => owner === id)
-        );
-        lines.push(
-            `| \`${id}\` | ${relativeLink(output, test.document, path.relative(graph.roots.spec, test.document), permutation.line)} | ${trace ? cell(trace, "level") : "Missing"} | ${trace ? cell(trace, "test status") : "Missing"} | ${mapped.length} | ${trace ? cell(trace, "missing coverage") : "Missing traceability"} |`
-        );
+    if (!unreferencedTests.length) {
+        lines.push("None.");
+    } else {
+        lines.push("| Test declaration | Test name |", "| --- | --- |");
+        for (const test of unreferencedTests) {
+            lines.push(
+                `| ${relativeLink(output, test.target, `${path.relative(graph.roots.repo, test.target)}:${test.line}`, test.line)} | ${escapeCell(inline(test.selector))} |`
+            );
+        }
     }
-    lines.push("", "## Gaps", "");
-    const gaps = [
-        ...graph.planItems.specification.duplicates.map(
-            ([first, second]) =>
-                `- Duplicate planned test \`${first.id}\` in ${relativeLink(output, first.document, path.relative(graph.roots.spec, first.document), first.line)} and ${relativeLink(output, second.document, path.relative(graph.roots.spec, second.document), second.line)}.`
-        ),
-        ...graph.planItems.implementation.duplicates.map(
-            ([first, second]) =>
-                `- Duplicate implementation test plan \`${first.id}\` in ${relativeLink(output, first.document, path.relative(graph.roots.spec, first.document), first.line)} and ${relativeLink(output, second.document, path.relative(graph.roots.spec, second.document), second.line)}.`
-        ),
-        ...graph.permutations.specification.duplicates.map(
-            ([first, second]) =>
-                `- Duplicate permutation \`${first.id}\` in ${relativeLink(output, first.document, path.relative(graph.roots.spec, first.document), first.line)} and ${relativeLink(output, second.document, path.relative(graph.roots.spec, second.document), second.line)}.`
-        ),
-        ...graph.permutations.implementation.duplicates.map(
-            ([first, second]) =>
-                `- Duplicate implementation permutation \`${first.id}\` in ${relativeLink(output, first.document, path.relative(graph.roots.spec, first.document), first.line)} and ${relativeLink(output, second.document, path.relative(graph.roots.spec, second.document), second.line)}.`
-        ),
-        ...missingTrace.map(
-            ({ id }) => `- Permutation \`${id}\` has no test-traceability row.`
-        ),
-        ...missingExactEvidence.map(
-            ({ id }) =>
-                `- Permutation \`${id}\` has no exact test-declaration evidence.`
-        ),
-        ...pendingApprovals.map(
-            ({ id }) => `- \`${id}\` has pending or stale engineer approval.`
-        ),
-        ...missingImplementationTrace.map(
-            ({ id }) =>
-                `- Implementation permutation \`${id}\` has no verification traceability row.`
-        ),
-        ...missingImplementationEvidence.map(
-            ({ id }) =>
-                `- Implementation permutation \`${id}\` has no exact test-declaration evidence.`
-        ),
-        ...pendingImplementationApprovals.map(
-            ({ id }) =>
-                `- Implementation permutation \`${id}\` has pending or stale engineer approval.`
-        ),
-        ...missingSubjects.map(
-            ({ relative }) =>
-                `- Missing verification subject \`verification/${relative}\`.`
-        ),
-        ...malformedSubjects.map(
-            ({ document, pattern }) =>
-                `- ${relativeLink(output, document, path.relative(graph.roots.spec, document))} is missing schema \`${pattern}\`.`
-        ),
-        ...brokenLinks.map(
-            ({ document, target }) =>
-                `- ${relativeLink(output, document, path.relative(graph.roots.spec, document))} — broken local link to \`${path.relative(graph.roots.spec, target)}\`.`
-        )
-    ];
-    lines.push(...(gaps.length ? gaps : ["None."]), "");
+    lines.push("");
     return { report: lines.join("\n"), issueCount };
 }
 
@@ -236,7 +283,7 @@ async function main() {
     );
     const current = await writeOrCheckReport(target, result.report, options);
     process.stdout.write(
-        `verification coverage: ${result.issueCount} gap(s)\n`
+        `verification coverage: ${result.issueCount} static gap(s)\n`
     );
     if (!current || (options.strict && result.issueCount)) process.exit(1);
 }
@@ -246,4 +293,5 @@ if (require.main === module)
         console.error(error);
         process.exit(1);
     });
+
 module.exports = { generateVerificationCoverage };

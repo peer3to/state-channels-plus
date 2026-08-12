@@ -58,8 +58,8 @@ repository defects do not define normative behavior here. Unresolved protocol de
 The local requirement and black-box test-plan tables are authoritative. For every subject `A`, read
 `specification/A`, then `implementation/A`, then `verification/A`. Knowledge flows only in that
 direction: a specification never links source, implementation documentation, concrete tests, or
-audit state. Static analysis aggregates only this layer's requirements and planned permutations
-into a generated index outside the specification layer.
+audit state. Static analysis compares this layer's requirement and invariant IDs with its test plans.
+The generated index lists only IDs that do not appear in any specification test.
 
 ## System assumptions and constraints
 

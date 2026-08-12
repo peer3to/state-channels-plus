@@ -25,9 +25,9 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 - Final ready paths: 0
 - Source files assigned to implementation subjects: 243/243
 - Test declarations mapped or explicitly ignored: 18/922
-- Open questions: 38
+- Open questions: 37
 - Active findings: 11
-- Strict blocking items: 3146
+- Strict blocking items: 1650
 
 ## Requirement paths
 

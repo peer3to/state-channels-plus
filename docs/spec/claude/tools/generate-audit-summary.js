@@ -19,7 +19,6 @@ const {
 const {
     generateImplementationCoverage
 } = require("./audit-implementation-mirror");
-const { generateTestCoverage } = require("./audit-test-coverage");
 const { generateVerificationCoverage } = require("./audit-verification");
 const {
     generateOpenQuestionsIndex
@@ -135,12 +134,12 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
     ).length;
     const unaccountedTests =
         graph.tests.tests.length - mappedTests - ignoredTests;
+    const openQuestionsModel = generateOpenQuestionsIndex(graph);
     const sourceModels = [
         generateSpecificationIndex(graph),
         generateImplementationCoverage(graph),
-        generateTestCoverage(graph),
         generateVerificationCoverage(graph),
-        generateOpenQuestionsIndex(graph)
+        openQuestionsModel
     ];
     const issueCount =
         sourceModels.reduce((sum, model) => sum + model.issueCount, 0) +
@@ -174,7 +173,7 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         `- Final ready paths: ${ready}`,
         `- Source files assigned to implementation subjects: ${mirrored}/${graph.mirrors.length}`,
         `- Test declarations mapped or explicitly ignored: ${mappedTests + ignoredTests}/${graph.tests.tests.length}`,
-        `- Open questions: ${graph.questions.entries.size}`,
+        `- Open questions: ${openQuestionsModel.issueCount}`,
         `- Active findings: ${activeFindings.length}`,
         `- Strict blocking items: ${issueCount}`,
         "",

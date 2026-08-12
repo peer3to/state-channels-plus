@@ -38,6 +38,6 @@ The older lifecycle, dispute, transport, runtime, security, and distributed-test
 supporting analyses only. They may explain shared environments or workflows, but they cannot own a
 specification or implementation permutation or substitute for an exact row in a mirrored subject.
 
-The generated [verification coverage](../generated/verification-coverage.md) lists every
-specification test-plan item, implementation unit/integration obligation, exact evidence, status,
-and missing cross-system coverage.
+The generated [verification coverage](../generated/verification-coverage.md) reports planned tests missing
+from their subject's verification file, planned tests without exact repository-test references, missing
+specification/implementation/verification counterparts, and repository tests not referenced by verification.

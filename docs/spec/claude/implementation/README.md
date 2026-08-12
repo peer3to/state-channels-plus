@@ -72,9 +72,6 @@ defects belong in [the audit findings register](../audit/open-findings.md).
 - `operations/` contains repository-specific configuration and runbooks.
 - [examples.md](./examples.md) records concrete examples without making them protocol requirements.
 
-The generated [implementation coverage](../generated/implementation-coverage.md) compares all subject
-inventories with the real `src/` and `contracts/` trees and links gaps back to the owning table rows.
-An inventory row without its source report is an unfinished maintained document, not generated content.
-Resolve it by inspecting the source and authoring its responsibility, choices, constraints, and file-owned
-unit permutations; do not silence it with generic boilerplate or remove a genuinely relevant owner merely
-to reduce the count.
+The generated [implementation coverage](../generated/implementation-coverage.md) reports specification and
+implementation subjects without counterparts, plus files under `src/` and `contracts/` that no implementation
+source inventory references. It does not assess implementation quality or the completeness of source reports.

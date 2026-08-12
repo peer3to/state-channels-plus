@@ -4,137 +4,88 @@
 const path = require("node:path");
 const {
     buildDocumentationGraph,
-    sorted
+    sorted,
+    tableRows
 } = require("./shared/documentation-graph");
 const {
+    escapeCell,
     parseReportArgs,
     relativeLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
 
+function questionMetadata(graph) {
+    const metadata = new Map();
+    const documents = new Set(
+        [...graph.questions.entries.values()].map(({ document }) => document)
+    );
+    for (const document of documents) {
+        for (const table of tableRows(document)) {
+            const idIndex = table.headers.indexOf("id");
+            const questionIndex = table.headers.indexOf("question");
+            const statusIndex = table.headers.indexOf("status");
+            if (idIndex < 0 || questionIndex < 0 || statusIndex < 0) continue;
+            for (const row of table.rows) {
+                const id = row.cells[idIndex].match(
+                    /(?:OQ-\d+|OQ-(?:SPEC|IMPL|VER|AUDIT)-[A-Z0-9-]+)/
+                )?.[0];
+                if (!id) continue;
+                metadata.set(id, {
+                    question: row.cells[questionIndex],
+                    status: row.cells[statusIndex]
+                });
+            }
+        }
+    }
+    return metadata;
+}
+
 function generateOpenQuestionsIndex(graph = buildDocumentationGraph()) {
     const output = path.join(graph.roots.generated, "open-questions-index.md");
-    const questions = graph.questions.entries;
-    const findings = graph.findings.entries;
-    const duplicateCount =
-        graph.questions.duplicates.length + graph.findings.duplicates.length;
-    const questionSchema = [...questions.values()].flatMap((item) => {
-        const layer = path
-            .relative(graph.roots.spec, item.document)
-            .split(path.sep)[0];
-        const expectedPrefix = {
-            specification: "OQ-SPEC-",
-            implementation: "OQ-IMPL-",
-            verification: "OQ-VER-",
-            audit: "OQ-AUDIT-"
-        }[layer];
-        const issues = [];
-        if (!/^OQ-\d+$/.test(item.id) && !item.id.startsWith(expectedPrefix))
-            issues.push(
-                "new question namespace does not match its primary layer"
-            );
-        for (const [field, pattern] of [
-            ["owner", /\bowner\b/i],
-            ["affected cross-layer links", /\baffected\b/i],
-            ["blocking effect", /\bblock(?:s|ing)?\b/i],
-            ["alternatives", /\balternatives?\b/i],
-            [
-                "requested engineer decision",
-                /\b(?:requested )?(?:engineer )?decision\b/i
-            ]
-        ]) {
-            if (!pattern.test(item.raw)) issues.push(`missing ${field}`);
-        }
-        if (/\*\*Status:\*\*\s*Resolved/i.test(item.raw))
-            issues.push("resolved question remains in an open register");
-        return issues.map((reason) => ({ item, reason }));
-    });
-    const registerDocuments = new Set(
-        [...questions.values(), ...findings.values()].map(
-            ({ document }) => document
+    const metadata = questionMetadata(graph);
+    const unresolved = new Map(
+        [...graph.questions.entries].filter(
+            ([id]) =>
+                !/^\s*(?:resolved\b|closed\b|withdrawn\b)/i.test(
+                    metadata.get(id)?.status || "Open"
+                )
         )
-    );
-    const brokenLinks = graph.validation.linkIssues.filter(({ document }) =>
-        registerDocuments.has(document)
     );
     const lines = [
         "# Open Questions Index",
         "",
-        "> **Generated—do not edit.** Sources: the four layer registers and audit findings. Command: `yarn spec:refresh`.",
+        "> **Generated—do not edit.** Sources: open-question registers under `specification/`, `implementation/`, `verification/`, and `audit/`. Command: `yarn spec:refresh`.",
         "",
-        "## What this report tracks",
+        "This report lists unresolved questions and the layer that owns each decision. It does not include audit findings or resolved questions.",
         "",
-        "This is the combined decision and finding queue. It answers: **what remains unresolved, which layer owns it, what does it block, and what decision or fix is required?**",
+        "## Contents",
         "",
-        "- **Open questions** are genuine choices requiring a decision. They are split between specification, implementation, verification, and audit ownership.",
-        "- **Current findings** are demonstrated defects or omissions, not questions of preference.",
-        "- **Register gaps** mean an entry is missing required metadata such as owner, affected IDs/documents, blocking effect, alternatives, or the requested engineer decision.",
-        "- Duplicate, misplaced, broken, or supposedly resolved entries that remain open are also reported.",
+        "- [Unresolved open questions](#unresolved-open-questions)",
         "",
-        "The reported blocking/current count combines actual open questions, active findings, and register-format/link gaps. Several format gaps may belong to one question, so the number is not a count of distinct protocol decisions.",
+        "## Unresolved open questions",
         "",
-        "## Summary",
-        "",
-        `- Open questions: ${questions.size}`,
-        `- Current findings: ${findings.size}`,
-        `- Duplicate IDs: ${duplicateCount}`,
-        `- Register schema/link findings: ${questionSchema.length + brokenLinks.length}`,
-        "",
-        "## Questions",
-        "",
-        "| ID | Primary layer | Owner | Approval state |",
-        "| --- | --- | --- | --- |"
+        "Each row links the question ID to its source register. Partially or provisionally resolved entries remain listed until their status is fully resolved, closed, or withdrawn. Audit questions appear only when the audit open-question register contains an unresolved entry.",
+        ""
     ];
-    for (const id of sorted(questions.keys())) {
-        const item = questions.get(id);
-        const layer = path
-            .relative(graph.roots.spec, item.document)
-            .split(path.sep)[0];
+    if (!unresolved.size) {
+        lines.push("None.");
+    } else {
         lines.push(
-            `| \`${id}\` | ${layer} | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document), item.line)} | Decision pending |`
+            "| Question ID | Layer | Question | Status | Register |",
+            "| --- | --- | --- | --- | --- |"
         );
+        for (const id of sorted(unresolved.keys())) {
+            const item = unresolved.get(id);
+            const layer = path
+                .relative(graph.roots.spec, item.document)
+                .split(path.sep)[0];
+            lines.push(
+                `| \`${id}\` | ${layer} | ${escapeCell(metadata.get(id)?.question || "—")} | ${escapeCell(metadata.get(id)?.status || "Open")} | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document), item.line)} |`
+            );
+        }
     }
-    lines.push(
-        "",
-        "## Findings",
-        "",
-        "| ID | Owner | State |",
-        "| --- | --- | --- |"
-    );
-    for (const id of sorted(findings.keys())) {
-        const item = findings.get(id);
-        lines.push(
-            `| \`${id}\` | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document), item.line)} | ${/withdrawn/i.test(item.raw) ? "Withdrawn" : "Open"} |`
-        );
-    }
-    lines.push("", "## Gaps", "");
-    const gaps = [
-        ...graph.questions.duplicates.map(
-            ([first, second]) =>
-                `- Duplicate question \`${first.id}\` in ${relativeLink(output, first.document, path.relative(graph.roots.spec, first.document), first.line)} and ${relativeLink(output, second.document, path.relative(graph.roots.spec, second.document), second.line)}.`
-        ),
-        ...graph.findings.duplicates.map(
-            ([first, second]) =>
-                `- Duplicate finding \`${first.id}\` in ${relativeLink(output, first.document, path.relative(graph.roots.spec, first.document), first.line)} and ${relativeLink(output, second.document, path.relative(graph.roots.spec, second.document), second.line)}.`
-        ),
-        ...questionSchema.map(
-            ({ item, reason }) => `- \`${item.id}\` — ${reason}.`
-        ),
-        ...brokenLinks.map(
-            ({ document, target }) =>
-                `- ${relativeLink(output, document, path.relative(graph.roots.spec, document))} — broken local link to \`${path.relative(graph.roots.spec, target)}\`.`
-        )
-    ];
-    lines.push(...(gaps.length ? gaps : ["None."]), "");
-    return {
-        report: lines.join("\n"),
-        issueCount:
-            gaps.length +
-            questions.size +
-            [...findings.values()].filter(
-                (item) => !/withdrawn/i.test(item.raw)
-            ).length
-    };
+    lines.push("");
+    return { report: lines.join("\n"), issueCount: unresolved.size };
 }
 
 async function main() {
@@ -143,7 +94,7 @@ async function main() {
     const target = path.join(__dirname, "../generated/open-questions-index.md");
     const current = await writeOrCheckReport(target, result.report, options);
     process.stdout.write(
-        `open questions: ${result.issueCount} blocking/current item(s)\n`
+        `open questions: ${result.issueCount} unresolved question(s)\n`
     );
     if (!current || (options.strict && result.issueCount)) process.exit(1);
 }
@@ -153,4 +104,5 @@ if (require.main === module)
         console.error(error);
         process.exit(1);
     });
+
 module.exports = { generateOpenQuestionsIndex };

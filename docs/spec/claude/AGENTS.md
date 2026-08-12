@@ -119,8 +119,8 @@ traceability matrices. Put the coverage judgment beside the case it evaluates.
   adversarial workflow without duplicating invisible unit permutations.
 - Link static declarations as `[test](...#L<declaration>)`; link dynamic/fuzz declarations as
   `[test family](...)` and enumerate dimensions and oracles.
-- Use `node docs/spec/claude/tools/audit-test-coverage.js --fix` only to repair a uniquely matched shifted
-  anchor. Never guess an ambiguous or vanished mapping.
+- Repair a shifted test anchor only when the declaration has one unique match. Never guess an ambiguous or
+  vanished mapping.
 
 ## Change and review loop
 
@@ -149,18 +149,17 @@ change, question/finding change, or audit disposition change:
 yarn spec:refresh
 ```
 
-This command runs every generator and schema audit in dependency order, formats the six reports, and then
+This command runs every generator and schema audit in dependency order, formats the five reports, and then
 reruns each generator in check mode. It never authors or repairs a specification, implementation, or
 verification subject. Agents must resolve each reported gap in the correct maintained layer or leave the
 genuine missing behavior/evidence explicit.
 
-Inspect all six files under `generated/`:
+Inspect all five files under `generated/`:
 
-- `specification-index.md`: requirements and planned permutations missing or malformed in neutral specs;
-- `implementation-coverage.md`: unowned source, missing source reports/test plans, and conformance gaps;
-- `test-coverage.md`: real test declarations without an exact planned-case owner;
-- `verification-coverage.md`: planned specification/implementation permutations without adequate evidence;
-- `open-questions-index.md`: unresolved decisions and malformed ownership;
+- `specification-index.md`: specification IDs that do not appear in a specification test plan;
+- `implementation-coverage.md`: missing specification/implementation counterparts and unreferenced source files;
+- `verification-coverage.md`: missing verification rows, exact test references, layer counterparts, and unreferenced repository tests;
+- `open-questions-index.md`: unresolved questions from all four maintained layers;
 - `audit-summary.md`: the joined current readiness and blocking queues.
 
 Run `yarn spec:refresh:strict` when evaluating full completeness;
