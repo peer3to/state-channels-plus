@@ -71,6 +71,11 @@ This table is the normative requirement index. Detailed rules and rationale are 
 - Typed local APIs do not make remote data trustworthy.
 - Peers may disconnect, withhold, duplicate, reorder, or send malformed messages at any point.
 - Protocol compatibility and encoding versions are established before protected calls are accepted.
+- The topology is a full mesh: every participant holds a session with every other participant, so
+  connection and broadcast cost grows quadratically with the participant count. This layer is therefore
+  scoped to small partitions — see [`REQ-TRUST-5`](../security/trust-model.md#8-topology-limits) for the
+  normative limit (up to roughly ten participants, commonly six) and the alternative-topology future work.
+  Resource bounds under `REQ-RPC-5` are sized against that partition size, not against arbitrary fan-out.
 
 ## Security considerations
 
