@@ -1,0 +1,247 @@
+# Dispute Intake, Verification, and Reduction Pipeline
+
+> **Agent status:** Maintained reverse-engineered draft.
+> **Engineer verification:** Pending.
+> **Status:** Draft.
+
+## Contents
+
+- [Purpose and observable model](#purpose-and-observable-model)
+- [Pipeline algorithm](#pipeline-algorithm)
+- [Requirements and invariants](#requirements-and-invariants)
+- [Assumptions and constraints](#assumptions-and-constraints)
+- [Security considerations](#security-considerations)
+- [Verification and test plan](#verification-and-test-plan)
+- [Future Work](#future-work)
+
+## Purpose and observable model
+
+A dispute pipeline converts a stalled or contested off-chain fork into an objectively auditable base-layer
+decision. It binds intake to a channel and fork, reconstructs the claimed history, verifies authorization and
+proofs in protocol order, classifies fraud or unavailability, reduces to the canonical survivor set, creates
+the successor fork, and returns participants to normal execution without losing evidence.
+
+Every honest participant embodies three roles at once: **disputer** (escalate when cooperation
+broke), **auditor** (validate every dispute others commit on-chain, killing invalid ones during the
+kill period), and **reducer** (fold the window's committed disputes into one successor fork after
+the kill period and return to execution). The game's rules — valid inputs, window lifecycle,
+precedence, reduction algebra — are owned by [disputes.md](./disputes.md); this document owns the
+processing algorithm that plays them.
+
+## Pipeline algorithm
+
+### Stage 1 — Escalation (disputer role)
+
+Escalation is once per fork per node, and a failed submission releases that guard for retry. The
+triggers and the dispute input each contributes:
+
+| Trigger                                                                                                                                                                    | Contributed input ([`REQ-DIS-1`](./disputes.md))                                            |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Objective block fault observed by the block pipeline ([`REQ-BLOCK-PIPE-8`](../block-progression/block-processing.md))                                                      | The stored fraud evidence, applied on-chain in the same atomic submission → slash-set entry |
+| Author timeout detected (below)                                                                                                                                            | The timeout claim                                                                           |
+| Voluntary exit without unanimous signatures                                                                                                                                | Self-removal                                                                                |
+| Own join ignored beyond the inclusion window ([`REQ-IX-3`](../interactions.md#req-ix-3))                                                                                   | Forced inbound inclusion (on-chain inbound tip newer than the fork's applied tip)           |
+| Slash observed on an undisputed fork; a killed dispute leaving its window empty; reduction finding an empty window; audit finding the node holds outcome-changing evidence | The node's own view with merged evidence                                                    |
+
+**Timeout detection.** After every committed block, schedule a check for the next scheduled
+author: skip when the target is the node itself, the node does not participate, or the block
+arrived. When due (previous relevant timestamp plus the full cooperative window,
+[time.md](../protocol-model/time.md)): do not submit into a window that opened before the timeout
+became valid; recover the _predecessor's_ on-chain posting first (it may grant the target extra
+time — reschedule); then check the _target_ slot's calldata commitment — a commitment whose block
+the pipeline did not accept yields a **forced** timeout claim, no commitment a normal one. Build
+the claim with its evidence context (previous producer, its posting status, the target's signature
+on the predecessor — which forfeits the extra time) and escalate.
+
+### Stage 2 — Construction and submission (disputer role)
+
+1. **State proof** for the fork's latest committed height: milestones at each participant-set
+   change point plus a latest anchor when threshold coverage exists; otherwise the linked signed
+   suffix back to the last finality anchor ([state-proofs.md](./state-proofs.md)).
+2. **Slash set:** the on-chain set intersected with participants, plus — for offenders the node
+   holds unapplied evidence against — the fraud proofs themselves, ordered _before_ the upload in
+   one atomic submission, so the dispute's claimed slashes are a subset of the on-chain set when it
+   executes (fraud enforcement stays separate from reduction, [fraud-proofs.md](./fraud-proofs.md)).
+3. **Timeout claim** if held; **auditing data** (genesis snapshot data, per-milestone snapshots,
+   latest state and finalized encoded state, linking stream ranges) — construction aborts rather
+   than submitting partial data.
+4. **Pre-committed outcome:** compute the successor-fork genesis via the mirrored reduction logic
+   ([`REQ-MIRROR-1`](../enforcement/local-mirror.md)) and embed its hash — the dispute commits to
+   its own reduction result.
+5. **Data availability decision:** post the auditing data as calldata iff the proof's final anchor
+   is not already provably final to everyone ([`REQ-DIS-*` upload rules](./disputes.md)).
+6. **Sign and submit atomically** (evidence applications + upload). Classify races: ineligibility
+   (the node was slashed), a window opened too early for the timeout, or an expired evidence
+   window; roll back the once-per-fork guard on failure.
+
+### Stage 3 — Chain intake (auditor role)
+
+Disputes never arrive over peer communication; the chain is the sole intake
+([`REQ-IX-7`](../interactions.md#req-ix-7)). For each observed dispute event: replicate into the
+local mirror, deduplicate by dispute identity, and gate by relevance (the disputed fork is the
+node's current fork, or a decided dispute for a fork with in-progress recovery — late events for
+resolved forks are ignored). Relevant disputes purge the dead fork's queued blocks and trigger the
+one-round [dispute acknowledgment](../peer-communication/dispute-acknowledgment.md).
+
+### Stage 4 — Audit (auditor role)
+
+The audit runs the ordered checks below; the first failure stores **exactly one** dispute fraud
+proof identifying the violation and stops — audit-invalid without stored evidence is an internal
+error, never a silent kill. Every predicate with an on-chain twin is evaluated through the mirrored
+canonical logic so the auditor can never disagree with the chain's own apply-handler
+(`REQ-DISPUTE-PIPE-5`); checks whose staleness could cause a wrong kill re-verify against the
+chain.
+
+1. The claimed inbound tip is a real on-chain inbound tip.
+2. The state proof decodes (undecodable with posted data → invalid; undecodable with nothing
+   posted → **unjudgeable**, skipped as valid — an auditor without the baseline must not kill).
+3. The proof header matches the dispute's claims; 4. every block in the proof is structurally
+   valid (first invalid index is the evidence).
+4. With posted data: the full proof verifies. Without: the last anchor must be provably final to
+   everyone _and_ locally available — otherwise unjudgeable, skipped as valid.
+5. **Replay the unfinalized suffix** through the block pipeline in its dispute-replay context
+   ([block-processing.md](../block-progression/block-processing.md)): deviations become dispute
+   fraud proofs; a discovered double-sign stores ordinary fraud evidence and continues (the dispute
+   may still be honest); local gaps alone must not kill an honest dispute — only canonical
+   structural failure does.
+6. The claimed latest state is consistent with the replayed proof; 8. claimed slashes are a subset
+   of the on-chain set (re-checked against the chain before proving); 9. the balance invariant
+   holds on the latest snapshot ([cross-layer-messages.md](../settlement/cross-layer-messages.md)); 10. the disputer used its own latest known state (a withheld newer signed block is evidence).
+7. Timeout claims: linked to the proof tip; the target is the scheduled next author; not too
+   early (strict inequality; extra time forfeited only when the target's posted signature on the
+   predecessor verifies); the target's block is not threshold-signed; and not posted as timely
+   calldata — this last proof is **preflighted** through the mirror because an incorrect
+   submission self-slashes (`REQ-DISPUTE-PIPE-5`).
+8. The dispute states a valid reason ([`REQ-DIS-1`](./disputes.md)); 13. the pre-committed output
+   is correct: the claimed successor genesis must equal the mirrored recomputation.
+
+### Stage 5 — Outcome handling (auditor role)
+
+- **Decided dispute** (the window finalized at upload): no audit — persist, derive the auditing
+  data locally if unposted, and adopt the pre-committed outcome (a non-participant that cannot
+  assemble the data fails closed).
+- **Kill period already expired:** challenging is forbidden; persist what is available and
+  schedule reduction at the window's end.
+- **Audit-invalid:** submit the stored dispute fraud proof to kill (guarded by a fresh window
+  read; kill races tolerated). The kill lands before any counter-dispute so the killed disputer's
+  slash gives the replacement its stated reason; when a kill empties the window, honest nodes
+  upload replacement evidence — first wins, the race is convergence.
+- **Audit-valid:** persist; then the **evidence-improvement rule** (`REQ-DISPUTE-PIPE-6`): compare
+  the reduction of the observed dispute set with and without the node's own constructible dispute —
+  upload only when the outcome differs; otherwise schedule reduction.
+
+### Stage 6 — Reduction and successor installation (reducer role)
+
+1. At the window's kill-period end (re-checked, not assumed): the fork must still be relevant, the
+   window must exist on-chain, and the period must be expired.
+2. **Load the committed dispute set from chain-synchronized records only** — a reducer never
+   reduces a window its own replicated evidence cannot back; missing events are recovered by
+   bounded targeted queries first. An empty window becomes an own-dispute escalation instead.
+3. **Compute** the reduction and the successor genesis through the mirrored canonical logic; the
+   successor fork id is the hash of the reduced genesis data.
+4. **Simulate the on-chain finalization first**; classify races as convergence (another reducer
+   committed the identical deterministic result → adopt) or supersession (a decided dispute's
+   outcome won → stand down).
+5. **Install locally, then submit**: adopt the successor genesis (the fork-transition point —
+   queues drain, membership status recomputes, author-timeout scheduling restarts), then submit
+   the finalization and snapshot advance detached. A completed reduction that resolves to a
+   different successor than computed is a fatal inconsistency, not a retry.
+6. **Foreign reductions observed on-chain:** recompute; a mismatch is challenged within the
+   challenge period and the dishonest reducer penalized; a match with an expired period is adopted.
+
+Valid non-final transitions from the disputed fork are carried forward _inside_ the reduction
+output ([`REQ-DIS-6`](./disputes.md)); the pipeline never replays them onto the successor.
+
+## Requirements and invariants
+
+<a id="inv-dispute-pipe-1"></a>
+**INV-DISPUTE-PIPE-1 — Equivalent audit.** Every auditor given the same chain state and complete evidence
+MUST reach the same validity, offender, reduction, and successor-fork result.
+
+<a id="req-dispute-pipe-1"></a>
+**REQ-DISPUTE-PIPE-1 — Bound intake.** Local escalation and chain-observed intake MUST bind the dispute,
+proofs, acknowledgements, and evidence to the exact manager, channel, fork, and dispute instance.
+
+<a id="req-dispute-pipe-2"></a>
+**REQ-DISPUTE-PIPE-2 — Ordered complete verification.** Audit MUST verify authenticity, authorization,
+commitment linkage, final/unfinalized boundaries, replayed transitions, messages, time, and claimed outcome
+before accepting or reducing a dispute.
+
+<a id="req-dispute-pipe-3"></a>
+**REQ-DISPUTE-PIPE-3 — Deterministic reduction.** Proven fraud, unavailable peers, and valid survivors MUST
+be treated according to distinct specified rules; removal order or evidence arrival order MUST NOT alter the
+canonical successor state.
+
+<a id="req-dispute-pipe-4"></a>
+**REQ-DISPUTE-PIPE-4 — Atomic recovery.** Evidence persistence, chain action, local fork replacement, queue
+reset, and resumed execution MUST either converge on the accepted successor or remain safely retryable.
+
+<a id="req-dispute-pipe-5"></a>
+**REQ-DISPUTE-PIPE-5 — Mirrored canonical audit.** Every audit predicate with an on-chain twin is
+evaluated through the same canonical logic ([`INV-MIRROR-1`](../enforcement/local-mirror.md)); an
+audit verdict of invalid stores exactly one dispute fraud proof before any kill attempt;
+self-slashing proof types are preflighted before submission; and a dispute the auditor cannot
+anchor (no posted data, no local baseline) is skipped as valid, never killed on local ignorance.
+
+<a id="req-dispute-pipe-6"></a>
+**REQ-DISPUTE-PIPE-6 — Minimal intervention and convergence.** A node uploads its own dispute in
+response to a valid observed one only when its evidence changes the reduced outcome; concurrent
+reducers' identical deterministic results classify as convergence, not conflict; and replacement
+evidence after a kill follows first-wins semantics. Redundant on-chain actions MUST NOT occur when
+the outcome is already determined.
+
+This table is the normative requirement index. Detailed rules and rationale are defined above.
+
+| Requirement / invariant | Statement                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `INV-DISPUTE-PIPE-1`    | Equivalent audit. Every auditor given the same chain state and complete evidence   |
+| `REQ-DISPUTE-PIPE-1`    | Bound intake. Local escalation and chain-observed intake MUST bind the dispute,    |
+| `REQ-DISPUTE-PIPE-2`    | Ordered complete verification. Audit MUST verify authenticity, authorization,      |
+| `REQ-DISPUTE-PIPE-3`    | Deterministic reduction. Proven fraud, unavailable peers, and valid survivors MUST |
+| `REQ-DISPUTE-PIPE-4`    | Atomic recovery. Evidence persistence, chain action, local fork replacement, queue |
+| `REQ-DISPUTE-PIPE-5`    | Mirrored canonical audit. Predicates with on-chain twins use the same logic;       |
+| `REQ-DISPUTE-PIPE-6`    | Minimal intervention and convergence. Upload only outcome-changing evidence;       |
+
+## Assumptions and constraints
+
+- Base-layer ordering and finality are authoritative for dispute state.
+- Required calldata, signed history, messages, and state encodings remain available during the evidence window.
+- Replay uses the same deterministic application semantics as ordinary validation.
+- Multiple observers and participants may process the same dispute concurrently or after restart.
+- Audit deadlines inherit the chain-observation freshness assumption
+  ([`REQ-IX-7`](../interactions.md#req-ix-7)); the windows come from the chain's configuration —
+  the pipeline reads them, it never computes its own authority over them.
+- Honest-peer coverage of unjudgeable disputes relies on at least one peer holding the anchor data
+  ([data-availability.md](../security/data-availability.md)).
+
+## Security considerations
+
+Threats include false dispute claims, cross-channel/fork evidence, truncated proof suffixes, forged
+acknowledgements, inconsistent off-chain/on-chain validators, evidence withholding, replay divergence,
+order-dependent reduction, duplicate chain actions, and restart races. Audit must fail closed without
+destroying evidence required for another honest participant to complete recovery. Two asymmetries
+deserve emphasis: killing is a staked act (an invalid kill self-slashes — hence mirrored predicates
+and preflight, `REQ-DISPUTE-PIPE-5`), and _not_ killing is safe (an unjudgeable dispute skipped as
+valid is caught by any peer that does hold the data), so the pipeline is deliberately biased toward
+abstention over false kills.
+
+## Verification and test plan
+
+### Requirement test matrix
+
+| Plan item                                                 | Requirements / invariants | Setup and stimulus                                                                                                                                                              | Expected result                                                                                                                                           | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-dispute-pipe-1-t1"></a>`INV-DISPUTE-PIPE-1.T1` | `INV-DISPUTE-PIPE-1`      | Give independent auditors identical valid and invalid disputes in different delivery orders.                                                                                    | Classification, offenders, survivor set, and successor commitments are identical.                                                                         | <a id="inv-dispute-pipe-1-t1-p1"></a>`INV-DISPUTE-PIPE-1.T1.P1` — valid/invalid; <a id="inv-dispute-pipe-1-t1-p2"></a>`INV-DISPUTE-PIPE-1.T1.P2` — calldata/non-calldata; <a id="inv-dispute-pipe-1-t1-p3"></a>`INV-DISPUTE-PIPE-1.T1.P3` — delivery order; <a id="inv-dispute-pipe-1-t1-p4"></a>`INV-DISPUTE-PIPE-1.T1.P4` — restart.                                                                                                                                                 |
+| <a id="req-dispute-pipe-1-t1"></a>`REQ-DISPUTE-PIPE-1.T1` | `REQ-DISPUTE-PIPE-1`      | Submit correct and substituted manager/channel/fork/dispute identities through local and chain intake.                                                                          | Only exactly bound evidence enters audit; rejection leaves no partial dispute state.                                                                      | <a id="req-dispute-pipe-1-t1-p1"></a>`REQ-DISPUTE-PIPE-1.T1.P1` — local/chain; <a id="req-dispute-pipe-1-t1-p2"></a>`REQ-DISPUTE-PIPE-1.T1.P2` — each wrong identity; <a id="req-dispute-pipe-1-t1-p3"></a>`REQ-DISPUTE-PIPE-1.T1.P3` — duplicate/concurrent intake.                                                                                                                                                                                                                   |
+| <a id="req-dispute-pipe-2-t1"></a>`REQ-DISPUTE-PIPE-2.T1` | `REQ-DISPUTE-PIPE-2`      | Corrupt or omit each audit layer independently and in representative combinations.                                                                                              | The first relevant invalid predicate is classified consistently and no later step legitimizes it.                                                         | <a id="req-dispute-pipe-2-t1-p1"></a>`REQ-DISPUTE-PIPE-2.T1.P1` — signatures/authorization; <a id="req-dispute-pipe-2-t1-p2"></a>`REQ-DISPUTE-PIPE-2.T1.P2` — linkage/boundaries; <a id="req-dispute-pipe-2-t1-p3"></a>`REQ-DISPUTE-PIPE-2.T1.P3` — replay/messages/time; <a id="req-dispute-pipe-2-t1-p4"></a>`REQ-DISPUTE-PIPE-2.T1.P4` — incomplete evidence.                                                                                                                       |
+| <a id="req-dispute-pipe-3-t1"></a>`REQ-DISPUTE-PIPE-3.T1` | `REQ-DISPUTE-PIPE-3`      | Vary fraudulent, unavailable, honest, removed, and already-slashed participants and evidence order.                                                                             | The same survivor set, balances, messages, and successor fork result.                                                                                     | <a id="req-dispute-pipe-3-t1-p1"></a>`REQ-DISPUTE-PIPE-3.T1.P1` — each classification; <a id="req-dispute-pipe-3-t1-p2"></a>`REQ-DISPUTE-PIPE-3.T1.P2` — one/many offenders; <a id="req-dispute-pipe-3-t1-p3"></a>`REQ-DISPUTE-PIPE-3.T1.P3` — order permutations; <a id="req-dispute-pipe-3-t1-p4"></a>`REQ-DISPUTE-PIPE-3.T1.P4` — empty/minimum survivor set.                                                                                                                       |
+| <a id="req-dispute-pipe-4-t1"></a>`REQ-DISPUTE-PIPE-4.T1` | `REQ-DISPUTE-PIPE-4`      | Fail and retry at persistence, chain submission, adoption, queue reset, and resumption boundaries.                                                                              | No split-brain fork or duplicate action occurs; recovery converges or remains safely retryable.                                                           | <a id="req-dispute-pipe-4-t1-p1"></a>`REQ-DISPUTE-PIPE-4.T1.P1` — each failure boundary; <a id="req-dispute-pipe-4-t1-p2"></a>`REQ-DISPUTE-PIPE-4.T1.P2` — duplicate/retry; <a id="req-dispute-pipe-4-t1-p3"></a>`REQ-DISPUTE-PIPE-4.T1.P3` — restart; <a id="req-dispute-pipe-4-t1-p4"></a>`REQ-DISPUTE-PIPE-4.T1.P4` — concurrent observers.                                                                                                                                         |
+| <a id="req-dispute-pipe-5-t1"></a>`REQ-DISPUTE-PIPE-5.T1` | `REQ-DISPUTE-PIPE-5`      | Audit disputes where local and canonical predicate results are forced to agree and to diverge; audit unanchorable disputes; drive kill attempts with and without stored proofs. | Verdicts follow the canonical logic; invalid ⇔ exactly one stored proof; self-slashing types are preflighted; unanchorable disputes are skipped as valid. | <a id="req-dispute-pipe-5-t1-p1"></a>`REQ-DISPUTE-PIPE-5.T1.P1` — each mirrored predicate agrees with the chain; <a id="req-dispute-pipe-5-t1-p2"></a>`REQ-DISPUTE-PIPE-5.T1.P2` — invalid verdict stores exactly one proof; <a id="req-dispute-pipe-5-t1-p3"></a>`REQ-DISPUTE-PIPE-5.T1.P3` — preflight blocks a self-slashing submission; <a id="req-dispute-pipe-5-t1-p4"></a>`REQ-DISPUTE-PIPE-5.T1.P4` — unanchorable dispute skipped as valid, later judged by an anchored peer. |
+| <a id="req-dispute-pipe-6-t1"></a>`REQ-DISPUTE-PIPE-6.T1` | `REQ-DISPUTE-PIPE-6`      | Observe valid disputes with redundant and with outcome-changing local evidence; race concurrent reducers and replacement uploads.                                               | Uploads happen only when the outcome changes; identical reductions converge without conflict; replacement after a kill is first-wins with no duplicates.  | <a id="req-dispute-pipe-6-t1-p1"></a>`REQ-DISPUTE-PIPE-6.T1.P1` — redundant evidence not uploaded; <a id="req-dispute-pipe-6-t1-p2"></a>`REQ-DISPUTE-PIPE-6.T1.P2` — outcome-changing evidence uploaded; <a id="req-dispute-pipe-6-t1-p3"></a>`REQ-DISPUTE-PIPE-6.T1.P3` — concurrent reducers converge; <a id="req-dispute-pipe-6-t1-p4"></a>`REQ-DISPUTE-PIPE-6.T1.P4` — post-kill replacement race.                                                                                 |
+
+## Future Work
+
+_Non-normative._ Define compact, interoperable audit transcripts for comparing independent
+implementations; atomic kill-plus-replacement submission carrying the expected slash; applying
+fraud evidence discovered during replay without opening a new dispute; the optimistic-reduction
+fast path ([disputes.md](./disputes.md) future work).

@@ -16,30 +16,30 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID    | Question                                                                                                             | Source                 | Affected documents                                                                                                                 | Status                            |
-| ----- | -------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| OQ-1  | Exact kill-period and dispute-fraud-proof slashing semantics                                                         | Specification analysis | [protocol/disputes.md](./protocol/disputes.md), [protocol/fraud-proofs.md](./protocol/fraud-proofs.md)                             | Open                              |
-| OQ-2  | Penalty for submitting an invalid fraud proof                                                                        | Specification analysis | [protocol/fraud-proofs.md](./protocol/fraud-proofs.md)                                                                             | Open                              |
-| OQ-3  | Leader election beyond round-robin: revert attribution, long-range proofs                                            | Specification analysis | [protocol/finality.md](./protocol/finality.md), [protocol/state-proofs.md](./protocol/state-proofs.md)                             | Open                              |
-| OQ-6  | P2P gossip rate-limiting policy                                                                                      | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                               | Open                              |
-| OQ-7  | Whether adjudication requires a self-call-only authorization boundary                                                | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                               | Open                              |
-| OQ-8  | Clock-skew and bias values to be validated empirically                                                               | Specification analysis | [protocol/time.md](./protocol/time.md)                                                                                             | Open                              |
-| OQ-9  | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                              | Specification analysis | [protocol/disputes.md](./protocol/disputes.md)                                                                                     | Open                              |
-| OQ-10 | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                      | Specification analysis | [protocol/cross-layer-messages.md](./protocol/cross-layer-messages.md)                                                             | Open                              |
-| OQ-11 | Channel-balance invariant: definition per balance model and check points                                             | Specification analysis | [protocol/cross-layer-messages.md](./protocol/cross-layer-messages.md), [concepts/state-machines.md](./concepts/state-machines.md) | Open                              |
-| OQ-12 | Book-like overview vs. tree as the authoritative reference                                                           | Specification analysis | [README.md](../README.md), [governance.md](../governance.md)                                                                       | Provisionally resolved            |
-| OQ-16 | Slash-set lifetime: cleared on channel-storage clear, questioned in code                                             | Code                   | [protocol/fraud-proofs.md](./protocol/fraud-proofs.md)                                                                             | Open                              |
-| OQ-18 | Whether removal and slashing use the same canonical exit-recording behavior                                          | Specification analysis | [concepts/state-machines.md](./concepts/state-machines.md)                                                                         | Resolved (implementation pending) |
-| OQ-20 | Outbound stream is not yet general-purpose; withdraw failure wedges snapshot advance; residual funds on close        | Code                   | [protocol/cross-layer-messages.md](./protocol/cross-layer-messages.md)                                                             | Open                              |
-| OQ-26 | Whether every adjudication path generically enforces next-author authorization                                       | Specification analysis | [concepts/state-machines.md](./concepts/state-machines.md)                                                                         | Open                              |
-| OQ-27 | Reducer eligibility check is disabled in `reduceAndFinalize` — anyone can reduce                                     | Code                   | [protocol/disputes.md](./protocol/disputes.md)                                                                                     | Open                              |
-| OQ-28 | Equal-height reduction tie-break by smaller block hash — unapproved rule, hash-grinding surface                      | Code                   | [protocol/disputes.md](./protocol/disputes.md)                                                                                     | Open                              |
-| OQ-29 | No signature domain separation: signatures replayable across deployments/chains                                      | Code                   | security/open-security-review.md                                                                                                   | Open                              |
-| OQ-31 | Hash-only dispute with unavailable/undecodable data: availability rule undecided                                     | Code                   | sdk/dispute-pipeline.md, [protocol/disputes.md](./protocol/disputes.md)                                                            | Open                              |
-| OQ-32 | Proof and audit size bounds (milestones, suffix blocks, signatures, auditing bytes, replay gas)                      | Specification analysis | [protocol/state-proofs.md](./protocol/state-proofs.md), [security/data-availability.md](./security/data-availability.md)           | Open                              |
-| OQ-33 | Maximum participant count and required enforcement boundary                                                          | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                               | Open                              |
-| OQ-34 | RPC boundary decisions: guard retry semantics, protocol versioning, ban persistence, failure-outcome policy          | Code and specification | sdk/rpc/README.md                                                                                                                  | Open                              |
-| OQ-38 | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation | Code and specification | sdk/runtime-and-concurrency.md §6, §11.5                                                                                           | Open                              |
+| ID    | Question                                                                                                             | Source                 | Affected documents                                                                                                                         | Status                            |
+| ----- | -------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| OQ-1  | Exact kill-period and dispute-fraud-proof slashing semantics                                                         | Specification analysis | [protocol/disputes.md](./disputes/disputes.md), [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                     | Open                              |
+| OQ-2  | Penalty for submitting an invalid fraud proof                                                                        | Specification analysis | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                     | Open                              |
+| OQ-3  | Leader election beyond round-robin: revert attribution, long-range proofs                                            | Specification analysis | [protocol/finality.md](./protocol-model/finality.md), [protocol/state-proofs.md](./disputes/state-proofs.md)                               | Open                              |
+| OQ-6  | P2P gossip rate-limiting policy                                                                                      | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
+| OQ-7  | Whether adjudication requires a self-call-only authorization boundary                                                | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
+| OQ-8  | Clock-skew and bias values to be validated empirically                                                               | Specification analysis | [protocol/time.md](./protocol-model/time.md)                                                                                               | Open                              |
+| OQ-9  | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                              | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
+| OQ-10 | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                      | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                   | Open                              |
+| OQ-11 | Channel-balance invariant: definition per balance model and check points                                             | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md), [concepts/state-machines.md](./protocol-model/state-machines.md) | Open                              |
+| OQ-12 | Book-like overview vs. tree as the authoritative reference                                                           | Specification analysis | [README.md](../README.md), [governance.md](../governance.md)                                                                               | Provisionally resolved            |
+| OQ-16 | Slash-set lifetime: cleared on channel-storage clear, questioned in code                                             | Code                   | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                     | Open                              |
+| OQ-18 | Whether removal and slashing use the same canonical exit-recording behavior                                          | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                           | Resolved (implementation pending) |
+| OQ-20 | Outbound stream is not yet general-purpose; withdraw failure wedges snapshot advance; residual funds on close        | Code                   | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                   | Open                              |
+| OQ-26 | Whether every adjudication path generically enforces next-author authorization                                       | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                           | Open                              |
+| OQ-27 | Reducer eligibility check is disabled in `reduceAndFinalize` — anyone can reduce                                     | Code                   | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
+| OQ-28 | Equal-height reduction tie-break by smaller block hash — unapproved rule, hash-grinding surface                      | Code                   | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
+| OQ-29 | No signature domain separation: signatures replayable across deployments/chains                                      | Code                   | security/open-security-review.md                                                                                                           | Open                              |
+| OQ-31 | Hash-only dispute with unavailable/undecodable data: availability rule undecided                                     | Code                   | sdk/dispute-pipeline.md, [protocol/disputes.md](./disputes/disputes.md)                                                                    | Open                              |
+| OQ-32 | Proof and audit size bounds (milestones, suffix blocks, signatures, auditing bytes, replay gas)                      | Specification analysis | [protocol/state-proofs.md](./disputes/state-proofs.md), [security/data-availability.md](./security/data-availability.md)                   | Open                              |
+| OQ-33 | Maximum participant count and required enforcement boundary                                                          | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
+| OQ-34 | RPC boundary decisions: guard retry semantics, protocol versioning, ban persistence, failure-outcome policy          | Code and specification | sdk/rpc/README.md                                                                                                                          | Open                              |
+| OQ-38 | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation | Code and specification | sdk/runtime-and-concurrency.md §6, §11.5                                                                                                   | Open                              |
 
 ## Register assumptions and constraints
 
@@ -69,13 +69,13 @@ slashed" description is wrong; implementation evidence suggests the kill period 
 which an invalid committed dispute can be challenged with a dispute fraud proof and killed. The
 open decision: the precise kill semantics, and **who is slashed when a dispute fraud proof is
 valid, and when it is invalid**. The reconstructed window lifecycle in
-[protocol/disputes.md](./protocol/disputes.md) depends on this rule.
+[protocol/disputes.md](./disputes/disputes.md) depends on this rule.
 
 Code-derived edges folded into this decision: a window whose commitments are all killed stays
 open and never reduces until new evidence arrives; whether kill and the follow-up counter-dispute
 should be one atomic multicall (the SDK deliberately sequences them so the slash lands first);
 the `postedAuditingData` rule under early finalization; and the calldata-posted-after-kill-decision
-race. See [protocol/disputes.md](./protocol/disputes.md) §4 and
+race. See [protocol/disputes.md](./disputes/disputes.md) §4 and
 sdk/dispute-pipeline.md.
 
 Additional implementation evidence: **an expired evidence window reopens when
@@ -140,7 +140,7 @@ Code-derived specifics: the sync tolerance factor is unresolved in code (1× vs.
 time, a live TODO); the clock syncs once per session (at init and on provider replacement) with no
 periodic re-sync cadence defined; no explicit maximum-skew constant exists anywhere; and the
 default window values (15/5/30/30 s) are development defaults. See
-[protocol/time.md](./protocol/time.md) §2–3.
+[protocol/time.md](./protocol-model/time.md) §2–3.
 
 ## OQ-9 — Timeout precedence edge rules
 
@@ -153,8 +153,8 @@ an already proposed timeout.
 Code-derived edges: whether "any non-timeout dispute cancels the proposed timeout" is intended
 (see OQ-14 for the suppression fold); the exact inclusive/exclusive boundary comparisons of the
 `Timeout*` dispute-fraud-proof rules; and unquantified underlying-chain timestamp-manipulation
-bounds relative to the protocol windows. See [protocol/disputes.md](./protocol/disputes.md) §6 and
-[protocol/time.md](./protocol/time.md) §5.3.
+bounds relative to the protocol windows. See [protocol/disputes.md](./disputes/disputes.md) §6 and
+[protocol/time.md](./protocol-model/time.md) §5.3.
 
 ## OQ-10 — Spectate/join failure-point details
 
@@ -168,7 +168,7 @@ the missing admission-policy hook), so unanimity is currently signature collecti
 the inclusion deadline is a heuristic (`participants + 1` blocks), not a normative rule;
 concurrent-join semantics are undefined; spectate-time simulation of consumer side effects is
 stubbed; and the first inbound block's height is not bound to the lower snapshot. See
-[protocol/cross-layer-messages.md](./protocol/cross-layer-messages.md) §3–4.
+[protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md) §3–4.
 
 Additional implementation gaps: the SDK promotes itself to `PENDING_PARTICIPANT`
 **before** the join transaction is even sent (never waiting for a canonical chain event; a
@@ -199,14 +199,14 @@ onboarding overview; the tree is the authoritative reference; both must stay con
 `_clearDisputeData` deletes the on-chain slash set when channel storage is cleared, and a code
 `TODO!` questions this: a slash consumed by one fork's reduction could be needed by a parallel
 window. Define the slash set's ownership and lifetime rules. See
-[protocol/fraud-proofs.md](./protocol/fraud-proofs.md) §6.
+[protocol/fraud-proofs.md](./disputes/fraud-proofs.md) §6.
 
 ## OQ-18 — Exit-recording asymmetry between slash and remove
 
 The external `slashParticipant` wrapper appends the resulting `ExitChannel` to the machine's
 outbound buffer; `removeParticipant` returns it without appending (the dispute pipeline
 compensates by using return values). Inert today, but which layer owns recording the exit message
-should be decided deliberately. See [concepts/state-machines.md](./concepts/state-machines.md)
+should be decided deliberately. See [concepts/state-machines.md](./protocol-model/state-machines.md)
 §6.4.
 
 **Resolved (2026-08-10):** the wrappers MUST be symmetric — both record the exit through
@@ -214,7 +214,7 @@ should be decided deliberately. See [concepts/state-machines.md](./concepts/stat
 balance semantics: `_removeParticipant` is the less aggressive path and may return the
 participant's full held balance; `_slashParticipant` applies the application-defined penalty.
 Recorded normatively as REQ-SM-8 in
-[concepts/state-machines.md](./concepts/state-machines.md). The implementation change
+[concepts/state-machines.md](./protocol-model/state-machines.md). The implementation change
 (`removeParticipant` also calling `_addExitChannel` on success) is pending; until it lands the
 Current: notes in the affected documents stand.
 
@@ -226,7 +226,7 @@ general-purpose (inbound has a proper hook on `AStateMachine`). A failing consum
 reverts the entire snapshot advance, wedging the stream. Residual funds on channel close are a
 live `TODO` (treasury). Define the custom-outbound registration point, per-message failure
 isolation, and the close-out path. See
-[protocol/cross-layer-messages.md](./protocol/cross-layer-messages.md) §1–2, §5.
+[protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md) §1–2, §5.
 
 The failure-isolation decision is really _atomic range vs.
 commit-a-prefix_ — prefix processing lowers retry cost but needs exact next-height semantics and
@@ -268,7 +268,7 @@ out, while dispute upload and `challengeDisputeReduction` enforce it — so toda
 reduce, but only eligible participants can upload or challenge. Decide who may reduce: anyone
 (permissionless, with anti-spam), a deterministic eligible participant first with permissionless
 fallback, or a threshold-signed fast path with fallback. Then make every entry point consistent.
-See [protocol/disputes.md](./protocol/disputes.md) §5.
+See [protocol/disputes.md](./disputes/disputes.md) §5.
 
 ## OQ-28 — Equal-height reduction tie-break
 
@@ -278,7 +278,7 @@ engineer-approved, and it gives a block author a hash-grinding surface: transact
 be varied to win same-height ties. Alternatives: prefer stronger confirmation evidence, or treat
 same-height distinct valid candidates as slashable equivocation. Decision criteria: no benefit
 from grinding, compatibility with virtual votes and membership changes, bounded gas, and a clear
-fraud target. See [protocol/disputes.md](./protocol/disputes.md) §5.
+fraud target. See [protocol/disputes.md](./disputes/disputes.md) §5.
 
 ## OQ-29 — Signature domain separation
 
@@ -308,7 +308,7 @@ signatures per object, message blocks and messages per block, disputes per windo
 per call, auditing bytes, or on-chain replay gas (the state-proof facet has a live TODO on
 missing gas limits). The transport's global frame cap is not a proof bound. Bounds must come
 from target-chain calldata/gas measurements and client CPU/memory tests. Distinct from OQ-6
-(gossip rate limiting). See [protocol/state-proofs.md](./protocol/state-proofs.md) and
+(gossip rate limiting). See [protocol/state-proofs.md](./disputes/state-proofs.md) and
 [security/data-availability.md](./security/data-availability.md).
 
 ## OQ-33 — Maximum participant count is not enforced

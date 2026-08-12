@@ -1,0 +1,63 @@
+# Participant-Set Change-Point Store
+
+> **Agent status:** Maintained reverse-engineered draft.
+> **Engineer verification:** Pending.
+> **Status:** Draft.
+> **Scope:** The module recording, per fork, the block heights at which the participant set
+> changed. Shared storage rules: [durability.md](./durability.md).
+
+## Contents
+
+- [Purpose and data model](#purpose-and-data-model)
+- [Requirements and invariants](#requirements-and-invariants)
+- [Assumptions and constraints](#assumptions-and-constraints)
+- [Security considerations](#security-considerations)
+- [Verification and test plan](#verification-and-test-plan)
+- [Future Work](#future-work)
+
+## Purpose and data model
+
+State proofs crossing a membership change need a milestone hop at exactly the changing block
+([state-proofs.md](../disputes/state-proofs.md), `REQ-SP-3`). This module records the change
+points — per fork, the set of heights where the participant set changed — so proof construction can
+enumerate the hops in a range without replaying history.
+
+## Requirements and invariants
+
+<a id="req-pscstore-1"></a>
+**REQ-PSCSTORE-1 — Complete ordered change points.** Recording a change point is idempotent per
+(fork, height). Range reads return the change points ascending by height; an open start defaults to
+the earliest recorded point, an open end to the latest, and an empty or inverted range returns
+nothing. A missed change point makes downstream proofs unbuildable, so the producing pipeline MUST
+record every membership-changing block it commits.
+
+This table is the normative requirement index. Detailed rules and rationale are defined above.
+
+| Requirement / invariant | Statement                                                                   |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `REQ-PSCSTORE-1`        | Idempotent per-(fork, height) recording; ascending, bound-defaulted ranges. |
+
+## Assumptions and constraints
+
+- What counts as a membership change is decided by the pipeline that executes the block; this
+  module records positions only.
+- Shared durability/retention rules: [durability.md](./durability.md); change points share the
+  retention obligations of the proofs they enable.
+
+## Security considerations
+
+An omitted change point silently weakens the node's ability to build valid membership hops; an
+extra one costs only proof size. The failure direction therefore matters more than the data's
+secrecy — completeness is the security property.
+
+## Verification and test plan
+
+### Requirement test matrix
+
+| Plan item                                         | Requirements / invariants | Setup and stimulus                                                                           | Expected result                                                                          | Required permutations                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="req-pscstore-1-t1"></a>`REQ-PSCSTORE-1.T1` | `REQ-PSCSTORE-1`          | Record change points (with duplicates, out of order) and read ranges with every bound shape. | Ascending, deduplicated results; defaults honored; empty/inverted ranges return nothing. | <a id="req-pscstore-1-t1-p1"></a>`REQ-PSCSTORE-1.T1.P1` — out-of-order + duplicate recording; <a id="req-pscstore-1-t1-p2"></a>`REQ-PSCSTORE-1.T1.P2` — open/closed/defaulted bounds; <a id="req-pscstore-1-t1-p3"></a>`REQ-PSCSTORE-1.T1.P3` — inverted/empty range; <a id="req-pscstore-1-t1-p4"></a>`REQ-PSCSTORE-1.T1.P4` — per-fork isolation. |
+
+## Future Work
+
+_Non-normative._ None currently.

@@ -59,7 +59,7 @@ version one.
   calldata (or otherwise act on-chain) when p2p plus agreement time expired without detecting
   unanimous agreement.
 - **`evidenceTime`** — the dispute-window evidence/kill period; also serves as the first-block
-  grace term in timeout deadlines ([../protocol/disputes.md](../protocol/disputes.md)).
+  grace term in timeout deadlines ([../protocol/disputes.md](../disputes/disputes.md)).
 
 Where the extra time is granted:
 
@@ -98,8 +98,8 @@ The costs of chain-backed DA are structural, not incidental:
 
 The kill period and self-slashing deter **objectively invalid** behavior: a participant who posts
 junk data, submits an invalid dispute, or files a bogus fraud proof loses stake
-([../protocol/fraud-proofs.md](../protocol/fraud-proofs.md),
-[../protocol/disputes.md](../protocol/disputes.md)).
+([../protocol/fraud-proofs.md](../disputes/fraud-proofs.md),
+[../protocol/disputes.md](../disputes/disputes.md)).
 
 Calldata commitments have a different, unsolved problem: **protocol-valid non-cooperation is not
 punishable but still imposes costs on everyone else.**
@@ -187,6 +187,6 @@ _Non-normative._
   recovery model (REQ-DA-4).
 - **Optimistic reduction / commitment-only paths** that keep full data off-chain unless a
   challenge forces publication (see the wider optimistic-commitment direction in
-  [../protocol/disputes.md](../protocol/disputes.md) Future Work).
+  [../protocol/disputes.md](../disputes/disputes.md) Future Work).
 - **Griefing-cost rebalancing**: mechanisms that shift fallback costs toward the party that caused
   the fallback, if attribution can be made objective without punishing honest unavailability.
