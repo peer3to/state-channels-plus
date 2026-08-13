@@ -27,43 +27,47 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         }
     }
 
-    const specificationPermutations = [
-        ...graph.permutations.specification.definitions.values()
-    ];
-    const implementationPermutations = [
-        ...graph.permutations.implementation.definitions.values()
-    ];
+    // The full planned-test pool: specification test plans, implementation
+    // UNIT-/INTEGRATION-TEST obligations, and REQ/INV permutations defined in
+    // implementation views.
+    const specificationRootPrefix = path.join(
+        graph.roots.spec,
+        "specification"
+    );
+    const allPermutations = [...graph.permutations.all.definitions.values()];
 
     // Section 1: specification IDs none of whose permutations have evidence.
     const evidencedIds = new Set();
-    for (const perm of specificationPermutations) {
-        if (evidencedPermutations.has(perm.id)) {
-            const owner = perm.id.match(PERM_OWNER_RE)?.[1];
-            if (owner) evidencedIds.add(owner);
-        }
+    for (const id of evidencedPermutations) {
+        const owner = id.match(PERM_OWNER_RE)?.[1];
+        if (owner) evidencedIds.add(owner);
     }
     const untestedIds = [...graph.requirements.definitions.entries()]
         .filter(([id]) => !evidencedIds.has(id))
         .sort(([a], [b]) => a.localeCompare(b));
 
-    // Section 2: every planned test permutation (specification and implementation) without evidence.
-    const untestedPermutations = [
-        ...specificationPermutations.map((item) => ({
-            type: "Specification",
-            item
-        })),
-        ...implementationPermutations.map((item) => ({
-            type: "Implementation",
+    // Section 2: every planned test permutation without evidence.
+    const untestedPermutations = allPermutations
+        .map((item) => ({
+            type: item.document.startsWith(specificationRootPrefix)
+                ? "Specification"
+                : "Implementation",
             item
         }))
-    ]
         .filter(({ item }) => !evidencedPermutations.has(item.id))
         .sort((a, b) => a.item.id.localeCompare(b.item.id));
+
+    // Files carrying a valid `@spec-test-coverage-ignore` marker are out of
+    // scope: they need no reports and their declarations are not queue items.
+    const activeTests = graph.tests.tests.filter(
+        (test) => !graph.tests.ignores.has(test.target)
+    );
+    const ignoredFileCount = graph.tests.ignores.size;
 
     // Section 3: test files with executable declarations but no verification report.
     const testReportRoot = path.join(verificationRoot, "tests");
     const declaringFiles = [
-        ...new Set(graph.tests.tests.map((test) => test.target))
+        ...new Set(activeTests.map((test) => test.target))
     ].sort();
     const filesWithoutReports = declaringFiles.filter(
         (target) =>
@@ -76,7 +80,7 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
     );
 
     // Section 4: repository test declarations not mapped in any verification report.
-    const unreferencedTests = graph.tests.tests.filter(
+    const unreferencedTests = activeTests.filter(
         (test) => !graph.tests.mappings.has(`${test.target}\0${test.line}`)
     );
 
@@ -104,12 +108,26 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         unreferencedTests.length +
         duplicateAssignments.length;
 
+    const score = (k, n) =>
+        `**${k}/${n}**${n ? ` (${Math.round((k / n) * 100)}%)` : ""}`;
+    const requirementTotal = graph.requirements.definitions.size;
+    const permutationTotal = allPermutations.length;
+    const assignedOwnerTotal = ownerDeclarations.size;
     const lines = [
         "# Verification Coverage",
         "",
         "> **Generated—do not edit.** Sources: maintained layers, `test/`, and exact mapped declarations. Command: `yarn spec:refresh`.",
         "",
         "A permutation counts as tested only when an exact repository test declaration is mapped to it in a verification report. File links and adjacent tests are never evidence.",
+        "",
+        "## Score",
+        "",
+        `- Specification IDs with test evidence: ${score(requirementTotal - untestedIds.length, requirementTotal)}`,
+        `- Test IDs (planned permutations) evidenced: ${score(permutationTotal - untestedPermutations.length, permutationTotal)}`,
+        `- Test files with verification reports: ${score(declaringFiles.length - filesWithoutReports.length, declaringFiles.length)}`,
+        `- Test declarations covering at least one test ID: ${score(activeTests.length - unreferencedTests.length, activeTests.length)}`,
+        `- Assigned test IDs with exactly one owning test: ${score(assignedOwnerTotal - duplicateAssignments.length, assignedOwnerTotal)}`,
+        `- Test files excluded as out of scope (\`@spec-test-coverage-ignore\`): ${ignoredFileCount}`,
         "",
         "## Contents",
         "",

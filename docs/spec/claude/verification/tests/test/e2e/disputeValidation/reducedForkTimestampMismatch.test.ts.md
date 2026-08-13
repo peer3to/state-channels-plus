@@ -17,8 +17,9 @@ After each reduction, and through six further honest state transitions on the tw
 the oracle is `assert.sync.peersInSyncWait` over the surviving honest peers — guarding the
 regression where a reduced fork's genesis timestamp mismatch would desynchronize survivors. The
 test asserts sync and fork settlement only; it does not inspect reduced-output contents,
-slash sets, or on-chain snapshot advancement. The order-independence and canonical-successor spec
-permutations near this behavior each bundle several scenarios, so none is assigned.
+slash sets, or on-chain snapshot advancement. After the permutation atomization, the
+predecessor-case successor-fork permutations are single scenarios that this back-to-back
+reduction covers: the second window runs on a fork that is itself a reduction product.
 
 ## Tests and covered test IDs
 
@@ -27,6 +28,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                                           | Covers |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: dispute validation / reducedForkTimestampMismatch > fork A→B→C: two reductions then sustained honest activity → all survivors stay in sync`](../../../../../../../../test/e2e/disputeValidation/reducedForkTimestampMismatch.test.ts#L16) (line 16) | —      |
+| Test declaration                                                                                                                                                                                                                                           | Covers                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / reducedForkTimestampMismatch > fork A→B→C: two reductions then sustained honest activity → all survivors stay in sync`](../../../../../../../../test/e2e/disputeValidation/reducedForkTimestampMismatch.test.ts#L16) (line 16) | [`REQ-DIS-6.T1.P7`](../../../../../specification/disputes/disputes.md#req-dis-6.t1.p7), [`INV-DVP-5.T1.P6`](../../../../../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-5.t1.p6) |

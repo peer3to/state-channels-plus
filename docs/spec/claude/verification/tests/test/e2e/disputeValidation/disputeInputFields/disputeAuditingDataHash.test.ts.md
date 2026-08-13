@@ -18,8 +18,9 @@ honest peers store the underlying `BlockDoubleSign` block fraud proof against pe
 peer fires `onDisputeKilled` during a 3-second quiet window (no `DisputeInvalid*` proof against
 the tampered dispute), and resolution excludes the double-signer, leaving 2 participants. The
 calldata-path counterpart, where the upload itself reverts with `ErrorAuditingDataHashMismatch`,
-lives in `disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts`. Nearby spec
-permutations are multi-scenario bundles, so none is assigned.
+lives in `disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts`. After the permutation
+atomization, this negative control is the valid-case demonstration that kill decisions stay
+grounded in the canonical Solidity predicates (no false kill on a field the path never audits).
 
 ## Tests and covered test IDs
 
@@ -28,6 +29,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                                                                                                                                | Covers |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: dispute validation / disputeInputFields / disputeAuditingDataHash > no calldata: dispute.input.disputeAuditingDataHash tampered → dispute commits, no DisputeInvalidStateProof or other audit-data fraud proof`](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts#L15) (line 15) | —      |
+| Test declaration                                                                                                                                                                                                                                                                                                                                | Covers                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / disputeInputFields / disputeAuditingDataHash > no calldata: dispute.input.disputeAuditingDataHash tampered → dispute commits, no DisputeInvalidStateProof or other audit-data fraud proof`](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts#L15) (line 15) | [`INV-DVP-2.T1.P1`](../../../../../../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-2.t1.p1) |

@@ -2,6 +2,11 @@
 
 > **Generated—do not edit.** Sources: `specification/`, `implementation/`, `src/`, and `contracts/`. Command: `yarn spec:refresh`.
 
+## Score
+
+- Specification IDs fully implemented (only `Covered` claims): **199/238** (84%)
+- Source files with a file report: **243/243** (100%)
+
 ## Contents
 
 - [Specification IDs not fully implemented](#specification-ids-not-fully-implemented)

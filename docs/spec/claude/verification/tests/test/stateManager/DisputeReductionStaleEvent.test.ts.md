@@ -1,6 +1,7 @@
 # test/stateManager/DisputeReductionStaleEvent.test.ts — Test Report
 
 > **Test file:** [test/stateManager/DisputeReductionStaleEvent.test.ts](../../../../../../../test/stateManager/DisputeReductionStaleEvent.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [EventHandler.ts](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md)
 
 ## Contents
 
@@ -27,6 +28,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                   | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| [`Dispute reduction stale event > treats a redelivered reduced-result event as consumed after the reduction was applied`](../../../../../../../test/stateManager/DisputeReductionStaleEvent.test.ts#L20) (line 20) | —      |
+| Test declaration                                                                                                                                                                                                   | Covers                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [`Dispute reduction stale event > treats a redelivered reduced-result event as consumed after the reduction was applied`](../../../../../../../test/stateManager/DisputeReductionStaleEvent.test.ts#L20) (line 20) | [`UNIT-TEST-EVENT-HANDLER-1.P2`](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1.p2) |

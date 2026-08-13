@@ -17,9 +17,9 @@ ancestor with a matching height, so the upload succeeds even though the inbound 
 advanced past genesis; the oracle is at least one committed dispute observed for peer 1. Junk
 inbound-hash variants (a non-genesis random hash, or genesis hash with height > 0) live
 deliberately in `disputeInputFields/inboundHash.test.ts` because they fail through the
-fraud-proof pipeline rather than upload revert. No permutation in the pool isolates this
-positive-ancestor scenario — the candidates bundle valid and invalid inbound-tip cases — so
-no ID is assigned.
+fraud-proof pipeline rather than upload revert. Even after the permutation atomization no ID isolates this
+positive-ancestor acceptance — the atomized inbound-tip permutations cover the failure
+side — so no ID is assigned.
 
 ## Tests and covered test IDs
 

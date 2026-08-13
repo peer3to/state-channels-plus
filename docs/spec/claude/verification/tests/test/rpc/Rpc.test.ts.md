@@ -18,10 +18,10 @@ malformed variant — non-array `params` (string, object, number, boolean, null)
 non-string `service`/`method`, and invalid JSON — the regression guard for the dispatcher's
 `method(...rpc.params)` spread. A last test asserts `MAX_RPC_FRAME_BYTES` is positive; the actual
 frame-size gate, `RpcResponse` encode/decode, and BigInt serialization are out of scope. The
-planned `UNIT-TEST-RPC-WIRE-1` permutations each bundle scenarios this suite either splits across
-separate tests (P2's "each malformed shape") or does not reach (P1's response round trip, P3's
-raw-BigInt throw, P4's boundary-size frame), so no permutation is fully covered by a single test
-here and none is assigned.
+`UNIT-TEST-RPC-WIRE-1` permutations are now one scenario each: the request-side shape scenarios
+(valid envelope round trip, missing field, wrong-typed field, non-array params) are assigned
+below; the response round trip (P5), raw-BigInt throw (P3), and boundary-size frame (P4) are not
+reached by this suite and stay unassigned.
 
 ## Tests and covered test IDs
 
@@ -30,12 +30,12 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                              | Covers |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`deserializeRpc - params schema > accepts a well-formed RPC with array params`](../../../../../../../test/rpc/Rpc.test.ts#L12) (line 12)     | —      |
-| [`deserializeRpc - params schema > preserves requestId for request-style RPCs`](../../../../../../../test/rpc/Rpc.test.ts#L20) (line 20)      | —      |
-| [`deserializeRpc - params schema > <dynamic: `rejects params that are a ${label}`>`](../../../../../../../test/rpc/Rpc.test.ts#L39) (line 39) | —      |
-| [`deserializeRpc - params schema > rejects when params is missing entirely`](../../../../../../../test/rpc/Rpc.test.ts#L47) (line 47)         | —      |
-| [`deserializeRpc - params schema > rejects a non-string service or method`](../../../../../../../test/rpc/Rpc.test.ts#L53) (line 53)          | —      |
-| [`deserializeRpc - params schema > returns undefined on invalid JSON`](../../../../../../../test/rpc/Rpc.test.ts#L62) (line 62)               | —      |
-| [`deserializeRpc - params schema > exposes a positive frame-size bound`](../../../../../../../test/rpc/Rpc.test.ts#L66) (line 66)             | —      |
+| Test declaration                                                                                                                              | Covers                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [`deserializeRpc - params schema > accepts a well-formed RPC with array params`](../../../../../../../test/rpc/Rpc.test.ts#L12) (line 12)     | [`UNIT-TEST-RPC-WIRE-1.P1`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1.p1) |
+| [`deserializeRpc - params schema > preserves requestId for request-style RPCs`](../../../../../../../test/rpc/Rpc.test.ts#L20) (line 20)      | —                                                                                                        |
+| [`deserializeRpc - params schema > <dynamic: `rejects params that are a ${label}`>`](../../../../../../../test/rpc/Rpc.test.ts#L39) (line 39) | [`UNIT-TEST-RPC-WIRE-1.P7`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1.p7) |
+| [`deserializeRpc - params schema > rejects when params is missing entirely`](../../../../../../../test/rpc/Rpc.test.ts#L47) (line 47)         | [`UNIT-TEST-RPC-WIRE-1.P2`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1.p2) |
+| [`deserializeRpc - params schema > rejects a non-string service or method`](../../../../../../../test/rpc/Rpc.test.ts#L53) (line 53)          | [`UNIT-TEST-RPC-WIRE-1.P6`](../../../../implementation/source/src/rpc/Rpc.ts.md#unit-test-rpc-wire-1.p6) |
+| [`deserializeRpc - params schema > returns undefined on invalid JSON`](../../../../../../../test/rpc/Rpc.test.ts#L62) (line 62)               | —                                                                                                        |
+| [`deserializeRpc - params schema > exposes a positive frame-size bound`](../../../../../../../test/rpc/Rpc.test.ts#L66) (line 66)             | —                                                                                                        |

@@ -27,8 +27,9 @@ document inputs unreachable from the public surface (malformed addresses, corrup
 signatures, hostile reduce outputs) rather than missing coverage, and the dispute e2e suite owns
 populated-window reduce-path behavior. The genesis-anchored fallback permutation is claimed by
 `DisputeManager.test.ts`, whose empty-proof dispute test verifies that carrier on-chain. The
-specification-level `REQ-SP-*` permutations each bundle valid-plus-invalid input families, so no
-single test here covers one in full and they stay unassigned.
+specification-level `REQ-SP-*` permutations are now atomized into single scenarios, but their
+definitive demonstrations are the on-chain verifier suites and the dispute e2e flows, so none
+are claimed here.
 
 ## Tests and covered test IDs
 

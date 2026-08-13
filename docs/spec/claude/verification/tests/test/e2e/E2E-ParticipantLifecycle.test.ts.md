@@ -19,11 +19,10 @@ post-leave block (checked against the actual confirmation-signature set of the n
 block, with no honest peer blacklisted), and retrying an already-landed join confirmation rejects
 with `ErrorJoinChannelParticipantAlreadyExists` while the host keeps PENDING_PARTICIPANT and the
 recorded join-submission height, so the pending join still completes. Oracles are host-side
-status/storage reads over the control port and decoded block bundles; the underlying components
-(`StateManager.joinChannel`/commit promotion, `EventHandler` snapshot handling) have their own
-obligation permutations that bundle further conditions (each `shouldSignBlock` condition,
-forced-join triggers), so no permutation here is covered in full by a single test and none are
-assigned.
+status/storage reads over the control port and decoded block bundles. The `shouldSignBlock` and
+admission permutations are now atomized per condition, so the join-promotion, signer-outside-union,
+and pending-join-rejection scenarios each map to a single test here; the remaining conditions
+(forfeit rule, blacklisted author, forced-join arming) belong to other suites.
 
 ## Tests and covered test IDs
 
@@ -32,9 +31,9 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                 | Covers |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: Participant Lifecycle > Exit path > should demote exiting participant to SYNCED when state snapshot is updated on-chain`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L26) (line 26)                   | —      |
-| [`E2E: Participant Lifecycle > Exit path > exiting participant does not sign blocks authored after its leave`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L46) (line 46)                                     | —      |
-| [`E2E: Participant Lifecycle > Join path > should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L101) (line 101) | —      |
-| [`E2E: Participant Lifecycle > Join path > preserves a landed pending join when the same confirmation is retried`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L161) (line 161)                               | —      |
+| Test declaration                                                                                                                                                                                                                 | Covers                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| [`E2E: Participant Lifecycle > Exit path > should demote exiting participant to SYNCED when state snapshot is updated on-chain`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L26) (line 26)                   | —                                                                                                                                    |
+| [`E2E: Participant Lifecycle > Exit path > exiting participant does not sign blocks authored after its leave`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L46) (line 46)                                     | [`UNIT-TEST-STATE-MANAGER-2.P7`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-2.p7) |
+| [`E2E: Participant Lifecycle > Join path > should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L101) (line 101) | [`UNIT-TEST-STATE-MANAGER-2.P4`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-2.p4) |
+| [`E2E: Participant Lifecycle > Join path > preserves a landed pending join when the same confirmation is retried`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L161) (line 161)                               | [`REQ-ENFADM-2.T1.P4`](../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-t1-p4)                              |

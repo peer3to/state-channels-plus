@@ -17,8 +17,10 @@ out, so it alone holds block 3 while honest peers 0-2 sit at height 2 (both fact
 honest peers, yet none of them fast-forwards past height 2 on the original fork just because the
 committed dispute references a higher block; `resolveDisputeWait` then settles the fork without
 requiring the attacker's removal. A known teardown bug (#353, `onStateSnapshotUpdated: unknown
-snapshot while status=4`) is documented in the file; the test body itself passes. The spec
-permutations near this behavior are multi-scenario bundles, so none is fully covered here.
+snapshot while status=4`) is documented in the file; the test body itself passes. Even after the
+permutation atomization, no single-scenario ID matches this protocol-gap regression (honest peers
+refusing to fast-forward off a committed dispute's higher block), so the Covers column stays
+empty.
 
 ## Tests and covered test IDs
 

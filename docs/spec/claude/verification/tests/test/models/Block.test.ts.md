@@ -21,11 +21,11 @@ signature, and a `didSign` address cache that stays coherent across expand and r
 `getRelevantTimestamp` is checked per branch (signed participant, unsigned with/without
 `onChainTimestamp`, max of both), and `onChainTimestamp` is shown to be local-only metadata that
 never changes encoding, hash, or equality. Out of scope: validation, storage, and queue behavior
-around blocks (owned by the ValidationService and BlockQueueManager suites). Of the four
-`UNIT-TEST-BLOCK-MODEL-1` permutations, only the round trip is covered by a single test here: P2
-bundles duplicate and malleated-encoding dedup (malleation is never exercised), P3 targets
-`didEveryoneSign`, which this file never calls, and P4 spreads the relevant-timestamp branches
-across four separate tests, so those stay unassigned.
+around blocks (owned by the ValidationService and BlockQueueManager suites). Of the six
+`UNIT-TEST-BLOCK-MODEL-1` permutations, four are covered by single tests here: the round trip
+(P1), duplicate-signature dedup (P2), and the author-signed (P4) and posted (P6)
+relevant-timestamp selections. P3 targets `didEveryoneSign`, which this file never calls, and
+P5's malleated-signature dedup is never exercised, so those two stay unassigned.
 
 ## Tests and covered test IDs
 
@@ -64,14 +64,14 @@ report but are kept here.
 | [`Block Model > Signature management > should expand signatures with new signatures array`](../../../../../../../test/models/Block.test.ts#L230) (line 230)                                           | —                                                                                                                   |
 | [`Block Model > Signature management > should grow cached signer addresses when expanding signatures`](../../../../../../../test/models/Block.test.ts#L245) (line 245)                                | —                                                                                                                   |
 | [`Block Model > Signature management > should expand signatures with new signatures Set`](../../../../../../../test/models/Block.test.ts#L257) (line 257)                                             | —                                                                                                                   |
-| [`Block Model > Signature management > should not duplicate signatures when expanding`](../../../../../../../test/models/Block.test.ts#L278) (line 278)                                               | —                                                                                                                   |
+| [`Block Model > Signature management > should not duplicate signatures when expanding`](../../../../../../../test/models/Block.test.ts#L278) (line 278)                                               | [`UNIT-TEST-BLOCK-MODEL-1.P2`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1.p2) |
 | [`Block Model > Signature management > should remove confirmation signatures`](../../../../../../../test/models/Block.test.ts#L293) (line 293)                                                        | —                                                                                                                   |
 | [`Block Model > Signature management > should shrink cached signer addresses when removing signatures`](../../../../../../../test/models/Block.test.ts#L310) (line 310)                               | —                                                                                                                   |
 | [`Block Model > Signature management > should keep the author's original signature when removing`](../../../../../../../test/models/Block.test.ts#L324) (line 324)                                    | —                                                                                                                   |
 | [`Block Model > Signature management > should ignore removing unknown signatures`](../../../../../../../test/models/Block.test.ts#L345) (line 345)                                                    | —                                                                                                                   |
 | [`Block Model > Block confirmation struct > should return correct block confirmation struct`](../../../../../../../test/models/Block.test.ts#L359) (line 359)                                         | —                                                                                                                   |
-| [`Block Model > Timestamp utilities > should return block timestamp when participant has signed`](../../../../../../../test/models/Block.test.ts#L377) (line 377)                                     | —                                                                                                                   |
-| [`Block Model > Timestamp utilities > should return onChainTimestamp when participant has not signed and onChainTimestamp is set`](../../../../../../../test/models/Block.test.ts#L395) (line 395)    | —                                                                                                                   |
+| [`Block Model > Timestamp utilities > should return block timestamp when participant has signed`](../../../../../../../test/models/Block.test.ts#L377) (line 377)                                     | [`UNIT-TEST-BLOCK-MODEL-1.P4`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1.p4) |
+| [`Block Model > Timestamp utilities > should return onChainTimestamp when participant has not signed and onChainTimestamp is set`](../../../../../../../test/models/Block.test.ts#L395) (line 395)    | [`UNIT-TEST-BLOCK-MODEL-1.P6`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1.p6) |
 | [`Block Model > Timestamp utilities > should return block timestamp when participant has not signed and onChainTimestamp is not set`](../../../../../../../test/models/Block.test.ts#L412) (line 412) | —                                                                                                                   |
 | [`Block Model > Timestamp utilities > should return max of onChainTimestamp and block timestamp when both are set`](../../../../../../../test/models/Block.test.ts#L427) (line 427)                   | —                                                                                                                   |
 | [`Block Model > Immutability > should not allow modification of underlying data`](../../../../../../../test/models/Block.test.ts#L445) (line 445)                                                     | —                                                                                                                   |

@@ -16,9 +16,11 @@ check — a factory block signed via `signBlock` recovers to the same address th
 `SignatureUtils.getSignerAddress(block.encode(), sig)` and `Block.signatureToAddress(sig)`,
 demonstrating the two recovery paths hash the same canonical-encoding digest. Out of scope:
 tampered messages/signatures, signature-encoding malleation, on-chain recovery agreement, and
-signing every protocol object class. All three `UNIT-TEST-SIGNATURE-UTILS-1` permutations either
-bundle each object class or require tamper/malleation cases absent here, so none is assignable
-in full.
+signing every protocol object class. `UNIT-TEST-SIGNATURE-UTILS-1` now defines one round-trip
+permutation per object class plus tamper/malleation cases, but none is assignable in full: the
+tamper/malleation cases are absent, the only signed object class is a block, and its signature
+comes from `Block.sign` rather than `SignatureUtils.signBlock`, so even the block round trip
+(`.P1`) never drives the component's sign side.
 
 ## Tests and covered test IDs
 

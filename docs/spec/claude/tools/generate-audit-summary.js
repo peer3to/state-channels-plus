@@ -29,6 +29,8 @@ const {
 
 function generateAuditSummary(graph = buildDocumentationGraph()) {
     const output = path.join(graph.roots.generated, "audit-summary.md");
+    const score = (k, n) =>
+        `**${k}/${n}**${n ? ` (${Math.round((k / n) * 100)}%)` : ""}`;
     const requirements = graph.requirements.definitions;
     const activeFindings = [...graph.findings.entries.values()].filter(
         (item) => !/withdrawn/i.test(item.raw)
@@ -171,12 +173,12 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         "## Readiness",
         "",
         `- Requirements/invariants: ${requirements.size}`,
-        `- Structurally complete requirement paths: ${structurallyComplete}`,
-        `- Current engineer-approved paths: ${approved}`,
-        `- Current security-accepted paths: ${securityAccepted}`,
-        `- Final ready paths: ${ready}`,
-        `- Source files assigned to implementation subjects: ${mirrored}/${graph.mirrors.length}`,
-        `- Test declarations mapped or explicitly ignored: ${mappedTests + ignoredTests}/${graph.tests.tests.length}`,
+        `- Structurally complete requirement paths: ${score(structurallyComplete, requirements.size)}`,
+        `- Current engineer-approved paths: ${score(approved, requirements.size)}`,
+        `- Current security-accepted paths: ${score(securityAccepted, requirements.size)}`,
+        `- Final ready paths: ${score(ready, requirements.size)}`,
+        `- Source files assigned to implementation subjects: ${score(mirrored, graph.mirrors.length)}`,
+        `- Test declarations mapped or explicitly ignored: ${score(mappedTests + ignoredTests, graph.tests.tests.length)}`,
         `- Open questions: ${openQuestionsModel.issueCount}`,
         `- Active findings: ${activeFindings.length}`,
         `- Strict blocking items: ${issueCount}`,

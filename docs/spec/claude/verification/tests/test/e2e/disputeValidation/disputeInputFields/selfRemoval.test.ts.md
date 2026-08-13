@@ -18,8 +18,9 @@ a dispute through `DisputeTampering.flipSelfRemovalWithoutOutputRecompute`, whic
 and zeroes timeout/onChainSlashes without recomputing `outputSnapshotDataHash`; the on-chain
 validator sees the output hash disagree with the flipped flag, so all peers fire
 `onDisputeKilled`, honest peers store a `DisputeInvalidOutputState` proof, and the fork still
-resolves. The applicable spec permutations bundle these accept/reject sides with further
-membership and deadline scenarios per ID, so neither test alone covers one in full.
+resolves. After the permutation atomization, the valid-case permutation of the dispute-input
+requirement is a single scenario the accept-side test covers in full; the flipped variant is a
+second instance of the output-correctness proof type, whose IDs live on `outputState.test.ts`.
 
 ## Tests and covered test IDs
 

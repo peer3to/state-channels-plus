@@ -19,9 +19,9 @@ interval (no valid/invalid/valid holes), the verdict is insensitive to `channelI
 honest skew up to `evidenceTime + P2P_TIME` is never flagged, the first-block grace boundary and
 the later-block no-grace boundary flip at exactly +1 second, and a forged author signature makes
 the proof inert. Proof application, slashing, and the other fraud-proof types
-(`applyFraudProofs` and its bookkeeping) are out of scope here. The facet's planned permutations
-(`UNIT-TEST-FRAUD-PROOF-FACET-1.P1`–`P5`) each bundle every proof type or the submitter-slash
-outcomes, so no single test in this predicate-only suite fully covers one; all rows stay
+(`applyFraudProofs` and its bookkeeping) are out of scope here. The facet's permutations are now
+atomized per proof type (`UNIT-TEST-FRAUD-PROOF-FACET-1.P1`–`P13`), but each one requires proof
+application and its slash outcome, which this predicate-only suite never performs; all rows stay
 unassigned.
 
 ## Tests and covered test IDs

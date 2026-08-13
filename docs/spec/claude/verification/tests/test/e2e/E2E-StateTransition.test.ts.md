@@ -19,10 +19,11 @@ only the honest peers remain in sync — i.e. ordinary block production keeps wo
 resolution. Oracles are the sync/height assertion helpers and dispute lifecycle waits only; the
 suite inspects no queue, storage, signature, or timestamp detail. Fault classification, timing
 windows, and queue behavior are out of scope (owned by the fraud-proof, timestamp-grace, and
-BlockQueueManager suites). No test IDs are assigned: every candidate permutation pairs the valid
-case with an invalid/opposite or bundled variant (e.g. `REQ-FIN-6.T1.P1`,
-`UNIT-TEST-STATE-TRANSITION-SERVICE-1.P2`) that these happy-path tests do not demonstrate on
-their own.
+BlockQueueManager suites). After the permutation atomization the round-robin leader-election
+scenarios stand alone, so the full-rotation and post-fork-recovery tests carry their
+`REQ-FIN-6.T1` scenarios; the remaining candidates (signature/authentication variants,
+`UNIT-TEST-STATE-TRANSITION-SERVICE-1.*` gating) still have no dedicated demonstration here and
+stay unassigned.
 
 ## Tests and covered test IDs
 
@@ -31,9 +32,9 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                        | Covers |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: State Transitions > Basic State Advancement > should handle consecutive blocks between participants`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L13) (line 13)   | —      |
-| [`E2E: State Transitions > Basic State Advancement > should handle full round rotation`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L21) (line 21)                       | —      |
-| [`E2E: State Transitions > Basic State Advancement > should handle multiple rotation rounds`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L29) (line 29)                  | —      |
-| [`E2E: State Transitions > State Modifications > should handle honest peer transitions after fork resolution`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L39) (line 39) | —      |
+| Test declaration                                                                                                                                                                        | Covers                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [`E2E: State Transitions > Basic State Advancement > should handle consecutive blocks between participants`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L13) (line 13)   | —                                                                                         |
+| [`E2E: State Transitions > Basic State Advancement > should handle full round rotation`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L21) (line 21)                       | [`REQ-FIN-6.T1.P1`](../../../../specification/protocol-model/finality.md#req-fin-6.t1.p1) |
+| [`E2E: State Transitions > Basic State Advancement > should handle multiple rotation rounds`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L29) (line 29)                  | —                                                                                         |
+| [`E2E: State Transitions > State Modifications > should handle honest peer transitions after fork resolution`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L39) (line 39) | [`REQ-FIN-6.T1.P7`](../../../../specification/protocol-model/finality.md#req-fin-6.t1.p7) |

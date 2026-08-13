@@ -29,9 +29,9 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                          | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`chain signer serialization > round-trips a normalized transaction request`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L13) (line 13)               | —      |
-| [`chain signer serialization > reconstructs a native provider-backed transaction response`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L47) (line 47) | —      |
-| [`chain signer serialization > allows explicit client-side replacement detection`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L68) (line 68)          | —      |
-| [`chain signer serialization > rejects fields that cannot cross the runtime port`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L116) (line 116)        | —      |
+| Test declaration                                                                                                                                                          | Covers                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [`chain signer serialization > round-trips a normalized transaction request`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L13) (line 13)               | [`REQ-RUN-6.T1.P1`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-6.t1.p1) |
+| [`chain signer serialization > reconstructs a native provider-backed transaction response`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L47) (line 47) | —                                                                                                                 |
+| [`chain signer serialization > allows explicit client-side replacement detection`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L68) (line 68)          | —                                                                                                                 |
+| [`chain signer serialization > rejects fields that cannot cross the runtime port`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L116) (line 116)        | [`REQ-RUN-6.T1.P4`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-6.t1.p4) |

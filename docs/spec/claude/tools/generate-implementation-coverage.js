@@ -88,10 +88,18 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
         .map(({ source }) => source);
 
     const issueCount = problemIds.length + sourcesWithoutFileReports.length;
+    const score = (k, n) =>
+        `**${k}/${n}**${n ? ` (${Math.round((k / n) * 100)}%)` : ""}`;
+    const requirementTotal = graph.requirements.definitions.size;
     const lines = [
         "# Implementation Coverage",
         "",
         "> **Generated—do not edit.** Sources: `specification/`, `implementation/`, `src/`, and `contracts/`. Command: `yarn spec:refresh`.",
+        "",
+        "## Score",
+        "",
+        `- Specification IDs fully implemented (only \`Covered\` claims): ${score(requirementTotal - problemIds.length, requirementTotal)}`,
+        `- Source files with a file report: ${score(graph.mirrors.length - sourcesWithoutFileReports.length, graph.mirrors.length)}`,
         "",
         "## Contents",
         "",

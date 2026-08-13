@@ -16,8 +16,9 @@ block provokes the dispute. The oracles assert peer 2's dispute is initiated and
 auditing data, an honest peer fires `onDisputeKilled`, honest peers store a
 `DisputeInvalidOutputState` dispute fraud proof, and the fork resolves via `resolveDisputeWait`.
 The selfRemoval-flipped variant that fails through the same proof type lives in
-`disputeInputFields/selfRemoval.test.ts`. The nearby spec permutations bundle valid and invalid
-scenarios, so none is fully covered by this single test.
+`disputeInputFields/selfRemoval.test.ts`. After the permutation atomization, the
+output-correctness check failure, its proof family, and its mirrored-predicate agreement exist
+as single-scenario IDs, and this test covers them in full.
 
 ## Tests and covered test IDs
 
@@ -26,6 +27,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                      | Covers |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: dispute validation / outputState > dispute.outputSnapshotDataHash = random → DisputeInvalidOutputState`](../../../../../../../../test/e2e/disputeValidation/outputState.test.ts#L10) (line 10) | —      |
+| Test declaration                                                                                                                                                                                      | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / outputState > dispute.outputSnapshotDataHash = random → DisputeInvalidOutputState`](../../../../../../../../test/e2e/disputeValidation/outputState.test.ts#L10) (line 10) | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1.P21`](../../../../../implementation/source/src/stateManager/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1.p21), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1.P10`](../../../../../implementation/source/src/stateManager/utils/DisputeFraudProofService.ts.md#unit-test-dispute-fraud-proof-service-1.p10), [`REQ-DISPUTE-PIPE-5.T1.P5`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-t1-p5) |

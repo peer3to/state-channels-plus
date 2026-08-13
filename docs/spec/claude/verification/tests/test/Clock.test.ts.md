@@ -21,8 +21,9 @@ recovers, and racing inits with two distinct providers settle on exactly one own
 serves reads. Oracles are `ownsProvider` booleans and live `blockNumber` reads after each
 transition. Out of scope: chain-time estimation accuracy, skew bounds, and deadline semantics
 (`REQ-TIME-*`), which this suite does not measure. No test IDs are assignable: the Clock
-implementation report defines no component test obligations, and each `REQ-TIME-1` permutation
-bundles identity/deadline/skew sweeps far beyond this initialization-lifecycle suite.
+implementation report defines no component test obligations, and each atomized `REQ-TIME-*`
+permutation still needs a chain-time semantics oracle (authority over wall clocks, skew bounds,
+or deadline behavior) that this initialization-lifecycle suite never measures.
 
 ## Tests and covered test IDs
 

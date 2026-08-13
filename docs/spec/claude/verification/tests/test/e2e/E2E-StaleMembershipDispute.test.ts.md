@@ -17,9 +17,9 @@ posting. The oracles assert the honest peers classify exactly the coordinate-bin
 apply fraud-proof types explicitly absent — and that the malicious disputer is slashed on-chain by
 the kill transaction, independent of the double-sign fork reduction. This pins the audit's author
 check to the resulting snapshot's coordinates instead of a naive membership lookup in a stale era.
-No planned permutation is assigned: the matching audit-layer permutations (e.g.
-`REQ-DISPUTE-PIPE-2.T1.P1` signatures/authorization, `REQ-DISPUTE-PIPE-5.T1.P2` exactly one stored
-proof) each bundle more scenarios than this single test demonstrates.
+After the permutation split, the removed-participant kill scenario this test demonstrates in full
+is assigned below; the mirrored `DisputeBlockAuthorNotParticipant` verdict permutation is held by
+`test/e2e/disputeValidation/stateProof/case3_signedBlocksOnly.test.ts`.
 
 ## Tests and covered test IDs
 
@@ -28,6 +28,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                             | Covers |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: stale-membership dispute > departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain`](../../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts#L10) (line 10) | —      |
+| Test declaration                                                                                                                                                                                                                             | Covers                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [`E2E: stale-membership dispute > departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain`](../../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts#L10) (line 10) | [`REQ-DIS-3.T1.P16`](../../../../specification/disputes/disputes.md#req-dis-3.t1.p16) |

@@ -19,8 +19,8 @@ slashed on-chain, the valid dispute's commitment is still present in the window'
 normal reduction settles the fork without the slashed participant (`resolveDisputeWait` with one
 synthetic on-chain participant from the calldata setup). The failing-proof self-slash permutation
 itself is assigned to the genesis-linkage sibling test, which additionally asserts the honest
-target stays unslashed; the remaining nearby permutations are multi-scenario bundles, so no ID is
-recorded here.
+target stays unslashed; after the permutation atomization this test records the facet-level
+self-slash branch and the slash-then-reduce consumption invariant instead.
 
 ## Tests and covered test IDs
 
@@ -29,6 +29,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                                                                           | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| [`E2E: dispute validation / invalidStateProofAuditing > [calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves`](../../../../../../../../test/e2e/disputeValidation/invalidStateProofAuditing.test.ts#L12) (line 12) | —      |
+| Test declaration                                                                                                                                                                                                                                                                           | Covers                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / invalidStateProofAuditing > [calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves`](../../../../../../../../test/e2e/disputeValidation/invalidStateProofAuditing.test.ts#L12) (line 12) | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1.P4`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1.p4), [`INV-DVP-6.T1.P1`](../../../../../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-6.t1.p1) |

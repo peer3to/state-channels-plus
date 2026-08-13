@@ -17,8 +17,8 @@ assert honest peers observe exactly one `disputeCommitted` event (the junk dispu
 on-chain), fire no `onDisputeKilled` during a 6-second quiet window since they never audit a fork
 they do not track, and each still reports the original genesis forkId afterwards — no peer
 switched onto the junk fork. Kill, slashing, and resolution behavior for the junk fork are out of
-scope. The wrong-identity spec permutation bundles every identity field (manager, channel, fork,
-dispute), so this fork-only test does not fully cover it and the Covers column stays empty.
+scope. After the permutation atomization, the wrong-identity permutation is split per identity
+field, and this test covers the wrong-fork scenario in full.
 
 ## Tests and covered test IDs
 
@@ -27,6 +27,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                                      | Covers |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: dispute validation / disputeInputFields / forkId > current fork == genesis; dispute.input.forkId = random; honest peers stay on genesis`](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/forkId.test.ts#L7) (line 7) | —      |
+| Test declaration                                                                                                                                                                                                                                      | Covers                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / disputeInputFields / forkId > current fork == genesis; dispute.input.forkId = random; honest peers stay on genesis`](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/forkId.test.ts#L7) (line 7) | [`REQ-DISPUTE-PIPE-1.T1.P6`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-t1-p6) |

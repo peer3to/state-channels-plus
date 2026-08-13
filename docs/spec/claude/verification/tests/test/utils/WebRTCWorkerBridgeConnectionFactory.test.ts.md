@@ -21,9 +21,9 @@ promise resolves with the bridge's SDP result, and that disposing the final owne
 in-flight request with a "disposed" error instead of hanging. Out of scope: `waitForPort`
 pre-arrival resolution (ports are registered before any call), behavioral parity with
 `LocalWebRTCConnectionFactory`, deserialization of `ok: false` bridge error responses, and the
-main-thread half of the bridge (owned by the WebRTCMainThreadBridge suite). Those bundled or
-untested scenarios are the P1–P3 permutations, which stay unassigned; only port-loss behavior is
-covered in full.
+main-thread half of the bridge (owned by the WebRTCMainThreadBridge suite). Those untested
+scenarios are the P1–P3 and per-method parity P5–P7 permutations, which stay unassigned; only
+port-loss behavior is covered in full.
 
 ## Tests and covered test IDs
 

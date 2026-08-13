@@ -20,9 +20,10 @@ stays independent of reduction completion; duplicate terminal triggers reuse one
 outcome without re-installing state; the dispute status is checked exactly once before reduction
 starts; and concurrent ordinary reduction attempts are serialized (one active chain probe, the
 second attempt deferred). Reduction computation itself (successor equivalence across orders) and
-completion-mismatch handling are out of scope. The manager's and executor's planned permutations
-bundle multi-path and convergence-classification scenarios these single cases do not fully
-demonstrate, so they stay unassigned.
+completion-mismatch handling are out of scope. The duplicate-terminal-trigger case demonstrates
+the manager's single-completion convergence permutation; the mismatch-fatal and restart
+permutations, and the executor's convergence-classification permutations, are not demonstrated
+here and stay unassigned.
 
 ## Tests and covered test IDs
 
@@ -31,10 +32,10 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                             | Covers |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`ReductionManager > returns undefined without retaining an operation for a non-disputed fork`](../../../../../../../test/stateManager/ReductionManager.test.ts#L5) (line 5) | —      |
-| [`ReductionManager > keeps future timer state independent from reduction completion`](../../../../../../../test/stateManager/ReductionManager.test.ts#L26) (line 26)         | —      |
-| [`ReductionManager > reuses one resolved outcome for duplicate terminal triggers`](../../../../../../../test/stateManager/ReductionManager.test.ts#L40) (line 40)            | —      |
-| [`ReductionManager > checks the dispute status before starting reduction`](../../../../../../../test/stateManager/ReductionManager.test.ts#L85) (line 85)                    | —      |
-| [`ReductionManager > serializes concurrent ordinary reduction attempts`](../../../../../../../test/stateManager/ReductionManager.test.ts#L131) (line 131)                    | —      |
+| Test declaration                                                                                                                                                             | Covers                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`ReductionManager > returns undefined without retaining an operation for a non-disputed fork`](../../../../../../../test/stateManager/ReductionManager.test.ts#L5) (line 5) | —                                                                                                                                                          |
+| [`ReductionManager > keeps future timer state independent from reduction completion`](../../../../../../../test/stateManager/ReductionManager.test.ts#L26) (line 26)         | —                                                                                                                                                          |
+| [`ReductionManager > reuses one resolved outcome for duplicate terminal triggers`](../../../../../../../test/stateManager/ReductionManager.test.ts#L40) (line 40)            | [`UNIT-TEST-REDUCTION-MANAGER-1.P1`](../../../../implementation/source/src/stateManager/reduction/ReductionManager.ts.md#unit-test-reduction-manager-1.p1) |
+| [`ReductionManager > checks the dispute status before starting reduction`](../../../../../../../test/stateManager/ReductionManager.test.ts#L85) (line 85)                    | —                                                                                                                                                          |
+| [`ReductionManager > serializes concurrent ordinary reduction attempts`](../../../../../../../test/stateManager/ReductionManager.test.ts#L131) (line 131)                    | —                                                                                                                                                          |

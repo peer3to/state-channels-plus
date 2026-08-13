@@ -82,9 +82,9 @@ function generatePendingReview() {
         '> its content hash with `SPEC_REVIEWER="Name" node docs/spec/claude/tools/review.js <file...>`.',
         "> Any later edit invalidates the record automatically (the file returns to pending as stale).",
         "",
+        `- Verified (current): **${rows.verified.length}/${rows.pending.length + rows.stale.length + rows.verified.length}**${rows.pending.length + rows.stale.length + rows.verified.length ? ` (${Math.round((rows.verified.length / (rows.pending.length + rows.stale.length + rows.verified.length)) * 100)}%)` : ""}`,
         `- Pending (never reviewed): **${rows.pending.length}**`,
         `- Stale (edited since review): **${rows.stale.length}**`,
-        `- Verified (current): **${rows.verified.length}**`,
         ""
     ];
     for (const [title, list, extra] of [

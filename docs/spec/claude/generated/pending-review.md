@@ -4,9 +4,9 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/claude/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Pending (never reviewed): **532**
+- Verified (current): **0/519** (0%)
+- Pending (never reviewed): **519**
 - Stale (edited since review): **0**
-- Verified (current): **0**
 
 ## Stale — edited since engineer review
 
@@ -415,7 +415,7 @@ None.
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (137)
+### verification (124)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -494,19 +494,6 @@ None.
 - [verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md](../verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md)
 - [verification/tests/test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts.md](../verification/tests/test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts.md)
 - [verification/tests/test/rpc/Rpc.test.ts.md](../verification/tests/test/rpc/Rpc.test.ts.md)
-- [verification/tests/test/scripts/crashLogServer.test.ts.md](../verification/tests/test/scripts/crashLogServer.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelDistributedE2E.test.ts.md](../verification/tests/test/scripts/e2eParallelDistributedE2E.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelDistributedLifecycle.test.ts.md](../verification/tests/test/scripts/e2eParallelDistributedLifecycle.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelLogDir.test.ts.md](../verification/tests/test/scripts/e2eParallelLogDir.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelOrchestratorLog.test.ts.md](../verification/tests/test/scripts/e2eParallelOrchestratorLog.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelProtocol.test.ts.md](../verification/tests/test/scripts/e2eParallelProtocol.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelRuntimeBundle.test.ts.md](../verification/tests/test/scripts/e2eParallelRuntimeBundle.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelTaskCoordinator.test.ts.md](../verification/tests/test/scripts/e2eParallelTaskCoordinator.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelTaskDiscovery.test.ts.md](../verification/tests/test/scripts/e2eParallelTaskDiscovery.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelWorkerLease.test.ts.md](../verification/tests/test/scripts/e2eParallelWorkerLease.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelWorkerScheduler.test.ts.md](../verification/tests/test/scripts/e2eParallelWorkerScheduler.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelWorkspaceCache.test.ts.md](../verification/tests/test/scripts/e2eParallelWorkspaceCache.test.ts.md)
-- [verification/tests/test/scripts/e2eParallelWorkspacePreparation.test.ts.md](../verification/tests/test/scripts/e2eParallelWorkspacePreparation.test.ts.md)
 - [verification/tests/test/stateManager/DisputeReductionStaleEvent.test.ts.md](../verification/tests/test/stateManager/DisputeReductionStaleEvent.test.ts.md)
 - [verification/tests/test/stateManager/DisputeValidationStrategy.test.ts.md](../verification/tests/test/stateManager/DisputeValidationStrategy.test.ts.md)
 - [verification/tests/test/stateManager/EventBus.test.ts.md](../verification/tests/test/stateManager/EventBus.test.ts.md)

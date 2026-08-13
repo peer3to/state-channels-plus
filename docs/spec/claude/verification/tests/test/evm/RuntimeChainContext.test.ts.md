@@ -19,8 +19,10 @@ connection error (not a timeout) is thrown to the host caller and rejected to th
 fake-timer cases pair a real client with a scripted host port: `quiesce` must not be failed by a
 client-side timer (the host owns the quiesce timeout), and an uncancellable P2P signer
 `sendTransaction` mutation outlives the 30s request timeout and still resolves with the local
-p2p result. Full host request-surface behavior (inline/worker equivalence, disposal settlement,
-signing confinement) is out of scope, so the host-protocol permutations stay unassigned.
+p2p result. The startup case demonstrates the runtime lifecycle startup-phase-failure
+permutation and the host-construction-failure invariant's valid case. Full host request-surface
+behavior (inline/worker equivalence, disposal settlement, signing confinement) is out of scope,
+so the remaining host-protocol permutations stay unassigned.
 
 ## Tests and covered test IDs
 
@@ -29,10 +31,10 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                           | Covers |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`RuntimeChainContext > accepts WebSocket URLs and optimistically converts HTTP URLs`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L19) (line 19)            | —      |
-| [`RuntimeChainContext > rejects non-WebSocket-compatible provider URLs`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L34) (line 34)                          | —      |
-| [`RuntimeChainContext > destroys the host provider and reports the original startup error`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L40) (line 40)       | —      |
-| [`RuntimeChainContext > lets the host own the quiesce timeout`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L107) (line 107)                                 | —      |
-| [`RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L168) (line 168) | —      |
+| Test declaration                                                                                                                                                           | Covers                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`RuntimeChainContext > accepts WebSocket URLs and optimistically converts HTTP URLs`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L19) (line 19)            | —                                                                                                                                                                                                              |
+| [`RuntimeChainContext > rejects non-WebSocket-compatible provider URLs`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L34) (line 34)                          | —                                                                                                                                                                                                              |
+| [`RuntimeChainContext > destroys the host provider and reports the original startup error`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L40) (line 40)       | [`REQ-RUNTIME-3.T1.P1`](../../../../specification/runtime/execution.md#req-runtime-3-t1-p1), [`INV-RUN-3.T1.P1`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-3.t1.p1) |
+| [`RuntimeChainContext > lets the host own the quiesce timeout`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L107) (line 107)                                 | —                                                                                                                                                                                                              |
+| [`RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L168) (line 168) | —                                                                                                                                                                                                              |
