@@ -1,28 +1,46 @@
 # test/e2e/E2E-StateSnapshots.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-StateSnapshots.test.ts](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-StateSnapshots.test.ts](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                                                                 | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: State Snapshots > should post updated state snapshot on-chain after 3 transitions` (line 24)                                                                                                                               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Snapshots > should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates` (line 48)                                                      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Snapshots > should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall` (line 71)                                                                           | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Snapshots > should not re-emit setState when a held old-fork reduction timeout runs after snapshot-event reduction` (line 96)                                                                                        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Snapshots > should not re-emit setState when a snapshot event joins an already-entered old-fork reduction` (line 174)                                                                                                | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Snapshots > should handle snapshot update at blockHeight = 0 (first snapshot) - edge case since genesis is also height 0` (line 329)                                                                                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Snapshots > should update on-chain snapshot to a new fork genesis after dispute resolution` (line 356)                                                                                                               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Snapshots > updateStateSnapshotSameFork during active dispute > disputeWindow.evidence.creationTimestamp != 0 → on-chain snapshot updates but disputeWindowMap NOT cleared (dispute kill still resolves)` (line 392) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite drives on-chain snapshot posting (`StateManager.postStateSnapshot` through the prepared
+same-fork/fork multicall paths of `StateSnapshotFacet`) end to end: peers advance real transitions
+(including `leaveChannel` exits so the outbound stream carries a withdrawal), post the snapshot,
+and the oracles compare chain against local state — `withdrawalDeltaMatchesExpected`,
+`verifyOnChainChannelBalanceInvariant` before and after, `snapshotMatchesLocal`, and
+`onStateSnapshotUpdated` event counts per peer. The dispute-path tests resolve a real fork and
+verify both shapes of the follow-up: two independent updates (fork genesis first, then a same-fork
+advance) and a single multicall that performs the fork update plus the same-fork advance in one
+transaction landing on the reduced fork; a further test checks the post-dispute on-chain snapshot
+is the new fork's genesis (`forkId == keccak256(snapshotData)`). Reduction re-entry tests use
+host-side stubs to hold or pause old-fork reduction timers and prove `onSetState` fires exactly
+once whether the held timer replays after the snapshot-event reduction or the snapshot event joins
+an already-entered reduction. Edge cases cover the first snapshot at block height 0 and a
+same-fork update during an active dispute that must not clear `disputeWindowMap` (the pending
+dispute kill still resolves). Reduction single-completion obligations belong to
+`test/stateManager/ReductionManager.test.ts` and stay unassigned here, as do batch-split
+convergence permutations that would need one test to compare split against unsplit advances.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                                                                  | Covers                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: State Snapshots > should post updated state snapshot on-chain after 3 transitions`](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts#L24) (line 24)                                                                                                                                | [`REQ-ENFSNAP-1.T1.P1`](../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-1-t1-p1)                                                                                                                                                                                 |
+| [`E2E: State Snapshots > should remove malicious participant after fork and then post updated state snapshot on the reduced fork - 2 independent snapshot updates`](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts#L48) (line 48)                                                       | —                                                                                                                                                                                                                                                                                       |
+| [`E2E: State Snapshots > should remove malicious participant after fork and then post updated state snapshot on the reduced fork - multicall`](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts#L71) (line 71)                                                                            | [`INV-ENFSNAP-1.T1.P1`](../../../../specification/enforcement/snapshot-adoption.md#inv-enfsnap-1-t1-p1), [`UNIT-TEST-STATE-SNAPSHOT-FACET-1.P1`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md#unit-test-state-snapshot-facet-1.p1) |
+| [`E2E: State Snapshots > should not re-emit setState when a held old-fork reduction timeout runs after snapshot-event reduction`](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts#L96) (line 96)                                                                                         | —                                                                                                                                                                                                                                                                                       |
+| [`E2E: State Snapshots > should not re-emit setState when a snapshot event joins an already-entered old-fork reduction`](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts#L174) (line 174)                                                                                                | —                                                                                                                                                                                                                                                                                       |
+| [`E2E: State Snapshots > should handle snapshot update at blockHeight = 0 (first snapshot) - edge case since genesis is also height 0`](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts#L329) (line 329)                                                                                 | —                                                                                                                                                                                                                                                                                       |
+| [`E2E: State Snapshots > should update on-chain snapshot to a new fork genesis after dispute resolution`](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts#L356) (line 356)                                                                                                               | —                                                                                                                                                                                                                                                                                       |
+| [`E2E: State Snapshots > updateStateSnapshotSameFork during active dispute > disputeWindow.evidence.creationTimestamp != 0 → on-chain snapshot updates but disputeWindowMap NOT cleared (dispute kill still resolves)`](../../../../../../../test/e2e/E2E-StateSnapshots.test.ts#L392) (line 392) | —                                                                                                                                                                                                                                                                                       |

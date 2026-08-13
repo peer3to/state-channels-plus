@@ -7,7 +7,13 @@ const ts = require("typescript");
 const TEST_FILE_RE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?|\.t\.sol)$/;
 const TEST_ENTRYPOINT_RE =
     /(?:^|[\s"'=])((?:\.\/)?test\/[\w./-]+\.[cm]?[jt]sx?)/g;
-const TEST_LINK_RE = /\[(test(?: family)?)\]\(([^)#]+)#L(\d+)\)/gi;
+// A "Tests and covered test IDs" table row in a verification test report:
+// | [`selector`](<rel test path>#L<line>) (line <line>) | <covers cell> |
+const COVERS_ROW_RE =
+    /^\|\s*\[.+?\]\(([^)#]+)#L(\d+)\)\s*\(line (\d+)\)\s*\|\s*(.*?)\s*\|\s*$/;
+// Only whole permutation IDs are assignable as covered test IDs.
+const COVERS_ID_RE =
+    /(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\.P\d+|(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+?\.P\d+/g;
 const IGNORE_MARKER = "@spec-test-coverage-ignore";
 const VALID_IGNORE_RE = /^\s*\/\/\s*@spec-test-coverage-ignore:\s*(\S.*)$/;
 const SUITE_CALLS = new Set(["context", "describe", "suite"]);
@@ -226,49 +232,54 @@ function scanTestMappings(documents, cases) {
     const invalid = [];
     for (const document of documents) {
         const markdown = fs.readFileSync(document, "utf8");
-        for (const match of markdown.matchAll(TEST_LINK_RE)) {
-            const family = match[1].toLowerCase() === "test family";
+        for (const row of markdown.split(/\r?\n/)) {
+            const match = row.match(COVERS_ROW_RE);
+            if (!match) continue;
             const target = path.resolve(
                 path.dirname(document),
-                decodeURIComponent(match[2])
+                decodeURIComponent(match[1])
             );
-            const line = Number(match[3]);
+            const line = Number(match[2]);
+            const statedLine = Number(match[3]);
+            const covers = match[4].trim();
+            const owners = covers.match(COVERS_ID_RE) || [];
+            if (line !== statedLine) {
+                invalid.push({
+                    document,
+                    target,
+                    line,
+                    owner: owners[0] || null,
+                    reason: `link anchor #L${line} disagrees with (line ${statedLine})`
+                });
+                continue;
+            }
             const testCase = byLocation.get(`${target}\0${line}`);
-            const lineStart = markdown.lastIndexOf("\n", match.index) + 1;
-            const lineEnd = markdown.indexOf("\n", match.index);
-            const ownerLine = markdown.slice(
-                lineStart,
-                lineEnd < 0 ? markdown.length : lineEnd
-            );
-            const owner =
-                ownerLine.match(
-                    /(?:(?:REQ|INV)-[A-Z0-9]+-\d+\.T\d+\.P\d+|(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+\.P\d+|(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+)/
-                )?.[0] || null;
             if (!testCase) {
                 invalid.push({
                     document,
                     target,
                     line,
-                    owner,
+                    owner: owners[0] || null,
                     reason: "no test declaration at anchor"
                 });
                 continue;
             }
-            if (testCase.dynamic !== family) {
-                invalid.push({
-                    document,
-                    target,
-                    line,
-                    owner,
-                    reason: testCase.dynamic
-                        ? "dynamic/fuzz declaration requires `test family`"
-                        : "static declaration requires `test`"
-                });
+            if (!owners.length) {
+                // Unassigned row (`—`) — legal; anything else unparseable is not.
+                if (covers && covers !== "—" && covers !== "-")
+                    invalid.push({
+                        document,
+                        target,
+                        line,
+                        owner: null,
+                        reason: "Covers cell has no recognizable test ID"
+                    });
                 continue;
             }
             const key = `${target}\0${line}`;
             if (!mappings.has(key)) mappings.set(key, []);
-            mappings.get(key).push({ document, owner });
+            for (const owner of owners)
+                mappings.get(key).push({ document, owner });
         }
     }
     return { mappings, invalid };
@@ -277,7 +288,8 @@ function scanTestMappings(documents, cases) {
 module.exports = {
     IGNORE_MARKER,
     TEST_FILE_RE,
-    TEST_LINK_RE,
+    COVERS_ROW_RE,
+    COVERS_ID_RE,
     discoverTestFiles,
     extractJavaScriptTests,
     extractSolidityTests,

@@ -28,9 +28,9 @@ const LAYER_NAMES = [
     "verification",
     "audit"
 ];
-const REQUIREMENT_RE = /^(?:REQ|INV)-[A-Z0-9]+-\d+$/;
-const TEST_PLAN_ITEM_RE = /^(?:REQ|INV)-[A-Z0-9]+-\d+\.T\d+$/;
-const PERMUTATION_RE = /^(?:REQ|INV)-[A-Z0-9]+-\d+\.T\d+\.P\d+$/;
+const REQUIREMENT_RE = /^(?:REQ|INV)-[A-Z0-9-]+-\d+$/;
+const TEST_PLAN_ITEM_RE = /^(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+$/;
+const PERMUTATION_RE = /^(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\.P\d+$/;
 const IMPLEMENTATION_TEST_RE = /^(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+$/;
 const IMPLEMENTATION_PERMUTATION_RE =
     /^(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+\.P\d+$/;
@@ -65,12 +65,12 @@ function linkedIds(collection, needles) {
 }
 
 function planRequirementId(planId) {
-    return planId.match(/^((?:REQ|INV)-[A-Z0-9]+-\d+)\.T\d+$/)?.[1];
+    return planId.match(/^((?:REQ|INV)-[A-Z0-9-]+-\d+)\.T\d+$/)?.[1];
 }
 
 function permutationPlanId(permutationId) {
     return permutationId.match(
-        /^((?:REQ|INV)-[A-Z0-9]+-\d+\.T\d+)\.P\d+$/
+        /^((?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+)\.P\d+$/
     )?.[1];
 }
 
@@ -146,7 +146,7 @@ function collectPermutations(documents) {
     for (const document of documents) {
         const markdown = readText(document);
         for (const match of markdown.matchAll(
-            /\b(?:REQ|INV)-[A-Z0-9]+-\d+\.T\d+\.P\d+\b/g
+            /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\.P\d+\b/g
         )) {
             if (!mentions.has(match[0])) mentions.set(match[0], new Set());
             mentions.get(match[0]).add(document);
@@ -165,7 +165,7 @@ function collectPermutations(documents) {
             for (const row of table.rows) {
                 const plan = identityFromCell(row.cells[planIndex]);
                 for (const match of row.cells[permutationIndex].matchAll(
-                    /(?:REQ|INV)-[A-Z0-9]+-\d+\.T\d+\.P\d+/g
+                    /(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\.P\d+/g
                 )) {
                     const id = match[0];
                     if (permutationPlanId(id) !== plan) continue;
@@ -287,8 +287,8 @@ function collectDefinitions(documents, pattern) {
         const markdown = readText(document);
         const mentionPattern =
             pattern === REQUIREMENT_RE
-                ? /\b(?:REQ|INV)-[A-Z0-9]+-\d+\b/g
-                : /\b(?:REQ|INV)-[A-Z0-9]+-\d+\.T\d+\b/g;
+                ? /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\b/g
+                : /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\b/g;
         for (const match of markdown.matchAll(mentionPattern)) {
             if (!pattern.test(match[0])) continue;
             if (!mentions.has(match[0])) mentions.set(match[0], new Set());

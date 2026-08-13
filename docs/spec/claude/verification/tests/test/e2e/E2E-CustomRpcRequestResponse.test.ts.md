@@ -1,21 +1,35 @@
 # test/e2e/E2E-CustomRpcRequestResponse.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-CustomRpcRequestResponse.test.ts](../../../../../../../test/e2e/E2E-CustomRpcRequestResponse.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-CustomRpcRequestResponse.test.ts](../../../../../../../test/e2e/E2E-CustomRpcRequestResponse.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                    | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: custom RPC request/response over the runtime port > lets a client drive hostRpc.request()/sendOne() across the port (self + peer)` (line 120) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+A single large test builds two full `EvmStateMachine.p2pSetup` instances by hand (no shared
+harness): it deploys the full contract stack, loads the PingPong custom RPC manifest by module
+path (a default export resolved host-side via `resolveCustomRpcManifest`), opens a channel, and
+waits for mutual handshakes using only client-side `p2pEventHooks` forwarded over the runtime
+port. It then drives the custom `pingService` entirely from the client through
+`hostRpc.<service>.<method>()`: a self-call with no target (loopback on the peer's own host),
+request/response in both directions targeted by EVM address with the typed `SumResponse` payload
+(sum, nonce, requester) asserted exactly, a fire-and-forget `sendOne` that must resolve without
+error, and a remote handler failure that must propagate back across the port as an `Error`
+carrying the original message. The oracles are the returned payload values and the error shape;
+delivery of the fire-and-forget message and guard/dispatch internals are out of scope (the
+PingService suite covers one-way delivery, and the RPC unit suites cover wire shape and
+dispatch).
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                               | Covers                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: custom RPC request/response over the runtime port > lets a client drive hostRpc.request()/sendOne() across the port (self + peer)`](../../../../../../../test/e2e/E2E-CustomRpcRequestResponse.test.ts#L120) (line 120) | [`REQ-RPC-1.T1.P1`](../../../../specification/peer-communication/rpc.md#req-rpc-1-t1-p1), [`UNIT-TEST-RESOLVE-CUSTOM-RPC-1.P1`](../../../../implementation/source/src/rpc/resolveCustomRpcManifest.ts.md#unit-test-resolve-custom-rpc-1.p1) |

@@ -69,16 +69,14 @@ variants, and exact test declarations. `Not applicable` always has a concrete ra
 
 The layer is repository-shaped: every test file with executable declarations has exactly one report
 at `verification/tests/<path>.md`; fixtures, harness code, utilities, runners, and configuration
-are support code, not evidence units. Each report inventories every declaration with its level
-(unit/integration/system/end-to-end — classified per declaration), public production entry point,
-setup, stimulus, oracle/forbidden effects, environment, linked production files, assigned
-specification permutations and implementation obligations, and inspected evidence quality. The
-level directories are navigational indexes over these reports. Methodology views under
-`verification/views/` provide cross-component context without introducing another case-ID
-hierarchy.
+are support code, not evidence units. Each report has a short overview and one table row per
+declaration, whose `Covers` cell lists the test IDs (planned permutations) that declaration covers
+**in full** — partial credit is never recorded, and a test ID may be assigned to at most one test
+declaration across the whole tree. Tests with no assigned ID stay listed and are reported by
+static analysis. See `verification/README.md` for the template and assignment rules.
 
-Tests are mapped individually with `[test](...#L<declaration>)`; dynamic/fuzz declarations use
-`[test family](...)` and enumerate generated dimensions and oracles. File and directory links map no tests.
+A listed test ID is an exact mapping claim for that declaration; file and directory links map no
+tests.
 
 ### Audit
 

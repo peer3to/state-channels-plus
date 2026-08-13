@@ -1,24 +1,33 @@
 # test/evm/workerShutdown.test.ts — Test Report
 
-> **Test file:** [test/evm/workerShutdown.test.ts](../../../../../../../test/evm/workerShutdown.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/evm/workerShutdown.test.ts](../../../../../../../test/evm/workerShutdown.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [workerShutdown.ts](../../../../implementation/source/src/evm/node/workerShutdown.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                     | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------ | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `workerShutdown > resolves once the worker drains its loop and exits` (line 18)      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `workerShutdown > resolves immediately for an already-exited worker` (line 28)       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `workerShutdown > waits for a slow drain instead of abandoning the worker` (line 41) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `workerShutdown > completes concurrent shutdowns independently` (line 59)            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+A unit suite for `createWorkerShutdown`, driven with real `node:worker_threads` workers built
+from inline eval scripts that close their parent port on request. The oracle is the returned
+shutdown promise plus `worker.threadId === -1` (the thread really exited). The cases prove: the
+shutdown resolves once a draining worker exits naturally; it resolves immediately for a worker
+that already exited before `createWorkerShutdown`'s closure runs; a slow drain (delayed port
+close) is awaited rather than abandoned; and ten concurrent shutdowns complete independently.
+Forceful termination and the executor/runtime callers of this helper are out of scope.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                 | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| [`workerShutdown > resolves once the worker drains its loop and exits`](../../../../../../../test/evm/workerShutdown.test.ts#L18) (line 18)      | —      |
+| [`workerShutdown > resolves immediately for an already-exited worker`](../../../../../../../test/evm/workerShutdown.test.ts#L28) (line 28)       | —      |
+| [`workerShutdown > waits for a slow drain instead of abandoning the worker`](../../../../../../../test/evm/workerShutdown.test.ts#L41) (line 41) | —      |
+| [`workerShutdown > completes concurrent shutdowns independently`](../../../../../../../test/evm/workerShutdown.test.ts#L59) (line 59)            | —      |

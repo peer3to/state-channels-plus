@@ -1,24 +1,39 @@
 # test/e2e/E2E-StateTransition.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-StateTransition.test.ts](../../../../../../../test/e2e/E2E-StateTransition.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-StateTransition.test.ts](../../../../../../../test/e2e/E2E-StateTransition.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                       | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ---------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: State Transitions > Basic State Advancement > should handle consecutive blocks between participants` (line 13)   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Transitions > Basic State Advancement > should handle full round rotation` (line 21)                       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Transitions > Basic State Advancement > should handle multiple rotation rounds` (line 29)                  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: State Transitions > State Modifications > should handle honest peer transitions after fork resolution` (line 39) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+Happy-path smoke suite for the core state-transition loop. It starts real 3–4 peer sessions
+through the harness lifecycle, advances state through the real state-transition gossip path
+(`h.transition.advanceState` by count and by full leader-rotation rounds), and asserts
+convergence: all peers in sync and at the exact expected block height (n transitions after
+genesis land at height n−1). The fourth test stages an invalid-state-transition dispute against a
+malicious peer, resolves it on-chain, advances three more blocks on the reduced fork, and asserts
+only the honest peers remain in sync — i.e. ordinary block production keeps working after fork
+resolution. Oracles are the sync/height assertion helpers and dispute lifecycle waits only; the
+suite inspects no queue, storage, signature, or timestamp detail. Fault classification, timing
+windows, and queue behavior are out of scope (owned by the fraud-proof, timestamp-grace, and
+BlockQueueManager suites). No test IDs are assigned: every candidate permutation pairs the valid
+case with an invalid/opposite or bundled variant (e.g. `REQ-FIN-6.T1.P1`,
+`UNIT-TEST-STATE-TRANSITION-SERVICE-1.P2`) that these happy-path tests do not demonstrate on
+their own.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                        | Covers |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: State Transitions > Basic State Advancement > should handle consecutive blocks between participants`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L13) (line 13)   | —      |
+| [`E2E: State Transitions > Basic State Advancement > should handle full round rotation`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L21) (line 21)                       | —      |
+| [`E2E: State Transitions > Basic State Advancement > should handle multiple rotation rounds`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L29) (line 29)                  | —      |
+| [`E2E: State Transitions > State Modifications > should handle honest peer transitions after fork resolution`](../../../../../../../test/e2e/E2E-StateTransition.test.ts#L39) (line 39) | —      |

@@ -1,24 +1,37 @@
 # test/unit/DeploymentCache.test.ts — Test Report
 
-> **Test file:** [test/unit/DeploymentCache.test.ts](../../../../../../../test/unit/DeploymentCache.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/unit/DeploymentCache.test.ts](../../../../../../../test/unit/DeploymentCache.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                             | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `resolveOrDeployShared (component) > deploys once and serves every later caller from the marker` (line 16)                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `resolveOrDeployShared (component) > gives concurrent first callers a usable value each, then caches for the rest` (line 41) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `resolveOrDeployShared (component) > redeploys when the stored value no longer validates` (line 76)                          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `resolveOrDeployShared (component) > deploys directly when no cache dir is configured` (line 101)                            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite exercises `resolveOrDeployShared` from the test-harness module
+`test/harness/core/deploymentCache` — infrastructure that lets parallel test processes share one
+deployed contract address through a marker file — against fresh `mkdtemp` cache directories with
+stubbed `validate`/`deploy` callbacks and a real logger. The tests assert the cache contract at
+the caller-visible level: a single deploy followed by cache hits for every later caller (deploy
+counted once, `source` reported as `deployed` vs `cache`), concurrent first callers each receiving
+a usable deployed value with the last write published for subsequent callers, redeployment when
+the stored marker no longer validates (stale value replaced on disk), and a direct deploy when no
+cache directory is configured. Oracles are the returned `{value, source}` pairs, deploy-call
+counts, and the marker file's on-disk content. This is harness-only code with no implementation
+source report under `docs/spec/claude/implementation/source/`, so there is no Exercises target and
+no assignable test ID pool; protocol behavior is entirely out of scope.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                           | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| [`resolveOrDeployShared (component) > deploys once and serves every later caller from the marker`](../../../../../../../test/unit/DeploymentCache.test.ts#L16) (line 16)                   | —      |
+| [`resolveOrDeployShared (component) > gives concurrent first callers a usable value each, then caches for the rest`](../../../../../../../test/unit/DeploymentCache.test.ts#L41) (line 41) | —      |
+| [`resolveOrDeployShared (component) > redeploys when the stored value no longer validates`](../../../../../../../test/unit/DeploymentCache.test.ts#L76) (line 76)                          | —      |
+| [`resolveOrDeployShared (component) > deploys directly when no cache dir is configured`](../../../../../../../test/unit/DeploymentCache.test.ts#L101) (line 101)                           | —      |

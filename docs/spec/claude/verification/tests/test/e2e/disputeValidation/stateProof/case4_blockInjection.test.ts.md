@@ -1,29 +1,45 @@
 # test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                                                                                                                                     | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > signedBlocks > stateProof.signedBlocks[-1].header.channelId = random → DisputeStateProofHeaderMismatch` (line 10)                                                                                          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > signedBlocks > stateProof.signedBlocks[-1].header.forkId = random → DisputeStateProofHeaderMismatch` (line 43)                                                                                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > signedBlocks > stateProof.signedBlocks[0].header.forkId = random → DisputeStateProofHeaderMismatch` (line 76)                                                                                              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > milestone blockConfirmations > stateProof.milestones[-1].blockConfirmations[-1].header.channelId = random → DisputeStateProofHeaderMismatch` (line 115)                                                    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > milestone blockConfirmations > stateProof.milestones[-1].blockConfirmations[-1].header.forkId = random → DisputeStateProofHeaderMismatch` (line 152)                                                       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > dispute.input fields (channelId, forkId) > dispute.input.channelId = random → upload fails → ErrorCantParticipateInDispute` (line 191)                                                                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > dispute.input fields (channelId, forkId) > dispute.input.forkId = random (stateProof still on real fork) → junk fork ignored` (line 196)                                                                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > dispute.input fields (channelId, forkId) > uniform junk forkId (dispute.input + entire stateProof) > signedBlocks: uniform junk forkId → committed, no kill, honest peers stay on current fork` (line 202) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > dispute.input fields (channelId, forkId) > uniform junk forkId (dispute.input + entire stateProof) > milestones: uniform junk forkId → committed, no kill, honest peers stay on current fork` (line 247)   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite checks the header binding between a dispute's claims and every block carried in its
+state proof, plus the relevance gating for foreign-fork disputes. `stubConstructDispute`
+rewrites peer 3's dispute: the header `channelId` or `forkId` is randomized on the last
+signed block, the first signed block, and the last milestone confirmation (signedBlocks-only
+and calldata/milestone setups respectively), with `submitDoubleSignBlock(1)` as the trigger.
+Oracle for the mismatch cases: the dispute initiates, honest peers kill it and store a
+`DisputeStateProofHeaderMismatch` dispute fraud proof, and the window resolves. The
+uniform-junk-forkId cases instead rewrite `dispute.input` and the entire proof consistently
+to a nonexistent fork and assert the opposite outcome: the dispute commits, no kill fires
+within the observation window, and every honest peer stays on the original fork — a dispute
+for a fork nobody runs is ignored, not fought. Two skipped declarations cross-reference
+`uploadRevert/channelId.test.ts` and `disputeInputFields/forkId.test.ts`. The candidate
+permutations (`REQ-DISPUTE-PIPE-1.T1.P2` "each wrong identity", the `REQ-SP-7` linkage
+bundles) each span several identity or linkage scenarios, so no single test here covers one
+in full and no IDs are assigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                                                                                                                                                                           | Covers |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > signedBlocks > stateProof.signedBlocks[-1].header.channelId = random → DisputeStateProofHeaderMismatch`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L10) (line 10)                                                                                           | —      |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > signedBlocks > stateProof.signedBlocks[-1].header.forkId = random → DisputeStateProofHeaderMismatch`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L43) (line 43)                                                                                              | —      |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > signedBlocks > stateProof.signedBlocks[0].header.forkId = random → DisputeStateProofHeaderMismatch`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L76) (line 76)                                                                                               | —      |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > milestone blockConfirmations > stateProof.milestones[-1].blockConfirmations[-1].header.channelId = random → DisputeStateProofHeaderMismatch`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L115) (line 115)                                                    | —      |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > milestone blockConfirmations > stateProof.milestones[-1].blockConfirmations[-1].header.forkId = random → DisputeStateProofHeaderMismatch`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L152) (line 152)                                                       | —      |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > dispute.input fields (channelId, forkId) > dispute.input.channelId = random → upload fails → ErrorCantParticipateInDispute`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L191) (line 191)                                                                     | —      |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > dispute.input fields (channelId, forkId) > dispute.input.forkId = random (stateProof still on real fork) → junk fork ignored`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L196) (line 196)                                                                   | —      |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > dispute.input fields (channelId, forkId) > uniform junk forkId (dispute.input + entire stateProof) > signedBlocks: uniform junk forkId → committed, no kill, honest peers stay on current fork`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L202) (line 202) | —      |
+| [`E2E: dispute validation / stateProof / block injection with incorrect channelId/forkId > dispute.input fields (channelId, forkId) > uniform junk forkId (dispute.input + entire stateProof) > milestones: uniform junk forkId → committed, no kill, honest peers stay on current fork`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case4_blockInjection.test.ts#L247) (line 247)   | —      |

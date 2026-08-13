@@ -1,21 +1,31 @@
 # test/evm/EvmFactory.test.ts — Test Report
 
-> **Test file:** [test/evm/EvmFactory.test.ts](../../../../../../../test/evm/EvmFactory.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/evm/EvmFactory.test.ts](../../../../../../../test/evm/EvmFactory.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [EvmFactory.ts](../../../../implementation/source/src/evm/EvmFactory.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                             | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------ | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `EvmFactory > should execute custom precompiles without disabling the built-in console precompile` (line 27) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+A single regression case for `createEvm`: registering a caller-supplied custom precompile must
+not disable the built-in console precompile. The test builds an EVM through the public factory
+with one custom precompile and a record-only logger, then issues two `runCall`s directly. The
+oracles assert the custom precompile executes at its address exactly once and returns the
+ABI-encoded value unchanged, and that a subsequent `log(string)` call to `CONSOLE_ADDRESS` still
+reaches the console precompile (the logger's `debug` spy receives the decoded message) with no
+exception on either call. Hardfork selection, jumpdest caching, and executor wrappers are out of
+scope — this file pins only the precompile-composition behavior of the factory.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                     | Covers |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`EvmFactory > should execute custom precompiles without disabling the built-in console precompile`](../../../../../../../test/evm/EvmFactory.test.ts#L27) (line 27) | —      |

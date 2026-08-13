@@ -1,21 +1,31 @@
 # test/stateManager/StateManagerTimeout.test.ts — Test Report
 
-> **Test file:** [test/stateManager/StateManagerTimeout.test.ts](../../../../../../../test/stateManager/StateManagerTimeout.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/stateManager/StateManagerTimeout.test.ts](../../../../../../../test/stateManager/StateManagerTimeout.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [StateManager.ts](../../../../implementation/source/src/stateManager/StateManager.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                   | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------ | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `StateManager timeout > does not submit a timeout when the existing dispute window predates its deadline` (line 7) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite drives `StateManager` timeout scheduling through the full harness runtime: it stages a
+pre-dispute setup with a short `evidenceTime`, marks a peer AFK, posts a tampered dispute from
+another peer, and waits until the dispute is committed on chain. The oracle is the window-age
+guard on timeout submission: because the committed dispute window predates the timeout's
+deadline, the observing peer must not submit a timeout — after sleeping almost the whole evidence
+window, `getTimeout` for the active fork still returns `null` via the harness query. Due-time
+computation, forced-versus-normal timeout selection, and the other scheduling branches are out of
+scope here; the single case isolates the early-window rejection.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                            | Covers                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| [`StateManager timeout > does not submit a timeout when the existing dispute window predates its deadline`](../../../../../../../test/stateManager/StateManagerTimeout.test.ts#L7) (line 7) | [`UNIT-TEST-STATE-MANAGER-3.P4`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-3.p4) |

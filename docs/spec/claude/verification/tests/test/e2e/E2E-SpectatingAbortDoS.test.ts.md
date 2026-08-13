@@ -1,26 +1,43 @@
 # test/e2e/E2E-SpectatingAbortDoS.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-SpectatingAbortDoS.test.ts](../../../../../../../test/e2e/E2E-SpectatingAbortDoS.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-SpectatingAbortDoS.test.ts](../../../../../../../test/e2e/E2E-SpectatingAbortDoS.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: spectating strategy junk-block handling > cuts the sender of an unauthenticated junk block and keeps a SYNCED spectator running` (line 21)                                | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: spectating strategy junk-block handling > cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running` (line 57)                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: spectating strategy junk-block handling > cuts the sender of an authenticated outsider-authored block over the live queue and keeps a SYNCED spectator running` (line 98) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: spectating strategy junk-block handling > cuts both the relayer and the author when an outsider-authored block arrives via a different peer` (line 147)                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: spectating strategy junk-block handling > cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED` (line 206)      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: active-participant stale-membership handling > cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute` (line 260)                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+A DoS-resistance suite for the spectating/pending-joiner validation context: a non-participant
+that feeds a spectator a block it must reject has to be dropped and blacklisted, and must never be
+able to abort the victim. The tests stage live channels through the `MathTestSession` harness, add
+spectator victims and non-participant attackers, craft junk, outsider-authored, and
+stale-membership block confirmations with the byzantine helpers, and deliver them over real
+transports via `sendBlockConfirmation`. Both rejection paths are exercised: synchronous ingest
+rejection of unauthenticated junk, and queued rejection of an authenticated outsider-authored
+block when `executeQueuedEntry` runs `onBlockConfirmation` on the live queue — the vector that
+used to abort the spectator. One test separates supplier from author (relayed outsider block) and
+asserts both are cut; the last test repeats the stale-membership attack against an active
+participant. Oracles are `peerBlacklistedAndDisconnected` plus the victim's preserved status
+(SYNCED, PENDING_PARTICIPANT, or PARTICIPATING), and for the participant variant additionally no
+dispute and continued honest-peer sync. No IDs are assigned: every applicable permutation bundles
+all deviations, contexts, or hooks into a single ID (`REQ-BLOCK-PIPE-3.T1.P1`/`P2`,
+`REQ-GOSSIP-2.T1.P1`, `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1.P1`), which no single test here
+covers in full.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                    | Covers |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: spectating strategy junk-block handling > cuts the sender of an unauthenticated junk block and keeps a SYNCED spectator running`](../../../../../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L21) (line 21)                                | —      |
+| [`E2E: spectating strategy junk-block handling > cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running`](../../../../../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L57) (line 57)                             | —      |
+| [`E2E: spectating strategy junk-block handling > cuts the sender of an authenticated outsider-authored block over the live queue and keeps a SYNCED spectator running`](../../../../../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L98) (line 98) | —      |
+| [`E2E: spectating strategy junk-block handling > cuts both the relayer and the author when an outsider-authored block arrives via a different peer`](../../../../../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L147) (line 147)                  | —      |
+| [`E2E: spectating strategy junk-block handling > cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED`](../../../../../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L206) (line 206)     | —      |
+| [`E2E: active-participant stale-membership handling > cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute`](../../../../../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L260) (line 260)                            | —      |

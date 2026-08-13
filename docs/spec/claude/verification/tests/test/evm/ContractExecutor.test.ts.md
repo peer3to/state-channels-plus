@@ -1,34 +1,49 @@
 # test/evm/ContractExecutor.test.ts — Test Report
 
-> **Test file:** [test/evm/ContractExecutor.test.ts](../../../../../../../test/evm/ContractExecutor.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/evm/ContractExecutor.test.ts](../../../../../../../test/evm/ContractExecutor.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [ContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                             | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `ContractExecutor > should successfully execute a call to get a value` (line 65)                                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should successfully execute a call to set a value` (line 82)                                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should successfully set state using bytes` (line 109)                                                    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should return RPC-style logs` (line 141)                                                                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should simulate a mutating call without persisting it` (line 170)                                        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should not expand the underlying EVM DB on simulated mutating calls` (line 199)                          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should expand the underlying EVM DB on canonical mutating calls` (line 214)                              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should make simulations wait while a canonical call holds the mutex` (line 229)                          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should simulate from the committed state after a canonical call releases` (line 281)                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should serialize detached simulations` (line 344)                                                        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should serialize many detached canonical increments and simulations without corrupting state` (line 382) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should serialize canonical detached calls before entering evm.runCall` (line 461)                        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should throw an error for invalid function calls` (line 510)                                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractExecutor > should properly decode Solidity revert errors` (line 524)                                                | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite drives a `ContractExecutor` wrapped around one raw `@ethereumjs/evm` instance with a
+deployed `SimpleNumberStorage` fixture, calling `executeCall`, `simulateCall`, and `deploy`
+directly (addresses are passed mixed-case to prove checksum-insensitive routing). The oracles
+decode return values, inspect RPC-style logs (address/topics/data parseable by an ethers
+interface), measure the underlying trie database size, and count concurrently active `runCall`
+invocations through record-only patches. The cases prove: reads and canonical writes commit
+(state and DB growth), `setState` accepts raw bytes, simulations never persist or expand the DB,
+simulations wait for an in-flight canonical call and then read its committed state, detached
+canonical calls and simulation storms are serialized to exactly one active `runCall` without
+corrupting a mixed increment workload, and failures decode (plain revert message and Solidity
+`Error(string)` custom-error decoding via `tryDecodeCustomError`). Worker-mode execution is out
+of scope (owned by `test/evm/WorkerContractExecutor.test.ts`). No pool test ID names the
+executor's mutex/simulation contract as a single-test permutation, so no ID is assigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                            | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`ContractExecutor > should successfully execute a call to get a value`](../../../../../../../test/evm/ContractExecutor.test.ts#L65) (line 65)                                              | —      |
+| [`ContractExecutor > should successfully execute a call to set a value`](../../../../../../../test/evm/ContractExecutor.test.ts#L82) (line 82)                                              | —      |
+| [`ContractExecutor > should successfully set state using bytes`](../../../../../../../test/evm/ContractExecutor.test.ts#L109) (line 109)                                                    | —      |
+| [`ContractExecutor > should return RPC-style logs`](../../../../../../../test/evm/ContractExecutor.test.ts#L141) (line 141)                                                                 | —      |
+| [`ContractExecutor > should simulate a mutating call without persisting it`](../../../../../../../test/evm/ContractExecutor.test.ts#L170) (line 170)                                        | —      |
+| [`ContractExecutor > should not expand the underlying EVM DB on simulated mutating calls`](../../../../../../../test/evm/ContractExecutor.test.ts#L199) (line 199)                          | —      |
+| [`ContractExecutor > should expand the underlying EVM DB on canonical mutating calls`](../../../../../../../test/evm/ContractExecutor.test.ts#L214) (line 214)                              | —      |
+| [`ContractExecutor > should make simulations wait while a canonical call holds the mutex`](../../../../../../../test/evm/ContractExecutor.test.ts#L229) (line 229)                          | —      |
+| [`ContractExecutor > should simulate from the committed state after a canonical call releases`](../../../../../../../test/evm/ContractExecutor.test.ts#L281) (line 281)                     | —      |
+| [`ContractExecutor > should serialize detached simulations`](../../../../../../../test/evm/ContractExecutor.test.ts#L344) (line 344)                                                        | —      |
+| [`ContractExecutor > should serialize many detached canonical increments and simulations without corrupting state`](../../../../../../../test/evm/ContractExecutor.test.ts#L382) (line 382) | —      |
+| [`ContractExecutor > should serialize canonical detached calls before entering evm.runCall`](../../../../../../../test/evm/ContractExecutor.test.ts#L461) (line 461)                        | —      |
+| [`ContractExecutor > should throw an error for invalid function calls`](../../../../../../../test/evm/ContractExecutor.test.ts#L510) (line 510)                                             | —      |
+| [`ContractExecutor > should properly decode Solidity revert errors`](../../../../../../../test/evm/ContractExecutor.test.ts#L524) (line 524)                                                | —      |

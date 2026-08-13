@@ -1,21 +1,34 @@
 # test/e2e/disputeValidation/invalidStateProofAuditing.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/invalidStateProofAuditing.test.ts](../../../../../../../../test/e2e/disputeValidation/invalidStateProofAuditing.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/invalidStateProofAuditing.test.ts](../../../../../../../../test/e2e/disputeValidation/invalidStateProofAuditing.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                               | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / invalidStateProofAuditing > [calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves` (line 12) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The single test exercises the self-slash guard for a failing `DisputeInvalidStateProof` on the
+calldata path. Peer 0 posts a valid dispute with real auditing data (captured via
+`postTamperedDispute` with a no-op tamper), and the test waits for its commitment. Byzantine peer
+2 then clones the real auditing data, replaces `latestFinalizedStateStateMachineState` with 128
+random bytes so its hash no longer matches `dispute.input.disputeAuditingDataHash`, and submits it
+directly through `applyDisputeFraudProofs`. The oracles assert the byzantine proof author is
+slashed on-chain, the valid dispute's commitment is still present in the window's commitments, and
+normal reduction settles the fork without the slashed participant (`resolveDisputeWait` with one
+synthetic on-chain participant from the calldata setup). The failing-proof self-slash permutation
+itself is assigned to the genesis-linkage sibling test, which additionally asserts the honest
+target stays unslashed; the remaining nearby permutations are multi-scenario bundles, so no ID is
+recorded here.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                                                           | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| [`E2E: dispute validation / invalidStateProofAuditing > [calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves`](../../../../../../../../test/e2e/disputeValidation/invalidStateProofAuditing.test.ts#L12) (line 12) | —      |

@@ -1,21 +1,37 @@
 # test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts — Test Report
 
-> **Test file:** [test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts](../../../../../../../../test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts](../../../../../../../../test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [JoinChannelService.ts](../../../../../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                         | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `JoinChannel signature requests > validates requests, signs exact joins, and fails fast when a threshold transport is missing` (line 10) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+One large test drives `JoinChannelService` on a live two-peer `MathTestSession` harness plus two
+spectators: a joiner first collects a full threshold confirmation via
+`collectJoinChannelConfirmation` (both member signatures assemble), then replays crafted
+`requestJoinSignature` requests against peer 0 through the real remote-RPC layer via
+`execOnHost`. Oracles: the valid, fully bound request returns a countersignature that recovers
+peer 0's address over the exact submitted bytes; a request relayed by a non-participant peer, a
+forged 65-byte signature, a wrong `channelId`, an expired deadline, a mismatched snapshot pin, a
+mismatched fork pin, and a responder whose local signer is outside the threshold each reject with
+their declared error message. Finally, after `forceInboundJoinWait` leaves a threshold
+participant without a transport, `collectJoinChannelConfirmation` fails at preflight in under one
+second and leaves no partial join state (status stays `SYNCED`, no join-submission height).
+Deadline-boundary probing (the expired case uses `0n`, not the edge), per-member collection
+failure modes (silent/erroring member, deadline-bounded timeout), and submission-time pin
+rechecks are not exercised, so those permutations stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                 | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`JoinChannel signature requests > validates requests, signs exact joins, and fails fast when a threshold transport is missing`](../../../../../../../../test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts#L10) (line 10) | [`UNIT-TEST-JOIN-CHANNEL-SERVICE-1.P1`](../../../../../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md#unit-test-join-channel-service-1.p1), [`UNIT-TEST-JOIN-CHANNEL-SERVICE-1.P3`](../../../../../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md#unit-test-join-channel-service-1.p3), [`UNIT-TEST-JOIN-CHANNEL-SERVICE-2.P1`](../../../../../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md#unit-test-join-channel-service-2.p1), [`UNIT-TEST-JOIN-CHANNEL-SERVICE-2.P2`](../../../../../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md#unit-test-join-channel-service-2.p2), [`UNIT-TEST-JOIN-CHANNEL-SERVICE-2.P4`](../../../../../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md#unit-test-join-channel-service-2.p4), [`UNIT-TEST-JOIN-CHANNEL-SERVICE-2.P5`](../../../../../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md#unit-test-join-channel-service-2.p5), [`INV-JOINSIG-1.T1.P1`](../../../../../specification/peer-communication/join-authorization.md#inv-joinsig-1-t1-p1), [`INV-JOINSIG-1.T1.P3`](../../../../../specification/peer-communication/join-authorization.md#inv-joinsig-1-t1-p3), [`INV-JOINSIG-1.T1.P4`](../../../../../specification/peer-communication/join-authorization.md#inv-joinsig-1-t1-p4), [`REQ-JOINSIG-2.T1.P3`](../../../../../specification/peer-communication/join-authorization.md#req-joinsig-2-t1-p3) |

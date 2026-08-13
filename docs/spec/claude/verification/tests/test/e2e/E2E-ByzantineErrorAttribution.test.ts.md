@@ -1,22 +1,31 @@
 # test/e2e/E2E-ByzantineErrorAttribution.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-ByzantineErrorAttribution.test.ts](../../../../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-ByzantineErrorAttribution.test.ts](../../../../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                  | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ----------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: Byzantine error attribution > suppresses a stray detached error originating on a malicious peer` (line 6)   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Byzantine error attribution > does not suppress the same error when it comes from an honest peer` (line 24) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+Two tests for the test session's detached-error attribution, not for a protocol component: a
+stray rejected promise raised on a peer marked malicious is suppressed (no detached error is
+recorded within the wait window), while the identical rejection from an honest peer must surface
+through `expectFirstDetachedError`. Both run against a real three-peer channel so the error path
+is the production host wiring, but the behavior under test is harness/session infrastructure —
+the error-to-peer attribution every other e2e suite relies on to ignore expected byzantine
+failures without hiding honest-peer bugs. There is no matching specification or implementation
+permutation for this infrastructure, so no test IDs are assigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                             | Covers |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: Byzantine error attribution > suppresses a stray detached error originating on a malicious peer`](../../../../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts#L6) (line 6)    | —      |
+| [`E2E: Byzantine error attribution > does not suppress the same error when it comes from an honest peer`](../../../../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts#L24) (line 24) | —      |

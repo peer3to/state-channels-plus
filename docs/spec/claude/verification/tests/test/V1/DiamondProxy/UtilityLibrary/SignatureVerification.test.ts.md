@@ -1,31 +1,45 @@
 # test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts — Test Report
 
-> **Test file:** [test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [UtilityFacet.sol](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                           | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `StateChannelUtilLibrary > Signature Verification > 1 of 1 - Success` (line 48)                                            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Signature Verification > 1 of 1 - Wrong encoded message` (line 60)                              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Signature Verification > 1 of 1 - No signature` (line 74)                                       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Signature Verification > 1 of 1 - Invalid signature length` (line 88)                           | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Treshold Signature Verification > 3 of 3 inorder - success` (line 107)                          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Treshold Signature Verification > 3 of 3 not inorder - success` (line 124)                      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Treshold Signature Verification > 3 of 3 with more signatures not inorder - success` (line 141) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Treshold Signature Verification > 2 of 3 - fail` (line 163)                                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Treshold Signature Verification > 2 of 3 with one duplicate signature - fail` (line 183)        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Treshold Signature Verification > 3 of 3 with changed message - fail` (line 203)                | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateChannelUtilLibrary > Treshold Signature Verification > 2 of 3 with one invalid signature length - fail` (line 223)   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+A Hardhat suite that deploys `UtilityFacet` standalone and calls `verifyThresholdSigned` directly
+with ethers `personal_sign` signatures over an ABI-encoded message hash. The oracle is the
+returned `(ok, reason)` tuple — `"Cryptography: Not enough signatures provided"` vs
+`"Cryptography: Not enough valid signatures"` — or the `ECDSAInvalidSignatureLength` custom error
+for length-corrupted signatures. Cases walk the 1-of-1 path (success, wrong encoded message, no
+signature, invalid length) and the 3-of-3 threshold path: signatures in and out of order, extra
+signatures tolerated, a one-signature shortfall, a duplicate signature never double-counted
+toward the threshold, a changed message invalidating all signatures, and a length-corrupted
+signature in a batch. Diamond routing, membership-union hops, and signer malleation (as opposed
+to truncation/corruption) are out of scope. The remaining planned permutations either bundle two
+scenarios (`P3` missing _and_ extra member) or target surfaces this suite does not touch
+(malleated encodings, `tryDecode`, genesis predicates), so they stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                | Covers                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`StateChannelUtilLibrary > Signature Verification > 1 of 1 - Success`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L48) (line 48)                                             | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Signature Verification > 1 of 1 - Wrong encoded message`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L60) (line 60)                               | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Signature Verification > 1 of 1 - No signature`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L74) (line 74)                                        | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Signature Verification > 1 of 1 - Invalid signature length`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L88) (line 88)                            | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Treshold Signature Verification > 3 of 3 inorder - success`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L107) (line 107)                          | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Treshold Signature Verification > 3 of 3 not inorder - success`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L124) (line 124)                      | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Treshold Signature Verification > 3 of 3 with more signatures not inorder - success`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L141) (line 141) | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Treshold Signature Verification > 2 of 3 - fail`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L163) (line 163)                                     | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Treshold Signature Verification > 2 of 3 with one duplicate signature - fail`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L183) (line 183)        | [`UNIT-TEST-UTILITY-FACET-1.P1`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md#unit-test-utility-facet-1.p1), [`REQ-ENFPROOF-2.T1.P1`](../../../../../../specification/enforcement/proof-verification.md#req-enfproof-2-t1-p1) |
+| [`StateChannelUtilLibrary > Treshold Signature Verification > 3 of 3 with changed message - fail`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L203) (line 203)                | —                                                                                                                                                                                                                                                                                  |
+| [`StateChannelUtilLibrary > Treshold Signature Verification > 2 of 3 with one invalid signature length - fail`](../../../../../../../../../test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts#L223) (line 223)   | —                                                                                                                                                                                                                                                                                  |

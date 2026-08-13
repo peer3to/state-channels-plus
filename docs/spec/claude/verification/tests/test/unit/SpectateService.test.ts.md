@@ -1,22 +1,39 @@
 # test/unit/SpectateService.test.ts — Test Report
 
-> **Test file:** [test/unit/SpectateService.test.ts](../../../../../../../test/unit/SpectateService.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/unit/SpectateService.test.ts](../../../../../../../test/unit/SpectateService.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [SpectateService.ts](../../../../implementation/source/src/rpc/services/spectate/SpectateService.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                  | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `Unit: SpectateService > generateSyncPayload > committed dispute missing locally → recovers before generating the payload` (line 12)              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Unit: SpectateService > generateSyncPayload > all dispute events suppressed → still declines the disputed fork instead of proving it` (line 162) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+Two regression tests for the responder side of spectate sync, driving
+`spectate.generateSyncPayload` through the harness control RPC on a real 4-peer channel while the
+observer's reduction entry points and incoming dispute-committed events are held. The first stages
+a dispute commitment that is on-chain but genuinely missing from local storage and pins that
+`generateSyncPayload` recovers it (via the same
+`EventSyncService.loadSynchronizedWindowCommitments` owner reduction uses) instead of throwing —
+the oracles verify the gap was real before the call and that afterwards every window commitment
+resolves to a stored confirmation, with the held events and frozen reduction ruling out any other
+recovery path. The second suppresses every dispute event so the local mirror still reports the
+fork undisputed while the chain says it is, and asserts the payload walk takes the disputed flag
+from the chain: the call returns `null` rather than proving a disputed, already-reducible fork as
+the tip. The suite does not exercise the planned obligation permutations for this component — the
+requester verification chain (`UNIT-TEST-SPECTATE-SERVICE-1`) and responder target proving
+(`UNIT-TEST-SPECTATE-SERVICE-2`) — so no test IDs are assigned here; both scenarios sit outside
+those tables.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                 | Covers |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`Unit: SpectateService > generateSyncPayload > committed dispute missing locally → recovers before generating the payload`](../../../../../../../test/unit/SpectateService.test.ts#L12) (line 12)               | —      |
+| [`Unit: SpectateService > generateSyncPayload > all dispute events suppressed → still declines the disputed fork instead of proving it`](../../../../../../../test/unit/SpectateService.test.ts#L162) (line 162) | —      |

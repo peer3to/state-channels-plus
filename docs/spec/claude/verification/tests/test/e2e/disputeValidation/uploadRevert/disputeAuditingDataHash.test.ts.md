@@ -1,21 +1,31 @@
 # test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts](../../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts](../../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                                    | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / uploadRevert / disputeAuditingDataHash > with calldata: dispute.input.disputeAuditingDataHash tampered → dispute upload fails → ErrorAuditingDataHashMismatch` (line 19) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+A single upload-gate case for auditing-data hash binding on the calldata path:
+`preDisputeSetupCalldataPath` makes peer 3 construct a dispute that posts auditing data,
+`DisputeTampering.tamperAuditingDataHash` breaks `dispute.input.disputeAuditingDataHash`, and
+the harness asserts the upload reverts with the decoded custom error
+`ErrorAuditingDataHashMismatch` — the chain refuses a dispute whose claimed hash does not
+match the posted calldata. No window state is created and the audit pipeline is never
+reached, so auditor behavior is out of scope. The matching gate permutation
+(`UNIT-TEST-DISPUTE-MANAGER-FACET-1.P1`, "each gate revert") bundles all upload gates and is
+not covered in full by this one case, so no ID is assigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                                                                              | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: dispute validation / uploadRevert / disputeAuditingDataHash > with calldata: dispute.input.disputeAuditingDataHash tampered → dispute upload fails → ErrorAuditingDataHashMismatch`](../../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts#L19) (line 19) | —      |

@@ -1,25 +1,27 @@
 # test/scripts/e2eParallelWorkspacePreparation.test.ts — Test Report
 
-> **Test file:** [test/scripts/e2eParallelWorkspacePreparation.test.ts](../../../../../../../test/scripts/e2eParallelWorkspacePreparation.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/scripts/e2eParallelWorkspacePreparation.test.ts](../../../../../../../test/scripts/e2eParallelWorkspacePreparation.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                      | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| --------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `distributed workspace preparation > reuses compiled contracts for non-contract source changes` (line 27)             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed workspace preparation > recompiles when Solidity inputs change or preparation is stale` (line 37)        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed workspace preparation > does not pass unrelated server secrets into uploaded code` (line 59)             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed workspace preparation > rebuilds missing native modules once and fails the preparation loudly` (line 69) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed workspace preparation > installs and prepares linked repositories in dependency order` (line 134)        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+This suite unit-tests workspace preparation on a distributed worker: `prepareWorkspace`/`selectPrepareScript` from `scripts/e2e-parallel/distributed/workspacePreparation.js` and `buildWorkerEnvironment` from `remoteEnvironment.js`. The preparation tests run against real temporary workspaces with a stub `pnpm` binary on `PATH` that records its invocations to a JSONL file. Oracles assert that non-contract source changes select the cached prepare script while Solidity inputs (`contracts/`, `hardhat.config.ts`, `package.json`) or stale preparation force the full script; that `buildWorkerEnvironment` forwards only an allowlist (`PATH`, `HOME`) and drops server secrets; that a missing native module triggers exactly one `pnpm rebuild` and then fails the preparation loudly, naming the module; and that linked repositories are installed and prepared in dependency order with the right lockfile flags (`--no-frozen-lockfile` vs `--frozen-lockfile` after `pnpm import`), no dangerous build or ignore-scripts flags, `HUSKY=0`, a shared `pnpm-store`, every child registered with the lease runtime, and human-readable stage callbacks. This is worker tooling under `scripts/`, so no specification or implementation test-plan permutation applies to this file.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                       | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| [`distributed workspace preparation > reuses compiled contracts for non-contract source changes`](../../../../../../../test/scripts/e2eParallelWorkspacePreparation.test.ts#L27) (line 27)             | —      |
+| [`distributed workspace preparation > recompiles when Solidity inputs change or preparation is stale`](../../../../../../../test/scripts/e2eParallelWorkspacePreparation.test.ts#L37) (line 37)        | —      |
+| [`distributed workspace preparation > does not pass unrelated server secrets into uploaded code`](../../../../../../../test/scripts/e2eParallelWorkspacePreparation.test.ts#L59) (line 59)             | —      |
+| [`distributed workspace preparation > rebuilds missing native modules once and fails the preparation loudly`](../../../../../../../test/scripts/e2eParallelWorkspacePreparation.test.ts#L69) (line 69) | —      |
+| [`distributed workspace preparation > installs and prepares linked repositories in dependency order`](../../../../../../../test/scripts/e2eParallelWorkspacePreparation.test.ts#L134) (line 134)       | —      |

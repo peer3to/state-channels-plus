@@ -1,23 +1,38 @@
 # test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts](../../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts](../../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                                                                                   | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / stateProof / structural rules > stateProof.milestones and stateProof.signedBlocks are mutually exclusive > stateProof.milestones.length > 0 AND stateProof.signedBlocks.length > 0 → DisputeInvalidStateProof` (line 6) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / structural rules > each milestone must have at least one blockConfirmation > stateProof.milestones[0].blockConfirmations = [] → DisputeInvalidStateProof` (line 60)                                        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / structural rules > unfinalized milestone block structure > invalid tail signature → DisputeInvalidBlockStructure` (line 104)                                                                               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite pins the structural admission rules of `verifyStateProof` as auditors evaluate them
+through the mirrored canonical logic: `preDisputeSetupCalldataPath` yields a milestones-only
+proof, `stubConstructDispute` mutates peer 3's dispute, and peer 1's double-sign provides the
+trigger. The first case copies a real milestone block into `stateProof.signedBlocks` so both
+arrays are non-empty — the milestones-XOR-signedBlocks constraint rejects the proof and the
+dispute dies with `DisputeInvalidStateProof` (the copy keeps headers matching so the header
+check cannot fire first). The second empties `milestones[0].blockConfirmations`, which fails
+milestone verification the same way. The third appends an unfinalized milestone confirmation
+whose author signature belongs to a different signer, killed as
+`DisputeInvalidBlockStructure`. Oracles throughout: dispute initiated with auditing data,
+`onDisputeKilled` observed, the exact proof type stored by honest peers, and the window
+resolved. Header-mismatch and replay-level tampers are out of scope (Case 4 and the
+milestone-content suite). The empty-confirmations and tail-signature cases map only to
+bundled permutations (`REQ-SP-1`, `UNIT-TEST-STATE-PROOF-FACET-1.P3`) and stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                                                                                                                        | Covers                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / stateProof / structural rules > stateProof.milestones and stateProof.signedBlocks are mutually exclusive > stateProof.milestones.length > 0 AND stateProof.signedBlocks.length > 0 → DisputeInvalidStateProof`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L6) (line 6) | [`UNIT-TEST-STATE-PROOF-FACET-1.P5`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md#unit-test-state-proof-facet-1.p5) |
+| [`E2E: dispute validation / stateProof / structural rules > each milestone must have at least one blockConfirmation > stateProof.milestones[0].blockConfirmations = [] → DisputeInvalidStateProof`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L60) (line 60)                                       | —                                                                                                                                                                           |
+| [`E2E: dispute validation / stateProof / structural rules > unfinalized milestone block structure > invalid tail signature → DisputeInvalidBlockStructure`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L104) (line 104)                                                                             | —                                                                                                                                                                           |

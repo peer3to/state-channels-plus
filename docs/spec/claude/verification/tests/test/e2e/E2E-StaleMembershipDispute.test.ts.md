@@ -1,21 +1,33 @@
 # test/e2e/E2E-StaleMembershipDispute.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-StaleMembershipDispute.test.ts](../../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-StaleMembershipDispute.test.ts](../../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                     | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: stale-membership dispute > departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain` (line 10) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+One adversarial scenario on a four-peer channel with a real participant leave: peer 3's dispute
+construction is stubbed to append a state-proof head block authored by the departed peer and bound
+to the stale pre-leave snapshot at the head's coordinates, then a double-sign triggers dispute
+posting. The oracles assert the honest peers classify exactly the coordinate-binding failure —
+`DisputeBlockAuthorNotParticipant` stored on peers 0/1/3, with the structural, state-proof, and
+apply fraud-proof types explicitly absent — and that the malicious disputer is slashed on-chain by
+the kill transaction, independent of the double-sign fork reduction. This pins the audit's author
+check to the resulting snapshot's coordinates instead of a naive membership lookup in a stale era.
+No planned permutation is assigned: the matching audit-layer permutations (e.g.
+`REQ-DISPUTE-PIPE-2.T1.P1` signatures/authorization, `REQ-DISPUTE-PIPE-5.T1.P2` exactly one stored
+proof) each bundle more scenarios than this single test demonstrates.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                             | Covers |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: stale-membership dispute > departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain`](../../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts#L10) (line 10) | —      |

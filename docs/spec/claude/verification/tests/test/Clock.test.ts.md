@@ -1,24 +1,39 @@
 # test/Clock.test.ts — Test Report
 
-> **Test file:** [test/Clock.test.ts](../../../../../../test/Clock.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/Clock.test.ts](../../../../../../test/Clock.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [Clock.ts](../../../implementation/source/src/Clock.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                             | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `Clock > initializes idempotently when real-provider calls overlap` (line 14)                | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Clock > re-initializes when a different provider arrives` (line 30)                         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Clock > recovers with a live provider after a failed replacement` (line 43)                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Clock > settles overlapping different-provider initializations on one live owner` (line 64) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite drives the `Clock` singleton against the real in-process Hardhat network — no mocks —
+through its public surface: `Clock.init`, `Clock.getBlockchainTime`,
+`Clock.getAverageOnChainBlockTime`, and `Clock.ownsProvider`, using `ethers.provider` plus extra
+`BrowserProvider` instances over the same node. It asserts four lifecycle properties: overlapping
+`init` calls with the same provider are idempotent (same block number, non-negative average block
+time), a different provider replaces the previous owner and serves live reads, a failed
+replacement with a destroyed provider throws without taking ownership and a later live provider
+recovers, and racing inits with two distinct providers settle on exactly one owner that still
+serves reads. Oracles are `ownsProvider` booleans and live `blockNumber` reads after each
+transition. Out of scope: chain-time estimation accuracy, skew bounds, and deadline semantics
+(`REQ-TIME-*`), which this suite does not measure. No test IDs are assignable: the Clock
+implementation report defines no component test obligations, and each `REQ-TIME-1` permutation
+bundles identity/deadline/skew sweeps far beyond this initialization-lifecycle suite.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                         | Covers |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`Clock > initializes idempotently when real-provider calls overlap`](../../../../../../test/Clock.test.ts#L14) (line 14)                | —      |
+| [`Clock > re-initializes when a different provider arrives`](../../../../../../test/Clock.test.ts#L30) (line 30)                         | —      |
+| [`Clock > recovers with a live provider after a failed replacement`](../../../../../../test/Clock.test.ts#L43) (line 43)                 | —      |
+| [`Clock > settles overlapping different-provider initializations on one live owner`](../../../../../../test/Clock.test.ts#L64) (line 64) | —      |

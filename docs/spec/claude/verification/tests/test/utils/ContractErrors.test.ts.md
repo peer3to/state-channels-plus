@@ -1,29 +1,45 @@
 # test/utils/ContractErrors.test.ts — Test Report
 
-> **Test file:** [test/utils/ContractErrors.test.ts](../../../../../../../test/utils/ContractErrors.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/utils/ContractErrors.test.ts](../../../../../../../test/utils/ContractErrors.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [evmErrorHandler.ts](../../../../implementation/source/src/utils/evmErrorHandler.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                             | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `artifacts loading > should load all required facet artifacts` (line 16)                                                                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `artifacts loading > should extract error ABIs from artifacts` (line 29)                                                                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractCaller and ContractErrors > should decode  contract errors correctly` (line 41)                                                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractCaller and ContractErrors > should pass through regular errors unchanged` (line 76)                                                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractCaller and ContractErrors > passes the decoded custom error to its handler` (line 95)                                               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractCaller and ContractErrors > Real contract calls > should handle postBlockCalldata success case` (line 134)                          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractCaller and ContractErrors > Real contract calls > should handle ErrorBlockCalldataMsgSenderNotBlockAuthor custom error` (line 156)  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractCaller and ContractErrors > Real contract calls > should handle RaceConditionBlockCalldataTimestampTooLate custom error` (line 179) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `ContractCaller and ContractErrors > Real contract calls > should handle ErrorBlockCalldataAlreadyPosted custom error` (line 203)            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite exercises the custom-EVM-error path at three levels. First, it sanity-checks
+`GeneratedArtifacts`: `artifacts` load with abi/contractName/bytecode and `errorAbis` contains
+only `type: "error"` entries (the ABI set `evmErrorHandler`'s parser is built from). Second, it
+drives `tryDecodeCustomError`/`tryHandleEvmError` with synthetic errors carrying hand-computed
+4-byte selectors: five named race-condition/error selectors decode to the right
+`errorDescription.name`, a plain `Error` with no revert data returns `null` and passes through
+unchanged, and a registered handler receives the `CustomEvmError` wrapping the original error.
+Third, real hardhat calls through `deployMathChannelProxyFixture` hit `postBlockCalldata` and
+decode genuine on-chain reverts (`ErrorBlockCalldataMsgSenderNotBlockAuthor`,
+`RaceConditionBlockCalldataTimestampTooLate`, `ErrorBlockCalldataAlreadyPosted`) plus one success
+case. No permutation is assigned in full: `UNIT-TEST-EVM-ERROR-HANDLER-1.P1` bundles each named
+error (only a subset appears in any one test), and the distinctive `.P2`/`.P3` scenarios — revert
+data with an unknown selector and malformed revert data — have no dedicated test (the
+plain-`Error` case exercises the missing-data guard, a different path).
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                            | Covers |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`artifacts loading > should load all required facet artifacts`](../../../../../../../test/utils/ContractErrors.test.ts#L16) (line 16)                                                                      | —      |
+| [`artifacts loading > should extract error ABIs from artifacts`](../../../../../../../test/utils/ContractErrors.test.ts#L29) (line 29)                                                                      | —      |
+| [`ContractCaller and ContractErrors > should decode  contract errors correctly`](../../../../../../../test/utils/ContractErrors.test.ts#L41) (line 41)                                                      | —      |
+| [`ContractCaller and ContractErrors > should pass through regular errors unchanged`](../../../../../../../test/utils/ContractErrors.test.ts#L76) (line 76)                                                  | —      |
+| [`ContractCaller and ContractErrors > passes the decoded custom error to its handler`](../../../../../../../test/utils/ContractErrors.test.ts#L95) (line 95)                                                | —      |
+| [`ContractCaller and ContractErrors > Real contract calls > should handle postBlockCalldata success case`](../../../../../../../test/utils/ContractErrors.test.ts#L134) (line 134)                          | —      |
+| [`ContractCaller and ContractErrors > Real contract calls > should handle ErrorBlockCalldataMsgSenderNotBlockAuthor custom error`](../../../../../../../test/utils/ContractErrors.test.ts#L156) (line 156)  | —      |
+| [`ContractCaller and ContractErrors > Real contract calls > should handle RaceConditionBlockCalldataTimestampTooLate custom error`](../../../../../../../test/utils/ContractErrors.test.ts#L179) (line 179) | —      |
+| [`ContractCaller and ContractErrors > Real contract calls > should handle ErrorBlockCalldataAlreadyPosted custom error`](../../../../../../../test/utils/ContractErrors.test.ts#L203) (line 203)            | —      |

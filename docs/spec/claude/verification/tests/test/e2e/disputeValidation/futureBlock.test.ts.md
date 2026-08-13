@@ -1,21 +1,32 @@
 # test/e2e/disputeValidation/futureBlock.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/futureBlock.test.ts](../../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/futureBlock.test.ts](../../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                          | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / futureBlock > dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height` (line 17) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+Protocol-gap regression for a height-above attack: peer 3's outbound block broadcast is stubbed
+out, so it alone holds block 3 while honest peers 0-2 sit at height 2 (both facts are asserted via
+`getLatestBlockHeight` before the attack proceeds). Peer 3 then posts a self-removal dispute whose
+`stateProof` tops out at the un-broadcast block 3, which the test confirms through
+`getStateProofTopBlockHeight` on the tampered dispute. The oracles assert the dispute commits for
+honest peers, yet none of them fast-forwards past height 2 on the original fork just because the
+committed dispute references a higher block; `resolveDisputeWait` then settles the fork without
+requiring the attacker's removal. A known teardown bug (#353, `onStateSnapshotUpdated: unknown
+snapshot while status=4`) is documented in the file; the test body itself passes. The spec
+permutations near this behavior are multi-scenario bundles, so none is fully covered here.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                                        | Covers |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: dispute validation / futureBlock > dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height`](../../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts#L17) (line 17) | —      |

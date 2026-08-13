@@ -1,27 +1,42 @@
 # test/e2e/E2E-IsForkDisputed.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-IsForkDisputed.test.ts](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-IsForkDisputed.test.ts](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [IsForkDisputedService.ts](../../../../implementation/source/src/rpc/services/isForkDisputedService/IsForkDisputedService.ts.md), [IsForkDisputedRpcMethods.ts](../../../../implementation/source/src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                       | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: Is Fork Disputed > Dispute Acknowledgment Broadcasting > should broadcast acknowledgment request and receive responses from all peers` (line 14) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Is Fork Disputed > Dispute Acknowledgment Broadcasting > should ignore duplicate dispute acknowledgment requests` (line 29)                      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Is Fork Disputed > Dispute Acknowledgment Broadcasting > should disconnect peer sending duplicate acknowledgment requests` (line 48)             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Is Fork Disputed > Dispute Acknowledgment Broadcasting > should disconnect non-responding peers after acknowledgment timeout` (line 71)          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Is Fork Disputed > Byzantine Peer Detection > should disconnect peer building on acknowledged disputed fork` (line 86)                           | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Is Fork Disputed > Byzantine Peer Detection > should disconnect peer requesting acknowledgment of non-disputed fork` (line 108)                  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Is Fork Disputed > Byzantine Peer Detection > should run stubbed RPC method via createRPCMethods wrapper` (line 119)                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+Exercises the isForkDisputed acknowledgment protocol over real channels, mostly through the
+`activeChannelWithDispute` scenario (three peers, one byzantine, a genuine dispute) plus direct
+RPC helpers. Requester side: one broadcast collects acknowledgments from every connected peer, a
+repeated request for the same fork is locally ignored (no second round), and peers that never
+answer a request are disconnected after the reply window. Responder side: a first request for a
+genuinely disputed fork is verified and recorded, a duplicate request from the same peer is a
+protocol violation that disconnects the requester, and a request naming a non-disputed fork
+disconnects the false claimer. A recorded acknowledger that afterwards supplies a block on the
+disputed fork is cut by the observer. Oracles are per-peer acknowledgment records in both
+directions (`didPeerAcknowledgeDisputedFork`, `didIAcknowledgeDisputedFork`), disputed-fork
+counters, and transport disconnect assertions; the last test only pins the harness's RPC stubbing
+seam and carries no protocol obligation. The timeout-only disconnect test covers half of the
+bundled refusal-and-timeout permutation, which therefore stays unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                       | Covers                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: Is Fork Disputed > Dispute Acknowledgment Broadcasting > should broadcast acknowledgment request and receive responses from all peers`](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts#L14) (line 14) | [`REQ-DACK-1.T1.P1`](../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1-t1-p1), [`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1.P1`](../../../../implementation/source/src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md#unit-test-is-fork-disputed-methods-1.p1) |
+| [`E2E: Is Fork Disputed > Dispute Acknowledgment Broadcasting > should ignore duplicate dispute acknowledgment requests`](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts#L29) (line 29)                      | —                                                                                                                                                                                                                                                                                                           |
+| [`E2E: Is Fork Disputed > Dispute Acknowledgment Broadcasting > should disconnect peer sending duplicate acknowledgment requests`](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts#L48) (line 48)             | [`REQ-DACK-1.T1.P2`](../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1-t1-p2), [`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1.P4`](../../../../implementation/source/src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md#unit-test-is-fork-disputed-methods-1.p4) |
+| [`E2E: Is Fork Disputed > Dispute Acknowledgment Broadcasting > should disconnect non-responding peers after acknowledgment timeout`](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts#L71) (line 71)          | —                                                                                                                                                                                                                                                                                                           |
+| [`E2E: Is Fork Disputed > Byzantine Peer Detection > should disconnect peer building on acknowledged disputed fork`](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts#L86) (line 86)                           | [`REQ-DACK-3.T1.P2`](../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-t1-p2)                                                                                                                                                                                               |
+| [`E2E: Is Fork Disputed > Byzantine Peer Detection > should disconnect peer requesting acknowledgment of non-disputed fork`](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts#L108) (line 108)                 | [`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1.P2`](../../../../implementation/source/src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md#unit-test-is-fork-disputed-methods-1.p2)                                                                                                                |
+| [`E2E: Is Fork Disputed > Byzantine Peer Detection > should run stubbed RPC method via createRPCMethods wrapper`](../../../../../../../test/e2e/E2E-IsForkDisputed.test.ts#L119) (line 119)                            | —                                                                                                                                                                                                                                                                                                           |

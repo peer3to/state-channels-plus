@@ -1,30 +1,48 @@
 # test/stateManager/EventBus.test.ts — Test Report
 
-> **Test file:** [test/stateManager/EventBus.test.ts](../../../../../../../test/stateManager/EventBus.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/stateManager/EventBus.test.ts](../../../../../../../test/stateManager/EventBus.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [EventBus.ts](../../../../implementation/source/src/events/EventBus.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                       | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `EventBus (worker + main thread) > delivers p2p hooks (onTurn, onBlockFinalized) to worker-side subscribers while the main-thread hook listener still fires` (line 26) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > publishes contract events on the worker bus and delivers typed ethers events to a consumer-built worker contract` (line 131)        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > mirrors contract events to the main thread: typed contract listeners and the generic bus subscription both fire` (line 330)         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > delivers the same eventHandler event to a worker subscriber and a main-thread subscriber` (line 380)                                | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > keeps a replaced worker hook target and the main-thread bus both firing after setP2pEventHooks` (line 429)                          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > surfaces a clone error to the hook producer after local delivery, and the main thread never sees the event` (line 475)              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > surfaces a clone error to the real wrapped event-handler producer after the original and local delivery ran` (line 542)             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > delivers nothing to the client after runtime disposal` (line 698)                                                                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > disposes the custom RPC root before runtime teardown` (line 740)                                                                    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventBus (worker + main thread) > still tears the runtime down when the custom root dispose rejects` (line 771)                                                       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite proves the unified `EventBus` end to end through the real runtime (SDK in a worker,
+real blocks, nothing stubbed): producers publish `{kind, eventName, args}` on the worker bus, the
+host's bridge tap forwards each emission over the port as one `busEvent` message, and the client
+re-emits it into `p2pInstance.events`. Worker-side listeners are registered through `execOnHost`.
+The oracles cover: p2p hook delivery to multiple worker subscribers with throwing-listener
+isolation and honored unsubscription while the bridged main-thread listener still fires; contract
+events reaching both the generic bus and typed ethers instances built by a consumer and attached
+with `attachContractEvents` — with deep plain-value args surviving structured clone (the nested
+`Roster` arrays), independent detach, local EVM reads on the same instance, and zero real-chain
+provider subscriptions; the same `eventHandler` event delivered to worker and main-thread
+subscribers; hook-target replacement via `setP2pEventHooks` leaving bus publication intact; the
+producer clone-failure policy (original handler and local delivery complete first, then the
+bridge error throws to the caller, and the main thread never sees the event — FIFO-fenced); no
+client delivery after runtime disposal; and custom RPC root disposal ordered before, and
+surviving rejection during, runtime teardown. Inline (non-worker) runtime mode is not driven
+here, so the host-protocol permutations that require inline/worker comparison stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                      | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`EventBus (worker + main thread) > delivers p2p hooks (onTurn, onBlockFinalized) to worker-side subscribers while the main-thread hook listener still fires`](../../../../../../../test/stateManager/EventBus.test.ts#L26) (line 26) | —      |
+| [`EventBus (worker + main thread) > publishes contract events on the worker bus and delivers typed ethers events to a consumer-built worker contract`](../../../../../../../test/stateManager/EventBus.test.ts#L131) (line 131)       | —      |
+| [`EventBus (worker + main thread) > mirrors contract events to the main thread: typed contract listeners and the generic bus subscription both fire`](../../../../../../../test/stateManager/EventBus.test.ts#L330) (line 330)        | —      |
+| [`EventBus (worker + main thread) > delivers the same eventHandler event to a worker subscriber and a main-thread subscriber`](../../../../../../../test/stateManager/EventBus.test.ts#L380) (line 380)                               | —      |
+| [`EventBus (worker + main thread) > keeps a replaced worker hook target and the main-thread bus both firing after setP2pEventHooks`](../../../../../../../test/stateManager/EventBus.test.ts#L429) (line 429)                         | —      |
+| [`EventBus (worker + main thread) > surfaces a clone error to the hook producer after local delivery, and the main thread never sees the event`](../../../../../../../test/stateManager/EventBus.test.ts#L475) (line 475)             | —      |
+| [`EventBus (worker + main thread) > surfaces a clone error to the real wrapped event-handler producer after the original and local delivery ran`](../../../../../../../test/stateManager/EventBus.test.ts#L542) (line 542)            | —      |
+| [`EventBus (worker + main thread) > delivers nothing to the client after runtime disposal`](../../../../../../../test/stateManager/EventBus.test.ts#L698) (line 698)                                                                  | —      |
+| [`EventBus (worker + main thread) > disposes the custom RPC root before runtime teardown`](../../../../../../../test/stateManager/EventBus.test.ts#L740) (line 740)                                                                   | —      |
+| [`EventBus (worker + main thread) > still tears the runtime down when the custom root dispose rejects`](../../../../../../../test/stateManager/EventBus.test.ts#L771) (line 771)                                                      | —      |

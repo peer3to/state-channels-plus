@@ -20,7 +20,7 @@ For every affected behavior:
 1. update the neutral requirement/invariant and its planned tests in `specification/`;
 2. update the matching implementation subject's exhaustive source inventory, design analysis,
    implementation-specific test obligations, and conformance traceability;
-3. update the matching verification subject's specification-test and implementation-test traceability;
+3. update the Covers assignments in the affected `verification/tests/` reports;
 4. update the current semantic/security assessment, findings, and questions in `audit/`; and
 5. allow changed graph fingerprints to make affected approvals stale until an engineer reapproves.
 
@@ -28,14 +28,13 @@ The three layers do NOT share a filesystem structure (review objective 46). The 
 organized by protocol system; the implementation mirrors the production tree under
 `implementation/source/` (one file report per `src/`/`contracts/` file, plus directory READMEs and
 cross-directory design views under `implementation/views/`); the verification mirrors the test tree
-under `verification/tests/` (one report per test file with executable declarations, plus level
-indexes and the matrix views under `verification/views/`). Traceability runs only through stable
-IDs and exact test declarations — path equality is never evidence.
+under `verification/tests/` (one report per test file with executable declarations — nothing
+else). Traceability runs only through stable IDs and exact test declarations — path equality is
+never evidence.
 
 Every `src/`/`contracts/` file has exactly one file report at `implementation/source/<path>.md` and
-appears in at least one source inventory table. Every extracted test declaration maps at least once
-to a planned-test permutation. Never clear a generated gap with a broad directory link, an
-unexplained `Not applicable`, or a file-level ignore that hides specification evidence.
+appears in at least one source inventory table. Never clear a generated gap with a broad directory
+link, an unexplained `Not applicable`, or a file-level ignore that hides specification evidence.
 
 Every implementation design view explicitly names exactly one `> **Specification subject:**` owner
 near its title; views link file reports and never duplicate or replace them. If concrete
@@ -93,22 +92,20 @@ Make every requirement, plan, and permutation reference navigable without losing
 use linked inline-code labels and stable explicit anchors at maintained definitions. Do not use line
 numbers as identity anchors; formatting and nearby documentation edits make them stale.
 
-Each test-file report (`verification/tests/<path>.md`) inventories every declaration in that file
-with: classification level (Unit / Integration / System / End-to-end — per declaration, not per
-file); public production entry point; setup, stimulus, oracle, and forbidden effects; environment;
-linked production files; assigned specification permutations and implementation-test obligations;
-and evidence quality (good, partial, wrong/misleading, adjacent-only, missing) with a specific
-explanation after inspecting the real test body. Fixtures, harness code, utilities, runners, and
-configuration get no reports; link support code only when it materially affects setup or the
-oracle. One declaration may prove multiple cases; the case is the unit of traceability. Broad file
-links, filenames, and adjacent tests are not evidence. Exact test links exist only in verification
-documents, and only on inspected rows. Generated reports project the maintained layers; never
-repair a generated table directly.
+Each test-file report (`verification/tests/<path>.md`) has: a header (test file link, Status, and
+an `Exercises` link when the suite targets one production component); a short prose **Overview**
+grounded in the real test bodies; and a **Tests and covered test IDs** table with one row per
+declaration — the name linked to its exact line, `(line <n>)`, and a `Covers` cell listing the
+test IDs that declaration covers **in full** as links to their definition anchors. Partial credit
+is never recorded; a test ID may be assigned to at most one test declaration across the whole
+tree; one test may cover several IDs. Tests with no assigned ID stay listed with `—`. Fixtures,
+harness code, utilities, runners, and configuration get no reports. Broad file links, filenames,
+and adjacent tests are not evidence. Generated reports project the maintained layers; never repair
+a generated table directly.
 
-Use [verification/concepts/state-machines.md](./verification/views/concepts/state-machines.md) as the canonical
-worked example. Do not add `Upstream dependencies`, `Test declaration inventory`, `Combined verification
-strategy`, or `Consolidated test evidence`: they duplicate information owned by the mirrored path and the two
-traceability matrices. Put the coverage judgment beside the case it evaluates.
+Use [verification/tests/test/unit/ValidationService.test.ts.md](./verification/tests/test/unit/ValidationService.test.ts.md)
+as the canonical worked example. Do not add inventory, classification, evidence-quality, or
+matrix sections: the table's Covers cells are the only mapping surface.
 
 ## Questions and findings
 
@@ -126,8 +123,7 @@ traceability matrices. Put the coverage judgment beside the case it evaluates.
   relevant interleavings through the real public component surface.
 - System scenarios cover each materially distinct external boundary and success/failure/recovery/race or
   adversarial workflow without duplicating invisible unit permutations.
-- Link static declarations as `[test](...#L<declaration>)`; link dynamic/fuzz declarations as
-  `[test family](...)` and enumerate dimensions and oracles.
+- Record evidence only in a test report's Covers cell, and only for IDs the test covers in full.
 - Repair a shifted test anchor only when the declaration has one unique match. Never guess an ambiguous or
   vanished mapping.
 

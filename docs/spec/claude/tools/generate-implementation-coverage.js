@@ -13,7 +13,7 @@ const {
     writeOrCheckReport
 } = require("./shared/report-utils");
 
-const ID_RE = /\b(?:REQ|INV)-[A-Z0-9]+-\d+\b/g;
+const ID_RE = /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\b/g;
 
 // Collect per-requirement implementation statuses from every conformance table
 // (`Requirement / invariant | Implementation status | ...`) in the implementation layer.

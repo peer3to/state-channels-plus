@@ -1,30 +1,47 @@
 # test/e2e/E2E-DisputeManager.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-DisputeManager.test.ts](../../../../../../../test/e2e/E2E-DisputeManager.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-DisputeManager.test.ts](../../../../../../../test/e2e/E2E-DisputeManager.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                        | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: Dispute Manager > Dispute Resolution and Fork Management > should reduce invalid state transition disputes and create new fork` (line 18)                         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Dispute Resolution and Fork Management > should post a dispute WITH auditing calldata on a pending-join fork` (line 37)                         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Dispute Resolution and Fork Management > should post updated state snapshot after fork resolution` (line 63)                                    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Writer Timeout on a Pending-Join Fork > should dispute a timed-out writer on a pending-join fork with auditing calldata` (line 92)              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Fraud Proof Detection > should kill a spam dispute with no legitimate enforcement basis` (line 133)                                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Fraud Proof Detection > should reject dispute when auditing data is partial and state proof invalid` (line 164)                                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Fraud Proof Detection > should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid` (line 209) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Partial Syncing via Dispute Validation > recovers an expired posted-data dispute and reduces from persisted proof data` (line 231)              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Partial Syncing via Dispute Validation > should have missing state Storage when peer receives dispute with blocks it doesn't have` (line 350)   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Dispute Manager > Partial Syncing via Dispute Validation > should handle valid dispute when validating peer is missing snapshot data` (line 387)                  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite runs three to four real peer hosts through the MathTestSession harness and drives the
+whole dispute pipeline: a byzantine stimulus (invalid state transition, double-sign, or a tampered
+dispute posted straight to the contract) triggers detection, dispute construction and upload by
+`DisputeManager`, on-chain commitment, kill auditing, and reduction to a successor fork. Oracles
+are protocol events (`onInitiatingDispute`, `onDisputeCommitted`, `onDisputeKilled`,
+`onStateSnapshotUpdated`), stored dispute fraud-proof types, on-chain slashed participants, fork
+settlement via `resolveDisputeWait`, and post-resolution snapshot posting. Both submission paths
+run: a settled fork disputes without auditing calldata, a pending-join fork with it. The
+fraud-proof group kills internally valid but baseless or tampered disputes (`InvalidDisputeReason`,
+`DisputeInvalidStateProof`). The partial-syncing group shows a disconnected peer recovering
+committed disputes and reducing from persisted proof data, and peers storing block/state data
+delivered by a dispute for heights they never received. The pending-join writer-timeout test is
+skipped on a known product race. Per-field dispute-input and state-proof audits are out of scope
+(`test/e2e/disputeValidation/*`), as are `DisputeManager` branch permutations
+(`test/unit/DisputeManager.test.ts`). Most planned permutations reachable from here bundle several
+scenarios (valid/invalid, calldata/non-calldata, each failure boundary), so they stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                         | Covers                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`E2E: Dispute Manager > Dispute Resolution and Fork Management > should reduce invalid state transition disputes and create new fork`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L18) (line 18)                          | [`INTEGRATION-TEST-DISPUTE-PIPE-1.P1`](../../../../implementation/views/protocol/dispute-processing.md#integration-test-dispute-pipe-1.p1) |
+| [`E2E: Dispute Manager > Dispute Resolution and Fork Management > should post a dispute WITH auditing calldata on a pending-join fork`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L37) (line 37)                          | —                                                                                                                                          |
+| [`E2E: Dispute Manager > Dispute Resolution and Fork Management > should post updated state snapshot after fork resolution`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L63) (line 63)                                     | —                                                                                                                                          |
+| [`E2E: Dispute Manager > Writer Timeout on a Pending-Join Fork > should dispute a timed-out writer on a pending-join fork with auditing calldata`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L92) (line 92)               | —                                                                                                                                          |
+| [`E2E: Dispute Manager > Fraud Proof Detection > should kill a spam dispute with no legitimate enforcement basis`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L133) (line 133)                                             | —                                                                                                                                          |
+| [`E2E: Dispute Manager > Fraud Proof Detection > should reject dispute when auditing data is partial and state proof invalid`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L164) (line 164)                                 | —                                                                                                                                          |
+| [`E2E: Dispute Manager > Fraud Proof Detection > should reject dispute when full auditing data reconstructed but both commitment and state proof are invalid`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L209) (line 209) | —                                                                                                                                          |
+| [`E2E: Dispute Manager > Partial Syncing via Dispute Validation > recovers an expired posted-data dispute and reduces from persisted proof data`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L231) (line 231)              | —                                                                                                                                          |
+| [`E2E: Dispute Manager > Partial Syncing via Dispute Validation > should have missing state Storage when peer receives dispute with blocks it doesn't have`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L350) (line 350)   | —                                                                                                                                          |
+| [`E2E: Dispute Manager > Partial Syncing via Dispute Validation > should handle valid dispute when validating peer is missing snapshot data`](../../../../../../../test/e2e/E2E-DisputeManager.test.ts#L387) (line 387)                  | —                                                                                                                                          |

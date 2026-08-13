@@ -1,30 +1,43 @@
 # test/utils/logEncoder.test.ts — Test Report
 
-> **Test file:** [test/utils/logEncoder.test.ts](../../../../../../../test/utils/logEncoder.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/utils/logEncoder.test.ts](../../../../../../../test/utils/logEncoder.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [logEncoder.ts](../../../../implementation/source/src/utils/logging/logEncoder.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                      | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ----------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `encodeLogEntry > redacts a direct AxiosError but keeps name/message/code` (line 47)                  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > redacts an AxiosError nested in a class instance` (line 55)                         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > redacts an AxiosError on an enumerable property of a Map` (line 62)                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > does not slip a raw error out through a non-string Error field getter` (line 68)    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > neither copies nor invokes an untrusted toJSON that would expose secrets` (line 79) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > does not invoke an accessor that materializes an error's config` (line 87)          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > drops a function whose toJSON would expose an error` (line 100)                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > encodes a circular class instance as [Circular] without throwing` (line 108)        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > survives throwing Error accessors without throwing` (line 123)                      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `encodeLogEntry > preserves Date as ISO and bigint as a string` (line 140)                            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite feeds hostile `meta` payloads through `encodeLogEntry` (wrapped in a minimal
+`LogEntry`) and asserts on the encoded output string. The central oracle is secret containment:
+a genuine `AxiosError` — whose `toJSON` would expose auth header, cookie, and request body —
+leaks none of those secrets whether it appears directly, nested in a class instance, attached to
+a `Map`, returned by a non-string `Error` field getter, or exposed via an untrusted
+`toJSON`/accessor/function property, while its name, code, and message survive. The remaining
+cases pin encoder robustness: accessors are never invoked (`[accessor]`), circular instances
+encode as `[Circular]` without throwing, throwing `Error` field accessors become
+`[unreadable]`, and `Date`/`bigint` values are preserved as ISO and decimal strings. Log
+storage, transport, and the `LogUploader` pipeline above the encoder are out of scope. The seed
+pool defines no permutations for this component, so no test IDs are assignable here.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                | Covers |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`encodeLogEntry > redacts a direct AxiosError but keeps name/message/code`](../../../../../../../test/utils/logEncoder.test.ts#L47) (line 47)                  | —      |
+| [`encodeLogEntry > redacts an AxiosError nested in a class instance`](../../../../../../../test/utils/logEncoder.test.ts#L55) (line 55)                         | —      |
+| [`encodeLogEntry > redacts an AxiosError on an enumerable property of a Map`](../../../../../../../test/utils/logEncoder.test.ts#L62) (line 62)                 | —      |
+| [`encodeLogEntry > does not slip a raw error out through a non-string Error field getter`](../../../../../../../test/utils/logEncoder.test.ts#L68) (line 68)    | —      |
+| [`encodeLogEntry > neither copies nor invokes an untrusted toJSON that would expose secrets`](../../../../../../../test/utils/logEncoder.test.ts#L79) (line 79) | —      |
+| [`encodeLogEntry > does not invoke an accessor that materializes an error's config`](../../../../../../../test/utils/logEncoder.test.ts#L87) (line 87)          | —      |
+| [`encodeLogEntry > drops a function whose toJSON would expose an error`](../../../../../../../test/utils/logEncoder.test.ts#L100) (line 100)                    | —      |
+| [`encodeLogEntry > encodes a circular class instance as [Circular] without throwing`](../../../../../../../test/utils/logEncoder.test.ts#L108) (line 108)       | —      |
+| [`encodeLogEntry > survives throwing Error accessors without throwing`](../../../../../../../test/utils/logEncoder.test.ts#L123) (line 123)                     | —      |
+| [`encodeLogEntry > preserves Date as ISO and bigint as a string`](../../../../../../../test/utils/logEncoder.test.ts#L140) (line 140)                           | —      |

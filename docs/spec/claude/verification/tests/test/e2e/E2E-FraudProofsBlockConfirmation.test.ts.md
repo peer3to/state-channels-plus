@@ -1,33 +1,53 @@
 # test/e2e/E2E-FraudProofsBlockConfirmation.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-FraudProofsBlockConfirmation.test.ts](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-FraudProofsBlockConfirmation.test.ts](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: Block Fraud Proofs > queued future block accepts later calldata event and executes after predecessor` (line 15)           | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > queued duplicate block does not fall through to double sign` (line 171)                              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > stored duplicate merges trusted timestamp without replaying transition` (line 209)                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > stored duplicate drops a new signature from a non-participant without dropping the block` (line 275) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > fresh block with a non-participant signature applies after dropping it` (line 327)                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > double sign → BlockDoubleSign` (line 395)                                                            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > wrong genesis → WrongGenesis` (line 412)                                                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > unexpected next leader → BlockInvalidStateTransition` (line 431)                                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > invalid timestamp → InvalidTimestamp` (line 449)                                                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > broken inbound chain → BlockInvalidStateTransition` (line 469)                                       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > forged inbound message → ForgedInboundMessageBlock` (line 491)                                       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > applyTransaction failure → BlockInvalidStateTransition` (line 513)                                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Block Fraud Proofs > stateSnapshotHash mismatch → BlockInvalidStateTransition` (line 534)                                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite drives `onBlockConfirmation` under the live `BlockValidationStrategy` on real
+multi-peer sessions, feeding blocks through the harness ingest RPC
+(`ingestBlockConfirmationWait`) or through byzantine helpers that craft and gossip invalid blocks
+from a real peer. One arm covers non-fault flows: a queued future block that is recovered through
+the on-chain calldata path and executes only after its predecessor, queued and stored duplicates
+(no double sign, trusted-timestamp merge without replaying the transition), and stray
+non-participant signatures that are stripped with the supplying peer blacklisted while the block
+itself survives. The other arm drives each objective fault class — double sign, wrong genesis,
+unexpected next leader, invalid timestamp, broken inbound message chain, forged inbound message,
+`applyTransaction` failure, and stateSnapshotHash mismatch — and asserts the dispute is initiated
+and committed, every honest peer stored a fraud proof of the exact `FraudProofType` against the
+malicious peer, and after on-chain dispute resolution only the honest peers remain in sync; the
+snapshot-hash case additionally proves the honest VMs roll back the aborted transition. Oracles
+are query-RPC reads of storage/queue/blacklist state, contract-instance state sums, event spies,
+and the shared dispute/storage assertion helpers. Contract-side proof adjudication internals and
+the validation predicate chain (unit `ValidationService` suite) are out of scope. The fault
+classes are spread across separate tests, so bundle permutations like `REQ-BLOCK-PIPE-8.T1.P1`
+("each fault class") and `REQ-FP-2.T1.*` ("every handler") have no single covering test here and
+stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                               | Covers                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| [`E2E: Block Fraud Proofs > queued future block accepts later calldata event and executes after predecessor`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L15) (line 15)            | [`REQ-BLOCK-PIPE-4.T1.P1`](../../../../specification/block-progression/block-processing.md#req-block-pipe-4-t1-p1) |
+| [`E2E: Block Fraud Proofs > queued duplicate block does not fall through to double sign`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L171) (line 171)                              | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > stored duplicate merges trusted timestamp without replaying transition`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L209) (line 209)                   | [`REQ-BLOCK-PIPE-1.T1.P2`](../../../../specification/block-progression/block-processing.md#req-block-pipe-1-t1-p2) |
+| [`E2E: Block Fraud Proofs > stored duplicate drops a new signature from a non-participant without dropping the block`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L275) (line 275) | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > fresh block with a non-participant signature applies after dropping it`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L327) (line 327)                   | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > double sign → BlockDoubleSign`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L395) (line 395)                                                            | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > wrong genesis → WrongGenesis`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L412) (line 412)                                                             | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > unexpected next leader → BlockInvalidStateTransition`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L431) (line 431)                                     | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > invalid timestamp → InvalidTimestamp`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L449) (line 449)                                                     | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > broken inbound chain → BlockInvalidStateTransition`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L469) (line 469)                                       | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > forged inbound message → ForgedInboundMessageBlock`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L491) (line 491)                                       | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > applyTransaction failure → BlockInvalidStateTransition`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L513) (line 513)                                   | —                                                                                                                  |
+| [`E2E: Block Fraud Proofs > stateSnapshotHash mismatch → BlockInvalidStateTransition`](../../../../../../../test/e2e/E2E-FraudProofsBlockConfirmation.test.ts#L534) (line 534)                                 | —                                                                                                                  |

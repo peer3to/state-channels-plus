@@ -1,22 +1,33 @@
 # test/utils/SignatureUtils.test.ts — Test Report
 
-> **Test file:** [test/utils/SignatureUtils.test.ts](../../../../../../../test/utils/SignatureUtils.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/utils/SignatureUtils.test.ts](../../../../../../../test/utils/SignatureUtils.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [SignatureUtils.ts](../../../../implementation/source/src/utils/SignatureUtils.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                         | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------ | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `SignatureUtils.getSignerAddress > recovers the signer of a message` (line 17)                                           | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `SignatureUtils.getSignerAddress > agrees with Block.signatureToAddress for a block (same recovery key space)` (line 25) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite drives `SignatureUtils` with a real hardhat signer: `signMsg` over random 48-byte hex
+and `getSignerAddress` recovery back to the signer's address, then a cross-component agreement
+check — a factory block signed via `signBlock` recovers to the same address through both
+`SignatureUtils.getSignerAddress(block.encode(), sig)` and `Block.signatureToAddress(sig)`,
+demonstrating the two recovery paths hash the same canonical-encoding digest. Out of scope:
+tampered messages/signatures, signature-encoding malleation, on-chain recovery agreement, and
+signing every protocol object class. All three `UNIT-TEST-SIGNATURE-UTILS-1` permutations either
+bundle each object class or require tamper/malleation cases absent here, so none is assignable
+in full.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                       | Covers |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`SignatureUtils.getSignerAddress > recovers the signer of a message`](../../../../../../../test/utils/SignatureUtils.test.ts#L17) (line 17)                                           | —      |
+| [`SignatureUtils.getSignerAddress > agrees with Block.signatureToAddress for a block (same recovery key space)`](../../../../../../../test/utils/SignatureUtils.test.ts#L25) (line 25) | —      |

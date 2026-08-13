@@ -1,21 +1,30 @@
 # test/stateManager/StateManagerAbort.test.ts — Test Report
 
-> **Test file:** [test/stateManager/StateManagerAbort.test.ts](../../../../../../../test/stateManager/StateManagerAbort.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/stateManager/StateManagerAbort.test.ts](../../../../../../../test/stateManager/StateManagerAbort.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [StateManager.ts](../../../../implementation/source/src/stateManager/StateManager.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                   | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------ | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `StateManager abort > cancels session-owned timeout work` (line 7) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The single case drives `StateManager.abort()` on a live four-peer harness session, executed in
+the peer's worker realm via `execOnHost`. It schedules a task through the session-owned
+`timeoutManager`, aborts, and then waits past the task's due time. The oracles assert that abort
+cancels session-owned timeout work (the task never runs), leaves the manager's status at
+`OPENED`, disconnects every peer (`getConnectedPeers` is empty), and fires the `onAbort` hook on
+the main thread. Full disposal semantics (worker teardown, storage release) are out of scope —
+the case isolates abort's cancellation and disconnect effects.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                          | Covers |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`StateManager abort > cancels session-owned timeout work`](../../../../../../../test/stateManager/StateManagerAbort.test.ts#L7) (line 7) | —      |

@@ -1,22 +1,34 @@
 # test/stateManager/EventSyncService.test.ts — Test Report
 
-> **Test file:** [test/stateManager/EventSyncService.test.ts](../../../../../../../test/stateManager/EventSyncService.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/stateManager/EventSyncService.test.ts](../../../../../../../test/stateManager/EventSyncService.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [EventSyncService.ts](../../../../implementation/source/src/stateManager/EventSyncService.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                               | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ---------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `EventSyncService > treats a failed log as fatal - never re-dispatched, cursor holds` (line 6) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `EventSyncService > joins concurrent calldata recovery onto one chain query` (line 27)         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+Two worker-realm probes drive the real `EventSyncService` of a live four-peer session through
+harness-control stubs. `probeRejectedEventSyncLog` asserts the fatal-log policy: a log whose
+handler rejects is never re-dispatched — the same promise is replayed to every waiter (handler
+called once, the identical error surfaces on the first await, the second await, the detached
+chain, and a later reschedule) and the per-channel cursor does not advance past the failure.
+`probeConcurrentCalldataRecovery` asserts that concurrent calldata-recovery requests join one
+in-flight chain query (two queries total across first/second/retry probes) and consistently
+report the calldata as not found. Ordering across out-of-order log delivery, gap recovery within
+attempt caps, and restart resume are not exercised here, so the service's planned permutations
+stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                     | Covers |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`EventSyncService > treats a failed log as fatal - never re-dispatched, cursor holds`](../../../../../../../test/stateManager/EventSyncService.test.ts#L6) (line 6) | —      |
+| [`EventSyncService > joins concurrent calldata recovery onto one chain query`](../../../../../../../test/stateManager/EventSyncService.test.ts#L27) (line 27)        | —      |

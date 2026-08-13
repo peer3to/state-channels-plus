@@ -1,23 +1,35 @@
 # test/harness/testTimeConfig.test.ts — Test Report
 
-> **Test file:** [test/harness/testTimeConfig.test.ts](../../../../../../../test/harness/testTimeConfig.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/harness/testTimeConfig.test.ts](../../../../../../../test/harness/testTimeConfig.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                       | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `test time config > resolves the minimum-safe baseline` (line 11)                      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `test time config > applies partial overrides without mutating the baseline` (line 20) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `test time config > includes first-block grace only at height zero` (line 28)          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite exercises the test-harness helper `test/harness/core/testTimeConfig.ts` directly — it
+tests support code for other suites, not production sources under `src/`. It asserts that
+`resolveTestTimeConfig()` returns the minimum-safe baseline (`p2pTime: 2`, `agreementTime: 3`,
+`chainFallbackTime: 3`, `evidenceTime: 6`), that partial overrides produce a copy without mutating
+`MIN_TEST_TIME_CONFIG`, and that the derived-wait arithmetic is exact:
+`participantTimeoutWaitMs` includes the first-block grace only at height 0, and
+`evidencePeriodWaitMs`/`protocolEventTimeoutMs` produce the expected millisecond totals, including
+the `withFirstBlockGrace` and `settlementMarginSeconds` options. Oracles are literal expected
+values, pinning the timing contract that E2E suites rely on when waiting for protocol events.
+Because this is harness support with no implementation source report, no test IDs from the pool
+apply to it.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                       | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| [`test time config > resolves the minimum-safe baseline`](../../../../../../../test/harness/testTimeConfig.test.ts#L11) (line 11)                      | —      |
+| [`test time config > applies partial overrides without mutating the baseline`](../../../../../../../test/harness/testTimeConfig.test.ts#L20) (line 20) | —      |
+| [`test time config > includes first-block grace only at height zero`](../../../../../../../test/harness/testTimeConfig.test.ts#L28) (line 28)          | —      |

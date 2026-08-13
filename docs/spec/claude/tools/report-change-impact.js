@@ -12,8 +12,8 @@ const {
     sorted
 } = require("./shared/documentation-graph");
 
-const REQUIREMENT_GLOBAL_RE = /\b(?:REQ|INV)-[A-Z0-9]+-\d+\b/g;
-const PLAN_GLOBAL_RE = /\b(?:REQ|INV)-[A-Z0-9]+-\d+\.T\d+(?:\.P\d+)?\b/g;
+const REQUIREMENT_GLOBAL_RE = /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\b/g;
+const PLAN_GLOBAL_RE = /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+(?:\.P\d+)?\b/g;
 
 function fail(message) {
     process.stderr.write(`${message}\n`);

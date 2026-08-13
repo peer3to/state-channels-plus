@@ -1,25 +1,38 @@
 # test/evm/RuntimeChainContext.test.ts — Test Report
 
-> **Test file:** [test/evm/RuntimeChainContext.test.ts](../../../../../../../test/evm/RuntimeChainContext.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/evm/RuntimeChainContext.test.ts](../../../../../../../test/evm/RuntimeChainContext.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [RuntimeChainContext.ts](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                         | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `RuntimeChainContext > accepts WebSocket URLs and optimistically converts HTTP URLs` (line 19)           | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `RuntimeChainContext > rejects non-WebSocket-compatible provider URLs` (line 34)                         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `RuntimeChainContext > destroys the host provider and reports the original startup error` (line 40)      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `RuntimeChainContext > lets the host own the quiesce timeout` (line 107)                                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout` (line 168) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite covers the chain-facing edges of the p2p runtime: URL policy, startup failure, and
+client-side request timeouts. `resolveWebSocketProviderUrl` is called directly (ws/wss accepted,
+http/https optimistically converted, anything else throws). The startup case runs the real
+`startP2pRuntimeHost` against a deliberately unreachable provider URL and asserts the original
+connection error (not a timeout) is thrown to the host caller and rejected to the paired
+`P2pRuntimeClient.ready`, with the host's `WebSocketProvider.destroy` called exactly once. Two
+fake-timer cases pair a real client with a scripted host port: `quiesce` must not be failed by a
+client-side timer (the host owns the quiesce timeout), and an uncancellable P2P signer
+`sendTransaction` mutation outlives the 30s request timeout and still resolves with the local
+p2p result. Full host request-surface behavior (inline/worker equivalence, disposal settlement,
+signing confinement) is out of scope, so the host-protocol permutations stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                           | Covers |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`RuntimeChainContext > accepts WebSocket URLs and optimistically converts HTTP URLs`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L19) (line 19)            | —      |
+| [`RuntimeChainContext > rejects non-WebSocket-compatible provider URLs`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L34) (line 34)                          | —      |
+| [`RuntimeChainContext > destroys the host provider and reports the original startup error`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L40) (line 40)       | —      |
+| [`RuntimeChainContext > lets the host own the quiesce timeout`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L107) (line 107)                                 | —      |
+| [`RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout`](../../../../../../../test/evm/RuntimeChainContext.test.ts#L168) (line 168) | —      |

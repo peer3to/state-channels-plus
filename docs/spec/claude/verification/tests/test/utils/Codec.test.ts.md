@@ -1,30 +1,43 @@
 # test/utils/Codec.test.ts — Test Report
 
-> **Test file:** [test/utils/Codec.test.ts](../../../../../../../test/utils/Codec.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/utils/Codec.test.ts](../../../../../../../test/utils/Codec.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [Codec.ts](../../../../implementation/source/src/utils/Codec.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                             | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode BlockStruct correctly` (line 9)                    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode JoinChannelStruct correctly` (line 17)             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode SignedJoinChannelStruct correctly` (line 26)       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode JoinChannelConfirmationStruct correctly` (line 41) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode TransactionStruct correctly` (line 62)             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode DisputeStruct correctly` (line 71)                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > round-trips DisputeBlockAuthorNotParticipant proof` (line 80)               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > round-trips DisputeInvalidBlockStructure proof` (line 99)                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > Error handling > should throw error for invalid type in encode` (line 116)  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `Codec > Round-trip encoding/decoding: decode(encode(T)) === T > Error handling > should throw error for invalid encoded data` (line 122)    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite calls `Codec.encode`/`Codec.decode` directly with factory-built domain structs and
+asserts byte-level round trips: `decode(encode(T))` deep-equals the original for six `Type`
+variants (Block, JoinChannel, SignedJoinChannel, JoinChannelConfirmation, Transaction, Dispute)
+plus two `DisputeFraudProofType` proof encodings (DisputeBlockAuthorNotParticipant,
+DisputeInvalidBlockStructure). The error-handling cases assert that an unmapped type value throws
+`No ethers type mapping found` on encode and that decoding corrupt hex (`0xinvaliddata`) throws.
+Out of scope: the other `Type` enum members (the enum has 21; six are round-tripped here),
+explicit above-`Number.MAX_SAFE_INTEGER` boundary values, and caller-side handling of decode
+failures (owned by the RPC layer per `REQ-RPC-1`). `UNIT-TEST-CODEC-1.P1` bundles every `Type`
+into one permutation and `.P2` requires above-safe-integer values, so neither is assignable to a
+single test here; only the corrupt-payload permutation is covered in full.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                  | Covers                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode BlockStruct correctly`](../../../../../../../test/utils/Codec.test.ts#L9) (line 9)                     | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode JoinChannelStruct correctly`](../../../../../../../test/utils/Codec.test.ts#L17) (line 17)             | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode SignedJoinChannelStruct correctly`](../../../../../../../test/utils/Codec.test.ts#L26) (line 26)       | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode JoinChannelConfirmationStruct correctly`](../../../../../../../test/utils/Codec.test.ts#L41) (line 41) | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode TransactionStruct correctly`](../../../../../../../test/utils/Codec.test.ts#L62) (line 62)             | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > should encode and decode DisputeStruct correctly`](../../../../../../../test/utils/Codec.test.ts#L71) (line 71)                 | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > round-trips DisputeBlockAuthorNotParticipant proof`](../../../../../../../test/utils/Codec.test.ts#L80) (line 80)               | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > round-trips DisputeInvalidBlockStructure proof`](../../../../../../../test/utils/Codec.test.ts#L99) (line 99)                   | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > Error handling > should throw error for invalid type in encode`](../../../../../../../test/utils/Codec.test.ts#L116) (line 116) | —                                                                                                      |
+| [`Codec > Round-trip encoding/decoding: decode(encode(T)) === T > Error handling > should throw error for invalid encoded data`](../../../../../../../test/utils/Codec.test.ts#L122) (line 122)   | [`UNIT-TEST-CODEC-1.P3`](../../../../implementation/source/src/utils/Codec.ts.md#unit-test-codec-1.p3) |

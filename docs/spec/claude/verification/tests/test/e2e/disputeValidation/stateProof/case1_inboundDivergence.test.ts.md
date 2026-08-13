@@ -1,25 +1,41 @@
 # test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts](../../../../../../../../../test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts](../../../../../../../../../test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                                                                                  | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.1: auditingData.milestoneSnapshots[1].snapshotData.latestInboundMessageBlockHash = random > Case 1.1 → DisputeInvalidStateProof` (line 17)                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.2: auditingData.milestoneSnapshots[1] left honest (M2 inbound hash valid, snapshot matches M2) > → dispute commits without DisputeInvalidStateProof` (line 56) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.3: auditingData.milestoneSnapshots[1] = milestoneSnapshots[2] (M2 row claims M3 snapshot, skip-ahead) > Case 1.3 → DisputeInvalidStateProof` (line 60)         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.4: auditingData.milestoneSnapshots[1] = milestoneSnapshots[0] (M2 row claims M1 snapshot, stay-back) > Case 1.4 → DisputeInvalidStateProof` (line 97)          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.5: auditingData.milestoneSnapshots[1].snapshotData.participants omits pending joiner (M1 colluding on M2) > Case 1.5 → DisputeInvalidStateProof` (line 134)    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite drives the auditor's milestone-snapshot consistency checks end to end:
+`setupTwoLeaversAcrossMilestones` builds a fork whose state proof carries three milestones
+(M1/M2/M3), and `postTamperedDispute` posts peer 0's dispute after mutating the M2 row of the
+calldata auditing data and recomputing `disputeAuditingDataHash`, so the upload passes the
+hash-binding gate and the corruption must be caught by the audit. The tampers are: a random
+`latestInboundMessageBlockHash` in the M2 snapshot (1.1), the M2 row replaced by M3's snapshot
+(1.3) or M1's snapshot (1.4), and — with the pending join staged inline between M1 and M2 —
+the M2 participant list stripped of the pending joiner (1.5). The oracle is the honest
+auditors' reaction: peers 0, 1, and 3 observe `onDisputeKilled`, and peers 1 and 3 store a
+`DisputeInvalidStateProof` dispute fraud proof. Case 1.2 (honest M2 row) is skipped as
+redundant with the valid disputes other suites already commit on honest setups. Upload-gate
+reverts and signedBlocks-only proofs are out of scope (`uploadRevert/` and Case 3). The
+matching specification permutations (`REQ-SP-3`/`REQ-SP-7` membership and linkage checks,
+`REQ-DISPUTE-PIPE-2` corruption layers) each bundle valid-and-invalid scenario families that
+no single test here covers in full, so no IDs are assigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                                                                                                                          | Covers |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.1: auditingData.milestoneSnapshots[1].snapshotData.latestInboundMessageBlockHash = random > Case 1.1 → DisputeInvalidStateProof`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts#L17) (line 17)                     | —      |
+| [`E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.2: auditingData.milestoneSnapshots[1] left honest (M2 inbound hash valid, snapshot matches M2) > → dispute commits without DisputeInvalidStateProof`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts#L56) (line 56) | —      |
+| [`E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.3: auditingData.milestoneSnapshots[1] = milestoneSnapshots[2] (M2 row claims M3 snapshot, skip-ahead) > Case 1.3 → DisputeInvalidStateProof`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts#L60) (line 60)         | —      |
+| [`E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.4: auditingData.milestoneSnapshots[1] = milestoneSnapshots[0] (M2 row claims M1 snapshot, stay-back) > Case 1.4 → DisputeInvalidStateProof`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts#L97) (line 97)          | —      |
+| [`E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergence) > Case 1.5: auditingData.milestoneSnapshots[1].snapshotData.participants omits pending joiner (M1 colluding on M2) > Case 1.5 → DisputeInvalidStateProof`](../../../../../../../../../test/e2e/disputeValidation/stateProof/case1_inboundDivergence.test.ts#L134) (line 134)   | —      |

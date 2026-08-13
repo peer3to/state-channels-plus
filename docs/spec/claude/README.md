@@ -30,7 +30,7 @@ selects proved history and creates a mandatory successor fork.
 | --- | --- | --- |
 | [Specification](./specification/README.md) | What must every conforming implementation do, and what must be tested? | Neutral requirements/invariants, assumptions, limits, security model, and exhaustive black-box test plans. |
 | [Implementation](./implementation/README.md) | How does this repository implement those rules? | Repository-shaped: one file report per production source file under `implementation/source/`, directory READMEs for subsystem ownership, and cross-directory design views. |
-| [Verification](./verification/README.md) | How are the real tests judged? | Repository-shaped: one report per test file under `verification/tests/` with per-declaration level classification, plus level indexes and methodology views. |
+| [Verification](./verification/README.md) | How are the real tests judged? | Repository-shaped: one report per test file under `verification/tests/` — a short overview plus a table assigning each declaration the test IDs it covers in full. |
 | [Audit](./audit/README.md) | Is the complete system structurally complete, semantically correct, sufficiently tested, and approved? | Current specification, implementation, verification, and security assessments; findings; questions; and engineer approvals. |
 
 The three layers answer different questions and deliberately do NOT share one filesystem structure
@@ -140,10 +140,10 @@ system design, system integration test plan, source inventory with one source re
 file, and conformance traceability. Implementation cases use `INTEGRATION-TEST-*` and `UNIT-TEST-*`, each with
 explicit `.P1` … `.PN` permutations.
 
-Every verification subject contains only a verification overview followed by specification-test traceability
-and implementation-test traceability. Analysis belongs in those rows: exact test declaration, runtime,
-quality of its setup/oracle, and the precise missing portion. There is no separate consolidated inventory or
-strategy section that can drift from the two matrices.
+Every verification test report contains only a short overview and the tests table: one row per
+declaration with the test IDs it covers **in full** (never partial credit; each test ID belongs to
+at most one test tree-wide). There is no separate inventory, classification, or matrix section
+that can drift from the table.
 
 The state-machine triplet is the canonical worked example. Layer READMEs define the complete schemas.
 
@@ -266,8 +266,8 @@ by agents.
 - *Understand a source file:* open its report under `implementation/source/<path>.md` — boundary,
   key design decisions, linked requirements, conformance with Here/Other-files evidence, and its
   `UNIT-TEST-*` obligations.
-- *Judge test coverage:* `verification/tests/<path>.md` per file, level indexes for the normalized
-  view, and the verification-coverage report for the queue.
+- *Judge test coverage:* `verification/tests/<path>.md` per file, and the verification-coverage
+  report for the queue.
 
 ## 8. Change and review workflow
 
@@ -277,8 +277,7 @@ For a design, implementation, contract, or test change affecting specified behav
 2. update or raise the neutral specification decision before choosing behavior;
 3. update the implementation subject's overview, design, source reports, unit/integration plans, and
    conformance rows;
-4. inspect real test bodies and update both verification traceability matrices with exact declaration links
-   and honest coverage classifications;
+4. inspect real test bodies and update the affected test reports' Covers assignments honestly;
 5. run affected tests, `yarn spec:refresh`, and inspect all generated gaps;
 6. reset or allow fingerprints to invalidate affected approvals; and
 7. audit the complete path and obtain explicit engineer approval before acceptance.

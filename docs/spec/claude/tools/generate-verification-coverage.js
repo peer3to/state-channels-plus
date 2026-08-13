@@ -10,7 +10,7 @@ const {
     writeOrCheckReport
 } = require("./shared/report-utils");
 
-const PERM_OWNER_RE = /^((?:REQ|INV)-[A-Z0-9]+-\d+)\./;
+const PERM_OWNER_RE = /^((?:REQ|INV)-[A-Z0-9-]+-\d+)\./;
 
 function generateVerificationCoverage(graph = buildDocumentationGraph()) {
     const output = path.join(graph.roots.generated, "verification-coverage.md");
@@ -80,11 +80,29 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         (test) => !graph.tests.mappings.has(`${test.target}\0${test.line}`)
     );
 
+    // Section 5: a test ID may be assigned to at most one test declaration.
+    const ownerDeclarations = new Map();
+    for (const [key, entries] of graph.tests.mappings) {
+        for (const entry of entries) {
+            if (!ownerDeclarations.has(entry.owner))
+                ownerDeclarations.set(entry.owner, new Set());
+            ownerDeclarations.get(entry.owner).add(key);
+        }
+    }
+    const duplicateAssignments = [...ownerDeclarations.entries()]
+        .filter(([, declarations]) => declarations.size > 1)
+        .map(([owner, declarations]) => ({
+            owner,
+            declarations: [...declarations].sort()
+        }))
+        .sort((a, b) => a.owner.localeCompare(b.owner));
+
     const issueCount =
         untestedIds.length +
         untestedPermutations.length +
         filesWithoutReports.length +
-        unreferencedTests.length;
+        unreferencedTests.length +
+        duplicateAssignments.length;
 
     const lines = [
         "# Verification Coverage",
@@ -99,6 +117,7 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         "- [Test IDs not tested](#test-ids-not-tested)",
         "- [Test files without verification reports](#test-files-without-verification-reports)",
         "- [Tests not referenced in verification reports](#tests-not-referenced-in-verification-reports)",
+        "- [Test IDs assigned to more than one test](#test-ids-assigned-to-more-than-one-test)",
         "",
         "## Specification IDs not tested",
         "",
@@ -169,6 +188,33 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
             lines.push(
                 `| \`${test.selector}\` | ${relativeLink(output, test.target, `${path.relative(graph.roots.repo, test.target)}#L${test.line}`, test.line)} |`
             );
+        }
+    }
+
+    lines.push(
+        "",
+        "## Test IDs assigned to more than one test",
+        "",
+        "Each test ID may be covered by exactly one test declaration; these assignments violate that rule and must be reduced to the single strongest test.",
+        ""
+    );
+    if (!duplicateAssignments.length) {
+        lines.push("None.");
+    } else {
+        lines.push("| Test ID | Assigned declarations |", "| --- | --- |");
+        for (const { owner, declarations } of duplicateAssignments) {
+            const cell = declarations
+                .map((key) => {
+                    const [target, line] = key.split("\0");
+                    return relativeLink(
+                        output,
+                        target,
+                        `${path.relative(graph.roots.repo, target)}#L${line}`,
+                        Number(line)
+                    );
+                })
+                .join(", ");
+            lines.push(`| \`${owner}\` | ${cell} |`);
         }
     }
     lines.push("");

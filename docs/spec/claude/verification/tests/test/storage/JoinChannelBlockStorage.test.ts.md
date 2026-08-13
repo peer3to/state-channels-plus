@@ -1,27 +1,38 @@
 # test/storage/JoinChannelBlockStorage.test.ts — Test Report
 
-> **Test file:** [test/storage/JoinChannelBlockStorage.test.ts](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/storage/JoinChannelBlockStorage.test.ts](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [MessageBlockStorage.ts](../../../../implementation/source/src/storage/MessageBlockStorage.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                        | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| --------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `MessageBlockStorage - inbound blocks > store() > stores block with computed hash` (line 32)                                            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `MessageBlockStorage - inbound blocks > store() > respects provided hash override` (line 40)                                            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `MessageBlockStorage - inbound blocks > store() > ignores metadata on duplicate store` (line 52)                                        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `MessageBlockStorage - inbound blocks > read operations > returns undefined for unknown hashes` (line 64)                               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `MessageBlockStorage - inbound blocks > read operations > retrieves ordered entries in range` (line 69)                                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `MessageBlockStorage - inbound blocks > latest block helpers > returns undefined when storage is empty` (line 88)                       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `MessageBlockStorage - inbound blocks > latest block helpers > tracks the highest block height even when stored out of order` (line 94) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite exercises `MessageBlockStorage` as the inbound (join-channel) instance with hand-built
+message-block structs hash-linked from a height-0 genesis. It covers content-addressed stores
+under computed and provided hashes, a duplicate store, unknown-hash reads, a complete backward
+`[upper, lower)` range read returning both linked blocks in order, the latest-block helpers on
+an empty store, and tip tracking that keeps the highest height and hash when a lower linked
+block is stored afterwards. Gapped or unlinked chains, bound edge shapes, `justPersist` opt-out,
+equal-height stores, and cross-instance isolation are not exercised, so those permutations stay
+unassigned; the duplicate-store test asserts only hash equality, which is not enough for the
+idempotence permutations.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                 | Covers                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`MessageBlockStorage - inbound blocks > store() > stores block with computed hash`](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts#L32) (line 32)                                            | —                                                                                                                                                                                                                                                          |
+| [`MessageBlockStorage - inbound blocks > store() > respects provided hash override`](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts#L40) (line 40)                                            | —                                                                                                                                                                                                                                                          |
+| [`MessageBlockStorage - inbound blocks > store() > ignores metadata on duplicate store`](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts#L52) (line 52)                                        | —                                                                                                                                                                                                                                                          |
+| [`MessageBlockStorage - inbound blocks > read operations > returns undefined for unknown hashes`](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts#L64) (line 64)                               | —                                                                                                                                                                                                                                                          |
+| [`MessageBlockStorage - inbound blocks > read operations > retrieves ordered entries in range`](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts#L69) (line 69)                                 | [`REQ-MSGSTORE-2.T1.P1`](../../../../specification/storage/message-blocks.md#req-msgstore-2-t1-p1), [`UNIT-TEST-MESSAGE-BLOCK-STORAGE-2.P1`](../../../../implementation/source/src/storage/MessageBlockStorage.ts.md#unit-test-message-block-storage-2.p1) |
+| [`MessageBlockStorage - inbound blocks > latest block helpers > returns undefined when storage is empty`](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts#L88) (line 88)                       | —                                                                                                                                                                                                                                                          |
+| [`MessageBlockStorage - inbound blocks > latest block helpers > tracks the highest block height even when stored out of order`](../../../../../../../test/storage/JoinChannelBlockStorage.test.ts#L94) (line 94) | [`REQ-MSGSTORE-1.T1.P1`](../../../../specification/storage/message-blocks.md#req-msgstore-1-t1-p1)                                                                                                                                                         |

@@ -1,21 +1,30 @@
 # test/e2e/disputeValidation/uploadRevert/disputer.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/uploadRevert/disputer.test.ts](../../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputer.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/uploadRevert/disputer.test.ts](../../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputer.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                        | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / uploadRevert / disputer > dispute.input.disputer = ZeroAddress → dispute upload fails → ErrorDisputerNotMsgSender` (line 17) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+A single upload-gate case for disputer identity: `postTamperedDispute` sets
+`dispute.input.disputer = ZeroAddress`, so the claimed disputer no longer equals
+`msg.sender`, and the harness asserts the upload reverts with the decoded custom error
+`ErrorDisputerNotMsgSender`. This pins the `disputer == msg.sender` binding of the upload
+eligibility rules at the contract boundary; audit-side behavior is out of scope because the
+dispute never lands on-chain. The applicable permutations
+(`UNIT-TEST-DISPUTE-MANAGER-FACET-1.P1` spans each gate; the `REQ-DIS-2` rows bundle the
+whole identity/signature matrix) are broader than this one revert, so no ID is assigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                   | Covers |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: dispute validation / uploadRevert / disputer > dispute.input.disputer = ZeroAddress → dispute upload fails → ErrorDisputerNotMsgSender`](../../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputer.test.ts#L17) (line 17) | —      |

@@ -1,25 +1,38 @@
 # test/e2e/E2E-FinalDispute.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-FinalDispute.test.ts](../../../../../../../test/e2e/E2E-FinalDispute.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-FinalDispute.test.ts](../../../../../../../test/e2e/E2E-FinalDispute.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                            | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| --------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: final dispute resolution > threshold-final dispute installs its exact output and can post the next snapshot` (line 7) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: final dispute resolution > threshold-final dispute makes a queued reduction timeout a no-op` (line 78)                | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: final dispute resolution > duplicate completion is idempotent` (line 138)                                             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: final dispute resolution > missed final-dispute delivery recovers the exact final output during reduction` (line 163) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: final dispute resolution > failed final-dispute preparation propagates without abandoning participation` (line 212)   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite stages threshold-final disputes (signed by the full participant set) on a real four-peer
+channel via the harness helpers `submitFinalDispute` / `submitFinalDisputeFromStoredEvidence` and
+resolves them on-chain with `resolveFinalDispute`. It asserts the final-dispute fast path in the
+reduction stack: the exact final output (fork id and genesis timestamp) is installed without
+running `validateDispute`, a queued ordinary reduction task released afterwards is a no-op (no
+second `onSetState`; the completed reduction joins the final fork), duplicate completion via
+`awaitReduction` is idempotent, and a peer whose `DisputeCommitted` delivery was withheld still
+lands on the exact final output during reduction. A forced failure of final-dispute output
+preparation propagates as a fatal host error while the peer stays `PARTICIPATING`. Oracles are
+host-side queries (fork ids, genesis timestamps, completed-reduction lookups, status), event-spy
+counts, and quiesced host errors. Ordinary (non-final) reduction submission outcomes are out of
+scope (`E2E-ReductionManager`, `test/stateManager/ReductionManager.test.ts`).
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                           | Covers                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: final dispute resolution > threshold-final dispute installs its exact output and can post the next snapshot`](../../../../../../../test/e2e/E2E-FinalDispute.test.ts#L7) (line 7)   | —                                                                                                                                                             |
+| [`E2E: final dispute resolution > threshold-final dispute makes a queued reduction timeout a no-op`](../../../../../../../test/e2e/E2E-FinalDispute.test.ts#L78) (line 78)                 | [`UNIT-TEST-REDUCTION-EXECUTOR-1.P4`](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1.p4) |
+| [`E2E: final dispute resolution > duplicate completion is idempotent`](../../../../../../../test/e2e/E2E-FinalDispute.test.ts#L138) (line 138)                                             | —                                                                                                                                                             |
+| [`E2E: final dispute resolution > missed final-dispute delivery recovers the exact final output during reduction`](../../../../../../../test/e2e/E2E-FinalDispute.test.ts#L163) (line 163) | —                                                                                                                                                             |
+| [`E2E: final dispute resolution > failed final-dispute preparation propagates without abandoning participation`](../../../../../../../test/e2e/E2E-FinalDispute.test.ts#L212) (line 212)   | —                                                                                                                                                             |

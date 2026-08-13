@@ -16,8 +16,8 @@ const {
     writeOrCheckReport
 } = require("./shared/report-utils");
 
-const ID_RE = /\b(?:REQ|INV)-[A-Z0-9]+-\d+\b/g;
-const PERM_OWNER_RE = /^((?:REQ|INV)-[A-Z0-9]+-\d+)\.T\d+\.P\d+$/;
+const ID_RE = /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\b/g;
+const PERM_OWNER_RE = /^((?:REQ|INV)-[A-Z0-9-]+-\d+)\.T\d+\.P\d+$/;
 
 function testReportPath(graph, target) {
     return path.join(
@@ -25,36 +25,6 @@ function testReportPath(graph, target) {
         "verification/tests",
         `${path.relative(graph.roots.repo, target)}.md`
     );
-}
-
-function declarationLevels(graph) {
-    // Parse "Level" columns from verification/tests reports: rows whose first cell
-    // contains `selector` (line N). Returns Map<"repoRelTarget\0line", level>.
-    const levels = new Map();
-    const root = path.join(graph.roots.spec, "verification/tests");
-    if (!fs.existsSync(root)) return levels;
-    const stack = [root];
-    while (stack.length) {
-        const dir = stack.pop();
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            const p = path.join(dir, entry.name);
-            if (entry.isDirectory()) stack.push(p);
-            else if (entry.name.endsWith(".md")) {
-                const rel = path.relative(root, p).replace(/\.md$/, "");
-                for (const line of fs.readFileSync(p, "utf8").split("\n")) {
-                    const m = line.match(
-                        /^\|\s*`(.+?)`\s*\(line (\d+)\)\s*\|\s*([^|]+)\|/
-                    );
-                    if (m)
-                        levels.set(
-                            `${rel}\0${m[2]}`,
-                            m[3].trim() || "Unclassified"
-                        );
-                }
-            }
-        }
-    }
-    return levels;
 }
 
 function generateTraceabilityViews(graph = buildDocumentationGraph()) {
@@ -102,8 +72,6 @@ function generateTraceabilityViews(graph = buildDocumentationGraph()) {
             if (!testPermutations.has(key)) testPermutations.set(key, []);
             testPermutations.get(key).push(perm);
         }
-
-    const levels = declarationLevels(graph);
 
     const requirements = [...graph.requirements.definitions.entries()].sort(
         ([a], [b]) => a.localeCompare(b)
@@ -237,17 +205,16 @@ function generateTraceabilityViews(graph = buildDocumentationGraph()) {
         "",
         "Only declarations mapped to at least one permutation appear here; the full inventory lives in the `verification/tests/` reports.",
         "",
-        "| Test declaration | Level | Specification permutations |",
-        "| --- | --- | --- |"
+        "| Test declaration | Covered test IDs |",
+        "| --- | --- |"
     );
     const mappedKeys = [...testPermutations.keys()].sort();
-    if (!mappedKeys.length) lines.push("| _none yet_ | — | — |");
+    if (!mappedKeys.length) lines.push("| _none yet_ | — |");
     for (const key of mappedKeys) {
         const [rel, line] = key.split("\0");
-        const level = levels.get(key) || "Unclassified";
         const perms = [...new Set(testPermutations.get(key))].sort();
         lines.push(
-            `| \`${rel}#L${line}\` | ${level} | ${perms.map((p) => `\`${p}\``).join(", ")} |`
+            `| \`${rel}#L${line}\` | ${perms.map((p) => `\`${p}\``).join(", ")} |`
         );
     }
 

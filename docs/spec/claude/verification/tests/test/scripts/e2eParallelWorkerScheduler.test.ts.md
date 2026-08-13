@@ -1,30 +1,32 @@
 # test/scripts/e2eParallelWorkerScheduler.test.ts — Test Report
 
-> **Test file:** [test/scripts/e2eParallelWorkerScheduler.test.ts](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/scripts/e2eParallelWorkerScheduler.test.ts](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                  | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ----------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `distributed worker scheduler > uses parallel-runner defaults and accepts server-local short overrides` (line 23) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > reuses only funded account partitions` (line 40)                                  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > uses the shared always-one and process-cap admission rules` (line 55)             | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > falls back conservatively and warns once when ps fails` (line 68)                 | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > builds the same complete slot environment for every scheduler` (line 90)          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > keeps capacity alive after no work and accepts a nudge` (line 115)                | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > suppresses concurrent task requests and stops timer retries` (line 142)           | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > does not start an assignment returned after the scheduler stops` (line 169)       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > buffers the next distributed assignment before capacity opens` (line 195)         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `distributed worker scheduler > paces successful admissions using the shared scheduler interval` (line 228)       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+This suite unit-tests the admission and pacing layer shared by the local and distributed runners: `WorkerScheduler`, `AccountPartitionPool`/`accountPartitionFor`, `ResourceGate`, and `buildSlotEnv` from `scripts/e2e-parallel/shared/`, plus `parseServerArgs` defaults from `scripts/e2e-parallel/distributed/serverArgParser.js`. Schedulers are driven with injected `canRun`/`requestTask`/`runTask` callbacks and asserted on request counts, running totals, and timing. Oracles cover server defaults with short-flag overrides, the funded-account-partition pool that refuses over-acquisition and reuses released partitions, the always-admit-one and process-cap admission rules, conservative fallback with a single warning when `ps` sampling fails, an identical fully-populated slot environment for every scheduler (including the null-slot case), capacity that survives empty polls and wakes on a nudge, suppression of concurrent task requests and of timer retries after stop, refusal to start an assignment returned after stop, prefetch buffering of the next assignment before capacity opens, and pacing of successive admissions by the shared tick interval. All components are runner tooling under `scripts/`, so no specification or implementation test-plan permutation applies to this file.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                              | Covers |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`distributed worker scheduler > uses parallel-runner defaults and accepts server-local short overrides`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L23) (line 23) | —      |
+| [`distributed worker scheduler > reuses only funded account partitions`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L40) (line 40)                                  | —      |
+| [`distributed worker scheduler > uses the shared always-one and process-cap admission rules`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L55) (line 55)             | —      |
+| [`distributed worker scheduler > falls back conservatively and warns once when ps fails`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L68) (line 68)                 | —      |
+| [`distributed worker scheduler > builds the same complete slot environment for every scheduler`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L90) (line 90)          | —      |
+| [`distributed worker scheduler > keeps capacity alive after no work and accepts a nudge`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L115) (line 115)               | —      |
+| [`distributed worker scheduler > suppresses concurrent task requests and stops timer retries`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L142) (line 142)          | —      |
+| [`distributed worker scheduler > does not start an assignment returned after the scheduler stops`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L169) (line 169)      | —      |
+| [`distributed worker scheduler > buffers the next distributed assignment before capacity opens`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L195) (line 195)        | —      |
+| [`distributed worker scheduler > paces successful admissions using the shared scheduler interval`](../../../../../../../test/scripts/e2eParallelWorkerScheduler.test.ts#L228) (line 228)      | —      |

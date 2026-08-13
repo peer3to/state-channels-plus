@@ -1,24 +1,40 @@
 # test/e2e/E2E-ParticipantLifecycle.test.ts — Test Report
 
-> **Test file:** [test/e2e/E2E-ParticipantLifecycle.test.ts](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/E2E-ParticipantLifecycle.test.ts](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                          | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: Participant Lifecycle > Exit path > should demote exiting participant to SYNCED when state snapshot is updated on-chain` (line 26)                  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Participant Lifecycle > Exit path > exiting participant does not sign blocks authored after its leave` (line 46)                                    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Participant Lifecycle > Join path > should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block` (line 101) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: Participant Lifecycle > Join path > preserves a landed pending join when the same confirmation is retried` (line 161)                               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite walks both participant-set transitions end to end through the `MathTestSession` harness:
+the exit path (`leaveChannel` → N/N snapshot → on-chain snapshot update demotes the exiter to
+SYNCED while the rest stay PARTICIPATING) and the join path (a synced spectator broadcasts a real
+join confirmation, flips to PENDING_PARTICIPANT before the transaction is mined, and is promoted
+to PARTICIPATING once the first block whose resulting participant set includes it is processed).
+It also proves two guards: a detached leaver whose process stays connected never signs a
+post-leave block (checked against the actual confirmation-signature set of the next finalized
+block, with no honest peer blacklisted), and retrying an already-landed join confirmation rejects
+with `ErrorJoinChannelParticipantAlreadyExists` while the host keeps PENDING_PARTICIPANT and the
+recorded join-submission height, so the pending join still completes. Oracles are host-side
+status/storage reads over the control port and decoded block bundles; the underlying components
+(`StateManager.joinChannel`/commit promotion, `EventHandler` snapshot handling) have their own
+obligation permutations that bundle further conditions (each `shouldSignBlock` condition,
+forced-join triggers), so no permutation here is covered in full by a single test and none are
+assigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                 | Covers |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: Participant Lifecycle > Exit path > should demote exiting participant to SYNCED when state snapshot is updated on-chain`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L26) (line 26)                   | —      |
+| [`E2E: Participant Lifecycle > Exit path > exiting participant does not sign blocks authored after its leave`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L46) (line 46)                                     | —      |
+| [`E2E: Participant Lifecycle > Join path > should set PENDING_PARTICIPANT on join broadcast, then PARTICIPATING once joiner appears in a block`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L101) (line 101) | —      |
+| [`E2E: Participant Lifecycle > Join path > preserves a landed pending join when the same confirmation is retried`](../../../../../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L161) (line 161)                               | —      |

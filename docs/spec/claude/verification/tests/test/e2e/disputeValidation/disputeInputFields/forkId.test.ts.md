@@ -1,21 +1,32 @@
 # test/e2e/disputeValidation/disputeInputFields/forkId.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/disputeInputFields/forkId.test.ts](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/forkId.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/disputeInputFields/forkId.test.ts](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/forkId.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                        | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / disputeInputFields / forkId > current fork == genesis; dispute.input.forkId = random; honest peers stay on genesis` (line 7) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The single test checks fork-identity binding from the auditor side: a committed dispute that
+targets a forkId honest peers do not track must be left alone. From a genesis channel
+(`timeoutSetup(3, 0)`), peer 1 posts a tampered self-removal dispute whose `input.forkId` is a
+random hash (timeout and onChainSlashes zeroed so selfRemoval is the only claim). The oracles
+assert honest peers observe exactly one `disputeCommitted` event (the junk dispute does land
+on-chain), fire no `onDisputeKilled` during a 6-second quiet window since they never audit a fork
+they do not track, and each still reports the original genesis forkId afterwards — no peer
+switched onto the junk fork. Kill, slashing, and resolution behavior for the junk fork are out of
+scope. The wrong-identity spec permutation bundles every identity field (manager, channel, fork,
+dispute), so this fork-only test does not fully cover it and the Covers column stays empty.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                      | Covers |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`E2E: dispute validation / disputeInputFields / forkId > current fork == genesis; dispute.input.forkId = random; honest peers stay on genesis`](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/forkId.test.ts#L7) (line 7) | —      |

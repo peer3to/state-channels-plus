@@ -1,24 +1,37 @@
 # test/evm/chainSignerSerialization.test.ts — Test Report
 
-> **Test file:** [test/evm/chainSignerSerialization.test.ts](../../../../../../../test/evm/chainSignerSerialization.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/evm/chainSignerSerialization.test.ts](../../../../../../../test/evm/chainSignerSerialization.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [chainSignerSerialization.ts](../../../../implementation/source/src/evm/p2pRuntime/chainSignerSerialization.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                    | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| --------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `chain signer serialization > round-trips a normalized transaction request` (line 13)               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `chain signer serialization > reconstructs a native provider-backed transaction response` (line 47) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `chain signer serialization > allows explicit client-side replacement detection` (line 68)          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `chain signer serialization > rejects fields that cannot cross the runtime port` (line 116)         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite exercises the four `chainSignerSerialization` codecs directly against a live Hardhat
+provider: transaction requests and responses are serialized for the runtime port and
+reconstructed on the other side. The oracles compare field-by-field round-trips and provider
+behavior of the reconstructed objects. The cases prove: a normalized request round-trips exactly
+(signer resolved to its address, quantities hex/bigint-normalized, access list preserved); a
+provider-backed response is reconstructed as a native ethers response (hash, nonce, value,
+signature identical, `wait()` and `confirmations()` functional); a reconstructed response
+supports explicit `replaceableTransaction` detection, surfacing `TRANSACTION_REPLACED` with the
+replacement hash; and a request carrying `customData` — which cannot cross the runtime port — is
+rejected with the documented error. The port transport itself and signing policy are out of
+scope; only the serialization boundary is pinned here.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                          | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`chain signer serialization > round-trips a normalized transaction request`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L13) (line 13)               | —      |
+| [`chain signer serialization > reconstructs a native provider-backed transaction response`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L47) (line 47) | —      |
+| [`chain signer serialization > allows explicit client-side replacement detection`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L68) (line 68)          | —      |
+| [`chain signer serialization > rejects fields that cannot cross the runtime port`](../../../../../../../test/evm/chainSignerSerialization.test.ts#L116) (line 116)        | —      |

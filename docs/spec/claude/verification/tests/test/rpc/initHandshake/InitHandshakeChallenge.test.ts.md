@@ -1,23 +1,35 @@
 # test/rpc/initHandshake/InitHandshakeChallenge.test.ts — Test Report
 
-> **Test file:** [test/rpc/initHandshake/InitHandshakeChallenge.test.ts](../../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/rpc/initHandshake/InitHandshakeChallenge.test.ts](../../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [InitHandshakeService.ts](../../../../../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                              | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `InitHandshake challenge domain separation > round-trips: a domain-separated handshake signature recovers the signer` (line 17)                               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `InitHandshake challenge domain separation > does not collide with block signing: the handshake signature is not valid over the raw challenge hash` (line 29) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `InitHandshake challenge domain separation > derives an identical message regardless of challenge-hash casing` (line 48)                                      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite is the focused regression test for the signing-oracle fix in the init-handshake
+responder: `InitHandshakeService.buildHandshakeChallengeMessage` must domain-separate what the
+responder signs so the endpoint cannot be abused to mint block signatures. Tests drive the static
+message builder plus ethers signing/recovery directly — no service instance, transport, or
+harness. The oracles: a signature over the domain-separated message recovers the signer under
+`verifyMessage`; when the challenge is set to `keccak256(encodedBlock)` (the attack), the
+handshake signature does NOT recover the signer under block-style verification (EIP-191 over the
+raw 32-byte hash); and the builder normalizes challenge-hash casing to one identical message. The
+live request/response endpoints, challenge freshness, time-window checks, and profile
+finalization are out of scope (exercised by `E2E-InitHandshake`).
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                   | Covers                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [`InitHandshake challenge domain separation > round-trips: a domain-separated handshake signature recovers the signer`](../../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts#L17) (line 17)                               | —                                                                                                   |
+| [`InitHandshake challenge domain separation > does not collide with block signing: the handshake signature is not valid over the raw challenge hash`](../../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts#L29) (line 29) | [`INV-AUTH-2.T1.P1`](../../../../../specification/peer-communication/handshake.md#inv-auth-2-t1-p1) |
+| [`InitHandshake challenge domain separation > derives an identical message regardless of challenge-hash casing`](../../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts#L48) (line 48)                                      | —                                                                                                   |

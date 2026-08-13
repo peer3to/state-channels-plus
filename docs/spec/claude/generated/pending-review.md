@@ -4,7 +4,7 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/claude/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Pending (never reviewed): **562**
+- Pending (never reviewed): **532**
 - Stale (edited since review): **0**
 - Verified (current): **0**
 
@@ -415,13 +415,10 @@ None.
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (167)
+### verification (137)
 
-- [verification/end-to-end/README.md](../verification/end-to-end/README.md)
-- [verification/integration/README.md](../verification/integration/README.md)
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
-- [verification/system/README.md](../verification/system/README.md)
 - [verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md](../verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md)
 - [verification/tests/test/browser/run-worker-contract-executor.mjs.md](../verification/tests/test/browser/run-worker-contract-executor.mjs.md)
 - [verification/tests/test/cache/SignerRecoveryCache.test.ts.md](../verification/tests/test/cache/SignerRecoveryCache.test.ts.md)
@@ -557,33 +554,6 @@ None.
 - [verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md)
 - [verification/tests/test/V1/UniversalDeployment.test.ts.md](../verification/tests/test/V1/UniversalDeployment.test.ts.md)
-- [verification/unit/README.md](../verification/unit/README.md)
-- [verification/views/architecture/contracts.md](../verification/views/architecture/contracts.md)
-- [verification/views/architecture/rpc.md](../verification/views/architecture/rpc.md)
-- [verification/views/architecture/sdk.md](../verification/views/architecture/sdk.md)
-- [verification/views/concepts/history-and-commitments.md](../verification/views/concepts/history-and-commitments.md)
-- [verification/views/concepts/state-machines.md](../verification/views/concepts/state-machines.md)
-- [verification/views/disputes.md](../verification/views/disputes.md)
-- [verification/views/distributed-testing.md](../verification/views/distributed-testing.md)
-- [verification/views/lifecycle.md](../verification/views/lifecycle.md)
-- [verification/views/operations/configuration.md](../verification/views/operations/configuration.md)
-- [verification/views/protocol/block-processing.md](../verification/views/protocol/block-processing.md)
-- [verification/views/protocol/cross-layer-messages.md](../verification/views/protocol/cross-layer-messages.md)
-- [verification/views/protocol/dispute-processing.md](../verification/views/protocol/dispute-processing.md)
-- [verification/views/protocol/disputes.md](../verification/views/protocol/disputes.md)
-- [verification/views/protocol/finality.md](../verification/views/protocol/finality.md)
-- [verification/views/protocol/fraud-proofs.md](../verification/views/protocol/fraud-proofs.md)
-- [verification/views/protocol/lifecycle.md](../verification/views/protocol/lifecycle.md)
-- [verification/views/protocol/state-proofs.md](../verification/views/protocol/state-proofs.md)
-- [verification/views/protocol/time.md](../verification/views/protocol/time.md)
-- [verification/views/reference/data-types.md](../verification/views/reference/data-types.md)
-- [verification/views/rpc-and-transport.md](../verification/views/rpc-and-transport.md)
-- [verification/views/runtime-and-workers.md](../verification/views/runtime-and-workers.md)
-- [verification/views/runtime/execution.md](../verification/views/runtime/execution.md)
-- [verification/views/security.md](../verification/views/security.md)
-- [verification/views/security/data-availability.md](../verification/views/security/data-availability.md)
-- [verification/views/security/trust-model.md](../verification/views/security/trust-model.md)
-- [verification/views/supporting/implementation-test-evidence.md](../verification/views/supporting/implementation-test-evidence.md)
 
 ## Verified — current
 

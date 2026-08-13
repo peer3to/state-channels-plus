@@ -1,35 +1,50 @@
 # test/models/StateSnapshot.test.ts — Test Report
 
-> **Test file:** [test/models/StateSnapshot.test.ts](../../../../../../../test/models/StateSnapshot.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/models/StateSnapshot.test.ts](../../../../../../../test/models/StateSnapshot.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [StateSnapshot.ts](../../../../implementation/source/src/models/StateSnapshot.ts.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| --------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `StateSnapshot Model > Static factory methods > should create StateSnapshot from StateSnapshotStruct` (line 27) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Static factory methods > should create StateSnapshot from encoded bytes` (line 33)       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Serialization > should convert back to struct correctly` (line 45)                       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Serialization > should round-trip encode/decode correctly` (line 50)                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Hash computation > should compute hash correctly` (line 58)                              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Hash computation > should compute snapshotDataHash correctly` (line 64)                  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Hash computation > should have consistent hash for same data` (line 72)                  | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Property getters > should return correct forkId` (line 80)                               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Property getters > should return correct snapshotData` (line 84)                         | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Property getters > should return correct latestInboundMessageBlockHash` (line 90)        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Property getters > should return correct latestOutboundMessageBlockHash` (line 98)       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Genesis snapshot logic > should identify genesis snapshot correctly` (line 108)          | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Genesis snapshot logic > should identify non-genesis snapshot correctly` (line 115)      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Data integrity > should maintain data integrity through transformations` (line 124)      | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `StateSnapshot Model > Immutability > should not allow modification of underlying data` (line 135)              | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+The suite drives the `StateSnapshot` model class directly — no protocol harness — on structs built
+by the `stateSnapshot` factory in `test/factory`. Oracles assert that `StateSnapshot.from` and
+`StateSnapshot.decode` reconstruct a struct deep-equal to the original, that `encode`/`decode`
+round-trips preserve every field, and that `hash` and `snapshotDataHash` equal the keccak256 of
+the corresponding `Codec` encodings. Property getters (`forkID`, `snapshotData`, inbound/outbound
+message block hashes) are checked field-by-field against the source struct, and `isGenesis` is
+verified in both directions by constructing a snapshot whose `forkId` equals its
+`snapshotDataHash`. An immutability check confirms that mutating a struct returned by `toStruct`
+does not affect the model's internal state. Out of scope: how snapshots are produced, stored, or
+validated (SnapshotUpdateService, StateSnapshotStorage, and contract facet suites). No test IDs
+are assignable here: the StateSnapshot implementation report defines no component test
+obligations, and the linked `REQ-DATA-1` permutations require malformed-input rejection sweeps
+across every type family, which this happy-path suite does not attempt.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                              | Covers |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`StateSnapshot Model > Static factory methods > should create StateSnapshot from StateSnapshotStruct`](../../../../../../../test/models/StateSnapshot.test.ts#L27) (line 27) | —      |
+| [`StateSnapshot Model > Static factory methods > should create StateSnapshot from encoded bytes`](../../../../../../../test/models/StateSnapshot.test.ts#L33) (line 33)       | —      |
+| [`StateSnapshot Model > Serialization > should convert back to struct correctly`](../../../../../../../test/models/StateSnapshot.test.ts#L45) (line 45)                       | —      |
+| [`StateSnapshot Model > Serialization > should round-trip encode/decode correctly`](../../../../../../../test/models/StateSnapshot.test.ts#L50) (line 50)                     | —      |
+| [`StateSnapshot Model > Hash computation > should compute hash correctly`](../../../../../../../test/models/StateSnapshot.test.ts#L58) (line 58)                              | —      |
+| [`StateSnapshot Model > Hash computation > should compute snapshotDataHash correctly`](../../../../../../../test/models/StateSnapshot.test.ts#L64) (line 64)                  | —      |
+| [`StateSnapshot Model > Hash computation > should have consistent hash for same data`](../../../../../../../test/models/StateSnapshot.test.ts#L72) (line 72)                  | —      |
+| [`StateSnapshot Model > Property getters > should return correct forkId`](../../../../../../../test/models/StateSnapshot.test.ts#L80) (line 80)                               | —      |
+| [`StateSnapshot Model > Property getters > should return correct snapshotData`](../../../../../../../test/models/StateSnapshot.test.ts#L84) (line 84)                         | —      |
+| [`StateSnapshot Model > Property getters > should return correct latestInboundMessageBlockHash`](../../../../../../../test/models/StateSnapshot.test.ts#L90) (line 90)        | —      |
+| [`StateSnapshot Model > Property getters > should return correct latestOutboundMessageBlockHash`](../../../../../../../test/models/StateSnapshot.test.ts#L98) (line 98)       | —      |
+| [`StateSnapshot Model > Genesis snapshot logic > should identify genesis snapshot correctly`](../../../../../../../test/models/StateSnapshot.test.ts#L108) (line 108)         | —      |
+| [`StateSnapshot Model > Genesis snapshot logic > should identify non-genesis snapshot correctly`](../../../../../../../test/models/StateSnapshot.test.ts#L115) (line 115)     | —      |
+| [`StateSnapshot Model > Data integrity > should maintain data integrity through transformations`](../../../../../../../test/models/StateSnapshot.test.ts#L124) (line 124)     | —      |
+| [`StateSnapshot Model > Immutability > should not allow modification of underlying data`](../../../../../../../test/models/StateSnapshot.test.ts#L135) (line 135)             | —      |

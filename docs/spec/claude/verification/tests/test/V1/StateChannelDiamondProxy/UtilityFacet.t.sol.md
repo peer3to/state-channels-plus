@@ -1,28 +1,41 @@
 # test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol — Test Report
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [UtilityFacet.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                         | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| ------------------------------------------------------------------------ | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `testFuzz_subtractAddressArrays_excludesSubtracted` (line 22)            | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `testFuzz_subtractAddressArrays_emptyIsIdentity` (line 32)               | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `testFuzz_subtractAddressArrays_selfIsEmpty` (line 41)                   | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `testFuzz_concatBytesArrays_lengthAndOrder` (line 46)                    | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `testFuzz_insertIntoAddressArrayNoDuplicates_containsAndDedup` (line 58) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `testFuzz_insertIntoAddressArrayNoDuplicates_idempotent` (line 75)       | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `testFuzz_areAddressArraysEqual_reflexive` (line 82)                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `testFuzz_areAddressArraysEqual_symmetric` (line 87)                     | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+A stateless Foundry fuzz suite over the pure array helpers of `UtilityFacet`, deployed standalone
+(plain `new UtilityFacet()`, no diamond, no storage). Each test states an algebraic property and
+checks it against a local reference (`_contains` loop): `subtractAddressArrays` yields a subset of
+the minuend with nothing from the subtrahend, is the identity for an empty subtrahend, and empties
+on self-subtraction; `concatBytesArrays` preserves total length and element order;
+`insertIntoAddressArrayNoDuplicates` guarantees presence, appends exactly one element only when
+absent, and is idempotent; `areAddressArraysEqual` is reflexive and symmetric. The facet's
+signature-threshold verification, block decode, and genesis/ordering predicates are not touched
+here (the Hardhat `SignatureVerification.test.ts` suite covers the threshold path). The planned
+permutations `UNIT-TEST-UTILITY-FACET-1.P1`–`P5` all target those threshold/decode/predicate
+surfaces, so none of them is covered by this array-helper suite and all rows stay unassigned.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                            | Covers |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`testFuzz_subtractAddressArrays_excludesSubtracted`](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol#L22) (line 22)            | —      |
+| [`testFuzz_subtractAddressArrays_emptyIsIdentity`](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol#L32) (line 32)               | —      |
+| [`testFuzz_subtractAddressArrays_selfIsEmpty`](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol#L41) (line 41)                   | —      |
+| [`testFuzz_concatBytesArrays_lengthAndOrder`](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol#L46) (line 46)                    | —      |
+| [`testFuzz_insertIntoAddressArrayNoDuplicates_containsAndDedup`](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol#L58) (line 58) | —      |
+| [`testFuzz_insertIntoAddressArrayNoDuplicates_idempotent`](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol#L75) (line 75)       | —      |
+| [`testFuzz_areAddressArraysEqual_reflexive`](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol#L82) (line 82)                     | —      |
+| [`testFuzz_areAddressArraysEqual_symmetric`](../../../../../../../../test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol#L87) (line 87)                     | —      |

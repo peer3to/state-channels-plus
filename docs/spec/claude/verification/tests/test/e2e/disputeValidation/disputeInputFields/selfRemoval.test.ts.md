@@ -1,22 +1,34 @@
 # test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts — Test Report
 
-> **Test file:** [test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts) > **Status:** Skeleton — declarations inventoried mechanically; setup/oracle inspection pending.
-> Declarations are listed by name and line (not exact links) until each is inspected and mapped;
-> exact `[test](...#L<declaration>)` links are added only on inspected traceability rows.
+> **Test file:** [test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts) > **Status:** Authored — engineer verification pending.
 
-## Declaration inventory
+## Contents
 
-Classification levels: Unit / Integration / System / End-to-end (per declaration, not per file).
+- [Overview](#overview)
+- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
-| Test declaration                                                                                                                                                                                         | Level        | Production entry point | Specification permutations | Implementation obligations | Evidence quality   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------------------- | -------------------------- | -------------------------- | ------------------ |
-| `E2E: dispute validation / disputeInputFields / selfRemoval > dispute.input.selfRemoval = true; honest disputer voluntarily exits → dispute commits and disputer removed from participant set` (line 10) | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
-| `E2E: dispute validation / disputeInputFields / selfRemoval > dispute.input.selfRemoval flipped without recomputing outputSnapshotDataHash → DisputeInvalidOutputState` (line 74)                        | Unclassified | _pending_              | none — gap                 | none — gap                 | Pending inspection |
+## Overview
 
-## Environment and support code
+Two tests cover `dispute.input.selfRemoval` from both sides. The valid case arms `forceExit` on
+peer 1 so its dispute pipeline produces a genuine self-removal dispute, posted untampered: the
+oracles assert exactly one commitment, no `onDisputeKilled` from anyone during a 4-second quiet
+window, fork resolution among the remaining peers, a participant count of 2, and that every
+remaining peer's participant list no longer contains the leaver's address. The invalid case posts
+a dispute through `DisputeTampering.flipSelfRemovalWithoutOutputRecompute`, which flips the flag
+and zeroes timeout/onChainSlashes without recomputing `outputSnapshotDataHash`; the on-chain
+validator sees the output hash disagree with the flipped flag, so all peers fire
+`onDisputeKilled`, honest peers store a `DisputeInvalidOutputState` proof, and the fork still
+resolves. The applicable spec permutations bundle these accept/reject sides with further
+membership and deadline scenarios per ID, so neither test alone covers one in full.
 
-_Pending: runtime/environment notes and any support code that materially affects setup or oracle._
+## Tests and covered test IDs
 
-## Remaining gaps
+A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
+test ID may be assigned to at most one test across the whole tree; static analysis reports
+duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
+report but are kept here.
 
-_Pending inspection._
+| Test declaration                                                                                                                                                                                                                                                                                             | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| [`E2E: dispute validation / disputeInputFields / selfRemoval > dispute.input.selfRemoval = true; honest disputer voluntarily exits → dispute commits and disputer removed from participant set`](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts#L10) (line 10) | —      |
+| [`E2E: dispute validation / disputeInputFields / selfRemoval > dispute.input.selfRemoval flipped without recomputing outputSnapshotDataHash → DisputeInvalidOutputState`](../../../../../../../../../test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts#L74) (line 74)                        | —      |
