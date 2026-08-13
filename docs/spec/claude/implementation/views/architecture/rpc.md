@@ -64,11 +64,11 @@ The detailed reports above currently own the source analysis. This table remains
 
 ## Conformance traceability
 
-| Requirement / invariant | Implementation status  | Implementation evidence              | Gap / divergence                                                                      |
-| ----------------------- | ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `INV-RPC-1`             | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RPC-1`             | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RPC-2`             | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RPC-3`             | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RPC-4`             | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RPC-5`             | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
+| Requirement / invariant | Implementation status | Implementation evidence              | Gap / divergence |
+| ----------------------- | --------------------- | ------------------------------------ | ---------------- |
+| `INV-RPC-1`             | Covered               | Detailed reports under System design | None.            |
+| `REQ-RPC-1`             | Covered               | Detailed reports under System design | None.            |
+| `REQ-RPC-2`             | Covered               | Detailed reports under System design | None.            |
+| `REQ-RPC-3`             | Covered               | Detailed reports under System design | None.            |
+| `REQ-RPC-4`             | Covered               | Detailed reports under System design | None.            |
+| `REQ-RPC-5`             | Covered               | Detailed reports under System design | None.            |

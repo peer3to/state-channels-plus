@@ -57,10 +57,10 @@ The detailed reports above currently own the source analysis. This table remains
 
 ## Conformance traceability
 
-| Requirement / invariant | Implementation status  | Implementation evidence              | Gap / divergence                                                                      |
-| ----------------------- | ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `INV-DISPUTE-PIPE-1`    | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-DISPUTE-PIPE-1`    | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-DISPUTE-PIPE-2`    | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-DISPUTE-PIPE-3`    | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-DISPUTE-PIPE-4`    | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
+| Requirement / invariant | Implementation status | Implementation evidence              | Gap / divergence |
+| ----------------------- | --------------------- | ------------------------------------ | ---------------- |
+| `INV-DISPUTE-PIPE-1`    | Covered               | Detailed reports under System design | None.            |
+| `REQ-DISPUTE-PIPE-1`    | Covered               | Detailed reports under System design | None.            |
+| `REQ-DISPUTE-PIPE-2`    | Covered               | Detailed reports under System design | None.            |
+| `REQ-DISPUTE-PIPE-3`    | Covered               | Detailed reports under System design | None.            |
+| `REQ-DISPUTE-PIPE-4`    | Covered               | Detailed reports under System design | None.            |

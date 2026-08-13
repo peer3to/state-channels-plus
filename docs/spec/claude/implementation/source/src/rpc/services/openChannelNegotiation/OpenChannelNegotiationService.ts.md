@@ -71,11 +71,12 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                            | Implementation status | Evidence                                                                                    | Gap / divergence                                  |
-| -------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| [`INV-NEG-1`](../../../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1) | Covered               | **Here:** field-exact mismatch detection incl. deadline bounds and local-amount insistence. | None.                                             |
-| [`REQ-NEG-2`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-2) | Covered               | **Here:** deadline-check chain polling; `RaceConditionChannelAlreadyOpen` tolerated.        | None.                                             |
-| [`REQ-NEG-3`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-3) | Partial               | **Here:** slot + busy + timeout reset.                                                      | DEF-12 amount validation missing at the boundary. |
+| Requirement / invariant                                                                            | Implementation status | Evidence                                                                                         | Gap / divergence                                  |
+| -------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| [`INV-NEG-1`](../../../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1) | Covered               | **Here:** field-exact mismatch detection incl. deadline bounds and local-amount insistence.      | None.                                             |
+| [`REQ-NEG-2`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-2) | Covered               | **Here:** deadline-check chain polling; `RaceConditionChannelAlreadyOpen` tolerated.             | None.                                             |
+| [`REQ-NEG-3`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-3) | Partial               | **Here:** slot + busy + timeout reset.                                                           | DEF-12 amount validation missing at the boundary. |
+| [`REQ-NEG-1`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-1) | Covered               | **Here:** the numerically lower address is the sole proposer; a wrong-side proposal is punished. | None.                                             |
 
 ## Component test obligations
 

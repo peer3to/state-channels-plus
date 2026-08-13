@@ -65,8 +65,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                         | Implementation status | Evidence                                                                                                                                                                                                      | Gap / divergence                                                                                                |
+| ------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| [`REQ-RUNTIME-5`](../../../../specification/runtime/execution.md#req-runtime-5) | Covered               | **Here:** the assembly is host-neutral; every platform-conditional facility resolves through paired seams. **Other files:** the browser/node pairs (transports, channels, loaders, loggers, jumpdest caches). | None demonstrated; the both-host e2e capability matrix is a verification obligation, not an implementation gap. |
 
 ## Component test obligations
 

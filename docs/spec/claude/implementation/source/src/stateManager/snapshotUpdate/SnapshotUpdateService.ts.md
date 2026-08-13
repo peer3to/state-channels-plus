@@ -68,9 +68,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                    | Implementation status | Evidence                                                                                                                                                               | Gap / divergence |
-| -------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DIS-9`](../../../../../specification/disputes/disputes.md#req-dis-9) | Covered               | **Here:** the link walk + range assembly. **Other files:** verification on-chain ([snapshot-adoption](../../../../../specification/enforcement/snapshot-adoption.md)). | None.            |
+| Requirement / invariant                                                    | Implementation status | Evidence                                                                                                                                                                                                                                   | Gap / divergence |
+| -------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| [`REQ-DIS-9`](../../../../../specification/disputes/disputes.md#req-dis-9) | Covered               | **Here:** the link walk + range assembly. **Other files:** verification on-chain ([snapshot-adoption](../../../../../specification/enforcement/snapshot-adoption.md)).                                                                     | None.            |
+| [`REQ-IX-6`](../../../../../specification/interactions.md#req-ix-6)        | Covered               | **Here:** advances submit finality proofs / reduced-link walks with the unprocessed outbound range. **Other files:** [StateSnapshotFacet](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md) verifies and releases. | None.            |
 
 ## Component test obligations
 

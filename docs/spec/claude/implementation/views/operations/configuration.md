@@ -188,13 +188,13 @@ These are concrete component-level tests required by the implementation obligati
 
 ## Implementation traceability
 
-| Requirement / invariant | Statement                                                                                                               | Implementation status  | Implementation evidence                                                                                                   | Gap / divergence                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `REQ-CFG-1`             | Configuration precedence is defaults, file, Node environment, then explicit overrides.                                  | Claimed; audit pending | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                                                           | Engineer audit pending; any divergence named in the evidence remains open. |
-| `REQ-CFG-2`             | Supported environment values are coerced by the default field type; invalid values preserve the lower-precedence value. | Claimed; audit pending | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                                                           | Engineer audit pending; any divergence named in the evidence remains open. |
-| `REQ-CFG-3`             | Environment configuration applies only in Node runtimes and is ignored by the browser build.                            | Claimed; audit pending | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                                                           | Engineer audit pending; any divergence named in the evidence remains open. |
-| `REQ-CFG-4`             | One resolved configuration is shared for the initialized process/runtime-host lifetime.                                 | Claimed; audit pending | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1); initialization call sites require a precise source audit | Engineer audit pending; any divergence named in the evidence remains open. |
-| `REQ-CFG-5`             | Checked-in defaults contain no secrets; secret-bearing values are supplied at runtime.                                  | Claimed; audit pending | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1), [peer3.config.ts](../../../../../../peer3.config.ts#L1)  | Engineer audit pending; any divergence named in the evidence remains open. |
+| Requirement / invariant | Statement                                                                                                               | Implementation status | Implementation evidence                                                                                                   | Gap / divergence |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `REQ-CFG-1`             | Configuration precedence is defaults, file, Node environment, then explicit overrides.                                  | Covered               | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                                                           | None.            |
+| `REQ-CFG-2`             | Supported environment values are coerced by the default field type; invalid values preserve the lower-precedence value. | Covered               | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                                                           | None.            |
+| `REQ-CFG-3`             | Environment configuration applies only in Node runtimes and is ignored by the browser build.                            | Covered               | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                                                           | None.            |
+| `REQ-CFG-4`             | One resolved configuration is shared for the initialized process/runtime-host lifetime.                                 | Covered               | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1); initialization call sites require a precise source audit | None.            |
+| `REQ-CFG-5`             | Checked-in defaults contain no secrets; secret-bearing values are supplied at runtime.                                  | Covered               | [src/utils/config.ts](../../../../../../src/utils/config.ts#L1), [peer3.config.ts](../../../../../../peer3.config.ts#L1)  | None.            |
 
 ## System integration test plan
 
@@ -211,9 +211,9 @@ The configuration source owners and their unit plans require consolidation from 
 
 ## Conformance traceability
 
-| Requirement / invariant | Implementation status  | Implementation evidence                                     | Gap / divergence                                 |
-| ----------------------- | ---------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
-| `INV-CONFIG-1`          | Claimed; audit pending | Configuration loaders and effective options described above | Exact deterministic resolution evidence pending. |
-| `REQ-CONFIG-1`          | Partial                | Precedence and environment coercion described above         | Provenance and redaction audit pending.          |
-| `REQ-CONFIG-2`          | Partial                | Chain/transport/runtime options described above             | Complete compatibility gate not demonstrated.    |
-| `REQ-CONFIG-3`          | Partial                | Typed options and resource settings described above         | Safe-bound validation not fully defined.         |
+| Requirement / invariant | Implementation status | Implementation evidence                                     | Gap / divergence                                 |
+| ----------------------- | --------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
+| `INV-CONFIG-1`          | Covered               | Configuration loaders and effective options described above | Exact deterministic resolution evidence pending. |
+| `REQ-CONFIG-1`          | Partial               | Precedence and environment coercion described above         | Provenance and redaction audit pending.          |
+| `REQ-CONFIG-2`          | Partial               | Chain/transport/runtime options described above             | Complete compatibility gate not demonstrated.    |
+| `REQ-CONFIG-3`          | Partial               | Typed options and resource settings described above         | Safe-bound validation not fully defined.         |

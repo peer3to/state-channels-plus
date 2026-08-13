@@ -114,6 +114,8 @@ function generateTraceabilityViews(graph = buildDocumentationGraph()) {
         "",
         "> **Generated—do not edit.** Inverse views joined by stable IDs across maintained layers. Command: `yarn spec:refresh`.",
         "",
+        "**What this file answers that the coverage reports do not:** the coverage reports are queues of what is *missing*; this file is the navigable map of what *exists* — which file reports implement each requirement, which exact declarations prove it, what each production file touches, and how evidence rolls up per protocol system. Use it while reviewing; use the coverage reports to find work.",
+        "",
         "Path equality is never evidence. A test counts only when its exact declaration is mapped to the permutation it proves in a verification report.",
         "",
         "## Contents",
@@ -125,7 +127,7 @@ function generateTraceabilityViews(graph = buildDocumentationGraph()) {
         "",
         "## Requirement to production files and tests",
         "",
-        "| Requirement | Defined in | Linked production files | Mapped test declarations |",
+        "| Requirement | Defined in | Implementing file reports | Evidence (mapped declarations) |",
         "| --- | --- | --- | --- |"
     ];
     const systemRollup = new Map();
@@ -144,10 +146,50 @@ function generateTraceabilityViews(graph = buildDocumentationGraph()) {
         roll.requirements++;
         if (sources.length) roll.withSources++;
         if (tests.length) roll.withTests++;
+        const CAP_FILES = 6;
+        const CAP_TESTS = 4;
         const sourceCell = sources.length
-            ? `${sources.length} file(s)`
+            ? sources
+                  .slice()
+                  .sort()
+                  .slice(0, CAP_FILES)
+                  .map((source) => {
+                      const rel = path.relative(repo, source);
+                      const report = path.join(
+                          graph.roots.spec,
+                          "implementation/source",
+                          `${rel}.md`
+                      );
+                      return fs.existsSync(report)
+                          ? relativeLink(output, report, path.basename(rel))
+                          : relativeLink(output, source, path.basename(rel));
+                  })
+                  .join(", ") +
+              (sources.length > CAP_FILES
+                  ? ` … (+${sources.length - CAP_FILES})`
+                  : "")
             : "none — gap";
-        const testCell = tests.length ? `${tests.length} mapped` : "none — gap";
+        const uniqueTests = [
+            ...new Map(
+                tests.map(({ t }) => [`${t.target}\0${t.line}`, t])
+            ).values()
+        ];
+        const testCell = uniqueTests.length
+            ? uniqueTests
+                  .slice(0, CAP_TESTS)
+                  .map((t) =>
+                      relativeLink(
+                          output,
+                          t.target,
+                          `${path.basename(path.relative(repo, t.target))}#L${t.line}`,
+                          t.line
+                      )
+                  )
+                  .join(", ") +
+              (uniqueTests.length > CAP_TESTS
+                  ? ` … (+${uniqueTests.length - CAP_TESTS})`
+                  : "")
+            : "none — gap";
         lines.push(
             `| \`${id}\` | ${relativeLink(output, def.document, path.relative(graph.roots.spec, def.document), def.line)} | ${sourceCell} | ${testCell} |`
         );
@@ -177,7 +219,12 @@ function generateTraceabilityViews(graph = buildDocumentationGraph()) {
                     ? [...ids]
                           .sort()
                           .slice(0, 8)
-                          .map((i) => `\`${i}\``)
+                          .map((i) => {
+                              const def = graph.requirements.definitions.get(i);
+                              return def
+                                  ? `[\`${i}\`](${path.relative(path.dirname(output), def.document)}#${i.toLowerCase()})`
+                                  : `\`${i}\``;
+                          })
                           .join(", ") + (ids.size > 8 ? ` … (${ids.size})` : "")
                     : "none — gap"
             } |`

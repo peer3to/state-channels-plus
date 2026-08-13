@@ -69,10 +69,11 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                            | Implementation status | Evidence                                                                                                       | Gap / divergence |
-| ---------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-ID-3`](../../../../../specification/protocol-model/identity.md#req-id-3)     | Covered               | **Here:** host-confined signing behind validated typed requests.                                               | None.            |
-| [`INV-RUNTIME-1`](../../../../../specification/runtime/execution.md#inv-runtime-1) | Covered               | **Here:** one message protocol for inline and worker hosting. **Other files:** channels/runtimes per platform. | None.            |
+| Requirement / invariant                                                            | Implementation status | Evidence                                                                                                                                                                           | Gap / divergence |
+| ---------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-ID-3`](../../../../../specification/protocol-model/identity.md#req-id-3)     | Covered               | **Here:** host-confined signing behind validated typed requests.                                                                                                                   | None.            |
+| [`INV-RUNTIME-1`](../../../../../specification/runtime/execution.md#inv-runtime-1) | Covered               | **Here:** one message protocol for inline and worker hosting. **Other files:** channels/runtimes per platform.                                                                     | None.            |
+| [`REQ-IX-8`](../../../../../specification/interactions.md#req-ix-8)                | Covered               | **Here:** one serialized port protocol for inline and worker hosting; host-owned state and signing. **Other files:** platform channels and worker runtimes under [p2pRuntime](./). | None.            |
 
 ## Component test obligations
 

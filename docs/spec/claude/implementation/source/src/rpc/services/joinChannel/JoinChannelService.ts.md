@@ -73,11 +73,12 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                   | Implementation status | Evidence                                                                    | Gap / divergence |
-| --------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------- | ---------------- |
-| [`INV-JOINSIG-1`](../../../../../../specification/peer-communication/join-authorization.md#inv-joinsig-1) | Covered               | **Here:** recover-and-compare across all three identities.                  | None.            |
-| [`REQ-JOINSIG-2`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-2) | Covered               | **Here:** preflight + all-or-nothing assembly with per-member verification. | None.            |
-| [`REQ-JOINSIG-3`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-3) | Covered               | **Here:** every validation failure throws to a request error; session kept. | None.            |
+| Requirement / invariant                                                                                   | Implementation status | Evidence                                                                                                                                              | Gap / divergence |
+| --------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`INV-JOINSIG-1`](../../../../../../specification/peer-communication/join-authorization.md#inv-joinsig-1) | Covered               | **Here:** recover-and-compare across all three identities.                                                                                            | None.            |
+| [`REQ-JOINSIG-2`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-2) | Covered               | **Here:** preflight + all-or-nothing assembly with per-member verification.                                                                           | None.            |
+| [`REQ-JOINSIG-3`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-3) | Covered               | **Here:** every validation failure throws to a request error; session kept.                                                                           | None.            |
+| [`REQ-JOINSIG-1`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-1) | Covered               | **Here:** collector pins fork+snapshot at collection; responder refuses on any pin mismatch against its own current view; pins carried to submission. | None.            |
 
 ## Component test obligations
 

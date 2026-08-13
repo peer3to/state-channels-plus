@@ -17,9 +17,12 @@ const {
     generateSpecificationIndex
 } = require("./generate-specification-index");
 const {
-    generateImplementationCoverage
-} = require("./audit-implementation-mirror");
-const { generateVerificationCoverage } = require("./audit-verification");
+    generateImplementationCoverage,
+    collectConformance
+} = require("./generate-implementation-coverage");
+const {
+    generateVerificationCoverage
+} = require("./generate-verification-coverage");
 const {
     generateOpenQuestionsIndex
 } = require("./generate-open-questions-index");
@@ -35,33 +38,35 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
     let approved = 0;
     let securityAccepted = 0;
     let ready = 0;
-    const implementationRows = new Map();
-    for (const document of graph.documents.implementationDocs) {
-        const lines = require("node:fs")
-            .readFileSync(document, "utf8")
-            .split(/\r?\n/);
-        for (let index = 0; index < lines.length; index += 1) {
-            const id = lines[index].match(
-                /^\|\s*`((?:REQ|INV)-[A-Z0-9]+-\d+)`\s*\|/
-            )?.[1];
-            if (id && /\|/.test(lines[index]))
-                implementationRows.set(id, {
-                    document,
-                    line: index + 1,
-                    raw: lines[index]
-                });
+    // Implementation state comes from the conformance tables (linked or bare IDs),
+    // aggregated across every claiming file report and design view.
+    const conformance = collectConformance(graph);
+    function aggregateImplementation(id) {
+        const claims = conformance.get(id) || [];
+        if (!claims.length) return { status: "No claim", claim: null };
+        const pick = (wanted) => claims.find(({ status }) => status === wanted);
+        for (const wanted of ["Contradicts", "Missing", "Partial"]) {
+            const claim = pick(wanted);
+            if (claim) return { status: wanted, claim };
+        }
+        return { status: "Covered", claim: claims[0] };
+    }
+    // A permutation is evidenced when an exact declaration is mapped to it.
+    const evidencedPermutations = new Set();
+    for (const test of graph.tests.tests) {
+        for (const entry of graph.tests.mappings.get(
+            `${test.target}\0${test.line}`
+        ) || []) {
+            if (entry.owner) evidencedPermutations.add(entry.owner);
         }
     }
     for (const id of sorted(requirements.keys())) {
         const requirement = requirementPath(graph, id);
         const { specification, tests } = requirement;
-        const implementationRow = implementationRows.get(id);
-        const implementationStatus = implementationRow
-            ? implementationRow.raw.split("|")[2]?.trim() ||
-              "Present; review pending"
-            : "Missing";
+        const implementation = aggregateImplementation(id);
+        const implementationStatus = implementation.status;
         const tracedPermutations = requirement.permutations.filter(
-            (permutationId) => graph.testTrace.definitions.has(permutationId)
+            (permutationId) => evidencedPermutations.has(permutationId)
         );
         const questions = linkedIds(graph.questions.entries, [
             id,
@@ -78,10 +83,9 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         );
         const structural =
             specification.length &&
-            implementationStatus !== "Missing" &&
+            implementationStatus === "Covered" &&
             requirement.permutations.length > 0 &&
-            tracedPermutations.length === requirement.permutations.length &&
-            tests.length
+            tracedPermutations.length === requirement.permutations.length
                 ? "Complete"
                 : "Gap";
         if (structural === "Complete") structurallyComplete += 1;
@@ -112,7 +116,7 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
             id,
             requirement: requirements.get(id),
             specification,
-            implementationRow,
+            implementation,
             implementationStatus,
             permutations: requirement.permutations,
             tracedPermutations,
@@ -154,8 +158,8 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         "",
         "This is the final joined readiness dashboard. It answers: **for each requirement, is the specification complete, the implementation accounted for, the required tests evidenced, all decisions/findings resolved, security risk accepted, and the final reviewed fingerprint approved?**",
         "",
-        "- **Requirement paths** join the authoritative specification, implementation, verification, exact-test count, related questions/findings, structural state, semantic approval, security acceptance, and final readiness.",
-        "- **Structurally complete** means the required documents, IDs, reports, mappings, and links exist; it is not a semantic correctness claim.",
+        "- **Requirement paths** join the specification plans, the aggregated conformance claim (`Covered`/`Partial`/`Contradicts`/`Missing`/`No claim` across all claiming file reports and views), evidenced-permutation counts, exact-test counts, related questions/findings, structural state, semantic approval, security acceptance, and final readiness.",
+        "- **Structurally complete** means: test plans exist, the aggregated implementation claim is `Covered`, and every planned permutation has exact mapped test evidence. It is not a semantic correctness claim.",
         "- **Engineer-approved** means the current dependency fingerprint was explicitly approved and has not become stale after a related edit.",
         "- **Security-accepted** means the current residual-risk assessment was explicitly accepted.",
         "- **Final ready** requires all preceding gates to pass simultaneously.",
@@ -184,6 +188,7 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
     ];
     for (const row of rows) {
         const firstTrace = row.permutations
+            .filter((id) => evidencedPermutations.has(id))
             .map((id) => graph.testTrace.definitions.get(id))
             .find(Boolean);
         const specificationLink = relativeLink(
@@ -192,22 +197,23 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
             `${row.id} · ${row.specification.length} plan`,
             row.requirement.line
         );
-        const implementationLink = row.implementationRow
+        const implementationLink = row.implementation.claim
             ? relativeLink(
                   output,
-                  row.implementationRow.document,
+                  row.implementation.claim.document,
                   row.implementationStatus,
-                  row.implementationRow.line
+                  row.implementation.claim.line
               )
-            : "Missing";
+            : "No claim";
+        const evidenceLabel = `${row.tracedPermutations.length}/${row.permutations.length} permutations evidenced`;
         const verificationLink = firstTrace
             ? relativeLink(
                   output,
                   firstTrace.document,
-                  `${row.tracedPermutations.length}/${row.permutations.length} permutations traced`,
+                  evidenceLabel,
                   firstTrace.line
               )
-            : "Missing";
+            : evidenceLabel;
         lines.push(
             `| \`${row.id}\` | ${specificationLink} | ${implementationLink} | ${verificationLink} | ${row.tests.length} | ${[...row.questions, ...row.findings].length ? [...row.questions, ...row.findings].map((id) => `\`${id}\``).join(", ") : "None linked"} | ${row.structural} | ${row.semantic} | ${row.security} | ${row.final} |`
         );

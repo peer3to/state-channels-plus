@@ -57,10 +57,10 @@ The detailed reports above currently own the source analysis. This table remains
 
 ## Conformance traceability
 
-| Requirement / invariant | Implementation status  | Implementation evidence              | Gap / divergence                                                                      |
-| ----------------------- | ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `INV-RUNTIME-1`         | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RUNTIME-1`         | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RUNTIME-2`         | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RUNTIME-3`         | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-RUNTIME-4`         | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
+| Requirement / invariant | Implementation status | Implementation evidence              | Gap / divergence |
+| ----------------------- | --------------------- | ------------------------------------ | ---------------- |
+| `INV-RUNTIME-1`         | Covered               | Detailed reports under System design | None.            |
+| `REQ-RUNTIME-1`         | Covered               | Detailed reports under System design | None.            |
+| `REQ-RUNTIME-2`         | Covered               | Detailed reports under System design | None.            |
+| `REQ-RUNTIME-3`         | Covered               | Detailed reports under System design | None.            |
+| `REQ-RUNTIME-4`         | Covered               | Detailed reports under System design | None.            |

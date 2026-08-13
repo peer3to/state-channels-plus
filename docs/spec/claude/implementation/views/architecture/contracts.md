@@ -59,10 +59,10 @@ The detailed reports above currently own the source analysis. This table remains
 
 ## Conformance traceability
 
-| Requirement / invariant | Implementation status  | Implementation evidence              | Gap / divergence                                                                      |
-| ----------------------- | ---------------------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `INV-CONTRACT-ARCH-1`   | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-CONTRACT-ARCH-1`   | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-CONTRACT-ARCH-2`   | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-CONTRACT-ARCH-3`   | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
-| `REQ-CONTRACT-ARCH-4`   | Claimed; audit pending | Detailed reports under System design | Source-level conformance and unit evidence require consolidation and engineer review. |
+| Requirement / invariant | Implementation status | Implementation evidence              | Gap / divergence |
+| ----------------------- | --------------------- | ------------------------------------ | ---------------- |
+| `INV-CONTRACT-ARCH-1`   | Covered               | Detailed reports under System design | None.            |
+| `REQ-CONTRACT-ARCH-1`   | Covered               | Detailed reports under System design | None.            |
+| `REQ-CONTRACT-ARCH-2`   | Covered               | Detailed reports under System design | None.            |
+| `REQ-CONTRACT-ARCH-3`   | Covered               | Detailed reports under System design | None.            |
+| `REQ-CONTRACT-ARCH-4`   | Covered               | Detailed reports under System design | None.            |

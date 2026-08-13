@@ -66,9 +66,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                     | Implementation status | Evidence                                       | Gap / divergence                                |
-| --------------------------------------------------------------------------- | --------------------- | ---------------------------------------------- | ----------------------------------------------- |
-| [`REQ-ID-1`](../../../../specification/protocol-model/identity.md#req-id-1) | Covered               | **Here:** canonical-target signing + recovery. | Domain separation pending OQ-29 (spec-tracked). |
+| Requirement / invariant                                                     | Implementation status | Evidence                                                                                                                                   | Gap / divergence                                |
+| --------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| [`REQ-ID-1`](../../../../specification/protocol-model/identity.md#req-id-1) | Covered               | **Here:** canonical-target signing + recovery.                                                                                             | Domain separation pending OQ-29 (spec-tracked). |
+| [`INV-ID-1`](../../../../specification/protocol-model/identity.md#inv-id-1) | Covered               | **Here:** recovery over canonical encodings decides identity for every protocol object; no rule distinguishes participant from key holder. | None.                                           |
 
 ## Component test obligations
 
