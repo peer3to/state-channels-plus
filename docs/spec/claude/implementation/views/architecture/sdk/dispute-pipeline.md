@@ -420,8 +420,6 @@ _Non-normative._
   ([OQ-15](../../../../specification/open-questions.md)).
 - Re-evaluate `postedAuditingData` under early finalization, and the
   cross-audit race where calldata is posted after a kill decision (code TODOs).
-- Resolve the penalty model for submitting an invalid _fraud proof_ (as
-  opposed to an invalid dispute) — [OQ-2](../../../../specification/open-questions.md).
 
 ## Implementation traceability
 

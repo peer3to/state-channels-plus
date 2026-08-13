@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/claude/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **0/519** (0%)
-- Pending (never reviewed): **519**
+- Verified (current): **0/515** (0%)
+- Pending (never reviewed): **515**
 - Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
@@ -72,7 +72,7 @@ None.
 - [specification/storage/README.md](../specification/storage/README.md)
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md)
 
-### implementation (340)
+### implementation (337)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -123,9 +123,6 @@ None.
 - [implementation/source/src/agreementManager/AgreementManager.ts.md](../implementation/source/src/agreementManager/AgreementManager.ts.md)
 - [implementation/source/src/agreementManager/index.ts.md](../implementation/source/src/agreementManager/index.ts.md)
 - [implementation/source/src/agreementManager/README.md](../implementation/source/src/agreementManager/README.md)
-- [implementation/source/src/cache/index.ts.md](../implementation/source/src/cache/index.ts.md)
-- [implementation/source/src/cache/README.md](../implementation/source/src/cache/README.md)
-- [implementation/source/src/cache/SignerRecoveryCache.ts.md](../implementation/source/src/cache/SignerRecoveryCache.ts.md)
 - [implementation/source/src/Clock.ts.md](../implementation/source/src/Clock.ts.md)
 - [implementation/source/src/disputeManager/DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md)
 - [implementation/source/src/disputeManager/index.ts.md](../implementation/source/src/disputeManager/index.ts.md)
@@ -415,13 +412,12 @@ None.
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (124)
+### verification (123)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
 - [verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md](../verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md)
 - [verification/tests/test/browser/run-worker-contract-executor.mjs.md](../verification/tests/test/browser/run-worker-contract-executor.mjs.md)
-- [verification/tests/test/cache/SignerRecoveryCache.test.ts.md](../verification/tests/test/cache/SignerRecoveryCache.test.ts.md)
 - [verification/tests/test/Clock.test.ts.md](../verification/tests/test/Clock.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md](../verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts.md](../verification/tests/test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts.md)

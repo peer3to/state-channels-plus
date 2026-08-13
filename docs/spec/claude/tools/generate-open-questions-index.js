@@ -40,10 +40,11 @@ function questionMetadata(graph) {
     return metadata;
 }
 
-function generateOpenQuestionsIndex(graph = buildDocumentationGraph()) {
-    const output = path.join(graph.roots.generated, "open-questions-index.md");
+// Questions whose register status is not fully resolved/closed/withdrawn.
+// Shared with the audit summary so a resolved question never counts as blocking.
+function unresolvedQuestions(graph) {
     const metadata = questionMetadata(graph);
-    const unresolved = new Map(
+    return new Map(
         [...graph.questions.entries].filter(
             ([id]) =>
                 !/^\s*(?:resolved\b|closed\b|withdrawn\b)/i.test(
@@ -51,6 +52,12 @@ function generateOpenQuestionsIndex(graph = buildDocumentationGraph()) {
                 )
         )
     );
+}
+
+function generateOpenQuestionsIndex(graph = buildDocumentationGraph()) {
+    const output = path.join(graph.roots.generated, "open-questions-index.md");
+    const metadata = questionMetadata(graph);
+    const unresolved = unresolvedQuestions(graph);
     const lines = [
         "# Open Questions Index",
         "",
@@ -105,4 +112,4 @@ if (require.main === module)
         process.exit(1);
     });
 
-module.exports = { generateOpenQuestionsIndex };
+module.exports = { generateOpenQuestionsIndex, unresolvedQuestions };

@@ -5,7 +5,7 @@
 ## Score
 
 - Specification IDs fully implemented (only `Covered` claims): **199/238** (84%)
-- Source files with a file report: **243/243** (100%)
+- Source files with a file report: **241/243** (99%)
 
 ## Contents
 
@@ -65,4 +65,7 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 Every file under `src/` and `contracts/` needs one maintained report at
 `implementation/source/<path>.md`.
 
-None.
+| Source file                                                                      |
+| -------------------------------------------------------------------------------- |
+| [src/cache/index.ts](../../../../src/cache/index.ts)                             |
+| [src/cache/SignerRecoveryCache.ts](../../../../src/cache/SignerRecoveryCache.ts) |

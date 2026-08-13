@@ -24,7 +24,8 @@ const {
     generateVerificationCoverage
 } = require("./generate-verification-coverage");
 const {
-    generateOpenQuestionsIndex
+    generateOpenQuestionsIndex,
+    unresolvedQuestions
 } = require("./generate-open-questions-index");
 
 function generateAuditSummary(graph = buildDocumentationGraph()) {
@@ -53,6 +54,9 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         }
         return { status: "Covered", claim: claims[0] };
     }
+    // Only unresolved questions block a requirement; resolved decisions stay
+    // in the registers as decision references without gating readiness.
+    const blockingQuestions = unresolvedQuestions(graph);
     // A permutation is evidenced when an exact declaration is mapped to it.
     const evidencedPermutations = new Set();
     for (const test of graph.tests.tests) {
@@ -70,7 +74,7 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         const tracedPermutations = requirement.permutations.filter(
             (permutationId) => evidencedPermutations.has(permutationId)
         );
-        const questions = linkedIds(graph.questions.entries, [
+        const questions = linkedIds(blockingQuestions, [
             id,
             ...specification,
             ...specification
@@ -230,9 +234,9 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
         ...(unaccountedTests
             ? [`- ${unaccountedTests} test declaration(s) are unaccounted.`]
             : []),
-        ...(graph.questions.entries.size
+        ...(blockingQuestions.size
             ? [
-                  `- ${graph.questions.entries.size} open question(s) require decisions.`
+                  `- ${blockingQuestions.size} open question(s) require decisions.`
               ]
             : []),
         ...(activeFindings.length

@@ -19,7 +19,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | ID    | Question                                                                                                             | Source                 | Affected documents                                                                                                                         | Status                            |
 | ----- | -------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
 | OQ-1  | Exact kill-period and dispute-fraud-proof slashing semantics                                                         | Specification analysis | [protocol/disputes.md](./disputes/disputes.md), [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                     | Open                              |
-| OQ-2  | Penalty for submitting an invalid fraud proof                                                                        | Specification analysis | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                     | Open                              |
+| OQ-2  | Penalty for submitting an invalid fraud proof                                                                        | Specification analysis | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                     | Resolved                          |
 | OQ-3  | Leader election beyond round-robin: revert attribution, long-range proofs                                            | Specification analysis | [protocol/finality.md](./protocol-model/finality.md), [protocol/state-proofs.md](./disputes/state-proofs.md)                               | Open                              |
 | OQ-6  | P2P gossip rate-limiting policy                                                                                      | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
 | OQ-7  | Whether adjudication requires a self-call-only authorization boundary                                                | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
@@ -94,6 +94,20 @@ N-of-N signatures).
 Whether and how a sender is penalized for submitting an invalid **fraud proof** (as opposed to an
 invalid dispute) is an open protocol detail, not an assumed rule. The penalty and its threshold
 effects need engineer confirmation before they are normative.
+
+**Resolved (2026-08-13, engineer decision):** an invalid fraud-proof submission slashes the
+submitter **when the submitter is a channel participant** (dispute-eligible: current or pending,
+not already slashed) — the self-slashing guard is confirmed as intended design, chosen to further
+disincentivize Byzantine behavior and bogus-proof spam from channel members. Non-participants stay
+unpenalized deliberately: they hold no channel stake to slash, and their invalid submissions
+remain no-ops. Threshold effects follow the normal slash-set rules (`REQ-FP-4`) — a self-slashed
+submitter loses dispute participation and on-chain threshold membership. Rejected alternatives:
+bonded submission, no-penalty-with-rate-limit, and a penalty restricted to provably malicious
+submissions. Accepted consequences: honest mistakes and preflight races are slashable, so
+submitters preflight proofs before sending; the residual preflight race and the batch-atomicity
+interaction remain verification items. Recorded normatively as `REQ-FP-6` in
+[protocol/fraud-proofs.md](./disputes/fraud-proofs.md); the current implementation already
+conforms.
 
 ## OQ-3 — Leader election beyond round-robin
 
