@@ -9,7 +9,10 @@ const {
     tableRows
 } = require("./shared/documentation-graph");
 const {
+    headingAnchorBefore,
     parseReportArgs,
+    relativeAnchorLink,
+    relativeIdLink,
     relativeLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
@@ -34,7 +37,12 @@ function collectConformance(graph) {
                 if (!status) continue;
                 for (const id of row.cells[idIndex].match(ID_RE) || []) {
                     if (!byId.has(id)) byId.set(id, []);
-                    byId.get(id).push({ status, document, line: row.line });
+                    byId.get(id).push({
+                        status,
+                        document,
+                        line: row.line,
+                        anchor: headingAnchorBefore(document, row.line)
+                    });
                 }
             }
         }
@@ -126,20 +134,25 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
         for (const { id, def, status, claims } of problemIds) {
             const where = claims.length
                 ? claims
-                      .map(({ document, line }) =>
-                          relativeLink(
-                              output,
-                              document,
-                              path.relative(graph.roots.spec, document),
-                              line
-                          )
+                      .map(({ document, anchor }) =>
+                          anchor
+                              ? relativeAnchorLink(
+                                    output,
+                                    document,
+                                    path.relative(graph.roots.spec, document),
+                                    anchor
+                                )
+                              : relativeLink(
+                                    output,
+                                    document,
+                                    path.relative(graph.roots.spec, document)
+                                )
                       )
                       .join("<br>")
-                : relativeLink(
+                : relativeIdLink(
                       output,
-                      def.document,
                       path.relative(graph.roots.spec, def.document),
-                      def.line
+                      id
                   ) + " (definition)";
             lines.push(`| \`${id}\` | ${status} | ${where} |`);
         }

@@ -7,6 +7,7 @@ const { REQUIREMENT_PATTERN } = require("./shared/id-utils");
 const { buildDocumentationGraph } = require("./shared/documentation-graph");
 const {
     parseReportArgs,
+    relativeIdLink,
     relativeLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
@@ -151,7 +152,7 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         lines.push("| Specification ID | Defined in |", "| --- | --- |");
         for (const [id, def] of untestedIds) {
             lines.push(
-                `| \`${id}\` | ${relativeLink(output, def.document, path.relative(graph.roots.spec, def.document), def.line)} |`
+                `| \`${id}\` | ${relativeIdLink(output, path.relative(graph.roots.spec, def.document), id)} |`
             );
         }
     }
@@ -169,7 +170,7 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         lines.push("| Test ID | Kind | Defined in |", "| --- | --- | --- |");
         for (const { type, item } of untestedPermutations) {
             lines.push(
-                `| \`${item.id}\` | ${type} | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document), item.line)} |`
+                `| \`${item.id}\` | ${type} | ${relativeIdLink(output, path.relative(graph.roots.spec, item.document), item.id)} |`
             );
         }
     }

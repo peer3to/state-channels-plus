@@ -10,6 +10,8 @@ const {
 } = require("./shared/documentation-graph");
 const {
     parseReportArgs,
+    relativeAnchorLink,
+    relativeIdLink,
     relativeLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
@@ -197,27 +199,32 @@ function generateAuditSummary(graph = buildDocumentationGraph()) {
             .filter((id) => evidencedPermutations.has(id))
             .map((id) => graph.testTrace.definitions.get(id))
             .find(Boolean);
-        const specificationLink = relativeLink(
+        const specificationLink = relativeIdLink(
             output,
-            row.requirement.document,
             `${row.id} · ${row.specification.length} plan`,
-            row.requirement.line
+            row.id
         );
         const implementationLink = row.implementation.claim
-            ? relativeLink(
-                  output,
-                  row.implementation.claim.document,
-                  row.implementationStatus,
-                  row.implementation.claim.line
-              )
+            ? row.implementation.claim.anchor
+                ? relativeAnchorLink(
+                      output,
+                      row.implementation.claim.document,
+                      row.implementationStatus,
+                      row.implementation.claim.anchor
+                  )
+                : relativeLink(
+                      output,
+                      row.implementation.claim.document,
+                      row.implementationStatus
+                  )
             : "No claim";
         const evidenceLabel = `${row.tracedPermutations.length}/${row.permutations.length} permutations evidenced`;
         const verificationLink = firstTrace
-            ? relativeLink(
+            ? relativeAnchorLink(
                   output,
                   firstTrace.document,
                   evidenceLabel,
-                  firstTrace.line
+                  "tests-and-covered-test-ids"
               )
             : evidenceLabel;
         lines.push(

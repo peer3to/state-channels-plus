@@ -13,6 +13,7 @@ const { REQUIREMENT_PATTERN } = require("./shared/id-utils");
 const { buildDocumentationGraph } = require("./shared/documentation-graph");
 const {
     parseReportArgs,
+    relativeIdLink,
     relativeLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
@@ -160,7 +161,7 @@ function generateTraceabilityViews(graph = buildDocumentationGraph()) {
                   : "")
             : "none — gap";
         lines.push(
-            `| \`${id}\` | ${relativeLink(output, def.document, path.relative(graph.roots.spec, def.document), def.line)} | ${sourceCell} | ${testCell} |`
+            `| \`${id}\` | ${relativeIdLink(output, path.relative(graph.roots.spec, def.document), id)} | ${sourceCell} | ${testCell} |`
         );
     }
 

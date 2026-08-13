@@ -11,7 +11,7 @@ const {
 const {
     escapeCell,
     parseReportArgs,
-    relativeLink,
+    relativeIdLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
 
@@ -88,7 +88,7 @@ function generateOpenQuestionsIndex(graph = buildDocumentationGraph()) {
                 .relative(graph.roots.spec, item.document)
                 .split(path.sep)[0];
             lines.push(
-                `| \`${id}\` | ${layer} | ${escapeCell(metadata.get(id)?.question || "—")} | ${escapeCell(metadata.get(id)?.status || "Open")} | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document), item.line)} |`
+                `| \`${id}\` | ${layer} | ${escapeCell(metadata.get(id)?.question || "—")} | ${escapeCell(metadata.get(id)?.status || "Open")} | ${relativeIdLink(output, path.relative(graph.roots.spec, item.document), id)} |`
             );
         }
     }

@@ -9,7 +9,7 @@ const {
 } = require("./shared/documentation-graph");
 const {
     parseReportArgs,
-    relativeLink,
+    relativeIdLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
 
@@ -50,7 +50,7 @@ function generateSpecificationIndex(graph = buildDocumentationGraph()) {
         lines.push("| Specification ID | Specification |", "| --- | --- |");
         for (const item of missing) {
             lines.push(
-                `| \`${item.id}\` | ${relativeLink(output, item.document, `specification/${path.relative(specificationRoot, item.document)}`, item.line)} |`
+                `| \`${item.id}\` | ${relativeIdLink(output, `specification/${path.relative(specificationRoot, item.document)}`, item.id)} |`
             );
         }
     }
