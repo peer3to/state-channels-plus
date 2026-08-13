@@ -210,13 +210,13 @@ semantics without lossy coercion.
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                                            |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `INV-DATA-1`            | Equal logical values have one canonical encoding and decode identically in every conforming implementation.          |
-| `REQ-DATA-1`            | Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and non-canonical encodings before effects. |
-| `REQ-DATA-2`            | Field and collection ordering, duplicate policy, optionality, and nested-byte codecs are explicit and canonical.     |
-| `REQ-DATA-3`            | Encoded and signed values bind every domain coordinate required by their owning protocol operation.                  |
-| `REQ-DATA-4`            | Integers and bytes cross ABI, off-chain runtime, worker, RPC, and persistence boundaries losslessly.                 |
+| Requirement / invariant             | Statement                                                                                                            |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-data-1"></a>`INV-DATA-1` | Equal logical values have one canonical encoding and decode identically in every conforming implementation.          |
+| <a id="req-data-1"></a>`REQ-DATA-1` | Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and non-canonical encodings before effects. |
+| <a id="req-data-2"></a>`REQ-DATA-2` | Field and collection ordering, duplicate policy, optionality, and nested-byte codecs are explicit and canonical.     |
+| <a id="req-data-3"></a>`REQ-DATA-3` | Encoded and signed values bind every domain coordinate required by their owning protocol operation.                  |
+| <a id="req-data-4"></a>`REQ-DATA-4` | Integers and bytes cross ABI, off-chain runtime, worker, RPC, and persistence boundaries losslessly.                 |
 
 ## Verification and test plan
 

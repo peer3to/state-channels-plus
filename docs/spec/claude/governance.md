@@ -49,10 +49,17 @@ those non-normative traceability sections.
 
 ### Implementation
 
-Every `src/` and `contracts/` file has exactly one mirror retaining the source extension. A mirror records its
-source, protocol obligations, public/observable surface, inputs/outputs/state/side effects, assumptions,
-dependencies, trust boundaries, limits, current conformance/divergence, failures/recovery/concurrency,
-component test plans, implementation traceability, test traceability, exact test evidence, and related mirrors.
+The layer is repository-shaped: every `src/` and `contracts/` file has exactly one file report at
+`implementation/source/<path>.md` (source extension retained). A file report records its source and
+relevant symbols, responsibility and observable boundary, inputs/outputs/state/side effects, linked
+specification requirements by ID, assumptions, dependencies, trust boundaries, limits,
+ordering/concurrency, failures/recovery, current adherence/contradictions/missing behavior,
+`UNIT-TEST-*` component obligations (stable IDs with permutations), and related reports. Exact
+test evidence lives only in verification, mapped against those IDs. Directory
+`README.md`s own subsystem-shared responsibility and `INTEGRATION-TEST-*` cases; design views under
+`implementation/views/` narrate cross-directory flows, each naming its specification owner, and
+never duplicate or replace file reports. Layer relationships are carried by stable IDs, never by
+path equality.
 
 Every implementation test-plan row states its obligations, real public entry point and valid domain
 setup, stimulus, oracle and forbidden effects, normal/no-op/boundary/invalid/failure/recovery/interleaving
@@ -60,10 +67,15 @@ variants, and exact test declarations. `Not applicable` always has a concrete ra
 
 ### Verification
 
-Verification documents provide shared cross-component methodology for the test plans owned by
-requirements. They state affected requirements and plan items, actors/components/external boundaries,
-environments/runtime modes, setup, trigger, oracle/forbidden effects, required permutations, exact test
-declarations, and open decisions without introducing another case-ID hierarchy.
+The layer is repository-shaped: every test file with executable declarations has exactly one report
+at `verification/tests/<path>.md`; fixtures, harness code, utilities, runners, and configuration
+are support code, not evidence units. Each report inventories every declaration with its level
+(unit/integration/system/end-to-end — classified per declaration), public production entry point,
+setup, stimulus, oracle/forbidden effects, environment, linked production files, assigned
+specification permutations and implementation obligations, and inspected evidence quality. The
+level directories are navigational indexes over these reports. Methodology views under
+`verification/views/` provide cross-component context without introducing another case-ID
+hierarchy.
 
 Tests are mapped individually with `[test](...#L<declaration>)`; dynamic/fuzz declarations use
 `[test family](...)` and enumerate generated dimensions and oracles. File and directory links map no tests.
@@ -93,10 +105,16 @@ implementation plans also depend on linked source; every plan depends on its exa
 formatting, approval fields, timestamps, and absolute paths are excluded. Real semantic fields, source, test
 declarations, mappings, planned tests, questions, and findings are included.
 
-Only `audit/approvals.md` establishes engineer approval. An engineer invokes
-`SPEC_APPROVER="Name" node docs/spec/claude/tools/approve.js <ID>`. A missing or unequal fingerprint means
-`Approval pending` or `Approval stale`; dependent audit paths are stale transitively. Code review remains the
-authorization boundary because repository writers can technically edit the register.
+Two registers carry engineer authority, both hash-bound and both stale-on-edit:
+
+- **Document review** — `audit/review-state.json`, written only by
+  `SPEC_REVIEWER="Name" node docs/spec/claude/tools/review.js <file...>`; projected into
+  `generated/pending-review.md`. A maintained document is pending until reviewed and returns to
+  pending (stale) on any later edit.
+- **Requirement approval** — only `audit/approvals.md` establishes engineer approval. An engineer invokes
+  `SPEC_APPROVER="Name" node docs/spec/claude/tools/approve.js <ID>`. A missing or unequal fingerprint means
+  `Approval pending` or `Approval stale`; dependent audit paths are stale transitively. Code review remains the
+  authorization boundary because repository writers can technically edit the register.
 
 ## 6. Generated analysis
 

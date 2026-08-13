@@ -1,0 +1,192 @@
+# Finality — Implementation
+
+> **Specification subject:** [specification/protocol-model/finality.md](../../../specification/protocol-model/finality.md)
+
+> **Agent authoring status:** Current implementation analysis assembled; source ownership and conclusions require engineer verification.
+> **Engineer verification:** Pending.
+
+## Contents
+
+- [Implementation overview](#implementation-overview)
+    - [Specification adherence](#specification-adherence)
+    - [Specification contradiction](#specification-contradiction)
+    - [Missing](#missing)
+- [Assumptions and constraints](#assumptions-and-constraints)
+- [System design](#system-design)
+- [System integration test plan](#system-integration-test-plan)
+- [Source inventory](#source-inventory)
+- [Conformance traceability](#conformance-traceability)
+
+## Implementation overview
+
+**Status:** Partial; engineer verification pending.
+
+### Specification adherence
+
+The repository contains concrete source evidence for the specification requirements and invariants
+listed in the conformance table. The principal finality mechanisms are implemented
+through the source boundaries described below, but their source ownership, edge cases, and test
+coverage have not yet received the complete file-by-file engineer audit required for a conformance
+claim.
+
+### Specification contradiction
+
+Known current-versus-intended divergences are recorded in [System design](#system-design) and in the
+`Gap / divergence` column of [Conformance traceability](#conformance-traceability). The audit is not
+yet complete enough to claim that list is exhaustive. **Required resolution:** classify every
+recorded divergence as a defect, an approved implementation choice, or an open design decision, then
+fix or approve it before marking the subject conformant.
+
+### Missing
+
+- Source ownership has not yet been reduced to one detailed report per inventoried file.
+  **Required resolution:** audit every inventory row, remove unrelated ownership, and add its source
+  report with exact specification IDs, design decisions, assumptions, constraints, and unit-test
+  obligations.
+- System integration cases have not yet been assigned stable `INTEGRATION-TEST-*` permutations.
+  **Required resolution:** replace the provisional plan below with exhaustive, independently
+  coverable integration cases and oracles.
+- Exact test evidence remains in the matching verification migration queue. **Required resolution:**
+  map every unit and integration permutation to inspected repository tests or an explicit gap.
+
+## Assumptions and constraints
+
+- The linked source entry points and data boundaries are the current implementation under review;
+  comments or historical design prose are not treated as implementation evidence.
+- Conformance depends on the assumptions and limits in the owning specification in addition to the
+  implementation-specific conditions recorded in the system design and conformance table below.
+- A source link establishes only that a mechanism exists. It does not prove all required behavior,
+  failure atomicity, concurrency properties, or cross-runtime equivalence until the planned tests
+  and engineer audit are complete.
+- Current implementation status is limited to this repository revision and becomes stale when any
+  mapped specification, source boundary, or verification evidence changes.
+
+## System design
+
+Current: [`StateManager.playTransaction`](../../../../../../src/stateManager/StateManager.ts#L1330) gates
+authoring only on the channel being open, it being the author's turn (`isMyTurn`), and linkage to
+the latest stored block — there is no agreement check. Signature collection runs asynchronously
+via the [`AgreementManager`](../../../../../../src/agreementManager/AgreementManager.ts#L20); the author
+schedules the calldata fallback (§8) `agreementTime` after producing the block and keeps going.
+
+Current: peers detect conflicts at intake —
+[`ValidationService.checkConflictingBlock`](../../../../../../src/stateManager/ValidationService.ts#L87)
+compares an incoming block against the stored block at the same coordinates and routes a same-author
+conflict to the double-sign handler of the active validation strategy.
+
+Current, off-chain:
+[`AgreementManager.tryBuildMilestone`](../../../../../../src/agreementManager/AgreementManager.ts#L106) walks
+consecutive blocks and accumulates _all_ signer addresses (author + confirmation signatures) into
+one set; when the accumulated set covers the threshold set, the walked blocks form a milestone
+whose **first** block is thereby finalized.
+Current, on-chain:
+[`StateProofFacet._isMilestoneFinalWithExpectedParticipants`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L1)
+verifies the same rule — hash-linked confirmations, valid author signatures, signatures counted
+across the whole sequence into a threshold set — and returns the first block's snapshot hash as
+the finalized anchor. The precise conditions for a signature to count (same fork, hash linkage,
+authentic author signature) are the linkage checks listed in
+[state-proofs.md §7](./state-proofs.md).
+
+current channel state defined by the integrator's state machine
+([`AStateMachine.getNextToWrite`](../../../../../../contracts/V1/AStateMachine.sol#L32)) — names the address
+authorized to author the next **block** (block-level, not per-transaction, even though the current
+implementation packs one transaction per block). Every peer validates incoming blocks against it
+([`ValidationService`](../../../../../../src/stateManager/ValidationService.ts#L26) leader check; this
+protocol-layer check is the enforcement point — in-contract wrong-turn checks are optional
+defense in depth, see [OQ-26](../../open-questions.md) for the on-chain proof gap), and the dispute
+path re-derives it on-chain to validate timeout targets
+([`DisputeFraudProofFacet`](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L15)).
+
+## 9. Current vs. intended divergences
+
+- **Proof shape limits virtual finality's reach in disputes.** Intended: a state proof may extend
+  a proved milestone with a trailing non-final signed-block suffix. Current: milestones and
+  trailing signed blocks are mutually exclusive in both the SDK proof builder and the on-chain
+  verifier, so when any milestone exists the provable latest state stops at the last milestone.
+  Recorded in full, with its consequences, in [state-proofs.md §8](./state-proofs.md).
+- **Refusing to sign posted blocks when next-to-write.** Current:
+  [`StateManager.shouldSignBlock`](../../../../../../src/stateManager/StateManager.ts#L2321) declines to sign
+  a block that was posted on-chain when the local participant is the next author. This is not
+  stated anywhere as intended protocol behavior. **Open question:** confirm the rule's intent
+  (presumably avoiding attesting to a block that arrived via the fallback path while the local
+  node is about to build on a competing view) and specify it, or remove it.
+- Otherwise, the continuous-execution model of this document matches the implementation.
+
+## System integration test plan
+
+For every conformance row, refine the specification permutations with the concrete public entry points, state/storage boundaries, failure and recovery paths, concurrency/interleaving risks, and platform-specific behavior introduced by this implementation. This section defines obligations only; exact test evidence belongs in the matching verification document.
+
+The supporting implementation analyses contain the currently authored component-level permutations. They remain obligations until consolidated into this subject document; they must not be treated as concrete test evidence here.
+
+No stable system-integration cases have been consolidated in this subject yet. The required schema
+is retained so the omission is explicit and generated analysis can track the migration.
+
+| Integration test ID | Specification IDs | Specification test IDs | Setup and stimulus | Expected result | Required permutations |
+| ------------------- | ----------------- | ---------------------- | ------------------ | --------------- | --------------------- |
+
+## Source inventory
+
+Every source file relevant to this specification belongs here. A missing file is an implementation-documentation gap even when the code itself works.
+
+| Source file                                                                                                                                                       | Specification IDs                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [contracts/V1/AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol#L3)                                                                             | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [contracts/V1/examples/MathStateMachine/MathStateMachine.sol](../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L16)                  | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L13)        | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L3)               | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L3)     | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L8)                       | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L3)                 | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L3)     | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L3)                       | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/agreementManager/AgreementManager.ts](../../../../../../src/agreementManager/AgreementManager.ts#L1)                                                         | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/cache/index.ts](../../../../../../src/cache/index.ts#L1)                                                                                                     | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/cache/SignerRecoveryCache.ts](../../../../../../src/cache/SignerRecoveryCache.ts#L15)                                                                        | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/disputeManager/DisputeManager.ts](../../../../../../src/disputeManager/DisputeManager.ts#L1)                                                                 | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1)                                                                       | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/rpc/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L1)               | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/rpc/services/stateTransition/StateTransitionService.ts](../../../../../../src/rpc/services/stateTransition/StateTransitionService.ts#L1)                     | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/StateChannelEventListener.ts](../../../../../../src/StateChannelEventListener.ts#L1)                                                                         | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/BlockQueueManager.ts](../../../../../../src/stateManager/BlockQueueManager.ts#L48)                                                              | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/DisputeValidationService.ts](../../../../../../src/stateManager/DisputeValidationService.ts#L33)                                                | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/EventSyncService.ts](../../../../../../src/stateManager/EventSyncService.ts#L1)                                                                 | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/reduction/index.ts](../../../../../../src/stateManager/reduction/index.ts#L1)                                                                   | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/reduction/ReductionComputationService.ts](../../../../../../src/stateManager/reduction/ReductionComputationService.ts#L24)                      | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/reduction/ReductionExecutor.ts](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L69)                                          | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/reduction/ReductionManager.ts](../../../../../../src/stateManager/reduction/ReductionManager.ts#L52)                                            | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/snapshotUpdate/SnapshotUpdateService.ts](../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L41)                        | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L1)                                                                         | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/utils/DisputeFraudProofService.ts](../../../../../../src/stateManager/utils/DisputeFraudProofService.ts#L8)                                     | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/utils/FraudProofService.ts](../../../../../../src/stateManager/utils/FraudProofService.ts#L16)                                                  | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts#L15)                                                              | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/validationStrategy/BlockValidationStrategy.ts](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L1)             | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/validationStrategy/CalldataCommittedStrategy.ts](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L1)         | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/validationStrategy/DisputeValidationStrategy.ts](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L1)         | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/stateManager/validationStrategy/SpectatingValidationStrategy.ts](../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L229) | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/storage/BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts#L1)                                                                                   | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/storage/DisputeFraudProofStorage.ts](../../../../../../src/storage/DisputeFraudProofStorage.ts#L1)                                                           | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/storage/DisputeStorage.ts](../../../../../../src/storage/DisputeStorage.ts#L1)                                                                               | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/storage/ForceExitStorage.ts](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                                           | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/storage/FraudProofStorage.ts](../../../../../../src/storage/FraudProofStorage.ts#L1)                                                                         | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/storage/QueueStorage.ts](../../../../../../src/storage/QueueStorage.ts#L1)                                                                                   | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+| [src/storage/TimeoutStorage.ts](../../../../../../src/storage/TimeoutStorage.ts#L1)                                                                               | `REQ-FIN-1`, `INV-FIN-2`, `REQ-FIN-3`, `REQ-FIN-4`, `REQ-FIN-5`, `REQ-FIN-6`, `REQ-FIN-7`, `INV-FIN-8` |
+
+### Supporting implementation analyses
+
+- [architecture/sdk/block-confirmation-pipeline.md](../architecture/sdk/block-confirmation-pipeline.md)
+- [architecture/sdk/dispute-pipeline.md](../architecture/sdk/dispute-pipeline.md)
+
+## Conformance traceability
+
+This table records whether the repository currently implements each requirement. It does not change the requirement or claim approval; code evidence remains pending until an engineer verifies it.
+
+| Requirement / invariant | Implementation status                      | Source evidence                                                                                                                                                                                                                                                                                                                             | Design decisions / assumptions                                                                     | Implementation-specific test obligations                                                                                                                                         | Gap / divergence                                                                   |
+| ----------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `REQ-FIN-1`             | Implemented; engineer verification pending | [StateManager.playTransaction](../../../../../../src/stateManager/StateManager.ts#L1330)                                                                                                                                                                                                                                                    | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `REQ-FIN-1.T*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | Engineer audit pending; any current divergence named in the evidence remains open. |
+| `INV-FIN-2`             | Implemented; engineer verification pending | [ValidationService.checkConflictingBlock](../../../../../../src/stateManager/ValidationService.ts#L87); [FraudProofFacet](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L10) (`BlockDoubleSign`)                                                                                                              | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `INV-FIN-2.T*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | Engineer audit pending; any current divergence named in the evidence remains open. |
+| `REQ-FIN-3`             | Implemented; engineer verification pending | [AgreementManager.tryBuildMilestone](../../../../../../src/agreementManager/AgreementManager.ts#L106); [StateProofFacet.\_isMilestoneFinalWithExpectedParticipants](../../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L1)                                                                                         | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `REQ-FIN-3.T*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | Engineer audit pending; any current divergence named in the evidence remains open. |
+| `REQ-FIN-4`             | Implemented; engineer verification pending | same as REQ-FIN-3                                                                                                                                                                                                                                                                                                                           | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `REQ-FIN-4.T*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | Engineer audit pending; any current divergence named in the evidence remains open. |
+| `REQ-FIN-5`             | Implemented; engineer verification pending | [AStateMachine.getNextToWrite](../../../../../../contracts/V1/AStateMachine.sol#L32); [ValidationService](../../../../../../src/stateManager/ValidationService.ts#L26); [StateManager.getTimeoutWaitTimeSeconds](../../../../../../src/stateManager/StateManager.ts#L650)                                                                   | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `REQ-FIN-5.T*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | Engineer audit pending; any current divergence named in the evidence remains open. |
+| `REQ-FIN-6`             | Implemented; engineer verification pending | [MathStateMachine.getNextToWrite](../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L29)                                                                                                                                                                                                                        | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `REQ-FIN-6.T*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | Engineer audit pending; any current divergence named in the evidence remains open. |
+| `REQ-FIN-7`             | Implemented; engineer verification pending | [AgreementManager.didEveryoneSignBlock](../../../../../../src/agreementManager/AgreementManager.ts#L51); [StateProofFacet](../../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L8); [StateChannelCommon.getOnChainThresholdSet](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L59) | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `REQ-FIN-7.T*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | Engineer audit pending; any current divergence named in the evidence remains open. |
+| `INV-FIN-8`             | Implemented; engineer verification pending | [DisputeVerificationFacet.reduce](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L61)                                                                                                                                                                                                                 | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `INV-FIN-8.T*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | Engineer audit pending; any current divergence named in the evidence remains open. |

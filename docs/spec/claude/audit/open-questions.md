@@ -8,9 +8,9 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID   | Question                                 | Source                 | Affected documents                                                                                                                         | Status |
-| ---- | ---------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| OQ-5 | Fraud-proof completeness security review | Specification analysis | [security/open-security-review.md](../audit/security-assessment.md), [protocol/fraud-proofs.md](../specification/protocol/fraud-proofs.md) | Open   |
+| ID   | Question                                 | Source                 | Affected documents                                                                                                                  | Status |
+| ---- | ---------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| OQ-5 | Fraud-proof completeness security review | Specification analysis | [security/open-security-review.md](./security-assessment.md), [protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md) | Open   |
 
 ## OQ-5 — Fraud-proof completeness security review
 
@@ -20,4 +20,4 @@ detected, or recoverable — across block production, signatures/equivocation, v
 proofs and milestone hops, membership changes, message streams, snapshot updates, proof
 submission, slash-set handling, reduction, timing, data availability, RPC trust, leader election,
 and cross-layer interactions. Tracked in detail by
-[security/open-security-review.md](../audit/security-assessment.md).
+[security/open-security-review.md](./security-assessment.md).

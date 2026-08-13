@@ -209,15 +209,15 @@ must identify prevention, detection, recovery, and residual exposure; an unowned
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                                                                                                  |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `INV-TRUST-1`           | Safety-relevant disagreements resolvable on-chain from objective inputs alone.                                                                                             |
-| `REQ-TRUST-1`           | Enforcement uses only objective on-chain claims; subjective input never slashable.                                                                                         |
-| `REQ-TRUST-2`           | At least one available, honest RPC connection required; redundancy helps availability but does not remove the assumption.                                                  |
-| `REQ-TRUST-3`           | At least one non-Byzantine participant per partition; all-Byzantine partitions have no safety.                                                                             |
-| `REQ-TRUST-4`           | Watchtower/delegate required for offline honest participants, with stated data, privacy, availability, authorization, timeout, and failure assumptions.                    |
-| `REQ-TRUST-5`           | Full-mesh topology; target is many small partitions (≤ ~10, commonly 6).                                                                                                   |
-| `REQ-TRUST-6`           | Temporary assumption A9: peer authentication assumes no on-path adversary; identity-dependent guarantees are conditional until the handshake binds identities and session. |
+| Requirement / invariant               | Statement                                                                                                                                                                  |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-trust-1"></a>`INV-TRUST-1` | Safety-relevant disagreements resolvable on-chain from objective inputs alone.                                                                                             |
+| <a id="req-trust-1"></a>`REQ-TRUST-1` | Enforcement uses only objective on-chain claims; subjective input never slashable.                                                                                         |
+| <a id="req-trust-2"></a>`REQ-TRUST-2` | At least one available, honest RPC connection required; redundancy helps availability but does not remove the assumption.                                                  |
+| <a id="req-trust-3"></a>`REQ-TRUST-3` | At least one non-Byzantine participant per partition; all-Byzantine partitions have no safety.                                                                             |
+| <a id="req-trust-4"></a>`REQ-TRUST-4` | Watchtower/delegate required for offline honest participants, with stated data, privacy, availability, authorization, timeout, and failure assumptions.                    |
+| <a id="req-trust-5"></a>`REQ-TRUST-5` | Full-mesh topology; target is many small partitions (≤ ~10, commonly 6).                                                                                                   |
+| <a id="req-trust-6"></a>`REQ-TRUST-6` | Temporary assumption A9: peer authentication assumes no on-path adversary; identity-dependent guarantees are conditional until the handshake binds identities and session. |
 
 ## Verification and test plan
 

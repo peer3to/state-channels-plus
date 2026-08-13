@@ -59,27 +59,6 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         graph.documents.verificationDocs.filter(isSubjectDocument);
     const verificationDocumentSet = new Set(verificationDocuments);
 
-    function expectedVerification(document) {
-        if (document.startsWith(`${specificationRoot}${path.sep}`)) {
-            return path.join(
-                verificationRoot,
-                path.relative(specificationRoot, document)
-            );
-        }
-        const matchingSpecification = path.join(
-            specificationRoot,
-            path.relative(implementationRoot, document)
-        );
-        const owners = specificationDocuments.has(matchingSpecification)
-            ? [matchingSpecification]
-            : declaredSpecificationOwners(document, specificationDocuments);
-        const owner = owners.length === 1 ? owners[0] : matchingSpecification;
-        return path.join(
-            verificationRoot,
-            path.relative(specificationRoot, owner)
-        );
-    }
-
     const specificationTraceRows = traceRows(graph.testTrace);
     const implementationTraceRows = traceRows(graph.implementationTestTrace);
     const specificationPermutations = [
@@ -100,83 +79,46 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
             item,
             rows: implementationTraceRows.get(item.id) || []
         }))
-    ].map((entry) => ({
-        ...entry,
-        expected: expectedVerification(entry.item.document)
-    }));
+    ];
 
     const testsMissingFromVerification = requiredCases.filter(
-        ({ rows, expected }) =>
-            !rows.some(({ document }) => document === expected)
+        ({ rows }) => rows.length === 0
     );
 
-    function mappedTests(id, verification) {
+    function mappedTests(id) {
         return graph.tests.tests.filter((test) =>
             (
                 graph.tests.mappings.get(`${test.target}\0${test.line}`) || []
-            ).some(
-                ({ owner, document }) =>
-                    owner === id && document === verification
-            )
+            ).some(({ owner }) => owner === id)
         );
     }
 
     const testsWithoutEvidence = requiredCases.filter(
-        ({ item, rows, expected }) =>
-            rows.some(({ document }) => document === expected) &&
-            mappedTests(item.id, expected).length === 0
+        ({ item, rows }) => rows.length > 0 && mappedTests(item.id).length === 0
     );
 
-    const primaryImplementationDocuments = implementationDocuments.filter(
-        (document) => {
-            const matchingSpecification = path.join(
-                specificationRoot,
-                path.relative(implementationRoot, document)
-            );
-            return (
-                specificationDocuments.has(matchingSpecification) ||
-                declaredSpecificationOwners(document, specificationDocuments)
-                    .length === 0
-            );
-        }
-    );
-    const documentMismatches = [];
-    for (const document of specificationDocuments) {
-        const verification = expectedVerification(document);
-        if (!verificationDocumentSet.has(verification)) {
-            documentMismatches.push({
-                type: "Specification without verification",
-                document,
-                missing: `verification/${path.relative(verificationRoot, verification)}`
-            });
-        }
-    }
-    for (const document of primaryImplementationDocuments) {
-        const verification = expectedVerification(document);
-        if (!verificationDocumentSet.has(verification)) {
-            documentMismatches.push({
-                type: "Implementation without verification",
-                document,
-                missing: `verification/${path.relative(verificationRoot, verification)}`
-            });
-        }
-    }
-    for (const document of verificationDocuments) {
-        const relative = path.relative(verificationRoot, document);
-        const specification = path.join(specificationRoot, relative);
-        const implementation = path.join(implementationRoot, relative);
-        const missing = [
-            !specificationDocuments.has(specification) ? "specification" : null,
-            !fs.existsSync(implementation) ? "implementation" : null
-        ].filter(Boolean);
-        if (missing.length) {
-            documentMismatches.push({
-                type: "Verification without counterpart",
-                document,
-                missing: missing.join(" and ")
-            });
-        }
-    }
+    // Every test file with executable declarations needs one maintained report at
+    // verification/tests/<repository path>.md. Path equality between layers is not
+    // required; traceability is by stable IDs.
+    const testReportRoot = path.join(verificationRoot, "tests");
+    const declaringFiles = [
+        ...new Set(graph.tests.tests.map((test) => test.target))
+    ];
+    const documentMismatches = declaringFiles
+        .filter(
+            (target) =>
+                !fs.existsSync(
+                    path.join(
+                        testReportRoot,
+                        `${path.relative(graph.roots.repo, target)}.md`
+                    )
+                )
+        )
+        .map((target) => ({
+            type: "Test file without a test report",
+            document: target,
+            missing: `verification/tests/${path.relative(graph.roots.repo, target)}.md`
+        }));
 
     const unreferencedTests = graph.tests.tests.filter(
         (test) => !graph.tests.mappings.has(`${test.target}\0${test.line}`)
@@ -197,12 +139,12 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         "",
         "- [Specification/Implementation tests missing in their Verification](#specificationimplementation-tests-missing-in-their-verification)",
         "- [Specification and implementation tests without repository test references](#specification-and-implementation-tests-without-repository-test-references)",
-        "- [verification files missing specification/implementation](#verification-files-missing-specificationimplementation)",
+        "- [Test files without test reports](#test-files-without-test-reports)",
         "- [Repository tests not referenced by verification](#repository-tests-not-referenced-by-verification)",
         "",
         "## Specification/Implementation tests missing in their Verification",
         "",
-        "This section lists specification-test and implementation-test permutations that do not have a traceability row in the verification document for their owning subject.",
+        "This section lists specification-test and implementation-test permutations that have no traceability row in any verification document.",
         ""
     ];
 
@@ -211,16 +153,12 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
             lines.push("None.");
             return;
         }
-        lines.push(
-            "| Type | Test ID | Defined in | Expected verification |",
-            "| --- | --- | --- | --- |"
-        );
-        for (const { type, item, expected } of items.sort((left, right) =>
+        lines.push("| Type | Test ID | Defined in |", "| --- | --- | --- |");
+        for (const { type, item } of items.sort((left, right) =>
             left.item.id.localeCompare(right.item.id)
         )) {
-            const expectedLabel = path.relative(graph.roots.spec, expected);
             lines.push(
-                `| ${type} | \`${item.id}\` | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document), item.line)} | ${fs.existsSync(expected) ? relativeLink(output, expected, expectedLabel) : `\`${expectedLabel}\``} |`
+                `| ${type} | \`${item.id}\` | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document), item.line)} |`
             );
         }
     }
@@ -230,15 +168,15 @@ function generateVerificationCoverage(graph = buildDocumentationGraph()) {
         "",
         "## Specification and implementation tests without repository test references",
         "",
-        "This section lists test permutations that have a row in the correct verification document but do not reference an exact, existing repository test declaration.",
+        "This section lists test permutations that have a traceability row but do not reference an exact, existing repository test declaration.",
         ""
     );
     appendCaseTable(testsWithoutEvidence);
     lines.push(
         "",
-        "## verification files missing specification/implementation",
+        "## Test files without test reports",
         "",
-        "This section reports missing documents across the three subject layers. Supporting verification documents without same-path specification or implementation counterparts are also listed.",
+        "This section lists test files containing executable declarations that have no maintained report under `verification/tests/`.",
         ""
     );
     if (!documentMismatches.length) {

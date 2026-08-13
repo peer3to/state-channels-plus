@@ -1,77 +1,68 @@
-# Implementation Specification
+# Implementation Layer
 
-> **Agent status:** All subject mirrors use the maintained structure; exhaustive source reports and test plans remain in progress.
+> **Agent status:** Restructured to the repository-shaped contract (review objective 46); file
+> reports are seeded skeletons pending authoring.
 > **Engineer verification:** Pending.
 
-This layer explains how this repository implements the neutral protocol specification. Agents author
-and maintain it; engineers verify it against the real source.
+This layer answers: **how does this repository implement the specified protocol?** It is organized
+around production code, not around specification paths. Traceability to the specification runs
+through stable `REQ-*`/`INV-*` IDs and, downstream, exact test declarations — never through path
+equality.
 
-## Subject mirror rule
+## Contents
 
-The primary tree mirrors the specification tree:
+- [Layer structure](#layer-structure)
+- [File reports](#file-reports)
+- [Directory READMEs](#directory-readmes)
+- [Design views](#design-views)
+- [Open questions](#open-questions)
 
-```text
-specification/<subject>.md -> implementation/<subject>.md
-```
+## Layer structure
 
-Each subject document begins with an actionable implementation overview and an exhaustive source inventory:
-
-| Source file | Specification IDs |
+| Location | Holds |
 | --- | --- |
+| [source/](./source/README.md) | One maintained report per production file under `src/` and `contracts/`, mirroring the repository layout with the source extension retained (`source/src/storage/QueueStorage.ts.md`). |
+| `source/**/README.md` | Per-directory subsystem ownership: shared responsibility, design, assumptions, interactions, and integration obligations of that source directory. |
+| [views/](./views/) | Cross-directory design views: authored accounts of protocol flows that span several source directories (pipelines, service families, contract architecture). Views link file reports; they never duplicate or replace them, and each names its specification owner. |
+| [open-questions.md](./open-questions.md) | Implementation-owned open decisions. |
 
-The overview contains a `Status` field plus dedicated `Specification adherence`, `Specification
-contradiction`, and `Missing` subsections. It distinguishes incomplete coverage from behavior that
-directly conflicts with the specification. Every contradiction and missing capability states its
-required resolution in place; do not repeat the same items in a separate work list. The inventory
-contains only files in which the listed IDs can actually be
-audited; generic roles, per-row status boilerplate, and duplicated symbol lists do not belong there.
+## File reports
 
-After the overview, define the implementation-wide `Assumptions and constraints`, then present
-`System design` and the `System integration test plan` so the reader understands the implemented
-system and its internal composition before inspecting files. Then list `Source inventory`, nesting every inventory item beneath it in the contents menu. Each
-inventory row has one
-matching `### Source report: <filename>` anchor. That report links the source, repeats only its
-auditable specification IDs, and records its implementation responsibility, design decisions,
-assumptions and constraints, and an exhaustive file-specific `#### Unit tests` table. Every unit
-case has its own `UNIT-TEST-*` identity and states all required permutations and the observable
-oracle. Number independently coverable permutations as `<UNIT-TEST-ID>.P1` through `.PN`, exactly
-as specification plans number their permutations. Optional columns link the case to relevant specification IDs and specification test IDs;
-an implementation-only case may leave either mapping empty. The compact table answers “what files
-implement this subject?”; the reports answer “how does each file do it and how must that file be
-tested?”
+Each production file has exactly one maintained report recording: the source path and relevant
+symbols; responsibility and observable boundary; inputs, outputs, state, and side effects; linked
+specification requirements and planned permutations; assumptions, dependencies, trust boundaries,
+limits, ordering, concurrency, failures, and recovery; current adherence, contradictions, and
+missing behavior; component test obligations (`UNIT-TEST-*` with stable permutations); and related source reports.
+Exact test evidence lives only in the verification test reports, mapped against those IDs.
 
-Render requirement and test identities as linked inline code—`[` + backticked ID + `](target)`—so
-they retain code styling while remaining navigable. Requirements link to stable anchors at their
-normative definitions. Unit and integration tests link to stable local anchors at their definition
-rows; never use fragile generated line numbers for these identities.
+A file may contribute to several requirements. The report describes *that file's contribution* and
+must not claim complete conformance for a requirement that depends on other files — the generated
+requirement view ([generated/traceability.md](../generated/traceability.md)) computes the complete
+status across all contributing files.
 
-The system integration plan covers interaction among the inventoried files from the top-down
-system perspective. Every integration case has a stable
-`INTEGRATION-TEST-*` identity, complete permutations and an oracle, with optional links to relevant
-specification IDs and specification test IDs. Its permutations are likewise
-`<INTEGRATION-TEST-ID>.P1` through `.PN`. Broader cross-system and end-to-end composition does not
-belong here; the matching verification document owns it. The implementation layer defines unit and
-integration obligations but not concrete test evidence.
+Requirement linkage lives in each report's `Source file | Specification IDs` table; the generated
+coverage report flags any production file without a report or without inventory ownership.
 
-The bottom conformance matrix joins every `REQ-*` / `INV-*` to current source evidence, design
-decisions, implementation-specific test obligations, and gaps. Source evidence points to the
-narrowest useful symbol or line. Every `src/` and `contracts/` file must occur in at least one subject
-inventory or be reported as unaccounted by static analysis. Generated tools report omissions but
-never create or edit maintained implementation documents.
+**Current maturity:** the reports were scaffolded from the pre-restructure subject inventories.
+Seeded ID lists are coarse (whole-subject dumps) and must be narrowed to the IDs actually auditable
+in each file during authoring; every `_Pending authoring_` marker is the work queue.
 
-Mechanically trivial files still require an explicit owning subject or a concrete `Not applicable`
-rationale in the maintained classification. `Not applicable` must not hide protocol behavior.
-Unresolved implementation decisions belong in [open-questions.md](./open-questions.md); demonstrated
-defects belong in [the audit findings register](../audit/open-findings.md).
+## Directory READMEs
 
-## Supplemental views
+A directory README owns what its files share: the subsystem's responsibility, design decisions,
+internal interactions, and integration obligations (`INTEGRATION-TEST-*` cases among the files of
+that subsystem). File reports stay file-scoped; anything cross-file in one directory belongs here.
 
-- Detailed files under `architecture/` are concrete reports owned by the neutral architecture, pipeline,
-  RPC, or runtime subject named in their `Specification subject` field. They may refine implementation
-  details but cannot introduce unowned protocol behavior.
-- `operations/` contains repository-specific configuration and runbooks.
-- [examples.md](./examples.md) records concrete examples without making them protocol requirements.
+## Design views
 
-The generated [implementation coverage](../generated/implementation-coverage.md) reports specification and
-implementation subjects without counterparts, plus files under `src/` and `contracts/` that no implementation
-source inventory references. It does not assess implementation quality or the completeness of source reports.
+The authored deep documentation predating the restructure lives under [views/](./views/) unchanged:
+pipeline accounts, RPC service reports, contract architecture, and per-topic conformance analyses.
+Each view names exactly one `> **Specification subject:**` owner. Views are design narrative and
+evidence context — the file report remains the single per-file account, and content still living
+only in a view is migration debt to fold into the file and directory reports it covers.
+
+## Open questions
+
+Mechanism, conformance, and platform choices belong in
+[open-questions.md](./open-questions.md); protocol behavior belongs to the specification's
+register.

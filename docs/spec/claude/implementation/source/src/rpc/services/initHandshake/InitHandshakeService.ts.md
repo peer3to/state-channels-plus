@@ -1,0 +1,92 @@
+# InitHandshakeService.ts — Source Report
+
+> **Source:** [src/rpc/services/initHandshake/InitHandshakeService.ts](../../../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts) > **Status:** Authored — engineer verification pending.
+> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/rpc/handshake.md](../../../../../views/architecture/sdk/rpc/handshake.md)
+
+## Contents
+
+- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
+- [Key design decisions](#key-design-decisions)
+- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
+- [Linked requirements](#linked-requirements)
+- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
+- [Specification adherence](#specification-adherence)
+- [Specification contradictions](#specification-contradictions)
+- [Missing behavior](#missing-behavior)
+- [Conformance traceability](#conformance-traceability)
+- [Component test obligations](#component-test-obligations)
+- [Related source reports](#related-source-reports)
+
+## Responsibility and observable boundary
+
+The authenticator: drives the initiator half of the challenge/response exchange (fresh keccak
+challenge, RTT/skew bounds, signature recovery under the domain tag, ack send) and owns
+finalization — the idempotent gate requiring local verification AND the peer's ack before the
+profile is marked completed, connections open, and the WebRTC-upgrade tie-break and
+post-handshake sync fire. Per-transport negotiation state lives in WeakMaps/WeakSets.
+
+## Key design decisions
+
+1. **Challenges are closure-scoped.** The random challenge never enters shared state — unguessable, single-use, exchange-bound ([`REQ-AUTH-2`](../../../../../../specification/peer-communication/handshake.md#req-auth-2)).
+2. **Completion requires both roles.** Verified-peer AND received-ack, checked in one idempotent finalizer, because each direction of the mutual exchange proves only one side ([`REQ-AUTH-3`](../../../../../../specification/peer-communication/handshake.md#req-auth-3)).
+3. **Transport-keyed weak state.** Negotiation state is per-connection by design (WeakMap GC on transport death); identity state is written only at finalization into the churn-surviving profile.
+4. **Deterministic upgrade tie-break** (lower address initiates WebRTC) removes offer glare at completion.
+
+## Inputs, outputs, state, and side effects
+
+| Aspect       | Contents                                                                        |
+| ------------ | ------------------------------------------------------------------------------- |
+| Inputs       | Transports to authenticate; handshake responses; acks.                          |
+| Outputs      | Completed profiles; ack sends; upgrade/sync triggers; timeout consequences.     |
+| Owned state  | Per-transport in-flight/acked/verified maps; completion barrier.                |
+| Side effects | Profile writes; connection registration; disconnect/blacklist on timeout rules. |
+
+## Linked requirements
+
+A file may contribute to several requirements; this report describes the contribution and never
+claims complete conformance for a requirement that depends on other files.
+
+| Source file                                                                                                  | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [InitHandshakeService.ts](../../../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts) | [`INV-AUTH-1`](../../../../../../specification/peer-communication/handshake.md#inv-auth-1), [`INV-AUTH-2`](../../../../../../specification/peer-communication/handshake.md#inv-auth-2), [`REQ-AUTH-2`](../../../../../../specification/peer-communication/handshake.md#req-auth-2), [`REQ-AUTH-3`](../../../../../../specification/peer-communication/handshake.md#req-auth-3), [`REQ-AUTH-4`](../../../../../../specification/peer-communication/handshake.md#req-auth-4) |
+
+## Assumptions, dependencies, trust boundaries, and limits
+
+- Timing bounds derive from the agreement window (../../../../../../specification/protocol-model/time.md); the signer is the confined runtime signing authority ([`REQ-ID-3`](../../../../../../specification/protocol-model/identity.md#req-id-3)).
+
+## Specification adherence
+
+- Only signature-over-own-challenge authenticates; acks carry no authority ([`INV-AUTH-1`](../../../../../../specification/peer-communication/handshake.md#inv-auth-1)).
+- Penalty only after proven identity: response timeout drops, verified-but-silent excludes by address ([`REQ-AUTH-4`](../../../../../../specification/peer-communication/handshake.md#req-auth-4)).
+
+## Specification contradictions
+
+None demonstrated.
+
+## Missing behavior
+
+Protocol-version binding into the handshake ([`REQ-RPC-8`](../../../../../../specification/peer-communication/rpc.md#req-rpc-8)) is undesigned — [OQ-34](../../../../../../specification/open-questions.md) coupled to [OQ-29](../../../../../../specification/open-questions.md).
+
+## Conformance traceability
+
+Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
+**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
+Gap column. Audit state is file-level (Status header), never a row status.
+
+| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                            | Gap / divergence |
+| ------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-AUTH-3`](../../../../../../specification/peer-communication/handshake.md#req-auth-3) | Covered               | **Here:** the dual-condition idempotent finalizer. **Other files:** [ProfileManager](../../../ProfileManager.ts.md) persists identity across churn. | None.            |
+| [`REQ-AUTH-4`](../../../../../../specification/peer-communication/handshake.md#req-auth-4) | Covered               | **Here:** timeout consequence split (unverified drop vs verified exclusion).                                                                        | None.            |
+| [`REQ-AUTH-2`](../../../../../../specification/peer-communication/handshake.md#req-auth-2) | Covered               | **Here:** closure-scoped fresh challenges; verification bound to the issued challenge.                                                              | None.            |
+
+## Component test obligations
+
+Exact test evidence is mapped against these IDs in the verification test reports.
+
+| Unit test ID                                                                        | Obligation                      | Public entry and setup                                                                      | Oracle and forbidden effects                                                                                           | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-init-handshake-service-1"></a>`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1` | Initiator flow and finalization | Run exchanges to every partial state; replay/forge responses; race bidirectional completion | Only correct fresh-challenge signatures verify; finalization fires once with both roles; timeouts split by proof state | <a id="unit-test-init-handshake-service-1.p1"></a>`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1.P1` — correct mutual completion; <a id="unit-test-init-handshake-service-1.p2"></a>`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1.P2` — forged/replayed response; <a id="unit-test-init-handshake-service-1.p3"></a>`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1.P3` — RTT and skew bounds at edges; <a id="unit-test-init-handshake-service-1.p4"></a>`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1.P4` — verified-only and acked-only stalls; <a id="unit-test-init-handshake-service-1.p5"></a>`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1.P5` — idempotent finalization race; <a id="unit-test-init-handshake-service-1.p6"></a>`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1.P6` — timeout consequence split |
+
+## Related source reports
+
+- [InitHandshakeRpcMethods](./InitHandshakeRpcMethods.ts.md) (wire endpoints), [HandshakeCompletedGuard](../../guards/HandshakeCompletedGuard.ts.md), [WebRTCSetupService](../WebRTCSetup/WebRTCSetupService.ts.md), [SpectateService](../spectate/SpectateService.ts.md) (post-auth sync).

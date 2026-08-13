@@ -11,7 +11,7 @@
 
 The implemented fraud-proof list
 ([contracts/V1/types/ProofTypes.sol](../../../../contracts/V1/types/ProofTypes.sol),
-[../protocol/fraud-proofs.md](../specification/protocol/fraud-proofs.md)) MUST NOT be treated as complete. It
+[../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)) MUST NOT be treated as complete. It
 enumerates what the code proves today; nothing yet establishes that every objectively provable
 violation is covered or that every attack path is prevented, detected, or recoverable. The threat
 table in [trust-model.md](../specification/security/trust-model.md) carries the same caveat.
@@ -32,23 +32,23 @@ the root [README](../README.md) says so.
 objective claims the protocol makes, the proofs and validations that police them, and the failure
 and recovery behavior.
 
-| Surface                                        | Primary references                                                                                                                                                                             |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Block production                               | [../protocol/finality.md](../specification/protocol/finality.md), [../sdk/block-confirmation-pipeline.md](../implementation/architecture/sdk/block-confirmation-pipeline.md)                   |
-| Signatures and equivocation                    | [../protocol/fraud-proofs.md](../specification/protocol/fraud-proofs.md)                                                                                                                       |
-| Virtual voting                                 | [../protocol/finality.md](../specification/protocol/finality.md)                                                                                                                               |
-| State proofs and milestone hops                | [../protocol/state-proofs.md](../specification/protocol/state-proofs.md)                                                                                                                       |
-| Membership changes (join, removal, thresholds) | [../protocol/cross-layer-messages.md](../specification/protocol/cross-layer-messages.md), [../protocol/state-proofs.md](../specification/protocol/state-proofs.md)                             |
-| Inbound and outbound streams                   | [../protocol/cross-layer-messages.md](../specification/protocol/cross-layer-messages.md)                                                                                                       |
-| Snapshot updates                               | [../protocol/lifecycle.md](../specification/protocol/lifecycle.md)                                                                                                                             |
-| Fraud-proof and dispute-proof submission       | [../protocol/fraud-proofs.md](../specification/protocol/fraud-proofs.md), [../sdk/dispute-pipeline.md](../implementation/architecture/sdk/dispute-pipeline.md)                                 |
-| Slash-set handling                             | [../protocol/fraud-proofs.md](../specification/protocol/fraud-proofs.md)                                                                                                                       |
-| Reduction                                      | [../protocol/disputes.md](../specification/protocol/disputes.md)                                                                                                                               |
-| Timing                                         | [../protocol/time.md](../specification/protocol/time.md)                                                                                                                                       |
-| Data availability                              | [data-availability.md](../specification/security/data-availability.md)                                                                                                                         |
-| RPC trust                                      | [trust-model.md](../specification/security/trust-model.md) §5                                                                                                                                  |
-| Leader election                                | [../protocol/finality.md](../specification/protocol/finality.md)                                                                                                                               |
-| Cross-layer interactions                       | [../protocol/cross-layer-messages.md](../specification/protocol/cross-layer-messages.md), [../contracts/manager-and-facets.md](../implementation/architecture/contracts/manager-and-facets.md) |
+| Surface                                        | Primary references                                                                                                                                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Block production                               | [../protocol/finality.md](../specification/protocol-model/finality.md), [../sdk/block-confirmation-pipeline.md](../implementation/views/architecture/sdk/block-confirmation-pipeline.md)               |
+| Signatures and equivocation                    | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)                                                                                                                               |
+| Virtual voting                                 | [../protocol/finality.md](../specification/protocol-model/finality.md)                                                                                                                                 |
+| State proofs and milestone hops                | [../protocol/state-proofs.md](../specification/disputes/state-proofs.md)                                                                                                                               |
+| Membership changes (join, removal, thresholds) | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md), [../protocol/state-proofs.md](../specification/disputes/state-proofs.md)                                   |
+| Inbound and outbound streams                   | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)                                                                                                             |
+| Snapshot updates                               | [../protocol/lifecycle.md](../specification/settlement/lifecycle.md)                                                                                                                                   |
+| Fraud-proof and dispute-proof submission       | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md), [../sdk/dispute-pipeline.md](../implementation/views/architecture/sdk/dispute-pipeline.md)                                   |
+| Slash-set handling                             | [../protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)                                                                                                                               |
+| Reduction                                      | [../protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                                       |
+| Timing                                         | [../protocol/time.md](../specification/protocol-model/time.md)                                                                                                                                         |
+| Data availability                              | [data-availability.md](../specification/security/data-availability.md)                                                                                                                                 |
+| RPC trust                                      | [trust-model.md](../specification/security/trust-model.md) §5                                                                                                                                          |
+| Leader election                                | [../protocol/finality.md](../specification/protocol-model/finality.md)                                                                                                                                 |
+| Cross-layer interactions                       | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md), [../contracts/manager-and-facets.md](../implementation/views/architecture/contracts/manager-and-facets.md) |
 
 **REQ-SEC-3.** The review MUST separate **objective slashable violations** (provable misbehavior)
 from **non-Byzantine failures** (disconnection, data loss, crash). The former are candidates for

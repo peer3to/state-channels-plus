@@ -245,12 +245,12 @@ checks only gate local behavior while objective claims use chain-verifiable valu
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `REQ-TIME-1`            | Chain time is authoritative; wall clocks are not a source of truth                                                        |
-| `REQ-TIME-2`            | Honest participants keep estimated chain time within the skew bound (estimated from recent block timestamps)              |
-| `REQ-TIME-3`            | Window values and skew bound are explicit configuration trade-offs; windows dominate honest skew                          |
-| `REQ-TIME-4`            | Timeouts/fraud proofs/slashing use only objectively validated timestamps; subjective assessments gate local behavior only |
+| Requirement / invariant             | Statement                                                                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| <a id="req-time-1"></a>`REQ-TIME-1` | Chain time is authoritative; wall clocks are not a source of truth                                                        |
+| <a id="req-time-2"></a>`REQ-TIME-2` | Honest participants keep estimated chain time within the skew bound (estimated from recent block timestamps)              |
+| <a id="req-time-3"></a>`REQ-TIME-3` | Window values and skew bound are explicit configuration trade-offs; windows dominate honest skew                          |
+| <a id="req-time-4"></a>`REQ-TIME-4` | Timeouts/fraud proofs/slashing use only objectively validated timestamps; subjective assessments gate local behavior only |
 
 ## Verification and test plan
 

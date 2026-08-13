@@ -240,12 +240,12 @@ because an otherwise valid commitment can still be too expensive to inspect on-c
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `INV-HIST-1`            | Block commits to the state snapshot hash; serialized state committed indirectly via `SnapshotData.stateMachineStateHash` |
-| `INV-HIST-2`            | Hash-linking: height>0 links to previous block hash; height 0 links to genesis snapshot hash                             |
-| `INV-HIST-3`            | Snapshots commit to inbound and outbound message-stream tips (hash + height)                                             |
-| `INV-HIST-4`            | `forkId = keccak256(abi.encode(genesis SnapshotData))`; `originForkId` chains fork ancestry                              |
+| Requirement / invariant             | Statement                                                                                                                |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| <a id="inv-hist-1"></a>`INV-HIST-1` | Block commits to the state snapshot hash; serialized state committed indirectly via `SnapshotData.stateMachineStateHash` |
+| <a id="inv-hist-2"></a>`INV-HIST-2` | Hash-linking: height>0 links to previous block hash; height 0 links to genesis snapshot hash                             |
+| <a id="inv-hist-3"></a>`INV-HIST-3` | Snapshots commit to inbound and outbound message-stream tips (hash + height)                                             |
+| <a id="inv-hist-4"></a>`INV-HIST-4` | `forkId = keccak256(abi.encode(genesis SnapshotData))`; `originForkId` chains fork ancestry                              |
 
 ## Verification and test plan
 

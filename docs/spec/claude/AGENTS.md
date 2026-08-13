@@ -24,16 +24,22 @@ For every affected behavior:
 4. update the current semantic/security assessment, findings, and questions in `audit/`; and
 5. allow changed graph fingerprints to make affected approvals stale until an engineer reapproves.
 
-Every `src/`/`contracts/` file appears in at least one implementation subject inventory. Every
-specification subject has the same relative path in `implementation/` and `verification/`. Every
-extracted test declaration maps at least once to a planned-test permutation. Never clear a generated gap with a broad directory link,
-an unexplained `Not applicable`, or a file-level ignore that hides specification evidence.
+The three layers do NOT share a filesystem structure (review objective 46). The specification is
+organized by protocol system; the implementation mirrors the production tree under
+`implementation/source/` (one file report per `src/`/`contracts/` file, plus directory READMEs and
+cross-directory design views under `implementation/views/`); the verification mirrors the test tree
+under `verification/tests/` (one report per test file with executable declarations, plus level
+indexes and the matrix views under `verification/views/`). Traceability runs only through stable
+IDs and exact test declarations — path equality is never evidence.
 
-Every implementation document is either the matching primary subject or explicitly names exactly one
-`Specification subject` owner near its title. Detailed architecture, service, pipeline, runtime, example,
-and operations reports are concrete children of that neutral owner; they are never free-standing design
-authority. If concrete documentation exposes behavior with no neutral requirement, add or amend the
-specification first, then its matching implementation and verification subjects.
+Every `src/`/`contracts/` file has exactly one file report at `implementation/source/<path>.md` and
+appears in at least one source inventory table. Every extracted test declaration maps at least once
+to a planned-test permutation. Never clear a generated gap with a broad directory link, an
+unexplained `Not applicable`, or a file-level ignore that hides specification evidence.
+
+Every implementation design view explicitly names exactly one `> **Specification subject:**` owner
+near its title; views link file reports and never duplicate or replace them. If concrete
+documentation exposes behavior with no neutral requirement, add or amend the specification first.
 
 Specification test plans preserve their owning requirement ID: `INV-DA-1.T1`, with required
 permutations `INV-DA-1.T1.P1`, `.P2`, and so on. Implementation tests use independent identities:
@@ -58,45 +64,48 @@ Specification documents must contain no source links, concrete implementation st
 defects, concrete test evidence, or references to implementation, verification, generated, or audit
 documents. Their only downstream-facing identity is the stable requirement and permutation IDs.
 
-Each matching implementation document owns `## Implementation overview`, `## Assumptions and constraints`,
-`## System design`, one `## System integration test plan`, a two-column
-`## Source inventory` (`Source file | Specification IDs`), and bottom
-`## Conformance traceability`, in that order. The overview has a `Status` field and dedicated
-`### Specification adherence`, `### Specification contradiction`, and `### Missing` subsections.
-It distinguishes contradiction from missing implementation and states each required resolution
-beside its issue; never duplicate the issues in a separate remaining-work list. The assumptions section defines the
-conditions and limits under which the concrete implementation operates. Inventory only files
-where the listed IDs can actually be audited; do not add generic role/status columns or repeat
-symbol dumps.
-
-Use this top-down order so readers see the implemented system and its interaction guarantees
-before descending into individual files. Nest every inventory item in the contents menu and give it one matching
-`### Source report: <filename>` section. Each report links the exact source, lists the IDs actually
-auditable there, explains that file's responsibility, design decisions, assumptions and constraints,
-and contains an exhaustive `#### Unit tests` table for that file's public boundary. Give every row a
-stable `UNIT-TEST-*` ID. Give every internal system-composition case above the inventory a stable
-`INTEGRATION-TEST-*` ID. Do not define cross-subsystem or E2E
-cases in implementation documents; verification owns those. Link conformance evidence to the
-narrowest relevant source line (`#L…`). If a requirement is integrator-owned or cannot be enforced
-generically, say so.
+Each production-file report (`implementation/source/<path>.md`) uses this section order (canonical
+exemplar: `implementation/source/src/disputeManager/DisputeManager.ts.md`): header (Source, Status,
+Design views); Responsibility and observable boundary; **Key design decisions** (near the top: each
+decision with its rationale and source anchor); Inputs, outputs, state, and side effects; Linked
+requirements (a `Source file | Specification IDs` table listing only IDs actually auditable in that
+file, plus a per-ID contribution note); Assumptions, dependencies, trust boundaries, and limits;
+then three separate sections for static analysis — **Specification adherence** (good, ignored by
+gap analysis), **Specification contradictions**, and **Missing behavior** (both flagged when
+non-empty; write exactly `None demonstrated.` when a section has no findings); Conformance
+traceability (status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. `Covered` means
+everything required exists — in this file or across the linked files; `Partial` is used only when
+something is genuinely missing and the Gap column states exactly what; audit state is file-level
+via the Status header, never a row status. Each row's Evidence cell is structured **Here:** what
+this file implements, with anchors, then **Other files:** linked reports with brief roles for the
+remainder, so the row is auditable from its links alone); Component test obligations (a `Unit test ID | … | Required permutations` table —
+this exact header is what static analysis collects, and each `UNIT-TEST-*.P*` carries its `<a id>`
+anchor here, making the file report the definition site all other references jump to); and Related
+source reports. Every requirement/permutation reference is a linked inline-code label jumping to
+its definition anchor. Exact test evidence lives only in verification, mapped against these IDs. A file may contribute to several requirements — describe
+the contribution, never claim complete conformance for a requirement that depends on other files;
+the generated requirement view computes the complete status. Directory `README.md`s own the shared
+subsystem responsibility and `INTEGRATION-TEST-*` cases among that directory's files. Cross-subsystem
+and E2E cases belong to verification. Link conformance evidence to the narrowest relevant source
+line (`#L…`). If a requirement is integrator-owned or cannot be enforced generically, say so.
 
 Make every requirement, plan, and permutation reference navigable without losing its code styling:
 use linked inline-code labels and stable explicit anchors at maintained definitions. Do not use line
 numbers as identity anchors; formatting and nearby documentation edits make them stale.
 
-Each matching verification document owns `## Verification overview` and bottom
-`## Specification test traceability` plus `## Implementation test traceability`.
-Do not add an upstream-dependency section: the mirrored subject already defines its specification
-and implementation inputs. The overview has a `Status` field and dedicated
-`### Specification-test adherence`, `### Implementation-test adherence`, `### Contradictions`, and
-`### Missing` subsections. Inspect the real test body for every traceability row and state whether its
-setup and oracle give good, partial, wrong/misleading, adjacent-only, or missing coverage, with a
-specific explanation. One declaration may appear in multiple rows when it genuinely covers multiple
-cases; the case is the unit of traceability. Broad file links, filenames, and adjacent tests are not
-evidence. Exact test links exist only here. Generated reports project these maintained layers; never
+Each test-file report (`verification/tests/<path>.md`) inventories every declaration in that file
+with: classification level (Unit / Integration / System / End-to-end — per declaration, not per
+file); public production entry point; setup, stimulus, oracle, and forbidden effects; environment;
+linked production files; assigned specification permutations and implementation-test obligations;
+and evidence quality (good, partial, wrong/misleading, adjacent-only, missing) with a specific
+explanation after inspecting the real test body. Fixtures, harness code, utilities, runners, and
+configuration get no reports; link support code only when it materially affects setup or the
+oracle. One declaration may prove multiple cases; the case is the unit of traceability. Broad file
+links, filenames, and adjacent tests are not evidence. Exact test links exist only in verification
+documents, and only on inspected rows. Generated reports project the maintained layers; never
 repair a generated table directly.
 
-Use [verification/concepts/state-machines.md](./verification/concepts/state-machines.md) as the canonical
+Use [verification/concepts/state-machines.md](./verification/views/concepts/state-machines.md) as the canonical
 worked example. Do not add `Upstream dependencies`, `Test declaration inventory`, `Combined verification
 strategy`, or `Consolidated test evidence`: they duplicate information owned by the mirrored path and the two
 traceability matrices. Put the coverage judgment beside the case it evaluates.
@@ -139,6 +148,15 @@ acceptance is uncertain; never guess. Fingerprints automatically turn changed ap
 Agents and PR/review skills must reject new structural gaps, semantic drift, incomplete test-plan/oracle coverage,
 stale approvals, and unresolved blocking questions. Existing queues may remain only when the change does not
 worsen them and the generated reports state them honestly.
+
+## Engineer review state
+
+Every maintained document under `specification/`, `implementation/`, and `verification/` is pending
+engineer review until the engineer records its content hash:
+`SPEC_REVIEWER="Name" node docs/spec/claude/tools/review.js <file...>`. Any later edit makes the
+record stale automatically — the file returns to pending in
+[generated/pending-review.md](./generated/pending-review.md) until re-verified. Agents never run
+`review.js`; after editing any maintained file, expect it to reappear as pending/stale and say so.
 
 ## Regeneration
 

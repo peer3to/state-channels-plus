@@ -200,16 +200,16 @@ domain-separation questions are security blockers, not optimization details.
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                                                                   |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `REQ-FIN-1`             | Participants build on the latest valid state immediately; explicit threshold finality is never a precondition for producing the next block. |
-| `INV-FIN-2`             | Signing is a non-equivocating vote; provable equivocation is slashable.                                                                     |
-| `REQ-FIN-3`             | Signatures accumulate across hash-linked ancestry (virtual voting).                                                                         |
-| `REQ-FIN-4`             | N consecutive blocks authored by the complete participant set finalize the sequence's first block.                                          |
-| `REQ-FIN-5`             | Deterministic block-level authoring via `getNextToWrite`; a missed slot is timeout-disputable.                                              |
-| `REQ-FIN-6`             | Recommended leader-election policy is round-robin as a function of channel state.                                                           |
-| `REQ-FIN-7`             | The finality threshold is unanimous over the relevant union participant set (minus on-chain-slashed, for disputes).                         |
-| `INV-FIN-8`             | Valid non-final transitions are carried into the canonical successor fork, not reverted (longest valid proved history wins).                |
+| Requirement / invariant           | Statement                                                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="req-fin-1"></a>`REQ-FIN-1` | Participants build on the latest valid state immediately; explicit threshold finality is never a precondition for producing the next block. |
+| <a id="inv-fin-2"></a>`INV-FIN-2` | Signing is a non-equivocating vote; provable equivocation is slashable.                                                                     |
+| <a id="req-fin-3"></a>`REQ-FIN-3` | Signatures accumulate across hash-linked ancestry (virtual voting).                                                                         |
+| <a id="req-fin-4"></a>`REQ-FIN-4` | N consecutive blocks authored by the complete participant set finalize the sequence's first block.                                          |
+| <a id="req-fin-5"></a>`REQ-FIN-5` | Deterministic block-level authoring via `getNextToWrite`; a missed slot is timeout-disputable.                                              |
+| <a id="req-fin-6"></a>`REQ-FIN-6` | Recommended leader-election policy is round-robin as a function of channel state.                                                           |
+| <a id="req-fin-7"></a>`REQ-FIN-7` | The finality threshold is unanimous over the relevant union participant set (minus on-chain-slashed, for disputes).                         |
+| <a id="inv-fin-8"></a>`INV-FIN-8` | Valid non-final transitions are carried into the canonical successor fork, not reverted (longest valid proved history wins).                |
 
 ## Verification and test plan
 

@@ -144,13 +144,13 @@ availability and griefing bounds remain explicit unresolved risks.
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                      |
-| ----------------------- | ---------------------------------------------------------------------------------------------- |
-| `INV-DA-1`              | Calldata commitments are immutable per key and binding on the poster.                          |
-| `REQ-DA-1`              | Dispute-relevant block data obtainable from the chain alone; no separate DA trust assumption.  |
-| `REQ-DA-2`              | Timing rules state which windows they consume; on-chain posting re-anchors timing objectively. |
-| `REQ-DA-3`              | Calldata griefing exposure stated plainly as a version-one limitation.                         |
-| `REQ-DA-4`              | DA changes evaluated against latency, cost, griefing cost, and new trust assumptions.          |
+| Requirement / invariant         | Statement                                                                                      |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| <a id="inv-da-1"></a>`INV-DA-1` | Calldata commitments are immutable per key and binding on the poster.                          |
+| <a id="req-da-1"></a>`REQ-DA-1` | Dispute-relevant block data obtainable from the chain alone; no separate DA trust assumption.  |
+| <a id="req-da-2"></a>`REQ-DA-2` | Timing rules state which windows they consume; on-chain posting re-anchors timing objectively. |
+| <a id="req-da-3"></a>`REQ-DA-3` | Calldata griefing exposure stated plainly as a version-one limitation.                         |
+| <a id="req-da-4"></a>`REQ-DA-4` | DA changes evaluated against latency, cost, griefing cost, and new trust assumptions.          |
 
 ## Verification and test plan
 

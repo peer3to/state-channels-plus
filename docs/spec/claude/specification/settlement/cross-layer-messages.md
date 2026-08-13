@@ -346,26 +346,26 @@ across concurrent inbound/outbound activity.
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                                                     |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `INV-MSG-1`             | Each stream is one hash-linked chain per channel; heights +1; identity = `keccak256(abi.encode(block))`                       |
-| `INV-MSG-2`             | No replay, no omission: each block processed exactly once, in order                                                           |
-| `INV-MSG-3`             | Tip `totalBalance` = cumulative sum of message balances; chain totals match processed prefixes                                |
-| `INV-MSG-4`             | `totalWithdrawals ≤ totalDeposits` at every outbound processing step                                                          |
-| `INV-MSG-5`             | Processed tips advance only to strictly newer descendants                                                                     |
-| `INV-MSG-6`             | Balance invariant: `totalDeposits == totalWithdrawals + getTotalStateBalance(state)` with chain-anchored deposits/withdrawals |
-| `REQ-MSG-1`             | Snapshots MUST commit both stream tips + totals; dispute outputs likewise                                                     |
-| `REQ-MSG-2`             | A dispute's claimed inbound tip MUST be an ancestor of the chain tip with matching height                                     |
-| `REQ-MSG-3`             | Packaged inbound blocks MUST chain from the previous snapshot tip and exist on-chain; fabrication is provable fraud           |
-| `REQ-MSG-4`             | Outbound processing MUST verify the linked range and skip the processed prefix before consuming                               |
-| `REQ-MSG-5`             | Catch-up MUST be batchable into smaller ranges with identical results                                                         |
-| `REQ-MSG-6`             | Snapshot advance MUST require finality (same-fork) or finalized reduction + expired challenge period (successor fork)         |
-| `REQ-MSG-7`             | Same-fork advance MUST consume all pending inbound messages                                                                   |
-| `REQ-MSG-8`             | Exits MUST be withdrawable only through snapshot advance (no standalone submission)                                           |
-| `REQ-MSG-9`             | Spectating MUST be fail-closed: any failure aborts with no funds or obligations at risk                                       |
-| `REQ-MSG-10`            | Joining MUST carry the joiner's signature plus the full threshold set's signatures, pinned to an expected snapshot/fork       |
-| `REQ-MSG-11`            | A deposited-but-unincluded joiner MUST be able to force inclusion via the dispute game and then be covered by leader election |
-| `REQ-MSG-12`            | Anyone MUST be able to verify the balance invariant trustlessly for a claimed snapshot                                        |
+| Requirement / invariant             | Statement                                                                                                                     |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-msg-1"></a>`INV-MSG-1`   | Each stream is one hash-linked chain per channel; heights +1; identity = `keccak256(abi.encode(block))`                       |
+| <a id="inv-msg-2"></a>`INV-MSG-2`   | No replay, no omission: each block processed exactly once, in order                                                           |
+| <a id="inv-msg-3"></a>`INV-MSG-3`   | Tip `totalBalance` = cumulative sum of message balances; chain totals match processed prefixes                                |
+| <a id="inv-msg-4"></a>`INV-MSG-4`   | `totalWithdrawals ≤ totalDeposits` at every outbound processing step                                                          |
+| <a id="inv-msg-5"></a>`INV-MSG-5`   | Processed tips advance only to strictly newer descendants                                                                     |
+| <a id="inv-msg-6"></a>`INV-MSG-6`   | Balance invariant: `totalDeposits == totalWithdrawals + getTotalStateBalance(state)` with chain-anchored deposits/withdrawals |
+| <a id="req-msg-1"></a>`REQ-MSG-1`   | Snapshots MUST commit both stream tips + totals; dispute outputs likewise                                                     |
+| <a id="req-msg-2"></a>`REQ-MSG-2`   | A dispute's claimed inbound tip MUST be an ancestor of the chain tip with matching height                                     |
+| <a id="req-msg-3"></a>`REQ-MSG-3`   | Packaged inbound blocks MUST chain from the previous snapshot tip and exist on-chain; fabrication is provable fraud           |
+| <a id="req-msg-4"></a>`REQ-MSG-4`   | Outbound processing MUST verify the linked range and skip the processed prefix before consuming                               |
+| <a id="req-msg-5"></a>`REQ-MSG-5`   | Catch-up MUST be batchable into smaller ranges with identical results                                                         |
+| <a id="req-msg-6"></a>`REQ-MSG-6`   | Snapshot advance MUST require finality (same-fork) or finalized reduction + expired challenge period (successor fork)         |
+| <a id="req-msg-7"></a>`REQ-MSG-7`   | Same-fork advance MUST consume all pending inbound messages                                                                   |
+| <a id="req-msg-8"></a>`REQ-MSG-8`   | Exits MUST be withdrawable only through snapshot advance (no standalone submission)                                           |
+| <a id="req-msg-9"></a>`REQ-MSG-9`   | Spectating MUST be fail-closed: any failure aborts with no funds or obligations at risk                                       |
+| <a id="req-msg-10"></a>`REQ-MSG-10` | Joining MUST carry the joiner's signature plus the full threshold set's signatures, pinned to an expected snapshot/fork       |
+| <a id="req-msg-11"></a>`REQ-MSG-11` | A deposited-but-unincluded joiner MUST be able to force inclusion via the dispute game and then be covered by leader election |
+| <a id="req-msg-12"></a>`REQ-MSG-12` | Anyone MUST be able to verify the balance invariant trustlessly for a claimed snapshot                                        |
 
 ## Verification and test plan
 

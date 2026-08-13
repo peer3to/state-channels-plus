@@ -224,14 +224,14 @@ and prohibited edge needs an observable oracle and must preserve value and canon
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                                                                             |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `REQ-LIF-1`             | Best-case complete lifecycle needs at least two base-layer txs: open/deposit and settlement via a snapshot update that processes the outbound stream. |
-| `REQ-LIF-2`             | Only two paths yield a snapshot-updating state: same-fork finality proof, or dispute reduction after the challenge window.                            |
-| `REQ-LIF-3`             | A normal transition may produce an outbound exit message; producing it needs no finality — finality is needed only at on-chain snapshot submission.   |
-| `REQ-LIF-4`             | Every initiated dispute produces a canonical successor fork; execution resumes from it.                                                               |
-| `INV-LIF-5`             | Settlement conserves value: processed withdrawals never exceed deposits.                                                                              |
-| `REQ-LIF-6`             | Four deployment-configured windows (`p2pTime`, `agreementTime`, `chainFallbackTime`, `evidenceTime`) bound the phases as specified in §8.             |
+| Requirement / invariant           | Statement                                                                                                                                             |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="req-lif-1"></a>`REQ-LIF-1` | Best-case complete lifecycle needs at least two base-layer txs: open/deposit and settlement via a snapshot update that processes the outbound stream. |
+| <a id="req-lif-2"></a>`REQ-LIF-2` | Only two paths yield a snapshot-updating state: same-fork finality proof, or dispute reduction after the challenge window.                            |
+| <a id="req-lif-3"></a>`REQ-LIF-3` | A normal transition may produce an outbound exit message; producing it needs no finality — finality is needed only at on-chain snapshot submission.   |
+| <a id="req-lif-4"></a>`REQ-LIF-4` | Every initiated dispute produces a canonical successor fork; execution resumes from it.                                                               |
+| <a id="inv-lif-5"></a>`INV-LIF-5` | Settlement conserves value: processed withdrawals never exceed deposits.                                                                              |
+| <a id="req-lif-6"></a>`REQ-LIF-6` | Four deployment-configured windows (`p2pTime`, `agreementTime`, `chainFallbackTime`, `evidenceTime`) bound the phases as specified in §8.             |
 
 ## Verification and test plan
 

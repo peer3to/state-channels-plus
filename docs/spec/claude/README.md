@@ -29,17 +29,21 @@ selects proved history and creates a mandatory successor fork.
 | Layer | Question answered | Maintained contents |
 | --- | --- | --- |
 | [Specification](./specification/README.md) | What must every conforming implementation do, and what must be tested? | Neutral requirements/invariants, assumptions, limits, security model, and exhaustive black-box test plans. |
-| [Implementation](./implementation/README.md) | How does this repository implement those rules? | One mirror per specification subject, exhaustive source inventories, concrete design and assumptions, conformance/divergence, and implementation-specific test obligations. |
-| [Verification](./verification/README.md) | How are cross-component and system test plans executed? | Supporting integration/e2e methodology, runtime matrices, exact oracles, required permutations, and concrete test-declaration evidence. |
+| [Implementation](./implementation/README.md) | How does this repository implement those rules? | Repository-shaped: one file report per production source file under `implementation/source/`, directory READMEs for subsystem ownership, and cross-directory design views. |
+| [Verification](./verification/README.md) | How are the real tests judged? | Repository-shaped: one report per test file under `verification/tests/` with per-declaration level classification, plus level indexes and methodology views. |
 | [Audit](./audit/README.md) | Is the complete system structurally complete, semantically correct, sufficiently tested, and approved? | Current specification, implementation, verification, and security assessments; findings; questions; and engineer approvals. |
 
-The three authored subject trees share the same relative paths. For example, the complete state-machine
-account is:
+The three layers answer different questions and deliberately do NOT share one filesystem structure
+(review objective 46). The specification is organized by protocol system; the implementation
+mirrors `src/` and `contracts/`; the verification mirrors `test/`. Their relationship is carried by
+stable identities — `REQ-*`/`INV-*`, planned-test permutations, `UNIT-TEST-*`/`INTEGRATION-TEST-*`,
+source paths, and exact test declarations — joined in the generated
+[traceability views](./generated/traceability.md). For example, the state-machine account is:
 
 ```text
-specification/concepts/state-machines.md
-    -> implementation/concepts/state-machines.md
-        -> verification/concepts/state-machines.md
+specification/protocol-model/state-machines.md        (neutral rules, REQ-SM-*)
+    -> implementation/source/contracts/V1/AStateMachine.sol.md   (file report linking REQ-SM-*)
+        -> verification/tests/test/... reports mapping REQ-SM-*.T*.P* to exact declarations
 ```
 
 Knowledge flows only from left to right:
@@ -47,14 +51,16 @@ Knowledge flows only from left to right:
 - **Specification** exists before any particular implementation. It contains requirements and invariants,
   assumptions and constraints, security consequences, and numbered black-box test-plan permutations. It
   never cites this repository's source or tests.
-- **Implementation** is authored after source exists. It explains the concrete design, conformance and
-  divergences, defines internal integration cases, and inventories every relevant source file with its own
-  unit-test plan. It may cite the specification, but not concrete test evidence.
-- **Verification** is authored after tests exist. It inspects the actual test bodies and judges whether they
-  prove every specification permutation and every implementation unit/integration permutation. It owns all
-  exact test-declaration links and records good, partial, misleading/adjacent, and missing evidence.
+- **Implementation** is authored after source exists. One report per production file explains that
+  file's responsibility, conformance, and divergences and links its requirements by ID; directory
+  READMEs own subsystem-shared design and integration cases; design views narrate cross-directory
+  flows. It may cite the specification, but not concrete test evidence.
+- **Verification** is authored after tests exist. One report per test file inspects the actual test
+  bodies, classifies each declaration (unit/integration/system/end-to-end), and judges whether it
+  proves its assigned permutations. It owns all exact test-declaration links and records good,
+  partial, misleading/adjacent, and missing evidence.
 
-Read the three matching files together for the full picture. A later layer may refine or expose a gap in an
+Follow the IDs — via the generated traceability views — for the full picture of any behavior. A later layer may refine or expose a gap in an
 earlier one, but it may not silently redefine it.
 
 Supporting infrastructure:
@@ -76,8 +82,9 @@ Generated files contain current structural facts only and are never hand-edited:
 | Generated file | Meaning |
 | --- | --- |
 | [Specification index](./generated/specification-index.md) | Specification IDs that do not appear in any specification test plan, with a link to the specification that defines each ID. |
-| [Implementation coverage](./generated/implementation-coverage.md) | Missing specification/implementation counterparts and source or contract files that no implementation inventory references. |
-| [Verification coverage](./generated/verification-coverage.md) | Missing verification rows, planned tests without exact repository-test references, document mismatches across the three subject layers, and repository tests that verification does not reference. |
+| [Implementation coverage](./generated/implementation-coverage.md) | Design views without declared specification owners, source files without file reports, and source files no inventory references. |
+| [Verification coverage](./generated/verification-coverage.md) | Permutations without traceability rows, planned tests without exact repository-test references, test files without test reports, and repository tests that verification does not reference. |
+| [Traceability views](./generated/traceability.md) | Inverse joins: requirement → production files and mapped tests; production file → requirements and report; mapped declaration → level and permutations; protocol system → evidence rollup. |
 | [Open-question index](./generated/open-questions-index.md) | Unresolved questions from the specification, implementation, verification, and audit question registers. |
 | [Audit summary](./generated/audit-summary.md) | Compact requirement readiness with direct links to the authoritative specification, implementation, and verification rows, plus structural, semantic, security, and final status. |
 
@@ -178,7 +185,91 @@ new IDs use `OQ-SPEC-*`, `OQ-IMPL-*`, `OQ-VER-*`, or `OQ-AUDIT-*`. Demonstrated 
 questions: existing `DEF-*` IDs remain in [open findings](./audit/open-findings.md), while new findings use
 `FIND-<AREA>-<n>`.
 
-## 7. Change and review workflow
+## 7. Usage guide — engineer vs agent
+
+The tree has two actors with strictly separated authority. Everything below is enforceable: the
+generated reports expose violations, and the two approval registers cannot be legitimately written
+by agents.
+
+### What the engineer does
+
+1. **Review documents.** [generated/pending-review.md](./generated/pending-review.md) is the
+   burn-down list: every maintained document under `specification/`, `implementation/`, and
+   `verification/` is *pending* until you record its content hash:
+
+   ```bash
+   SPEC_REVIEWER="Name" node docs/spec/claude/tools/review.js <file...>
+   ```
+
+   The register is [audit/review-state.json](./audit/review-state.json). Any later edit to a
+   verified file changes its hash, and the next refresh automatically moves it to **stale** (your
+   old review is shown but no longer counts) — nobody has to remember to re-flag it. Re-review the
+   diff and re-run `review.js`.
+2. **Decide open questions.** [generated/open-questions-index.md](./generated/open-questions-index.md)
+   lists every unresolved decision. Agents must not choose protocol behavior; each `OQ-*` blocks
+   whatever it names until you resolve it (the resolution then moves into the owning document).
+3. **Disposition findings.** [audit/open-findings.md](./audit/open-findings.md) holds demonstrated
+   defects (`DEF-*`/`FIND-*`); confirm the proposed direction or reject it, then the fix proceeds
+   as a normal change.
+4. **Approve requirements.** Separate from document review, at a different granularity with a
+   different staleness trigger:
+
+   ```bash
+   SPEC_APPROVER="Name" node docs/spec/claude/tools/approve.js <REQ-or-INV-ID>
+   ```
+
+   recorded in [audit/approvals.md](./audit/approvals.md), surfaced per requirement path in
+   [generated/audit-summary.md](./generated/audit-summary.md).
+
+   | | Document review (`review.js`) | Requirement approval (`approve.js`) |
+   | --- | --- | --- |
+   | Unit | one markdown file | one `REQ-*`/`INV-*` ID |
+   | Hash covers | that file's bytes | the dependency closure: the requirement's complete owning specification document, the linked implementation evidence *and its source files*, and the exact mapped test declarations' code |
+   | Invalidated by | editing that file | editing anything in the closure — including a `src/` or `test/` change that touches no document |
+   | You are saying | "I read this document and its account is accurate" | "this behavior is correctly specified, the implementation conforms, and the mapped tests prove it" |
+
+   The systems fail independently in both directions: a perfectly written file report can belong to
+   a requirement with no test evidence yet, and a fully proven requirement can sit in a document
+   with a stale paragraph. A code refactor silently invalidates approvals (closure hash) without
+   touching reviews; a doc rewording invalidates reviews without necessarily touching semantics.
+   Intended sequence: document review is the cheap reading pass done early; requirement approval is
+   the per-behavior final sign-off done as test evidence lands. Cosmetic churn (formatting,
+   generated output, the approval fields themselves) is excluded from fingerprints; semantic
+   fields, source bytes, and test bytes are included, and dependents go stale transitively.
+5. **Gate releases.** `yarn spec:refresh:strict` fails while anything is pending/stale/unmapped —
+   the checkable definition of "the documentation is complete and reviewed".
+
+### What the agent does
+
+1. **Author and maintain everything** — specification subjects, implementation file reports and
+   views, verification test reports, findings, questions, and the current audit — always leaving
+   honest gaps (`none — gap`, `Pending inspection`) rather than paper-over claims.
+2. **Follow the change loop** (§8): before changing behavior, identify affected IDs via
+   `yarn spec:impact`; update specification first when neutral behavior changes; update the
+   affected file reports, test reports, and audit state in the same change; run
+   `yarn spec:refresh` and leave every generated gap visible.
+3. **Never mark approval or review.** Agents do not run `review.js` or `approve.js`, and do not
+   edit `review-state.json` or `approvals.md`. After editing any maintained file, the agent expects
+   it to reappear as pending/stale and says so.
+4. **Never decide open questions.** When intended behavior is ambiguous, raise the layer-owned
+   `OQ-*` and stop at the documented divergence (`Contradicts` rows, three-way
+   adherence/contradictions/missing sections) instead of normalizing either side.
+5. **Keep traceability real.** IDs are linked to their definition anchors; a test counts only as an
+   exact inspected declaration mapped to the permutation it proves; path equality is never
+   evidence.
+
+### Reading paths
+
+- *Understand a behavior:* start at the system README (specification), follow the owned document,
+  then jump by ID through [generated/traceability.md](./generated/traceability.md) to the file
+  reports and test evidence.
+- *Understand a source file:* open its report under `implementation/source/<path>.md` — boundary,
+  key design decisions, linked requirements, conformance with Here/Other-files evidence, and its
+  `UNIT-TEST-*` obligations.
+- *Judge test coverage:* `verification/tests/<path>.md` per file, level indexes for the normalized
+  view, and the verification-coverage report for the queue.
+
+## 8. Change and review workflow
 
 For a design, implementation, contract, or test change affecting specified behavior:
 
@@ -195,7 +286,7 @@ For a design, implementation, contract, or test change affecting specified behav
 An agent authors and checks documentation but cannot resolve an engineer decision or write an approval.
 Approvals are recorded only through the engineer workflow in [audit/README.md](./audit/README.md).
 
-## 8. Current maturity
+## 9. Current maturity
 
 The four-layer structure and analyzers are being established from a reverse-engineered baseline. Non-strict
 generation is expected to expose missing subject mirrors or source owners, incomplete test plans, unaccounted tests, open decisions,

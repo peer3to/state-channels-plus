@@ -35,48 +35,41 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
     const specificationDocuments =
         graph.documents.specificationDocs.filter(isSubjectDocument);
     const specificationSet = new Set(specificationDocuments);
-    const implementationDocuments =
-        graph.documents.implementationDocs.filter(isSubjectDocument);
-    const specificationsWithoutImplementations = specificationDocuments
+    const sourceReportRoot = path.join(implementationRoot, "source");
+    // Design views (everything outside implementation/source/) must declare their
+    // specification owner explicitly; file reports link requirements by ID instead.
+    const viewDocuments = graph.documents.implementationDocs
+        .filter(isSubjectDocument)
+        .filter(
+            (document) => !document.startsWith(`${sourceReportRoot}${path.sep}`)
+        );
+    const implementationsWithoutSpecifications = viewDocuments
         .filter(
             (document) =>
-                !fs.existsSync(
-                    path.join(
-                        implementationRoot,
-                        path.relative(specificationRoot, document)
-                    )
-                )
+                implementationSpecificationOwners(document, specificationSet)
+                    .length === 0
         )
         .map((document) => ({
             document,
-            expected: path.join(
-                implementationRoot,
-                path.relative(specificationRoot, document)
-            )
+            expected: "a declared `> **Specification subject:**` owner"
         }));
-    const implementationsWithoutSpecifications = implementationDocuments
-        .filter((document) => {
-            const matchingSpecification = path.join(
-                specificationRoot,
-                path.relative(implementationRoot, document)
-            );
-            return (
-                !specificationSet.has(matchingSpecification) &&
-                implementationSpecificationOwners(document, specificationSet)
-                    .length === 0
-            );
-        })
-        .map((document) => ({
-            document,
-            expected: path.join(
-                specificationRoot,
-                path.relative(implementationRoot, document)
-            )
-        }));
+    // Every production source file needs exactly one file report mirrored under
+    // implementation/source/ (repository path + source extension + .md).
+    const sourcesWithoutFileReports = graph.mirrors
+        .filter(
+            ({ source }) =>
+                !fs.existsSync(
+                    path.join(
+                        sourceReportRoot,
+                        `${path.relative(graph.roots.repo, source)}.md`
+                    )
+                )
+        )
+        .map(({ source }) => ({ source }));
     const unreferencedSources = graph.mirrors.filter(({ exists }) => !exists);
     const issueCount =
-        specificationsWithoutImplementations.length +
         implementationsWithoutSpecifications.length +
+        sourcesWithoutFileReports.length +
         unreferencedSources.length;
     const lines = [
         "# Implementation Coverage",
@@ -88,24 +81,21 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
         "## Contents",
         "",
         "- [Specification and implementation mismatches](#specification-and-implementation-mismatches)",
+        "- [Source files without a file report](#source-files-without-a-file-report)",
         "- [Source files not referenced by an implementation](#source-files-not-referenced-by-an-implementation)",
         "",
         "## Specification and implementation mismatches",
         "",
-        "This section lists specification subjects without a matching implementation and implementation subjects without a matching or explicitly declared specification owner.",
+        "This section lists implementation design views without an explicitly declared specification owner. Traceability is by stable IDs, not path equality; file reports under `implementation/source/` link requirements by ID.",
         ""
     ];
 
-    const documentMismatches = [
-        ...specificationsWithoutImplementations.map((item) => ({
-            type: "Specification without implementation",
+    const documentMismatches = implementationsWithoutSpecifications.map(
+        (item) => ({
+            type: "Implementation view without declared specification owner",
             ...item
-        })),
-        ...implementationsWithoutSpecifications.map((item) => ({
-            type: "Implementation without specification",
-            ...item
-        }))
-    ];
+        })
+    );
     if (!documentMismatches.length) {
         lines.push("None.");
     } else {
@@ -115,11 +105,28 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
         );
         for (const item of documentMismatches) {
             lines.push(
-                `| ${item.type} | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document))} | \`${path.relative(graph.roots.spec, item.expected)}\` |`
+                `| ${item.type} | ${relativeLink(output, item.document, path.relative(graph.roots.spec, item.document))} | ${item.expected.startsWith("a declared") ? item.expected : `\`${path.relative(graph.roots.spec, item.expected)}\``} |`
             );
         }
     }
 
+    lines.push(
+        "",
+        "## Source files without a file report",
+        "",
+        "Every file under `src/` and `contracts/` needs one maintained report at `implementation/source/<path>.md`.",
+        ""
+    );
+    if (!sourcesWithoutFileReports.length) {
+        lines.push("None.");
+    } else {
+        lines.push("| Source file |", "| --- |");
+        for (const { source } of sourcesWithoutFileReports) {
+            lines.push(
+                `| ${relativeLink(output, source, path.relative(graph.roots.repo, source))} |`
+            );
+        }
+    }
     lines.push(
         "",
         "## Source files not referenced by an implementation",

@@ -144,15 +144,15 @@ boundary plus adversarial combinations; a proof rejection must leave canonical s
 
 This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
 
-| Requirement / invariant | Statement                                                                                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `REQ-SP-1`              | A milestone is a finality anchor: its first block is final directly or via virtual votes from later linked confirmations within the milestone.                     |
-| `REQ-SP-2`              | Proofs chain anchor→anchor→latest state; the latest state need not be final but must be a cryptographically linked descendant of the last proved anchor.           |
-| `REQ-SP-3`              | Membership changes require milestone hops proven under the old∪new (plus pending joiners) union threshold.                                                         |
-| `REQ-SP-4`              | Fork genesis is the implicit final anchor: empty proofs claim the genesis snapshot; signed-block proofs must start at `transactionCnt == 0` and hash-link forward. |
-| `REQ-SP-5`              | The final block of the proved path supplies the state commitment the dispute game operates on.                                                                     |
-| `INV-SP-6`              | Non-final suffixes are safe: conflicting commitments expose slashable double-signs, and reduction selects the longest valid proved history.                        |
-| `REQ-SP-7`              | Linkage checks: hash linkage, fork identity, authentic author signatures, threshold coverage, and latest-state commitment, exactly as listed in §7.                |
+| Requirement / invariant         | Statement                                                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="req-sp-1"></a>`REQ-SP-1` | A milestone is a finality anchor: its first block is final directly or via virtual votes from later linked confirmations within the milestone.                     |
+| <a id="req-sp-2"></a>`REQ-SP-2` | Proofs chain anchor→anchor→latest state; the latest state need not be final but must be a cryptographically linked descendant of the last proved anchor.           |
+| <a id="req-sp-3"></a>`REQ-SP-3` | Membership changes require milestone hops proven under the old∪new (plus pending joiners) union threshold.                                                         |
+| <a id="req-sp-4"></a>`REQ-SP-4` | Fork genesis is the implicit final anchor: empty proofs claim the genesis snapshot; signed-block proofs must start at `transactionCnt == 0` and hash-link forward. |
+| <a id="req-sp-5"></a>`REQ-SP-5` | The final block of the proved path supplies the state commitment the dispute game operates on.                                                                     |
+| <a id="inv-sp-6"></a>`INV-SP-6` | Non-final suffixes are safe: conflicting commitments expose slashable double-signs, and reduction selects the longest valid proved history.                        |
+| <a id="req-sp-7"></a>`REQ-SP-7` | Linkage checks: hash linkage, fork identity, authentic author signatures, threshold coverage, and latest-state commitment, exactly as listed in §7.                |
 
 ## Verification and test plan
 
