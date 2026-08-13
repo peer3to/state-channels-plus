@@ -23,7 +23,7 @@ Browser-side local pairing (message-channel based) mirroring LocalTransport sema
 
 ## Key design decisions
 
-1. **Platform pair with identical observable behavior** ([`REQ-RUNTIME-4`](../../../../specification/runtime/execution.md#req-runtime-4)).
+1. **Platform pair with identical observable behavior** ([`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -39,9 +39,9 @@ Browser-side local pairing (message-channel based) mirroring LocalTransport sema
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                             | Specification IDs                                                               |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [BrowserLocalTransport.ts](../../../../../../../src/transport/BrowserLocalTransport.ts) | [`REQ-RUNTIME-4`](../../../../specification/runtime/execution.md#req-runtime-4) |
+| Source file                                                                             | Specification IDs                                                                             |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [BrowserLocalTransport.ts](../../../../../../../src/transport/BrowserLocalTransport.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

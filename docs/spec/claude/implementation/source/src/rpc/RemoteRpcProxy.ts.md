@@ -40,9 +40,9 @@ sending surface (`remoteRpc.initHandshakeService.…`), caching one per-service 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                         | Specification IDs                                                            |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [RemoteRpcProxy.ts](../../../../../../../src/rpc/RemoteRpcProxy.ts) | [`REQ-RPC-1`](../../../../specification/peer-communication/rpc.md#req-rpc-1) |
+| Source file                                                         | Specification IDs                                                                          |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [RemoteRpcProxy.ts](../../../../../../../src/rpc/RemoteRpcProxy.ts) | [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Public-surface confinement at the type and runtime levels ([`REQ-RPC-1`](../../../../specification/peer-communication/rpc.md#req-rpc-1)).
+- Public-surface confinement at the type and runtime levels ([`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)).
 
 ## Specification contradictions
 
@@ -66,17 +66,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                      | Implementation status | Evidence                                                                                                                              | Gap / divergence |
-| ---------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RPC-1`](../../../../specification/peer-communication/rpc.md#req-rpc-1) | Covered               | **Here:** service-only access with runtime enforcement. **Other files:** [MainRpcService](./MainRpcService.ts.md) defines the roster. | None.            |
+| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                              | Gap / divergence |
+| ------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Covered               | **Here:** service-only access with runtime enforcement. **Other files:** [MainRpcService](./MainRpcService.ts.md) defines the roster. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                            | Obligation           | Public entry and setup                 | Oracle and forbidden effects                                            | Required permutations                                                                                                                                                                                                                                                                                                          |
-| ----------------------------------------------------------------------- | -------------------- | -------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-remote-rpc-proxy-1"></a>`UNIT-TEST-REMOTE-RPC-PROXY-1` | Service-only surface | Access services and non-service fields | Services yield cached proxies; non-services throw; symbols pass through | <a id="unit-test-remote-rpc-proxy-1.p1"></a>`UNIT-TEST-REMOTE-RPC-PROXY-1.P1` — service access + cache identity; <a id="unit-test-remote-rpc-proxy-1.p2"></a>`UNIT-TEST-REMOTE-RPC-PROXY-1.P2` — non-service access throws; <a id="unit-test-remote-rpc-proxy-1.p3"></a>`UNIT-TEST-REMOTE-RPC-PROXY-1.P3` — symbol passthrough |
+| Unit test ID                                                                          | Obligation           | Public entry and setup                 | Oracle and forbidden effects                                            | Required permutations                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------- | -------------------- | -------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="unit-test-remote-rpc-proxy-1-tzz729"></a>`UNIT-TEST-REMOTE-RPC-PROXY-1-TZZ729` | Service-only surface | Access services and non-service fields | Services yield cached proxies; non-services throw; symbols pass through | <a id="unit-test-remote-rpc-proxy-1-tzz729.p1"></a>`UNIT-TEST-REMOTE-RPC-PROXY-1-TZZ729.P1` — service access + cache identity; <a id="unit-test-remote-rpc-proxy-1-tzz729.p2"></a>`UNIT-TEST-REMOTE-RPC-PROXY-1-TZZ729.P2` — non-service access throws; <a id="unit-test-remote-rpc-proxy-1-tzz729.p3"></a>`UNIT-TEST-REMOTE-RPC-PROXY-1-TZZ729.P3` — symbol passthrough |
 
 ## Related source reports
 

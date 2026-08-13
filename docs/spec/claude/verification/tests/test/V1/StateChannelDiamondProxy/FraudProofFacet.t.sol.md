@@ -20,7 +20,7 @@ honest skew up to `evidenceTime + P2P_TIME` is never flagged, the first-block gr
 the later-block no-grace boundary flip at exactly +1 second, and a forged author signature makes
 the proof inert. Proof application, slashing, and the other fraud-proof types
 (`applyFraudProofs` and its bookkeeping) are out of scope here. The facet's permutations are now
-atomized per proof type (`UNIT-TEST-FRAUD-PROOF-FACET-1.P1`–`P13`), but each one requires proof
+atomized per proof type ([`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P1`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md#unit-test-fraud-proof-facet-1-bwvnpg.p1)–`P13`), but each one requires proof
 application and its slash outcome, which this predicate-only suite never performs; all rows stay
 unassigned.
 

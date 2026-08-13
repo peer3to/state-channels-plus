@@ -25,7 +25,7 @@ interchangeable.
 
 ## Key design decisions
 
-1. **Structural typing over platform classes** so Node (no RTC), browsers, and the worker bridge satisfy one interface ([`REQ-RUNTIME-4`](../../../../../../../specification/runtime/execution.md#req-runtime-4)).
+1. **Structural typing over platform classes** so Node (no RTC), browsers, and the worker bridge satisfy one interface ([`REQ-RUNTIME-4-B0N70Y`](../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -41,9 +41,9 @@ interchangeable.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                                | Specification IDs                                                                        |
-| -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [WebRTCConnectionTypes.ts](../../../../../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCConnectionTypes.ts) | [`REQ-RUNTIME-4`](../../../../../../../specification/runtime/execution.md#req-runtime-4) |
+| Source file                                                                                                                | Specification IDs                                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [WebRTCConnectionTypes.ts](../../../../../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCConnectionTypes.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -51,7 +51,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Platform-equivalence seam ([`REQ-RUNTIME-4`](../../../../../../../specification/runtime/execution.md#req-runtime-4)).
+- Platform-equivalence seam ([`REQ-RUNTIME-4-B0N70Y`](../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Specification contradictions
 

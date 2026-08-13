@@ -46,7 +46,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Module loading is platform-delegated ([moduleLoader](../utils/moduleLoader/) per [`REQ-RUNTIME-4`](../../../../specification/runtime/execution.md#req-runtime-4)).
+- Module loading is platform-delegated ([moduleLoader](../utils/moduleLoader/) per [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Specification adherence
 

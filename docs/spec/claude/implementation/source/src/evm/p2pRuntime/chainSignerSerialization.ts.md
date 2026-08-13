@@ -23,7 +23,7 @@ Serialization of signer/provider capability descriptions across the boundary —
 
 ## Key design decisions
 
-1. **Keys never serialize** — the boundary carries descriptions that reconstruct against host-held authority ([`REQ-ID-3`](../../../../../specification/protocol-model/identity.md#req-id-3)).
+1. **Keys never serialize** — the boundary carries descriptions that reconstruct against host-held authority ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -39,9 +39,9 @@ Serialization of signer/provider capability descriptions across the boundary —
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                           | Specification IDs                                                                                                                                                  |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [chainSignerSerialization.ts](../../../../../../../../src/evm/p2pRuntime/chainSignerSerialization.ts) | [`REQ-RUNTIME-1`](../../../../../specification/runtime/execution.md#req-runtime-1), [`REQ-ID-3`](../../../../../specification/protocol-model/identity.md#req-id-3) |
+| Source file                                                                                           | Specification IDs                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [chainSignerSerialization.ts](../../../../../../../../src/evm/p2pRuntime/chainSignerSerialization.ts) | [`REQ-RUNTIME-1-RSM6MZ`](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz), [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

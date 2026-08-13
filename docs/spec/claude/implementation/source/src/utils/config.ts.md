@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                           | Specification IDs                                                                 |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [config.ts](../../../../../../../src/utils/config.ts) | [`REQ-CONFIG-1`](../../../../specification/runtime/configuration.md#req-config-1) |
+| Source file                                           | Specification IDs                                                                               |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [config.ts](../../../../../../../src/utils/config.ts) | [`REQ-CONFIG-1-PDHA8T`](../../../../specification/runtime/configuration.md#req-config-1-pdha8t) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

@@ -23,7 +23,7 @@
 
 ## Key design decisions
 
-1. (Current) `in`-based lookup — the DEF-7 site.
+1. (Current) `in`-based lookup — the [`DEF-7-PK564B`](../../../../audit/open-findings.md#def-7-pk564b) site.
 
 ## Inputs, outputs, state, and side effects
 
@@ -39,9 +39,9 @@
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                       | Specification IDs                                                            |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [ObjectChecks.ts](../../../../../../../src/utils/ObjectChecks.ts) | [`REQ-RPC-6`](../../../../specification/peer-communication/rpc.md#req-rpc-6) |
+| Source file                                                       | Specification IDs                                                                          |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [ObjectChecks.ts](../../../../../../../src/utils/ObjectChecks.ts) | [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -53,11 +53,11 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification contradictions
 
-**DEF-7:** `hasMethod` accepts prototype-inherited names, making `toString`/`constructor` remotely callable on every RpcMethods class. Fix: own-property + function check ([open-findings](../../../../audit/open-findings.md)).
+**[`DEF-7-PK564B`](../../../../audit/open-findings.md#def-7-pk564b):** `hasMethod` accepts prototype-inherited names, making `toString`/`constructor` remotely callable on every RpcMethods class. Fix: own-property + function check ([open-findings](../../../../audit/open-findings.md)).
 
 ## Missing behavior
 
-None beyond DEF-7.
+None beyond [`DEF-7-PK564B`](../../../../audit/open-findings.md#def-7-pk564b).
 
 ## Conformance traceability
 
@@ -65,17 +65,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                      | Implementation status | Evidence                                  | Gap / divergence                      |
-| ---------------------------------------------------------------------------- | --------------------- | ----------------------------------------- | ------------------------------------- |
-| [`REQ-RPC-6`](../../../../specification/peer-communication/rpc.md#req-rpc-6) | Contradicts           | **Here:** the method-existence predicate. | DEF-7 prototype-inherited acceptance. |
+| Requirement / invariant                                                                    | Implementation status | Evidence                                  | Gap / divergence                                                                                  |
+| ------------------------------------------------------------------------------------------ | --------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Contradicts           | **Here:** the method-existence predicate. | [`DEF-7-PK564B`](../../../../audit/open-findings.md#def-7-pk564b) prototype-inherited acceptance. |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                      | Obligation       | Public entry and setup                      | Oracle and forbidden effects                                      | Required permutations                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------------------- | ---------------- | ------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-object-checks-1"></a>`UNIT-TEST-OBJECT-CHECKS-1` | Method predicate | Own methods, inherited names, non-functions | Documents current behavior; post-fix: own-property functions only | <a id="unit-test-object-checks-1.p1"></a>`UNIT-TEST-OBJECT-CHECKS-1.P1` — own method; <a id="unit-test-object-checks-1.p2"></a>`UNIT-TEST-OBJECT-CHECKS-1.P2` — inherited name (documents DEF-7); <a id="unit-test-object-checks-1.p3"></a>`UNIT-TEST-OBJECT-CHECKS-1.P3` — non-function property |
+| Unit test ID                                                                    | Obligation       | Public entry and setup                      | Oracle and forbidden effects                                      | Required permutations                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------- | ---------------- | ------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-object-checks-1-bhaqsx"></a>`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX` | Method predicate | Own methods, inherited names, non-functions | Documents current behavior; post-fix: own-property functions only | <a id="unit-test-object-checks-1-bhaqsx.p1"></a>`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P1` — own method; <a id="unit-test-object-checks-1-bhaqsx.p2"></a>`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P2` — inherited name (documents [`DEF-7-PK564B`](../../../../audit/open-findings.md#def-7-pk564b)); <a id="unit-test-object-checks-1-bhaqsx.p3"></a>`UNIT-TEST-OBJECT-CHECKS-1-BHAQSX.P3` — non-function property |
 
 ## Related source reports
 

@@ -38,7 +38,7 @@ Every normative document contains:
 6. a dedicated **Verification and test plan** section defining every black-box test obligation,
    including setup, stimulus, expected result, required permutations, boundary combinations,
    failure/recovery/race/adversarial cases, and the coverage rule for each list; give every
-   permutation a stable child ID such as `REQ-SM-1.T1.P1`;
+   permutation a stable child ID such as [`REQ-SM-1-Y72CKX.T1.P1`](protocol-model/state-machines.md#req-sm-1-y72ckx.t1.p1);
 7. failure, ordering, recovery, concurrency, and adversarial behavior;
 8. a normative **Requirements and invariants** index; and
 9. non-normative future work that changes protocol behavior, without describing repository tasks.
@@ -69,18 +69,18 @@ Cross-system boundary contracts: [interactions.md](./interactions.md). Open deci
 
 ```mermaid
 flowchart TD
-    PC["3 Peer communication"] -- "REQ-IX-1 block ingress" --> BP["2 Block progression"]
-    BP -- "REQ-IX-2 execute + commit" --> PM["1 Protocol model"]
-    SET["4 Settlement"] -- "REQ-IX-3 inbound inclusion / joins" --> BP
-    BP -- "REQ-IX-4 proof material" --> DIS["5 Disputes"]
-    DIS -- "REQ-IX-5 adjudication ops" --> ENF["6 Enforcement"]
-    SET -- "REQ-IX-6 snapshot adoption + outbound" --> ENF
-    ENF -- "REQ-IX-7 chain observation" --> RT["7 Runtime"]
-    RT -- "REQ-IX-7 observed events re-validated" --> BP
-    RT -- "REQ-IX-7" --> DIS
-    RT -- "REQ-IX-8 execution equivalence" --> PC
+    PC["3 Peer communication"] -- "REQ-IX-1-WTJ0D1 block ingress" --> BP["2 Block progression"]
+    BP -- "REQ-IX-2-2PY2EF execute + commit" --> PM["1 Protocol model"]
+    SET["4 Settlement"] -- "REQ-IX-3-H8WCVY inbound inclusion / joins" --> BP
+    BP -- "REQ-IX-4-BB35GC proof material" --> DIS["5 Disputes"]
+    DIS -- "REQ-IX-5-6XHJJB adjudication ops" --> ENF["6 Enforcement"]
+    SET -- "REQ-IX-6-A4Y7KB snapshot adoption + outbound" --> ENF
+    ENF -- "REQ-IX-7-A004VZ chain observation" --> RT["7 Runtime"]
+    RT -- "REQ-IX-7-A004VZ observed events re-validated" --> BP
+    RT -- "REQ-IX-7-A004VZ" --> DIS
+    RT -- "REQ-IX-8-FY54AV execution equivalence" --> PC
     DIS -- "reduced successor fork" --> SET
-    BP & SET & DIS & PC & RT -- "REQ-IX-9 store/read" --> STO["9 Storage"]
+    BP & SET & DIS & PC & RT -- "REQ-IX-9-AV56NR store/read" --> STO["9 Storage"]
     SEC["8 Security"] -. "constrains every edge" .- PM
 ```
 
@@ -138,7 +138,7 @@ without weakening or contradicting them.
 
 A system-wide portability commitment applies to every client capability: a conforming client runs in
 both browser and Node.js host environments with identical observable protocol behavior — normative
-owner [`REQ-RUNTIME-5`](./runtime/execution.md). Every mechanism document's behavior is implicitly
+owner [`REQ-RUNTIME-5-WJ1XKK`](runtime/execution.md#req-runtime-5-wj1xkk). Every mechanism document's behavior is implicitly
 required on both hosts; none may assume a host-specific facility above the runtime system's
 equivalence boundary.
 

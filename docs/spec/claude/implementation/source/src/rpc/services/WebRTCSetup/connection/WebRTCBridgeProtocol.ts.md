@@ -24,7 +24,7 @@ across the worker↔main-thread port, plus error (de)serialization preserving me
 
 ## Key design decisions
 
-1. **Errors cross as data.** Serialized error shapes reconstruct on the far side — failures keep their meaning across the boundary ([`REQ-RUNTIME-1`](../../../../../../../specification/runtime/execution.md#req-runtime-1)).
+1. **Errors cross as data.** Serialized error shapes reconstruct on the far side — failures keep their meaning across the boundary ([`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +40,9 @@ across the worker↔main-thread port, plus error (de)serialization preserving me
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                              | Specification IDs                                                                        |
-| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| [WebRTCBridgeProtocol.ts](../../../../../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCBridgeProtocol.ts) | [`REQ-RUNTIME-1`](../../../../../../../specification/runtime/execution.md#req-runtime-1) |
+| Source file                                                                                                              | Specification IDs                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| [WebRTCBridgeProtocol.ts](../../../../../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCBridgeProtocol.ts) | [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Canonical cross-context encoding for the bridge domain ([`REQ-RUNTIME-1`](../../../../../../../specification/runtime/execution.md#req-runtime-1)).
+- Canonical cross-context encoding for the bridge domain ([`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)).
 
 ## Specification contradictions
 
@@ -66,17 +66,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                  | Implementation status | Evidence                                     | Gap / divergence |
-| ---------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------- | ---------------- |
-| [`REQ-RUNTIME-1`](../../../../../../../specification/runtime/execution.md#req-runtime-1) | Covered               | **Here:** typed messages + error round-trip. | None.            |
+| Requirement / invariant                                                                                | Implementation status | Evidence                                     | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------- | ---------------- |
+| [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) | Covered               | **Here:** typed messages + error round-trip. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                        | Obligation       | Public entry and setup              | Oracle and forbidden effects                     | Required permutations                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------- | ---------------- | ----------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-webrtc-bridge-protocol-1"></a>`UNIT-TEST-WEBRTC-BRIDGE-PROTOCOL-1` | Error round trip | Serialize/deserialize varied errors | Message/name preserved; non-Error inputs handled | <a id="unit-test-webrtc-bridge-protocol-1.p1"></a>`UNIT-TEST-WEBRTC-BRIDGE-PROTOCOL-1.P1` — Error round trip; <a id="unit-test-webrtc-bridge-protocol-1.p2"></a>`UNIT-TEST-WEBRTC-BRIDGE-PROTOCOL-1.P2` — non-Error input; <a id="unit-test-webrtc-bridge-protocol-1.p3"></a>`UNIT-TEST-WEBRTC-BRIDGE-PROTOCOL-1.P3` — unknown message ignored by consumers |
+| Unit test ID                                                                                      | Obligation       | Public entry and setup              | Oracle and forbidden effects                     | Required permutations                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------- | ---------------- | ----------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-webrtc-bridge-protocol-1-vf15nx"></a>`UNIT-TEST-WEBRTC-BRIDGE-PROTOCOL-1-VF15NX` | Error round trip | Serialize/deserialize varied errors | Message/name preserved; non-Error inputs handled | <a id="unit-test-webrtc-bridge-protocol-1-vf15nx.p1"></a>`UNIT-TEST-WEBRTC-BRIDGE-PROTOCOL-1-VF15NX.P1` — Error round trip; <a id="unit-test-webrtc-bridge-protocol-1-vf15nx.p2"></a>`UNIT-TEST-WEBRTC-BRIDGE-PROTOCOL-1-VF15NX.P2` — non-Error input; <a id="unit-test-webrtc-bridge-protocol-1-vf15nx.p3"></a>`UNIT-TEST-WEBRTC-BRIDGE-PROTOCOL-1-VF15NX.P3` — unknown message ignored by consumers |
 
 ## Related source reports
 

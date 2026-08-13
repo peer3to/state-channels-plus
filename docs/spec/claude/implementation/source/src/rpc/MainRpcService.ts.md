@@ -42,9 +42,9 @@ override.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                         | Specification IDs                                                                                                                                          |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [MainRpcService.ts](../../../../../../../src/rpc/MainRpcService.ts) | [`INV-RPC-1`](../../../../specification/peer-communication/rpc.md#inv-rpc-1), [`REQ-RPC-3`](../../../../specification/peer-communication/rpc.md#req-rpc-3) |
+| Source file                                                         | Specification IDs                                                                                                                                                                      |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [MainRpcService.ts](../../../../../../../src/rpc/MainRpcService.ts) | [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-3-ZM9WR5`](../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -52,7 +52,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Root-level surface definition backing service authorization ([`REQ-RPC-3`](../../../../specification/peer-communication/rpc.md#req-rpc-3)).
+- Root-level surface definition backing service authorization ([`REQ-RPC-3-ZM9WR5`](../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5)).
 
 ## Specification contradictions
 
@@ -60,7 +60,7 @@ None demonstrated.
 
 ## Missing behavior
 
-`OpenChannelNegotiationService` is exported but not instantiated here — reachable only via a custom root; default-wiring decision open ([OQ-34](../../../../specification/open-questions.md)).
+`OpenChannelNegotiationService` is exported but not instantiated here — reachable only via a custom root; default-wiring decision open ([`OQ-34-FY08V2`](../../../../specification/open-questions.md#oq-34-fy08v2)).
 
 ## Conformance traceability
 
@@ -68,17 +68,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                      | Implementation status | Evidence                                                                                                           | Gap / divergence                                           |
-| ---------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| [`REQ-RPC-3`](../../../../specification/peer-communication/rpc.md#req-rpc-3) | Covered               | **Here:** the reachable-service roster. **Other files:** per-service guards and validation in each service report. | Negotiation service unwired (open decision, not a defect). |
+| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                           | Gap / divergence                                           |
+| ------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| [`REQ-RPC-3-ZM9WR5`](../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Covered               | **Here:** the reachable-service roster. **Other files:** per-service guards and validation in each service report. | Negotiation service unwired (open decision, not a defect). |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                            | Obligation          | Public entry and setup                           | Oracle and forbidden effects                                              | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ----------------------------------------------------------------------- | ------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-main-rpc-service-1"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1` | Roster and disposal | Construct; enumerate reachable services; dispose | Exactly the six built-ins reachable; dispose hook awaited before teardown | <a id="unit-test-main-rpc-service-1.p1"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1.P1` — roster exact; <a id="unit-test-main-rpc-service-1.p2"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1.P2` — unknown service unreachable; <a id="unit-test-main-rpc-service-1.p3"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1.P3` — custom-root extension; <a id="unit-test-main-rpc-service-1.p4"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1.P4` — dispose drain ordering |
+| Unit test ID                                                                          | Obligation          | Public entry and setup                           | Oracle and forbidden effects                                              | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-main-rpc-service-1-awn39m"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M` | Roster and disposal | Construct; enumerate reachable services; dispose | Exactly the six built-ins reachable; dispose hook awaited before teardown | <a id="unit-test-main-rpc-service-1-awn39m.p1"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P1` — roster exact; <a id="unit-test-main-rpc-service-1-awn39m.p2"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P2` — unknown service unreachable; <a id="unit-test-main-rpc-service-1-awn39m.p3"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P3` — custom-root extension; <a id="unit-test-main-rpc-service-1-awn39m.p4"></a>`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P4` — dispose drain ordering |
 
 ## Related source reports
 

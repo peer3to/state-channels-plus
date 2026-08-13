@@ -39,9 +39,9 @@ The `hostRpc` back-channel: no target → loopback into the local host's service
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                     | Specification IDs                                                               |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [ClientHostRpc.ts](../../../../../../../../src/evm/p2pRuntime/ClientHostRpc.ts) | [`INV-RPC-1`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1) |
+| Source file                                                                     | Specification IDs                                                                             |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [ClientHostRpc.ts](../../../../../../../../src/evm/p2pRuntime/ClientHostRpc.ts) | [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

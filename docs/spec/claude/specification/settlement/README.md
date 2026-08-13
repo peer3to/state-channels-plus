@@ -34,14 +34,14 @@ spectate-before-join admission flow.
   ([cross-layer-messages.md](./cross-layer-messages.md)).
 - **Invariants (owned).** `REQ-MSG-*`, `INV-MSG-*` ([cross-layer-messages.md](./cross-layer-messages.md));
   `REQ-LIF-*` ([lifecycle.md](./lifecycle.md)).
-- **Failure and recovery outcomes.** Spectating is fail-closed (`REQ-MSG-9`); a stalled inbound
+- **Failure and recovery outcomes.** Spectating is fail-closed ([`REQ-MSG-9-BFN9P5`](cross-layer-messages.md#req-msg-9-bfn9p5)); a stalled inbound
   inclusion is recoverable through the forced-inclusion dispute input; a failed snapshot advance
-  leaves the previous snapshot authoritative; withdrawals cannot exceed deposits (`INV-MSG-4`).
+  leaves the previous snapshot authoritative; withdrawals cannot exceed deposits ([`INV-MSG-4-6E5G7V`](cross-layer-messages.md#inv-msg-4-6e5g7v)).
 - **Resource bounds.** Proven ranges are bounded by gas and calldata limits; batch splitting keeps
   each submission within deployable bounds without changing the result.
 - **Verification evidence.** Requirement matrices in the owned documents; the settlement edges are
-  proven under [`REQ-IX-3`](../interactions.md#req-ix-3) and
-  [`REQ-IX-6`](../interactions.md#req-ix-6).
+  proven under [`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy) and
+  <a id="req-ix-6-a4y7kb"></a>`REQ-IX-6-A4Y7KB`.
 
 ## Owned documents
 
@@ -53,5 +53,5 @@ spectate-before-join admission flow.
 ## Interaction contracts
 
 Producer of the snapshot-adoption edge into enforcement
-([`REQ-IX-6`](../interactions.md#req-ix-6)); consumer of inbound-inclusion service from block
-progression ([`REQ-IX-3`](../interactions.md#req-ix-3)) and of reduced successor forks from disputes.
+([`REQ-IX-6-A4Y7KB`](README.md#req-ix-6-a4y7kb)); consumer of inbound-inclusion service from block
+progression ([`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)) and of reduced successor forks from disputes.

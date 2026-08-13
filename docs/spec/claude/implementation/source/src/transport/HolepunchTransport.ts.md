@@ -40,9 +40,9 @@ constructor — every connection authenticates immediately.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                       | Specification IDs                                                                    |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [HolepunchTransport.ts](../../../../../../../src/transport/HolepunchTransport.ts) | [`REQ-AUTH-3`](../../../../specification/peer-communication/handshake.md#req-auth-3) |
+| Source file                                                                       | Specification IDs                                                                                  |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [HolepunchTransport.ts](../../../../../../../src/transport/HolepunchTransport.ts) | [`REQ-AUTH-3-ZV74KB`](../../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

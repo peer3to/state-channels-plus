@@ -28,22 +28,20 @@ Three markers that carry a node's position or intent across protocol phases:
 
 ## Requirements and invariants
 
-<a id="req-rmstore-1"></a>
-**REQ-RMSTORE-1 — Monotone observation progress.** Event-sync progress per channel only advances: a
+**[`REQ-RMSTORE-1-BWKVBG`](progress-markers.md#req-rmstore-1-bwkvbg) — Monotone observation progress.** Event-sync progress per channel only advances: a
 store of a lower block number than the retained one leaves the retained value. Progress reflects
 _processed_, not merely observed, events — the producer stores it only after handling.
 
-<a id="req-rmstore-2"></a>
-**REQ-RMSTORE-2 — Explicit intent lifecycle.** The force-exit flag and force-join marker are set,
+**[`REQ-RMSTORE-2-Y2T1PG`](progress-markers.md#req-rmstore-2-y2t1pg) — Explicit intent lifecycle.** The force-exit flag and force-join marker are set,
 read, and cleared explicitly; clearing returns them to their absent state. Absent means "no intent /
 no pending submission", and consumers MUST NOT infer intent from any other module.
 
 This table is the normative requirement index. Detailed rules and rationale are defined above.
 
-| Requirement / invariant | Statement                                                         |
-| ----------------------- | ----------------------------------------------------------------- |
-| `REQ-RMSTORE-1`         | Per-channel observation progress is monotone and means processed. |
-| `REQ-RMSTORE-2`         | Intent markers have explicit set/read/clear lifecycles.           |
+| Requirement / invariant                                 | Statement                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------------- |
+| <a id="req-rmstore-1-bwkvbg"></a>`REQ-RMSTORE-1-BWKVBG` | Per-channel observation progress is monotone and means processed. |
+| <a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` | Intent markers have explicit set/read/clear lifecycles.           |
 
 ## Assumptions and constraints
 
@@ -51,7 +49,7 @@ This table is the normative requirement index. Detailed rules and rationale are 
   _forward-jumped_ one would skip events (unsafe) — producers must store only truly processed
   positions.
 - Under the current in-memory medium these markers reset with the process; the recovery consequences
-  are bounded by [durability.md](./durability.md) `REQ-STOR-3` (re-derive from chain observation).
+  are bounded by [durability.md](./durability.md) [`REQ-STOR-3-4RJGER`](durability.md#req-stor-3-4rjger) (re-derive from chain observation).
 
 ## Security considerations
 
@@ -64,10 +62,10 @@ and the processed-only rule.
 
 ### Requirement test matrix
 
-| Plan item                                       | Requirements / invariants | Setup and stimulus                                                          | Expected result                                                  | Required permutations                                                                                                                                                                                                                                                                                                                         |
-| ----------------------------------------------- | ------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-rmstore-1-t1"></a>`REQ-RMSTORE-1.T1` | `REQ-RMSTORE-1`           | Store progress values increasing, repeated, and regressing across channels. | Monotone per channel; regressions ignored; channels independent. | <a id="req-rmstore-1-t1-p1"></a>`REQ-RMSTORE-1.T1.P1` — advance; <a id="req-rmstore-1-t1-p2"></a>`REQ-RMSTORE-1.T1.P2` — regression ignored; <a id="req-rmstore-1-t1-p3"></a>`REQ-RMSTORE-1.T1.P3` — per-channel isolation.                                                                                                                   |
-| <a id="req-rmstore-2-t1"></a>`REQ-RMSTORE-2.T1` | `REQ-RMSTORE-2`           | Set, read, and clear each intent marker, including reads before any set.    | Explicit lifecycle honored; absent state distinct and default.   | <a id="req-rmstore-2-t1-p1"></a>`REQ-RMSTORE-2.T1.P1` — set/read/clear force-exit flag; <a id="req-rmstore-2-t1-p2"></a>`REQ-RMSTORE-2.T1.P2` — read before set; <a id="req-rmstore-2-t1-p3"></a>`REQ-RMSTORE-2.T1.P3` — repeated clear idempotent; <a id="req-rmstore-2-t1-p4"></a>`REQ-RMSTORE-2.T1.P4` — set/read/clear force-join marker. |
+| Plan item                                                     | Requirements / invariants                                          | Setup and stimulus                                                          | Expected result                                                  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="req-rmstore-1-bwkvbg.t1"></a>`REQ-RMSTORE-1-BWKVBG.T1` | [`REQ-RMSTORE-1-BWKVBG`](progress-markers.md#req-rmstore-1-bwkvbg) | Store progress values increasing, repeated, and regressing across channels. | Monotone per channel; regressions ignored; channels independent. | <a id="req-rmstore-1-bwkvbg.t1.p1"></a>`REQ-RMSTORE-1-BWKVBG.T1.P1` — advance; <a id="req-rmstore-1-bwkvbg.t1.p2"></a>`REQ-RMSTORE-1-BWKVBG.T1.P2` — regression ignored; <a id="req-rmstore-1-bwkvbg.t1.p3"></a>`REQ-RMSTORE-1-BWKVBG.T1.P3` — per-channel isolation.                                                                                                                                 |
+| <a id="req-rmstore-2-y2t1pg.t1"></a>`REQ-RMSTORE-2-Y2T1PG.T1` | [`REQ-RMSTORE-2-Y2T1PG`](progress-markers.md#req-rmstore-2-y2t1pg) | Set, read, and clear each intent marker, including reads before any set.    | Explicit lifecycle honored; absent state distinct and default.   | <a id="req-rmstore-2-y2t1pg.t1.p1"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P1` — set/read/clear force-exit flag; <a id="req-rmstore-2-y2t1pg.t1.p2"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P2` — read before set; <a id="req-rmstore-2-y2t1pg.t1.p3"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P3` — repeated clear idempotent; <a id="req-rmstore-2-y2t1pg.t1.p4"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P4` — set/read/clear force-join marker. |
 
 ## Future Work
 

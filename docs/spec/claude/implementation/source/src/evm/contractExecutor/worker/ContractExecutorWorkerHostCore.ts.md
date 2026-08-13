@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                                       | Specification IDs                                                                     |
-| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [ContractExecutorWorkerHostCore.ts](../../../../../../../../../src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts) | [`REQ-RUNTIME-2`](../../../../../../specification/runtime/execution.md#req-runtime-2) |
+| Source file                                                                                                                       | Specification IDs                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [ContractExecutorWorkerHostCore.ts](../../../../../../../../../src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts) | [`REQ-RUNTIME-2-KBXKTG`](../../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

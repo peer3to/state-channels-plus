@@ -39,9 +39,9 @@ The main-thread client: the application-facing typed surface sending requests to
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                           | Specification IDs                                                                                                                                                      |
-| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [P2pRuntimeClient.ts](../../../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts) | [`INV-RUNTIME-1`](../../../../../specification/runtime/execution.md#inv-runtime-1), [`REQ-RUNTIME-2`](../../../../../specification/runtime/execution.md#req-runtime-2) |
+| Source file                                                                           | Specification IDs                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [P2pRuntimeClient.ts](../../../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts) | [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak), [`REQ-RUNTIME-2-KBXKTG`](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

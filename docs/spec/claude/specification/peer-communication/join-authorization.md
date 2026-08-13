@@ -28,7 +28,7 @@ joiners) must countersign before the joiner submits on-chain with its deposit. T
 exactly the collect-signatures hop: the joiner fans out one request per threshold member and
 assembles the confirmation, or the collection fails as a whole. Deciding _whether_ to admit is not
 part of this service's current contract — a structurally and contextually valid request is signed —
-and the admission-policy filter is an open decision ([OQ-10](../open-questions.md)).
+and the admission-policy filter is an open decision ([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)).
 
 ## Collector algorithm
 
@@ -88,34 +88,30 @@ Run by each threshold member on request; the adversarial ingress side:
 
 ## Requirements and invariants
 
-<a id="inv-joinsig-1"></a>
-**INV-JOINSIG-1 — Identity triple-binding.** A countersignature is produced only when the join's
+**[`INV-JOINSIG-1-JX5EC4`](join-authorization.md#inv-joinsig-1-jx5ec4) — Identity triple-binding.** A countersignature is produced only when the join's
 embedded signature, its declared participant, and the authenticated requesting peer all bind to the
 same identity.
 
-<a id="req-joinsig-1"></a>
-**REQ-JOINSIG-1 — Pinned-state authorization.** Both sides bind the authorization to an exact
+**[`REQ-JOINSIG-1-8X1A4V`](join-authorization.md#req-joinsig-1-8x1a4v) — Pinned-state authorization.** Both sides bind the authorization to an exact
 on-chain snapshot and fork; a countersigner MUST refuse when its own current view differs from the
 pin, and the collection's pins MUST be carried to submission.
 
-<a id="req-joinsig-2"></a>
-**REQ-JOINSIG-2 — All-or-nothing unanimity.** The collection succeeds only with a verified
+**[`REQ-JOINSIG-2-RR2G4Q`](join-authorization.md#req-joinsig-2-rr2g4q) — All-or-nothing unanimity.** The collection succeeds only with a verified
 countersignature from every threshold member over the exact encoded join; any member's failure
 fails the collection.
 
-<a id="req-joinsig-3"></a>
-**REQ-JOINSIG-3 — Refusal is penalty-free.** A responder's validation failure is a declared error
+**[`REQ-JOINSIG-3-VAGFVD`](join-authorization.md#req-joinsig-3-vagfvd) — Refusal is penalty-free.** A responder's validation failure is a declared error
 without session or identity consequences; countersigning is voluntary cooperation, not an
 obligation whose refusal is slashable.
 
 This table is the normative requirement index. Detailed rules and rationale are defined above.
 
-| Requirement / invariant | Statement                                                     |
-| ----------------------- | ------------------------------------------------------------- |
-| `INV-JOINSIG-1`         | Signer = declared participant = authenticated sender.         |
-| `REQ-JOINSIG-1`         | Authorization pinned to an exact snapshot/fork on both sides. |
-| `REQ-JOINSIG-2`         | Unanimous verified countersignatures or the collection fails. |
-| `REQ-JOINSIG-3`         | Responder refusal is a penalty-free declared error.           |
+| Requirement / invariant                                 | Statement                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------- |
+| <a id="inv-joinsig-1-jx5ec4"></a>`INV-JOINSIG-1-JX5EC4` | Signer = declared participant = authenticated sender.         |
+| <a id="req-joinsig-1-8x1a4v"></a>`REQ-JOINSIG-1-8X1A4V` | Authorization pinned to an exact snapshot/fork on both sides. |
+| <a id="req-joinsig-2-rr2g4q"></a>`REQ-JOINSIG-2-RR2G4Q` | Unanimous verified countersignatures or the collection fails. |
+| <a id="req-joinsig-3-vagfvd"></a>`REQ-JOINSIG-3-VAGFVD` | Responder refusal is a penalty-free declared error.           |
 
 ## Assumptions and constraints
 
@@ -126,7 +122,7 @@ This table is the normative requirement index. Detailed rules and rationale are 
   so replay of a still-valid request yields another signature over the same bytes — idempotent by
   content.
 - Admission policy (who _should_ be admitted, beyond structural validity) is deliberately outside
-  this contract and open ([OQ-10](../open-questions.md)).
+  this contract and open ([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)).
 
 ## Security considerations
 
@@ -136,21 +132,21 @@ byte-exact signing over the canonical encoding stops substitution between what w
 what was signed; state pinning stops authorization against a moved or forked state; threshold
 membership stops non-members from manufacturing authority. Residual: unconditional signing of valid
 requests means membership control is purely structural until the admission filter is decided
-(OQ-10); a malicious joiner can burn responder attention (rate bounds per `REQ-RPC-5`).
+([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)); a malicious joiner can burn responder attention (rate bounds per [`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y)).
 
 ## Verification and test plan
 
 ### Requirement test matrix
 
-| Plan item                                       | Requirements / invariants | Setup and stimulus                                                                                                                               | Expected result                                                                                                  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-joinsig-1-t1"></a>`INV-JOINSIG-1.T1` | `INV-JOINSIG-1`           | Request countersignatures with each identity of the triple mismatched, and all matched.                                                          | Only the fully bound request is signed.                                                                          | <a id="inv-joinsig-1-t1-p1"></a>`INV-JOINSIG-1.T1.P1` — bound request signed; <a id="inv-joinsig-1-t1-p2"></a>`INV-JOINSIG-1.T1.P2` — wrong embedded signer; <a id="inv-joinsig-1-t1-p3"></a>`INV-JOINSIG-1.T1.P3` — relayed join (sender ≠ participant); <a id="inv-joinsig-1-t1-p4"></a>`INV-JOINSIG-1.T1.P4` — forged signature rejected at decode/recovery.                                                                                                                                                                                                                                                                 |
-| <a id="req-joinsig-1-t1"></a>`REQ-JOINSIG-1.T1` | `REQ-JOINSIG-1`           | Collect and respond across snapshot advances, fork changes, and matching pins.                                                                   | Mismatched pins refuse on the responder and fail at submission; matching pins succeed end-to-end.                | <a id="req-joinsig-1-t1-p1"></a>`REQ-JOINSIG-1.T1.P1` — matching pins; <a id="req-joinsig-1-t1-p2"></a>`REQ-JOINSIG-1.T1.P2` — snapshot moved between pin and request; <a id="req-joinsig-1-t1-p3"></a>`REQ-JOINSIG-1.T1.P3` — fork changed; <a id="req-joinsig-1-t1-p4"></a>`REQ-JOINSIG-1.T1.P4` — stale collection rejected at submission.                                                                                                                                                                                                                                                                                   |
-| <a id="req-joinsig-2-t1"></a>`REQ-JOINSIG-2.T1` | `REQ-JOINSIG-2`           | Run collections with all members responsive, one silent, one erroring, one returning a wrong-signer signature, and one unreachable at preflight. | Only the fully unanimous collection assembles; every other case fails whole with no partial confirmation usable. | <a id="req-joinsig-2-t1-p1"></a>`REQ-JOINSIG-2.T1.P1` — unanimous success; <a id="req-joinsig-2-t1-p2"></a>`REQ-JOINSIG-2.T1.P2` — silent member times out; <a id="req-joinsig-2-t1-p3"></a>`REQ-JOINSIG-2.T1.P3` — preflight unreachable fails before any request; <a id="req-joinsig-2-t1-p4"></a>`REQ-JOINSIG-2.T1.P4` — deadline-bounded timeout; <a id="req-joinsig-2-t1-p5"></a>`REQ-JOINSIG-2.T1.P5` — erroring member; <a id="req-joinsig-2-t1-p6"></a>`REQ-JOINSIG-2.T1.P6` — wrong-signer response.                                                                                                                   |
-| <a id="req-joinsig-3-t1"></a>`REQ-JOINSIG-3.T1` | `REQ-JOINSIG-3`           | Trigger every responder validation failure repeatedly.                                                                                           | Declared errors only; session and identity standing unchanged; expired deadline refuses.                         | <a id="req-joinsig-3-t1-p1"></a>`REQ-JOINSIG-3.T1.P1` — decode failure penalty-free; <a id="req-joinsig-3-t1-p2"></a>`REQ-JOINSIG-3.T1.P2` — deadline at boundary; <a id="req-joinsig-3-t1-p3"></a>`REQ-JOINSIG-3.T1.P3` — non-member responder refuses; <a id="req-joinsig-3-t1-p4"></a>`REQ-JOINSIG-3.T1.P4` — identity-binding failure penalty-free; <a id="req-joinsig-3-t1-p5"></a>`REQ-JOINSIG-3.T1.P5` — wrong-channel failure penalty-free; <a id="req-joinsig-3-t1-p6"></a>`REQ-JOINSIG-3.T1.P6` — pin-mismatch failure penalty-free; <a id="req-joinsig-3-t1-p7"></a>`REQ-JOINSIG-3.T1.P7` — deadline after boundary. |
+| Plan item                                                     | Requirements / invariants                                            | Setup and stimulus                                                                                                                               | Expected result                                                                                                  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-joinsig-1-jx5ec4.t1"></a>`INV-JOINSIG-1-JX5EC4.T1` | [`INV-JOINSIG-1-JX5EC4`](join-authorization.md#inv-joinsig-1-jx5ec4) | Request countersignatures with each identity of the triple mismatched, and all matched.                                                          | Only the fully bound request is signed.                                                                          | <a id="inv-joinsig-1-jx5ec4.t1.p1"></a>`INV-JOINSIG-1-JX5EC4.T1.P1` — bound request signed; <a id="inv-joinsig-1-jx5ec4.t1.p2"></a>`INV-JOINSIG-1-JX5EC4.T1.P2` — wrong embedded signer; <a id="inv-joinsig-1-jx5ec4.t1.p3"></a>`INV-JOINSIG-1-JX5EC4.T1.P3` — relayed join (sender ≠ participant); <a id="inv-joinsig-1-jx5ec4.t1.p4"></a>`INV-JOINSIG-1-JX5EC4.T1.P4` — forged signature rejected at decode/recovery.                                                                                                                                                                                                                                                                                                           |
+| <a id="req-joinsig-1-8x1a4v.t1"></a>`REQ-JOINSIG-1-8X1A4V.T1` | [`REQ-JOINSIG-1-8X1A4V`](join-authorization.md#req-joinsig-1-8x1a4v) | Collect and respond across snapshot advances, fork changes, and matching pins.                                                                   | Mismatched pins refuse on the responder and fail at submission; matching pins succeed end-to-end.                | <a id="req-joinsig-1-8x1a4v.t1.p1"></a>`REQ-JOINSIG-1-8X1A4V.T1.P1` — matching pins; <a id="req-joinsig-1-8x1a4v.t1.p2"></a>`REQ-JOINSIG-1-8X1A4V.T1.P2` — snapshot moved between pin and request; <a id="req-joinsig-1-8x1a4v.t1.p3"></a>`REQ-JOINSIG-1-8X1A4V.T1.P3` — fork changed; <a id="req-joinsig-1-8x1a4v.t1.p4"></a>`REQ-JOINSIG-1-8X1A4V.T1.P4` — stale collection rejected at submission.                                                                                                                                                                                                                                                                                                                             |
+| <a id="req-joinsig-2-rr2g4q.t1"></a>`REQ-JOINSIG-2-RR2G4Q.T1` | [`REQ-JOINSIG-2-RR2G4Q`](join-authorization.md#req-joinsig-2-rr2g4q) | Run collections with all members responsive, one silent, one erroring, one returning a wrong-signer signature, and one unreachable at preflight. | Only the fully unanimous collection assembles; every other case fails whole with no partial confirmation usable. | <a id="req-joinsig-2-rr2g4q.t1.p1"></a>`REQ-JOINSIG-2-RR2G4Q.T1.P1` — unanimous success; <a id="req-joinsig-2-rr2g4q.t1.p2"></a>`REQ-JOINSIG-2-RR2G4Q.T1.P2` — silent member times out; <a id="req-joinsig-2-rr2g4q.t1.p3"></a>`REQ-JOINSIG-2-RR2G4Q.T1.P3` — preflight unreachable fails before any request; <a id="req-joinsig-2-rr2g4q.t1.p4"></a>`REQ-JOINSIG-2-RR2G4Q.T1.P4` — deadline-bounded timeout; <a id="req-joinsig-2-rr2g4q.t1.p5"></a>`REQ-JOINSIG-2-RR2G4Q.T1.P5` — erroring member; <a id="req-joinsig-2-rr2g4q.t1.p6"></a>`REQ-JOINSIG-2-RR2G4Q.T1.P6` — wrong-signer response.                                                                                                                                 |
+| <a id="req-joinsig-3-vagfvd.t1"></a>`REQ-JOINSIG-3-VAGFVD.T1` | [`REQ-JOINSIG-3-VAGFVD`](join-authorization.md#req-joinsig-3-vagfvd) | Trigger every responder validation failure repeatedly.                                                                                           | Declared errors only; session and identity standing unchanged; expired deadline refuses.                         | <a id="req-joinsig-3-vagfvd.t1.p1"></a>`REQ-JOINSIG-3-VAGFVD.T1.P1` — decode failure penalty-free; <a id="req-joinsig-3-vagfvd.t1.p2"></a>`REQ-JOINSIG-3-VAGFVD.T1.P2` — deadline at boundary; <a id="req-joinsig-3-vagfvd.t1.p3"></a>`REQ-JOINSIG-3-VAGFVD.T1.P3` — non-member responder refuses; <a id="req-joinsig-3-vagfvd.t1.p4"></a>`REQ-JOINSIG-3-VAGFVD.T1.P4` — identity-binding failure penalty-free; <a id="req-joinsig-3-vagfvd.t1.p5"></a>`REQ-JOINSIG-3-VAGFVD.T1.P5` — wrong-channel failure penalty-free; <a id="req-joinsig-3-vagfvd.t1.p6"></a>`REQ-JOINSIG-3-VAGFVD.T1.P6` — pin-mismatch failure penalty-free; <a id="req-joinsig-3-vagfvd.t1.p7"></a>`REQ-JOINSIG-3-VAGFVD.T1.P7` — deadline after boundary. |
 
 ## Future Work
 
 _Non-normative._ The configurable admission filter, including snapshot-scoped consent
-([OQ-10](../open-questions.md)); collection retry strategy against churn between pin and
+([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)); collection retry strategy against churn between pin and
 submission.

@@ -31,20 +31,20 @@ execution.
   participant or watchtower per partition; required calldata, signed history, and encodings remain
   available during the evidence window; deterministic replay matches ordinary validation.
 - **Ordering and concurrency.** Reduction is deterministic over the committed dispute set and must be
-  order-independent (`INV-DIS-5`, with its open divergences); multiple observers may audit the same
-  dispute concurrently and must reach the same result (`INV-DISPUTE-PIPE-1`).
+  order-independent ([`INV-DIS-5-J1QZ92`](disputes.md#inv-dis-5-j1qz92), with its open divergences); multiple observers may audit the same
+  dispute concurrently and must reach the same result ([`INV-DISPUTE-PIPE-1-BN0K81`](dispute-processing.md#inv-dispute-pipe-1-bn0k81)).
 - **Invariants (owned).** `REQ-DIS-*`, `INV-DIS-*` ([disputes.md](./disputes.md)); `REQ-FP-*`,
   `INV-FP-*` ([fraud-proofs.md](./fraud-proofs.md)); `REQ-SP-*`, `INV-SP-*`
-  ([state-proofs.md](./state-proofs.md)); `INV-DISPUTE-PIPE-1`, `REQ-DISPUTE-PIPE-*`
+  ([state-proofs.md](./state-proofs.md)); [`INV-DISPUTE-PIPE-1-BN0K81`](dispute-processing.md#inv-dispute-pipe-1-bn0k81), `REQ-DISPUTE-PIPE-*`
   ([dispute-processing.md](./dispute-processing.md)).
 - **Failure and recovery outcomes.** Invalid committed disputes are killed and their disputers
   slashed; an aborted or failed audit fails closed without destroying evidence another honest
-  participant needs; every initiated window still ends in a canonical successor fork (`REQ-DIS-6`).
+  participant needs; every initiated window still ends in a canonical successor fork ([`REQ-DIS-6-Y92H1M`](disputes.md#req-dis-6-y92h1m)).
 - **Resource bounds.** Evidence, proof, and reduction inputs are bounded by gas/calldata limits;
-  upload throttles bound spam per identity (`REQ-DIS-2`).
+  upload throttles bound spam per identity ([`REQ-DIS-2-PKVZ7E`](disputes.md#req-dis-2-pkvz7e)).
 - **Verification evidence.** Requirement matrices in the owned documents; the enforcement edge is
-  proven under [`REQ-IX-5`](../interactions.md#req-ix-5) and the proof-material edge under
-  [`REQ-IX-4`](../interactions.md#req-ix-4).
+  proven under [`REQ-IX-5-6XHJJB`](../interactions.md#req-ix-5-6xhjjb) and the proof-material edge under
+  <a id="req-ix-4-bb35gc"></a>`REQ-IX-4-BB35GC`.
 
 ## Owned documents
 
@@ -57,6 +57,6 @@ execution.
 
 ## Interaction contracts
 
-Consumer of proof material from block progression ([`REQ-IX-4`](../interactions.md#req-ix-4));
-producer of the adjudication edge into enforcement ([`REQ-IX-5`](../interactions.md#req-ix-5)) and of
-reduced successor forks consumed by settlement ([`REQ-IX-6`](../interactions.md#req-ix-6)).
+Consumer of proof material from block progression ([`REQ-IX-4-BB35GC`](README.md#req-ix-4-bb35gc));
+producer of the adjudication edge into enforcement ([`REQ-IX-5-6XHJJB`](../interactions.md#req-ix-5-6xhjjb)) and of
+reduced successor forks consumed by settlement ([`REQ-IX-6-A4Y7KB`](../settlement/README.md#req-ix-6-a4y7kb)).

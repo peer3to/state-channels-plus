@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                   | Specification IDs                                                              |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [DeploymentBridgeSigner.ts](../../../../../../../../src/evm/signer/DeploymentBridgeSigner.ts) | [`REQ-ID-3`](../../../../../specification/protocol-model/identity.md#req-id-3) |
+| Source file                                                                                   | Specification IDs                                                                            |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [DeploymentBridgeSigner.ts](../../../../../../../../src/evm/signer/DeploymentBridgeSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

@@ -24,7 +24,7 @@ mismatch, and the positional committed-set matching `areDisputesCommitted`.
 
 ## Key design decisions
 
-1. **Positional set matching** is where the post-kill order sensitivity (OQ-4 input) is anchored.
+1. **Positional set matching** is where the post-kill order sensitivity ([`OQ-4-JGDCNX`](../../../../../../verification/open-questions.md#oq-4-jgdcnx) input) is anchored.
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +40,9 @@ mismatch, and the positional committed-set matching `areDisputesCommitted`.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                 | Specification IDs                                                                            |
-| ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [DisputeUtils.sol](../../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol) | [`REQ-ENFDIS-1`](../../../../../../specification/enforcement/dispute-window.md#req-enfdis-1) |
+| Source file                                                                                                 | Specification IDs                                                                                          |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| [DisputeUtils.sol](../../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol) | [`REQ-ENFDIS-1-8CSA6B`](../../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -58,7 +58,7 @@ None demonstrated.
 
 ## Missing behavior
 
-Order-sensitivity of the positional match feeds OQ-4 — documented, engineer decision pending.
+Order-sensitivity of the positional match feeds [`OQ-4-JGDCNX`](../../../../../../verification/open-questions.md#oq-4-jgdcnx) — documented, engineer decision pending.
 
 ## Conformance traceability
 

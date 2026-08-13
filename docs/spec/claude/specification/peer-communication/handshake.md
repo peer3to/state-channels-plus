@@ -23,7 +23,7 @@
 A fresh transport is a byte pipe to an unknown counterparty — discovery metadata may _claim_ an
 identity but proves nothing. The handshake proves, per direction, that the counterparty controls
 the private key of its claimed protocol identity. Completion produces the authenticated session
-every gated service requires ([`INV-RPC-1`](./rpc.md)), binds the identity to the transport for
+every gated service requires ([`INV-RPC-1-SJS2T6`](rpc.md#inv-rpc-1-sjs2t6)), binds the identity to the transport for
 addressed delivery and response correlation, and survives transport replacement (identity outlives
 the connection). This is the only service that accepts pre-session traffic.
 
@@ -85,43 +85,37 @@ identity; an unverified peer is merely dropped — there is no proven identity t
 
 ## Requirements and invariants
 
-<a id="inv-auth-1"></a>
-**INV-AUTH-1 — Signature is the only proof.** The sole authentication evidence is a valid signature
+**[`INV-AUTH-1-J0PRYA`](handshake.md#inv-auth-1-j0prya) — Signature is the only proof.** The sole authentication evidence is a valid signature
 over this node's own fresh challenge under the handshake domain. Discovery metadata,
 acknowledgements, and transport properties prove nothing.
 
-<a id="inv-auth-2"></a>
-**INV-AUTH-2 — Domain separation.** Handshake signatures are made only over the domain-tagged,
+**[`INV-AUTH-2-VQ6D54`](handshake.md#inv-auth-2-vq6d54) — Domain separation.** Handshake signatures are made only over the domain-tagged,
 versioned message form; a handshake exchange can never produce a signature usable in any other
 protocol context, regardless of the challenge value chosen by the counterparty.
 
-<a id="req-auth-1"></a>
-**REQ-AUTH-1 — Validate before signing.** A responder MUST fully validate challenge shape and time
+**[`REQ-AUTH-1-RF901K`](handshake.md#req-auth-1-rf901k) — Validate before signing.** A responder MUST fully validate challenge shape and time
 bounds before creating any signature for an unauthenticated caller.
 
-<a id="req-auth-2"></a>
-**REQ-AUTH-2 — Fresh single-use challenges.** Challenges MUST be unpredictable, single-use, and
+**[`REQ-AUTH-2-BQ5CRG`](handshake.md#req-auth-2-bq5crg) — Fresh single-use challenges.** Challenges MUST be unpredictable, single-use, and
 scoped to one exchange; verification MUST bind the response to exactly the issued challenge.
 
-<a id="req-auth-3"></a>
-**REQ-AUTH-3 — Completion requires both roles.** A session authenticates only when local
+**[`REQ-AUTH-3-ZV74KB`](handshake.md#req-auth-3-zv74kb) — Completion requires both roles.** A session authenticates only when local
 verification _and_ the peer's acknowledgement are both present; completion is idempotent and
 recorded against the identity, not the transport.
 
-<a id="req-auth-4"></a>
-**REQ-AUTH-4 — Penalty requires proof.** Exclusion consequences apply only to proven identities;
+**[`REQ-AUTH-4-JWCF71`](handshake.md#req-auth-4-jwcf71) — Penalty requires proof.** Exclusion consequences apply only to proven identities;
 an unauthenticated failure never penalizes an identity.
 
 This table is the normative requirement index. Detailed rules and rationale are defined above.
 
-| Requirement / invariant | Statement                                                                  |
-| ----------------------- | -------------------------------------------------------------------------- |
-| `INV-AUTH-1`            | Only a domain-tagged signature over a fresh own challenge proves identity. |
-| `INV-AUTH-2`            | Handshake signatures cannot collide with any other protocol signature.     |
-| `REQ-AUTH-1`            | Full validation precedes signing for unauthenticated callers.              |
-| `REQ-AUTH-2`            | Challenges are unpredictable, single-use, exchange-scoped.                 |
-| `REQ-AUTH-3`            | Completion = local verification + peer acknowledgement; idempotent.        |
-| `REQ-AUTH-4`            | No identity penalty without proven identity.                               |
+| Requirement / invariant                           | Statement                                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------- |
+| <a id="inv-auth-1-j0prya"></a>`INV-AUTH-1-J0PRYA` | Only a domain-tagged signature over a fresh own challenge proves identity. |
+| <a id="inv-auth-2-vq6d54"></a>`INV-AUTH-2-VQ6D54` | Handshake signatures cannot collide with any other protocol signature.     |
+| <a id="req-auth-1-rf901k"></a>`REQ-AUTH-1-RF901K` | Full validation precedes signing for unauthenticated callers.              |
+| <a id="req-auth-2-bq5crg"></a>`REQ-AUTH-2-BQ5CRG` | Challenges are unpredictable, single-use, exchange-scoped.                 |
+| <a id="req-auth-3-zv74kb"></a>`REQ-AUTH-3-ZV74KB` | Completion = local verification + peer acknowledgement; idempotent.        |
+| <a id="req-auth-4-jwcf71"></a>`REQ-AUTH-4-JWCF71` | No identity penalty without proven identity.                               |
 
 ## Assumptions and constraints
 
@@ -129,8 +123,8 @@ This table is the normative requirement index. Detailed rules and rationale are 
   exempt ([rpc.md](./rpc.md)).
 - Timing bounds derive from the protocol's agreement window
   ([time.md](../protocol-model/time.md)); honest peers within stated skew must complete.
-- Protocol-version compatibility should bind into this exchange (`REQ-RPC-8`); the scheme is open
-  ([OQ-34](../open-questions.md)).
+- Protocol-version compatibility should bind into this exchange ([`REQ-RPC-8-44XECF`](rpc.md#req-rpc-8-44xecf)); the scheme is open
+  ([`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2)).
 - The handshake authenticates _identity_, not authorization: whether the identity may join, sync,
   or dispute is each service's own check.
 
@@ -138,29 +132,29 @@ This table is the normative requirement index. Detailed rules and rationale are 
 
 This service is the trust boundary's gatekeeper and its own biggest target. Threats and defenses:
 identity spoofing (defeated by challenge-response over the domain tag); signing-oracle abuse — the
-counterparty choosing challenges to harvest signatures (defeated by domain separation, `INV-AUTH-2`);
+counterparty choosing challenges to harvest signatures (defeated by domain separation, [`INV-AUTH-2-VQ6D54`](handshake.md#inv-auth-2-vq6d54));
 replayed or stale exchanges (freshness windows plus single-use challenges); acknowledgement forgery
-(the ack carries no authority, `INV-AUTH-1`); and penalty misdirection — tricking a node into
-excluding an identity that never proved itself (`REQ-AUTH-4`). Residual: the responder in a single
+(the ack carries no authority, [`INV-AUTH-1-J0PRYA`](handshake.md#inv-auth-1-j0prya)); and penalty misdirection — tricking a node into
+excluding an identity that never proved itself ([`REQ-AUTH-4-JWCF71`](handshake.md#req-auth-4-jwcf71)). Residual: the responder in a single
 direction signs for an unauthenticated caller by design; the cost is bounded by validation-before-
 signing and the domain tag. Exclusion durability and its interaction with deferred-call queues are
-open ([OQ-34](../open-questions.md)).
+open ([`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2)).
 
 ## Verification and test plan
 
 ### Requirement test matrix
 
-| Plan item                                 | Requirements / invariants | Setup and stimulus                                                                                                          | Expected result                                                                                                              | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                |
-| ----------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-auth-1-t1"></a>`INV-AUTH-1.T1` | `INV-AUTH-1`              | Attempt authentication with forged metadata, replayed signatures, wrong-challenge signatures, and a correct fresh exchange. | Only the correct signature over this node's own fresh challenge authenticates.                                               | <a id="inv-auth-1-t1-p1"></a>`INV-AUTH-1.T1.P1` — correct exchange; <a id="inv-auth-1-t1-p2"></a>`INV-AUTH-1.T1.P2` — replayed signature; <a id="inv-auth-1-t1-p3"></a>`INV-AUTH-1.T1.P3` — metadata-only claim rejected; <a id="inv-auth-1-t1-p4"></a>`INV-AUTH-1.T1.P4` — wrong-challenge signature.                                                                                                               |
-| <a id="req-auth-2-t1"></a>`REQ-AUTH-2.T1` | `REQ-AUTH-2`              | Observe challenge generation across many exchanges; attempt cross-exchange and repeated use of one challenge.               | Challenges are unpredictable and never reused; a response to a different exchange's challenge fails verification.            | <a id="req-auth-2-t1-p1"></a>`REQ-AUTH-2.T1.P1` — uniqueness/unpredictability across exchanges; <a id="req-auth-2-t1-p2"></a>`REQ-AUTH-2.T1.P2` — cross-exchange challenge reuse rejected; <a id="req-auth-2-t1-p3"></a>`REQ-AUTH-2.T1.P3` — response bound to exactly the issued challenge.                                                                                                                         |
-| <a id="inv-auth-2-t1"></a>`INV-AUTH-2.T1` | `INV-AUTH-2`              | Present challenges crafted to equal other protocol commitments (block hashes, dispute encodings).                           | The returned signature verifies only under the handshake domain and is unusable in any other protocol context.               | <a id="inv-auth-2-t1-p1"></a>`INV-AUTH-2.T1.P1` — block-commitment challenge; <a id="inv-auth-2-t1-p2"></a>`INV-AUTH-2.T1.P2` — dispute-encoding challenge; <a id="inv-auth-2-t1-p3"></a>`INV-AUTH-2.T1.P3` — domain-tag version mismatch fails verification; <a id="inv-auth-2-t1-p4"></a>`INV-AUTH-2.T1.P4` — join-encoding challenge; <a id="inv-auth-2-t1-p5"></a>`INV-AUTH-2.T1.P5` — opening-struct challenge. |
-| <a id="req-auth-1-t1"></a>`REQ-AUTH-1.T1` | `REQ-AUTH-1`              | Send malformed shapes, non-finite times, and boundary-window times.                                                         | Invalid input terminates before any signature exists; boundary values behave per the window definition.                      | <a id="req-auth-1-t1-p1"></a>`REQ-AUTH-1.T1.P1` — malformed challenge bytes; <a id="req-auth-1-t1-p2"></a>`REQ-AUTH-1.T1.P2` — non-finite time; <a id="req-auth-1-t1-p3"></a>`REQ-AUTH-1.T1.P3` — at window boundary; <a id="req-auth-1-t1-p4"></a>`REQ-AUTH-1.T1.P4` — structurally invalid message; <a id="req-auth-1-t1-p5"></a>`REQ-AUTH-1.T1.P5` — just beyond window.                                          |
-| <a id="req-auth-3-t1"></a>`REQ-AUTH-3.T1` | `REQ-AUTH-3`              | Drive exchanges to every partial-completion state, including duplicates, races, and transport replacement mid-exchange.     | Sessions authenticate only with both roles complete; completion is idempotent; identity survives transport churn.            | <a id="req-auth-3-t1-p1"></a>`REQ-AUTH-3.T1.P1` — verified-only stall; <a id="req-auth-3-t1-p2"></a>`REQ-AUTH-3.T1.P2` — duplicate ack violation; <a id="req-auth-3-t1-p3"></a>`REQ-AUTH-3.T1.P3` — concurrent bidirectional completion; <a id="req-auth-3-t1-p4"></a>`REQ-AUTH-3.T1.P4` — repeated completion idempotent; <a id="req-auth-3-t1-p5"></a>`REQ-AUTH-3.T1.P5` — acked-only stall.                       |
-| <a id="req-auth-4-t1"></a>`REQ-AUTH-4.T1` | `REQ-AUTH-4`              | Fail exchanges before and after identity proof.                                                                             | Pre-proof failures drop the transport with no identity penalty; post-proof non-acknowledgement excludes the proven identity. | <a id="req-auth-4-t1-p1"></a>`REQ-AUTH-4.T1.P1` — timeout before proof; <a id="req-auth-4-t1-p2"></a>`REQ-AUTH-4.T1.P2` — verified-but-silent peer excluded; <a id="req-auth-4-t1-p3"></a>`REQ-AUTH-4.T1.P3` — excluded identity refused at verification.                                                                                                                                                            |
+| Plan item                                               | Requirements / invariants                             | Setup and stimulus                                                                                                          | Expected result                                                                                                              | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="inv-auth-1-j0prya.t1"></a>`INV-AUTH-1-J0PRYA.T1` | [`INV-AUTH-1-J0PRYA`](handshake.md#inv-auth-1-j0prya) | Attempt authentication with forged metadata, replayed signatures, wrong-challenge signatures, and a correct fresh exchange. | Only the correct signature over this node's own fresh challenge authenticates.                                               | <a id="inv-auth-1-j0prya.t1.p1"></a>`INV-AUTH-1-J0PRYA.T1.P1` — correct exchange; <a id="inv-auth-1-j0prya.t1.p2"></a>`INV-AUTH-1-J0PRYA.T1.P2` — replayed signature; <a id="inv-auth-1-j0prya.t1.p3"></a>`INV-AUTH-1-J0PRYA.T1.P3` — metadata-only claim rejected; <a id="inv-auth-1-j0prya.t1.p4"></a>`INV-AUTH-1-J0PRYA.T1.P4` — wrong-challenge signature.                                                                                                                             |
+| <a id="req-auth-2-bq5crg.t1"></a>`REQ-AUTH-2-BQ5CRG.T1` | [`REQ-AUTH-2-BQ5CRG`](handshake.md#req-auth-2-bq5crg) | Observe challenge generation across many exchanges; attempt cross-exchange and repeated use of one challenge.               | Challenges are unpredictable and never reused; a response to a different exchange's challenge fails verification.            | <a id="req-auth-2-bq5crg.t1.p1"></a>`REQ-AUTH-2-BQ5CRG.T1.P1` — uniqueness/unpredictability across exchanges; <a id="req-auth-2-bq5crg.t1.p2"></a>`REQ-AUTH-2-BQ5CRG.T1.P2` — cross-exchange challenge reuse rejected; <a id="req-auth-2-bq5crg.t1.p3"></a>`REQ-AUTH-2-BQ5CRG.T1.P3` — response bound to exactly the issued challenge.                                                                                                                                                     |
+| <a id="inv-auth-2-vq6d54.t1"></a>`INV-AUTH-2-VQ6D54.T1` | [`INV-AUTH-2-VQ6D54`](handshake.md#inv-auth-2-vq6d54) | Present challenges crafted to equal other protocol commitments (block hashes, dispute encodings).                           | The returned signature verifies only under the handshake domain and is unusable in any other protocol context.               | <a id="inv-auth-2-vq6d54.t1.p1"></a>`INV-AUTH-2-VQ6D54.T1.P1` — block-commitment challenge; <a id="inv-auth-2-vq6d54.t1.p2"></a>`INV-AUTH-2-VQ6D54.T1.P2` — dispute-encoding challenge; <a id="inv-auth-2-vq6d54.t1.p3"></a>`INV-AUTH-2-VQ6D54.T1.P3` — domain-tag version mismatch fails verification; <a id="inv-auth-2-vq6d54.t1.p4"></a>`INV-AUTH-2-VQ6D54.T1.P4` — join-encoding challenge; <a id="inv-auth-2-vq6d54.t1.p5"></a>`INV-AUTH-2-VQ6D54.T1.P5` — opening-struct challenge. |
+| <a id="req-auth-1-rf901k.t1"></a>`REQ-AUTH-1-RF901K.T1` | [`REQ-AUTH-1-RF901K`](handshake.md#req-auth-1-rf901k) | Send malformed shapes, non-finite times, and boundary-window times.                                                         | Invalid input terminates before any signature exists; boundary values behave per the window definition.                      | <a id="req-auth-1-rf901k.t1.p1"></a>`REQ-AUTH-1-RF901K.T1.P1` — malformed challenge bytes; <a id="req-auth-1-rf901k.t1.p2"></a>`REQ-AUTH-1-RF901K.T1.P2` — non-finite time; <a id="req-auth-1-rf901k.t1.p3"></a>`REQ-AUTH-1-RF901K.T1.P3` — at window boundary; <a id="req-auth-1-rf901k.t1.p4"></a>`REQ-AUTH-1-RF901K.T1.P4` — structurally invalid message; <a id="req-auth-1-rf901k.t1.p5"></a>`REQ-AUTH-1-RF901K.T1.P5` — just beyond window.                                          |
+| <a id="req-auth-3-zv74kb.t1"></a>`REQ-AUTH-3-ZV74KB.T1` | [`REQ-AUTH-3-ZV74KB`](handshake.md#req-auth-3-zv74kb) | Drive exchanges to every partial-completion state, including duplicates, races, and transport replacement mid-exchange.     | Sessions authenticate only with both roles complete; completion is idempotent; identity survives transport churn.            | <a id="req-auth-3-zv74kb.t1.p1"></a>`REQ-AUTH-3-ZV74KB.T1.P1` — verified-only stall; <a id="req-auth-3-zv74kb.t1.p2"></a>`REQ-AUTH-3-ZV74KB.T1.P2` — duplicate ack violation; <a id="req-auth-3-zv74kb.t1.p3"></a>`REQ-AUTH-3-ZV74KB.T1.P3` — concurrent bidirectional completion; <a id="req-auth-3-zv74kb.t1.p4"></a>`REQ-AUTH-3-ZV74KB.T1.P4` — repeated completion idempotent; <a id="req-auth-3-zv74kb.t1.p5"></a>`REQ-AUTH-3-ZV74KB.T1.P5` — acked-only stall.                       |
+| <a id="req-auth-4-jwcf71.t1"></a>`REQ-AUTH-4-JWCF71.T1` | [`REQ-AUTH-4-JWCF71`](handshake.md#req-auth-4-jwcf71) | Fail exchanges before and after identity proof.                                                                             | Pre-proof failures drop the transport with no identity penalty; post-proof non-acknowledgement excludes the proven identity. | <a id="req-auth-4-jwcf71.t1.p1"></a>`REQ-AUTH-4-JWCF71.T1.P1` — timeout before proof; <a id="req-auth-4-jwcf71.t1.p2"></a>`REQ-AUTH-4-JWCF71.T1.P2` — verified-but-silent peer excluded; <a id="req-auth-4-jwcf71.t1.p3"></a>`REQ-AUTH-4-JWCF71.T1.P3` — excluded identity refused at verification.                                                                                                                                                                                        |
 
 ## Future Work
 
-_Non-normative._ Bind protocol-version negotiation into the signed handshake (`REQ-RPC-8`,
-[OQ-34](../open-questions.md)); align with the signature-domain decision for all protocol objects
-([OQ-29](../open-questions.md)); define exclusion persistence and appeal semantics.
+_Non-normative._ Bind protocol-version negotiation into the signed handshake ([`REQ-RPC-8-44XECF`](rpc.md#req-rpc-8-44xecf),
+[`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2)); align with the signature-domain decision for all protocol objects
+([`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf)); define exclusion persistence and appeal semantics.

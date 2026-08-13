@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { formatMarkdown } = require("./documentation-graph");
+const { buildIdRegistry, linkIdReferences } = require("./id-registry");
 
 function parseReportArgs(argv = process.argv.slice(2)) {
     const allowed = new Set(["--check", "--strict", "--fix"]);
@@ -18,7 +19,9 @@ function parseReportArgs(argv = process.argv.slice(2)) {
 }
 
 async function writeOrCheckReport(target, markdown, options) {
-    const report = await formatMarkdown(markdown);
+    const report = await formatMarkdown(
+        linkIdReferences(markdown, target, buildIdRegistry())
+    );
     const current = fs.existsSync(target)
         ? fs.readFileSync(target, "utf8")
         : null;

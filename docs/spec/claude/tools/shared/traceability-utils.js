@@ -2,11 +2,12 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { REQUIREMENT_PATTERN, REQUIREMENT_RE } = require("./id-utils");
 
 const SPEC_ROOT = path.resolve(__dirname, "../..");
 const REPO_ROOT = path.resolve(SPEC_ROOT, "../../..");
-const ID_PATTERN = "(?:INV|REQ)-[A-Z]+-\\d+";
-const ID_RE = new RegExp(ID_PATTERN);
+const ID_PATTERN = REQUIREMENT_PATTERN;
+const ID_RE = REQUIREMENT_RE;
 const ID_GLOBAL_RE = new RegExp(ID_PATTERN, "g");
 const LINK_RE = /\[[^\]]*\]\(([^)]+)\)/g;
 const TABLE_SEPARATOR_RE = /^:?-{3,}:?$/;

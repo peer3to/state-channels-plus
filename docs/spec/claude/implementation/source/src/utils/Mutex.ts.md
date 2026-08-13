@@ -40,9 +40,9 @@ FIFO waiters, named tasks for diagnostics.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                         | Specification IDs                                                               |
-| --------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [Mutex.ts](../../../../../../../src/utils/Mutex.ts) | [`REQ-RUNTIME-2`](../../../../specification/runtime/execution.md#req-runtime-2) |
+| Source file                                         | Specification IDs                                                                             |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [Mutex.ts](../../../../../../../src/utils/Mutex.ts) | [`REQ-RUNTIME-2-KBXKTG`](../../../../specification/runtime/execution.md#req-runtime-2-kbxktg) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -66,17 +66,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                         | Implementation status | Evidence                                 | Gap / divergence |
-| ------------------------------------------------------------------------------- | --------------------- | ---------------------------------------- | ---------------- |
-| [`REQ-RUNTIME-2`](../../../../specification/runtime/execution.md#req-runtime-2) | Covered               | **Here:** ordered exclusive acquisition. | None.            |
+| Requirement / invariant                                                                       | Implementation status | Evidence                                 | Gap / divergence |
+| --------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------- | ---------------- |
+| [`REQ-RUNTIME-2-KBXKTG`](../../../../specification/runtime/execution.md#req-runtime-2-kbxktg) | Covered               | **Here:** ordered exclusive acquisition. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                      | Obligation    | Public entry and setup                                | Oracle and forbidden effects                                    | Required permutations                                                                                                                                                                                                             |
-| ------------------------------------------------- | ------------- | ----------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-mutex-1"></a>`UNIT-TEST-MUTEX-1` | Serialization | Contend, throw inside critical sections, verify order | Exclusive FIFO; throws release; no deadlock on reentry attempts | <a id="unit-test-mutex-1.p1"></a>`UNIT-TEST-MUTEX-1.P1` — contention order; <a id="unit-test-mutex-1.p2"></a>`UNIT-TEST-MUTEX-1.P2` — throw releases; <a id="unit-test-mutex-1.p3"></a>`UNIT-TEST-MUTEX-1.P3` — unlock discipline |
+| Unit test ID                                                    | Obligation    | Public entry and setup                                | Oracle and forbidden effects                                    | Required permutations                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------- | ------------- | ----------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-mutex-1-yqgdqh"></a>`UNIT-TEST-MUTEX-1-YQGDQH` | Serialization | Contend, throw inside critical sections, verify order | Exclusive FIFO; throws release; no deadlock on reentry attempts | <a id="unit-test-mutex-1-yqgdqh.p1"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P1` — contention order; <a id="unit-test-mutex-1-yqgdqh.p2"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P2` — throw releases; <a id="unit-test-mutex-1-yqgdqh.p3"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P3` — unlock discipline |
 
 ## Related source reports
 

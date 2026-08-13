@@ -40,9 +40,9 @@ pipeline with guards bypassed.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                     | Specification IDs                                                            |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [LoopbackTransport.ts](../../../../../../../src/transport/LoopbackTransport.ts) | [`REQ-RPC-7`](../../../../specification/peer-communication/rpc.md#req-rpc-7) |
+| Source file                                                                     | Specification IDs                                                                          |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [LoopbackTransport.ts](../../../../../../../src/transport/LoopbackTransport.ts) | [`REQ-RPC-7-9CBSHK`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

@@ -19,7 +19,7 @@ open, never twice on a redundant open event), an open channel sends directly, an
 channel drops sends silently. Out of scope: RPC serialization through `ATransport.send` (the
 tests call `_send` directly), close/error teardown and disconnect accounting, and the
 signaling-side WebRTC setup service. The seed pool defines no permutations for
-`WebRTCTransport.ts` itself, and the `UNIT-TEST-ATRANSPORT-1` / transport-upgrade spec
+`WebRTCTransport.ts` itself, and the [`UNIT-TEST-ATRANSPORT-1-7DGX9R`](../../../../implementation/source/src/transport/ATransport.ts.md#unit-test-atransport-1-7dgx9r) / transport-upgrade spec
 permutations target surfaces (identity comparison, serialize path, upgrade signaling) this suite
 does not fully exercise, so no IDs are assigned.
 

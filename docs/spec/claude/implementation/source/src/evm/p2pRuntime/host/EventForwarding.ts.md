@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                 | Specification IDs |
-| ------------------------------------------------------------------------------------------- | ----------------- |
-| [EventForwarding.ts](../../../../../../../../../src/evm/p2pRuntime/host/EventForwarding.ts) | `REQ-SDK-ARCH-3`  |
+| Source file                                                                                 | Specification IDs                                                                               |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [EventForwarding.ts](../../../../../../../../../src/evm/p2pRuntime/host/EventForwarding.ts) | [`REQ-SDK-ARCH-3-WHTDWX`](../../../../../../specification/runtime/sdk.md#req-sdk-arch-3-whtdwx) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

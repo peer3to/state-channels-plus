@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                       | Specification IDs                                                               |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [EventBarrier.ts](../../../../../../../src/utils/EventBarrier.ts) | [`REQ-RUNTIME-3`](../../../../specification/runtime/execution.md#req-runtime-3) |
+| Source file                                                       | Specification IDs                                                                             |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [EventBarrier.ts](../../../../../../../src/utils/EventBarrier.ts) | [`REQ-RUNTIME-3-VQXW59`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

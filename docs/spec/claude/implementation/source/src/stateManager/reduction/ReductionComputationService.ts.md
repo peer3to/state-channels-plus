@@ -25,7 +25,7 @@ producing the successor genesis and its fork id.
 
 ## Key design decisions
 
-1. **Pure mirrored computation** — the client never re-implements the fold ([`INV-MIRROR-1`](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1)).
+1. **Pure mirrored computation** — the client never re-implements the fold ([`INV-MIRROR-1-VAF778`](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -41,9 +41,9 @@ producing the successor genesis and its fork id.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                         | Specification IDs    |
-| ------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| [ReductionComputationService.ts](../../../../../../../../src/stateManager/reduction/ReductionComputationService.ts) | `REQ-DISPUTE-PIPE-3` |
+| Source file                                                                                                         | Specification IDs                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| [ReductionComputationService.ts](../../../../../../../../src/stateManager/reduction/ReductionComputationService.ts) | [`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -51,7 +51,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Deterministic reduction inputs→outputs (`REQ-DISPUTE-PIPE-3`).
+- Deterministic reduction inputs→outputs ([`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)).
 
 ## Specification contradictions
 
@@ -67,17 +67,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence                         | Gap / divergence |
-| ----------------------- | --------------------- | -------------------------------- | ---------------- |
-| `REQ-DISPUTE-PIPE-3`    | Covered               | **Here:** mirrored compute only. | None.            |
+| Requirement / invariant                                                                                              | Implementation status | Evidence                         | Gap / divergence |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------- | ---------------- |
+| [`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq) | Covered               | **Here:** mirrored compute only. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                              | Obligation       | Public entry and setup               | Oracle and forbidden effects                                                   | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------- | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-reduction-compute-1"></a>`UNIT-TEST-REDUCTION-COMPUTE-1` | Mirrored compute | Compute over permuted committed sets | Identical successor for every order (documents the OQ-4 caveat where it fails) | <a id="unit-test-reduction-compute-1.p1"></a>`UNIT-TEST-REDUCTION-COMPUTE-1.P1` — order permutations; <a id="unit-test-reduction-compute-1.p2"></a>`UNIT-TEST-REDUCTION-COMPUTE-1.P2` — genesis-claim disputes; <a id="unit-test-reduction-compute-1.p3"></a>`UNIT-TEST-REDUCTION-COMPUTE-1.P3` — committed set with a timeout dispute; <a id="unit-test-reduction-compute-1.p4"></a>`UNIT-TEST-REDUCTION-COMPUTE-1.P4` — committed set without a timeout dispute |
+| Unit test ID                                                                            | Obligation       | Public entry and setup               | Oracle and forbidden effects                                                                                                                         | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------------------- | ---------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-reduction-compute-1-gnx0rp"></a>`UNIT-TEST-REDUCTION-COMPUTE-1-GNX0RP` | Mirrored compute | Compute over permuted committed sets | Identical successor for every order (documents the [`OQ-4-JGDCNX`](../../../../../verification/open-questions.md#oq-4-jgdcnx) caveat where it fails) | <a id="unit-test-reduction-compute-1-gnx0rp.p1"></a>`UNIT-TEST-REDUCTION-COMPUTE-1-GNX0RP.P1` — order permutations; <a id="unit-test-reduction-compute-1-gnx0rp.p2"></a>`UNIT-TEST-REDUCTION-COMPUTE-1-GNX0RP.P2` — genesis-claim disputes; <a id="unit-test-reduction-compute-1-gnx0rp.p3"></a>`UNIT-TEST-REDUCTION-COMPUTE-1-GNX0RP.P3` — committed set with a timeout dispute; <a id="unit-test-reduction-compute-1-gnx0rp.p4"></a>`UNIT-TEST-REDUCTION-COMPUTE-1-GNX0RP.P4` — committed set without a timeout dispute |
 
 ## Related source reports
 

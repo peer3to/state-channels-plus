@@ -24,7 +24,7 @@ The Node local-discovery server: registration with advertised peer addresses (pl
 
 ## Key design decisions
 
-1. **Advertised identity is metadata only** — every brokered connection still authenticates ([`INV-AUTH-1`](../../../../../specification/peer-communication/handshake.md#inv-auth-1)).
+1. **Advertised identity is metadata only** — every brokered connection still authenticates ([`INV-AUTH-1-J0PRYA`](../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +40,9 @@ The Node local-discovery server: registration with advertised peer addresses (pl
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                               | Specification IDs                                                                       |
-| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [LocalDiscoveryServer.ts](../../../../../../../../src/utils/node/LocalDiscoveryServer.ts) | [`REQ-AUTH-4`](../../../../../specification/peer-communication/handshake.md#req-auth-4) |
+| Source file                                                                               | Specification IDs                                                                                     |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [LocalDiscoveryServer.ts](../../../../../../../../src/utils/node/LocalDiscoveryServer.ts) | [`REQ-AUTH-4-JWCF71`](../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

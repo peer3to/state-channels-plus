@@ -41,9 +41,9 @@ delegatecall path shares.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                                    | Specification IDs     |
-| ------------------------------------------------------------------------------------------------------------------------------ | --------------------- |
-| [StateChannelManagerStorage.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol) | `INV-CONTRACT-ARCH-1` |
+| Source file                                                                                                                    | Specification IDs                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| [StateChannelManagerStorage.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol) | [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -68,17 +68,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence                            | Gap / divergence                                                                          |
-| ----------------------- | --------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| `INV-CONTRACT-ARCH-1`   | Covered               | **Here:** the one canonical layout. | Layout is slot-0 inherited (pre-namespacing); versioned namespaces are the refactor plan. |
+| Requirement / invariant                                                                                          | Implementation status | Evidence                            | Gap / divergence                                                                          |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) | Covered               | **Here:** the one canonical layout. | Layout is slot-0 inherited (pre-namespacing); versioned namespaces are the refactor plan. |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                          | Obligation       | Public entry and setup                  | Oracle and forbidden effects                                              | Required permutations                                                                                  |
-| --------------------------------------------------------------------- | ---------------- | --------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-manager-storage-1"></a>`UNIT-TEST-MANAGER-STORAGE-1` | Layout stability | Compile-time layout snapshot comparison | Layout matches the committed reference; changes are deliberate migrations | <a id="unit-test-manager-storage-1.p1"></a>`UNIT-TEST-MANAGER-STORAGE-1.P1` — storage-layout diff gate |
+| Unit test ID                                                                        | Obligation       | Public entry and setup                  | Oracle and forbidden effects                                              | Required permutations                                                                                                |
+| ----------------------------------------------------------------------------------- | ---------------- | --------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-manager-storage-1-et3gpf"></a>`UNIT-TEST-MANAGER-STORAGE-1-ET3GPF` | Layout stability | Compile-time layout snapshot comparison | Layout matches the committed reference; changes are deliberate migrations | <a id="unit-test-manager-storage-1-et3gpf.p1"></a>`UNIT-TEST-MANAGER-STORAGE-1-ET3GPF.P1` — storage-layout diff gate |
 
 ## Related source reports
 

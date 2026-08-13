@@ -39,9 +39,9 @@ The inline signer facade: local key-backed signing plus the join-collection entr
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                   | Specification IDs                                                              |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [LocalP2pSigner.ts](../../../../../../../../src/evm/signer/LocalP2pSigner.ts) | [`REQ-ID-3`](../../../../../specification/protocol-model/identity.md#req-id-3) |
+| Source file                                                                   | Specification IDs                                                                            |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [LocalP2pSigner.ts](../../../../../../../../src/evm/signer/LocalP2pSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

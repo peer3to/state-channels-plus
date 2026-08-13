@@ -8,11 +8,13 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID   | Question                                                            | Source                 | Affected documents                                            | Status |
-| ---- | ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------- | ------ |
-| OQ-4 | Dispute-reduction order-independence: proof and permutation testing | Specification analysis | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
+| ID                                             | Question                                                            | Source                 | Affected documents                                            | Status |
+| ---------------------------------------------- | ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------- | ------ |
+| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx) | Dispute-reduction order-independence: proof and permutation testing | Specification analysis | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
 
-## OQ-4 — Dispute-reduction order-independence
+<a id="oq-4-jgdcnx"></a>
+
+## OQ-4-JGDCNX — Dispute-reduction order-independence
 
 Reduction is intended to converge to the same result regardless of the order in which valid
 dispute inputs are applied, even though the chain serializes transactions. The exact merge/
@@ -23,7 +25,7 @@ integration tests. Until then it MUST NOT be described as CRDT-like.
 Code-derived sharpening: order independence is currently violated in principle. Killing a
 commitment removes it by swap-with-last, reordering the survivor set that `reduce()` consumes
 positionally, and order-sensitive consumers exist (slash application order can change the
-serialized output state and therefore the successor `forkId`; the empty-timeout fold of OQ-14 is
+serialized output state and therefore the successor `forkId`; the empty-timeout fold of [`OQ-14-5C8KV7`](../implementation/open-questions.md#oq-14-5c8kv7) is
 last-writer-wins). Candidate directions: canonicalize (sort) the survivor set before reduction,
 or prove and permutation-test independence including kills and slash-application order. See
-[protocol/disputes.md](../specification/disputes/disputes.md) §5 (INV-DIS-5).
+[protocol/disputes.md](../specification/disputes/disputes.md) §5 ([`INV-DIS-5-J1QZ92`](../specification/disputes/disputes.md#inv-dis-5-j1qz92)).

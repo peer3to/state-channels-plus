@@ -24,7 +24,7 @@ runtime, or a thrown absence the factory selector converts into bridge fallback.
 
 ## Key design decisions
 
-1. **Feature-detect, never platform-detect** — presence of the constructor decides, keeping browser variants and polyfilled Node equal ([`REQ-RUNTIME-4`](../../../../../../../specification/runtime/execution.md#req-runtime-4)).
+1. **Feature-detect, never platform-detect** — presence of the constructor decides, keeping browser variants and polyfilled Node equal ([`REQ-RUNTIME-4-B0N70Y`](../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +40,9 @@ runtime, or a thrown absence the factory selector converts into bridge fallback.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                  | Specification IDs                                                                        |
-| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| [WebRTCProvider.ts](../../../../../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCProvider.ts) | [`REQ-RUNTIME-4`](../../../../../../../specification/runtime/execution.md#req-runtime-4) |
+| Source file                                                                                                  | Specification IDs                                                                                      |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| [WebRTCProvider.ts](../../../../../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCProvider.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Feature detection per [`REQ-RUNTIME-4`](../../../../../../../specification/runtime/execution.md#req-runtime-4).
+- Feature detection per [`REQ-RUNTIME-4-B0N70Y`](../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y).
 
 ## Specification contradictions
 
@@ -73,9 +73,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                          | Obligation | Public entry and setup                        | Oracle and forbidden effects                                | Required permutations                                                                                                                                                       |
-| --------------------------------------------------------------------- | ---------- | --------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-webrtc-provider-1"></a>`UNIT-TEST-WEBRTC-PROVIDER-1` | Detection  | Run with and without a global RTC constructor | Provider returned or absence signaled; no platform sniffing | <a id="unit-test-webrtc-provider-1.p1"></a>`UNIT-TEST-WEBRTC-PROVIDER-1.P1` — present; <a id="unit-test-webrtc-provider-1.p2"></a>`UNIT-TEST-WEBRTC-PROVIDER-1.P2` — absent |
+| Unit test ID                                                                        | Obligation | Public entry and setup                        | Oracle and forbidden effects                                | Required permutations                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------- | ---------- | --------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-webrtc-provider-1-dfs5tf"></a>`UNIT-TEST-WEBRTC-PROVIDER-1-DFS5TF` | Detection  | Run with and without a global RTC constructor | Provider returned or absence signaled; no platform sniffing | <a id="unit-test-webrtc-provider-1-dfs5tf.p1"></a>`UNIT-TEST-WEBRTC-PROVIDER-1-DFS5TF.P1` — present; <a id="unit-test-webrtc-provider-1-dfs5tf.p2"></a>`UNIT-TEST-WEBRTC-PROVIDER-1-DFS5TF.P2` — absent |
 
 ## Related source reports
 

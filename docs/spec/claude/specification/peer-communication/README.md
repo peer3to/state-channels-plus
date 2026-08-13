@@ -29,19 +29,19 @@ through this system.
   payload validation are not. Peers may disconnect, withhold, duplicate, reorder, or send malformed
   frames at any point. Typed local APIs never make remote data trustworthy.
 - **Ordering and concurrency.** Frame dispatch follows a fixed verification order
-  ([rpc.md](./rpc.md) `REQ-RPC-6`); handlers run outside the execution serialization boundary of
+  ([rpc.md](./rpc.md) [`REQ-RPC-6-E60S4J`](rpc.md#req-rpc-6-e60s4j)); handlers run outside the execution serialization boundary of
   block progression and hand validated input to the owning system, which enforces its own ordering.
-- **Invariants (owned).** `INV-RPC-1`, `REQ-RPC-1`–`REQ-RPC-8` ([rpc.md](./rpc.md)), plus the
+- **Invariants (owned).** [`INV-RPC-1-SJS2T6`](rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-1-FF89Z0`](rpc.md#req-rpc-1-ff89z0)–[`REQ-RPC-8-44XECF`](rpc.md#req-rpc-8-44xecf) ([rpc.md](./rpc.md)), plus the
   per-service requirements: `INV-AUTH-*`/`REQ-AUTH-*`, `REQ-GOSSIP-*`, `INV-JOINSIG-*`/`REQ-JOINSIG-*`,
   `REQ-DACK-*`, `INV-SYNC-*`/`REQ-SYNC-*`, `INV-NEG-*`/`REQ-NEG-*`, `INV-UPG-*`/`REQ-UPG-*`.
 - **Failure and recovery outcomes.** Every endpoint failure has a defined consequence class —
   disconnect, blacklist, request error, silent ignore, or escalation — and a peer-controlled failure
-  never corrupts another session (`REQ-RPC-5`, `REQ-RPC-6`).
+  never corrupts another session ([`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y), [`REQ-RPC-6-E60S4J`](rpc.md#req-rpc-6-e60s4j)).
 - **Resource bounds.** Frame size, outstanding requests, expensive proof/signaling work, and per-peer
-  rate are bounded (`REQ-RPC-5`); bounds are sized for the full-mesh small-partition topology
-  ([../security/trust-model.md](../security/trust-model.md) `REQ-TRUST-5`).
+  rate are bounded ([`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y)); bounds are sized for the full-mesh small-partition topology
+  ([../security/trust-model.md](../security/trust-model.md) [`REQ-TRUST-5-NDVRW8`](../security/trust-model.md#req-trust-5-ndvrw8)).
 - **Verification evidence.** The requirement matrix in [rpc.md](./rpc.md); the ingress edge into
-  block progression is proven under [`REQ-IX-1`](../interactions.md#req-ix-1).
+  block progression is proven under [`REQ-IX-1-WTJ0D1`](../interactions.md#req-ix-1-wtj0d1).
 
 ## Owned documents
 
@@ -62,6 +62,6 @@ with its algorithm, system interactions, failure outcomes, and test plan.
 ## Interaction contracts
 
 Producer of authenticated, envelope-validated ingress for block progression
-([`REQ-IX-1`](../interactions.md#req-ix-1)); carrier for the join-authorization and synchronization
-flows of settlement ([`REQ-IX-3`](../interactions.md#req-ix-3)). Gossip rate limiting is open —
-[OQ-6](../open-questions.md).
+([`REQ-IX-1-WTJ0D1`](../interactions.md#req-ix-1-wtj0d1)); carrier for the join-authorization and synchronization
+flows of settlement ([`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)). Gossip rate limiting is open —
+[`OQ-6-4JPNE5`](../open-questions.md#oq-6-4jpne5).

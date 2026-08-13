@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                       | Specification IDs                                                           |
-| ------------------------------------------------- | --------------------------------------------------------------------------- |
-| [time.ts](../../../../../../../src/types/time.ts) | [`REQ-TIME-1`](../../../../specification/protocol-model/time.md#req-time-1) |
+| Source file                                       | Specification IDs                                                                         |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [time.ts](../../../../../../../src/types/time.ts) | [`REQ-TIME-1-FM4651`](../../../../specification/protocol-model/time.md#req-time-1-fm4651) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

@@ -28,6 +28,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                     | Covers                                                                                   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [`E2E: PingPongService (custom RPC) > should let two peers call custom Ping/Pong RPC services`](../../../../../../../test/e2e/E2E-PingService.test.ts#L19) (line 19) | [`REQ-RPC-1.T1.P2`](../../../../specification/peer-communication/rpc.md#req-rpc-1-t1-p2) |
+| Test declaration                                                                                                                                                     | Covers                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [`E2E: PingPongService (custom RPC) > should let two peers call custom Ping/Pong RPC services`](../../../../../../../test/e2e/E2E-PingService.test.ts#L19) (line 19) | [`REQ-RPC-1-FF89Z0.T1.P2`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p2) |

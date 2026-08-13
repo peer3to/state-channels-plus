@@ -13,15 +13,32 @@ not silently choose unresolved behavior, mark engineer approval, edit `audit/app
 
 ## 2. Stable identities
 
-- `REQ-<AREA>-<n>` — normative requirement.
-- `INV-<AREA>-<n>` — invariant.
+- `REQ-<AREA>-<n>-<suffix>` — normative requirement.
+- `INV-<AREA>-<n>-<suffix>` — invariant.
 - `<REQ-or-INV-ID>.T<n>` — a stable planned-test row owned directly by that requirement.
-- `OQ-SPEC-*`, `OQ-IMPL-*`, `OQ-VER-*`, `OQ-AUDIT-*` — new layer-owned questions.
-- `DEF-*` — preserved legacy finding; `FIND-<AREA>-<n>` — new finding.
+- `<REQ-or-INV-ID>.T<n>.P<n>` — an independently coverable permutation of that plan.
+- `UNIT-TEST-<AREA>-<n>-<suffix>` and `INTEGRATION-TEST-<AREA>-<n>-<suffix>` — implementation test obligations; their permutations append `.P<n>`.
+- `OQ-SPEC-*`, `OQ-IMPL-*`, `OQ-VER-*`, `OQ-AUDIT-*` — layer-owned questions, each ending in a suffix.
+- `DEF-*` — preserved legacy finding; `FIND-<AREA>-<n>-<suffix>` — new finding.
 
-IDs are never reused. A moved or withdrawn item retains its ID and disposition. Planned tests use
-simple sequential suffixes such as `INV-DA-1.T1`. Every required permutation has a stable child ID,
-such as `INV-DA-1.T1.P1`; exact tests map to these permutation IDs.
+The suffix is six random Crockford Base32 characters. It is part of the immutable root identity,
+not a revision or checksum. The readable area and ordinal organize the document; the random suffix
+makes independently allocated IDs overwhelmingly unlikely to collide when branches are edited in
+parallel. Allocate a root with `yarn spec:id:new <semantic-sequential-stem>`, for example
+`yarn spec:id:new REQ-X-10`. Never invent or change the suffix by hand.
+
+IDs are never reused. A moved or withdrawn item retains its complete ID and disposition. Child
+test-plan and permutation IDs inherit the collision-resistant root, so they remain simple and
+readable: [`INV-DA-1-TS7HX2.T1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1)
+and [`INV-DA-1-TS7HX2.T1.P1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1.p1).
+Two branches adding children to the same existing root are editing the same owned table and should
+resolve the normal Git conflict rather than hide it behind independently random child IDs.
+
+The token at its canonical definition is plain inline code preceded by an explicit stable anchor.
+Every other concrete ID occurrence is a linked inline-code label targeting that anchor. Run
+`yarn spec:ids:fix` after authoring to normalize anchors and references, and
+`yarn spec:ids:check` to reject legacy collision-prone IDs, undefined references, duplicate
+definitions or anchors, unlinked references, and links to the wrong definition.
 
 Use another test-plan item (`.T2`, `.T3`) only when the requirement needs a materially different
 setup, stimulus, or oracle. Variations of the same obligation are `.P1`…`.PN` under that plan item.

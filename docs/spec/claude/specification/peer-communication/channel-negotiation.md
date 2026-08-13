@@ -4,7 +4,7 @@
 > **Engineer verification:** Pending.
 > **Status:** Draft. The realizing implementation exists but is not wired into the default service
 > root; whether it becomes default or integrator-wired is an open decision
-> ([OQ-34](../open-questions.md) family — see Assumptions).
+> ([`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2) family — see Assumptions).
 > **Scope:** Negotiating the terms of a two-party channel opening and producing the doubly signed
 > opening the chain requires. Shared communication rules: [rpc.md](./rpc.md). Opening semantics:
 > [lifecycle.md](../settlement/lifecycle.md).
@@ -77,33 +77,29 @@ is confirmed only by observing the channel open on-chain.
 
 ## Requirements and invariants
 
-<a id="inv-neg-1"></a>
-**INV-NEG-1 — Negotiated-terms-only signing.** A node signs an opening struct only when it equals,
+**[`INV-NEG-1-6FW90P`](channel-negotiation.md#inv-neg-1-6fw90p) — Negotiated-terms-only signing.** A node signs an opening struct only when it equals,
 field-exactly, the struct rebuilt from its own negotiation state, with its own deposit amount taken
 from local state and the counterparty bound to the authenticated session.
 
-<a id="req-neg-1"></a>
-**REQ-NEG-1 — Deterministic single proposer.** Exactly one side builds and first-signs the
+**[`REQ-NEG-1-RTKPT1`](channel-negotiation.md#req-neg-1-rtkpt1) — Deterministic single proposer.** Exactly one side builds and first-signs the
 canonical struct, selected by a deterministic identity-order rule; a proposal from the wrong side
 is misbehavior.
 
-<a id="req-neg-2"></a>
-**REQ-NEG-2 — Chain-observed completion.** Negotiation success is established only by observing
+**[`REQ-NEG-2-ED48TZ`](channel-negotiation.md#req-neg-2-ed48tz) — Chain-observed completion.** Negotiation success is established only by observing
 the channel open on-chain; no peer message confirms an opening, and lost races defer to the chain.
 
-<a id="req-neg-3"></a>
-**REQ-NEG-3 — Single-slot serialization.** A node negotiates with one counterparty at a time;
+**[`REQ-NEG-3-Q5WFAA`](channel-negotiation.md#req-neg-3-q5wfaa) — Single-slot serialization.** A node negotiates with one counterparty at a time;
 competing initiations receive an explicit busy signal and only the recorded counterparty's
 messages affect the negotiation.
 
 This table is the normative requirement index. Detailed rules and rationale are defined above.
 
-| Requirement / invariant | Statement                                                    |
-| ----------------------- | ------------------------------------------------------------ |
-| `INV-NEG-1`             | Sign only self-rebuilt, field-exact, locally amounted terms. |
-| `REQ-NEG-1`             | One deterministic proposer per pair.                         |
-| `REQ-NEG-2`             | Completion only by chain observation.                        |
-| `REQ-NEG-3`             | One negotiation slot; busy is explicit and penalty-free.     |
+| Requirement / invariant                         | Statement                                                    |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| <a id="inv-neg-1-6fw90p"></a>`INV-NEG-1-6FW90P` | Sign only self-rebuilt, field-exact, locally amounted terms. |
+| <a id="req-neg-1-rtkpt1"></a>`REQ-NEG-1-RTKPT1` | One deterministic proposer per pair.                         |
+| <a id="req-neg-2-ed48tz"></a>`REQ-NEG-2-ED48TZ` | Completion only by chain observation.                        |
+| <a id="req-neg-3-q5wfaa"></a>`REQ-NEG-3-Q5WFAA` | One negotiation slot; busy is explicit and penalty-free.     |
 
 ## Assumptions and constraints
 
@@ -117,7 +113,7 @@ This table is the normative requirement index. Detailed rules and rationale are 
 
 The attack surface is term substitution: a counterparty or relay altering amounts, participants,
 deadline, or atomicity between negotiation and signature. Re-derivation with field-exact comparison
-(`INV-NEG-1`) is the defense — the proposal is a _claim to check_, never a _value to adopt_. The
+([`INV-NEG-1-6FW90P`](channel-negotiation.md#inv-neg-1-6fw90p)) is the defense — the proposal is a _claim to check_, never a _value to adopt_. The
 deterministic proposer rule removes proposal glare and makes an out-of-role proposal itself
 evidence. Cold proposals against defaults are refused. Residual: griefing by stall (claim a slot,
 go silent) costs the victim one timeout window; busy-signal probing reveals only slot occupancy.
@@ -126,12 +122,12 @@ go silent) costs the victim one timeout window; busy-signal probing reveals only
 
 ### Requirement test matrix
 
-| Plan item                               | Requirements / invariants | Setup and stimulus                                                                                                    | Expected result                                                                                                   | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-neg-1-t1"></a>`INV-NEG-1.T1` | `INV-NEG-1`               | Deliver proposals with each field altered, amounts replayed from the wire, unsolicited proposals, and an exact match. | Only the exact self-rebuilt struct is co-signed; every deviation excludes the proposer; local amount always wins. | <a id="inv-neg-1-t1-p1"></a>`INV-NEG-1.T1.P1` — exact match co-signed; <a id="inv-neg-1-t1-p2"></a>`INV-NEG-1.T1.P2` — altered amount; <a id="inv-neg-1-t1-p3"></a>`INV-NEG-1.T1.P3` — cold/unsolicited proposal; <a id="inv-neg-1-t1-p4"></a>`INV-NEG-1.T1.P4` — deadline outside bounds; <a id="inv-neg-1-t1-p5"></a>`INV-NEG-1.T1.P5` — altered participants; <a id="inv-neg-1-t1-p6"></a>`INV-NEG-1.T1.P6` — altered deadline; <a id="inv-neg-1-t1-p7"></a>`INV-NEG-1.T1.P7` — altered atomicity. |
-| <a id="req-neg-1-t1"></a>`REQ-NEG-1.T1` | `REQ-NEG-1`               | Run negotiations from both initiation directions; send proposals from the wrong side.                                 | The deterministic side proposes regardless of initiator; wrong-side proposals are misbehavior.                    | <a id="req-neg-1-t1-p1"></a>`REQ-NEG-1.T1.P1` — initiation by the proposer side; <a id="req-neg-1-t1-p2"></a>`REQ-NEG-1.T1.P2` — wrong-side proposal excluded; <a id="req-neg-1-t1-p3"></a>`REQ-NEG-1.T1.P3` — proposer signature recovery enforced; <a id="req-neg-1-t1-p4"></a>`REQ-NEG-1.T1.P4` — initiation by the non-proposer side.                                                                                                                                                             |
-| <a id="req-neg-2-t1"></a>`REQ-NEG-2.T1` | `REQ-NEG-2`               | Complete openings normally, race two submissions, fail submission, and let deadlines lapse.                           | Success only via the chain event; races defer; failures abort and reset without false success.                    | <a id="req-neg-2-t1-p1"></a>`REQ-NEG-2.T1.P1` — normal completion; <a id="req-neg-2-t1-p2"></a>`REQ-NEG-2.T1.P2` — race lost, chain event wins; <a id="req-neg-2-t1-p3"></a>`REQ-NEG-2.T1.P3` — submission failure aborts; <a id="req-neg-2-t1-p4"></a>`REQ-NEG-2.T1.P4` — deadline without open channel resets.                                                                                                                                                                                      |
-| <a id="req-neg-3-t1"></a>`REQ-NEG-3.T1` | `REQ-NEG-3`               | Initiate concurrent negotiations from multiple peers; interleave messages from third parties.                         | One slot honored; busy signals reset competitors; third-party and wrong-channel messages ignored.                 | <a id="req-neg-3-t1-p1"></a>`REQ-NEG-3.T1.P1` — busy under contention; <a id="req-neg-3-t1-p2"></a>`REQ-NEG-3.T1.P2` — third-party interference ignored; <a id="req-neg-3-t1-p3"></a>`REQ-NEG-3.T1.P3` — timeout frees the slot; <a id="req-neg-3-t1-p4"></a>`REQ-NEG-3.T1.P4` — stalling counterparty costs one window only.                                                                                                                                                                         |
+| Plan item                                             | Requirements / invariants                                     | Setup and stimulus                                                                                                    | Expected result                                                                                                   | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-neg-1-6fw90p.t1"></a>`INV-NEG-1-6FW90P.T1` | [`INV-NEG-1-6FW90P`](channel-negotiation.md#inv-neg-1-6fw90p) | Deliver proposals with each field altered, amounts replayed from the wire, unsolicited proposals, and an exact match. | Only the exact self-rebuilt struct is co-signed; every deviation excludes the proposer; local amount always wins. | <a id="inv-neg-1-6fw90p.t1.p1"></a>`INV-NEG-1-6FW90P.T1.P1` — exact match co-signed; <a id="inv-neg-1-6fw90p.t1.p2"></a>`INV-NEG-1-6FW90P.T1.P2` — altered amount; <a id="inv-neg-1-6fw90p.t1.p3"></a>`INV-NEG-1-6FW90P.T1.P3` — cold/unsolicited proposal; <a id="inv-neg-1-6fw90p.t1.p4"></a>`INV-NEG-1-6FW90P.T1.P4` — deadline outside bounds; <a id="inv-neg-1-6fw90p.t1.p5"></a>`INV-NEG-1-6FW90P.T1.P5` — altered participants; <a id="inv-neg-1-6fw90p.t1.p6"></a>`INV-NEG-1-6FW90P.T1.P6` — altered deadline; <a id="inv-neg-1-6fw90p.t1.p7"></a>`INV-NEG-1-6FW90P.T1.P7` — altered atomicity. |
+| <a id="req-neg-1-rtkpt1.t1"></a>`REQ-NEG-1-RTKPT1.T1` | [`REQ-NEG-1-RTKPT1`](channel-negotiation.md#req-neg-1-rtkpt1) | Run negotiations from both initiation directions; send proposals from the wrong side.                                 | The deterministic side proposes regardless of initiator; wrong-side proposals are misbehavior.                    | <a id="req-neg-1-rtkpt1.t1.p1"></a>`REQ-NEG-1-RTKPT1.T1.P1` — initiation by the proposer side; <a id="req-neg-1-rtkpt1.t1.p2"></a>`REQ-NEG-1-RTKPT1.T1.P2` — wrong-side proposal excluded; <a id="req-neg-1-rtkpt1.t1.p3"></a>`REQ-NEG-1-RTKPT1.T1.P3` — proposer signature recovery enforced; <a id="req-neg-1-rtkpt1.t1.p4"></a>`REQ-NEG-1-RTKPT1.T1.P4` — initiation by the non-proposer side.                                                                                                                                                                                                       |
+| <a id="req-neg-2-ed48tz.t1"></a>`REQ-NEG-2-ED48TZ.T1` | [`REQ-NEG-2-ED48TZ`](channel-negotiation.md#req-neg-2-ed48tz) | Complete openings normally, race two submissions, fail submission, and let deadlines lapse.                           | Success only via the chain event; races defer; failures abort and reset without false success.                    | <a id="req-neg-2-ed48tz.t1.p1"></a>`REQ-NEG-2-ED48TZ.T1.P1` — normal completion; <a id="req-neg-2-ed48tz.t1.p2"></a>`REQ-NEG-2-ED48TZ.T1.P2` — race lost, chain event wins; <a id="req-neg-2-ed48tz.t1.p3"></a>`REQ-NEG-2-ED48TZ.T1.P3` — submission failure aborts; <a id="req-neg-2-ed48tz.t1.p4"></a>`REQ-NEG-2-ED48TZ.T1.P4` — deadline without open channel resets.                                                                                                                                                                                                                                |
+| <a id="req-neg-3-q5wfaa.t1"></a>`REQ-NEG-3-Q5WFAA.T1` | [`REQ-NEG-3-Q5WFAA`](channel-negotiation.md#req-neg-3-q5wfaa) | Initiate concurrent negotiations from multiple peers; interleave messages from third parties.                         | One slot honored; busy signals reset competitors; third-party and wrong-channel messages ignored.                 | <a id="req-neg-3-q5wfaa.t1.p1"></a>`REQ-NEG-3-Q5WFAA.T1.P1` — busy under contention; <a id="req-neg-3-q5wfaa.t1.p2"></a>`REQ-NEG-3-Q5WFAA.T1.P2` — third-party interference ignored; <a id="req-neg-3-q5wfaa.t1.p3"></a>`REQ-NEG-3-Q5WFAA.T1.P3` — timeout frees the slot; <a id="req-neg-3-q5wfaa.t1.p4"></a>`REQ-NEG-3-Q5WFAA.T1.P4` — stalling counterparty costs one window only.                                                                                                                                                                                                                   |
 
 ## Future Work
 

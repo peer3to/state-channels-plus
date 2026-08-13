@@ -40,9 +40,9 @@ sync scheduler in arrival order.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                        | Specification IDs                                                       |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [StateChannelEventListener.ts](../../../../../../src/StateChannelEventListener.ts) | [`REQ-STOR-3`](../../../specification/storage/durability.md#req-stor-3) |
+| Source file                                                                        | Specification IDs                                                                     |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [StateChannelEventListener.ts](../../../../../../src/StateChannelEventListener.ts) | [`REQ-STOR-3-4RJGER`](../../../specification/storage/durability.md#req-stor-3-4rjger) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -58,7 +58,7 @@ None demonstrated.
 
 ## Missing behavior
 
-**DEF-2 anchor:** `OutboundMessagesProcessed` is absent from the dispatched-event set — local withdrawal accounting can go stale ([open-findings](../../../audit/open-findings.md)).
+**[`DEF-2-SHQR0A`](../../../audit/open-findings.md#def-2-shqr0a) anchor:** `OutboundMessagesProcessed` is absent from the dispatched-event set — local withdrawal accounting can go stale ([open-findings](../../../audit/open-findings.md)).
 
 ## Conformance traceability
 

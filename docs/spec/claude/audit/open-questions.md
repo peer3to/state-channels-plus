@@ -8,11 +8,13 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID   | Question                                 | Source                 | Affected documents                                                                                                                  | Status |
-| ---- | ---------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| OQ-5 | Fraud-proof completeness security review | Specification analysis | [security/open-security-review.md](./security-assessment.md), [protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md) | Open   |
+| ID                                             | Question                                 | Source                 | Affected documents                                                                                                                  | Status |
+| ---------------------------------------------- | ---------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`OQ-5-4Q38M5`](open-questions.md#oq-5-4q38m5) | Fraud-proof completeness security review | Specification analysis | [security/open-security-review.md](./security-assessment.md), [protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md) | Open   |
 
-## OQ-5 — Fraud-proof completeness security review
+<a id="oq-5-4q38m5"></a>
+
+## OQ-5-4Q38M5 — Fraud-proof completeness security review
 
 The current fraud-proof list must not be treated as complete. A dedicated security review must ask
 which objectively provable violations lack a fraud proof and which attack paths are not prevented,

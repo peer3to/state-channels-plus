@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                             | Specification IDs                                                           |
-| ------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [address.ts](../../../../../../../src/utils/address.ts) | [`REQ-ID-2`](../../../../specification/protocol-model/identity.md#req-id-2) |
+| Source file                                             | Specification IDs                                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [address.ts](../../../../../../../src/utils/address.ts) | [`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

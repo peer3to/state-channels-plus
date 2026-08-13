@@ -39,9 +39,9 @@ The SyncRequest/SyncPayload shapes of verifiable synchronization.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                               | Specification IDs                                                                 |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [spectate.ts](../../../../../../../src/types/spectate.ts) | [`REQ-DATA-1`](../../../../specification/protocol-model/data-types.md#req-data-1) |
+| Source file                                               | Specification IDs                                                                               |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [spectate.ts](../../../../../../../src/types/spectate.ts) | [`REQ-DATA-1-1KNRQS`](../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

@@ -25,7 +25,7 @@ service to own.
 
 ## Key design decisions
 
-1. **No state is the design.** Everything a frame touches lives downstream (queue, storage, profiles); the service exists to gate and construct per-dispatch endpoints ([`REQ-GOSSIP-1`](../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1)).
+1. **No state is the design.** Everything a frame touches lives downstream (queue, storage, profiles); the service exists to gate and construct per-dispatch endpoints ([`REQ-GOSSIP-1-HTK3NX`](../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1-htk3nx)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -41,17 +41,17 @@ service to own.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                        | Specification IDs                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| [StateTransitionService.ts](../../../../../../../../../src/rpc/services/stateTransition/StateTransitionService.ts) | [`REQ-GOSSIP-1`](../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1) |
+| Source file                                                                                                        | Specification IDs                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| [StateTransitionService.ts](../../../../../../../../../src/rpc/services/stateTransition/StateTransitionService.ts) | [`REQ-GOSSIP-1-HTK3NX`](../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1-htk3nx) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Highest-volume ingress; frequency bounding is the future rate limiter ([OQ-6](../../../../../../specification/open-questions.md)).
+- Highest-volume ingress; frequency bounding is the future rate limiter ([`OQ-6-4JPNE5`](../../../../../../specification/open-questions.md#oq-6-4jpne5)).
 
 ## Specification adherence
 
-- Thin shell per the gossip contract ([`REQ-GOSSIP-1`](../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1)).
+- Thin shell per the gossip contract ([`REQ-GOSSIP-1-HTK3NX`](../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1-htk3nx)).
 
 ## Specification contradictions
 
@@ -67,17 +67,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                           | Implementation status | Evidence                                                                                                                                                                                                | Gap / divergence |
-| ------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-GOSSIP-1`](../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1) | Covered               | **Here:** gated stateless shell. **Other files:** [StateTransitionRpcMethods](./StateTransitionRpcMethods.ts.md) attributes; [BlockQueueManager](../../../stateManager/BlockQueueManager.ts.md) judges. | None.            |
+| Requirement / invariant                                                                                         | Implementation status | Evidence                                                                                                                                                                                                | Gap / divergence |
+| --------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-GOSSIP-1-HTK3NX`](../../../../../../specification/peer-communication/block-gossip.md#req-gossip-1-htk3nx) | Covered               | **Here:** gated stateless shell. **Other files:** [StateTransitionRpcMethods](./StateTransitionRpcMethods.ts.md) attributes; [BlockQueueManager](../../../stateManager/BlockQueueManager.ts.md) judges. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                            | Obligation | Public entry and setup      | Oracle and forbidden effects                  | Required permutations                                                                                                                                                                                                              |
-| --------------------------------------------------------------------------------------- | ---------- | --------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-state-transition-service-1"></a>`UNIT-TEST-STATE-TRANSITION-SERVICE-1` | Gating     | Dispatch pre/post handshake | Only authenticated senders reach the endpoint | <a id="unit-test-state-transition-service-1.p1"></a>`UNIT-TEST-STATE-TRANSITION-SERVICE-1.P1` — gated pre-auth; <a id="unit-test-state-transition-service-1.p2"></a>`UNIT-TEST-STATE-TRANSITION-SERVICE-1.P2` — authenticated pass |
+| Unit test ID                                                                                          | Obligation | Public entry and setup      | Oracle and forbidden effects                  | Required permutations                                                                                                                                                                                                                                          |
+| ----------------------------------------------------------------------------------------------------- | ---------- | --------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-state-transition-service-1-w4mkds"></a>`UNIT-TEST-STATE-TRANSITION-SERVICE-1-W4MKDS` | Gating     | Dispatch pre/post handshake | Only authenticated senders reach the endpoint | <a id="unit-test-state-transition-service-1-w4mkds.p1"></a>`UNIT-TEST-STATE-TRANSITION-SERVICE-1-W4MKDS.P1` — gated pre-auth; <a id="unit-test-state-transition-service-1-w4mkds.p2"></a>`UNIT-TEST-STATE-TRANSITION-SERVICE-1-W4MKDS.P2` — authenticated pass |
 
 ## Related source reports
 

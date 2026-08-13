@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                       | Specification IDs                                                                 |
-| ------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [hash.ts](../../../../../../../src/utils/hash.ts) | [`REQ-DATA-1`](../../../../specification/protocol-model/data-types.md#req-data-1) |
+| Source file                                       | Specification IDs                                                                               |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [hash.ts](../../../../../../../src/utils/hash.ts) | [`REQ-DATA-1-1KNRQS`](../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

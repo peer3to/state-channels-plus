@@ -40,9 +40,9 @@ manager delegates to — the funds trust boundary the protocol confines but does
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                            | Specification IDs                                                                               |
-| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| [AConsumerFacet.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol) | [`REQ-ENFSM-2`](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2) |
+| Source file                                                                                            | Specification IDs                                                                                             |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| [AConsumerFacet.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol) | [`REQ-ENFSM-2-G4HBKG`](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -67,9 +67,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                         | Implementation status | Evidence                                                                                                        | Gap / divergence       |
-| ----------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| [`REQ-ENFSM-2`](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2) | Covered               | **Here:** the confined delegation surface. **Other files:** reachability caveat in the state-machine-base view. | None at the interface. |
+| Requirement / invariant                                                                                       | Implementation status | Evidence                                                                                                        | Gap / divergence       |
+| ------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| [`REQ-ENFSM-2-G4HBKG`](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg) | Covered               | **Here:** the confined delegation surface. **Other files:** reachability caveat in the state-machine-base view. | None at the interface. |
 
 ## Component test obligations
 

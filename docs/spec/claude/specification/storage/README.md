@@ -30,7 +30,7 @@ strength, never observable semantics.
   (attribution written through queue intake, sync served from stores); runtime (recovery reads
   everything back at restart).
 - **Trust and availability assumptions.** Stored data is only as trustworthy as its producer's
-  validation; read-back re-enters validation per [`REQ-STOR-3`](./durability.md). The medium is
+  validation; read-back re-enters validation per [`REQ-STOR-3-4RJGER`](durability.md#req-stor-3-4rjger). The medium is
   currently process-lifetime memory: durability across restart is **not yet provided**, and every
   consumer obligation that presumes it (watchtower duties, restart recovery) is limited accordingly
   until the disk medium lands — see [durability.md](./durability.md), which specifies the target
@@ -38,16 +38,16 @@ strength, never observable semantics.
 - **Ordering and concurrency.** Module operations are atomic at the single-operation level; merge
   operations (signature sets, source attribution) are monotone and idempotent so concurrent and
   duplicate delivery converge. Cross-module consistency at an operation boundary is the *caller's*
-  transaction, specified by [`REQ-STOR-2`](./durability.md).
+  transaction, specified by [`REQ-STOR-2-TARP8S`](durability.md#req-stor-2-tarp8s).
 - **Invariants (owned).** `REQ-STOR-*` ([durability.md](./durability.md)) plus the per-module
   requirements in the module documents below.
 - **Failure and recovery outcomes.** A read of absent data returns nothing, never a default that
   masquerades as protocol state; a failed or partial multi-module write must be repairable per
-  `REQ-STOR-2`; corruption (once media can corrupt) fails closed per `REQ-STOR-5`.
+  [`REQ-STOR-2-TARP8S`](durability.md#req-stor-2-tarp8s); corruption (once media can corrupt) fails closed per [`REQ-STOR-5-T6EQSA`](durability.md#req-stor-5-t6eqsa).
 - **Resource bounds.** Per-entry structural caps where an adversary controls insertion volume (queue
-  attribution caps); retention bounded by protocol obligations (`REQ-STOR-4`).
+  attribution caps); retention bounded by protocol obligations ([`REQ-STOR-4-MF6FT6`](durability.md#req-stor-4-mf6ft6)).
 - **Verification evidence.** Test matrices in the owned documents; the cross-system storage edge is
-  [`REQ-IX-9`](../interactions.md#req-ix-9).
+  <a id="req-ix-9-av56nr"></a>`REQ-IX-9-AV56NR`.
 
 ## Owned documents
 
@@ -69,6 +69,6 @@ what is specific to that module: its key space, data model, merge/update rules, 
 
 ## Interaction contracts
 
-Every system's storage use is governed by one edge: [`REQ-IX-9`](../interactions.md#req-ix-9) —
+Every system's storage use is governed by one edge: [`REQ-IX-9-AV56NR`](README.md#req-ix-9-av56nr) —
 storage preserves exactly what producers committed, returns it unreinterpreted, and grants no
 validity. Modules never call back into their producers.

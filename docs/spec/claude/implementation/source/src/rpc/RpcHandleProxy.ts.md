@@ -42,9 +42,9 @@ to fire-and-forget or request/response by its return type.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                         | Specification IDs                                                            |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [RpcHandleProxy.ts](../../../../../../../src/rpc/RpcHandleProxy.ts) | [`REQ-RPC-1`](../../../../specification/peer-communication/rpc.md#req-rpc-1) |
+| Source file                                                         | Specification IDs                                                                          |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [RpcHandleProxy.ts](../../../../../../../src/rpc/RpcHandleProxy.ts) | [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -52,7 +52,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Typed construction of well-formed envelopes ([`REQ-RPC-1`](../../../../specification/peer-communication/rpc.md#req-rpc-1)).
+- Typed construction of well-formed envelopes ([`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)).
 
 ## Specification contradictions
 
@@ -68,17 +68,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                      | Implementation status | Evidence                                                                                                                                            | Gap / divergence |
-| ---------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RPC-1`](../../../../specification/peer-communication/rpc.md#req-rpc-1) | Covered               | **Here:** envelope fabrication with service/method identity. **Other files:** [Rpc](./Rpc.ts.md) shapes; [RpcHandler](./RpcHandler.ts.md) delivery. | None.            |
+| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                            | Gap / divergence |
+| ------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Covered               | **Here:** envelope fabrication with service/method identity. **Other files:** [Rpc](./Rpc.ts.md) shapes; [RpcHandler](./RpcHandler.ts.md) delivery. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                            | Obligation           | Public entry and setup                  | Oracle and forbidden effects                                                         | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------------------------------------------------------- | -------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-rpc-handle-proxy-1"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1` | Envelope fabrication | Access methods incl. symbols and `then` | Envelopes carry exact service/method/params; symbol/`then` access fabricates nothing | <a id="unit-test-rpc-handle-proxy-1.p1"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1.P1` — method access → envelope; <a id="unit-test-rpc-handle-proxy-1.p2"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1.P2` — symbol access exempt; <a id="unit-test-rpc-handle-proxy-1.p3"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1.P3` — params passed verbatim; <a id="unit-test-rpc-handle-proxy-1.p4"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1.P4` — `then` access exempt |
+| Unit test ID                                                                          | Obligation           | Public entry and setup                  | Oracle and forbidden effects                                                         | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------- | -------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="unit-test-rpc-handle-proxy-1-sm6m47"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1-SM6M47` | Envelope fabrication | Access methods incl. symbols and `then` | Envelopes carry exact service/method/params; symbol/`then` access fabricates nothing | <a id="unit-test-rpc-handle-proxy-1-sm6m47.p1"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1-SM6M47.P1` — method access → envelope; <a id="unit-test-rpc-handle-proxy-1-sm6m47.p2"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1-SM6M47.P2` — symbol access exempt; <a id="unit-test-rpc-handle-proxy-1-sm6m47.p3"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1-SM6M47.P3` — params passed verbatim; <a id="unit-test-rpc-handle-proxy-1-sm6m47.p4"></a>`UNIT-TEST-RPC-HANDLE-PROXY-1-SM6M47.P4` — `then` access exempt |
 
 ## Related source reports
 

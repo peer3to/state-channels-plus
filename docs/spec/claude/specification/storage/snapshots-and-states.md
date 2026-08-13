@@ -33,36 +33,33 @@ Two content-addressed stores and the joins over them:
 
 ## Requirements and invariants
 
-<a id="inv-snapstore-1"></a>
-**INV-SNAPSTORE-1 — Content addressing.** A snapshot or encoded state is stored and retrieved only
+**[`INV-SNAPSTORE-1-DPHPJE`](snapshots-and-states.md#inv-snapstore-1-dphpje) — Content addressing.** A snapshot or encoded state is stored and retrieved only
 under its commitment hash; the store never recomputes, reinterprets, or substitutes content. A
 caller-supplied key is trusted to equal the content hash only to the extent the producer's pipeline
 guarantees it — the store's contract is exact-key fidelity.
 
-<a id="req-snapstore-1"></a>
-**REQ-SNAPSTORE-1 — Genesis index consistency.** The genesis index maps a fork id to exactly the
+**[`REQ-SNAPSTORE-1-AJW0HJ`](snapshots-and-states.md#req-snapstore-1-ajw0hj) — Genesis index consistency.** The genesis index maps a fork id to exactly the
 genesis snapshot whose data hashes to that fork id; registering a fork's genesis is idempotent and a
 conflicting registration for an existing fork id MUST be refused.
 
-<a id="req-snapstore-2"></a>
-**REQ-SNAPSTORE-2 — Derived reads fail explicitly.** Coordinate-based reads return nothing when any
+**[`REQ-SNAPSTORE-2-Q7E6TQ`](snapshots-and-states.md#req-snapstore-2-q7e6tq) — Derived reads fail explicitly.** Coordinate-based reads return nothing when any
 link of the join is absent (no block, no committed snapshot, no stored state). Negative heights
 resolve to fork genesis; the store never fabricates intermediate results to satisfy a join.
 
 This table is the normative requirement index. Detailed rules and rationale are defined above.
 
-| Requirement / invariant | Statement                                                                  |
-| ----------------------- | -------------------------------------------------------------------------- |
-| `INV-SNAPSTORE-1`       | Exact content addressing for snapshots and encoded states.                 |
-| `REQ-SNAPSTORE-1`       | Genesis index: fork id ↔ genesis snapshot, idempotent, conflicts refused. |
-| `REQ-SNAPSTORE-2`       | Derived coordinate reads join explicitly and return nothing on a gap.      |
+| Requirement / invariant                                     | Statement                                                                  |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| <a id="inv-snapstore-1-dphpje"></a>`INV-SNAPSTORE-1-DPHPJE` | Exact content addressing for snapshots and encoded states.                 |
+| <a id="req-snapstore-1-ajw0hj"></a>`REQ-SNAPSTORE-1-AJW0HJ` | Genesis index: fork id ↔ genesis snapshot, idempotent, conflicts refused. |
+| <a id="req-snapstore-2-q7e6tq"></a>`REQ-SNAPSTORE-2-Q7E6TQ` | Derived coordinate reads join explicitly and return nothing on a gap.      |
 
 ## Assumptions and constraints
 
 - Commitment relationships (block → snapshot hash → state hash) are defined by the protocol model;
   this module stores each level and performs the joins, proving nothing about them.
 - Encoded states can be large; retention follows the shared obligation rules
-  ([durability.md](./durability.md), `REQ-STOR-4`).
+  ([durability.md](./durability.md), [`REQ-STOR-4-MF6FT6`](durability.md#req-stor-4-mf6ft6)).
 
 ## Security considerations
 
@@ -75,11 +72,11 @@ explicit-failure joins prevent that.
 
 ### Requirement test matrix
 
-| Plan item                                           | Requirements / invariants | Setup and stimulus                                                                                                  | Expected result                                                                                    | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-snapstore-1-t1"></a>`INV-SNAPSTORE-1.T1` | `INV-SNAPSTORE-1`         | Store and read snapshots and states by hash, including repeated stores.                                             | Exact round trips; repeated stores idempotent; absent keys return nothing.                         | <a id="inv-snapstore-1-t1-p1"></a>`INV-SNAPSTORE-1.T1.P1` — snapshot store round trip; <a id="inv-snapstore-1-t1-p2"></a>`INV-SNAPSTORE-1.T1.P2` — repeated store; <a id="inv-snapstore-1-t1-p3"></a>`INV-SNAPSTORE-1.T1.P3` — absent key; <a id="inv-snapstore-1-t1-p4"></a>`INV-SNAPSTORE-1.T1.P4` — state store round trip.                                                                                                                                                                                   |
-| <a id="req-snapstore-1-t1"></a>`REQ-SNAPSTORE-1.T1` | `REQ-SNAPSTORE-1`         | Register fork geneses, repeat, and attempt a conflicting genesis for a known fork id.                               | Idempotent registration; conflicting registration refused with the original intact.                | <a id="req-snapstore-1-t1-p1"></a>`REQ-SNAPSTORE-1.T1.P1` — register/read; <a id="req-snapstore-1-t1-p2"></a>`REQ-SNAPSTORE-1.T1.P2` — idempotent repeat; <a id="req-snapstore-1-t1-p3"></a>`REQ-SNAPSTORE-1.T1.P3` — conflict refused.                                                                                                                                                                                                                                                                          |
-| <a id="req-snapstore-2-t1"></a>`REQ-SNAPSTORE-2.T1` | `REQ-SNAPSTORE-2`         | Perform coordinate reads with each join link present and absent, including negative heights and participant unions. | Complete joins resolve; any missing link returns nothing; genesis resolution and unions are exact. | <a id="req-snapstore-2-t1-p1"></a>`REQ-SNAPSTORE-2.T1.P1` — full join; <a id="req-snapstore-2-t1-p2"></a>`REQ-SNAPSTORE-2.T1.P2` — absent block; <a id="req-snapstore-2-t1-p3"></a>`REQ-SNAPSTORE-2.T1.P3` — negative height → genesis; <a id="req-snapstore-2-t1-p4"></a>`REQ-SNAPSTORE-2.T1.P4` — participant union across a membership change; <a id="req-snapstore-2-t1-p5"></a>`REQ-SNAPSTORE-2.T1.P5` — absent snapshot; <a id="req-snapstore-2-t1-p6"></a>`REQ-SNAPSTORE-2.T1.P6` — absent encoded state. |
+| Plan item                                                         | Requirements / invariants                                                  | Setup and stimulus                                                                                                  | Expected result                                                                                    | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-snapstore-1-dphpje.t1"></a>`INV-SNAPSTORE-1-DPHPJE.T1` | [`INV-SNAPSTORE-1-DPHPJE`](snapshots-and-states.md#inv-snapstore-1-dphpje) | Store and read snapshots and states by hash, including repeated stores.                                             | Exact round trips; repeated stores idempotent; absent keys return nothing.                         | <a id="inv-snapstore-1-dphpje.t1.p1"></a>`INV-SNAPSTORE-1-DPHPJE.T1.P1` — snapshot store round trip; <a id="inv-snapstore-1-dphpje.t1.p2"></a>`INV-SNAPSTORE-1-DPHPJE.T1.P2` — repeated store; <a id="inv-snapstore-1-dphpje.t1.p3"></a>`INV-SNAPSTORE-1-DPHPJE.T1.P3` — absent key; <a id="inv-snapstore-1-dphpje.t1.p4"></a>`INV-SNAPSTORE-1-DPHPJE.T1.P4` — state store round trip.                                                                                                                                                                                                               |
+| <a id="req-snapstore-1-ajw0hj.t1"></a>`REQ-SNAPSTORE-1-AJW0HJ.T1` | [`REQ-SNAPSTORE-1-AJW0HJ`](snapshots-and-states.md#req-snapstore-1-ajw0hj) | Register fork geneses, repeat, and attempt a conflicting genesis for a known fork id.                               | Idempotent registration; conflicting registration refused with the original intact.                | <a id="req-snapstore-1-ajw0hj.t1.p1"></a>`REQ-SNAPSTORE-1-AJW0HJ.T1.P1` — register/read; <a id="req-snapstore-1-ajw0hj.t1.p2"></a>`REQ-SNAPSTORE-1-AJW0HJ.T1.P2` — idempotent repeat; <a id="req-snapstore-1-ajw0hj.t1.p3"></a>`REQ-SNAPSTORE-1-AJW0HJ.T1.P3` — conflict refused.                                                                                                                                                                                                                                                                                                                    |
+| <a id="req-snapstore-2-q7e6tq.t1"></a>`REQ-SNAPSTORE-2-Q7E6TQ.T1` | [`REQ-SNAPSTORE-2-Q7E6TQ`](snapshots-and-states.md#req-snapstore-2-q7e6tq) | Perform coordinate reads with each join link present and absent, including negative heights and participant unions. | Complete joins resolve; any missing link returns nothing; genesis resolution and unions are exact. | <a id="req-snapstore-2-q7e6tq.t1.p1"></a>`REQ-SNAPSTORE-2-Q7E6TQ.T1.P1` — full join; <a id="req-snapstore-2-q7e6tq.t1.p2"></a>`REQ-SNAPSTORE-2-Q7E6TQ.T1.P2` — absent block; <a id="req-snapstore-2-q7e6tq.t1.p3"></a>`REQ-SNAPSTORE-2-Q7E6TQ.T1.P3` — negative height → genesis; <a id="req-snapstore-2-q7e6tq.t1.p4"></a>`REQ-SNAPSTORE-2-Q7E6TQ.T1.P4` — participant union across a membership change; <a id="req-snapstore-2-q7e6tq.t1.p5"></a>`REQ-SNAPSTORE-2-Q7E6TQ.T1.P5` — absent snapshot; <a id="req-snapstore-2-q7e6tq.t1.p6"></a>`REQ-SNAPSTORE-2-Q7E6TQ.T1.P6` — absent encoded state. |
 
 ## Future Work
 

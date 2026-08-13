@@ -3,6 +3,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { REQUIREMENT_PATTERN } = require("./shared/id-utils");
 const { buildDocumentationGraph } = require("./shared/documentation-graph");
 const {
     parseReportArgs,
@@ -10,7 +11,7 @@ const {
     writeOrCheckReport
 } = require("./shared/report-utils");
 
-const PERM_OWNER_RE = /^((?:REQ|INV)-[A-Z0-9-]+-\d+)\./;
+const PERM_OWNER_RE = new RegExp(`^(${REQUIREMENT_PATTERN})\\.`);
 
 function generateVerificationCoverage(graph = buildDocumentationGraph()) {
     const output = path.join(graph.roots.generated, "verification-coverage.md");

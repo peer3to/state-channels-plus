@@ -21,9 +21,9 @@ verified in both directions by constructing a snapshot whose `forkId` equals its
 does not affect the model's internal state. Out of scope: how snapshots are produced, stored, or
 validated (SnapshotUpdateService, StateSnapshotStorage, and contract facet suites). No test IDs
 are assignable here: the StateSnapshot implementation report defines no component test
-obligations, and even after atomization each `REQ-DATA-1` permutation is a malformed-input
+obligations, and even after atomization each [`REQ-DATA-1-1KNRQS`](../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) permutation is a malformed-input
 rejection case, which this happy-path suite does not attempt; the snapshot-struct canonical-form
-permutation (`INV-DATA-1.T1.P10`) requires equal-value encode identity and decode equality in one
+permutation ([`INV-DATA-1-F8CG0P.T1.P10`](../../../../specification/protocol-model/data-types.md#inv-data-1-f8cg0p.t1.p10)) requires equal-value encode identity and decode equality in one
 demonstration, which no single test here provides.
 
 ## Tests and covered test IDs

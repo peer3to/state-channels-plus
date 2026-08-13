@@ -41,9 +41,9 @@ executors implement.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                              | Specification IDs                                                                 |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [ADiamondStateMachine.ts](../../../../../../src/ADiamondStateMachine.ts) | [`INV-MIRROR-1`](../../../specification/enforcement/local-mirror.md#inv-mirror-1) |
+| Source file                                                              | Specification IDs                                                                               |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| [ADiamondStateMachine.ts](../../../../../../src/ADiamondStateMachine.ts) | [`INV-MIRROR-1-VAF778`](../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

@@ -19,7 +19,7 @@ on self-subtraction; `concatBytesArrays` preserves total length and element orde
 absent, and is idempotent; `areAddressArraysEqual` is reflexive and symmetric. The facet's
 signature-threshold verification, block decode, and genesis/ordering predicates are not touched
 here (the Hardhat `SignatureVerification.test.ts` suite covers the threshold path). The planned
-permutations `UNIT-TEST-UTILITY-FACET-1.P1`–`P8` all target those threshold/decode/predicate
+permutations [`UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md#unit-test-utility-facet-1-er4p0v.p1)–`P8` all target those threshold/decode/predicate
 surfaces, so none of them is covered by this array-helper suite and all rows stay unassigned.
 
 ## Tests and covered test IDs

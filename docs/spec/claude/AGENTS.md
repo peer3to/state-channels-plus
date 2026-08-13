@@ -13,6 +13,21 @@ These rules apply to every file under `docs/spec/claude/`. Read [README.md](./RE
 - Keep future work non-normative. Keep questions separate from demonstrated findings.
 - Preserve all stable `REQ-*`, `INV-*`, planned-test, `OQ-*`, and `DEF-*` IDs; never renumber on move.
 
+## Allocate and link IDs safely
+
+- Every independently allocated root ends in an immutable six-character Crockford Base32 suffix.
+  Keep the semantic stem readable, then allocate it with `yarn spec:id:new <stem>`; for example,
+  `yarn spec:id:new REQ-X-10`. Never choose, copy, or edit the random suffix manually.
+- Planned-test (`.T<n>`) and permutation (`.P<n>`) children inherit their root suffix. Number
+  children contiguously within the owning table; concurrent changes to that same table must resolve
+  the ordinary Git conflict.
+- At the one canonical definition, keep the ID as unlinked inline code with its explicit anchor.
+  Every other concrete ID occurrence must be a linked inline-code label pointing to that anchor.
+- After changing IDs or references, run `yarn spec:ids:fix`, inspect the link changes, then run
+  `yarn spec:refresh`. The refresh includes `yarn spec:ids:check` and fails on legacy IDs,
+  collisions, undefined IDs, duplicate definitions or anchors, unlinked references, and wrong
+  targets.
+
 ## Maintain all four layers
 
 For every affected behavior:
@@ -40,8 +55,8 @@ Every implementation design view explicitly names exactly one `> **Specification
 near its title; views link file reports and never duplicate or replace them. If concrete
 documentation exposes behavior with no neutral requirement, add or amend the specification first.
 
-Specification test plans preserve their owning requirement ID: `INV-DA-1.T1`, with required
-permutations `INV-DA-1.T1.P1`, `.P2`, and so on. Implementation tests use independent identities:
+Specification test plans preserve their owning requirement ID: [`INV-DA-1-TS7HX2.T1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1), with required
+permutations [`INV-DA-1-TS7HX2.T1.P1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1.p1), `.P2`, and so on. Implementation tests use independent identities:
 `UNIT-TEST-*` for one inventoried source file and `INTEGRATION-TEST-*` for interactions among the
 files of one subsystem. Their requirement and specification-test mappings are optional; do not
 force an implementation-only behavior under an unrelated requirement. Each row states all inputs,
@@ -163,7 +178,7 @@ change, question/finding change, or audit disposition change:
 yarn spec:refresh
 ```
 
-This command runs every generator and schema audit in dependency order, formats the five reports, and then
+This command runs every generator, schema audit, and ID/link check in dependency order, formats the generated reports, and then
 reruns each generator in check mode. It never authors or repairs a specification, implementation, or
 verification subject. Agents must resolve each reported gap in the correct maintained layer or leave the
 genuine missing behavior/evidence explicit.

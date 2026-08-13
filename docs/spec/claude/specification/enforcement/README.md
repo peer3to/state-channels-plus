@@ -26,23 +26,23 @@ executes what the other systems prove; it never originates protocol decisions of
   block progression (calldata publication), and every node's chain observation.
 - **Trust and availability assumptions.** The base chain provides deterministic execution, ordering,
   and finality; deployment platform limits (code size, gas, calldata) constrain decomposition but
-  never weaken validation (`REQ-CONTRACT-ARCH-4`).
+  never weaken validation ([`REQ-CONTRACT-ARCH-4-FZ3CJE`](contracts.md#req-contract-arch-4-fz3cje)).
 - **Ordering and concurrency.** The chain serializes all inputs; protocol results must nevertheless
   be order-independent where the owning system requires it (dispute reduction, incremental range
   processing).
-- **Invariants (owned).** `INV-CONTRACT-ARCH-1`, `REQ-CONTRACT-ARCH-*`
+- **Invariants (owned).** [`INV-CONTRACT-ARCH-1-TWQHTM`](contracts.md#inv-contract-arch-1-twqhtm), `REQ-CONTRACT-ARCH-*`
   ([contracts.md](./contracts.md)). The *semantics* each operation enforces are owned by the
   invoking system's documents and cross-linked from the operation inventory.
 - **Failure and recovery outcomes.** Every public operation fails atomically; a rejected submission
   leaves prior state authoritative; internal-only operations reject direct external invocation
-  (`REQ-CONTRACT-ARCH-3`).
+  ([`REQ-CONTRACT-ARCH-3-GEGD78`](contracts.md#req-contract-arch-3-gegd78)).
 - **Resource bounds.** Mainnet code-size budget per deployable module, gas-bounded proof and
-  reduction inputs, and calldata-bounded evidence (`REQ-CONTRACT-ARCH-4`,
+  reduction inputs, and calldata-bounded evidence ([`REQ-CONTRACT-ARCH-4-FZ3CJE`](contracts.md#req-contract-arch-4-fz3cje),
   [../security/data-availability.md](../security/data-availability.md)).
 - **Verification evidence.** The requirement matrices in the owned documents below; the
-  adjudication and settlement edges are proven under [`REQ-IX-5`](../interactions.md#req-ix-5) and
-  [`REQ-IX-6`](../interactions.md#req-ix-6); the observation edge under
-  [`REQ-IX-7`](../interactions.md#req-ix-7); local/on-chain equivalence under
+  adjudication and settlement edges are proven under [`REQ-IX-5-6XHJJB`](../interactions.md#req-ix-5-6xhjjb) and
+  [`REQ-IX-6-A4Y7KB`](../settlement/README.md#req-ix-6-a4y7kb); the observation edge under
+  [`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz); local/on-chain equivalence under
   [local-mirror.md](./local-mirror.md).
 
 ## Owned documents
@@ -65,8 +65,8 @@ semantics to their owning protocol systems without restating their algorithms.
 
 ## Interaction contracts
 
-Consumer end of [`REQ-IX-5`](../interactions.md#req-ix-5) (dispute adjudication) and
-[`REQ-IX-6`](../interactions.md#req-ix-6) (snapshot adoption); producer of the chain-observation edge
-[`REQ-IX-7`](../interactions.md#req-ix-7) that feeds every node. The [local mirror](./local-mirror.md)
-is how consumers of `REQ-IX-7` avoid re-querying the chain for every read without ever trusting the
+Consumer end of [`REQ-IX-5-6XHJJB`](../interactions.md#req-ix-5-6xhjjb) (dispute adjudication) and
+[`REQ-IX-6-A4Y7KB`](../settlement/README.md#req-ix-6-a4y7kb) (snapshot adoption); producer of the chain-observation edge
+[`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz) that feeds every node. The [local mirror](./local-mirror.md)
+is how consumers of [`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz) avoid re-querying the chain for every read without ever trusting the
 cache as authority.

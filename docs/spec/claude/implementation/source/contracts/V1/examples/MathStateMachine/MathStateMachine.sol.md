@@ -40,9 +40,9 @@ join-or-top-up handling, and canonical single-struct serialization.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                    | Specification IDs                                                                       |
-| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [MathStateMachine.sol](../../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol) | [`REQ-SM-1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-1) |
+| Source file                                                                                                    | Specification IDs                                                                                     |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [MathStateMachine.sol](../../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol) | [`REQ-SM-1-Y72CKX`](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

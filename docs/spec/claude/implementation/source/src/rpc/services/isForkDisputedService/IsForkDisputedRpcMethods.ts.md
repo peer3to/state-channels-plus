@@ -40,9 +40,9 @@ check, local-then-chain dispute verification, record-and-confirm.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                                  | Specification IDs                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [IsForkDisputedRpcMethods.ts](../../../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts) | [`REQ-DACK-1`](../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1) |
+| Source file                                                                                                                  | Specification IDs                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [IsForkDisputedRpcMethods.ts](../../../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts) | [`REQ-DACK-1-ESEGGG`](../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1-eseggg) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Duplicate-as-violation on the answer side ([`REQ-DACK-1`](../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1)).
+- Duplicate-as-violation on the answer side ([`REQ-DACK-1-ESEGGG`](../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1-eseggg)).
 
 ## Specification contradictions
 
@@ -66,17 +66,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                 | Implementation status | Evidence                                                                                                                                     | Gap / divergence |
-| ------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DACK-1`](../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1) | Covered               | **Here:** answered-round dedup + violation. **Other files:** requester-side dedup in [IsForkDisputedService](./IsForkDisputedService.ts.md). | None.            |
+| Requirement / invariant                                                                                               | Implementation status | Evidence                                                                                                                                     | Gap / divergence |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-DACK-1-ESEGGG`](../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1-eseggg) | Covered               | **Here:** answered-round dedup + violation. **Other files:** requester-side dedup in [IsForkDisputedService](./IsForkDisputedService.ts.md). | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                            | Obligation             | Public entry and setup                      | Oracle and forbidden effects                            | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| --------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-is-fork-disputed-methods-1"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1` | Responder verification | Ask about disputed/undisputed forks; repeat | Truthful answers from own verification; repeats violate | <a id="unit-test-is-fork-disputed-methods-1.p1"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1.P1` — disputed confirm; <a id="unit-test-is-fork-disputed-methods-1.p2"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1.P2` — undisputed behavior; <a id="unit-test-is-fork-disputed-methods-1.p3"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1.P3` — chain-fallback path; <a id="unit-test-is-fork-disputed-methods-1.p4"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1.P4` — duplicate violation |
+| Unit test ID                                                                                          | Obligation             | Public entry and setup                      | Oracle and forbidden effects                            | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-is-fork-disputed-methods-1-jzbh4b"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B` | Responder verification | Ask about disputed/undisputed forks; repeat | Truthful answers from own verification; repeats violate | <a id="unit-test-is-fork-disputed-methods-1-jzbh4b.p1"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P1` — disputed confirm; <a id="unit-test-is-fork-disputed-methods-1-jzbh4b.p2"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P2` — undisputed behavior; <a id="unit-test-is-fork-disputed-methods-1-jzbh4b.p3"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P3` — chain-fallback path; <a id="unit-test-is-fork-disputed-methods-1-jzbh4b.p4"></a>`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P4` — duplicate violation |
 
 ## Related source reports
 

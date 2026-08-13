@@ -2,6 +2,7 @@
 "use strict";
 
 const path = require("node:path");
+const { QUESTION_PATTERN } = require("./shared/id-utils");
 const {
     buildDocumentationGraph,
     sorted,
@@ -27,7 +28,7 @@ function questionMetadata(graph) {
             if (idIndex < 0 || questionIndex < 0 || statusIndex < 0) continue;
             for (const row of table.rows) {
                 const id = row.cells[idIndex].match(
-                    /(?:OQ-\d+|OQ-(?:SPEC|IMPL|VER|AUDIT)-[A-Z0-9-]+)/
+                    new RegExp(QUESTION_PATTERN)
                 )?.[0];
                 if (!id) continue;
                 metadata.set(id, {

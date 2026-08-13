@@ -39,9 +39,9 @@ The top-level assembly: wires storage, managers, services, EVM, transports, and 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                   | Specification IDs |
-| ------------------------------------------------------------- | ----------------- |
-| [P2pInstance.ts](../../../../../../../src/evm/P2pInstance.ts) | `REQ-SDK-ARCH-2`  |
+| Source file                                                   | Specification IDs                                                                         |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [P2pInstance.ts](../../../../../../../src/evm/P2pInstance.ts) | [`REQ-SDK-ARCH-2-QBZAT8`](../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -65,9 +65,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                         | Implementation status | Evidence                                                                                                                                                                                                      | Gap / divergence                                                                                                |
-| ------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| [`REQ-RUNTIME-5`](../../../../specification/runtime/execution.md#req-runtime-5) | Covered               | **Here:** the assembly is host-neutral; every platform-conditional facility resolves through paired seams. **Other files:** the browser/node pairs (transports, channels, loaders, loggers, jumpdest caches). | None demonstrated; the both-host e2e capability matrix is a verification obligation, not an implementation gap. |
+| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                                                                      | Gap / divergence                                                                                                |
+| --------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| [`REQ-RUNTIME-5-WJ1XKK`](../../../../specification/runtime/execution.md#req-runtime-5-wj1xkk) | Covered               | **Here:** the assembly is host-neutral; every platform-conditional facility resolves through paired seams. **Other files:** the browser/node pairs (transports, channels, loaders, loggers, jumpdest caches). | None demonstrated; the both-host e2e capability matrix is a verification obligation, not an implementation gap. |
 
 ## Component test obligations
 

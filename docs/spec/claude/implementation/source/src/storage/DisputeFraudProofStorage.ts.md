@@ -41,9 +41,9 @@ retained per dispute, explicit first-write-wins.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                 | Specification IDs                                                                    |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [DisputeFraudProofStorage.ts](../../../../../../../src/storage/DisputeFraudProofStorage.ts) | [`REQ-DSTORE-3`](../../../../specification/storage/dispute-evidence.md#req-dstore-3) |
+| Source file                                                                                 | Specification IDs                                                                                  |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [DisputeFraudProofStorage.ts](../../../../../../../src/storage/DisputeFraudProofStorage.ts) | [`REQ-DSTORE-3-ZNXSTM`](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -53,7 +53,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Dispute-keyed, first-write-wins retention ([`REQ-DSTORE-3`](../../../../specification/storage/dispute-evidence.md#req-dstore-3)).
+- Dispute-keyed, first-write-wins retention ([`REQ-DSTORE-3-ZNXSTM`](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm)).
 
 ## Specification contradictions
 
@@ -69,17 +69,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                              | Implementation status | Evidence                                                                                                                                                                                                                              | Gap / divergence |
-| ------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DSTORE-3`](../../../../specification/storage/dispute-evidence.md#req-dstore-3) | Covered               | **Here:** dispute-hash keying with explicit first-write-wins ([#L26](../../../../../../../src/storage/DisputeFraudProofStorage.ts#L26)). **Other files:** [FraudProofStorage](./FraudProofStorage.ts.md) covers the block-proof half. | None.            |
+| Requirement / invariant                                                                            | Implementation status | Evidence                                                                                                                                                                                                                              | Gap / divergence |
+| -------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-DSTORE-3-ZNXSTM`](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm) | Covered               | **Here:** dispute-hash keying with explicit first-write-wins ([#L26](../../../../../../../src/storage/DisputeFraudProofStorage.ts#L26)). **Other files:** [FraudProofStorage](./FraudProofStorage.ts.md) covers the block-proof half. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                                  | Obligation                   | Public entry and setup                                                  | Oracle and forbidden effects                            | Required permutations                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-dispute-fraud-proof-storage-1"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1` | First-write-wins per dispute | Store proofs for a dispute, then a different proof for the same dispute | First retained; second dropped; lookup by dispute exact | <a id="unit-test-dispute-fraud-proof-storage-1.p1"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1.P1` — store/lookup; <a id="unit-test-dispute-fraud-proof-storage-1.p2"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1.P2` — second write dropped; <a id="unit-test-dispute-fraud-proof-storage-1.p3"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1.P3` — distinct disputes independent |
+| Unit test ID                                                                                                | Obligation                   | Public entry and setup                                                  | Oracle and forbidden effects                            | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-dispute-fraud-proof-storage-1-wfrdhk"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1-WFRDHK` | First-write-wins per dispute | Store proofs for a dispute, then a different proof for the same dispute | First retained; second dropped; lookup by dispute exact | <a id="unit-test-dispute-fraud-proof-storage-1-wfrdhk.p1"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1-WFRDHK.P1` — store/lookup; <a id="unit-test-dispute-fraud-proof-storage-1-wfrdhk.p2"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1-WFRDHK.P2` — second write dropped; <a id="unit-test-dispute-fraud-proof-storage-1-wfrdhk.p3"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-STORAGE-1-WFRDHK.P3` — distinct disputes independent |
 
 ## Related source reports
 

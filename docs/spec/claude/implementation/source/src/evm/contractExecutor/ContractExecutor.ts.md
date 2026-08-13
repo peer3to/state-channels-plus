@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                 | Specification IDs                                                                  |
-| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| [ContractExecutor.ts](../../../../../../../../src/evm/contractExecutor/ContractExecutor.ts) | [`INV-RUNTIME-1`](../../../../../specification/runtime/execution.md#inv-runtime-1) |
+| Source file                                                                                 | Specification IDs                                                                                |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [ContractExecutor.ts](../../../../../../../../src/evm/contractExecutor/ContractExecutor.ts) | [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

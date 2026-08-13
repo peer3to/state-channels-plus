@@ -40,9 +40,9 @@ the scheduling substrate for queue lifetimes, author timeouts, and calldata post
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                           | Specification IDs                                                               |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [TimeoutManager.ts](../../../../../../../src/utils/TimeoutManager.ts) | [`REQ-RUNTIME-3`](../../../../specification/runtime/execution.md#req-runtime-3) |
+| Source file                                                           | Specification IDs                                                                             |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [TimeoutManager.ts](../../../../../../../src/utils/TimeoutManager.ts) | [`REQ-RUNTIME-3-VQXW59`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Lifecycle-convergent scheduling ([`REQ-RUNTIME-3`](../../../../specification/runtime/execution.md#req-runtime-3)).
+- Lifecycle-convergent scheduling ([`REQ-RUNTIME-3-VQXW59`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)).
 
 ## Specification contradictions
 
@@ -66,17 +66,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                         | Implementation status | Evidence                           | Gap / divergence |
-| ------------------------------------------------------------------------------- | --------------------- | ---------------------------------- | ---------------- |
-| [`REQ-RUNTIME-3`](../../../../specification/runtime/execution.md#req-runtime-3) | Covered               | **Here:** cancel/dispose draining. | None.            |
+| Requirement / invariant                                                                       | Implementation status | Evidence                           | Gap / divergence |
+| --------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------- | ---------------- |
+| [`REQ-RUNTIME-3-VQXW59`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** cancel/dispose draining. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                          | Obligation           | Public entry and setup             | Oracle and forbidden effects                             | Required permutations                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------------------------------------- | -------------------- | ---------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-timeout-manager-1"></a>`UNIT-TEST-TIMEOUT-MANAGER-1` | Scheduling lifecycle | Schedule/cancel/dispose under load | Exactly-once firing or cancellation; disposal drains all | <a id="unit-test-timeout-manager-1.p1"></a>`UNIT-TEST-TIMEOUT-MANAGER-1.P1` — fire; <a id="unit-test-timeout-manager-1.p2"></a>`UNIT-TEST-TIMEOUT-MANAGER-1.P2` — cancel; <a id="unit-test-timeout-manager-1.p3"></a>`UNIT-TEST-TIMEOUT-MANAGER-1.P3` — dispose drain; <a id="unit-test-timeout-manager-1.p4"></a>`UNIT-TEST-TIMEOUT-MANAGER-1.P4` — reschedule patterns |
+| Unit test ID                                                                        | Obligation           | Public entry and setup             | Oracle and forbidden effects                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------------- | -------------------- | ---------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-timeout-manager-1-jngdyk"></a>`UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK` | Scheduling lifecycle | Schedule/cancel/dispose under load | Exactly-once firing or cancellation; disposal drains all | <a id="unit-test-timeout-manager-1-jngdyk.p1"></a>`UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P1` — fire; <a id="unit-test-timeout-manager-1-jngdyk.p2"></a>`UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P2` — cancel; <a id="unit-test-timeout-manager-1-jngdyk.p3"></a>`UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P3` — dispose drain; <a id="unit-test-timeout-manager-1-jngdyk.p4"></a>`UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P4` — reschedule patterns |
 
 ## Related source reports
 

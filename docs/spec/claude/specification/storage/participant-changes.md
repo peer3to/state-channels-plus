@@ -18,14 +18,13 @@
 ## Purpose and data model
 
 State proofs crossing a membership change need a milestone hop at exactly the changing block
-([state-proofs.md](../disputes/state-proofs.md), `REQ-SP-3`). This module records the change
+([state-proofs.md](../disputes/state-proofs.md), [`REQ-SP-3-SP1JG4`](../disputes/state-proofs.md#req-sp-3-sp1jg4)). This module records the change
 points — per fork, the set of heights where the participant set changed — so proof construction can
 enumerate the hops in a range without replaying history.
 
 ## Requirements and invariants
 
-<a id="req-pscstore-1"></a>
-**REQ-PSCSTORE-1 — Complete ordered change points.** Recording a change point is idempotent per
+**[`REQ-PSCSTORE-1-7BDTEV`](participant-changes.md#req-pscstore-1-7bdtev) — Complete ordered change points.** Recording a change point is idempotent per
 (fork, height). Range reads return the change points ascending by height; an open start defaults to
 the earliest recorded point, an open end to the latest, and an empty or inverted range returns
 nothing. A missed change point makes downstream proofs unbuildable, so the producing pipeline MUST
@@ -33,9 +32,9 @@ record every membership-changing block it commits.
 
 This table is the normative requirement index. Detailed rules and rationale are defined above.
 
-| Requirement / invariant | Statement                                                                   |
-| ----------------------- | --------------------------------------------------------------------------- |
-| `REQ-PSCSTORE-1`        | Idempotent per-(fork, height) recording; ascending, bound-defaulted ranges. |
+| Requirement / invariant                                   | Statement                                                                   |
+| --------------------------------------------------------- | --------------------------------------------------------------------------- |
+| <a id="req-pscstore-1-7bdtev"></a>`REQ-PSCSTORE-1-7BDTEV` | Idempotent per-(fork, height) recording; ascending, bound-defaulted ranges. |
 
 ## Assumptions and constraints
 
@@ -54,9 +53,9 @@ secrecy — completeness is the security property.
 
 ### Requirement test matrix
 
-| Plan item                                         | Requirements / invariants | Setup and stimulus                                                                           | Expected result                                                                          | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-pscstore-1-t1"></a>`REQ-PSCSTORE-1.T1` | `REQ-PSCSTORE-1`          | Record change points (with duplicates, out of order) and read ranges with every bound shape. | Ascending, deduplicated results; defaults honored; empty/inverted ranges return nothing. | <a id="req-pscstore-1-t1-p1"></a>`REQ-PSCSTORE-1.T1.P1` — out-of-order recording; <a id="req-pscstore-1-t1-p2"></a>`REQ-PSCSTORE-1.T1.P2` — open start defaults to earliest; <a id="req-pscstore-1-t1-p3"></a>`REQ-PSCSTORE-1.T1.P3` — inverted/empty range; <a id="req-pscstore-1-t1-p4"></a>`REQ-PSCSTORE-1.T1.P4` — per-fork isolation; <a id="req-pscstore-1-t1-p5"></a>`REQ-PSCSTORE-1.T1.P5` — duplicate recording idempotent; <a id="req-pscstore-1-t1-p6"></a>`REQ-PSCSTORE-1.T1.P6` — open end defaults to latest; <a id="req-pscstore-1-t1-p7"></a>`REQ-PSCSTORE-1.T1.P7` — closed bounds. |
+| Plan item                                                       | Requirements / invariants                                               | Setup and stimulus                                                                           | Expected result                                                                          | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="req-pscstore-1-7bdtev.t1"></a>`REQ-PSCSTORE-1-7BDTEV.T1` | [`REQ-PSCSTORE-1-7BDTEV`](participant-changes.md#req-pscstore-1-7bdtev) | Record change points (with duplicates, out of order) and read ranges with every bound shape. | Ascending, deduplicated results; defaults honored; empty/inverted ranges return nothing. | <a id="req-pscstore-1-7bdtev.t1.p1"></a>`REQ-PSCSTORE-1-7BDTEV.T1.P1` — out-of-order recording; <a id="req-pscstore-1-7bdtev.t1.p2"></a>`REQ-PSCSTORE-1-7BDTEV.T1.P2` — open start defaults to earliest; <a id="req-pscstore-1-7bdtev.t1.p3"></a>`REQ-PSCSTORE-1-7BDTEV.T1.P3` — inverted/empty range; <a id="req-pscstore-1-7bdtev.t1.p4"></a>`REQ-PSCSTORE-1-7BDTEV.T1.P4` — per-fork isolation; <a id="req-pscstore-1-7bdtev.t1.p5"></a>`REQ-PSCSTORE-1-7BDTEV.T1.P5` — duplicate recording idempotent; <a id="req-pscstore-1-7bdtev.t1.p6"></a>`REQ-PSCSTORE-1-7BDTEV.T1.P6` — open end defaults to latest; <a id="req-pscstore-1-7bdtev.t1.p7"></a>`REQ-PSCSTORE-1-7BDTEV.T1.P7` — closed bounds. |
 
 ## Future Work
 

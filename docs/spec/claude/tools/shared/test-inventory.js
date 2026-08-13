@@ -3,6 +3,10 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
+const {
+    IMPLEMENTATION_PERMUTATION_PATTERN,
+    SPECIFICATION_PERMUTATION_PATTERN
+} = require("./id-utils");
 
 const TEST_FILE_RE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?|\.t\.sol)$/;
 const TEST_ENTRYPOINT_RE =
@@ -12,8 +16,10 @@ const TEST_ENTRYPOINT_RE =
 const COVERS_ROW_RE =
     /^\|\s*\[.+?\]\(([^)#]+)#L(\d+)\)\s*\(line (\d+)\)\s*\|\s*(.*?)\s*\|\s*$/;
 // Only whole permutation IDs are assignable as covered test IDs.
-const COVERS_ID_RE =
-    /(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\.P\d+|(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+?\.P\d+/g;
+const COVERS_ID_RE = new RegExp(
+    `${SPECIFICATION_PERMUTATION_PATTERN}|${IMPLEMENTATION_PERMUTATION_PATTERN}`,
+    "g"
+);
 const IGNORE_MARKER = "@spec-test-coverage-ignore";
 const VALID_IGNORE_RE = /^\s*\/\/\s*@spec-test-coverage-ignore:\s*(\S.*)$/;
 const SUITE_CALLS = new Set(["context", "describe", "suite"]);

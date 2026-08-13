@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                               | Specification IDs                                                                     |
-| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [P2pRuntimeWorkerEntry.ts](../../../../../../../../../src/evm/p2pRuntime/worker/P2pRuntimeWorkerEntry.ts) | [`REQ-RUNTIME-4`](../../../../../../specification/runtime/execution.md#req-runtime-4) |
+| Source file                                                                                               | Specification IDs                                                                                   |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [P2pRuntimeWorkerEntry.ts](../../../../../../../../../src/evm/p2pRuntime/worker/P2pRuntimeWorkerEntry.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

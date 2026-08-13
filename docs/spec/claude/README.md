@@ -63,6 +63,14 @@ Knowledge flows only from left to right:
 Follow the IDs — via the generated traceability views — for the full picture of any behavior. A later layer may refine or expose a gap in an
 earlier one, but it may not silently redefine it.
 
+Root IDs combine a readable semantic stem with an immutable six-character Crockford Base32 suffix,
+for example [`INV-DA-1-TS7HX2`](specification/security/data-availability.md#inv-da-1-ts7hx2). The suffix prevents collisions when separate branches allocate the
+same readable ordinal. Planned tests and permutations inherit that namespace (`.T1`, `.T1.P1`),
+so the hierarchy remains short and readable. Allocate roots with
+`yarn spec:id:new REQ-X-10`; do not hand-author the suffix. The defining occurrence is plain
+inline code with a stable anchor, while every other concrete occurrence links to that definition.
+`yarn spec:ids:fix` normalizes authored links and `yarn spec:ids:check` verifies the complete tree.
+
 Supporting infrastructure:
 
 - [Governance](./governance.md) defines IDs, ownership, approval, change, and acceptance rules.
@@ -97,7 +105,8 @@ yarn spec:refresh
 Run it after changing a requirement, planned permutation, source inventory/report, implementation test plan,
 verification mapping, test declaration, open question, finding, or audit state. Review all five generated
 files; a successful refresh means the documents are parseable and the reports are deterministic, not that
-the system is complete. Run the command a second time when changing the generators and confirm it produces no
+the system is complete. It also rejects legacy or colliding IDs, missing or duplicate definition
+anchors, undefined or unlinked references, and links to the wrong definition. Run the command a second time when changing the generators and confirm it produces no
 further diff. Never hand-edit `generated/`.
 
 Before committing, deterministically list every requirement path affected by the working tree or staged
@@ -132,8 +141,8 @@ It fails while mirrors, test plans, mappings, links, decisions, findings, or cur
 
 Every specification subject contains a contents menu, the neutral observable model, requirements/invariants,
 assumptions and constraints, security considerations, and a verification/test plan. Each planned test keeps
-the requirement identity (`REQ-X-1.T1`) and enumerates independently checkable permutations
-(`REQ-X-1.T1.P1` … `.PN`).
+the requirement identity ([`INV-DA-1-TS7HX2.T1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1)) and enumerates independently checkable permutations
+([`INV-DA-1-TS7HX2.T1.P1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1.p1) … `.PN`).
 
 Every implementation subject contains, in order, an implementation overview, assumptions and constraints,
 system design, system integration test plan, source inventory with one source report and unit-test plan per
@@ -159,7 +168,7 @@ The intended path for every normative behavior is:
 
 ```text
 REQ-* / INV-*
-    -> planned test items such as INV-SM-1.T1
+    -> planned test items such as INV-SM-1-J7BP6D.T1
     -> implementation traceability
     -> test traceability for every required permutation
     -> exact automated test declarations

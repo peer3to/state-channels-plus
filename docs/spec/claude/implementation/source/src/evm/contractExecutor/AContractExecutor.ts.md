@@ -23,7 +23,7 @@ The executor abstraction: the typed operation surface both inline and worker exe
 
 ## Key design decisions
 
-1. **Transport-neutral interface** — callers cannot tell inline from worker ([`INV-RUNTIME-1`](../../../../../specification/runtime/execution.md#inv-runtime-1)).
+1. **Transport-neutral interface** — callers cannot tell inline from worker ([`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -39,9 +39,9 @@ The executor abstraction: the typed operation surface both inline and worker exe
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                   | Specification IDs                                                                  |
-| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| [AContractExecutor.ts](../../../../../../../../src/evm/contractExecutor/AContractExecutor.ts) | [`INV-RUNTIME-1`](../../../../../specification/runtime/execution.md#inv-runtime-1) |
+| Source file                                                                                   | Specification IDs                                                                                |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [AContractExecutor.ts](../../../../../../../../src/evm/contractExecutor/AContractExecutor.ts) | [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

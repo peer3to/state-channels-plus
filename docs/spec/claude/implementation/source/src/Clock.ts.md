@@ -24,7 +24,7 @@ The chain-time tracker: the node's protocol clock derived from observed block ti
 
 ## Key design decisions
 
-1. **Local wall time is never protocol time** — consumers read the chain-derived clock ([`REQ-TIME-1`](../../../specification/protocol-model/time.md#req-time-1)).
+1. **Local wall time is never protocol time** — consumers read the chain-derived clock ([`REQ-TIME-1-FM4651`](../../../specification/protocol-model/time.md#req-time-1-fm4651)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +40,9 @@ The chain-time tracker: the node's protocol clock derived from observed block ti
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                | Specification IDs                                                        |
-| ------------------------------------------ | ------------------------------------------------------------------------ |
-| [Clock.ts](../../../../../../src/Clock.ts) | [`REQ-TIME-1`](../../../specification/protocol-model/time.md#req-time-1) |
+| Source file                                | Specification IDs                                                                      |
+| ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| [Clock.ts](../../../../../../src/Clock.ts) | [`REQ-TIME-1-FM4651`](../../../specification/protocol-model/time.md#req-time-1-fm4651) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

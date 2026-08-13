@@ -43,9 +43,9 @@ index for construction-time lookup.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                   | Specification IDs                                                                    |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [FraudProofStorage.ts](../../../../../../../src/storage/FraudProofStorage.ts) | [`REQ-DSTORE-3`](../../../../specification/storage/dispute-evidence.md#req-dstore-3) |
+| Source file                                                                   | Specification IDs                                                                                  |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [FraudProofStorage.ts](../../../../../../../src/storage/FraudProofStorage.ts) | [`REQ-DSTORE-3-ZNXSTM`](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -55,7 +55,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Content-addressed proofs with consistent participant index ([`REQ-DSTORE-3`](../../../../specification/storage/dispute-evidence.md#req-dstore-3)).
+- Content-addressed proofs with consistent participant index ([`REQ-DSTORE-3-ZNXSTM`](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm)).
 
 ## Specification contradictions
 
@@ -71,17 +71,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                              | Implementation status | Evidence                                                                                                                                                                                                                                           | Gap / divergence |
-| ------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DSTORE-3`](../../../../specification/storage/dispute-evidence.md#req-dstore-3) | Covered               | **Here:** hash-keyed store + set-backed index ([#L18](../../../../../../../src/storage/FraudProofStorage.ts#L18)). **Other files:** [DisputeFraudProofStorage](./DisputeFraudProofStorage.ts.md) covers the dispute-proof half of the requirement. | None.            |
+| Requirement / invariant                                                                            | Implementation status | Evidence                                                                                                                                                                                                                                           | Gap / divergence |
+| -------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-DSTORE-3-ZNXSTM`](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm) | Covered               | **Here:** hash-keyed store + set-backed index ([#L18](../../../../../../../src/storage/FraudProofStorage.ts#L18)). **Other files:** [DisputeFraudProofStorage](./DisputeFraudProofStorage.ts.md) covers the dispute-proof half of the requirement. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                  | Obligation      | Public entry and setup                                  | Oracle and forbidden effects                                                                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------------------------------------------------------------- | --------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-fraud-proof-storage-1"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1` | Store and index | Store proofs incl. repeats and multiple per participant | Round trips exact; repeats idempotent; index returns a stored proof for exactly the indexed participants | <a id="unit-test-fraud-proof-storage-1.p1"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1.P1` — store/read by hash; <a id="unit-test-fraud-proof-storage-1.p2"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1.P2` — repeat idempotent; <a id="unit-test-fraud-proof-storage-1.p3"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1.P3` — multiple proofs one participant; <a id="unit-test-fraud-proof-storage-1.p4"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1.P4` — unindexed participant absent |
+| Unit test ID                                                                                | Obligation      | Public entry and setup                                  | Oracle and forbidden effects                                                                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-fraud-proof-storage-1-xjahws"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS` | Store and index | Store proofs incl. repeats and multiple per participant | Round trips exact; repeats idempotent; index returns a stored proof for exactly the indexed participants | <a id="unit-test-fraud-proof-storage-1-xjahws.p1"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P1` — store/read by hash; <a id="unit-test-fraud-proof-storage-1-xjahws.p2"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P2` — repeat idempotent; <a id="unit-test-fraud-proof-storage-1-xjahws.p3"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P3` — multiple proofs one participant; <a id="unit-test-fraud-proof-storage-1-xjahws.p4"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P4` — unindexed participant absent |
 
 ## Related source reports
 

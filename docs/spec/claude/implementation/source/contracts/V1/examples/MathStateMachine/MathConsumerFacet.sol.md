@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                      | Specification IDs                                                                                  |
-| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| [MathConsumerFacet.sol](../../../../../../../../../contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol) | [`REQ-ENFSM-2`](../../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2) |
+| Source file                                                                                                      | Specification IDs                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [MathConsumerFacet.sol](../../../../../../../../../contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol) | [`REQ-ENFSM-2-G4HBKG`](../../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

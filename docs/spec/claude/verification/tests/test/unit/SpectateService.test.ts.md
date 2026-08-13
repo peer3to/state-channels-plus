@@ -22,8 +22,8 @@ recovery path. The second suppresses every dispute event so the local mirror sti
 fork undisputed while the chain says it is, and asserts the payload walk takes the disputed flag
 from the chain: the call returns `null` rather than proving a disputed, already-reducible fork as
 the tip. The suite does not exercise the planned obligation permutations for this component — the
-requester verification chain (`UNIT-TEST-SPECTATE-SERVICE-1`) and responder target proving
-(`UNIT-TEST-SPECTATE-SERVICE-2`) — so no test IDs are assigned here; both scenarios sit outside
+requester verification chain ([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT`](../../../../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct)) and responder target proving
+([`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD`](../../../../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd)) — so no test IDs are assigned here; both scenarios sit outside
 those tables.
 
 ## Tests and covered test IDs

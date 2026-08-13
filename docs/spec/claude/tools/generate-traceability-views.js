@@ -9,6 +9,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { REQUIREMENT_PATTERN } = require("./shared/id-utils");
 const { buildDocumentationGraph } = require("./shared/documentation-graph");
 const {
     parseReportArgs,
@@ -16,8 +17,8 @@ const {
     writeOrCheckReport
 } = require("./shared/report-utils");
 
-const ID_RE = /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\b/g;
-const PERM_OWNER_RE = /^((?:REQ|INV)-[A-Z0-9-]+-\d+)\.T\d+\.P\d+$/;
+const ID_RE = new RegExp(REQUIREMENT_PATTERN, "g");
+const PERM_OWNER_RE = new RegExp(`^(${REQUIREMENT_PATTERN})\\.T\\d+\\.P\\d+$`);
 
 function testReportPath(graph, target) {
     return path.join(

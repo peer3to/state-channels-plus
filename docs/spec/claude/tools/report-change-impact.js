@@ -3,6 +3,10 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+    REQUIREMENT_PATTERN,
+    SPECIFICATION_PLAN_PATTERN
+} = require("./shared/id-utils");
 const { execFileSync } = require("node:child_process");
 const {
     buildDocumentationGraph,
@@ -12,8 +16,11 @@ const {
     sorted
 } = require("./shared/documentation-graph");
 
-const REQUIREMENT_GLOBAL_RE = /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\b/g;
-const PLAN_GLOBAL_RE = /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+(?:\.P\d+)?\b/g;
+const REQUIREMENT_GLOBAL_RE = new RegExp(REQUIREMENT_PATTERN, "g");
+const PLAN_GLOBAL_RE = new RegExp(
+    `${SPECIFICATION_PLAN_PATTERN}(?:\\.P\\d+)?`,
+    "g"
+);
 
 function fail(message) {
     process.stderr.write(`${message}\n`);

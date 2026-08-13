@@ -33,7 +33,7 @@ algorithms.
 - **Resource bounds.** Partition size (full mesh, ≤ ~10 participants), calldata cost, and the
   griefing exposure quantified in [data-availability.md](./data-availability.md).
 - **Verification evidence.** The completeness review is a standing obligation tracked by the audit
-  layer (`REQ-SEC-1`); adversarial families in every owned matrix; system-level strategy in
+  layer ([`REQ-SEC-1-SNS1GA`](../../audit/security-assessment.md#req-sec-1-sns1ga)); adversarial families in every owned matrix; system-level strategy in
   [../README.md](../README.md).
 
 ## Owned documents

@@ -39,9 +39,9 @@ Holepunch (hyperswarm) discovery/NAT-traversal wiring producing bootstrap transp
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                        | Specification IDs                                                            |
-| -------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [Holepunch.ts](../../../../../../src/Holepunch.ts) | [`REQ-RUNTIME-4`](../../../specification/runtime/execution.md#req-runtime-4) |
+| Source file                                        | Specification IDs                                                                          |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [Holepunch.ts](../../../../../../src/Holepunch.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

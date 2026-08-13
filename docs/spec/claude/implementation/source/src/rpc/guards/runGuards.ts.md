@@ -40,9 +40,9 @@ Sequential guard evaluation: declaration order, short-circuit on first failure, 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                         | Specification IDs                                                               |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [runGuards.ts](../../../../../../../../src/rpc/guards/runGuards.ts) | [`REQ-RPC-7`](../../../../../specification/peer-communication/rpc.md#req-rpc-7) |
+| Source file                                                         | Specification IDs                                                                             |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [runGuards.ts](../../../../../../../../src/rpc/guards/runGuards.ts) | [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Declaration-order short-circuit ([`REQ-RPC-7`](../../../../../specification/peer-communication/rpc.md#req-rpc-7)).
+- Declaration-order short-circuit ([`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)).
 
 ## Specification contradictions
 
@@ -66,17 +66,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                         | Implementation status | Evidence                                                                                                          | Gap / divergence |
-| ------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RPC-7`](../../../../../specification/peer-communication/rpc.md#req-rpc-7) | Covered               | **Here:** the ordering/short-circuit semantics ([#L10](../../../../../../../../src/rpc/guards/runGuards.ts#L10)). | None.            |
+| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                          | Gap / divergence |
+| --------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Covered               | **Here:** the ordering/short-circuit semantics ([#L10](../../../../../../../../src/rpc/guards/runGuards.ts#L10)). | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                | Obligation                 | Public entry and setup                        | Oracle and forbidden effects                                                       | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------------- | -------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-run-guards-1"></a>`UNIT-TEST-RUN-GUARDS-1` | Ordering and short-circuit | Three probe guards with each failing position | Later guards unevaluated after a failure; exactly one onFailure; empty list passes | <a id="unit-test-run-guards-1.p1"></a>`UNIT-TEST-RUN-GUARDS-1.P1` — first guard fails; <a id="unit-test-run-guards-1.p2"></a>`UNIT-TEST-RUN-GUARDS-1.P2` — all pass; <a id="unit-test-run-guards-1.p3"></a>`UNIT-TEST-RUN-GUARDS-1.P3` — empty list; <a id="unit-test-run-guards-1.p4"></a>`UNIT-TEST-RUN-GUARDS-1.P4` — middle guard fails; <a id="unit-test-run-guards-1.p5"></a>`UNIT-TEST-RUN-GUARDS-1.P5` — last guard fails |
+| Unit test ID                                                              | Obligation                 | Public entry and setup                        | Oracle and forbidden effects                                                       | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------- | -------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-run-guards-1-ts1wht"></a>`UNIT-TEST-RUN-GUARDS-1-TS1WHT` | Ordering and short-circuit | Three probe guards with each failing position | Later guards unevaluated after a failure; exactly one onFailure; empty list passes | <a id="unit-test-run-guards-1-ts1wht.p1"></a>`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P1` — first guard fails; <a id="unit-test-run-guards-1-ts1wht.p2"></a>`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P2` — all pass; <a id="unit-test-run-guards-1-ts1wht.p3"></a>`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P3` — empty list; <a id="unit-test-run-guards-1-ts1wht.p4"></a>`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P4` — middle guard fails; <a id="unit-test-run-guards-1-ts1wht.p5"></a>`UNIT-TEST-RUN-GUARDS-1-TS1WHT.P5` — last guard fails |
 
 ## Related source reports
 

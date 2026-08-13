@@ -3,6 +3,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { REQUIREMENT_PATTERN } = require("./shared/id-utils");
 const {
     buildDocumentationGraph,
     tableRows
@@ -13,7 +14,7 @@ const {
     writeOrCheckReport
 } = require("./shared/report-utils");
 
-const ID_RE = /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\b/g;
+const ID_RE = new RegExp(REQUIREMENT_PATTERN, "g");
 
 // Collect per-requirement implementation statuses from every conformance table
 // (`Requirement / invariant | Implementation status | ...`) in the implementation layer.

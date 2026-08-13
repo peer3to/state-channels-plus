@@ -40,17 +40,17 @@ the named or default export and forwarding serializable options.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                             | Specification IDs                                                               |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [resolveCustomRpcManifest.ts](../../../../../../../src/rpc/resolveCustomRpcManifest.ts) | [`REQ-RUNTIME-4`](../../../../specification/runtime/execution.md#req-runtime-4) |
+| Source file                                                                             | Specification IDs                                                                             |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [resolveCustomRpcManifest.ts](../../../../../../../src/rpc/resolveCustomRpcManifest.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- The platform loader abstracts Node/browser import differences ([`REQ-RUNTIME-4`](../../../../specification/runtime/execution.md#req-runtime-4)).
+- The platform loader abstracts Node/browser import differences ([`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Specification adherence
 
-- Platform-neutral loading through the delegated loader ([`REQ-RUNTIME-4`](../../../../specification/runtime/execution.md#req-runtime-4)).
+- Platform-neutral loading through the delegated loader ([`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Specification contradictions
 
@@ -66,17 +66,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                         | Implementation status | Evidence                                                                                                                | Gap / divergence |
-| ------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RUNTIME-4`](../../../../specification/runtime/execution.md#req-runtime-4) | Covered               | **Here:** loader delegation + export validation. **Other files:** [moduleLoader](../utils/moduleLoader/) platform pair. | None.            |
+| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                | Gap / divergence |
+| --------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** loader delegation + export validation. **Other files:** [moduleLoader](../utils/moduleLoader/) platform pair. | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                | Obligation          | Public entry and setup                                             | Oracle and forbidden effects                                                     | Required permutations                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-resolve-custom-rpc-1"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1` | Manifest resolution | Resolve default/named/missing/non-function exports and no manifest | Constructors returned with options; non-function throws; no manifest → undefined | <a id="unit-test-resolve-custom-rpc-1.p1"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1.P1` — default export; <a id="unit-test-resolve-custom-rpc-1.p2"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1.P2` — named export; <a id="unit-test-resolve-custom-rpc-1.p3"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1.P3` — non-function throws; <a id="unit-test-resolve-custom-rpc-1.p4"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1.P4` — absent manifest |
+| Unit test ID                                                                              | Obligation          | Public entry and setup                                             | Oracle and forbidden effects                                                     | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-resolve-custom-rpc-1-tq6bp6"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1-TQ6BP6` | Manifest resolution | Resolve default/named/missing/non-function exports and no manifest | Constructors returned with options; non-function throws; no manifest → undefined | <a id="unit-test-resolve-custom-rpc-1-tq6bp6.p1"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1-TQ6BP6.P1` — default export; <a id="unit-test-resolve-custom-rpc-1-tq6bp6.p2"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1-TQ6BP6.P2` — named export; <a id="unit-test-resolve-custom-rpc-1-tq6bp6.p3"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1-TQ6BP6.P3` — non-function throws; <a id="unit-test-resolve-custom-rpc-1-tq6bp6.p4"></a>`UNIT-TEST-RESOLVE-CUSTOM-RPC-1-TQ6BP6.P4` — absent manifest |
 
 ## Related source reports
 

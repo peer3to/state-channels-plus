@@ -24,7 +24,7 @@ carrying protocol traffic, and reports the WebRTC transport type for preference 
 
 ## Key design decisions
 
-1. **Re-authentication is built into the wrapper** — signaling produced connectivity, the transport proves identity ([`REQ-UPG-2`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-2)).
+1. **Re-authentication is built into the wrapper** — signaling produced connectivity, the transport proves identity ([`REQ-UPG-2-WH7BC7`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +40,9 @@ carrying protocol traffic, and reports the WebRTC transport type for preference 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                 | Specification IDs                                                                          |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [WebRTCTransport.ts](../../../../../../../src/transport/WebRTCTransport.ts) | [`REQ-UPG-2`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-2) |
+| Source file                                                                 | Specification IDs                                                                                        |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [WebRTCTransport.ts](../../../../../../../src/transport/WebRTCTransport.ts) | [`REQ-UPG-2-WH7BC7`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

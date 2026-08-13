@@ -40,9 +40,9 @@ validation chain with the sender transport bound.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                  | Specification IDs                                                                                         |
-| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| [JoinChannelRpcMethods.ts](../../../../../../../../../src/rpc/services/joinChannel/JoinChannelRpcMethods.ts) | [`REQ-JOINSIG-3`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-3) |
+| Source file                                                                                                  | Specification IDs                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| [JoinChannelRpcMethods.ts](../../../../../../../../../src/rpc/services/joinChannel/JoinChannelRpcMethods.ts) | [`REQ-JOINSIG-3-VAGFVD`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-3-vagfvd) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Penalty-free error surface ([`REQ-JOINSIG-3`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-3)).
+- Penalty-free error surface ([`REQ-JOINSIG-3-VAGFVD`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-3-vagfvd)).
 
 ## Specification contradictions
 
@@ -66,17 +66,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                   | Implementation status | Evidence                                                                                            | Gap / divergence |
-| --------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-JOINSIG-3`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-3) | Covered               | **Here:** request-error mapping. **Other files:** [JoinChannelService](./JoinChannelService.ts.md). | None.            |
+| Requirement / invariant                                                                                                 | Implementation status | Evidence                                                                                            | Gap / divergence |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-JOINSIG-3-VAGFVD`](../../../../../../specification/peer-communication/join-authorization.md#req-joinsig-3-vagfvd) | Covered               | **Here:** request-error mapping. **Other files:** [JoinChannelService](./JoinChannelService.ts.md). | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                    | Obligation       | Public entry and setup     | Oracle and forbidden effects              | Required permutations                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------- | ---------------- | -------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-join-channel-methods-1"></a>`UNIT-TEST-JOIN-CHANNEL-METHODS-1` | Endpoint mapping | Valid and failing requests | Signature or declared error; session kept | <a id="unit-test-join-channel-methods-1.p1"></a>`UNIT-TEST-JOIN-CHANNEL-METHODS-1.P1` — valid path; <a id="unit-test-join-channel-methods-1.p2"></a>`UNIT-TEST-JOIN-CHANNEL-METHODS-1.P2` — failure→error mapping |
+| Unit test ID                                                                                  | Obligation       | Public entry and setup     | Oracle and forbidden effects              | Required permutations                                                                                                                                                                                                                         |
+| --------------------------------------------------------------------------------------------- | ---------------- | -------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-join-channel-methods-1-dchgm0"></a>`UNIT-TEST-JOIN-CHANNEL-METHODS-1-DCHGM0` | Endpoint mapping | Valid and failing requests | Signature or declared error; session kept | <a id="unit-test-join-channel-methods-1-dchgm0.p1"></a>`UNIT-TEST-JOIN-CHANNEL-METHODS-1-DCHGM0.P1` — valid path; <a id="unit-test-join-channel-methods-1-dchgm0.p2"></a>`UNIT-TEST-JOIN-CHANNEL-METHODS-1-DCHGM0.P2` — failure→error mapping |
 
 ## Related source reports
 

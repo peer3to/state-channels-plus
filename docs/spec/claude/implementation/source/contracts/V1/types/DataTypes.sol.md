@@ -24,7 +24,7 @@ exits, channel state) — the Solidity side of the canonical encodings.
 
 ## Key design decisions
 
-1. **Struct shape = signature domain** under the current no-domain-tag scheme, which is exactly why [OQ-29] couples versioning to these definitions.
+1. **Struct shape = signature domain** under the current no-domain-tag scheme, which is exactly why [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf)] couples versioning to these definitions.
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +40,9 @@ exits, channel state) — the Solidity side of the canonical encodings.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                               | Specification IDs                                                                    |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [DataTypes.sol](../../../../../../../../contracts/V1/types/DataTypes.sol) | [`REQ-DATA-1`](../../../../../specification/protocol-model/data-types.md#req-data-1) |
+| Source file                                                               | Specification IDs                                                                                  |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [DataTypes.sol](../../../../../../../../contracts/V1/types/DataTypes.sol) | [`REQ-DATA-1-1KNRQS`](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

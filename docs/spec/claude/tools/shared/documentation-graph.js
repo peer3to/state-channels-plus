@@ -20,6 +20,20 @@ const {
     ignoreDisposition,
     scanTestMappings
 } = require("./test-inventory");
+const {
+    FINDING_RE,
+    IMPLEMENTATION_PERMUTATION_PATTERN,
+    IMPLEMENTATION_PERMUTATION_RE,
+    IMPLEMENTATION_TEST_PATTERN,
+    IMPLEMENTATION_TEST_RE,
+    PERMUTATION_RE,
+    QUESTION_RE,
+    REQUIREMENT_PATTERN,
+    REQUIREMENT_RE,
+    SPECIFICATION_PERMUTATION_PATTERN,
+    SPECIFICATION_PLAN_PATTERN,
+    TEST_PLAN_ITEM_RE
+} = require("./id-utils");
 
 const GENERATED_ROOT = path.join(SPEC_ROOT, "generated");
 const LAYER_NAMES = [
@@ -28,15 +42,6 @@ const LAYER_NAMES = [
     "verification",
     "audit"
 ];
-const REQUIREMENT_RE = /^(?:REQ|INV)-[A-Z0-9-]+-\d+$/;
-const TEST_PLAN_ITEM_RE = /^(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+$/;
-const PERMUTATION_RE = /^(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\.P\d+$/;
-const IMPLEMENTATION_TEST_RE = /^(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+$/;
-const IMPLEMENTATION_PERMUTATION_RE =
-    /^(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+\.P\d+$/;
-const QUESTION_RE = /^(?:OQ-\d+|OQ-(?:SPEC|IMPL|VER|AUDIT)-[A-Z0-9-]+)$/;
-const FINDING_RE = /^(?:DEF-\d+|FIND-[A-Z0-9]+-\d+)$/;
-
 const sorted = (values) =>
     [...values].sort((left, right) =>
         String(left).localeCompare(String(right))
@@ -65,12 +70,12 @@ function linkedIds(collection, needles) {
 }
 
 function planRequirementId(planId) {
-    return planId.match(/^((?:REQ|INV)-[A-Z0-9-]+-\d+)\.T\d+$/)?.[1];
+    return planId.match(new RegExp(`^(${REQUIREMENT_PATTERN})\\.T\\d+$`))?.[1];
 }
 
 function permutationPlanId(permutationId) {
     return permutationId.match(
-        /^((?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+)\.P\d+$/
+        new RegExp(`^(${SPECIFICATION_PLAN_PATTERN})\\.P\\d+$`)
     )?.[1];
 }
 
@@ -146,7 +151,7 @@ function collectPermutations(documents) {
     for (const document of documents) {
         const markdown = readText(document);
         for (const match of markdown.matchAll(
-            /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\.P\d+\b/g
+            new RegExp(SPECIFICATION_PERMUTATION_PATTERN, "g")
         )) {
             if (!mentions.has(match[0])) mentions.set(match[0], new Set());
             mentions.get(match[0]).add(document);
@@ -165,7 +170,7 @@ function collectPermutations(documents) {
             for (const row of table.rows) {
                 const plan = identityFromCell(row.cells[planIndex]);
                 for (const match of row.cells[permutationIndex].matchAll(
-                    /(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\.P\d+/g
+                    new RegExp(SPECIFICATION_PERMUTATION_PATTERN, "g")
                 )) {
                     const id = match[0];
                     if (permutationPlanId(id) !== plan) continue;
@@ -194,7 +199,7 @@ function collectImplementationPermutations(documents) {
     for (const document of documents) {
         const markdown = readText(document);
         for (const match of markdown.matchAll(
-            /(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+\.P\d+/g
+            new RegExp(IMPLEMENTATION_PERMUTATION_PATTERN, "g")
         )) {
             if (!mentions.has(match[0])) mentions.set(match[0], new Set());
             mentions.get(match[0]).add(document);
@@ -210,7 +215,7 @@ function collectImplementationPermutations(documents) {
             for (const row of table.rows) {
                 const testId = identityFromCell(row.cells[testIndex]);
                 for (const match of row.cells[permutationIndex].matchAll(
-                    /(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+\.P\d+/g
+                    new RegExp(IMPLEMENTATION_PERMUTATION_PATTERN, "g")
                 )) {
                     const id = match[0];
                     if (!id.startsWith(`${testId}.P`)) continue;
@@ -287,8 +292,8 @@ function collectDefinitions(documents, pattern) {
         const markdown = readText(document);
         const mentionPattern =
             pattern === REQUIREMENT_RE
-                ? /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\b/g
-                : /\b(?:REQ|INV)-[A-Z0-9-]+-\d+\.T\d+\b/g;
+                ? new RegExp(REQUIREMENT_PATTERN, "g")
+                : new RegExp(SPECIFICATION_PLAN_PATTERN, "g");
         for (const match of markdown.matchAll(mentionPattern)) {
             if (!pattern.test(match[0])) continue;
             if (!mentions.has(match[0])) mentions.set(match[0], new Set());
@@ -474,7 +479,7 @@ function headingEntries(documents, pattern, kind) {
         }
         for (const table of tableRows(document)) {
             for (const row of table.rows) {
-                const id = row.cells[0]?.replace(/[`*_]/g, "").trim();
+                const id = identityFromCell(row.cells[0] || "");
                 if (!id || !pattern.test(id) || entries.has(id)) continue;
                 entries.set(id, {
                     id,
