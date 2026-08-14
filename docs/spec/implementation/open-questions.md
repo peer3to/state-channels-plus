@@ -18,7 +18,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-21-PEZK9X`](open-questions.md#oq-21-pezk9x) | `_tx.body` is never populated; no state-encoding version marker                                                                   | Code   | [concepts/state-machines.md](../specification/protocol-model/state-machines.md)                                                                                                                       | Partially resolved |
 | [`OQ-22-99DDSZ`](open-questions.md#oq-22-99ddsz) | Inauthentic on-chain block calldata: escalation is signalled but no proof is built                                                | Code   | [sdk/block-confirmation-pipeline.md](./views/architecture/sdk/block-confirmation-pipeline.md), [security/open-security-review.md](../audit/security-assessment.md)                                    | Open               |
 | [`OQ-23-SDBGYB`](open-questions.md#oq-23-sdbgyb) | SDK restart/recovery semantics: storage is fully in-memory                                                                        | Code   | [sdk/components.md](./views/architecture/sdk/components.md)                                                                                                                                           | Open               |
-| [`OQ-24-A4XRTB`](open-questions.md#oq-24-a4xrtb) | `shouldSignBlock` refuses to sign an on-chain-posted block when the local node is next-to-write                                   | Code   | [protocol/finality.md](../specification/protocol-model/finality.md)                                                                                                                                   | Open               |
+| [`OQ-24-A4XRTB`](open-questions.md#oq-24-a4xrtb) | `shouldSignBlock` refuses to sign an on-chain-posted block when the local node is next-to-write                                   | Code   | [protocol/finality.md](../specification/protocol-model/finality.md), [protocol/block-processing.md](../specification/block-progression/block-processing.md)                                           | Open               |
 | [`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr) | Minor SDK lifecycle races: `abort()` residual queryability, TS snapshot-event ordering, kill/counter-dispute sequencing           | Code   | [sdk/architecture.md](./views/architecture/sdk/architecture.md), [sdk/components.md](./views/architecture/sdk/components.md), [sdk/dispute-pipeline.md](./views/architecture/sdk/dispute-pipeline.md) | Open               |
 | [`OQ-30-2G0Q5M`](open-questions.md#oq-30-2g0q5m) | Chain-reorg handling and canonical per-channel event ordering in the SDK                                                          | Code   | [sdk/components.md](./views/architecture/sdk/components.md), [security/open-security-review.md](../audit/security-assessment.md)                                                                      | Open               |
 | [`OQ-35-E5RRDF`](open-questions.md#oq-35-e5rrdf) | Handshake has no channel/identity binding — relay/reflection MITM; the signature is the whole root of trust                       | Code   | [sdk/rpc/handshake.md](./views/architecture/sdk/rpc/handshake.md), [security/trust-model.md](../specification/security/trust-model.md)                                                                | Open               |
@@ -146,6 +146,11 @@ chain anchor, resume) needs an algorithm decision.
 `StateManager.shouldSignBlock` refuses to sign an on-chain-posted block when the local node is
 the next-to-write. The rule is not stated anywhere as intended protocol behavior; confirm intent
 and specify it (or remove it). See [protocol/finality.md](../specification/protocol-model/finality.md) §8.
+
+The counter-signing policy is now recorded normatively as
+[`REQ-BLOCK-PIPE-10-PHAKE2`](../specification/block-progression/block-processing.md#req-block-pipe-10-phake2)
+in [protocol/block-processing.md](../specification/block-progression/block-processing.md), with the
+next-author refusal clause marked as this open decision.
 
 <a id="oq-25-e09xfr"></a>
 

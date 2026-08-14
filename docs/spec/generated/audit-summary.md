@@ -18,16 +18,16 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 
 ## Readiness
 
-- Requirements/invariants: 238
-- Structurally complete requirement paths: **5/238** (2%)
-- Current engineer-approved paths: **0/238** (0%)
-- Current security-accepted paths: **0/238** (0%)
-- Final ready paths: **0/238** (0%)
+- Requirements/invariants: 241
+- Structurally complete requirement paths: **5/241** (2%)
+- Current engineer-approved paths: **0/241** (0%)
+- Current security-accepted paths: **0/241** (0%)
+- Final ready paths: **0/241** (0%)
 - Source files assigned to implementation subjects: **243/243** (100%)
-- Test declarations mapped or explicitly ignored: **398/922** (43%)
+- Test declarations mapped or explicitly ignored: **400/922** (43%)
 - Open questions: 36
 - Active findings: 14
-- Strict blocking items: 5001
+- Strict blocking items: 5020
 
 ## Requirement paths
 
@@ -93,13 +93,16 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-BLKSTORE-2-VWXP2C`](../specification/storage/blocks.md#req-blkstore-2-vwxp2c) | [REQ-BLKSTORE-2-VWXP2C · 1 plan](../specification/storage/blocks.md#req-blkstore-2-vwxp2c) | [Contradicts](../implementation/source/src/storage/BlockStorage.ts.md#conformance-traceability) | 1/3 permutations evidenced | 1 | [`FIND-STORAGE-1-P8SMH3`](../audit/open-findings.md#find-storage-1-p8smh3) | Gap | Approval pending | Blocked | Not ready |
 | [`REQ-BLKSTORE-3-S9V2KC`](../specification/storage/blocks.md#req-blkstore-3-s9v2kc) | [REQ-BLKSTORE-3-S9V2KC · 1 plan](../specification/storage/blocks.md#req-blkstore-3-s9v2kc) | [Covered](../implementation/source/src/storage/BlockStorage.ts.md#conformance-traceability) | 2/3 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-BLOCK-PIPE-1-SS24D1`](../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1) | [REQ-BLOCK-PIPE-1-SS24D1 · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1) | [Covered](../implementation/views/protocol/block-processing.md#conformance-traceability) | 2/12 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
-| [`REQ-BLOCK-PIPE-2-PCXNT6`](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) | [REQ-BLOCK-PIPE-2-PCXNT6 · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) | [Covered](../implementation/source/src/stateManager/ValidationService.ts.md#conformance-traceability) | 0/16 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-BLOCK-PIPE-10-PHAKE2`](../specification/block-progression/block-processing.md#req-block-pipe-10-phake2) | [REQ-BLOCK-PIPE-10-PHAKE2 · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-10-phake2) | [Covered](../implementation/source/src/stateManager/StateManager.ts.md#conformance-traceability) | 1/5 permutations evidenced | 1 | [`OQ-24-A4XRTB`](../implementation/open-questions.md#oq-24-a4xrtb) | Gap | Approval pending | Blocked | Not ready |
+| [`REQ-BLOCK-PIPE-11-DCHAJ2`](../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2) | [REQ-BLOCK-PIPE-11-DCHAJ2 · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2) | [Covered](../implementation/source/src/stateManager/StateManager.ts.md#conformance-traceability) | 1/7 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-BLOCK-PIPE-2-PCXNT6`](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) | [REQ-BLOCK-PIPE-2-PCXNT6 · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) | [Covered](../implementation/source/src/stateManager/ValidationService.ts.md#conformance-traceability) | 1/17 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-BLOCK-PIPE-3-WW2SB7`](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7) | [REQ-BLOCK-PIPE-3-WW2SB7 · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7) | [Covered](../implementation/source/src/stateManager/validationStrategy/AValidationStrategy.ts.md#conformance-traceability) | 1/16 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
-| [`REQ-BLOCK-PIPE-4-CF52J6`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6) | [REQ-BLOCK-PIPE-4-CF52J6 · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6) | [Covered](../implementation/source/src/stateManager/BlockQueueManager.ts.md#conformance-traceability) | 2/12 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
-| [`REQ-BLOCK-PIPE-5-WJ31RG`](../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | [REQ-BLOCK-PIPE-5-WJ31RG · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | [Covered](../implementation/source/src/stateManager/BlockQueueManager.ts.md#conformance-traceability) | 0/15 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-BLOCK-PIPE-4-CF52J6`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6) | [REQ-BLOCK-PIPE-4-CF52J6 · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6) | [Covered](../implementation/source/src/stateManager/BlockQueueManager.ts.md#conformance-traceability) | 3/13 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-BLOCK-PIPE-5-WJ31RG`](../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | [REQ-BLOCK-PIPE-5-WJ31RG · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | [Covered](../implementation/source/src/stateManager/BlockQueueManager.ts.md#conformance-traceability) | 0/16 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-BLOCK-PIPE-6-XQ0RTT`](../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt) | [REQ-BLOCK-PIPE-6-XQ0RTT · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt) | [Covered](../implementation/source/src/stateManager/BlockQueueManager.ts.md#conformance-traceability) | 1/13 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-BLOCK-PIPE-7-FYE9VJ`](../specification/block-progression/block-processing.md#req-block-pipe-7-fye9vj) | [REQ-BLOCK-PIPE-7-FYE9VJ · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-7-fye9vj) | [Covered](../implementation/source/src/stateManager/StateManager.ts.md#conformance-traceability) | 0/3 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-BLOCK-PIPE-8-N529VH`](../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh) | [REQ-BLOCK-PIPE-8-N529VH · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh) | [Covered](../implementation/source/src/stateManager/StateManager.ts.md#conformance-traceability) | 7/7 permutations evidenced | 7 | None linked | Complete | Approval pending | Assessment pending | Not ready |
+| [`REQ-BLOCK-PIPE-9-QA66GT`](../specification/block-progression/block-processing.md#req-block-pipe-9-qa66gt) | [REQ-BLOCK-PIPE-9-QA66GT · 1 plan](../specification/block-progression/block-processing.md#req-block-pipe-9-qa66gt) | [Covered](../implementation/source/src/stateManager/BlockQueueManager.ts.md#conformance-traceability) | 1/6 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-CDSTORE-1-ECWBNY`](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny) | [REQ-CDSTORE-1-ECWBNY · 1 plan](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny) | [Covered](../implementation/source/src/storage/BlockCalldataStorage.ts.md#conformance-traceability) | 2/4 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-CONFIG-1-PDHA8T`](../specification/runtime/configuration.md#req-config-1-pdha8t) | [REQ-CONFIG-1-PDHA8T · 1 plan](../specification/runtime/configuration.md#req-config-1-pdha8t) | [Partial](../implementation/views/operations/configuration.md#conformance-traceability) | 0/12 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-CONFIG-2-JA2SKN`](../specification/runtime/configuration.md#req-config-2-ja2skn) | [REQ-CONFIG-2-JA2SKN · 1 plan](../specification/runtime/configuration.md#req-config-2-ja2skn) | [Partial](../implementation/views/operations/configuration.md#conformance-traceability) | 0/15 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -274,11 +277,11 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 
 ## Global gaps
 
-- 524 test declaration(s) are unaccounted.
+- 522 test declaration(s) are unaccounted.
 - 36 open question(s) require decisions.
 - 14 active finding(s) remain.
-- 238 requirement path(s) lack current engineer approval.
-- 238 requirement path(s) lack current security-risk acceptance.
+- 241 requirement path(s) lack current engineer approval.
+- 241 requirement path(s) lack current security-risk acceptance.
 
 ## Audit sources
 
