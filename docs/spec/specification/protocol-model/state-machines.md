@@ -82,7 +82,7 @@ below.
 | Process inbound message           | One canonical inbound message                                        | Deterministic success or rejection and the resulting state change; standard membership messages and supported application-defined messages follow the same atomicity rules as transitions. |
 | Apply membership lifecycle action | Join/top-up request, soft-removal identity, or slashing identity     | Deterministic success or rejection, the resulting membership/balance state, and any canonical exit message required by §6.                                                                 |
 
-[`REQ-SM-9-QK86SJ`](state-machines.md#req-sm-9-qk86sj) — A conforming state machine MUST provide the complete interface above. Every operation
+<a id="req-sm-9-qk86sj"></a>`REQ-SM-9-QK86SJ` — A conforming state machine MUST provide the complete interface above. Every operation
 MUST use the same canonical state, identity, balance, message, and transaction meanings defined by
 this specification. An unsupported required operation, a hidden mutable input, or a different
 result between equivalent execution environments is non-conforming.
@@ -442,7 +442,7 @@ Until those gaps close, engineer review of an integrator contract remains a secu
 
 **<a id="req-sm-8-8chsq8"></a>`REQ-SM-8-8CHSQ8`.** Slash and remove record their `ExitChannel` identically via `_addExitChannel`; hooks differ only in balance semantics
 
-**<a id="req-sm-9-qk86sj"></a>`REQ-SM-9-QK86SJ`.** Complete logical state-machine interface is exposed with canonical inputs, outputs, atomic failure, and cross-runtime equivalence
+**[`REQ-SM-9-QK86SJ`](state-machines.md#req-sm-9-qk86sj).** Complete logical state-machine interface is exposed with canonical inputs, outputs, atomic failure, and cross-runtime equivalence
 
 ## Verification and test plan
 

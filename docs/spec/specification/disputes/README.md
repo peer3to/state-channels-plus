@@ -44,7 +44,7 @@ execution.
   upload throttles bound spam per identity ([`REQ-DIS-2-PKVZ7E`](disputes.md#req-dis-2-pkvz7e)).
 - **Verification evidence.** Requirement matrices in the owned documents; the enforcement edge is
   proven under [`REQ-IX-5-6XHJJB`](../interactions.md#req-ix-5-6xhjjb) and the proof-material edge under
-  [`REQ-IX-4-BB35GC`](../interactions.md#req-ix-4-bb35gc).
+  <a id="req-ix-4-bb35gc"></a>`REQ-IX-4-BB35GC`.
 
 ## Owned documents
 
@@ -57,6 +57,6 @@ execution.
 
 ## Interaction contracts
 
-Consumer of proof material from block progression ([`REQ-IX-4-BB35GC`](../interactions.md#req-ix-4-bb35gc));
+Consumer of proof material from block progression ([`REQ-IX-4-BB35GC`](README.md#req-ix-4-bb35gc));
 producer of the adjudication edge into enforcement ([`REQ-IX-5-6XHJJB`](../interactions.md#req-ix-5-6xhjjb)) and of
 reduced successor forks consumed by settlement ([`REQ-IX-6-A4Y7KB`](../interactions.md#req-ix-6-a4y7kb)).

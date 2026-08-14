@@ -100,19 +100,22 @@ stateDiagram-v2
     state "On-chain snapshot advanced to G" as Advanced
 
     [*] --> Idle
-    Idle --> Idle: objective violation → immediate fraud proof → on-chain slash set (separate path)
-    Idle --> Open: uploadDispute[WithCalldata] with any of the 4 inputs — opener commitment recorded immediately
+    note right of Idle
+        objective violation → immediate fraud proof
+        and on-chain slash — separate path, no window
+    end note
+    Idle --> Open: uploadDispute[WithCalldata] with any of the 4 inputs (opener commitment recorded immediately)
     Open --> Open: further disputes committed (≤1 per participant, each resets the kill period)
-    Open --> Open: applyDisputeFraudProofs kills an invalid committed dispute; its disputer is slashed
-    Open --> Reduced: kill period expired → reduceAndFinalize (deterministic on-chain reduce; finalizes immediately)
-    Open --> Reduced: full-threshold-signed dispute → periods force-expired, immediate finalization
-    Reduced --> Advanced: updateStateSnapshotFork walks reducedResult links once the result is uncontestable
+    Open --> Open: applyDisputeFraudProofs kills an invalid dispute — its disputer is slashed
+    Open --> Reduced: kill period expired → reduceAndFinalize
+    Open --> Reduced: full-threshold-signed dispute → immediate finalization
+    Reduced --> Advanced: updateStateSnapshotFork walks reducedResult links once uncontestable
     Advanced --> [*]: execution resumes from successor fork G (valid state carried forward)
 ```
 
-The fraud-proof path (top self-loop) runs beside the game at all times: a slash recorded before a
-window's expiry becomes reduction input for that window; a slash recorded later feeds the next
-dispute.
+The fraud-proof path (the note on the first state) runs beside the game at all times: a slash
+recorded before a window's expiry becomes reduction input for that window; a slash recorded later
+feeds the next dispute.
 
 ### 4.1 Upload
 
@@ -144,7 +147,9 @@ and consumes **the exact committed dispute set** (`areDisputesCommitted` matches
 array one-to-one against the stored commitments, in commitment order) ([`REQ-DIS-4-6J6YYG`](disputes.md#req-dis-4-6j6yyg)). Entry points
 on `dispute reducer/verifier`:
 
-- `reduce(disputes)` — pure fold to a `ReduceOutput` (§5).
+- `reduce(disputes)` — folds the committed set to a `ReduceOutput` (§5; not a pure fold today —
+  two fields read chain state, and whether they should is the open decision
+  [`OQ-39-C3EAMN`](../open-questions.md#oq-39-c3eamn)).
 - `reduceOutputToSnapshotData(...)` — verifies the claimed latest snapshot, state-machine state,
   and inbound message blocks against the reduce output, applies slashes/removals/inbound messages
   through the state machine, and produces the successor fork's genesis `SnapshotData`
@@ -210,6 +215,13 @@ Every reduction produces the canonical successor fork ([`REQ-DIS-6-Y92H1M`](disp
 | `latestInboundMessageBlockHash/Height` | Taken from the chain itself, not from any dispute: the on-chain inbound tip walked back until its timestamp `≤` window expiry. This is what makes forced inbound inclusion effective.                                                                                                                                                                                                                          |
 | `timeout`                              | The single timeout with the lowest `blockHeight` across disputes (§6.1).                                                                                                                                                                                                                                                                                                                                       |
 | `selfRemovals`                         | The disputers of all disputes with `selfRemoval` set.                                                                                                                                                                                                                                                                                                                                                          |
+
+Note the fold is stateful in exactly two fields — `slashedParticipants` injects the channel's
+authoritative on-chain slash set, and `latestInboundMessageBlockHash/Height` is read from the
+chain itself; every other field reduces the committed dispute inputs alone. Whether reduction
+should stay stateful against on-chain state or become a stateless fold over the committed inputs
+(with the slash-completeness and forced-inclusion guarantees re-established elsewhere) is an open
+engineer decision ([`OQ-39-C3EAMN`](../open-questions.md#oq-39-c3eamn)).
 
 `reduceOutputToSnapshotData` then applies, in order: pending inbound messages (joins etc.),
 slashes, removals — where the timeout target is added to removals **only if the slash set is

@@ -169,27 +169,27 @@ marker and withdrawal totals, and stores the new snapshot.
 
 ```mermaid
 sequenceDiagram
-    participant off-chain participant as Submitter (off-chain participant / anyone with the proof)
+    participant Submitter as Submitter (off-chain participant / anyone with the proof)
     participant SSF as StateSnapshotFacet (L1)
     participant SPF as state-proof verifier / DisputeWindows
     participant CF as ConsumerFacet
 
-    Note over off-chain participant: holds newer snapshot S_new committing outbound tip B,<br/>plus the linked outbound range and the proof path
-    off-chain participant->>SSF: updateStateSnapshotSameFork(milestoneProofs, snapshots, range)<br/>or updateStateSnapshotFork(S_new, range)
+    Note over Submitter: holds newer snapshot S_new committing outbound tip B,<br/>plus the linked outbound range and the proof path
+    Submitter->>SSF: updateStateSnapshotSameFork(milestoneProofs, snapshots, range)<br/>or updateStateSnapshotFork(S_new, range)
     alt same-fork path
         SSF->>SPF: verifyMilestones(fork, proofs, snapshots, S_current)
         SSF->>SSF: require S_new newer + inbound tip == chain inbound head
     else successor-fork path
-        SSF->>SPF: walk reducedResult chain; require each<br/>reduce-challenge period expired; S_new is fork genesis
+        SSF->>SPF: walk reducedResult chain, require each<br/>reduce-challenge period expired, S_new is fork genesis
     end
     SSF->>SSF: prune range prefix already processed<br/>(old tip A = S_current.outbound tip)
     SSF->>SSF: verify linked range A -> B<br/>(hash links, heights, running totals)
     loop each new outbound message
         SSF->>CF: withdraw(ExitChannel) via withdrawAssetsComposable
         CF-->>SSF: assets released to participant
-        SSF->>SSF: totalWithdrawals += balance;<br/>require totalWithdrawals <= totalDeposits
+        SSF->>SSF: totalWithdrawals += balance,<br/>require totalWithdrawals <= totalDeposits
     end
-    SSF->>SSF: store S_new; advance outbound marker to B;<br/>emit StateSnapshotUpdated, WithdrawalsUpdated
+    SSF->>SSF: store S_new, advance outbound marker to B,<br/>emit StateSnapshotUpdated, WithdrawalsUpdated
 ```
 
 ### 2.4 Verification

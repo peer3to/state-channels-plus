@@ -118,7 +118,7 @@ Requirements/invariants with no mapped test evidence on any of their planned per
 | [`REQ-IX-1-WTJ0D1`](../specification/interactions.md#req-ix-1-wtj0d1) | [specification/interactions.md](../specification/interactions.md#req-ix-1-wtj0d1) |
 | [`REQ-IX-2-2PY2EF`](../specification/interactions.md#req-ix-2-2py2ef) | [specification/interactions.md](../specification/interactions.md#req-ix-2-2py2ef) |
 | [`REQ-IX-3-H8WCVY`](../specification/interactions.md#req-ix-3-h8wcvy) | [specification/interactions.md](../specification/interactions.md#req-ix-3-h8wcvy) |
-| [`REQ-IX-4-BB35GC`](../specification/interactions.md#req-ix-4-bb35gc) | [specification/interactions.md](../specification/interactions.md#req-ix-4-bb35gc) |
+| [`REQ-IX-4-BB35GC`](../specification/disputes/README.md#req-ix-4-bb35gc) | [specification/disputes/README.md](../specification/disputes/README.md#req-ix-4-bb35gc) |
 | [`REQ-IX-5-6XHJJB`](../specification/interactions.md#req-ix-5-6xhjjb) | [specification/interactions.md](../specification/interactions.md#req-ix-5-6xhjjb) |
 | [`REQ-IX-6-A4Y7KB`](../specification/interactions.md#req-ix-6-a4y7kb) | [specification/interactions.md](../specification/interactions.md#req-ix-6-a4y7kb) |
 | [`REQ-IX-7-A004VZ`](../specification/interactions.md#req-ix-7-a004vz) | [specification/interactions.md](../specification/interactions.md#req-ix-7-a004vz) |

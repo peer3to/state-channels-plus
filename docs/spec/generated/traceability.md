@@ -162,7 +162,7 @@ Path equality is never evidence. A test counts only when its exact declaration i
 | [`REQ-IX-1-WTJ0D1`](../specification/interactions.md#req-ix-1-wtj0d1) | [specification/interactions.md](../specification/interactions.md#req-ix-1-wtj0d1) | [StateTransitionRpcMethods.ts](../implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md) | none — gap |
 | [`REQ-IX-2-2PY2EF`](../specification/interactions.md#req-ix-2-2py2ef) | [specification/interactions.md](../specification/interactions.md#req-ix-2-2py2ef) | none — gap | none — gap |
 | [`REQ-IX-3-H8WCVY`](../specification/interactions.md#req-ix-3-h8wcvy) | [specification/interactions.md](../specification/interactions.md#req-ix-3-h8wcvy) | none — gap | none — gap |
-| [`REQ-IX-4-BB35GC`](../specification/interactions.md#req-ix-4-bb35gc) | [specification/interactions.md](../specification/interactions.md#req-ix-4-bb35gc) | none — gap | none — gap |
+| [`REQ-IX-4-BB35GC`](../specification/disputes/README.md#req-ix-4-bb35gc) | [specification/disputes/README.md](../specification/disputes/README.md#req-ix-4-bb35gc) | none — gap | none — gap |
 | [`REQ-IX-5-6XHJJB`](../specification/interactions.md#req-ix-5-6xhjjb) | [specification/interactions.md](../specification/interactions.md#req-ix-5-6xhjjb) | none — gap | none — gap |
 | [`REQ-IX-6-A4Y7KB`](../specification/interactions.md#req-ix-6-a4y7kb) | [specification/interactions.md](../specification/interactions.md#req-ix-6-a4y7kb) | none — gap | none — gap |
 | [`REQ-IX-7-A004VZ`](../specification/interactions.md#req-ix-7-a004vz) | [specification/interactions.md](../specification/interactions.md#req-ix-7-a004vz) | none — gap | none — gap |
@@ -197,7 +197,7 @@ Path equality is never evidence. A test counts only when its exact declaration i
 | [`REQ-NEG-2-ED48TZ`](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz) | [specification/peer-communication/channel-negotiation.md](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz) | [OpenChannelNegotiationService.ts](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md) | none — gap |
 | [`REQ-NEG-3-Q5WFAA`](../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) | [specification/peer-communication/channel-negotiation.md](../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) | [OpenChannelNegotiationRpcMethods.ts](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts.md), [OpenChannelNegotiationService.ts](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md) | none — gap |
 | [`REQ-PSCSTORE-1-7BDTEV`](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev) | [specification/storage/participant-changes.md](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev) | [ParticipantSetChangeStorage.ts](../implementation/source/src/storage/ParticipantSetChangeStorage.ts.md) | [ParticipantSetChangeStorage.test.ts#L27](../../../test/storage/ParticipantSetChangeStorage.test.ts#L27), [ParticipantSetChangeStorage.test.ts#L40](../../../test/storage/ParticipantSetChangeStorage.test.ts#L40), [ParticipantSetChangeStorage.test.ts#L93](../../../test/storage/ParticipantSetChangeStorage.test.ts#L93), [ParticipantSetChangeStorage.test.ts#L105](../../../test/storage/ParticipantSetChangeStorage.test.ts#L105) … (+3) |
-| [`REQ-QSTORE-1-PS769J`](../specification/storage/queue.md#req-qstore-1-ps769j) | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-1-ps769j) | [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) | [QueueStorage.test.ts#L93](../../../test/storage/QueueStorage.test.ts#L93), [QueueStorage.test.ts#L358](../../../test/storage/QueueStorage.test.ts#L358) |
+| [`REQ-QSTORE-1-PS769J`](../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j) | [specification/peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j) | [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) | [QueueStorage.test.ts#L93](../../../test/storage/QueueStorage.test.ts#L93), [QueueStorage.test.ts#L358](../../../test/storage/QueueStorage.test.ts#L358) |
 | [`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-2-vywjaq) | [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) | [QueueStorage.test.ts#L151](../../../test/storage/QueueStorage.test.ts#L151), [QueueStorage.test.ts#L178](../../../test/storage/QueueStorage.test.ts#L178) |
 | [`REQ-QSTORE-3-DEKYG6`](../specification/storage/queue.md#req-qstore-3-dekyg6) | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-3-dekyg6) | [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) | [QueueStorage.test.ts#L252](../../../test/storage/QueueStorage.test.ts#L252), [QueueStorage.test.ts#L396](../../../test/storage/QueueStorage.test.ts#L396) |
 | [`REQ-RMSTORE-1-BWKVBG`](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | [specification/storage/progress-markers.md](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | [EventSyncStorage.ts](../implementation/source/src/storage/EventSyncStorage.ts.md) | [EventSyncStorage.test.ts#L8](../../../test/storage/EventSyncStorage.test.ts#L8) |
@@ -807,12 +807,12 @@ Only declarations mapped to at least one permutation appear here; the full inven
 | System | Requirements | With linked production files | With mapped tests |
 | --- | --- | --- | --- |
 | block-progression | 12 | 12 | 9 |
-| disputes | 33 | 33 | 13 |
+| disputes | 34 | 33 | 13 |
 | enforcement | 31 | 26 | 13 |
-| interactions.md | 9 | 2 | 0 |
-| peer-communication | 40 | 37 | 15 |
+| interactions.md | 8 | 2 | 0 |
+| peer-communication | 41 | 38 | 16 |
 | protocol-model | 40 | 37 | 4 |
 | runtime | 15 | 11 | 3 |
 | security | 12 | 12 | 0 |
 | settlement | 24 | 24 | 7 |
-| storage | 25 | 21 | 16 |
+| storage | 24 | 20 | 15 |

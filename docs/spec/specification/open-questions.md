@@ -40,6 +40,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-33-1N5BY1`](open-questions.md#oq-33-1n5by1) | Maximum participant count and required enforcement boundary                                                          | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
 | [`OQ-34-FY08V2`](open-questions.md#oq-34-fy08v2) | RPC boundary decisions: guard retry semantics, protocol versioning, ban persistence, failure-outcome policy          | Code and specification | sdk/rpc/README.md                                                                                                                          | Open                              |
 | [`OQ-38-EY27T5`](open-questions.md#oq-38-ey27t5) | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation | Code and specification | sdk/runtime-and-concurrency.md §6, §11.5                                                                                                   | Open                              |
+| [`OQ-39-C3EAMN`](open-questions.md#oq-39-c3eamn) | Reduce: stateful (reads on-chain slashes / inbound tip) vs stateless fold over the committed dispute inputs          | Engineer question      | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
 
 ## Register assumptions and constraints
 
@@ -434,3 +435,38 @@ Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T`](../impleme
   the isolation guarantee should be one chain per test process.
 
 See sdk/runtime-and-concurrency.md §6 and §11.5.
+
+<a id="oq-39-c3eamn"></a>
+
+## OQ-39-C3EAMN — Reduce: stateful (chain-reading) or stateless (commitment-only)
+
+**Question.** Should dispute reduction read the channel's on-chain state during execution, or
+statelessly fold only the committed dispute inputs? `For this protocol version:` the fold is
+stateful in exactly two fields ([disputes.md §5](./disputes/disputes.md#5-reduction-rules-and-order-independence)):
+`slashedParticipants` unions in the channel's authoritative on-chain slash set (filtered to
+entries with timestamp ≤ window expiry and to the participant union), and
+`latestInboundMessageBlockHash/Height` is taken from the chain's inbound stream walked back to
+window expiry. Everything else reduces the committed dispute set alone. Reading and verifying the
+included commitments is required under either answer (`areDisputesCommitted` one-to-one matching);
+the question is only whether chain state beyond those commitments feeds the fold.
+
+- **Stateless direction.** A pure fold over verified committed inputs is reproducible from the
+  committed data alone (no chain view at a particular height or time), simplifies the
+  order-independence and convergence analysis ([`INV-DIS-5-J1QZ92`](disputes/disputes.md#inv-dis-5-j1qz92)), keeps the off-chain
+  reducer and the on-chain apply path trivially in agreement, and fits the optimistic-reduction
+  direction where challengers must cheaply re-derive the result (couples to the dormant
+  `challengeDisputeReduction` question in [disputes.md §4.3](./disputes/disputes.md#43-reduction-and-finalization)). But both stateful
+  reads exist for omission resistance: chain injection of the slash set is what makes per-dispute
+  subset listing safe, and the chain-read inbound tip is what makes forced inbound inclusion
+  effective. A stateless reduce must re-establish both guarantees explicitly — for example,
+  require disputes to commit the slash set and inbound tip and enforce completeness at
+  upload/commit time instead of at reduce time.
+- **Stateful direction.** Keeps the chain as the authority no disputer can omit, but ties the
+  reduce result to chain-read timing (the window-expiry filters), requires an equivalent chain
+  view for every off-chain recomputation and audit, and widens the surface where the off-chain
+  and on-chain reducers can diverge.
+
+**Decision needed.** Choose the model. If stateless: specify where slash-set completeness and
+forced inbound inclusion are enforced instead. If stateful: specify the exact chain reads —
+source, expiry filtering, and the chain view an off-chain recomputation requires — as normative
+inputs of the reduction.

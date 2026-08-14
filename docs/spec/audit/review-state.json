@@ -1,1 +1,12 @@
-{}
+{
+    "specification/block-progression/README.md": {
+        "hash": "e878b926c73c819c",
+        "reviewer": "Luka",
+        "date": "2026-08-14"
+    },
+    "specification/block-progression/block-processing.md": {
+        "hash": "58245911e5de50c5",
+        "reviewer": "Luka",
+        "date": "2026-08-14"
+    }
+}

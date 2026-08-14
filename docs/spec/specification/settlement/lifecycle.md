@@ -28,7 +28,7 @@ The design goal is that everything between opening and settlement is off-chain, 
 real-time; the chain is touched to move value across the layer boundary and to adjudicate when
 peers cannot cooperate.
 
-**[`REQ-LIF-1-A5BN02`](lifecycle.md#req-lif-1-a5bn02).** The best-case complete lifecycle needs **at least two** base-layer transactions:
+**<a id="req-lif-1-a5bn02"></a>`REQ-LIF-1-A5BN02`.** The best-case complete lifecycle needs **at least two** base-layer transactions:
 
 1. **Open/deposit** — `StateChannelManagerProxy.open`
    verifies the unanimously signed terms, deposits the committed assets, and records the genesis
@@ -52,13 +52,13 @@ and forced inbound inclusion.
 stateDiagram-v2
     [*] --> Opening
     Opening --> Executing: open() succeeds on-chain (tx 1)
-    Executing --> Executing: continuous block production;\nfinality trails via thresholds / virtual votes
-    Executing --> Executing: joins, top-ups, deposits\n(extra on-chain txs → inbound stream)
-    Executing --> Disputing: timeout, on-chain slashes,\nself-removal, forced inbound inclusion
-    Disputing --> Executing: reduction produces the canonical successor fork;\nvalid state carried forward
+    Executing --> Executing: continuous block production — finality trails via thresholds / virtual votes
+    Executing --> Executing: joins, top-ups, deposits (extra on-chain txs → inbound stream)
+    Executing --> Disputing: timeout, on-chain slashes, self-removal, forced inbound inclusion
+    Disputing --> Executing: reduction produces the canonical successor fork — valid state carried forward
     Executing --> Settling: finalized snapshot submitted on-chain (tx 2)
-    Disputing --> Settling: successor-fork snapshot adopted\nafter the reduce challenge period
-    Settling --> [*]: outbound stream processed incrementally;\nwithdrawals released; storage cleared at 0 participants
+    Disputing --> Settling: successor-fork snapshot adopted after the reduce challenge period
+    Settling --> [*]: outbound stream processed incrementally — withdrawals released, storage cleared at 0 participants
 ```
 
 Fraud proofs run on a separate, immediate path beside this lifecycle: an objective violation seen
@@ -104,14 +104,14 @@ sign and return signatures. Participants **do not wait** for a block to reach th
 before building the next one — finality trails behind production. The full model, including the
 three finality routes and the calldata fallback, is specified in [finality.md](../protocol-model/finality.md).
 
-**[`REQ-LIF-3-PDRTPY`](lifecycle.md#req-lif-3-pdrtpy).** A normal state transition MAY produce an outbound message — including an
+**<a id="req-lif-3-pdrtpy"></a>`REQ-LIF-3-PDRTPY`.** A normal state transition MAY produce an outbound message — including an
 `ExitChannel` — as an ordinary transition result. Exits are **not** limited to removal or
 slashing, and **producing the message requires no finality**. Finality is required only when a
 snapshot carrying that outbound tip is submitted on-chain.
 
 ## 5. Two paths to a snapshot-updating state
 
-**[`REQ-LIF-2-Z3Z9Y3`](lifecycle.md#req-lif-2-z3z9y3).** Exactly two paths lead to a state that can update the on-chain snapshot and support
+**<a id="req-lif-2-z3z9y3"></a>`REQ-LIF-2-Z3Z9Y3`.** Exactly two paths lead to a state that can update the on-chain snapshot and support
 withdrawals:
 
 1. **Same-fork finality.** Every required participant signed (directly or via virtual votes —
@@ -138,7 +138,7 @@ self-removal, and forced inclusion of newer inbound messages ([disputes.md](../d
 Uploading a dispute opens (or joins) a `DisputeWindow` for the disputed fork and records the
 disputer's commitment immediately.
 
-**[`REQ-LIF-4-SW8GVY`](lifecycle.md#req-lif-4-sw8gvy).** Every initiated dispute runs through the dispute game and produces a **canonical
+**<a id="req-lif-4-sw8gvy"></a>`REQ-LIF-4-SW8GVY`.** Every initiated dispute runs through the dispute game and produces a **canonical
 successor fork** — whether the submitted claim is ultimately accepted, rejected, or reduced away.
 The reduction (`reduce` → `reduceOutputToSnapshotData`) deterministically folds the committed
 disputes into a new genesis `SnapshotData`; its hash is the successor `forkId`; off-chain
@@ -169,18 +169,18 @@ standalone withdrawal call. `_updateStateSnapshot`:
 
 ```mermaid
 sequenceDiagram
-    participant off-chain participant as off-chain participant (snapshot submitter)
+    participant Submitter as off-chain participant (snapshot submitter)
     participant SS as StateSnapshotFacet
     participant CF as ConsumerFacet
-    off-chain participant->>SS: updateStateSnapshotSameFork(milestoneProofs, milestoneSnapshots, outboundBlocks)
+    Submitter->>SS: updateStateSnapshotSameFork(milestoneProofs, milestoneSnapshots, outboundBlocks)
     SS->>SS: verify milestones vs current snapshot's threshold set
     SS->>SS: prune already-processed outbound blocks, verify linkage old tip → new tip
     loop each new outbound message
         SS->>CF: withdraw(ExitChannel)
-        SS->>SS: totalWithdrawals += balance; require ≤ totalDeposits
+        SS->>SS: totalWithdrawals += balance, require ≤ totalDeposits
     end
     SS->>SS: store new snapshot, advance outbound marker
-    SS-->>off-chain participant: StateSnapshotUpdated / WithdrawalsUpdated
+    SS-->>Submitter: StateSnapshotUpdated / WithdrawalsUpdated
 ```
 
 The same mechanism serves normal exits, dispute-derived exits, and arbitrary outbound messages;
@@ -188,7 +188,7 @@ the stream model is specified in [cross-layer-messages.md](./cross-layer-message
 
 ## 8. The four timing windows
 
-**[`REQ-LIF-6-VG861M`](lifecycle.md#req-lif-6-vg861m).** Four protocol windows are configured on the manager at deployment
+**<a id="req-lif-6-vg861m"></a>`REQ-LIF-6-VG861M`.** Four protocol windows are configured on the manager at deployment
 (`StateChannelManagerProxy`
 deployment configuration; defaults in seconds in parentheses) and mirrored into the off-chain participant's
 `timeConfig`. Each bounds a specific phase:
@@ -222,17 +222,17 @@ and prohibited edge needs an observable oracle and must preserve value and canon
 
 ## Requirements and invariants
 
-**<a id="req-lif-1-a5bn02"></a>`REQ-LIF-1-A5BN02`.** Best-case complete lifecycle needs at least two base-layer txs: open/deposit and settlement via a snapshot update that processes the outbound stream.
+**[`REQ-LIF-1-A5BN02`](lifecycle.md#req-lif-1-a5bn02).** Best-case complete lifecycle needs at least two base-layer txs: open/deposit and settlement via a snapshot update that processes the outbound stream.
 
-**<a id="req-lif-2-z3z9y3"></a>`REQ-LIF-2-Z3Z9Y3`.** Only two paths yield a snapshot-updating state: same-fork finality proof, or dispute reduction after the challenge window.
+**[`REQ-LIF-2-Z3Z9Y3`](lifecycle.md#req-lif-2-z3z9y3).** Only two paths yield a snapshot-updating state: same-fork finality proof, or dispute reduction after the challenge window.
 
-**<a id="req-lif-3-pdrtpy"></a>`REQ-LIF-3-PDRTPY`.** A normal transition may produce an outbound exit message; producing it needs no finality — finality is needed only at on-chain snapshot submission.
+**[`REQ-LIF-3-PDRTPY`](lifecycle.md#req-lif-3-pdrtpy).** A normal transition may produce an outbound exit message; producing it needs no finality — finality is needed only at on-chain snapshot submission.
 
-**<a id="req-lif-4-sw8gvy"></a>`REQ-LIF-4-SW8GVY`.** Every initiated dispute produces a canonical successor fork; execution resumes from it.
+**[`REQ-LIF-4-SW8GVY`](lifecycle.md#req-lif-4-sw8gvy).** Every initiated dispute produces a canonical successor fork; execution resumes from it.
 
 **<a id="inv-lif-5-enqb91"></a>`INV-LIF-5-ENQB91`.** Settlement conserves value: processed withdrawals never exceed deposits.
 
-**<a id="req-lif-6-vg861m"></a>`REQ-LIF-6-VG861M`.** Four deployment-configured windows (`p2pTime`, `agreementTime`, `chainFallbackTime`, `evidenceTime`) bound the phases as specified in §8.
+**[`REQ-LIF-6-VG861M`](lifecycle.md#req-lif-6-vg861m).** Four deployment-configured windows (`p2pTime`, `agreementTime`, `chainFallbackTime`, `evidenceTime`) bound the phases as specified in §8.
 
 ## Verification and test plan
 

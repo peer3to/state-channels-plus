@@ -16,7 +16,7 @@ enumerates what the code proves today; nothing yet establishes that every object
 violation is covered or that every attack path is prevented, detected, or recoverable. The threat
 table in [trust-model.md](../specification/security/trust-model.md) carries the same caveat.
 
-**[`REQ-SEC-1-SNS1GA`](security-assessment.md#req-sec-1-sns1ga).** Before this specification is finalized, a dedicated security review of the full
+**<a id="req-sec-1-sns1ga"></a>`REQ-SEC-1-SNS1GA`.** Before this specification is finalized, a dedicated security review of the full
 protocol MUST be performed that explicitly asks:
 
 1. Which objectively provable violations are NOT yet covered by a fraud proof?
@@ -28,7 +28,7 @@ the root [README](../README.md) says so.
 
 ## 2. Required scope
 
-**[`REQ-SEC-2-XPGSC3`](security-assessment.md#req-sec-2-xpgsc3).** The review MUST cover, at minimum, every surface below. For each, it examines the
+**<a id="req-sec-2-xpgsc3"></a>`REQ-SEC-2-XPGSC3`.** The review MUST cover, at minimum, every surface below. For each, it examines the
 objective claims the protocol makes, the proofs and validations that police them, and the failure
 and recovery behavior.
 
@@ -50,14 +50,14 @@ and recovery behavior.
 | Leader election                                | [../protocol/finality.md](../specification/protocol-model/finality.md)                                                                                                                                 |
 | Cross-layer interactions                       | [../protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md), [../contracts/manager-and-facets.md](../implementation/views/architecture/contracts/manager-and-facets.md) |
 
-**[`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5).** The review MUST separate **objective slashable violations** (provable misbehavior)
+**<a id="req-sec-3-nppjn5"></a>`REQ-SEC-3-NPPJN5`.** The review MUST separate **objective slashable violations** (provable misbehavior)
 from **non-Byzantine failures** (disconnection, data loss, crash). The former are candidates for
 fraud proofs; the latter need recovery paths, never punishment. Conflating them either lets
 attackers hide as "unavailable" or punishes honest failures.
 
 ## 3. Required output per gap
 
-**[`REQ-SEC-4-VF81QD`](security-assessment.md#req-sec-4-vf81qd).** For every identified gap, the review MUST classify the required response as exactly
+**<a id="req-sec-4-vf81qd"></a>`REQ-SEC-4-VF81QD`.** For every identified gap, the review MUST classify the required response as exactly
 one of:
 
 - a **new fraud proof** (the violation is objectively provable and worth proving on-chain);
@@ -121,7 +121,7 @@ peers (full mesh), disconnects a peer that sends an oversized RPC frame, and sup
 disconnect-and-blacklist of misbehaving peers. There is no rate limiting, throttling, queueing
 policy, or backpressure — **gap**.
 
-**[`REQ-SEC-5-1JPJ3C`](security-assessment.md#req-sec-5-1jpj3c).** Before the P2P security model can be declared complete, a rate-limiting design MUST
+**<a id="req-sec-5-1jpj3c"></a>`REQ-SEC-5-1JPJ3C`.** Before the P2P security model can be declared complete, a rate-limiting design MUST
 define:
 
 - the **unit of limiting** (messages, bytes, RPC type, validation cost);
@@ -169,10 +169,10 @@ _Non-normative._
 
 ## Traceability
 
-| ID                                              | State          | Statement                                                                                                       | Implementation                                                                                          | Verification evidence                                                                                                                         |
-| ----------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-sec-1-sns1ga"></a>`REQ-SEC-1-SNS1GA` | Design pending | Dedicated fraud-proof-completeness and attack-coverage review required before the specification is finalized.   | `none — gap` (formal review pending, §4.1)                                                              | `none — gap` (§4.1 empty; §4.2 holds targeted findings, which do not discharge [`REQ-SEC-1-SNS1GA`](security-assessment.md#req-sec-1-sns1ga)) |
-| <a id="req-sec-2-xpgsc3"></a>`REQ-SEC-2-XPGSC3` | Design pending | Review covers the full surface checklist in §2.                                                                 | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
-| <a id="req-sec-3-nppjn5"></a>`REQ-SEC-3-NPPJN5` | Design pending | Review separates objective slashable violations from non-Byzantine failures.                                    | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
-| <a id="req-sec-4-vf81qd"></a>`REQ-SEC-4-VF81QD` | Design pending | Every gap classified as proof / validation / dispute input / recovery / trust assumption / accepted limitation. | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
-| <a id="req-sec-5-1jpj3c"></a>`REQ-SEC-5-1JPJ3C` | Design pending | Gossip rate-limiting policy designed and enforced before the P2P security model is complete.                    | `none — gap` ([src/P2PManager.ts](../../../src/P2PManager.ts) has frame-size and blacklist guards only) | `none — gap` (flood tests required)                                                                                                           |
+| ID                                                            | State          | Statement                                                                                                       | Implementation                                                                                          | Verification evidence                                                                                                                         |
+| ------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`REQ-SEC-1-SNS1GA`](security-assessment.md#req-sec-1-sns1ga) | Design pending | Dedicated fraud-proof-completeness and attack-coverage review required before the specification is finalized.   | `none — gap` (formal review pending, §4.1)                                                              | `none — gap` (§4.1 empty; §4.2 holds targeted findings, which do not discharge [`REQ-SEC-1-SNS1GA`](security-assessment.md#req-sec-1-sns1ga)) |
+| [`REQ-SEC-2-XPGSC3`](security-assessment.md#req-sec-2-xpgsc3) | Design pending | Review covers the full surface checklist in §2.                                                                 | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
+| [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) | Design pending | Review separates objective slashable violations from non-Byzantine failures.                                    | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
+| [`REQ-SEC-4-VF81QD`](security-assessment.md#req-sec-4-vf81qd) | Design pending | Every gap classified as proof / validation / dispute input / recovery / trust assumption / accepted limitation. | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
+| [`REQ-SEC-5-1JPJ3C`](security-assessment.md#req-sec-5-1jpj3c) | Design pending | Gossip rate-limiting policy designed and enforced before the P2P security model is complete.                    | `none — gap` ([src/P2PManager.ts](../../../src/P2PManager.ts) has frame-size and blacklist guards only) | `none — gap` (flood tests required)                                                                                                           |

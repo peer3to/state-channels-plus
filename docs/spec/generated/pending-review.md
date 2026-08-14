@@ -4,20 +4,20 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **0/515** (0%)
-- Pending (never reviewed): **515**
-- Stale (edited since review): **0**
+- Verified (current): **1/515** (0%)
+- Pending (never reviewed): **513**
+- Stale (edited since review): **1**
 
 ## Stale — edited since engineer review
 
-None.
+### specification (1)
+
+- [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
 
 ## Pending — never reviewed
 
-### specification (55)
+### specification (53)
 
-- [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md)
-- [specification/block-progression/README.md](../specification/block-progression/README.md)
 - [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md)
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
@@ -540,4 +540,6 @@ None.
 
 ## Verified — current
 
-None.
+### specification (1)
+
+- [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-14
