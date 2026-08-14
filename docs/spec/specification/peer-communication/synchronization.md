@@ -106,7 +106,12 @@ Ordered verification; any failure aborts the sync with no partial effect:
 **Abort semantics.** A fresh spectator aborts by stopping entirely — it has no channel obligations
 to unwind. A participant using sync for recovery aborts by cutting only the offending peer and
 retaining its own state. In both cases no funds, obligations, or partial local commitments remain
-([`REQ-MSG-9-BFN9P5`](../settlement/cross-layer-messages.md#req-msg-9-bfn9p5)).
+([`REQ-MSG-9-BFN9P5`](../settlement/cross-layer-messages.md#req-msg-9-bfn9p5)). For a prospective joiner, an early abort is the point of
+spectating, not a defect: participant non-cooperation is discovered while nothing is committed,
+and the joiner walks away and interacts with someone else
+([cross-layer-messages.md](../settlement/cross-layer-messages.md) §3). Only misbehavior
+attributable to a participant justifies an abort — junk from non-participants merely drops the
+sender, so an outsider can never force one.
 
 ## System interactions
 

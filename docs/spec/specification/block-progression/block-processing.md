@@ -89,22 +89,23 @@ have won the race; non-replay contexts drop known-stale forks and restore unknow
 the Stage-3 probe), the ordered predicate chain runs ([`REQ-BLOCK-PIPE-2-PCXNT6`](block-processing.md#req-block-pipe-2-pcxnt6)) — each failure routing to the current
 context's consequence ([`REQ-BLOCK-PIPE-3-WW2SB7`](block-processing.md#req-block-pipe-3-ww2sb7)):
 
-1. **Correct channel**; 2. **channel open** (genesis applied);
-2. **author is a participant** of the pre-state (or of the block's declared resulting snapshot,
+1. **Correct channel**;
+2. **channel open** (genesis applied);
+3. **author is a participant** of the pre-state (or of the block's declared resulting snapshot,
    bound to its coordinates), falling back to the on-chain participant union when no local anchor
    exists;
-3. **conflict detection** against committed history at the same coordinates ([`REQ-BLOCK-PIPE-6-XQ0RTT`](block-processing.md#req-block-pipe-6-xq0rtt) evidence rules): same author, different
+4. **conflict detection** against committed history at the same coordinates ([`REQ-BLOCK-PIPE-6-XQ0RTT`](block-processing.md#req-block-pipe-6-xq0rtt) evidence rules): same author, different
    block → **double-sign evidence**; incoming block linked to the committed predecessor → **invalid
    state transition by the author** (extending an agreed history differently); height-zero conflict
    → **wrong genesis**; conflicting but unlinked → unattributable junk;
-4. **live-fork gate** and 6. **not-in-the-future gate** (live contexts only — replay audits a fixed
+5. **live-fork gate** and 6. **not-in-the-future gate** (live contexts only — replay audits a fixed
    proof out of live order by design);
-5. **linkage**: the block's predecessor hash must equal the committed predecessor (or the fork's
+6. **linkage**: the block's predecessor hash must equal the committed predecessor (or the fork's
    genesis snapshot at height zero);
-6. **author is the scheduled leader**: `getNextToWrite` of the pre-state
+7. **author is the scheduled leader**: `getNextToWrite` of the pre-state
    ([`REQ-SM-5-3GS7A7`](../protocol-model/state-machines.md#req-sm-5-3gs7a7)), with the pre-state positioned explicitly in
    replay contexts;
-7. **time rules** ([time.md](../protocol-model/time.md)): the objective timestamp predicate is
+8. **time rules** ([time.md](../protocol-model/time.md)): the objective timestamp predicate is
    evaluated by the canonical enforcement logic over the exact proof structure the chain would
    verify; when it fails against incomplete predecessor timing data, the pipeline first attempts to
    recover the predecessor's on-chain posting timestamp and re-evaluates — an on-chain post can
@@ -155,17 +156,24 @@ check ([dispute-processing.md](../disputes/dispute-processing.md)).
 
 Verdicts are shared; consequences depend on the context ([`REQ-BLOCK-PIPE-3-WW2SB7`](block-processing.md#req-block-pipe-3-ww2sb7)):
 
-| Context                    | Active when                            | Consequence profile                                                                                                                                                                                                                                                                                                                                                           |
-| -------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Live participant           | Node participates                      | Objective faults → store fraud evidence, then escalate to the dispute pipeline ([`REQ-BLOCK-PIPE-8-N529VH`](block-processing.md#req-block-pipe-8-n529vh)). Unattributable junk → terminate/exclude suppliers. Not-yet-ready (channel not open, future block, possibly-honest supplier on a disputed fork) → restore to the queue. Subjective lateness → park, never evidence. |
-| Spectator / pending joiner | Node not (yet) participating           | Same verdicts; a spectator cannot dispute: provable participant fraud → abort and stop following (fail-closed); junk with nobody to slash → drop the sender and keep spectating — junk must never force an abort.                                                                                                                                                             |
-| Calldata-committed         | Block entered from an on-chain posting | As live, except authenticity failure is an objective fault by the poster (open question: proof type). The confirmation carries only the author's signature.                                                                                                                                                                                                                   |
-| Dispute replay             | Auditing a dispute's proof suffix      | Live-fork and ordering gates off; deviations become dispute fraud proofs that kill the dispute ([dispute-processing.md](../disputes/dispute-processing.md)); a double-sign discovered during replay stores ordinary fraud evidence but does not abort the replay (the dispute may still be honest); observations reflecting only missing local baselines continue as valid.   |
+| Context                    | Active when                            | Consequence profile                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Live participant           | Node participates                      | Objective faults → store fraud evidence, then escalate to the dispute pipeline ([`REQ-BLOCK-PIPE-8-N529VH`](block-processing.md#req-block-pipe-8-n529vh)). Unattributable junk → terminate/exclude suppliers. Not-yet-ready (channel not open, future block, possibly-honest supplier on a disputed fork) → restore to the queue. Subjective lateness → park, never evidence.                                                                                                                                                                                                        |
+| Spectator / pending joiner | Node not (yet) participating           | Same verdicts; a spectator cannot dispute: misbehavior attributable to a participant (provable fraud, or junk carrying a participant's signature) → abort and stop following (fail-closed — spectating exists to confirm participant cooperation before funds are committed, so a non-cooperating participant means abort early and interact with someone else); junk from a non-participant (nobody to slash) → drop the sender and keep spectating — a non-participant must never be able to force an abort ([cross-layer-messages.md](../settlement/cross-layer-messages.md) §3). |
+| Calldata-committed         | Block entered from an on-chain posting | As live, except authenticity failure is an objective fault by the poster (open question: proof type). The confirmation carries only the author's signature.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Dispute replay             | Auditing a dispute's proof suffix      | Live-fork and ordering gates off; deviations become dispute fraud proofs that kill the dispute ([dispute-processing.md](../disputes/dispute-processing.md)); a double-sign discovered during replay stores ordinary fraud evidence but does not abort the replay (the dispute may still be honest); observations reflecting only missing local baselines continue as valid.                                                                                                                                                                                                          |
 
 ## Requirements and invariants
 
 **<a id="inv-block-pipe-1-1ab2me"></a>`INV-BLOCK-PIPE-1-1AB2ME` — Atomic ordered commit.** A block and all of its signatures, attribution, state,
 messages, agreement progress, and events commit together exactly once or not at all.
+"Exactly once" scopes the block's execution: one pass through the pipeline and one application
+to state, committing atomically with whatever signatures and attribution the work item carries at
+that moment. It does not freeze the signature set — signatures for the block may keep arriving
+afterward and are collected asynchronously, in parallel with other work, merging onto the
+already-committed block through the pre-execution merge layer (Stage 2,
+[`REQ-BLOCK-PIPE-1-SS24D1`](block-processing.md#req-block-pipe-1-ss24d1), [`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg)) without the block ever
+re-executing.
 
 **<a id="req-block-pipe-1-ss24d1"></a>`REQ-BLOCK-PIPE-1-SS24D1` — Unified work item.** Duplicate confirmations MUST merge signatures and source
 attribution before processing; no path may discard attribution or validate a bare block with weaker context.

@@ -211,6 +211,22 @@ spectator abort with nothing at risk. Aborting is a safe, expected outcome — i
 that a dispute is needed. No step of the sync sends an on-chain transaction: all contract
 verification is read-only against the spectator's execution environment and chain provider.
 
+**Early cooperation check.** Spectating doubles as a zero-commitment probe of the participant
+set: it confirms the participants are cooperating _before_ the prospective joiner commits any
+funds. That purpose fixes the consequence split for misbehavior observed while spectating:
+
+- **Misbehavior attributable to a channel participant** (provable fraud, or junk carrying a
+  participant's signature) → **abort the spectate entirely**. The participant set has already
+  demonstrated non-cooperation while walking away is still free; the prospective joiner aborts
+  early and goes to interact with someone else instead of committing funds to a channel that
+  would misbehave after they were bonded to it.
+- **Junk from a non-participant** (nothing attributable to any participant, nobody to slash) →
+  **drop the sender and keep spectating**. A non-participant must never be able to force an
+  abort — otherwise any outsider could deny channels new joiners.
+
+The per-verdict consequences are specified in the spectating validation context
+([block-processing.md](../block-progression/block-processing.md#validation-contexts-and-consequence-classes)).
+
 **Requester flow.** A spectator sends a synchronization request identifying the channel and,
 optionally, a pinned fork and height. A responder returns the reduced dispute-window chain from the on-chain
 snapshot's fork to the tip fork (with the disputes, latest states, and inbound blocks needed to
