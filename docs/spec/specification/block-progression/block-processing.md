@@ -32,7 +32,7 @@ collection proceed while a transition executes, without letting arrival order de
 The stages below are the normative behavior; how an implementation schedules them is its own concern
 so long as the ordering, decisions, and actions are preserved. Four input paths converge on one
 pipeline: peer gossip ([block-gossip.md](../peer-communication/block-gossip.md)), observed on-chain
-calldata ([`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz)), local authoring (which enters at execution —
+calldata ([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)), local authoring (which enters at execution —
 the author validated by constructing), and proof replay from the dispute and synchronization paths
 (sourceless: there is no supplier to penalize).
 

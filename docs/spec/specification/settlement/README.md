@@ -41,7 +41,7 @@ spectate-before-join admission flow.
   each submission within deployable bounds without changing the result.
 - **Verification evidence.** Requirement matrices in the owned documents; the settlement edges are
   proven under [`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy) and
-  <a id="req-ix-6-a4y7kb"></a>`REQ-IX-6-A4Y7KB`.
+  [`REQ-IX-6-A4Y7KB`](../interactions.md#req-ix-6-a4y7kb).
 
 ## Owned documents
 
@@ -53,5 +53,5 @@ spectate-before-join admission flow.
 ## Interaction contracts
 
 Producer of the snapshot-adoption edge into enforcement
-([`REQ-IX-6-A4Y7KB`](README.md#req-ix-6-a4y7kb)); consumer of inbound-inclusion service from block
+([`REQ-IX-6-A4Y7KB`](../interactions.md#req-ix-6-a4y7kb)); consumer of inbound-inclusion service from block
 progression ([`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)) and of reduced successor forks from disputes.

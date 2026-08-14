@@ -28,7 +28,7 @@
 
 **Purpose & observable contract.**
 
-- **<a id="req-time-1-fm4651"></a>`REQ-TIME-1-FM4651`** — The connected blockchain's time is authoritative for the protocol. Local wall
+- **[`REQ-TIME-1-FM4651`](time.md#req-time-1-fm4651)** — The connected blockchain's time is authoritative for the protocol. Local wall
   clocks are not a source of truth: no protocol decision (timeout, timestamp validity, window
   expiry) may rest on a wall-clock reading that has not been anchored to chain time.
 
@@ -71,7 +71,7 @@ average block time. The estimate therefore deliberately runs behind wall-clock "
 accurate to a band of about one block interval. This lag is a feature for safety-side decisions
 (a participant is less likely to falsely judge a peer late) and a cost for responsiveness.
 
-- **<a id="req-time-2-vg94s7"></a>`REQ-TIME-2-VG94S7`** — Each honest participant MUST keep its local protocol clock within the
+- **[`REQ-TIME-2-VG94S7`](time.md#req-time-2-vg94s7)** — Each honest participant MUST keep its local protocol clock within the
   specified skew bound of chain time, normally by estimating from recent block timestamps.
   Timing windows (§3) are dimensioned assuming this bound holds for honest participants.
 
@@ -109,7 +109,7 @@ and shorten the exposure to stalling peers, but raise the false-failure rate und
 block-timestamp variation, and clock skew; looser windows reduce false failures but slow every
 time-dependent recovery path (timeouts, disputes, settlement).
 
-- **<a id="req-time-3-mt1mmf"></a>`REQ-TIME-3-MT1MMF`** — Deployments MUST treat the window values and the clock-skew bound as explicit
+- **[`REQ-TIME-3-MT1MMF`](time.md#req-time-3-mt1mmf)** — Deployments MUST treat the window values and the clock-skew bound as explicit
   configuration with the trade-off above; the windows MUST be large relative to the maximum
   honest clock skew and the chain's block-time variance.
 
@@ -140,7 +140,7 @@ recorded timestamp becomes an **objective protocol claim** only when it is valid
 chain-time rules and tolerances below — rules whose inputs (signed predecessor timestamps,
 snapshot timestamps, on-chain posting times) any party and the chain itself can check.
 
-- **<a id="req-time-4-83v27z"></a>`REQ-TIME-4-83V27Z`** — Every timeout, fraud proof, and slashing condition MUST be defined over
+- **[`REQ-TIME-4-83V27Z`](time.md#req-time-4-83v27z)** — Every timeout, fraud proof, and slashing condition MUST be defined over
   objectively validatable timestamps only. A subjective timeliness assessment MAY gate local
   behavior (stop signing, escalate, requeue) but MUST NOT be slashable evidence by itself.
 
@@ -242,6 +242,14 @@ slashable evidence. Tests must vary authoritative and estimated time independent
 checks only gate local behavior while objective claims use chain-verifiable values.
 
 ## Requirements and invariants
+
+**<a id="req-time-1-fm4651"></a>`REQ-TIME-1-FM4651`.** Chain time is authoritative; wall clocks are not a source of truth
+
+**<a id="req-time-2-vg94s7"></a>`REQ-TIME-2-VG94S7`.** Honest participants keep estimated chain time within the skew bound (estimated from recent block timestamps)
+
+**<a id="req-time-3-mt1mmf"></a>`REQ-TIME-3-MT1MMF`.** Window values and skew bound are explicit configuration trade-offs; windows dominate honest skew
+
+**<a id="req-time-4-83v27z"></a>`REQ-TIME-4-83V27Z`.** Timeouts/fraud proofs/slashing use only objectively validated timestamps; subjective assessments gate local behavior only
 
 ## Verification and test plan
 

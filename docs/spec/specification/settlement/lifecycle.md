@@ -28,7 +28,7 @@ The design goal is that everything between opening and settlement is off-chain, 
 real-time; the chain is touched to move value across the layer boundary and to adjudicate when
 peers cannot cooperate.
 
-**<a id="req-lif-1-a5bn02"></a>`REQ-LIF-1-A5BN02`.** The best-case complete lifecycle needs **at least two** base-layer transactions:
+**[`REQ-LIF-1-A5BN02`](lifecycle.md#req-lif-1-a5bn02).** The best-case complete lifecycle needs **at least two** base-layer transactions:
 
 1. **Open/deposit** — `StateChannelManagerProxy.open`
    verifies the unanimously signed terms, deposits the committed assets, and records the genesis
@@ -104,14 +104,14 @@ sign and return signatures. Participants **do not wait** for a block to reach th
 before building the next one — finality trails behind production. The full model, including the
 three finality routes and the calldata fallback, is specified in [finality.md](../protocol-model/finality.md).
 
-**<a id="req-lif-3-pdrtpy"></a>`REQ-LIF-3-PDRTPY`.** A normal state transition MAY produce an outbound message — including an
+**[`REQ-LIF-3-PDRTPY`](lifecycle.md#req-lif-3-pdrtpy).** A normal state transition MAY produce an outbound message — including an
 `ExitChannel` — as an ordinary transition result. Exits are **not** limited to removal or
 slashing, and **producing the message requires no finality**. Finality is required only when a
 snapshot carrying that outbound tip is submitted on-chain.
 
 ## 5. Two paths to a snapshot-updating state
 
-**<a id="req-lif-2-z3z9y3"></a>`REQ-LIF-2-Z3Z9Y3`.** Exactly two paths lead to a state that can update the on-chain snapshot and support
+**[`REQ-LIF-2-Z3Z9Y3`](lifecycle.md#req-lif-2-z3z9y3).** Exactly two paths lead to a state that can update the on-chain snapshot and support
 withdrawals:
 
 1. **Same-fork finality.** Every required participant signed (directly or via virtual votes —
@@ -138,7 +138,7 @@ self-removal, and forced inclusion of newer inbound messages ([disputes.md](../d
 Uploading a dispute opens (or joins) a `DisputeWindow` for the disputed fork and records the
 disputer's commitment immediately.
 
-**<a id="req-lif-4-sw8gvy"></a>`REQ-LIF-4-SW8GVY`.** Every initiated dispute runs through the dispute game and produces a **canonical
+**[`REQ-LIF-4-SW8GVY`](lifecycle.md#req-lif-4-sw8gvy).** Every initiated dispute runs through the dispute game and produces a **canonical
 successor fork** — whether the submitted claim is ultimately accepted, rejected, or reduced away.
 The reduction (`reduce` → `reduceOutputToSnapshotData`) deterministically folds the committed
 disputes into a new genesis `SnapshotData`; its hash is the successor `forkId`; off-chain
@@ -162,7 +162,7 @@ standalone withdrawal call. `_updateStateSnapshot`:
 2. verifies the supplied range links the old tip to the new snapshot's committed tip,
 3. processes each message (an `EXIT` message runs `withdrawAssetsComposable` → application boundary
    `withdraw`), accumulating `totalWithdrawals`,
-4. **<a id="inv-lif-5-enqb91"></a>`INV-LIF-5-ENQB91`:** requires `totalWithdrawals <= totalDeposits` after every message
+4. **[`INV-LIF-5-ENQB91`](lifecycle.md#inv-lif-5-enqb91):** requires `totalWithdrawals <= totalDeposits` after every message
    (`CantWithdrawMoreThanDeposits`) — settlement conserves value,
 5. stores the new snapshot and advances the outbound accounting; at 0 remaining participants the
    channel's storage is cleared.
@@ -188,7 +188,7 @@ the stream model is specified in [cross-layer-messages.md](./cross-layer-message
 
 ## 8. The four timing windows
 
-**<a id="req-lif-6-vg861m"></a>`REQ-LIF-6-VG861M`.** Four protocol windows are configured on the manager at deployment
+**[`REQ-LIF-6-VG861M`](lifecycle.md#req-lif-6-vg861m).** Four protocol windows are configured on the manager at deployment
 (`StateChannelManagerProxy`
 deployment configuration; defaults in seconds in parentheses) and mirrored into the off-chain participant's
 `timeConfig`. Each bounds a specific phase:
@@ -221,6 +221,18 @@ failed settlement, retry/recovery, and all terminal states. The diagram is not s
 and prohibited edge needs an observable oracle and must preserve value and canonical-history invariants.
 
 ## Requirements and invariants
+
+**<a id="req-lif-1-a5bn02"></a>`REQ-LIF-1-A5BN02`.** Best-case complete lifecycle needs at least two base-layer txs: open/deposit and settlement via a snapshot update that processes the outbound stream.
+
+**<a id="req-lif-2-z3z9y3"></a>`REQ-LIF-2-Z3Z9Y3`.** Only two paths yield a snapshot-updating state: same-fork finality proof, or dispute reduction after the challenge window.
+
+**<a id="req-lif-3-pdrtpy"></a>`REQ-LIF-3-PDRTPY`.** A normal transition may produce an outbound exit message; producing it needs no finality — finality is needed only at on-chain snapshot submission.
+
+**<a id="req-lif-4-sw8gvy"></a>`REQ-LIF-4-SW8GVY`.** Every initiated dispute produces a canonical successor fork; execution resumes from it.
+
+**<a id="inv-lif-5-enqb91"></a>`INV-LIF-5-ENQB91`.** Settlement conserves value: processed withdrawals never exceed deposits.
+
+**<a id="req-lif-6-vg861m"></a>`REQ-LIF-6-VG861M`.** Four deployment-configured windows (`p2pTime`, `agreementTime`, `chainFallbackTime`, `evidenceTime`) bound the phases as specified in §8.
 
 ## Verification and test plan
 

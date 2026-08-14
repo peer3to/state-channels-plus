@@ -41,8 +41,8 @@ executes what the other systems prove; it never originates protocol decisions of
   [../security/data-availability.md](../security/data-availability.md)).
 - **Verification evidence.** The requirement matrices in the owned documents below; the
   adjudication and settlement edges are proven under [`REQ-IX-5-6XHJJB`](../interactions.md#req-ix-5-6xhjjb) and
-  [`REQ-IX-6-A4Y7KB`](../settlement/README.md#req-ix-6-a4y7kb); the observation edge under
-  [`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz); local/on-chain equivalence under
+  [`REQ-IX-6-A4Y7KB`](../interactions.md#req-ix-6-a4y7kb); the observation edge under
+  [`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz); local/on-chain equivalence under
   [local-mirror.md](./local-mirror.md).
 
 ## Owned documents
@@ -66,7 +66,7 @@ semantics to their owning protocol systems without restating their algorithms.
 ## Interaction contracts
 
 Consumer end of [`REQ-IX-5-6XHJJB`](../interactions.md#req-ix-5-6xhjjb) (dispute adjudication) and
-[`REQ-IX-6-A4Y7KB`](../settlement/README.md#req-ix-6-a4y7kb) (snapshot adoption); producer of the chain-observation edge
-[`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz) that feeds every node. The [local mirror](./local-mirror.md)
-is how consumers of [`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz) avoid re-querying the chain for every read without ever trusting the
+[`REQ-IX-6-A4Y7KB`](../interactions.md#req-ix-6-a4y7kb) (snapshot adoption); producer of the chain-observation edge
+[`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz) that feeds every node. The [local mirror](./local-mirror.md)
+is how consumers of [`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz) avoid re-querying the chain for every read without ever trusting the
 cache as authority.

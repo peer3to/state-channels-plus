@@ -67,7 +67,7 @@ result that will be _acted on_ with on-chain consequences — needs chain confir
 ## Sync and fallback
 
 - **Unconditional sync.** The client advances the mirror from every relevant observed on-chain
-  event and state read ([`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz)), unconditionally — the mirror
+  event and state read ([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)), unconditionally — the mirror
   tracks the chain, never a local hypothesis. Mirror writes are event-driven replication, not local
   decisions.
 - **No completeness proof.** Without a light client, the node cannot prove its observed view is
@@ -110,7 +110,7 @@ for observation lag within the trust model's bounds.
   commitment and MUST NOT include any predicate the client evaluates locally.
 - RPC fallback inherits the trust model's honest-RPC assumption (A6); the mirror reduces query
   volume, not the trust requirement.
-- Mirror state is storage-system data ([`REQ-IX-9-AV56NR`](../storage/README.md#req-ix-9-av56nr)): rebuilt from
+- Mirror state is storage-system data ([`REQ-IX-9-AV56NR`](../interactions.md#req-ix-9-av56nr)): rebuilt from
   chain observation after loss, per [durability.md](../storage/durability.md) [`REQ-STOR-3-4RJGER`](../storage/durability.md#req-stor-3-4rjger).
 
 ## Security considerations

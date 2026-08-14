@@ -77,7 +77,7 @@ on the predecessor — which forfeits the extra time) and escalate.
 ### Stage 3 — Chain intake (auditor role)
 
 Disputes never arrive over peer communication; the chain is the sole intake
-([`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz)). For each observed dispute event: replicate into the
+([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)). For each observed dispute event: replicate into the
 local mirror, deduplicate by dispute identity, and gate by relevance (the disputed fork is the
 node's current fork, or a decided dispute for a fork with in-progress recovery — late events for
 resolved forks are ignored). Relevant disputes purge the dead fork's queued blocks and trigger the
@@ -190,7 +190,7 @@ the outcome is already determined.
 - Replay uses the same deterministic application semantics as ordinary validation.
 - Multiple observers and participants may process the same dispute concurrently or after restart.
 - Audit deadlines inherit the chain-observation freshness assumption
-  ([`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz)); the windows come from the chain's configuration —
+  ([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)); the windows come from the chain's configuration —
   the pipeline reads them, it never computes its own authority over them.
 - Honest-peer coverage of unjudgeable disputes relies on at least one peer holding the anchor data
   ([data-availability.md](../security/data-availability.md)).

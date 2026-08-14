@@ -50,7 +50,7 @@ The same contract runs in two places:
 2. **On-chain**, when a dispute or fraud proof re-executes a transition
    (`executeStateTransition` on the manager).
 
-- **<a id="inv-sm-1-j7bp6d"></a>`INV-SM-1-J7BP6D`** — Transitions MUST be deterministic: identical prior state (as restored by
+- **[`INV-SM-1-J7BP6D`](state-machines.md#inv-sm-1-j7bp6d)** — Transitions MUST be deterministic: identical prior state (as restored by
   `_setState`) plus identical transaction MUST yield an identical resulting state and identical
   outbound messages, both off-chain and under on-chain replay.
 
@@ -82,7 +82,7 @@ below.
 | Process inbound message           | One canonical inbound message                                        | Deterministic success or rejection and the resulting state change; standard membership messages and supported application-defined messages follow the same atomicity rules as transitions. |
 | Apply membership lifecycle action | Join/top-up request, soft-removal identity, or slashing identity     | Deterministic success or rejection, the resulting membership/balance state, and any canonical exit message required by §6.                                                                 |
 
-<a id="req-sm-9-qk86sj"></a>`REQ-SM-9-QK86SJ` — A conforming state machine MUST provide the complete interface above. Every operation
+[`REQ-SM-9-QK86SJ`](state-machines.md#req-sm-9-qk86sj) — A conforming state machine MUST provide the complete interface above. Every operation
 MUST use the same canonical state, identity, balance, message, and transaction meanings defined by
 this specification. An unsupported required operation, a hidden mutable input, or a different
 result between equivalent execution environments is non-conforming.
@@ -123,7 +123,7 @@ transition executes rather than on the injected transaction and restored state. 
 | `msg.value`, `address(this).balance`, external calls to other contracts, precompile-dependent randomness               | State outside `getState()` cannot be restored for replay.                                                                                                                                                                                                                        |
 | `gasleft()`                                                                                                            | Differs between execution environments even under the same `gasLimit`.                                                                                                                                                                                                           |
 
-- **<a id="req-sm-1-y72ckx"></a>`REQ-SM-1-Y72CKX`** — Author identity MUST be read from `_tx.header.participant` and time from
+- **[`REQ-SM-1-Y72CKX`](state-machines.md#req-sm-1-y72ckx)** — Author identity MUST be read from `_tx.header.participant` and time from
   `_tx.header.timestamp`; any use of the prohibited ambient context in transition logic is a
   correctness and fraud-proof vulnerability, and MUST be treated as a defect, not a style issue.
 
@@ -155,22 +155,22 @@ function getState() public view virtual returns (bytes memory);   // serialize
 function _setState(bytes memory encodedState) internal virtual;    // restore
 ```
 
-- **<a id="inv-sm-2-0ftj2t"></a>`INV-SM-2-0FTJ2T`** — `getState`/`_setState` MUST be exact inverses: `_setState(getState())` leaves
+- **[`INV-SM-2-0FTJ2T`](state-machines.md#inv-sm-2-0ftj2t)** — `getState`/`_setState` MUST be exact inverses: `_setState(getState())` leaves
   the state unchanged, and `getState()` after `_setState(b)` returns bytes whose decoded logical
   state equals the state encoded in `b`.
 
-- **<a id="req-sm-2-phcrfr"></a>`REQ-SM-2-PHCRFR`** — Serialization MUST be deterministic and lossless: one logical state maps to one
+- **[`REQ-SM-2-PHCRFR`](state-machines.md#req-sm-2-phcrfr)** — Serialization MUST be deterministic and lossless: one logical state maps to one
   canonical byte encoding, and every field that transition logic can read is included. Equivalent
   logical states MUST serialize to identical bytes, because the protocol compares state by hash
   (`keccak256(getState())` becomes `SnapshotData.stateMachineStateHash`; see
   [history-and-commitments.md](./history-and-commitments.md)).
 
-- **<a id="req-sm-3-88rfp2"></a>`REQ-SM-3-88RFP2`** — contract runtime `mapping`s MAY be used only when the state also maintains a complete,
+- **[`REQ-SM-3-88RFP2`](state-machines.md#req-sm-3-88rfp2)** — contract runtime `mapping`s MAY be used only when the state also maintains a complete,
   deterministic key enumeration, the serialization walks that enumeration in a defined order, and
   `_setState` restores both the mapping and its enumeration consistently. State that cannot be
   enumerated deterministically MUST NOT be part of channel state.
 
-- **<a id="req-sm-4-z32m0w"></a>`REQ-SM-4-Z32M0W`** — The integrator MUST define ordering (field and collection order), encoding
+- **[`REQ-SM-4-Z32M0W`](state-machines.md#req-sm-4-z32m0w)** — The integrator MUST define ordering (field and collection order), encoding
   (`abi.encode` of a single state struct is the reference pattern), and round-trip behavior
   explicitly. The state machine and its state encoding are **immutable for the lifetime of a
   channel**: upgrades to state-machine logic, if any, apply only to newly opened channels. No
@@ -222,14 +222,14 @@ state machine's balance operations interpret it. Serialization is ABI encoding o
 
 The state machine defines the balance **algebra** by implementing:
 
-| Operation                     | Required semantics                                                                                                                            |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `addBalance(b1, b2)`          | Associative and commutative over valid balances; MUST reject overflow rather than wrap (**<a id="req-bal-3-p7q83f"></a>`REQ-BAL-3-P7Q83F`**). |
-| `subtractBalance(b1, b2)`     | Partial function: MUST revert when `b2` is not covered by `b1` (**<a id="req-bal-1-z8rh4v"></a>`REQ-BAL-1-Z8RH4V`**, underflow rejection).    |
-| `areBalancesEqual(b1, b2)`    | Equivalence over logical value (not raw bytes).                                                                                               |
-| `isBalanceLesserThan(b1, b2)` | The order used by protocol comparisons.                                                                                                       |
-| `getTotalStateBalance()`      | Sum of all value the current state accounts for.                                                                                              |
-| `getZeroBalance()`            | Identity element of `addBalance`.                                                                                                             |
+| Operation                     | Required semantics                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `addBalance(b1, b2)`          | Associative and commutative over valid balances; MUST reject overflow rather than wrap (**[`REQ-BAL-3-P7Q83F`](state-machines.md#req-bal-3-p7q83f)**). |
+| `subtractBalance(b1, b2)`     | Partial function: MUST revert when `b2` is not covered by `b1` (**[`REQ-BAL-1-Z8RH4V`](state-machines.md#req-bal-1-z8rh4v)**, underflow rejection).    |
+| `areBalancesEqual(b1, b2)`    | Equivalence over logical value (not raw bytes).                                                                                                        |
+| `isBalanceLesserThan(b1, b2)` | The order used by protocol comparisons.                                                                                                                |
+| `getTotalStateBalance()`      | Sum of all value the current state accounts for.                                                                                                       |
+| `getZeroBalance()`            | Identity element of `addBalance`.                                                                                                                      |
 
 - **[`REQ-BAL-1-Z8RH4V`](state-machines.md#req-bal-1-z8rh4v)** — `subtractBalance` MUST reject underflow: a participant cannot spend or exit
   more than they hold. This operation is the local enforcement point of the channel's
@@ -238,7 +238,7 @@ The state machine defines the balance **algebra** by implementing:
   [../protocol/cross-layer-messages.md](../settlement/cross-layer-messages.md) (channel-balance
   invariant).
 
-- **<a id="req-bal-2-ktsw9b"></a>`REQ-BAL-2-KTSW9B`** — All balance operations MUST be pure/deterministic functions of their inputs
+- **[`REQ-BAL-2-KTSW9B`](state-machines.md#req-bal-2-ktsw9b)** — All balance operations MUST be pure/deterministic functions of their inputs
   (they are declared `pure`/`view` in the base and are called during replay).
 
 - **[`REQ-BAL-3-P7Q83F`](state-machines.md#req-bal-3-p7q83f)** — `addBalance` and every balance aggregation (`getTotalStateBalance`, join
@@ -290,7 +290,7 @@ what is not held.
 function getNextToWrite() public view virtual returns (address);
 ```
 
-- **<a id="req-sm-5-3gs7a7"></a>`REQ-SM-5-3GS7A7`** — `getNextToWrite()` returns the address authorized to author the next **block**.
+- **[`REQ-SM-5-3GS7A7`](state-machines.md#req-sm-5-3gs7a7)** — `getNextToWrite()` returns the address authorized to author the next **block**.
   The authorization rule is block-level: it constrains who may produce and sign the next block on
   the fork, not who may author an individual transaction inside it.
 
@@ -302,7 +302,7 @@ block came from the legitimate author and whether it is this instance's turn
 (the corresponding participant-state operation); `peekNextToWrite(serializedState)`
 answers the same question against a supplied state without mutating the live one.
 
-- **<a id="req-sm-6-bjzvq5"></a>`REQ-SM-6-BJZVQ5`** — Turn authorization is a protocol-layer responsibility, enforced generically for
+- **[`REQ-SM-6-BJZVQ5`](state-machines.md#req-sm-6-bjzvq5)** — Turn authorization is a protocol-layer responsibility, enforced generically for
   every state machine: the validation pipeline checks `block.author == getNextToWrite()` on the
   pre-state before any execution
   (block-validation service leader check — a
@@ -333,7 +333,7 @@ stateDiagram-v2
 
 ### 6.1 `_joinChannel(JoinChannel)` — admission and top-up
 
-- **<a id="req-sm-7-y38nty"></a>`REQ-SM-7-Y38NTY`** — `_joinChannel` MUST handle both cases:
+- **[`REQ-SM-7-Y38NTY`](state-machines.md#req-sm-7-y38nty)** — `_joinChannel` MUST handle both cases:
     - **New address:** incorporate the participant and its initial balance into state.
     - **Existing participant:** increase that participant's balance without changing membership
       (a top-up on a repeated join).
@@ -362,7 +362,7 @@ them into the hash-linked outbound message-block stream committed by the next sn
 [../protocol/cross-layer-messages.md](../settlement/cross-layer-messages.md)). A normal transition
 MAY also produce an exit; exits are not limited to removal and slashing.
 
-- **<a id="req-sm-8-8chsq8"></a>`REQ-SM-8-8CHSQ8`** — `slashParticipant` and `removeParticipant` MUST record their resulting
+- **[`REQ-SM-8-8CHSQ8`](state-machines.md#req-sm-8-8chsq8)** — `slashParticipant` and `removeParticipant` MUST record their resulting
   `ExitChannel` identically: both produce the `MESSAGE_TYPE_EXIT` outbound message through the
   same path (`_addExitChannel`). The only permitted difference between the two is balance
   semantics inside the hooks: `_removeParticipant` is the soft path and MAY return the
@@ -415,6 +415,34 @@ serialization property suite, top-up test, generic on-chain wrong-turn proof, or
 Until those gaps close, engineer review of an integrator contract remains a security-critical control.
 
 ## Requirements and invariants
+
+**<a id="inv-sm-1-j7bp6d"></a>`INV-SM-1-J7BP6D`.** Transitions deterministic; identical state + transaction ⇒ identical result and outbound messages, off-chain and on-chain
+
+**<a id="req-sm-1-y72ckx"></a>`REQ-SM-1-Y72CKX`.** Author = `_tx.header.participant`, time = `_tx.header.timestamp`; ambient EVM context prohibited
+
+**<a id="inv-sm-2-0ftj2t"></a>`INV-SM-2-0FTJ2T`.** `getState`/`_setState` exact inverses
+
+**<a id="req-sm-2-phcrfr"></a>`REQ-SM-2-PHCRFR`.** Canonical, deterministic, lossless serialization; equal states ⇒ equal bytes
+
+**<a id="req-sm-3-88rfp2"></a>`REQ-SM-3-88RFP2`.** Mappings only with complete deterministic key enumeration
+
+**<a id="req-sm-4-z32m0w"></a>`REQ-SM-4-Z32M0W`.** Ordering/encoding/round-trip defined explicitly; state machine and encoding immutable per channel (upgrades affect new channels only)
+
+**<a id="req-bal-1-z8rh4v"></a>`REQ-BAL-1-Z8RH4V`.** `subtractBalance` rejects underflow
+
+**<a id="req-bal-2-ktsw9b"></a>`REQ-BAL-2-KTSW9B`.** Balance operations pure/deterministic
+
+**<a id="req-bal-3-p7q83f"></a>`REQ-BAL-3-P7Q83F`.** `addBalance` and aggregations reject overflow (no wrapping)
+
+**<a id="req-sm-5-3gs7a7"></a>`REQ-SM-5-3GS7A7`.** `getNextToWrite` authorizes the next block author (block-level rule)
+
+**<a id="req-sm-6-bjzvq5"></a>`REQ-SM-6-BJZVQ5`.** Turn authorization enforced generically at the protocol layer (pre-execution leader check); in-contract checks optional
+
+**<a id="req-sm-7-y38nty"></a>`REQ-SM-7-Y38NTY`.** `_joinChannel` handles admission and top-up
+
+**<a id="req-sm-8-8chsq8"></a>`REQ-SM-8-8CHSQ8`.** Slash and remove record their `ExitChannel` identically via `_addExitChannel`; hooks differ only in balance semantics
+
+**<a id="req-sm-9-qk86sj"></a>`REQ-SM-9-QK86SJ`.** Complete logical state-machine interface is exposed with canonical inputs, outputs, atomic failure, and cross-runtime equivalence
 
 ## Verification and test plan
 

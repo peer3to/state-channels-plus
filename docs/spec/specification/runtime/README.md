@@ -46,7 +46,7 @@ operational limits. It hosts every other system without changing their observabl
   measurement justifies it.
 - **Verification evidence.** Requirement matrices in the owned documents; execution equivalence and
   the observation edge are proven under [`REQ-IX-8-FY54AV`](../interactions.md#req-ix-8-fy54av) and
-  <a id="req-ix-7-a004vz"></a>`REQ-IX-7-A004VZ`.
+  [`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz).
 
 ## Owned documents
 
@@ -61,6 +61,6 @@ which nearly every system calls; this system consumes it like the others.
 
 ## Interaction contracts
 
-Producer of chain observation for every system ([`REQ-IX-7-A004VZ`](README.md#req-ix-7-a004vz)) and owner
+Producer of chain observation for every system ([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)) and owner
 of the execution-equivalence guarantee every system inherits
 ([`REQ-IX-8-FY54AV`](../interactions.md#req-ix-8-fy54av)).

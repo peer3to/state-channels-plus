@@ -59,7 +59,7 @@ Deterministic author selection is owned by
 
 ## Interaction contracts
 
-Producer of proof material for disputes ([`REQ-IX-4-BB35GC`](../disputes/README.md#req-ix-4-bb35gc)) and consumer of
+Producer of proof material for disputes ([`REQ-IX-4-BB35GC`](../interactions.md#req-ix-4-bb35gc)) and consumer of
 peer ingress ([`REQ-IX-1-WTJ0D1`](../interactions.md#req-ix-1-wtj0d1)), deterministic execution
 ([`REQ-IX-2-2PY2EF`](../interactions.md#req-ix-2-2py2ef)), and inbound-inclusion obligations
 ([`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)).

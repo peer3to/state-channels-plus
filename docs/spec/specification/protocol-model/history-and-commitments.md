@@ -98,7 +98,7 @@ flowchart TB
     PBH -->|"height 0: keccak256(abi.encode(genesis StateSnapshot))"| GEN["Genesis StateSnapshot"]
 ```
 
-- **<a id="inv-hist-1-5n44k9"></a>`INV-HIST-1-5N44K9`** — A block's `stateSnapshotHash` MUST equal
+- **[`INV-HIST-1-5N44K9`](history-and-commitments.md#inv-hist-1-5n44k9)** — A block's `stateSnapshotHash` MUST equal
   `keccak256(abi.encode(StateSnapshot))` of the snapshot describing the channel immediately after
   this block's transition and inbound messages are applied. The serialized state-machine state is
   committed indirectly: `SnapshotData.stateMachineStateHash = keccak256(getState())`. Agreement
@@ -123,7 +123,7 @@ struct) and, on-chain, `keccak256(abi.encode(...))` of the same struct
 
 ### 3.2 Hash-linking
 
-- **<a id="inv-hist-2-27m8va"></a>`INV-HIST-2-27M8VA`** — Blocks MUST be hash-linked: for height > 0, `previousBlockHash` is
+- **[`INV-HIST-2-27M8VA`](history-and-commitments.md#inv-hist-2-27m8va)** — Blocks MUST be hash-linked: for height > 0, `previousBlockHash` is
   `keccak256(encodedBlock)` of the predecessor block; for height 0 (the first block of a fork),
   `previousBlockHash` is `keccak256(abi.encode(StateSnapshot))` of the fork's genesis snapshot.
   A block whose link does not verify is not part of the history.
@@ -167,7 +167,7 @@ commits to its tip in the snapshot
 and their incremental on-chain processing are specified in
 [../protocol/cross-layer-messages.md](../settlement/cross-layer-messages.md).
 
-- **<a id="inv-hist-3-t17t78"></a>`INV-HIST-3-T17T78`** — Each snapshot MUST commit to the tips (hash and height) of both message streams as
+- **[`INV-HIST-3-T17T78`](history-and-commitments.md#inv-hist-3-t17t78)** — Each snapshot MUST commit to the tips (hash and height) of both message streams as
   they stand after the block's effects; stream contents are bound through the streams' own
   hash-linking, mirroring HIST-2.
 
@@ -175,7 +175,7 @@ and their incremental on-chain processing are specified in
 
 A **fork** is one branch of channel history.
 
-- **<a id="inv-hist-4-dsmggt"></a>`INV-HIST-4-DSMGGT`** — `forkId = keccak256(abi.encode(genesisSnapshotData))`: the fork identifier is the
+- **[`INV-HIST-4-DSMGGT`](history-and-commitments.md#inv-hist-4-dsmggt)** — `forkId = keccak256(abi.encode(genesisSnapshotData))`: the fork identifier is the
   hash of the fork's genesis `SnapshotData`. Verified:
   StateChannelManagerProxy
   computes it exactly this way when building a genesis, and the off-chain participant's genesis test is
@@ -237,6 +237,14 @@ history. Resource limits for blocks, message blocks, snapshots, and proof paths 
 because an otherwise valid commitment can still be too expensive to inspect on-chain.
 
 ## Requirements and invariants
+
+**<a id="inv-hist-1-5n44k9"></a>`INV-HIST-1-5N44K9`.** Block commits to the state snapshot hash; serialized state committed indirectly via `SnapshotData.stateMachineStateHash`
+
+**<a id="inv-hist-2-27m8va"></a>`INV-HIST-2-27M8VA`.** Hash-linking: height>0 links to previous block hash; height 0 links to genesis snapshot hash
+
+**<a id="inv-hist-3-t17t78"></a>`INV-HIST-3-T17T78`.** Snapshots commit to inbound and outbound message-stream tips (hash + height)
+
+**<a id="inv-hist-4-dsmggt"></a>`INV-HIST-4-DSMGGT`.** `forkId = keccak256(abi.encode(genesis SnapshotData))`; `originForkId` chains fork ancestry
 
 ## Verification and test plan
 

@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Aliasing prevention backing the storage-fidelity edge ([`REQ-IX-9-AV56NR`](../../../../specification/storage/README.md#req-ix-9-av56nr)).
+- Aliasing prevention backing the storage-fidelity edge ([`REQ-IX-9-AV56NR`](../../../../specification/interactions.md#req-ix-9-av56nr)).
 
 ## Specification contradictions
 

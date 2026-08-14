@@ -47,7 +47,7 @@ strength, never observable semantics.
 - **Resource bounds.** Per-entry structural caps where an adversary controls insertion volume (queue
   attribution caps); retention bounded by protocol obligations ([`REQ-STOR-4-MF6FT6`](durability.md#req-stor-4-mf6ft6)).
 - **Verification evidence.** Test matrices in the owned documents; the cross-system storage edge is
-  <a id="req-ix-9-av56nr"></a>`REQ-IX-9-AV56NR`.
+  [`REQ-IX-9-AV56NR`](../interactions.md#req-ix-9-av56nr).
 
 ## Owned documents
 
@@ -69,6 +69,6 @@ what is specific to that module: its key space, data model, merge/update rules, 
 
 ## Interaction contracts
 
-Every system's storage use is governed by one edge: [`REQ-IX-9-AV56NR`](README.md#req-ix-9-av56nr) —
+Every system's storage use is governed by one edge: [`REQ-IX-9-AV56NR`](../interactions.md#req-ix-9-av56nr) —
 storage preserves exactly what producers committed, returns it unreinterpreted, and grants no
 validity. Modules never call back into their producers.

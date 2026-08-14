@@ -24,7 +24,7 @@ posted, dispute lifecycle, slashes, stream processing, storage cleared).
 
 ## Key design decisions
 
-1. **Events are the observation contract:** the client's mirror replication keys on these signatures ([`REQ-IX-7-A004VZ`](../../../../specification/runtime/README.md#req-ix-7-a004vz)).
+1. **Events are the observation contract:** the client's mirror replication keys on these signatures ([`REQ-IX-7-A004VZ`](../../../../specification/interactions.md#req-ix-7-a004vz)).
 
 ## Inputs, outputs, state, and side effects
 

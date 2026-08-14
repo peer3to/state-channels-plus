@@ -74,7 +74,7 @@ The recursive hash linkage permits incremental catch-up. If the base layer has p
 tip _A_ and receives proof of a finalized snapshot committing to descendant tip _B_, it processes
 the linked _A → B_ difference and advances its marker to _B_.
 
-- **<a id="req-msg-5-5xb7db"></a>`REQ-MSG-5-5XB7DB` (batchability).** Catch-up MUST be splittable into smaller ranges without changing
+- **[`REQ-MSG-5-5XB7DB`](cross-layer-messages.md#req-msg-5-5xb7db) (batchability).** Catch-up MUST be splittable into smaller ranges without changing
   the result: processing _A → M_ then _M → B_ (via any intermediate committed snapshot _M_) MUST
   leave the same marker, totals, and consumer effects as processing _A → B_ at once.
   **For this protocol version:** supported operationally — `updateStateSnapshotSameFork` accepts any newer proven
@@ -117,19 +117,19 @@ defense in depth?
 
 ### 1.6 Invariants
 
-- **<a id="inv-msg-1-36y41q"></a>`INV-MSG-1-36Y41Q` (ordered, linked streams).** Each stream is a single hash-linked chain per channel
+- **[`INV-MSG-1-36Y41Q`](cross-layer-messages.md#inv-msg-1-36y41q) (ordered, linked streams).** Each stream is a single hash-linked chain per channel
   with heights increasing by exactly 1; a message block's identity is
   `keccak256(abi.encode(block))`.
-- **<a id="inv-msg-2-pq0t1k"></a>`INV-MSG-2-PQ0T1K` (no replay, no omission).** The destination processes each message block exactly
+- **[`INV-MSG-2-PQ0T1K`](cross-layer-messages.md#inv-msg-2-pq0t1k) (no replay, no omission).** The destination processes each message block exactly
   once and in order: already-processed blocks are skipped (inbound: persistence guard; outbound:
   prefix pruning), and a range that omits or reorders blocks cannot verify against the committed
   tips.
-- **<a id="inv-msg-3-pcr3kt"></a>`INV-MSG-3-PCR3KT` (cumulative totals).** `totalBalance` of the stream tip equals the balance-algebra
+- **[`INV-MSG-3-PCR3KT`](cross-layer-messages.md#inv-msg-3-pcr3kt) (cumulative totals).** `totalBalance` of the stream tip equals the balance-algebra
   sum of all message balances since stream genesis; on-chain `totalDeposits` /
   `totalWithdrawals` equal the tip totals of the processed prefixes.
-- **<a id="inv-msg-4-6e5g7v"></a>`INV-MSG-4-6E5G7V` (withdrawals capped by deposits).** At every point of outbound processing,
+- **[`INV-MSG-4-6E5G7V`](cross-layer-messages.md#inv-msg-4-6e5g7v) (withdrawals capped by deposits).** At every point of outbound processing,
   `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).
-- **<a id="inv-msg-5-yc48r5"></a>`INV-MSG-5-YC48R5` (marker monotonicity).** Processed tips only advance to descendants of the current
+- **[`INV-MSG-5-YC48R5`](cross-layer-messages.md#inv-msg-5-yc48r5) (marker monotonicity).** Processed tips only advance to descendants of the current
   tip; snapshot advance requires strictly newer snapshots (`isSnapshotNewer` /
   `RaceConditionBlockHeightTooOld`).
 
@@ -344,6 +344,16 @@ across concurrent inbound/outbound activity.
 
 ## Requirements and invariants
 
+**<a id="inv-msg-1-36y41q"></a>`INV-MSG-1-36Y41Q`.** Each stream is one hash-linked chain per channel; heights +1; identity = `keccak256(abi.encode(block))`
+
+**<a id="inv-msg-2-pq0t1k"></a>`INV-MSG-2-PQ0T1K`.** No replay, no omission: each block processed exactly once, in order
+
+**<a id="inv-msg-3-pcr3kt"></a>`INV-MSG-3-PCR3KT`.** Tip `totalBalance` = cumulative sum of message balances; chain totals match processed prefixes
+
+**<a id="inv-msg-4-6e5g7v"></a>`INV-MSG-4-6E5G7V`.** `totalWithdrawals ≤ totalDeposits` at every outbound processing step
+
+**<a id="inv-msg-5-yc48r5"></a>`INV-MSG-5-YC48R5`.** Processed tips advance only to strictly newer descendants
+
 **<a id="inv-msg-6-1c22rd"></a>`INV-MSG-6-1C22RD`.** Balance invariant: `totalDeposits == totalWithdrawals + getTotalStateBalance(state)` with chain-anchored deposits/withdrawals
 
 **<a id="req-msg-1-ay3a77"></a>`REQ-MSG-1-AY3A77`.** Snapshots MUST commit both stream tips + totals; dispute outputs likewise
@@ -353,6 +363,8 @@ across concurrent inbound/outbound activity.
 **<a id="req-msg-3-yy569f"></a>`REQ-MSG-3-YY569F`.** Packaged inbound blocks MUST chain from the previous snapshot tip and exist on-chain; fabrication is provable fraud
 
 **<a id="req-msg-4-sc1fex"></a>`REQ-MSG-4-SC1FEX`.** Outbound processing MUST verify the linked range and skip the processed prefix before consuming
+
+**<a id="req-msg-5-5xb7db"></a>`REQ-MSG-5-5XB7DB`.** Catch-up MUST be batchable into smaller ranges with identical results
 
 **<a id="req-msg-6-mznqam"></a>`REQ-MSG-6-MZNQAM`.** Snapshot advance MUST require finality (same-fork) or finalized reduction + expired challenge period (successor fork)
 

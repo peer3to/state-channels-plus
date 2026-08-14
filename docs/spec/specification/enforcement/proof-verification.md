@@ -51,7 +51,7 @@ protocol events, or depends on caller identity; a predicate's verdict is a pure 
 inputs and committed state, equal for every caller and every evaluation context satisfying the
 [mirror equivalence constraints](./local-mirror.md).
 
-**[`REQ-ENFPROOF-1-RH4WEM`](proof-verification.md#req-enfproof-1-rh4wem) — Single verification authority.** Every consumer — adoption, adjudication,
+**<a id="req-enfproof-1-rh4wem"></a>`REQ-ENFPROOF-1-RH4WEM` — Single verification authority.** Every consumer — adoption, adjudication,
 fraud enforcement, and off-chain audit — MUST verify through these predicates; no consumer may
 carry a private variant of any check they cover ([`REQ-CONTRACT-ARCH-2-BE651C`](contracts.md#req-contract-arch-2-be651c) on-chain,
 [`INV-MIRROR-1-VAF778`](local-mirror.md#inv-mirror-1-vaf778) off-chain).
@@ -81,7 +81,7 @@ rejection censors valid claims, and a side effect would turn verification into a
 Threats: crafted proofs targeting boundary conditions (empty proofs, genesis anchoring, membership
 hops), signature malleability against threshold counts, gas-exhaustion proofs sized to pass
 locally and fail on-chain (bounded input rules), and divergence between consumers (excluded by
-<a id="req-enfproof-1-rh4wem"></a>`REQ-ENFPROOF-1-RH4WEM` — one authority, everywhere).
+[`REQ-ENFPROOF-1-RH4WEM`](proof-verification.md#req-enfproof-1-rh4wem) — one authority, everywhere).
 
 ## Verification and test plan
 

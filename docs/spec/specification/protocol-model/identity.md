@@ -88,7 +88,7 @@ Signing authority is therefore a confined capability, not ambient data:
 
 ## Requirements and invariants
 
-**[`INV-ID-1-B4FXJ4`](identity.md#inv-id-1-b4fxj4) — Key control is identity.** A valid signature recovering to an address is, for every
+**<a id="inv-id-1-b4fxj4"></a>`INV-ID-1-B4FXJ4` — Key control is identity.** A valid signature recovering to an address is, for every
 protocol purpose, an act of that participant. No protocol rule may distinguish "the participant"
 from "whoever controls the key"; consequently key compromise is participant compromise, with no
 in-protocol recovery in this version.
@@ -126,7 +126,7 @@ chains, and deployments is [`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf).)
 ## Security considerations
 
 Protected asset: the binding between statements and accountability. Threats: key theft (total by
-<a id="inv-id-1-b4fxj4"></a>`INV-ID-1-B4FXJ4` — mitigations are operational, plus the economic bound of trust-model A5); signing-oracle
+[`INV-ID-1-B4FXJ4`](identity.md#inv-id-1-b4fxj4) — mitigations are operational, plus the economic bound of trust-model A5); signing-oracle
 abuse (an endpoint tricked into signing attacker-shaped content — contained by [`REQ-ID-3-KR0BE3`](identity.md#req-id-3-kr0be3)/
 [`REQ-ID-4-BNEKCM`](identity.md#req-id-4-bnekcm) and per-endpoint validation); identity-comparison bugs (a checksum-variant address
 slipping past an exclusion list or splitting attribution — [`REQ-ID-2-F3Y8J4`](identity.md#req-id-2-f3y8j4)); cross-context replay of

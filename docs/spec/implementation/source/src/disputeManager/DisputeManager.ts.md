@@ -112,7 +112,7 @@ state proof and its per-milestone snapshots into auditing data.
   remote input reaches this file directly. Its outputs, however, become adversarial input to the
   chain — everything it submits is re-verified on-chain.
 - **Storage-backed construction:** correctness of a constructed dispute presumes the storage
-  modules' fidelity ([`REQ-IX-9-AV56NR`](../../../../specification/storage/README.md#req-ix-9-av56nr)) and the
+  modules' fidelity ([`REQ-IX-9-AV56NR`](../../../../specification/interactions.md#req-ix-9-av56nr)) and the
   agreement manager's proof assembly; a state-hash mismatch between snapshot and stored state is
   treated as a fatal race ([#L358](../../../../../../src/disputeManager/DisputeManager.ts#L358)).
 - **Mirror freshness:** slash-subset and finality probes read the mirror; staleness is bounded by

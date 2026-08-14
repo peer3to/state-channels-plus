@@ -85,7 +85,7 @@ MUST keep the tolerant outcome.
 ## Assumptions and constraints
 
 - The acknowledged fact is chain-verifiable; both sides can check it independently
-  ([`REQ-IX-7-A004VZ`](../runtime/README.md#req-ix-7-a004vz)).
+  ([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)).
 - The round is relevance-gated to avoid acknowledging forks the node has no stake in tracking.
 - Timing bound: two agreement windows per request, tolerating one chain-read round trip on the
   responder.

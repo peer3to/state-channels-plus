@@ -42,11 +42,11 @@ assumption; alternatives that reduce them introduce new assumptions and are Futu
 
 ## 2. Block-calldata publication
 
-**<a id="inv-da-1-ts7hx2"></a>`INV-DA-1-TS7HX2`.** A posted block-calldata commitment MUST be immutable for its key and binding: the
+**[`INV-DA-1-TS7HX2`](data-availability.md#inv-da-1-ts7hx2).** A posted block-calldata commitment MUST be immutable for its key and binding: the
 commitment either matches the calldata-published signed block and posting timestamp, or it is
 objective evidence against the poster.
 
-**<a id="req-da-1-nvv85z"></a>`REQ-DA-1-NVV85Z`.** Block data referenced by any dispute-relevant commitment MUST be obtainable from the
+**[`REQ-DA-1-NVV85Z`](data-availability.md#req-da-1-nvv85z).** Block data referenced by any dispute-relevant commitment MUST be obtainable from the
 chain alone (calldata of the posting transaction). No separate DA trust assumption is permitted in
 version one.
 
@@ -73,7 +73,7 @@ Where the extra time is granted:
   next author fresh time from that anchor. A participant who already signed the parent forfeits
   this extra time (the forfeit-of-extra-time rule: its signature proves earlier possession).
 
-**<a id="req-da-2-kyz70m"></a>`REQ-DA-2-KYZ70M`.** The specification of any timing-sensitive rule MUST state which of these windows it
+**[`REQ-DA-2-KYZ70M`](data-availability.md#req-da-2-kyz70m).** The specification of any timing-sensitive rule MUST state which of these windows it
 consumes and when the on-chain re-anchoring applies. Why extra time exists: without it, a
 participant who never received data p2p could be timed out or fraud-proven using data it provably
 never had; the calldata post makes availability objective and restarts the clock from an
@@ -114,12 +114,12 @@ fallback. Virtual voting and the rest of the protocol preserve eventual progress
 - the cost is potentially **asymmetric**: in a six-party channel, one instigator incurs one
   posting cost while causing five peers to incur their own posting costs each.
 
-**<a id="req-da-3-g6tj90"></a>`REQ-DA-3-G6TJ90`.** This griefing exposure is a deliberate version-one limitation and MUST be stated
+**[`REQ-DA-3-G6TJ90`](data-availability.md#req-da-3-g6tj90).** This griefing exposure is a deliberate version-one limitation and MUST be stated
 plainly wherever chain-backed DA is described. It MUST NOT be presented as a solved anti-spam
 mechanism: kill period and self-slashing deter objectively invalid submissions; they do not remove
 the cost of protocol-valid non-cooperation.
 
-**<a id="req-da-4-1b0mf4"></a>`REQ-DA-4-1B0MF4`.** Any change to the DA design MUST be evaluated against: user-visible latency,
+**[`REQ-DA-4-1B0MF4`](data-availability.md#req-da-4-1b0mf4).** Any change to the DA design MUST be evaluated against: user-visible latency,
 ordinary-case cost, worst-case griefing cost, and new trust assumptions, and MUST preserve the
 safety and recovery model.
 
@@ -141,6 +141,16 @@ reorganizations where supported, deadline boundaries, malformed data, and cost/s
 availability and griefing bounds remain explicit unresolved risks.
 
 ## Requirements and invariants
+
+**<a id="inv-da-1-ts7hx2"></a>`INV-DA-1-TS7HX2`.** Calldata commitments are immutable per key and binding on the poster.
+
+**<a id="req-da-1-nvv85z"></a>`REQ-DA-1-NVV85Z`.** Dispute-relevant block data obtainable from the chain alone; no separate DA trust assumption.
+
+**<a id="req-da-2-kyz70m"></a>`REQ-DA-2-KYZ70M`.** Timing rules state which windows they consume; on-chain posting re-anchors timing objectively.
+
+**<a id="req-da-3-g6tj90"></a>`REQ-DA-3-G6TJ90`.** Calldata griefing exposure stated plainly as a version-one limitation.
+
+**<a id="req-da-4-1b0mf4"></a>`REQ-DA-4-1B0MF4`.** DA changes evaluated against latency, cost, griefing cost, and new trust assumptions.
 
 ## Verification and test plan
 
