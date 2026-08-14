@@ -87,10 +87,13 @@ variants, and exact test declarations. `Not applicable` always has a concrete ra
 The layer is repository-shaped: every test file with executable declarations has exactly one report
 at `verification/tests/<path>.md`; fixtures, harness code, utilities, runners, and configuration
 are support code, not evidence units. Each report has a short overview and one table row per
-declaration, whose `Covers` cell lists the test IDs (planned permutations) that declaration covers
-**in full** — partial credit is never recorded, and a test ID may be assigned to at most one test
-declaration across the whole tree. Tests with no assigned ID stay listed and are reported by
-static analysis. See `verification/README.md` for the template and assignment rules.
+declaration, whose `Covers` cell lists the permutation IDs that declaration covers **in full** —
+the permutation is the unit of evidence (root test IDs only name the family and are never
+assignable), partial credit is never recorded, each permutation is judged independently (siblings
+left unassigned are the tracked gap, not a reason to withhold an earned assignment), and a
+permutation ID may be assigned to at most one test declaration across the whole tree. Tests with
+no assigned ID stay listed and are reported by static analysis. See `verification/README.md` for
+the template and assignment rules.
 
 A listed test ID is an exact mapping claim for that declaration; file and directory links map no
 tests.

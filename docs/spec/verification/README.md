@@ -27,16 +27,23 @@ Each report ([canonical example](./tests/test/unit/ValidationService.test.ts.md)
 
 ## Assignment rules
 
-- **Full coverage only.** A row lists a test ID only when that single test demonstrably exercises
-  the whole permutation as defined, including its oracle. Partial credit is never recorded.
-- **One test per ID.** A test ID may be assigned to at most one test declaration across the whole
-  tree; duplicates are reported by static analysis and must be reduced to the single strongest
-  test.
-- **One test may cover several IDs** — preferred, since it keeps the suite small.
+- **The permutation is the unit of evidence.** Assignable IDs are only the planned permutations:
+  specification `REQ-*/INV-*.T<n>.P<n>` and implementation `UNIT-TEST-*/INTEGRATION-TEST-*.P<n>`.
+  A root test ID (`.T<n>`, or a bare `UNIT-TEST-*`/`INTEGRATION-TEST-*`) only names the family in
+  its planning table and is never assignable in a `Covers` cell.
+- **Full coverage of that permutation only.** A row lists a permutation ID only when that single
+  test demonstrably exercises that one permutation as defined, including its oracle. Partial
+  credit is never recorded. Judge each permutation independently: a permutation a test satisfies
+  in full is assigned even when its sibling permutations remain unassigned — the unassigned
+  siblings are the tracked gap, never a reason to withhold the assignment.
+- **One test per permutation ID.** A permutation ID may be assigned to at most one test
+  declaration across the whole tree; duplicates are reported by static analysis and must be
+  reduced to the single strongest test.
+- **One test may cover several permutation IDs** — preferred, since it keeps the suite small.
+  This includes permutations from both layers: a test that fully satisfies a specification
+  permutation and an implementation permutation carries both.
 - Tests with no assigned ID stay listed; static analysis reports them as unreferenced.
-- Assignable IDs are the planned permutations: specification `REQ-*/INV-*.T<n>.P<n>` and
-  implementation `UNIT-TEST-*/INTEGRATION-TEST-*.P<n>`. IDs are always links to their definition
-  anchors.
+- IDs are always links to their definition anchors.
 - A genuinely out-of-scope test file may use `// @spec-test-coverage-ignore: <reason>` in its
   first ten lines.
 

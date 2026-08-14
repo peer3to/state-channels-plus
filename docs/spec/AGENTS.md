@@ -111,9 +111,14 @@ Each test-file report (`verification/tests/<path>.md`) has: a header (test file 
 an `Exercises` link when the suite targets one production component); a short prose **Overview**
 grounded in the real test bodies; and a **Tests and covered test IDs** table with one row per
 declaration — the name linked to its exact line, `(line <n>)`, and a `Covers` cell listing the
-test IDs that declaration covers **in full** as links to their definition anchors. Partial credit
-is never recorded; a test ID may be assigned to at most one test declaration across the whole
-tree; one test may cover several IDs. Tests with no assigned ID stay listed with `—`. Fixtures,
+**permutation IDs** that declaration covers **in full** as links to their definition anchors. The
+permutation is the unit of evidence: root test IDs (`.T<n>` or bare `UNIT-TEST-*`/
+`INTEGRATION-TEST-*`) name the family in the planning table and are never assignable. Judge each
+permutation independently — assign every permutation the test fully satisfies (from both the
+specification and implementation layers) even when sibling permutations stay unassigned; the
+unassigned siblings are the tracked gap. Partial credit is never recorded; a permutation ID may
+be assigned to at most one test declaration across the whole tree; one test may cover several
+permutation IDs. Tests with no assigned ID stay listed with `—`. Fixtures,
 harness code, utilities, runners, and configuration get no reports. Broad file links, filenames,
 and adjacent tests are not evidence. Generated reports project the maintained layers; never repair
 a generated table directly.
@@ -138,7 +143,8 @@ matrix sections: the table's Covers cells are the only mapping surface.
   relevant interleavings through the real public component surface.
 - System scenarios cover each materially distinct external boundary and success/failure/recovery/race or
   adversarial workflow without duplicating invisible unit permutations.
-- Record evidence only in a test report's Covers cell, and only for IDs the test covers in full.
+- Record evidence only in a test report's Covers cell, and only as permutation IDs the test
+  covers in full — never a root test ID.
 - Repair a shifted test anchor only when the declaration has one unique match. Never guess an ambiguous or
   vanished mapping.
 

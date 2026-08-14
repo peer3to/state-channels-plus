@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **3/515** (1%)
-- Pending (never reviewed): **512**
+- Verified (current): **3/516** (1%)
+- Pending (never reviewed): **513**
 - Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
@@ -409,12 +409,13 @@ None.
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (123)
+### verification (124)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
 - [verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md](../verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md)
 - [verification/tests/test/browser/run-worker-contract-executor.mjs.md](../verification/tests/test/browser/run-worker-contract-executor.mjs.md)
+- [verification/tests/test/cache/SignerRecoveryCache.test.ts.md](../verification/tests/test/cache/SignerRecoveryCache.test.ts.md)
 - [verification/tests/test/Clock.test.ts.md](../verification/tests/test/Clock.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md](../verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts.md](../verification/tests/test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts.md)
