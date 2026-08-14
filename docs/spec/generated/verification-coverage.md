@@ -7,7 +7,7 @@ A permutation counts as tested only when an exact repository test declaration is
 ## Score
 
 - Specification IDs with test evidence: **80/241** (33%)
-- Test IDs (planned permutations) evidenced: **462/4239** (11%)
+- Test IDs (planned permutations) evidenced: **462/4240** (11%)
 - Test files with verification reports: **121/122** (99%)
 - Test declarations covering at least one test ID: **288/810** (36%)
 - Assigned test IDs with exactly one owning test: **462/462** (100%)
@@ -1297,6 +1297,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-BLOCK-PIPE-2-PCXNT6.T1.P8`](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t1.p8) | Specification | [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t1.p8) |
 | [`REQ-BLOCK-PIPE-2-PCXNT6.T1.P9`](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t1.p9) | Specification | [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t1.p9) |
 | [`REQ-BLOCK-PIPE-3-WW2SB7.T1.P1`](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p1) | Specification | [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p1) |
+| [`REQ-BLOCK-PIPE-3-WW2SB7.T1.P10`](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p10) | Specification | [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p10) |
 | [`REQ-BLOCK-PIPE-3-WW2SB7.T1.P2`](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p2) | Specification | [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p2) |
 | [`REQ-BLOCK-PIPE-3-WW2SB7.T1.P3`](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p3) | Specification | [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p3) |
 | [`REQ-BLOCK-PIPE-3-WW2SB7.T1.P4`](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p4) | Specification | [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7.t1.p4) |
