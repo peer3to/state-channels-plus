@@ -25,7 +25,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 - Final ready paths: **0/241** (0%)
 - Source files assigned to implementation subjects: **243/243** (100%)
 - Test declarations mapped or explicitly ignored: **400/922** (43%)
-- Open questions: 37
+- Open questions: 36
 - Active findings: 14
 - Strict blocking items: 5022
 
@@ -42,8 +42,8 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`INV-DA-1-TS7HX2`](../specification/security/data-availability.md#inv-da-1-ts7hx2) | [INV-DA-1-TS7HX2 · 1 plan](../specification/security/data-availability.md#inv-da-1-ts7hx2) | [Covered](../implementation/views/security/data-availability.md#conformance-traceability) | 0/8 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-DATA-1-F8CG0P`](../specification/protocol-model/data-types.md#inv-data-1-f8cg0p) | [INV-DATA-1-F8CG0P · 1 plan](../specification/protocol-model/data-types.md#inv-data-1-f8cg0p) | [Covered](../implementation/views/reference/data-types.md#conformance-traceability) | 0/21 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-DIS-5-J1QZ92`](../specification/disputes/disputes.md#inv-dis-5-j1qz92) | [INV-DIS-5-J1QZ92 · 1 plan](../specification/disputes/disputes.md#inv-dis-5-j1qz92) | [Covered](../implementation/views/protocol/disputes.md#conformance-traceability) | 0/21 permutations evidenced | 0 | [`OQ-39-C3EAMN`](../specification/open-questions.md#oq-39-c3eamn), [`OQ-4-JGDCNX`](../verification/open-questions.md#oq-4-jgdcnx) | Gap | Approval pending | Blocked | Not ready |
-| [`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) | [INV-DIS-7-9GGZSD · 1 plan](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) | [Covered](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#conformance-traceability) | 0/17 permutations evidenced | 0 | [`OQ-14-5C8KV7`](../implementation/open-questions.md#oq-14-5c8kv7), [`OQ-9-XR1MFS`](../specification/open-questions.md#oq-9-xr1mfs) | Gap | Approval pending | Blocked | Not ready |
-| [`INV-DIS-8-1GY6Q5`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5) | [INV-DIS-8-1GY6Q5 · 1 plan](../specification/disputes/disputes.md#inv-dis-8-1gy6q5) | [Contradicts](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#conformance-traceability) | 0/18 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) | [INV-DIS-7-9GGZSD · 1 plan](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) | [Covered](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#conformance-traceability) | 0/17 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`INV-DIS-8-1GY6Q5`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5) | [INV-DIS-8-1GY6Q5 · 1 plan](../specification/disputes/disputes.md#inv-dis-8-1gy6q5) | [Contradicts](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#conformance-traceability) | 0/19 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-DISPUTE-PIPE-1-BN0K81`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81) | [INV-DISPUTE-PIPE-1-BN0K81 · 1 plan](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81) | [Covered](../implementation/views/protocol/dispute-processing.md#conformance-traceability) | 3/13 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-ENFADM-1-H53AQY`](../specification/enforcement/admission-and-funds.md#inv-enfadm-1-h53aqy) | [INV-ENFADM-1-H53AQY · 1 plan](../specification/enforcement/admission-and-funds.md#inv-enfadm-1-h53aqy) | [Covered](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#conformance-traceability) | 1/5 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-ENFDIS-1-1K65DT`](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt) | [INV-ENFDIS-1-1K65DT · 1 plan](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt) | [Covered](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#conformance-traceability) | 0/7 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -278,7 +278,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 ## Global gaps
 
 - 522 test declaration(s) are unaccounted.
-- 37 open question(s) require decisions.
+- 36 open question(s) require decisions.
 - 14 active finding(s) remain.
 - 241 requirement path(s) lack current engineer approval.
 - 241 requirement path(s) lack current security-risk acceptance.

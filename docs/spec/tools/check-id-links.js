@@ -29,6 +29,14 @@ const EXACT_ID_LINK_RE = new RegExp(
 );
 const ID_ANCHOR_RE =
     /<a id="(?:req|inv|unit-test|integration-test|oq|def|find)-[^"]+"><\/a>/gi;
+// A canonical heading anchor on its own line, together with every adjacent
+// blank line. Stripping only the anchor markup would leave its line (and the
+// blank line addCanonicalAnchors inserts after it) behind, so each --write run
+// would grow the file by two blank lines per heading anchor.
+const STANDALONE_ANCHOR_BLOCK_RE = new RegExp(
+    `(?:[ \\t]*\\r?\\n)*[ \\t]*${ID_ANCHOR_RE.source}[ \\t]*(?:\\r?\\n[ \\t]*)*\\r?\\n`,
+    "gi"
+);
 const LEGACY_ID_RE = new RegExp(
     `\\b(?:(?:REQ|INV)-[A-Z0-9-]+-\\d+|(?:UNIT|INTEGRATION)-TEST-[A-Z0-9-]+-\\d+|OQ-\\d+|DEF-\\d+|FIND-[A-Z0-9-]+-\\d+)(?!-${HASH_PATTERN})\\b`,
     "g"
@@ -41,7 +49,10 @@ function escapeRegExp(value) {
 function normalizeIdMarkup() {
     for (const document of walkFiles(SPEC_ROOT, { extensions: [".md"] })) {
         const before = fs.readFileSync(document, "utf8");
-        let markdown = before.replace(ID_ANCHOR_RE, "");
+        let markdown = before
+            .replace(STANDALONE_ANCHOR_BLOCK_RE, "\n\n")
+            .replace(/^\n+/, "")
+            .replace(ID_ANCHOR_RE, "");
         let previous;
         do {
             previous = markdown;

@@ -24,7 +24,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-6-4JPNE5`](open-questions.md#oq-6-4jpne5)   | P2P gossip rate-limiting policy                                                                                      | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
 | [`OQ-7-M5G9M3`](open-questions.md#oq-7-m5g9m3)   | Whether adjudication requires a self-call-only authorization boundary                                                | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
 | [`OQ-8-PEYAAQ`](open-questions.md#oq-8-peyaaq)   | Clock-skew and bias values to be validated empirically                                                               | Specification analysis | [protocol/time.md](./protocol-model/time.md)                                                                                               | Open                              |
-| [`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs)   | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                              | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
+| [`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs)   | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                              | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Resolved (implementation pending) |
 | [`OQ-10-04YNC4`](open-questions.md#oq-10-04ync4) | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                      | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                   | Open                              |
 | [`OQ-11-38S3SE`](open-questions.md#oq-11-38s3se) | Channel-balance invariant: definition per balance model and check points                                             | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md), [concepts/state-machines.md](./protocol-model/state-machines.md) | Open                              |
 | [`OQ-12-B45Q7N`](open-questions.md#oq-12-b45q7n) | Book-like overview vs. tree as the authoritative reference                                                           | Specification analysis | [README.md](../README.md), [governance.md](../governance.md)                                                                               | Provisionally resolved            |
@@ -41,6 +41,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-34-FY08V2`](open-questions.md#oq-34-fy08v2) | RPC boundary decisions: guard retry semantics, protocol versioning, ban persistence, failure-outcome policy          | Code and specification | sdk/rpc/README.md                                                                                                                          | Open                              |
 | [`OQ-38-EY27T5`](open-questions.md#oq-38-ey27t5) | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation | Code and specification | sdk/runtime-and-concurrency.md §6, §11.5                                                                                                   | Open                              |
 | [`OQ-39-C3EAMN`](open-questions.md#oq-39-c3eamn) | Reduce: stateful (reads on-chain slashes / inbound tip) vs stateless fold over the committed dispute inputs          | Engineer question      | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
+| [`OQ-40-M12S72`](open-questions.md#oq-40-m12s72) | `challengeDisputeReduction`: dormant scaffolding for optimistic reduction, or dead code to remove                    | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
 
 ## Register assumptions and constraints
 
@@ -167,7 +168,9 @@ Code-derived specifics: the sync tolerance factor is unresolved in code (1× vs.
 time, a live TODO); the clock syncs once per session (at init and on provider replacement) with no
 periodic re-sync cadence defined; no explicit maximum-skew constant exists anywhere; and the
 default window values (15/5/30/30 s) are development defaults. See
-[protocol/time.md](./protocol-model/time.md) §2–3.
+[protocol/time.md](./protocol-model/time.md) §2–3. Also covers the unquantified underlying-chain
+timestamp-manipulation bounds relative to the protocol windows (inherited from
+[`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs) on its resolution; [protocol/time.md](./protocol-model/time.md) §5.3).
 
 <a id="oq-9-xr1mfs"></a>
 
@@ -179,19 +182,35 @@ fork_, how block heights are compared across different proven histories, when su
 becomes available to the timeout target, and how a fraud proof revealed by that evidence changes
 an already proposed timeout.
 
-Code-derived edges: the empty-timeout cancellation of the `reduce()` fold
-(see [`OQ-14-5C8KV7`](../implementation/open-questions.md#oq-14-5c8kv7) for the fold mechanics); the exact inclusive/exclusive boundary comparisons of the
-`Timeout*` dispute-fraud-proof rules; and unquantified underlying-chain timestamp-manipulation
-bounds relative to the protocol windows. See [protocol/disputes.md](./disputes/disputes.md) §6 and
-[protocol/time.md](./protocol-model/time.md) §5.3.
+**Resolved (2026-08-14, engineer decision):**
 
-**Partially resolved (2026-08-14, engineer decision):** a slash cancels a proposed timeout — a
-reduction that slashes someone applies no timeout (normatively
-[`INV-DIS-7-9GGZSD`](disputes/disputes.md#inv-dis-7-9ggzsd)), so a slash-carrying dispute
-suppressing the timeout candidate is intended. **Still open:** whether a dispute with no slashes
-and no timeout claim (self-removal-only, or the accused's own counter-dispute) also cancels the
-proposed timeout; [protocol/disputes.md](./disputes/disputes.md) §5 and §6.1 record the decision
-and this residual.
+1. **Only a slash cancels a proposed timeout** (normatively
+   [`INV-DIS-7-9GGZSD`](disputes/disputes.md#inv-dis-7-9ggzsd)). Every other valid dispute input
+   — self-removal-only disputes, the accused's own counter-dispute, any slash-free dispute with
+   no timeout claim — leaves the timeout applied: such inputs leak no information the timed-out
+   participant could not already have known or that is relevant to it, so they cannot legitimize
+   ignoring the missed slot ([`INV-DIS-8-1GY6Q5`](disputes/disputes.md#inv-dis-8-1gy6q5) amended;
+   permutation [`INV-DIS-8-1GY6Q5.T1.P19`](disputes/disputes.md#inv-dis-8-1gy6q5.t1.p19)). Rationale for the slash side: if the timeout still
+   applied, an attacker could remove an honest participant at the cost of a slash; with
+   suppression the attacker is simply slashed and no timeout applies.
+2. **"The same fork" means the `forkId`** — a reality that prevails out of the dispute game after
+   a genesis — never divergent block histories inside one `forkId`. Leader election is
+   deterministic as a function of state, so exactly one block exists per state: intra-`forkId`
+   divergence implies a double-sign by construction.
+3. **Height comparison across proven histories is sound as implemented.** Fork choice inside a
+   `forkId` is longest-chain (the `latestBlock` reduction rule); a submitter bringing a divergent
+   history to the dispute game discloses the double-sign, and the resulting slash suppresses any
+   timeout — so raw `transactionCnt`/`blockHeight` comparison needs no one-chain proof.
+4. **Evidence availability needs no finer definition.** Evidence changes an already-proposed
+   timeout only via the slash set at reduction time or by killing the dispute during the kill
+   period — intended; the observation moment of non-slash inputs is immaterial.
+
+[protocol/disputes.md](./disputes/disputes.md) §5, §6.1, and §6.2 record the decisions.
+Remaining mechanics are implementation-tracked in [`OQ-14-5C8KV7`](../implementation/open-questions.md#oq-14-5c8kv7): the fold fix
+(empty timeout structs must not participate — a defect in the slash-free case) and the exact
+inclusive/exclusive boundary comparisons of the `Timeout*` dispute-fraud-proof rules.
+Unquantified underlying-chain timestamp-manipulation bounds relative to the protocol windows
+remain with [`OQ-8-PEYAAQ`](open-questions.md#oq-8-peyaaq) / [protocol/time.md](./protocol-model/time.md) §5.3.
 
 <a id="oq-10-04ync4"></a>
 
@@ -455,7 +474,7 @@ the question is only whether chain state beyond those commitments feeds the fold
   order-independence and convergence analysis ([`INV-DIS-5-J1QZ92`](disputes/disputes.md#inv-dis-5-j1qz92)), keeps the off-chain
   reducer and the on-chain apply path trivially in agreement, and fits the optimistic-reduction
   direction where challengers must cheaply re-derive the result (couples to the dormant
-  `challengeDisputeReduction` question in [disputes.md §4.3](./disputes/disputes.md#43-reduction-and-finalization)). But both stateful
+  `challengeDisputeReduction` question, [`OQ-40-M12S72`](open-questions.md#oq-40-m12s72)). But both stateful
   reads exist for omission resistance: chain injection of the slash set is what makes per-dispute
   subset listing safe, and the chain-read inbound tip is what makes forced inbound inclusion
   effective. A stateless reduce must re-establish both guarantees explicitly — for example,
@@ -470,3 +489,26 @@ the question is only whether chain state beyond those commitments feeds the fold
 forced inbound inclusion are enforced instead. If stateful: specify the exact chain reads —
 source, expiry filtering, and the chain view an off-chain recomputation requires — as normative
 inputs of the reduction.
+
+<a id="oq-40-m12s72"></a>
+
+## OQ-40-M12S72 — `challengeDisputeReduction`: dormant scaffolding or dead code
+
+**Question.** `For this protocol version:` every reduction commit path passes
+`reductionTimestamp = now − evidenceTime`, so the reduce-challenge period is already expired at
+commit time and finalization is immediate — the reduction is recomputed on-chain from the
+committed set, so the result is objectively correct at commit. Consequently
+`challengeDisputeReduction` (which requires a _non-expired_ challenge period, and on a successful
+challenge slashes the previous reducer and re-commits, or slashes the challenger on a failed one)
+is unreachable from any current commit path ([disputes.md §4.3](./disputes/disputes.md#43-reduction-and-finalization)). Decide whether it is
+intentionally dormant scaffolding for the optimistic-reduction design or dead code to remove.
+
+`Intended:` under the optimistic design the reduced result would be committed as a bare hash with
+a real challenge period; the current immediate-finalization behavior would become the fast path.
+
+**Couplings.** The optimistic direction interacts with [`OQ-39-C3EAMN`](open-questions.md#oq-39-c3eamn) (a stateless reduce is
+cheaper for challengers to re-derive) and with [`OQ-27-GT4W09`](open-questions.md#oq-27-gt4w09) (reducer eligibility is
+enforced in `challengeDisputeReduction` but disabled in `reduceAndFinalize`). If dead code:
+remove the function and the challenge-period machinery it implies. If scaffolding: keep it
+non-normative until the optimistic design is specified, and state explicitly that no current
+commit path can be challenged.

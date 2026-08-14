@@ -7,7 +7,7 @@ A permutation counts as tested only when an exact repository test declaration is
 ## Score
 
 - Specification IDs with test evidence: **80/241** (33%)
-- Test IDs (planned permutations) evidenced: **462/4240** (11%)
+- Test IDs (planned permutations) evidenced: **462/4241** (11%)
 - Test files with verification reports: **121/122** (99%)
 - Test declarations covering at least one test ID: **288/810** (36%)
 - Assigned test IDs with exactly one owning test: **462/462** (100%)
@@ -473,6 +473,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`INV-DIS-8-1GY6Q5.T1.P16`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p16) | Specification | [specification/disputes/disputes.md](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p16) |
 | [`INV-DIS-8-1GY6Q5.T1.P17`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p17) | Specification | [specification/disputes/disputes.md](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p17) |
 | [`INV-DIS-8-1GY6Q5.T1.P18`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p18) | Specification | [specification/disputes/disputes.md](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p18) |
+| [`INV-DIS-8-1GY6Q5.T1.P19`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p19) | Specification | [specification/disputes/disputes.md](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p19) |
 | [`INV-DIS-8-1GY6Q5.T1.P2`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p2) | Specification | [specification/disputes/disputes.md](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p2) |
 | [`INV-DIS-8-1GY6Q5.T1.P3`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p3) | Specification | [specification/disputes/disputes.md](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p3) |
 | [`INV-DIS-8-1GY6Q5.T1.P4`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p4) | Specification | [specification/disputes/disputes.md](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p4) |

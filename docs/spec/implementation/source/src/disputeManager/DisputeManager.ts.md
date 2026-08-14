@@ -141,8 +141,9 @@ state proof and its per-milestone snapshots into auditing data.
 None demonstrated in this file. (The empty-timeout sentinel it submits — zero height, zero
 participant — is the input shape behind the empty-timeout reduction cancellation of
 [disputes.md §5](../../../../specification/disputes/disputes.md): intended slash precedence for
-slash-carrying disputes, still open for the slash-free case per
-[`OQ-9-XR1MFS`](../../../../specification/open-questions.md#oq-9-xr1mfs); this file follows the
+slash-carrying disputes, but a confirmed defect in the slash-free case — resolved 2026-08-14,
+[`OQ-9-XR1MFS`](../../../../specification/open-questions.md#oq-9-xr1mfs); the fold fix is tracked in
+[`OQ-14-5C8KV7`](../../../open-questions.md#oq-14-5c8kv7). This file follows the
 current struct contract, and the behavior is owned by the reduction fold, not construction.)
 
 ## Missing behavior
