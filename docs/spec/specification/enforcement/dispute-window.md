@@ -38,26 +38,18 @@ per-address upload throttle. The slash set is _read_ here as reduction input but
 
 ## Requirements and invariants
 
-**[`INV-ENFDIS-1-1K65DT`](dispute-window.md#inv-enfdis-1-1k65dt) — Commitment-exact reduction.** Reduction consumes exactly the currently committed
+**<a id="inv-enfdis-1-1k65dt"></a>`INV-ENFDIS-1-1K65DT` — Commitment-exact reduction.** Reduction consumes exactly the currently committed
 dispute set — no more, no fewer, no substitutes — and recomputes the result on-chain; a stored
 result is replaced only through the specified challenge path.
 
-**[`REQ-ENFDIS-1-8CSA6B`](dispute-window.md#req-enfdis-1-8csa6b) — Window bookkeeping integrity.** Timestamps, commitments, and posting records
+**<a id="req-enfdis-1-8csa6b"></a>`REQ-ENFDIS-1-8CSA6B` — Window bookkeeping integrity.** Timestamps, commitments, and posting records
 follow the owner's lifecycle exactly: immediate commitment on upload, kill-period refresh per
 accepted upload, evidence-period admission, fully-killed-window reopen, and the full-threshold
 force-expiry — with no other transition mutating a window.
 
-**[`REQ-ENFDIS-2-VV9FPR`](dispute-window.md#req-enfdis-2-vv9fpr) — Bounded participation.** The per-address throttle and the one-post-per-window
+**<a id="req-enfdis-2-vv9fpr"></a>`REQ-ENFDIS-2-VV9FPR` — Bounded participation.** The per-address throttle and the one-post-per-window
 rule bound upload volume per identity; throttling MUST NOT block the first upload that opens a
 fork's window when the address is otherwise eligible and unthrottled.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                               | Statement                                                                         |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------- |
-| <a id="inv-enfdis-1-1k65dt"></a>`INV-ENFDIS-1-1K65DT` | Reduce exactly the committed set; recompute on-chain; replace only via challenge. |
-| <a id="req-enfdis-1-8csa6b"></a>`REQ-ENFDIS-1-8CSA6B` | Window transitions are exactly the owner's lifecycle.                             |
-| <a id="req-enfdis-2-vv9fpr"></a>`REQ-ENFDIS-2-VV9FPR` | Per-identity upload bounds without blocking eligible escalation.                  |
 
 ## Assumptions and constraints
 

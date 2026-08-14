@@ -85,37 +85,26 @@ identity; an unverified peer is merely dropped — there is no proven identity t
 
 ## Requirements and invariants
 
-**[`INV-AUTH-1-J0PRYA`](handshake.md#inv-auth-1-j0prya) — Signature is the only proof.** The sole authentication evidence is a valid signature
+**<a id="inv-auth-1-j0prya"></a>`INV-AUTH-1-J0PRYA` — Signature is the only proof.** The sole authentication evidence is a valid signature
 over this node's own fresh challenge under the handshake domain. Discovery metadata,
 acknowledgements, and transport properties prove nothing.
 
-**[`INV-AUTH-2-VQ6D54`](handshake.md#inv-auth-2-vq6d54) — Domain separation.** Handshake signatures are made only over the domain-tagged,
+**<a id="inv-auth-2-vq6d54"></a>`INV-AUTH-2-VQ6D54` — Domain separation.** Handshake signatures are made only over the domain-tagged,
 versioned message form; a handshake exchange can never produce a signature usable in any other
 protocol context, regardless of the challenge value chosen by the counterparty.
 
-**[`REQ-AUTH-1-RF901K`](handshake.md#req-auth-1-rf901k) — Validate before signing.** A responder MUST fully validate challenge shape and time
+**<a id="req-auth-1-rf901k"></a>`REQ-AUTH-1-RF901K` — Validate before signing.** A responder MUST fully validate challenge shape and time
 bounds before creating any signature for an unauthenticated caller.
 
-**[`REQ-AUTH-2-BQ5CRG`](handshake.md#req-auth-2-bq5crg) — Fresh single-use challenges.** Challenges MUST be unpredictable, single-use, and
+**<a id="req-auth-2-bq5crg"></a>`REQ-AUTH-2-BQ5CRG` — Fresh single-use challenges.** Challenges MUST be unpredictable, single-use, and
 scoped to one exchange; verification MUST bind the response to exactly the issued challenge.
 
-**[`REQ-AUTH-3-ZV74KB`](handshake.md#req-auth-3-zv74kb) — Completion requires both roles.** A session authenticates only when local
+**<a id="req-auth-3-zv74kb"></a>`REQ-AUTH-3-ZV74KB` — Completion requires both roles.** A session authenticates only when local
 verification _and_ the peer's acknowledgement are both present; completion is idempotent and
 recorded against the identity, not the transport.
 
-**[`REQ-AUTH-4-JWCF71`](handshake.md#req-auth-4-jwcf71) — Penalty requires proof.** Exclusion consequences apply only to proven identities;
+**<a id="req-auth-4-jwcf71"></a>`REQ-AUTH-4-JWCF71` — Penalty requires proof.** Exclusion consequences apply only to proven identities;
 an unauthenticated failure never penalizes an identity.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                           | Statement                                                                  |
-| ------------------------------------------------- | -------------------------------------------------------------------------- |
-| <a id="inv-auth-1-j0prya"></a>`INV-AUTH-1-J0PRYA` | Only a domain-tagged signature over a fresh own challenge proves identity. |
-| <a id="inv-auth-2-vq6d54"></a>`INV-AUTH-2-VQ6D54` | Handshake signatures cannot collide with any other protocol signature.     |
-| <a id="req-auth-1-rf901k"></a>`REQ-AUTH-1-RF901K` | Full validation precedes signing for unauthenticated callers.              |
-| <a id="req-auth-2-bq5crg"></a>`REQ-AUTH-2-BQ5CRG` | Challenges are unpredictable, single-use, exchange-scoped.                 |
-| <a id="req-auth-3-zv74kb"></a>`REQ-AUTH-3-ZV74KB` | Completion = local verification + peer acknowledgement; idempotent.        |
-| <a id="req-auth-4-jwcf71"></a>`REQ-AUTH-4-JWCF71` | No identity penalty without proven identity.                               |
 
 ## Assumptions and constraints
 

@@ -88,30 +88,21 @@ Run by each threshold member on request; the adversarial ingress side:
 
 ## Requirements and invariants
 
-**[`INV-JOINSIG-1-JX5EC4`](join-authorization.md#inv-joinsig-1-jx5ec4) — Identity triple-binding.** A countersignature is produced only when the join's
+**<a id="inv-joinsig-1-jx5ec4"></a>`INV-JOINSIG-1-JX5EC4` — Identity triple-binding.** A countersignature is produced only when the join's
 embedded signature, its declared participant, and the authenticated requesting peer all bind to the
 same identity.
 
-**[`REQ-JOINSIG-1-8X1A4V`](join-authorization.md#req-joinsig-1-8x1a4v) — Pinned-state authorization.** Both sides bind the authorization to an exact
+**<a id="req-joinsig-1-8x1a4v"></a>`REQ-JOINSIG-1-8X1A4V` — Pinned-state authorization.** Both sides bind the authorization to an exact
 on-chain snapshot and fork; a countersigner MUST refuse when its own current view differs from the
 pin, and the collection's pins MUST be carried to submission.
 
-**[`REQ-JOINSIG-2-RR2G4Q`](join-authorization.md#req-joinsig-2-rr2g4q) — All-or-nothing unanimity.** The collection succeeds only with a verified
+**<a id="req-joinsig-2-rr2g4q"></a>`REQ-JOINSIG-2-RR2G4Q` — All-or-nothing unanimity.** The collection succeeds only with a verified
 countersignature from every threshold member over the exact encoded join; any member's failure
 fails the collection.
 
-**[`REQ-JOINSIG-3-VAGFVD`](join-authorization.md#req-joinsig-3-vagfvd) — Refusal is penalty-free.** A responder's validation failure is a declared error
+**<a id="req-joinsig-3-vagfvd"></a>`REQ-JOINSIG-3-VAGFVD` — Refusal is penalty-free.** A responder's validation failure is a declared error
 without session or identity consequences; countersigning is voluntary cooperation, not an
 obligation whose refusal is slashable.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                 | Statement                                                     |
-| ------------------------------------------------------- | ------------------------------------------------------------- |
-| <a id="inv-joinsig-1-jx5ec4"></a>`INV-JOINSIG-1-JX5EC4` | Signer = declared participant = authenticated sender.         |
-| <a id="req-joinsig-1-8x1a4v"></a>`REQ-JOINSIG-1-8X1A4V` | Authorization pinned to an exact snapshot/fork on both sides. |
-| <a id="req-joinsig-2-rr2g4q"></a>`REQ-JOINSIG-2-RR2G4Q` | Unanimous verified countersignatures or the collection fails. |
-| <a id="req-joinsig-3-vagfvd"></a>`REQ-JOINSIG-3-VAGFVD` | Responder refusal is a penalty-free declared error.           |
 
 ## Assumptions and constraints
 

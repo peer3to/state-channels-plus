@@ -42,7 +42,7 @@ the observable boundary behavior is what conformance is judged against.
 
 ## Requirements and invariants
 
-**[`REQ-IX-1-WTJ0D1`](interactions.md#req-ix-1-wtj0d1) — Peer block ingress.** Block confirmations reaching block progression from a peer MUST
+**<a id="req-ix-1-wtj0d1"></a>`REQ-IX-1-WTJ0D1` — Peer block ingress.** Block confirmations reaching block progression from a peer MUST
 have passed, in order: session authentication ([`INV-RPC-1-SJS2T6`](peer-communication/rpc.md#inv-rpc-1-sjs2t6)), envelope
 and frame validation ([`REQ-RPC-1-FF89Z0`](peer-communication/rpc.md#req-rpc-1-ff89z0)), and canonical struct decoding — and MUST then receive the full
 pipeline validation of [`REQ-BLOCK-PIPE-2-PCXNT6`](block-progression/block-processing.md#req-block-pipe-2-pcxnt6) as if the
@@ -52,7 +52,7 @@ partial delivery is in-contract. Trust boundary: untrusted peer ingress. Failure
 classified by [`REQ-BLOCK-PIPE-3-WW2SB7`](block-progression/block-processing.md#req-block-pipe-3-ww2sb7) with its context consequence; transport-level failure consequences
 (disconnect/blacklist) are owned by [`REQ-RPC-6-E60S4J`](peer-communication/rpc.md#req-rpc-6-e60s4j) and never substitute for pipeline validation.
 
-**[`REQ-IX-2-2PY2EF`](interactions.md#req-ix-2-2py2ef) — Deterministic execution and commitment.** Block progression executes state transitions
+**<a id="req-ix-2-2py2ef"></a>`REQ-IX-2-2PY2EF` — Deterministic execution and commitment.** Block progression executes state transitions
 only through the protocol model's injected execution context
 ([`REQ-SM-1-Y72CKX`](protocol-model/state-machines.md#req-sm-1-y72ckx) family) and commits results only through the
 commitment hierarchy ([`INV-HIST-1-5N44K9`](protocol-model/history-and-commitments.md#inv-hist-1-5n44k9)). Data: the
@@ -63,7 +63,7 @@ rules ([time.md](./protocol-model/time.md)). Trust boundary: internal, but the _
 adversarial — a mismatch is objective fraud evidence
 ([fraud-proofs.md](./disputes/fraud-proofs.md)), never a retry.
 
-**[`REQ-IX-3-H8WCVY`](interactions.md#req-ix-3-h8wcvy) — Inbound inclusion and join flow.** Settlement produces the ordered inbound stream; block
+**<a id="req-ix-3-h8wcvy"></a>`REQ-IX-3-H8WCVY` — Inbound inclusion and join flow.** Settlement produces the ordered inbound stream; block
 authors MUST include due inbound messages promptly (liveness expectation of
 [cross-layer-messages.md](./settlement/cross-layer-messages.md)); peer communication carries the
 unanimous join-authorization collection. Data: hash-linked inbound message blocks; signed join
@@ -84,7 +84,7 @@ adversarial input to on-chain verification even when produced honestly. Failure:
 invalid material yields a rejected or killed claim; it MUST NOT corrupt the audit of other claims
 ([`REQ-DISPUTE-PIPE-2-MJRJV1`](disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1)).
 
-**[`REQ-IX-5-6XHJJB`](interactions.md#req-ix-5-6xhjjb) — On-chain adjudication.** Disputes drive enforcement through the adjudication operations
+**<a id="req-ix-5-6xhjjb"></a>`REQ-IX-5-6XHJJB` — On-chain adjudication.** Disputes drive enforcement through the adjudication operations
 (upload, kill, reduce/finalize, challenge). Data: signed dispute claims, auditing data committed by
 hash and posted as calldata when required, fraud proofs, and the exact committed dispute set at
 reduction. Validity: enforcement recomputes every protocol predicate itself
@@ -116,7 +116,7 @@ lag. Trust boundary: RPC providers may be unavailable, lagging, or dishonest; re
 does not remove the assumption. Failure: a node that cannot observe honestly cannot promise timely
 protocol reactions; its recovery path after reconnection is bounded sync, not silent trust.
 
-**[`REQ-IX-8-FY54AV`](interactions.md#req-ix-8-fy54av) — Execution equivalence.** Runtime hosts every system inline or across isolated contexts;
+**<a id="req-ix-8-fy54av"></a>`REQ-IX-8-FY54AV` — Execution equivalence.** Runtime hosts every system inline or across isolated contexts;
 given the same inputs and state, results, committed effects, events, and failure classification MUST
 be identical ([`INV-RUNTIME-1-AKRHAK`](runtime/execution.md#inv-runtime-1-akrhak)). Data: every cross-context protocol value
 crosses in the canonical transfer-safe encoding ([`REQ-RUNTIME-1-RSM6MZ`](runtime/execution.md#req-runtime-1-rsm6mz)). Ordering: ownership and causal
@@ -136,20 +136,6 @@ storage is inside the node, but what flows into it originates from untrusted sou
 and evidence MUST survive storage exactly so they remain usable as evidence. Failure: an absent
 record reads as nothing rather than a default that masquerades as protocol state; a failed
 multi-module write leaves the operation retryable per [`REQ-STOR-2-TARP8S`](storage/durability.md#req-stor-2-tarp8s).
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                   | Statement                                                                                                         |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| <a id="req-ix-1-wtj0d1"></a>`REQ-IX-1-WTJ0D1`             | Peer block ingress: authenticated, envelope-validated frames still get full pipeline validation.                  |
-| <a id="req-ix-2-2py2ef"></a>`REQ-IX-2-2PY2EF`             | Deterministic execution and commitment: same transition, same commitment, everywhere; mismatch is fraud evidence. |
-| <a id="req-ix-3-h8wcvy"></a>`REQ-IX-3-H8WCVY`             | Inbound inclusion and join flow: prompt linked inclusion; forced-inclusion recovery when stalled.                 |
-| [`REQ-IX-4-BB35GC`](disputes/README.md#req-ix-4-bb35gc)   | Proof material: state-proof rules bind producer and consumer without reinterpretation.                            |
-| <a id="req-ix-5-6xhjjb"></a>`REQ-IX-5-6XHJJB`             | On-chain adjudication: enforcement recomputes every predicate; off-chain audit is advice.                         |
-| [`REQ-IX-6-A4Y7KB`](settlement/README.md#req-ix-6-a4y7kb) | Snapshot adoption: linked-range verification, at-most-once release, batch-split invariance.                       |
-| [`REQ-IX-7-A004VZ`](runtime/README.md#req-ix-7-a004vz)    | Chain observation: observed intake re-enters validation; freshness bounded by the RPC trust assumption.           |
-| <a id="req-ix-8-fy54av"></a>`REQ-IX-8-FY54AV`             | Execution equivalence: inline and isolated hosting are observationally identical.                                 |
-| [`REQ-IX-9-AV56NR`](storage/README.md#req-ix-9-av56nr)    | Storage fidelity: exact preservation, no granted validity, monotone merges, explicit absence.                     |
 
 ## Assumptions and constraints
 

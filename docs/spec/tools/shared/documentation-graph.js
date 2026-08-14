@@ -299,6 +299,32 @@ function collectDefinitions(documents, pattern) {
             if (!mentions.has(match[0])) mentions.set(match[0], new Set());
             mentions.get(match[0]).add(document);
         }
+        // Requirement definitions live in prose: the canonical anchor
+        // immediately followed by the unlinked inline-code ID.
+        if (pattern === REQUIREMENT_RE) {
+            const lines = markdown.split(/\r?\n/);
+            const anchoredId = new RegExp(
+                `<a id="[^"]+"></a>\\x60(${REQUIREMENT_PATTERN})\\x60`,
+                "g"
+            );
+            for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+                for (const match of lines[lineIndex].matchAll(anchoredId)) {
+                    const id = match[1];
+                    if (!pattern.test(id)) continue;
+                    const value = {
+                        id,
+                        document,
+                        line: lineIndex,
+                        raw: lines[lineIndex],
+                        cells: [],
+                        headers: []
+                    };
+                    if (definitions.has(id))
+                        duplicates.push([definitions.get(id), value]);
+                    else definitions.set(id, value);
+                }
+            }
+        }
         for (const table of tableRows(document)) {
             const candidateIndexes =
                 pattern === REQUIREMENT_RE

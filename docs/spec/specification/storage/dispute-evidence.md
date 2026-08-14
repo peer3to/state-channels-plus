@@ -30,26 +30,18 @@ Three evidence stores:
 
 ## Requirements and invariants
 
-**[`REQ-DSTORE-1-5AQYJX`](dispute-evidence.md#req-dstore-1-5aqyjx) — Dispute confirmation merge.** Storing a dispute already known merges co-signatures
+**<a id="req-dstore-1-5aqyjx"></a>`REQ-DSTORE-1-5AQYJX` — Dispute confirmation merge.** Storing a dispute already known merges co-signatures
 as a set (monotone, idempotent, order-independent) and never alters the signed dispute itself.
 Storing a signed dispute without confirmations creates an entry with an empty co-signature set.
 
-**[`REQ-DSTORE-2-H1DAGX`](dispute-evidence.md#req-dstore-2-h1dagx) — Fork dispute flags.** The disputed flag and the own-dispute flag are per fork,
+**<a id="req-dstore-2-h1dagx"></a>`REQ-DSTORE-2-H1DAGX` — Fork dispute flags.** The disputed flag and the own-dispute flag are per fork,
 explicit, and independent of the dispute entries; an unset flag reads as not-disputed rather than
 unknown. These flags feed dispute relevance and throttle decisions and MUST reflect exactly what the
 producing pipeline recorded.
 
-**[`REQ-DSTORE-3-ZNXSTM`](dispute-evidence.md#req-dstore-3-znxstm) — Content-addressed proofs with stable indexes.** Fraud proofs and dispute fraud
+**<a id="req-dstore-3-znxstm"></a>`REQ-DSTORE-3-ZNXSTM` — Content-addressed proofs with stable indexes.** Fraud proofs and dispute fraud
 proofs are stored under their defined content hashes; re-storing an existing proof is a no-op
 (first write wins), and the participant index always reflects exactly the stored proof set.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                               | Statement                                                                 |
-| ----------------------------------------------------- | ------------------------------------------------------------------------- |
-| <a id="req-dstore-1-5aqyjx"></a>`REQ-DSTORE-1-5AQYJX` | Signature-set merge for dispute confirmations; signed dispute immutable.  |
-| <a id="req-dstore-2-h1dagx"></a>`REQ-DSTORE-2-H1DAGX` | Explicit per-fork disputed and own-dispute flags.                         |
-| <a id="req-dstore-3-znxstm"></a>`REQ-DSTORE-3-ZNXSTM` | Content-addressed proofs, first-write-wins, consistent participant index. |
 
 ## Assumptions and constraints
 

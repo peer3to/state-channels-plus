@@ -208,15 +208,15 @@ semantics without lossy coercion.
 
 ## Requirements and invariants
 
-This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
+**<a id="inv-data-1-f8cg0p"></a>`INV-DATA-1-F8CG0P`.** Equal logical values have one canonical encoding and decode identically in every conforming implementation.
 
-| Requirement / invariant                           | Statement                                                                                                            |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-data-1-f8cg0p"></a>`INV-DATA-1-F8CG0P` | Equal logical values have one canonical encoding and decode identically in every conforming implementation.          |
-| <a id="req-data-1-1knrqs"></a>`REQ-DATA-1-1KNRQS` | Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and non-canonical encodings before effects. |
-| <a id="req-data-2-a5hmzp"></a>`REQ-DATA-2-A5HMZP` | Field and collection ordering, duplicate policy, optionality, and nested-byte codecs are explicit and canonical.     |
-| <a id="req-data-3-anvn8x"></a>`REQ-DATA-3-ANVN8X` | Encoded and signed values bind every domain coordinate required by their owning protocol operation.                  |
-| <a id="req-data-4-hfeaea"></a>`REQ-DATA-4-HFEAEA` | Integers and bytes cross ABI, off-chain runtime, worker, RPC, and persistence boundaries losslessly.                 |
+**<a id="req-data-1-1knrqs"></a>`REQ-DATA-1-1KNRQS`.** Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and non-canonical encodings before effects.
+
+**<a id="req-data-2-a5hmzp"></a>`REQ-DATA-2-A5HMZP`.** Field and collection ordering, duplicate policy, optionality, and nested-byte codecs are explicit and canonical.
+
+**<a id="req-data-3-anvn8x"></a>`REQ-DATA-3-ANVN8X`.** Encoded and signed values bind every domain coordinate required by their owning protocol operation.
+
+**<a id="req-data-4-hfeaea"></a>`REQ-DATA-4-HFEAEA`.** Integers and bytes cross ABI, off-chain runtime, worker, RPC, and persistence boundaries losslessly.
 
 ## Verification and test plan
 

@@ -28,20 +28,13 @@ Three markers that carry a node's position or intent across protocol phases:
 
 ## Requirements and invariants
 
-**[`REQ-RMSTORE-1-BWKVBG`](progress-markers.md#req-rmstore-1-bwkvbg) — Monotone observation progress.** Event-sync progress per channel only advances: a
+**<a id="req-rmstore-1-bwkvbg"></a>`REQ-RMSTORE-1-BWKVBG` — Monotone observation progress.** Event-sync progress per channel only advances: a
 store of a lower block number than the retained one leaves the retained value. Progress reflects
 _processed_, not merely observed, events — the producer stores it only after handling.
 
-**[`REQ-RMSTORE-2-Y2T1PG`](progress-markers.md#req-rmstore-2-y2t1pg) — Explicit intent lifecycle.** The force-exit flag and force-join marker are set,
+**<a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` — Explicit intent lifecycle.** The force-exit flag and force-join marker are set,
 read, and cleared explicitly; clearing returns them to their absent state. Absent means "no intent /
 no pending submission", and consumers MUST NOT infer intent from any other module.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                 | Statement                                                         |
-| ------------------------------------------------------- | ----------------------------------------------------------------- |
-| <a id="req-rmstore-1-bwkvbg"></a>`REQ-RMSTORE-1-BWKVBG` | Per-channel observation progress is monotone and means processed. |
-| <a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` | Intent markers have explicit set/read/clear lifecycles.           |
 
 ## Assumptions and constraints
 

@@ -107,6 +107,15 @@ function collectCandidates(document) {
 
     for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
+        // The canonical-definition convention: an explicit anchor immediately
+        // followed by the unlinked inline-code ID marks the definition site.
+        for (const anchored of line.matchAll(
+            new RegExp(
+                `<a id="[^"]+"></a>\\x60(${AUDITABLE_ID_PATTERN})\\x60`,
+                "g"
+            )
+        ))
+            add(anchored[1], index, "statement");
         const content = line.replace(/<a id="[^"]+"><\/a>/g, "");
         const heading = content.match(
             new RegExp(`^#{2,4}\\s+(${AUDITABLE_ID_PATTERN})(?:\\s|$)`)
@@ -116,7 +125,7 @@ function collectCandidates(document) {
 
         const statement = content.match(
             new RegExp(
-                `^\\s*(?:-\\s*)?(?:\\*\\*|\\x60|\\[\\x60)?(${AUDITABLE_ID_PATTERN})(?:\\x60\\]|\\*\\*|\\x60)?(?:\\.|\\s+[—-])`
+                `^\\s*(?:-\\s*)?(?:\\*\\*\\x60|\\*\\*|\\x60|\\[\\x60)?(${AUDITABLE_ID_PATTERN})(?:\\x60\\]|\\*\\*|\\x60)?(?:\\.|\\s+[—-])`
             )
         )?.[1];
         if (statement && REQUIREMENT_RE.test(statement))

@@ -21,26 +21,17 @@ participants and execution environments.
 
 ## Requirements and invariants
 
-**[`INV-CONFIG-1-0FJ2HX`](configuration.md#inv-config-1-0fj2hx) — Deterministic effective configuration.** The same declared inputs and precedence rules MUST
+**<a id="inv-config-1-0fj2hx"></a>`INV-CONFIG-1-0FJ2HX` — Deterministic effective configuration.** The same declared inputs and precedence rules MUST
 produce the same typed effective configuration; unknown, ambiguous, or invalid values MUST NOT be guessed.
 
-**[`REQ-CONFIG-1-PDHA8T`](configuration.md#req-config-1-pdha8t) — Explicit precedence.** Every source of configuration MUST have a documented precedence and
+**<a id="req-config-1-pdha8t"></a>`REQ-CONFIG-1-PDHA8T` — Explicit precedence.** Every source of configuration MUST have a documented precedence and
 coercion rule, and security-sensitive values MUST identify their provenance without exposing secrets.
 
-**[`REQ-CONFIG-2-JA2SKN`](configuration.md#req-config-2-ja2skn) — Cross-layer compatibility.** Chain identity, contract addresses, timing windows, encodings,
+**<a id="req-config-2-ja2skn"></a>`REQ-CONFIG-2-JA2SKN` — Cross-layer compatibility.** Chain identity, contract addresses, timing windows, encodings,
 protocol version, and transport/runtime choices MUST be mutually compatible before protocol work begins.
 
-**[`REQ-CONFIG-3-J4H12F`](configuration.md#req-config-3-j4h12f) — Safe bounds.** Timing, memory, concurrency, payload, retry, and persistence values MUST
+**<a id="req-config-3-j4h12f"></a>`REQ-CONFIG-3-J4H12F` — Safe bounds.** Timing, memory, concurrency, payload, retry, and persistence values MUST
 reject unsafe or unsupported ranges rather than silently clamping to a behavior peers cannot predict.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                               | Statement                                                                                 |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| <a id="inv-config-1-0fj2hx"></a>`INV-CONFIG-1-0FJ2HX` | Deterministic effective configuration. The same declared inputs and precedence rules MUST |
-| <a id="req-config-1-pdha8t"></a>`REQ-CONFIG-1-PDHA8T` | Explicit precedence. Every source of configuration MUST have a documented precedence and  |
-| <a id="req-config-2-ja2skn"></a>`REQ-CONFIG-2-JA2SKN` | Cross-layer compatibility. Chain identity, contract addresses, timing windows, encodings, |
-| <a id="req-config-3-j4h12f"></a>`REQ-CONFIG-3-J4H12F` | Safe bounds. Timing, memory, concurrency, payload, retry, and persistence values MUST     |
 
 ## Assumptions and constraints
 

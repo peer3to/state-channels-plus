@@ -46,7 +46,7 @@ state-proof open questions.
 
 ## Requirements and invariants
 
-**[`INV-ENFPROOF-1-DR1N9B`](proof-verification.md#inv-enfproof-1-dr1n9b) — Side-effect-free verification.** No predicate mutates channel state, emits
+**<a id="inv-enfproof-1-dr1n9b"></a>`INV-ENFPROOF-1-DR1N9B` — Side-effect-free verification.** No predicate mutates channel state, emits
 protocol events, or depends on caller identity; a predicate's verdict is a pure function of its
 inputs and committed state, equal for every caller and every evaluation context satisfying the
 [mirror equivalence constraints](./local-mirror.md).
@@ -56,23 +56,14 @@ fraud enforcement, and off-chain audit — MUST verify through these predicates;
 carry a private variant of any check they cover ([`REQ-CONTRACT-ARCH-2-BE651C`](contracts.md#req-contract-arch-2-be651c) on-chain,
 [`INV-MIRROR-1-VAF778`](local-mirror.md#inv-mirror-1-vaf778) off-chain).
 
-**[`REQ-ENFPROOF-2-YZDCXM`](proof-verification.md#req-enfproof-2-yzdcxm) — Deduplicated threshold counting.** Threshold verification MUST count each
+**<a id="req-enfproof-2-yzdcxm"></a>`REQ-ENFPROOF-2-YZDCXM` — Deduplicated threshold counting.** Threshold verification MUST count each
 distinct recovered signer at most once, over exactly the canonical encoding, against exactly the
 required set; signature-encoding malleability MUST NOT yield double counting
 ([identity.md](../protocol-model/identity.md)).
 
-**[`REQ-ENFPROOF-3-EEDR2Y`](proof-verification.md#req-enfproof-3-eedr2y) — Falsifying detail on failure.** Structural predicates MUST report enough detail
+**<a id="req-enfproof-3-eedr2y"></a>`REQ-ENFPROOF-3-EEDR2Y` — Falsifying detail on failure.** Structural predicates MUST report enough detail
 to act on a failure objectively (e.g. the first invalid block index), so fraud-proof construction
 can cite the exact violation rather than re-deriving it.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                                | Statement                                                           |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| <a id="inv-enfproof-1-dr1n9b"></a>`INV-ENFPROOF-1-DR1N9B`              | Predicates are side-effect-free and caller-independent.             |
-| [`REQ-ENFPROOF-1-RH4WEM`](proof-verification.md#req-enfproof-1-rh4wem) | All consumers verify through these predicates; no private variants. |
-| <a id="req-enfproof-2-yzdcxm"></a>`REQ-ENFPROOF-2-YZDCXM`              | Threshold counting: deduplicated, canonical, exact set.             |
-| <a id="req-enfproof-3-eedr2y"></a>`REQ-ENFPROOF-3-EEDR2Y`              | Failures report objective, actionable detail.                       |
 
 ## Assumptions and constraints
 

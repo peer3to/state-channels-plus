@@ -24,33 +24,24 @@ on-chain publication timestamp.
 
 ## Requirements and invariants
 
-**[`INV-BLKSTORE-1-MK4W8D`](blocks.md#inv-blkstore-1-mk4w8d) — Index consistency.** The hash index and the coordinate index always refer to the
+**<a id="inv-blkstore-1-mk4w8d"></a>`INV-BLKSTORE-1-MK4W8D` — Index consistency.** The hash index and the coordinate index always refer to the
 same block objects: a store, signature merge, timestamp update, or delete through either key is
 observable through both, and a delete removes the entry from both.
 
-**[`REQ-BLKSTORE-1-KYHTWT`](blocks.md#req-blkstore-1-kyhtwt) — Same-coordinate conflict is not resolved here.** Storing a block whose
+**<a id="req-blkstore-1-kyhtwt"></a>`REQ-BLKSTORE-1-KYHTWT` — Same-coordinate conflict is not resolved here.** Storing a block whose
 coordinates are occupied by a _different_ block MUST be refused, not silently replaced; resolving
 which block is canonical belongs to the validation and evidence rules of
 [block-processing.md](../block-progression/block-processing.md) ([`REQ-BLOCK-PIPE-6-XQ0RTT`](../block-progression/block-processing.md#req-block-pipe-6-xq0rtt)). Storing the
 _same_ block again merges its signature set and, when present, its earliest on-chain timestamp.
 
-**[`REQ-BLKSTORE-2-VWXP2C`](blocks.md#req-blkstore-2-vwxp2c) — Monotone signature merge.** Signature insertion only grows the set, is
+**<a id="req-blkstore-2-vwxp2c"></a>`REQ-BLKSTORE-2-VWXP2C` — Monotone signature merge.** Signature insertion only grows the set, is
 idempotent, and never alters block identity. The earliest observed on-chain timestamp wins; a later
 one never overwrites it.
 
-**[`REQ-BLKSTORE-3-S9V2KC`](blocks.md#req-blkstore-3-s9v2kc) — Tip tracking and bounded traversal.** The per-fork maximum height advances only
+**<a id="req-blkstore-3-s9v2kc"></a>`REQ-BLKSTORE-3-S9V2KC` — Tip tracking and bounded traversal.** The per-fork maximum height advances only
 on stores that extend the fork (a persistence-only store MAY opt out of tip advancement, e.g. when
 backfilling proof data). Range and latest-block reads MUST clamp any caller-supplied bound to the
 fork's known tip so a remote-supplied absurd height cannot force iteration over an empty range.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                   | Statement                                                                      |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| <a id="inv-blkstore-1-mk4w8d"></a>`INV-BLKSTORE-1-MK4W8D` | Index consistency between hash and coordinate keying, including deletes.       |
-| <a id="req-blkstore-1-kyhtwt"></a>`REQ-BLKSTORE-1-KYHTWT` | Different block at occupied coordinates refused; same block merges signatures. |
-| <a id="req-blkstore-2-vwxp2c"></a>`REQ-BLKSTORE-2-VWXP2C` | Signature merge is monotone/idempotent; earliest on-chain timestamp wins.      |
-| <a id="req-blkstore-3-s9v2kc"></a>`REQ-BLKSTORE-3-S9V2KC` | Tip advances only on extending stores; traversal bounds clamp to the tip.      |
 
 ## Assumptions and constraints
 

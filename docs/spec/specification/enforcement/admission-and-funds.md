@@ -37,32 +37,23 @@ themselves. It appends to the inbound stream; it never processes the outbound st
 
 ## Requirements and invariants
 
-**[`INV-ENFADM-1-H53AQY`](admission-and-funds.md#inv-enfadm-1-h53aqy) — Inbound append is the only membership/value entry.** Every deposit, join, and
+**<a id="inv-enfadm-1-h53aqy"></a>`INV-ENFADM-1-H53AQY` — Inbound append is the only membership/value entry.** Every deposit, join, and
 top-up reaches the channel exclusively as an appended inbound message block, hash-linked to the
 prior head with height +1 and cumulative totals advanced; no path mutates membership or
 `totalDeposits` without the corresponding inbound block.
 
-**[`REQ-ENFADM-1-V926CA`](admission-and-funds.md#req-enfadm-1-v926ca) — Self-submission with pinned state.** Join and top-up MUST be submitted by the
+**<a id="req-enfadm-1-v926ca"></a>`REQ-ENFADM-1-V926CA` — Self-submission with pinned state.** Join and top-up MUST be submitted by the
 affected participant itself, MUST carry the submitter's expected fork and snapshot, and MUST be
 rejected when the current state has moved — the participant authorizes entry against exactly the
 state it inspected.
 
-**[`REQ-ENFADM-2-K6K9SP`](admission-and-funds.md#req-enfadm-2-k6k9sp) — Membership-split correctness.** Join requires the participant absent from
+**<a id="req-enfadm-2-k6k9sp"></a>`REQ-ENFADM-2-K6K9SP` — Membership-split correctness.** Join requires the participant absent from
 snapshot ∪ pending and the fork undisputed; top-up requires it present. The two cases MUST NOT be
 interchangeable through either entry point.
 
-**[`REQ-ENFADM-3-6A3BEB`](admission-and-funds.md#req-enfadm-3-6a3beb) — Custody through the adapter only.** Asset custody is delegated to the integrator's
+**<a id="req-enfadm-3-6a3beb"></a>`REQ-ENFADM-3-6A3BEB` — Custody through the adapter only.** Asset custody is delegated to the integrator's
 consumer adapter through the internal composition path exclusively; a failing adapter call MUST
 fail the affected join per the composition mode with no partial escrow or unbacked inbound block.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                               | Statement                                                   |
-| ----------------------------------------------------- | ----------------------------------------------------------- |
-| <a id="inv-enfadm-1-h53aqy"></a>`INV-ENFADM-1-H53AQY` | All membership/value entry is a hash-linked inbound append. |
-| <a id="req-enfadm-1-v926ca"></a>`REQ-ENFADM-1-V926CA` | Self-submitted, pinned-state joins and top-ups.             |
-| <a id="req-enfadm-2-k6k9sp"></a>`REQ-ENFADM-2-K6K9SP` | Join/top-up membership split enforced both ways.            |
-| <a id="req-enfadm-3-6a3beb"></a>`REQ-ENFADM-3-6A3BEB` | Custody only via the adapter; no partial escrow.            |
 
 ## Assumptions and constraints
 

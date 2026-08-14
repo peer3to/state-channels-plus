@@ -364,20 +364,25 @@ security gaps tracked by the linked questions and audit findings.
 
 ## Requirements and invariants
 
-This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
+**<a id="req-dis-1-xaj1va"></a>`REQ-DIS-1-XAJ1VA`.** A dispute MUST state at least one of the four valid inputs (timeout, valid on-chain slashes, self-removal, forced inbound inclusion); fraud proofs are not a dispute input.
 
-| Requirement / invariant                           | Statement                                                                                                                                                                                                                                   |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-dis-1-xaj1va"></a>`REQ-DIS-1-XAJ1VA`   | A dispute MUST state at least one of the four valid inputs (timeout, valid on-chain slashes, self-removal, forced inbound inclusion); fraud proofs are not a dispute input.                                                                 |
-| <a id="req-dis-2-pkvz7e"></a>`REQ-DIS-2-PKVZ7E`   | Upload is limited to eligible disputers: `disputer == msg.sender`, dispute-eligible, ≤1 dispute per window per participant, throttled to one upload per `evidenceTime` per sender.                                                          |
-| <a id="req-dis-3-c4kysf"></a>`REQ-DIS-3-C4KYSF`   | An uploaded dispute records its commitment immediately; while the kill period runs, an invalid committed dispute can be killed via dispute fraud proof, slashing its disputer. (Intended rule: open question §4.2.)                         |
-| <a id="req-dis-4-6j6yyg"></a>`REQ-DIS-4-6J6YYG`   | Reduction runs only after the kill period expires and consumes exactly the committed dispute set.                                                                                                                                           |
-| <a id="inv-dis-5-j1qz92"></a>`INV-DIS-5-J1QZ92`   | The reduced result is independent of the order in which valid dispute inputs are applied.                                                                                                                                                   |
-| <a id="req-dis-6-y92h1m"></a>`REQ-DIS-6-Y92H1M`   | Every initiated dispute window MUST end in a canonical successor fork (`forkId = keccak256(output SnapshotData)`, genesis timestamp = kill-period end), whether individual claims are accepted or rejected; valid state is carried forward. |
-| <a id="inv-dis-7-9ggzsd"></a>`INV-DIS-7-9GGZSD`   | In a fork whose reduction contains any on-chain slashes, timeout removal is not applied — slashes take precedence.                                                                                                                          |
-| <a id="inv-dis-8-1gy6q5"></a>`INV-DIS-8-1GY6Q5`   | A fork applies at most one timeout, targeting the participant at the lowest timed-out block height; no skipping ahead past an earlier missed slot.                                                                                          |
-| <a id="req-dis-9-64whcd"></a>`REQ-DIS-9-64WHCD`   | The on-chain snapshot advances to a successor fork only along committed `reducedResult` links whose challenge periods have expired, verifying genesis identity/timestamp and processing the proven outbound range incrementally.            |
-| <a id="req-dis-10-sahjbn"></a>`REQ-DIS-10-SAHJBN` | Timeout claims MUST satisfy the deadline, linkage, schedule, and existence conditions of §6.3; violations are falsifiable via the `Timeout*` dispute fraud proofs and upload race checks.                                                   |
+**<a id="req-dis-2-pkvz7e"></a>`REQ-DIS-2-PKVZ7E`.** Upload is limited to eligible disputers: `disputer == msg.sender`, dispute-eligible, ≤1 dispute per window per participant, throttled to one upload per `evidenceTime` per sender.
+
+**<a id="req-dis-3-c4kysf"></a>`REQ-DIS-3-C4KYSF`.** An uploaded dispute records its commitment immediately; while the kill period runs, an invalid committed dispute can be killed via dispute fraud proof, slashing its disputer. (Intended rule: open question §4.2.)
+
+**<a id="req-dis-4-6j6yyg"></a>`REQ-DIS-4-6J6YYG`.** Reduction runs only after the kill period expires and consumes exactly the committed dispute set.
+
+**<a id="inv-dis-5-j1qz92"></a>`INV-DIS-5-J1QZ92`.** The reduced result is independent of the order in which valid dispute inputs are applied.
+
+**<a id="req-dis-6-y92h1m"></a>`REQ-DIS-6-Y92H1M`.** Every initiated dispute window MUST end in a canonical successor fork (`forkId = keccak256(output SnapshotData)`, genesis timestamp = kill-period end), whether individual claims are accepted or rejected; valid state is carried forward.
+
+**<a id="inv-dis-7-9ggzsd"></a>`INV-DIS-7-9GGZSD`.** In a fork whose reduction contains any on-chain slashes, timeout removal is not applied — slashes take precedence.
+
+**<a id="inv-dis-8-1gy6q5"></a>`INV-DIS-8-1GY6Q5`.** A fork applies at most one timeout, targeting the participant at the lowest timed-out block height; no skipping ahead past an earlier missed slot.
+
+**<a id="req-dis-9-64whcd"></a>`REQ-DIS-9-64WHCD`.** The on-chain snapshot advances to a successor fork only along committed `reducedResult` links whose challenge periods have expired, verifying genesis identity/timestamp and processing the proven outbound range incrementally.
+
+**<a id="req-dis-10-sahjbn"></a>`REQ-DIS-10-SAHJBN`.** Timeout claims MUST satisfy the deadline, linkage, schedule, and existence conditions of §6.3; violations are falsifiable via the `Timeout*` dispute fraud proofs and upload race checks.
 
 ## Verification and test plan
 

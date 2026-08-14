@@ -70,25 +70,17 @@ it.
 
 ## Requirements and invariants
 
-**[`REQ-DACK-1-ESEGGG`](dispute-acknowledgment.md#req-dack-1-eseggg) — One round per fork per peer pair.** Acknowledgment requests run at most once per
+**<a id="req-dack-1-eseggg"></a>`REQ-DACK-1-ESEGGG` — One round per fork per peer pair.** Acknowledgment requests run at most once per
 disputed fork toward each peer, and a peer answers each fork at most once; duplicates in either
 direction are protocol violations.
 
-**[`REQ-DACK-2-MJZENJ`](dispute-acknowledgment.md#req-dack-2-mjzenj) — Bilateral records.** Both sides record the acknowledgment: the requester records
+**<a id="req-dack-2-mjzenj"></a>`REQ-DACK-2-MJZENJ` — Bilateral records.** Both sides record the acknowledgment: the requester records
 that the peer knows, the responder records that it acknowledged. Records key by peer identity and
 survive transport churn.
 
-**[`REQ-DACK-3-J4Z33Y`](dispute-acknowledgment.md#req-dack-3-j4z33y) — Knowledge-gated consequences.** Dead-fork blocks from a recorded acknowledger MUST
+**<a id="req-dack-3-j4z33y"></a>`REQ-DACK-3-J4Z33Y` — Knowledge-gated consequences.** Dead-fork blocks from a recorded acknowledger MUST
 lose straggler tolerance and be treated as attributable misbehavior; from an unrecorded peer they
 MUST keep the tolerant outcome.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                           | Statement                                                      |
-| ------------------------------------------------- | -------------------------------------------------------------- |
-| <a id="req-dack-1-eseggg"></a>`REQ-DACK-1-ESEGGG` | One round per fork per pair; duplicates are violations.        |
-| <a id="req-dack-2-mjzenj"></a>`REQ-DACK-2-MJZENJ` | Bilateral identity-keyed records surviving transport churn.    |
-| <a id="req-dack-3-j4z33y"></a>`REQ-DACK-3-J4Z33Y` | Consequences for dead-fork blocks gated on recorded knowledge. |
 
 ## Assumptions and constraints
 

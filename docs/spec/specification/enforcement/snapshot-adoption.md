@@ -35,30 +35,21 @@ channel and the only writer of the canonical snapshot after opening.
 
 ## Requirements and invariants
 
-**[`INV-ENFSNAP-1-9VZ2HE`](snapshot-adoption.md#inv-enfsnap-1-9vz2he) — Single monotone snapshot.** Each channel has exactly one canonical snapshot,
+**<a id="inv-enfsnap-1-9vz2he"></a>`INV-ENFSNAP-1-9VZ2HE` — Single monotone snapshot.** Each channel has exactly one canonical snapshot,
 replaced only by the two proof paths, never regressing: same-fork advances require a strictly newer
 snapshot, successor-fork advances only along uncontestable reduced-result links.
 
-**[`REQ-ENFSNAP-1-FYN3BW`](snapshot-adoption.md#req-enfsnap-1-fyn3bw) — Coupled adoption and outbound processing.** A snapshot advance and its outbound
+**<a id="req-enfsnap-1-fyn3bw"></a>`REQ-ENFSNAP-1-FYN3BW` — Coupled adoption and outbound processing.** A snapshot advance and its outbound
 range processing are one atomic operation: the range MUST verify against both tips, already
 processed blocks MUST be discarded not reprocessed, each withdrawal releases at most once, and a
 failure anywhere (including a failing consumer withdrawal) reverts the entire advance.
 
-**[`REQ-ENFSNAP-2-MGRCY8`](snapshot-adoption.md#req-enfsnap-2-mgrcy8) — Batch-split invariance.** Advancing in several smaller proof/range batches MUST
+**<a id="req-enfsnap-2-mgrcy8"></a>`REQ-ENFSNAP-2-MGRCY8` — Batch-split invariance.** Advancing in several smaller proof/range batches MUST
 produce the same final snapshot, processed position, and totals as one combined advance.
 
-**[`REQ-ENFSNAP-3-VD9T8A`](snapshot-adoption.md#req-enfsnap-3-vd9t8a) — Inbound-consumption gate.** A same-fork advance MUST demonstrate that the new
+**<a id="req-enfsnap-3-vd9t8a"></a>`REQ-ENFSNAP-3-VD9T8A` — Inbound-consumption gate.** A same-fork advance MUST demonstrate that the new
 snapshot has consumed all inbound blocks pending at adoption, so admission cannot be silently
 erased by advancing past it.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                 | Statement                                                 |
-| ------------------------------------------------------- | --------------------------------------------------------- |
-| <a id="inv-enfsnap-1-9vz2he"></a>`INV-ENFSNAP-1-9VZ2HE` | One canonical snapshot; monotone; two proof paths only.   |
-| <a id="req-enfsnap-1-fyn3bw"></a>`REQ-ENFSNAP-1-FYN3BW` | Atomic advance+outbound processing; at-most-once release. |
-| <a id="req-enfsnap-2-mgrcy8"></a>`REQ-ENFSNAP-2-MGRCY8` | Batch splits converge to the identical result.            |
-| <a id="req-enfsnap-3-vd9t8a"></a>`REQ-ENFSNAP-3-VD9T8A` | Same-fork advances must consume pending inbound blocks.   |
 
 ## Assumptions and constraints
 

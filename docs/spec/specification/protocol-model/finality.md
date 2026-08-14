@@ -29,7 +29,7 @@ deliberately **decoupled from progress** — execution never stops to wait for i
 
 ## 2. Continuous execution
 
-**[`REQ-FIN-1-SP669G`](finality.md#req-fin-1-sp669g).** Participants MUST NOT be required to wait for explicit threshold finality before
+**<a id="req-fin-1-sp669g"></a>`REQ-FIN-1-SP669G`.** Participants MUST NOT be required to wait for explicit threshold finality before
 building the next block. The scheduled author builds on the latest valid state immediately, even
 when that state's block has not yet collected all signatures. Requiring agreement before progress
 contradicts the liveness model: one slow or absent signer would stall the channel even though the
@@ -40,7 +40,7 @@ blocks. The correction is the intended design, and it is also what the required 
 
 ## 3. Signing is a non-equivocating vote
 
-**[`INV-FIN-2-MK27J6`](finality.md#inv-fin-2-mk27j6).** Signing a block is a binding, non-equivocating vote for that block **and the
+**<a id="inv-fin-2-mk27j6"></a>`INV-FIN-2-MK27J6`.** Signing a block is a binding, non-equivocating vote for that block **and the
 history it links to**. A participant MUST NOT sign two different blocks at the same
 `(forkId, height)` or otherwise commit to conflicting histories. Provable equivocation is fraud:
 the `BlockDoubleSign` fraud proof slashes the signer
@@ -53,11 +53,11 @@ requires trusting an unbacked claim.
 
 ## 4. Virtual voting
 
-**[`REQ-FIN-3-9P9J4Q`](finality.md#req-fin-3-9p9j4q).** A signature on block _B_ is also an indirect vote for every ancestor of _B_ on the
+**<a id="req-fin-3-9p9j4q"></a>`REQ-FIN-3-9P9J4Q`.** A signature on block _B_ is also an indirect vote for every ancestor of _B_ on the
 same hash-linked chain. Signatures are therefore **cumulative across ancestry**: votes for a block
 are the union of direct signatures on it and signatures on its linked descendants.
 
-**[`REQ-FIN-4-ZFDDS6`](finality.md#req-fin-4-zfdds6).** Consequently, in a channel with _N_ participants, _N_ consecutive blocks authored
+**<a id="req-fin-4-zfdds6"></a>`REQ-FIN-4-ZFDDS6`.** Consequently, in a channel with _N_ participants, _N_ consecutive blocks authored
 by the complete participant set finalize the **first** block of the sequence, even if no
 participant other than its author ever signed that first block directly: each author's signature
 on their own block is a vote for all its ancestors, and the _N_ authors together cover the
@@ -73,9 +73,9 @@ flowchart LR
 
 ## 5. Leader election
 
-**[`REQ-FIN-5-DH29VZ`](finality.md#req-fin-5-dh29vz).** Block authoring is deterministic: `getNextToWrite()` — a pure function of the
+**<a id="req-fin-5-dh29vz"></a>`REQ-FIN-5-DH29VZ`.** Block authoring is deterministic: `getNextToWrite()` — a pure function of the
 
-**[`REQ-FIN-6-YZWJX2`](finality.md#req-fin-6-yzwjx2) (SHOULD).** The recommended policy is **round-robin** over the participant set, as a
+**<a id="req-fin-6-yzwjx2"></a>`REQ-FIN-6-YZWJX2` (SHOULD).** The recommended policy is **round-robin** over the participant set, as a
 function of channel state (e.g.
 `the illustrative round-robin rule`:
 `participants[currentTurnIndex % participants.length]`). The safety argument for carrying
@@ -111,7 +111,7 @@ Finality arrives by exactly one of three routes:
    available (possibly non-final) proved state to the dispute game, and after reduction and the
    challenge period the result is canonical ([disputes.md](../disputes/disputes.md)).
 
-**[`REQ-FIN-7-RTZWQZ`](finality.md#req-fin-7-rtzwqz).** The threshold is **unanimous** over the _relevant participant set_:
+**<a id="req-fin-7-rtzwqz"></a>`REQ-FIN-7-RTZWQZ`.** The threshold is **unanimous** over the _relevant participant set_:
 
 - Off-chain: `the corresponding agreement-tracking operation`
   requires signatures from the union of the block's previous and resulting participant sets, so a
@@ -139,7 +139,7 @@ most once per threshold set. These are exactly the checks the milestone verifier
 
 ## 7. Non-final transitions are carried forward
 
-**[`INV-FIN-8-G6V1M1`](finality.md#inv-fin-8-g6v1m1).** Valid transitions that lacked finality when a dispute began are **not reverted**.
+**<a id="inv-fin-8-g6v1m1"></a>`INV-FIN-8-G6V1M1`.** Valid transitions that lacked finality when a dispute began are **not reverted**.
 The dispute reduction selects the _longest valid proved history_ among the presented views —
 `the corresponding dispute-verification operation`
 keeps the candidate latest block with the highest `transactionCnt` (ties broken deterministically
@@ -197,19 +197,6 @@ duplicate/reordered signatures, delayed votes, and recovery through the chain. L
 domain-separation questions are security blockers, not optimization details.
 
 ## Requirements and invariants
-
-This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
-
-| Requirement / invariant                         | Statement                                                                                                                                   |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-fin-1-sp669g"></a>`REQ-FIN-1-SP669G` | Participants build on the latest valid state immediately; explicit threshold finality is never a precondition for producing the next block. |
-| <a id="inv-fin-2-mk27j6"></a>`INV-FIN-2-MK27J6` | Signing is a non-equivocating vote; provable equivocation is slashable.                                                                     |
-| <a id="req-fin-3-9p9j4q"></a>`REQ-FIN-3-9P9J4Q` | Signatures accumulate across hash-linked ancestry (virtual voting).                                                                         |
-| <a id="req-fin-4-zfdds6"></a>`REQ-FIN-4-ZFDDS6` | N consecutive blocks authored by the complete participant set finalize the sequence's first block.                                          |
-| <a id="req-fin-5-dh29vz"></a>`REQ-FIN-5-DH29VZ` | Deterministic block-level authoring via `getNextToWrite`; a missed slot is timeout-disputable.                                              |
-| <a id="req-fin-6-yzwjx2"></a>`REQ-FIN-6-YZWJX2` | Recommended leader-election policy is round-robin as a function of channel state.                                                           |
-| <a id="req-fin-7-rtzwqz"></a>`REQ-FIN-7-RTZWQZ` | The finality threshold is unanimous over the relevant union participant set (minus on-chain-slashed, for disputes).                         |
-| <a id="inv-fin-8-g6v1m1"></a>`INV-FIN-8-G6V1M1` | Valid non-final transitions are carried into the canonical successor fork, not reverted (longest valid proved history wins).                |
 
 ## Verification and test plan
 

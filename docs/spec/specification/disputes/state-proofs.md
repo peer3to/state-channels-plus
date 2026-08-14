@@ -47,7 +47,7 @@ valid — invalid transitions inside a proof are handled by the dispute fraud pr
 
 ## 2. A milestone is a finality anchor
 
-**[`REQ-SP-1-9YABY1`](state-proofs.md#req-sp-1-9yaby1).** A milestone is not merely a list of independently threshold-signed blocks. It is a
+**<a id="req-sp-1-9yaby1"></a>`REQ-SP-1-9YABY1`.** A milestone is not merely a list of independently threshold-signed blocks. It is a
 **finality anchor**: a consecutive, hash-linked run of block confirmations whose accumulated
 signatures finalize the run's **first** block. That first block's confirmation is final either
 directly — it carries the required threshold signatures itself — or **virtually**, because later,
@@ -56,12 +56,12 @@ the ancestry ([finality.md §4](../protocol-model/finality.md)).
 
 ## 3. Anchors chain to the latest state
 
-**[`REQ-SP-2-ST4JJ4`](state-proofs.md#req-sp-2-st4jj4).** A state proof establishes a path from one final anchor to the next, and finally to
+**<a id="req-sp-2-st4jj4"></a>`REQ-SP-2-ST4JJ4`.** A state proof establishes a path from one final anchor to the next, and finally to
 the **latest state** the dispute transition operates on. The latest state itself need **not** be
 final; it MUST be a cryptographically linked descendant of the last proved final anchor. That
 linkage is what places it on the canonical chain before the dispute game applies its transition.
 
-**[`REQ-SP-5-MTE4RV`](state-proofs.md#req-sp-5-mte4rv).** The final block of the proved path supplies the state commitment
+**<a id="req-sp-5-mte4rv"></a>`REQ-SP-5-MTE4RV`.** The final block of the proved path supplies the state commitment
 (`stateSnapshotHash` → `latestStateSnapshotHash`) that the dispute game and the reduction operate
 on (`the corresponding state-proof verification operation`).
 
@@ -79,7 +79,7 @@ _(The dashed suffix is the intended shape; the protocol definition restricts it 
 
 ## 4. Membership hops are required at participant-set changes
 
-**[`REQ-SP-3-SP1JG4`](state-proofs.md#req-sp-3-sp1jg4).** A join or removal changes the threshold set, so a proof crossing a membership change
+**<a id="req-sp-3-sp1jg4"></a>`REQ-SP-3-SP1JG4`.** A join or removal changes the threshold set, so a proof crossing a membership change
 MUST establish the old-set → new-set transition at the relevant block with a milestone hop; it
 cannot simply assert the new membership. The hop's threshold is the **union** of the sets involved:
 a 4→5 join is final only when the four original participants _and_ the joiner have (directly or
@@ -93,7 +93,7 @@ on-chain snapshot.
 
 ## 5. Genesis anchoring
 
-**[`REQ-SP-4-NCSEX4`](state-proofs.md#req-sp-4-ncsex4).** When a proof starts at fork genesis, genesis is the **implicit final anchor** for
+**<a id="req-sp-4-ncsex4"></a>`REQ-SP-4-NCSEX4`.** When a proof starts at fork genesis, genesis is the **implicit final anchor** for
 that fork; no milestone is needed for it. Concretely:
 
 - An **empty** proof (no milestones, no signed blocks) claims the fork's genesis snapshot itself
@@ -111,7 +111,7 @@ that fork; no milestone is needed for it. Concretely:
 
 ## 6. Why the non-final suffix is safe
 
-**[`INV-SP-6-GNW74H`](state-proofs.md#inv-sp-6-gnw74h).** Extending the proved anchor with unfinalized blocks is safe because signing is a
+**<a id="inv-sp-6-gnw74h"></a>`INV-SP-6-GNW74H`.** Extending the proved anchor with unfinalized blocks is safe because signing is a
 non-equivocating commitment ([finality.md §3](../protocol-model/finality.md)): a participant cannot commit to
 conflicting histories without exposing a slashable double-sign. Different participants MAY still
 present different valid latest states during a dispute (they saw different suffix lengths). The
@@ -142,17 +142,7 @@ boundary plus adversarial combinations; a proof rejection must leave canonical s
 
 ## Requirements and invariants
 
-This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
-
-| Requirement / invariant                       | Statement                                                                                                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="req-sp-1-9yaby1"></a>`REQ-SP-1-9YABY1` | A milestone is a finality anchor: its first block is final directly or via virtual votes from later linked confirmations within the milestone.                     |
-| <a id="req-sp-2-st4jj4"></a>`REQ-SP-2-ST4JJ4` | Proofs chain anchor→anchor→latest state; the latest state need not be final but must be a cryptographically linked descendant of the last proved anchor.           |
-| <a id="req-sp-3-sp1jg4"></a>`REQ-SP-3-SP1JG4` | Membership changes require milestone hops proven under the old∪new (plus pending joiners) union threshold.                                                         |
-| <a id="req-sp-4-ncsex4"></a>`REQ-SP-4-NCSEX4` | Fork genesis is the implicit final anchor: empty proofs claim the genesis snapshot; signed-block proofs must start at `transactionCnt == 0` and hash-link forward. |
-| <a id="req-sp-5-mte4rv"></a>`REQ-SP-5-MTE4RV` | The final block of the proved path supplies the state commitment the dispute game operates on.                                                                     |
-| <a id="inv-sp-6-gnw74h"></a>`INV-SP-6-GNW74H` | Non-final suffixes are safe: conflicting commitments expose slashable double-signs, and reduction selects the longest valid proved history.                        |
-| <a id="req-sp-7-70emat"></a>`REQ-SP-7-70EMAT` | Linkage checks: hash linkage, fork identity, authentic author signatures, threshold coverage, and latest-state commitment, exactly as listed in §7.                |
+**<a id="req-sp-7-70emat"></a>`REQ-SP-7-70EMAT`.** Linkage checks: hash linkage, fork identity, authentic author signatures, threshold coverage, and latest-state commitment, exactly as listed in §7.
 
 ## Verification and test plan
 

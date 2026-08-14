@@ -154,46 +154,34 @@ output ([`REQ-DIS-6-Y92H1M`](disputes.md#req-dis-6-y92h1m)); the pipeline never 
 
 ## Requirements and invariants
 
-**[`INV-DISPUTE-PIPE-1-BN0K81`](dispute-processing.md#inv-dispute-pipe-1-bn0k81) — Equivalent audit.** Every auditor given the same chain state and complete evidence
+**<a id="inv-dispute-pipe-1-bn0k81"></a>`INV-DISPUTE-PIPE-1-BN0K81` — Equivalent audit.** Every auditor given the same chain state and complete evidence
 MUST reach the same validity, offender, reduction, and successor-fork result.
 
-**[`REQ-DISPUTE-PIPE-1-HRBFP7`](dispute-processing.md#req-dispute-pipe-1-hrbfp7) — Bound intake.** Local escalation and chain-observed intake MUST bind the dispute,
+**<a id="req-dispute-pipe-1-hrbfp7"></a>`REQ-DISPUTE-PIPE-1-HRBFP7` — Bound intake.** Local escalation and chain-observed intake MUST bind the dispute,
 proofs, acknowledgements, and evidence to the exact manager, channel, fork, and dispute instance.
 
-**[`REQ-DISPUTE-PIPE-2-MJRJV1`](dispute-processing.md#req-dispute-pipe-2-mjrjv1) — Ordered complete verification.** Audit MUST verify authenticity, authorization,
+**<a id="req-dispute-pipe-2-mjrjv1"></a>`REQ-DISPUTE-PIPE-2-MJRJV1` — Ordered complete verification.** Audit MUST verify authenticity, authorization,
 commitment linkage, final/unfinalized boundaries, replayed transitions, messages, time, and claimed outcome
 before accepting or reducing a dispute.
 
-**[`REQ-DISPUTE-PIPE-3-PHE3SQ`](dispute-processing.md#req-dispute-pipe-3-phe3sq) — Deterministic reduction.** Proven fraud, unavailable peers, and valid survivors MUST
+**<a id="req-dispute-pipe-3-phe3sq"></a>`REQ-DISPUTE-PIPE-3-PHE3SQ` — Deterministic reduction.** Proven fraud, unavailable peers, and valid survivors MUST
 be treated according to distinct specified rules; removal order or evidence arrival order MUST NOT alter the
 canonical successor state.
 
-**[`REQ-DISPUTE-PIPE-4-3YVDSA`](dispute-processing.md#req-dispute-pipe-4-3yvdsa) — Atomic recovery.** Evidence persistence, chain action, local fork replacement, queue
+**<a id="req-dispute-pipe-4-3yvdsa"></a>`REQ-DISPUTE-PIPE-4-3YVDSA` — Atomic recovery.** Evidence persistence, chain action, local fork replacement, queue
 reset, and resumed execution MUST either converge on the accepted successor or remain safely retryable.
 
-**[`REQ-DISPUTE-PIPE-5-RZZB48`](dispute-processing.md#req-dispute-pipe-5-rzzb48) — Mirrored canonical audit.** Every audit predicate with an on-chain twin is
+**<a id="req-dispute-pipe-5-rzzb48"></a>`REQ-DISPUTE-PIPE-5-RZZB48` — Mirrored canonical audit.** Every audit predicate with an on-chain twin is
 evaluated through the same canonical logic ([`INV-MIRROR-1-VAF778`](../enforcement/local-mirror.md#inv-mirror-1-vaf778)); an
 audit verdict of invalid stores exactly one dispute fraud proof before any kill attempt;
 self-slashing proof types are preflighted before submission; and a dispute the auditor cannot
 anchor (no posted data, no local baseline) is skipped as valid, never killed on local ignorance.
 
-**[`REQ-DISPUTE-PIPE-6-6FZB9M`](dispute-processing.md#req-dispute-pipe-6-6fzb9m) — Minimal intervention and convergence.** A node uploads its own dispute in
+**<a id="req-dispute-pipe-6-6fzb9m"></a>`REQ-DISPUTE-PIPE-6-6FZB9M` — Minimal intervention and convergence.** A node uploads its own dispute in
 response to a valid observed one only when its evidence changes the reduced outcome; concurrent
 reducers' identical deterministic results classify as convergence, not conflict; and replacement
 evidence after a kill follows first-wins semantics. Redundant on-chain actions MUST NOT occur when
 the outcome is already determined.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                           | Statement                                                                          |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| <a id="inv-dispute-pipe-1-bn0k81"></a>`INV-DISPUTE-PIPE-1-BN0K81` | Equivalent audit. Every auditor given the same chain state and complete evidence   |
-| <a id="req-dispute-pipe-1-hrbfp7"></a>`REQ-DISPUTE-PIPE-1-HRBFP7` | Bound intake. Local escalation and chain-observed intake MUST bind the dispute,    |
-| <a id="req-dispute-pipe-2-mjrjv1"></a>`REQ-DISPUTE-PIPE-2-MJRJV1` | Ordered complete verification. Audit MUST verify authenticity, authorization,      |
-| <a id="req-dispute-pipe-3-phe3sq"></a>`REQ-DISPUTE-PIPE-3-PHE3SQ` | Deterministic reduction. Proven fraud, unavailable peers, and valid survivors MUST |
-| <a id="req-dispute-pipe-4-3yvdsa"></a>`REQ-DISPUTE-PIPE-4-3YVDSA` | Atomic recovery. Evidence persistence, chain action, local fork replacement, queue |
-| <a id="req-dispute-pipe-5-rzzb48"></a>`REQ-DISPUTE-PIPE-5-RZZB48` | Mirrored canonical audit. Predicates with on-chain twins use the same logic;       |
-| <a id="req-dispute-pipe-6-6fzb9m"></a>`REQ-DISPUTE-PIPE-6-6FZB9M` | Minimal intervention and convergence. Upload only outcome-changing evidence;       |
 
 ## Assumptions and constraints
 

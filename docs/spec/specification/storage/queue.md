@@ -32,24 +32,16 @@ copy's signatures into the entry, attributes exactly those signatures to that co
 signatures pooled from earlier copies), and merges the earliest on-chain timestamp. Merge is
 idempotent and arrival-order independent.
 
-**[`REQ-QSTORE-2-VYWJAQ`](queue.md#req-qstore-2-vywjaq) — Structural caps as markers, not rejections.** Per-entry attribution retention is
+**<a id="req-qstore-2-vywjaq"></a>`REQ-QSTORE-2-VYWJAQ` — Structural caps as markers, not rejections.** Per-entry attribution retention is
 capped. Reaching the cap sets an overflow marker and stops _retention growth_; it never rejects a
 later copy, never evicts already-tracked sources, and never influences any validity decision — the
 marker is an attribution/rate-limiting hint only. A junk-first flood therefore cannot crowd out an
 honest source or block a later valid copy.
 
-**[`REQ-QSTORE-3-DEKYG6`](queue.md#req-qstore-3-dekyg6) — Coordinate dequeue rules.** Dequeue-at removes and returns every entry at exactly
+**<a id="req-qstore-3-dekyg6"></a>`REQ-QSTORE-3-DEKYG6` — Coordinate dequeue rules.** Dequeue-at removes and returns every entry at exactly
 (fork, height). Priority dequeue selects the _lowest_ queued height on the fork not exceeding the
 caller's bound. Clearing a fork removes all of its entries and reports what was removed. A dequeued
 entry leaves both the entry map and the coordinate index.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                                            | Statement                                                                      |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [`REQ-QSTORE-1-PS769J`](../peer-communication/block-gossip.md#req-qstore-1-ps769j) | Copy-scoped attributed merge; monotone, idempotent, order-independent.         |
-| <a id="req-qstore-2-vywjaq"></a>`REQ-QSTORE-2-VYWJAQ`                              | Retention caps set markers; they never reject, evict, or decide validity.      |
-| <a id="req-qstore-3-dekyg6"></a>`REQ-QSTORE-3-DEKYG6`                              | Dequeue by exact coordinates, lowest-height priority, and complete fork clear. |
 
 ## Assumptions and constraints
 

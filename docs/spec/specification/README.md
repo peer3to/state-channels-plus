@@ -40,7 +40,9 @@ Every normative document contains:
    failure/recovery/race/adversarial cases, and the coverage rule for each list; give every
    permutation a stable child ID such as [`REQ-SM-1-Y72CKX.T1.P1`](protocol-model/state-machines.md#req-sm-1-y72ckx.t1.p1);
 7. failure, ordering, recovery, concurrency, and adversarial behavior;
-8. a normative **Requirements and invariants** index; and
+8. a normative **Requirements and invariants** section of prose entries — each entry is the
+   canonical definition of its ID (explicit anchor plus unlinked inline-code ID, then the full
+   normative statement); no separate index table duplicates these entries; and
 9. non-normative future work that changes protocol behavior, without describing repository tasks.
 
 System READMEs are navigational system contracts: they cite the owned documents' IDs and mint none of

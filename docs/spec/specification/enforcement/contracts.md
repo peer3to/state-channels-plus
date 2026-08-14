@@ -49,41 +49,30 @@ only through the composition rules here and the state-machine contract.
 
 ## Requirements and invariants
 
-**[`INV-CONTRACT-ARCH-1-TWQHTM`](contracts.md#inv-contract-arch-1-twqhtm) — Single logical state.** Every module acting for one channel manager MUST read and
+**<a id="inv-contract-arch-1-twqhtm"></a>`INV-CONTRACT-ARCH-1-TWQHTM` — Single logical state.** Every module acting for one channel manager MUST read and
 write the same canonical state layout. Module selection, replacement, and internal calls MUST NOT create a
 second authority or reinterpret existing state.
 
-**[`REQ-CONTRACT-ARCH-1-9W5390`](contracts.md#req-contract-arch-1-9w5390) — Stable external boundary.** Public lifecycle, message, proof, dispute, and view
+**<a id="req-contract-arch-1-9w5390"></a>`REQ-CONTRACT-ARCH-1-9W5390` — Stable external boundary.** Public lifecycle, message, proof, dispute, and view
 operations MUST remain available through one stable manager boundary regardless of internal decomposition.
 
-**[`REQ-CONTRACT-ARCH-2-BE651C`](contracts.md#req-contract-arch-2-be651c) — Shared validation.** Authentication, channel/fork binding, replay protection,
+**<a id="req-contract-arch-2-be651c"></a>`REQ-CONTRACT-ARCH-2-BE651C` — Shared validation.** Authentication, channel/fork binding, replay protection,
 timing, commitment, and authorization checks that apply to more than one operation MUST have identical
 semantics on every path.
 
-**[`REQ-CONTRACT-ARCH-3-GEGD78`](contracts.md#req-contract-arch-3-gegd78) — Internal-call confinement.** Operations intended only for composition inside the
+**<a id="req-contract-arch-3-gegd78"></a>`REQ-CONTRACT-ARCH-3-GEGD78` — Internal-call confinement.** Operations intended only for composition inside the
 manager MUST reject direct external invocation and MUST execute with the same storage and caller context as
 the initiating public operation.
 
-**[`REQ-CONTRACT-ARCH-4-FZ3CJE`](contracts.md#req-contract-arch-4-fz3cje) — Upgrade and deployment integrity.** A deployed composition MUST identify all
+**<a id="req-contract-arch-4-fz3cje"></a>`REQ-CONTRACT-ARCH-4-FZ3CJE` — Upgrade and deployment integrity.** A deployed composition MUST identify all
 required modules, reject missing or incompatible modules, remain within platform deployment limits, and
 never silently change the semantics or encoding of an existing channel.
 
-**[`REQ-CONTRACT-ARCH-5-QT17P1`](contracts.md#req-contract-arch-5-qt17p1) — Complete operation ownership.** Every externally visible operation MUST belong
+**<a id="req-contract-arch-5-qt17p1"></a>`REQ-CONTRACT-ARCH-5-QT17P1` — Complete operation ownership.** Every externally visible operation MUST belong
 to exactly one operation group of the [external operation inventory](#external-operation-inventory),
 with its semantics owned by the named protocol-system document. An externally reachable operation with
 no owning group MUST NOT affect channel state, and integrator-supplied consumer operations remain
 subject to the composition rules of this document.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                             | Statement                                                                       |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| <a id="inv-contract-arch-1-twqhtm"></a>`INV-CONTRACT-ARCH-1-TWQHTM` | Single logical state. Every module acting for one channel manager MUST read and |
-| <a id="req-contract-arch-1-9w5390"></a>`REQ-CONTRACT-ARCH-1-9W5390` | Stable external boundary. Public lifecycle, message, proof, dispute, and view   |
-| <a id="req-contract-arch-2-be651c"></a>`REQ-CONTRACT-ARCH-2-BE651C` | Shared validation. Authentication, channel/fork binding, replay protection,     |
-| <a id="req-contract-arch-3-gegd78"></a>`REQ-CONTRACT-ARCH-3-GEGD78` | Internal-call confinement. Operations intended only for composition inside the  |
-| <a id="req-contract-arch-4-fz3cje"></a>`REQ-CONTRACT-ARCH-4-FZ3CJE` | Upgrade and deployment integrity. A deployed composition MUST identify all      |
-| <a id="req-contract-arch-5-qt17p1"></a>`REQ-CONTRACT-ARCH-5-QT17P1` | Complete operation ownership. Every externally visible operation MUST belong    |
 
 ## Assumptions and constraints
 

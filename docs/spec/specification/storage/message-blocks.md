@@ -24,22 +24,15 @@ channel), one the outbound (channel → base layer); the module contract is iden
 
 ## Requirements and invariants
 
-**[`REQ-MSGSTORE-1-6ME9D7`](message-blocks.md#req-msgstore-1-6me9d7) — Content-addressed store with tip tracking.** A block is stored under the hash of
+**<a id="req-msgstore-1-6me9d7"></a>`REQ-MSGSTORE-1-6ME9D7` — Content-addressed store with tip tracking.** A block is stored under the hash of
 its canonical encoding. The latest-tip pointer advances only when a stored block's height exceeds
 the current tip; storing historical blocks (backfill) never moves the tip, and a store operation MAY
 explicitly opt out of tip advancement.
 
-**[`REQ-MSGSTORE-2-8RDXPZ`](message-blocks.md#req-msgstore-2-8rdxpz) — Linked backward range reads.** A range read walks the chain backward by
+**<a id="req-msgstore-2-8rdxpz"></a>`REQ-MSGSTORE-2-8RDXPZ` — Linked backward range reads.** A range read walks the chain backward by
 `previousBlockHash` from an upper bound (inclusive) to a lower bound (exclusive), returning the
 linked blocks in between. A break in linkage or an absent block ends the walk with exactly the
 blocks proven linked so far — the store never bridges gaps or substitutes blocks by height.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                   | Statement                                                                     |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| <a id="req-msgstore-1-6me9d7"></a>`REQ-MSGSTORE-1-6ME9D7` | Content-addressed storage; tip advances only on higher-height stores.         |
-| <a id="req-msgstore-2-8rdxpz"></a>`REQ-MSGSTORE-2-8RDXPZ` | Backward `[upper, lower)` range reads follow linkage only; gaps end the walk. |
 
 ## Assumptions and constraints
 

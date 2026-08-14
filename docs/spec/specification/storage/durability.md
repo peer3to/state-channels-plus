@@ -38,47 +38,37 @@ untrusted input to the validation pipelines when it is read back.
 
 ## Requirements and invariants
 
-**[`REQ-STOR-1-D4XE73`](durability.md#req-stor-1-d4xe73) — Complete durable set.** A node MUST keep durably, per channel and fork, every datum in
+**<a id="req-stor-1-d4xe73"></a>`REQ-STOR-1-D4XE73` — Complete durable set.** A node MUST keep durably, per channel and fork, every datum in
 the [durable data classes](#durable-data-classes) that a protocol obligation could still require:
 resuming execution, serving verifiable synchronization, constructing state proofs, meeting
 watchtower/contest duties within open windows, and completing begun disputes or recovery. Data whose
 loss silently converts an honest node into one that cannot meet an obligation is in the durable set
 by definition.
 
-**[`REQ-STOR-2-TARP8S`](durability.md#req-stor-2-tarp8s) — Commit-aligned durability.** Durable writes commit atomically with the owning
+**<a id="req-stor-2-tarp8s"></a>`REQ-STOR-2-TARP8S` — Commit-aligned durability.** Durable writes commit atomically with the owning
 operation's effect boundary: a block and its consequences commit together
 ([`INV-BLOCK-PIPE-1-1AB2ME`](../block-progression/block-processing.md#inv-block-pipe-1-1ab2me)); dispute evidence and actions
 converge or stay retryable ([`REQ-DISPUTE-PIPE-4-3YVDSA`](../disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)); temporary
 work never reaches durable state without a successful commit
 ([`REQ-SDK-ARCH-4-GTN7QN`](../runtime/sdk.md#req-sdk-arch-4-gtn7qn)). Observable events describe only durably committed transitions.
 
-**[`REQ-STOR-3-4RJGER`](durability.md#req-stor-3-4rjger) — Restart recovery without trust.** From its durable set plus chain observation alone, a
+**<a id="req-stor-3-4rjger"></a>`REQ-STOR-3-4RJGER` — Restart recovery without trust.** From its durable set plus chain observation alone, a
 restarted node MUST re-derive its protocol position and resume. Every datum read back re-enters the
 owning validation pipeline as untrusted input — storage grants persistence, never validity — and
 recovery is bounded: it either converges to the committed position or fails explicitly; it MUST NOT
 half-apply.
 
-**[`REQ-STOR-4-MF6FT6`](durability.md#req-stor-4-mf6ft6) — Obligation-bounded retention.** Data MAY be pruned only when no protocol obligation
+**<a id="req-stor-4-mf6ft6"></a>`REQ-STOR-4-MF6FT6` — Obligation-bounded retention.** Data MAY be pruned only when no protocol obligation
 can still require it: the relevant windows (dispute, kill, challenge, contest) are expired, the
 on-chain snapshot has advanced past it, and no synchronization or watchtower duty the node has
 accepted still depends on it. Pruning MUST NOT remove evidence needed to contest within any window
 that is still open or can still be opened against retained state.
 
-**[`REQ-STOR-5-T6EQSA`](durability.md#req-stor-5-t6eqsa) — Isolation, integrity, and versioned encoding.** Stores are keyed by channel and fork;
+**<a id="req-stor-5-t6eqsa"></a>`REQ-STOR-5-T6EQSA` — Isolation, integrity, and versioned encoding.** Stores are keyed by channel and fork;
 one channel's data can neither shadow nor corrupt another's. Corruption MUST be detected and fail
 closed — a node serves no data it cannot verify against its commitments. Stored encodings carry
 enough version identity that a later software revision either reads them correctly or refuses
 explicitly; silent reinterpretation is prohibited.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                           | Statement                                                                               |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| <a id="req-stor-1-d4xe73"></a>`REQ-STOR-1-D4XE73` | Complete durable set. A node MUST keep durably, per channel and fork, every datum       |
-| <a id="req-stor-2-tarp8s"></a>`REQ-STOR-2-TARP8S` | Commit-aligned durability. Durable writes commit atomically with the owning operation   |
-| <a id="req-stor-3-4rjger"></a>`REQ-STOR-3-4RJGER` | Restart recovery without trust. From durable state plus chain observation alone, resume |
-| <a id="req-stor-4-mf6ft6"></a>`REQ-STOR-4-MF6FT6` | Obligation-bounded retention. Prune only what no protocol obligation can still require  |
-| <a id="req-stor-5-t6eqsa"></a>`REQ-STOR-5-T6EQSA` | Isolation, integrity, and versioned encoding. Keyed stores, fail-closed corruption      |
 
 ## Assumptions and constraints
 

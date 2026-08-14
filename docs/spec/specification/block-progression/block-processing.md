@@ -161,55 +161,41 @@ Verdicts are shared; consequences depend on the context ([`REQ-BLOCK-PIPE-3-WW2S
 
 ## Requirements and invariants
 
-**[`INV-BLOCK-PIPE-1-1AB2ME`](block-processing.md#inv-block-pipe-1-1ab2me) — Atomic ordered commit.** A block and all of its signatures, attribution, state,
+**<a id="inv-block-pipe-1-1ab2me"></a>`INV-BLOCK-PIPE-1-1AB2ME` — Atomic ordered commit.** A block and all of its signatures, attribution, state,
 messages, agreement progress, and events commit together exactly once or not at all.
 
-**[`REQ-BLOCK-PIPE-1-SS24D1`](block-processing.md#req-block-pipe-1-ss24d1) — Unified work item.** Duplicate confirmations MUST merge signatures and source
+**<a id="req-block-pipe-1-ss24d1"></a>`REQ-BLOCK-PIPE-1-SS24D1` — Unified work item.** Duplicate confirmations MUST merge signatures and source
 attribution before processing; no path may discard attribution or validate a bare block with weaker context.
 
-**[`REQ-BLOCK-PIPE-2-PCXNT6`](block-processing.md#req-block-pipe-2-pcxnt6) — Complete pre-execution validation.** Authenticity, membership, authorship, linkage,
+**<a id="req-block-pipe-2-pcxnt6"></a>`REQ-BLOCK-PIPE-2-PCXNT6` — Complete pre-execution validation.** Authenticity, membership, authorship, linkage,
 fork/height, time, message inputs, and state-proof constraints MUST be evaluated against the same pre-state.
 
-**[`REQ-BLOCK-PIPE-3-WW2SB7`](block-processing.md#req-block-pipe-3-ww2sb7) — Strategy-complete deviations.** Each validation context MUST classify every deviation
+**<a id="req-block-pipe-3-ww2sb7"></a>`REQ-BLOCK-PIPE-3-WW2SB7` — Strategy-complete deviations.** Each validation context MUST classify every deviation
 and apply only its context-appropriate side effect while preserving the common accept/reject semantics.
 
-**[`REQ-BLOCK-PIPE-4-CF52J6`](block-processing.md#req-block-pipe-4-cf52j6) — Recovery without bypass.** Missing predecessor/input data MAY trigger bounded sync and
+**<a id="req-block-pipe-4-cf52j6"></a>`REQ-BLOCK-PIPE-4-CF52J6` — Recovery without bypass.** Missing predecessor/input data MAY trigger bounded sync and
 retry, but recovered work MUST re-enter the same validation and commitment pipeline.
 
-**[`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg) — Pre-execution merge layer.** Intake, deduplication, and signature merging form a
+**<a id="req-block-pipe-5-wj31rg"></a>`REQ-BLOCK-PIPE-5-WJ31RG` — Pre-execution merge layer.** Intake, deduplication, and signature merging form a
 pre-execution layer. Accepting an older, future, duplicate, or not-yet-eligible block, or additional
 signatures for any already known block, MUST NOT require the serialization boundary that guards
 state-machine execution. The merge MUST be monotone (signature sets only grow), idempotent under duplicate
 delivery, independent of arrival order, and MUST retain per-signature source attribution. Pre-execution
 retention MUST be bounded per entry so that work which never executes cannot exhaust memory or storage.
 
-**[`REQ-BLOCK-PIPE-6-XQ0RTT`](block-processing.md#req-block-pipe-6-xq0rtt) — Total-order application.** Blocks leave the pre-execution layer in total order by fork
+**<a id="req-block-pipe-6-xq0rtt"></a>`REQ-BLOCK-PIPE-6-XQ0RTT` — Total-order application.** Blocks leave the pre-execution layer in total order by fork
 identity and block height, and at most one block per channel MAY be in state-machine execution at a time.
 Two blocks claiming the same fork and height MUST be resolved by the specified validation, evidence, and
 drop rules; arrival or queue order MUST NOT decide which one becomes canonical.
 
-**[`REQ-BLOCK-PIPE-7-FYE9VJ`](block-processing.md#req-block-pipe-7-fye9vj) — Commit before publish.** A confirmation is persisted locally before it is
+**<a id="req-block-pipe-7-fye9vj"></a>`REQ-BLOCK-PIPE-7-FYE9VJ` — Commit before publish.** A confirmation is persisted locally before it is
 published to peers, so echoed copies merge as duplicates instead of re-entering validation, and a
 publication can never advertise state the node has not committed.
 
-**[`REQ-BLOCK-PIPE-8-N529VH`](block-processing.md#req-block-pipe-8-n529vh) — Evidence precedes escalation.** Every escalation of an objective fault stores
+**<a id="req-block-pipe-8-n529vh"></a>`REQ-BLOCK-PIPE-8-N529VH` — Evidence precedes escalation.** Every escalation of an objective fault stores
 the fraud evidence for the offender before initiating the dispute, so the dispute can carry it; only
 canonically checkable violations may escalate, and subjective judgments (agreement-window lateness)
 MUST NOT produce evidence, penalties, or escalation.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                       | Statement                                                                            |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| <a id="inv-block-pipe-1-1ab2me"></a>`INV-BLOCK-PIPE-1-1AB2ME` | Atomic ordered commit. A block and all of its signatures, attribution, state,        |
-| <a id="req-block-pipe-1-ss24d1"></a>`REQ-BLOCK-PIPE-1-SS24D1` | Unified work item. Duplicate confirmations MUST merge signatures and source          |
-| <a id="req-block-pipe-2-pcxnt6"></a>`REQ-BLOCK-PIPE-2-PCXNT6` | Complete pre-execution validation. Authenticity, membership, authorship, linkage,    |
-| <a id="req-block-pipe-3-ww2sb7"></a>`REQ-BLOCK-PIPE-3-WW2SB7` | Strategy-complete deviations. Each validation context MUST classify every deviation  |
-| <a id="req-block-pipe-4-cf52j6"></a>`REQ-BLOCK-PIPE-4-CF52J6` | Recovery without bypass. Missing predecessor/input data MAY trigger bounded sync and |
-| <a id="req-block-pipe-5-wj31rg"></a>`REQ-BLOCK-PIPE-5-WJ31RG` | Pre-execution merge layer. Intake, deduplication, and signature merging form a       |
-| <a id="req-block-pipe-6-xq0rtt"></a>`REQ-BLOCK-PIPE-6-XQ0RTT` | Total-order application. Blocks leave the pre-execution layer in total order by fork |
-| <a id="req-block-pipe-7-fye9vj"></a>`REQ-BLOCK-PIPE-7-FYE9VJ` | Commit before publish. A confirmation is persisted locally before it is published    |
-| <a id="req-block-pipe-8-n529vh"></a>`REQ-BLOCK-PIPE-8-N529VH` | Evidence precedes escalation. Every escalation of an objective fault stores the      |
 
 ## Assumptions and constraints
 

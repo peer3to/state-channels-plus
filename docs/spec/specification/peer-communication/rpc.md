@@ -144,59 +144,45 @@ established across incompatible deployments. The concrete negotiation scheme is 
 
 ## Requirements and invariants
 
-**[`INV-RPC-1-SJS2T6`](rpc.md#inv-rpc-1-sjs2t6) — Identity-bound dispatch.** Every accepted call MUST be attributable to the authenticated peer
+**<a id="inv-rpc-1-sjs2t6"></a>`INV-RPC-1-SJS2T6` — Identity-bound dispatch.** Every accepted call MUST be attributable to the authenticated peer
 and dispatched only to a method permitted in the current session state.
 
-**[`REQ-RPC-1-FF89Z0`](rpc.md#req-rpc-1-ff89z0) — Typed wire contract.** Envelopes MUST identify method, delivery mode, correlation identity, and
+**<a id="req-rpc-1-ff89z0"></a>`REQ-RPC-1-FF89Z0` — Typed wire contract.** Envelopes MUST identify method, delivery mode, correlation identity, and
 encoded payload; malformed, unknown, duplicate, or incompatible messages MUST fail deterministically.
 Payloads carrying protocol structs (including any large-integer values) MUST cross the boundary in the
 protocol's canonical encoding and be decoded and semantically validated inside the receiving endpoint;
 decode failure is a handled protocol failure, never an escaping exception.
 
-**[`REQ-RPC-2-SZDTTM`](rpc.md#req-rpc-2-szdttm) — Request lifecycle.** Each request MUST settle at most once through response, declared remote
+**<a id="req-rpc-2-szdttm"></a>`REQ-RPC-2-SZDTTM` — Request lifecycle.** Each request MUST settle at most once through response, declared remote
 error, timeout, cancellation, or disconnect; pending work MUST be released on transport replacement/disposal.
 Only the addressed authenticated peer may settle a request; unknown or late responses are ignored.
 
-**[`REQ-RPC-3-ZM9WR5`](rpc.md#req-rpc-3-zm9wr5) — Service authorization.** Handshake precedes protected services. Join, block, dispute, sync, and
+**<a id="req-rpc-3-zm9wr5"></a>`REQ-RPC-3-ZM9WR5` — Service authorization.** Handshake precedes protected services. Join, block, dispute, sync, and
 transport-upgrade calls MUST validate their channel/fork/session binding and required participant role.
 
-**[`REQ-RPC-4-9VX0B9`](rpc.md#req-rpc-4-9vx0b9) — Replay and concurrency.** Duplicate or reordered delivery MUST be idempotent, rejected, or
+**<a id="req-rpc-4-9vx0b9"></a>`REQ-RPC-4-9VX0B9` — Replay and concurrency.** Duplicate or reordered delivery MUST be idempotent, rejected, or
 merged according to the owning protocol operation; it MUST NOT duplicate signatures, membership, blocks,
 effects, or resource ownership. Every endpoint declares its replay class
 ([Replay classification](#replay-classification)).
 
-**[`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y) — Resource bounds.** Payload size, outstanding requests, expensive proof/signaling work, and
+**<a id="req-rpc-5-cv1r1y"></a>`REQ-RPC-5-CV1R1Y` — Resource bounds.** Payload size, outstanding requests, expensive proof/signaling work, and
 per-peer rate MUST be bounded, with overload isolated from unrelated peers and services.
 
-**[`REQ-RPC-6-E60S4J`](rpc.md#req-rpc-6-e60s4j) — Ordered ingress verification.** Inbound frames MUST pass the fixed dispatch order of
+**<a id="req-rpc-6-e60s4j"></a>`REQ-RPC-6-E60S4J` — Ordered ingress verification.** Inbound frames MUST pass the fixed dispatch order of
 [Ingress dispatch algorithm](#ingress-dispatch-algorithm): size bound before parsing, response
 classification before dispatch, envelope verification, service resolution, guards before
 method-existence disclosure, then invocation. Each stage failure MUST have its defined consequence,
 and a probe against a gated service MUST NOT reveal whether a method exists.
 
-**[`REQ-RPC-7-9CBSHK`](rpc.md#req-rpc-7-9cbshk) — Guard semantics.** Guards MUST be pure predicates evaluated in declaration order with
+**<a id="req-rpc-7-9cbshk"></a>`REQ-RPC-7-9CBSHK` — Guard semantics.** Guards MUST be pure predicates evaluated in declaration order with
 all consequences in their failure handlers; guard failure MUST settle a request-style call
 deterministically at the caller; the guard-bypass exemption applies only to the node's own loopback
 self-delivery, never to a network transport.
 
-**[`REQ-RPC-8-44XECF`](rpc.md#req-rpc-8-44xecf) — Compatibility before protected calls.** Session compatibility (protocol and encoding
+**<a id="req-rpc-8-44xecf"></a>`REQ-RPC-8-44XECF` — Compatibility before protected calls.** Session compatibility (protocol and encoding
 versions) MUST be established no later than authentication, an incompatible peer MUST be refused
 cleanly without penalty escalation, and compatibility identity SHOULD be bound into the signed
 handshake domain. (Scheme unresolved: [`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2).)
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                         | Statement                                                                                     |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| <a id="inv-rpc-1-sjs2t6"></a>`INV-RPC-1-SJS2T6` | Identity-bound dispatch. Every accepted call MUST be attributable to the authenticated peer   |
-| <a id="req-rpc-1-ff89z0"></a>`REQ-RPC-1-FF89Z0` | Typed wire contract. Envelopes MUST identify method, delivery mode, correlation identity, and |
-| <a id="req-rpc-2-szdttm"></a>`REQ-RPC-2-SZDTTM` | Request lifecycle. Each request MUST settle at most once through response, declared remote    |
-| <a id="req-rpc-3-zm9wr5"></a>`REQ-RPC-3-ZM9WR5` | Service authorization. Handshake precedes protected services. Join, block, dispute, sync, and |
-| <a id="req-rpc-4-9vx0b9"></a>`REQ-RPC-4-9VX0B9` | Replay and concurrency. Duplicate or reordered delivery MUST be idempotent, rejected, or      |
-| <a id="req-rpc-5-cv1r1y"></a>`REQ-RPC-5-CV1R1Y` | Resource bounds. Payload size, outstanding requests, expensive proof/signaling work, and      |
-| <a id="req-rpc-6-e60s4j"></a>`REQ-RPC-6-E60S4J` | Ordered ingress verification. Inbound frames MUST pass the fixed dispatch order               |
-| <a id="req-rpc-7-9cbshk"></a>`REQ-RPC-7-9CBSHK` | Guard semantics. Guards MUST be pure predicates evaluated in declaration order                |
-| <a id="req-rpc-8-44xecf"></a>`REQ-RPC-8-44XECF` | Compatibility before protected calls. Session compatibility MUST be established               |
 
 ## Assumptions and constraints
 

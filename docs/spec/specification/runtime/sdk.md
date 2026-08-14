@@ -21,31 +21,21 @@ or replaced, but a peer must observe the same protocol results and ordering as a
 
 ## Requirements and invariants
 
-**[`INV-SDK-ARCH-1-KNAX7F`](sdk.md#inv-sdk-arch-1-knax7f) — Coherent participant state.** Services MUST converge on the same channel, fork, peer,
+**<a id="inv-sdk-arch-1-knax7f"></a>`INV-SDK-ARCH-1-KNAX7F` — Coherent participant state.** Services MUST converge on the same channel, fork, peer,
 proof, and lifecycle state; no service may privately establish a conflicting protocol truth.
 
-**[`REQ-SDK-ARCH-1-7H14H6`](sdk.md#req-sdk-arch-1-7h14h6) — Explicit ownership.** Each mutable operation, state store, external effect, and recovery
+**<a id="req-sdk-arch-1-7h14h6"></a>`REQ-SDK-ARCH-1-7H14H6` — Explicit ownership.** Each mutable operation, state store, external effect, and recovery
 decision MUST have one canonical owner and all other components MUST delegate to it.
 
-**[`REQ-SDK-ARCH-2-QBZAT8`](sdk.md#req-sdk-arch-2-qbzat8) — Ordered lifecycle.** Initialization MUST establish dependencies before accepting work;
+**<a id="req-sdk-arch-2-qbzat8"></a>`REQ-SDK-ARCH-2-QBZAT8` — Ordered lifecycle.** Initialization MUST establish dependencies before accepting work;
 shutdown MUST stop intake, settle or reject owned work, release resources, and prevent late callbacks from
 mutating disposed state.
 
-**[`REQ-SDK-ARCH-3-WHTDWX`](sdk.md#req-sdk-arch-3-whtdwx) — Event fidelity.** Public events MUST describe committed participant state transitions,
+**<a id="req-sdk-arch-3-whtdwx"></a>`REQ-SDK-ARCH-3-WHTDWX` — Event fidelity.** Public events MUST describe committed participant state transitions,
 not speculative intermediate work, and MUST preserve causally significant ordering.
 
-**[`REQ-SDK-ARCH-4-GTN7QN`](sdk.md#req-sdk-arch-4-gtn7qn) — Execution isolation.** Temporary validation, replay, and query work MUST NOT mutate the
+**<a id="req-sdk-arch-4-gtn7qn"></a>`REQ-SDK-ARCH-4-GTN7QN` — Execution isolation.** Temporary validation, replay, and query work MUST NOT mutate the
 live application state or durable protocol state unless the owning operation commits successfully.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                   | Statement                                                                              |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| <a id="inv-sdk-arch-1-knax7f"></a>`INV-SDK-ARCH-1-KNAX7F` | Coherent participant state. Services MUST converge on the same channel, fork, peer,    |
-| <a id="req-sdk-arch-1-7h14h6"></a>`REQ-SDK-ARCH-1-7H14H6` | Explicit ownership. Each mutable operation, state store, external effect, and recovery |
-| <a id="req-sdk-arch-2-qbzat8"></a>`REQ-SDK-ARCH-2-QBZAT8` | Ordered lifecycle. Initialization MUST establish dependencies before accepting work;   |
-| <a id="req-sdk-arch-3-whtdwx"></a>`REQ-SDK-ARCH-3-WHTDWX` | Event fidelity. Public events MUST describe committed participant state transitions,   |
-| <a id="req-sdk-arch-4-gtn7qn"></a>`REQ-SDK-ARCH-4-GTN7QN` | Execution isolation. Temporary validation, replay, and query work MUST NOT mutate the  |
 
 ## Assumptions and constraints
 

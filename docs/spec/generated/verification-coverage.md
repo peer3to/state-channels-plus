@@ -119,12 +119,12 @@ Requirements/invariants with no mapped test evidence on any of their planned per
 | [`REQ-IX-1-WTJ0D1`](../specification/interactions.md#req-ix-1-wtj0d1) | [specification/interactions.md](../specification/interactions.md#req-ix-1-wtj0d1) |
 | [`REQ-IX-2-2PY2EF`](../specification/interactions.md#req-ix-2-2py2ef) | [specification/interactions.md](../specification/interactions.md#req-ix-2-2py2ef) |
 | [`REQ-IX-3-H8WCVY`](../specification/interactions.md#req-ix-3-h8wcvy) | [specification/interactions.md](../specification/interactions.md#req-ix-3-h8wcvy) |
-| [`REQ-IX-4-BB35GC`](../specification/disputes/README.md#req-ix-4-bb35gc) | [specification/interactions.md](../specification/disputes/README.md#req-ix-4-bb35gc) |
+| [`REQ-IX-4-BB35GC`](../specification/disputes/README.md#req-ix-4-bb35gc) | [specification/disputes/README.md](../specification/disputes/README.md#req-ix-4-bb35gc) |
 | [`REQ-IX-5-6XHJJB`](../specification/interactions.md#req-ix-5-6xhjjb) | [specification/interactions.md](../specification/interactions.md#req-ix-5-6xhjjb) |
-| [`REQ-IX-6-A4Y7KB`](../specification/settlement/README.md#req-ix-6-a4y7kb) | [specification/interactions.md](../specification/settlement/README.md#req-ix-6-a4y7kb) |
-| [`REQ-IX-7-A004VZ`](../specification/runtime/README.md#req-ix-7-a004vz) | [specification/interactions.md](../specification/runtime/README.md#req-ix-7-a004vz) |
+| [`REQ-IX-6-A4Y7KB`](../specification/settlement/README.md#req-ix-6-a4y7kb) | [specification/settlement/README.md](../specification/settlement/README.md#req-ix-6-a4y7kb) |
+| [`REQ-IX-7-A004VZ`](../specification/runtime/README.md#req-ix-7-a004vz) | [specification/runtime/README.md](../specification/runtime/README.md#req-ix-7-a004vz) |
 | [`REQ-IX-8-FY54AV`](../specification/interactions.md#req-ix-8-fy54av) | [specification/interactions.md](../specification/interactions.md#req-ix-8-fy54av) |
-| [`REQ-IX-9-AV56NR`](../specification/storage/README.md#req-ix-9-av56nr) | [specification/interactions.md](../specification/storage/README.md#req-ix-9-av56nr) |
+| [`REQ-IX-9-AV56NR`](../specification/storage/README.md#req-ix-9-av56nr) | [specification/storage/README.md](../specification/storage/README.md#req-ix-9-av56nr) |
 | [`REQ-JOINSIG-1-8X1A4V`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v) | [specification/peer-communication/join-authorization.md](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v) |
 | [`REQ-LIF-3-PDRTPY`](../specification/settlement/lifecycle.md#req-lif-3-pdrtpy) | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-3-pdrtpy) |
 | [`REQ-LIF-4-SW8GVY`](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy) | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy) |

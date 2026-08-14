@@ -24,17 +24,11 @@ enumerate the hops in a range without replaying history.
 
 ## Requirements and invariants
 
-**[`REQ-PSCSTORE-1-7BDTEV`](participant-changes.md#req-pscstore-1-7bdtev) — Complete ordered change points.** Recording a change point is idempotent per
+**<a id="req-pscstore-1-7bdtev"></a>`REQ-PSCSTORE-1-7BDTEV` — Complete ordered change points.** Recording a change point is idempotent per
 (fork, height). Range reads return the change points ascending by height; an open start defaults to
 the earliest recorded point, an open end to the latest, and an empty or inverted range returns
 nothing. A missed change point makes downstream proofs unbuildable, so the producing pipeline MUST
 record every membership-changing block it commits.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                   | Statement                                                                   |
-| --------------------------------------------------------- | --------------------------------------------------------------------------- |
-| <a id="req-pscstore-1-7bdtev"></a>`REQ-PSCSTORE-1-7BDTEV` | Idempotent per-(fork, height) recording; ascending, bound-defaulted ranges. |
 
 ## Assumptions and constraints
 

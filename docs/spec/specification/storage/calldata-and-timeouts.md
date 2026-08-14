@@ -26,22 +26,15 @@
 
 ## Requirements and invariants
 
-**[`REQ-CDSTORE-1-ECWBNY`](calldata-and-timeouts.md#req-cdstore-1-ecwbny) — Coordinate-keyed calldata with exact matching.** A calldata record is stored and
+**<a id="req-cdstore-1-ecwbny"></a>`REQ-CDSTORE-1-ECWBNY` — Coordinate-keyed calldata with exact matching.** A calldata record is stored and
 retrieved by (fork, height, author). A match query for a specific block succeeds only when the
 stored record's block hash equals the queried block's hash — same coordinates with different content
 is not a match, it is evidence of a divergence for the consumer to judge.
 
-**[`REQ-TOSTORE-1-JQPXBC`](calldata-and-timeouts.md#req-tostore-1-jqpxbc) — Lowest-height timeout candidate.** The store keeps at most one candidate per
+**<a id="req-tostore-1-jqpxbc"></a>`REQ-TOSTORE-1-JQPXBC` — Lowest-height timeout candidate.** The store keeps at most one candidate per
 fork and ignores a stored update whose height is above the retained candidate's — mirroring the
 protocol's lowest-timed-out-height precedence ([`INV-DIS-8-1GY6Q5`](../disputes/disputes.md#inv-dis-8-1gy6q5)) so the node never escalates a
 later slot while an earlier one is missed.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                 | Statement                                                               |
-| ------------------------------------------------------- | ----------------------------------------------------------------------- |
-| <a id="req-cdstore-1-ecwbny"></a>`REQ-CDSTORE-1-ECWBNY` | Calldata keyed by (fork, height, author); match requires hash equality. |
-| <a id="req-tostore-1-jqpxbc"></a>`REQ-TOSTORE-1-JQPXBC` | One timeout candidate per fork; lowest height retained.                 |
 
 ## Assumptions and constraints
 

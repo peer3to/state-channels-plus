@@ -50,7 +50,7 @@ correctness rest entirely on the chain's ability to adjudicate and enforce. See
 [../protocol/disputes.md](../disputes/disputes.md) and
 [../protocol/fraud-proofs.md](../disputes/fraud-proofs.md).
 
-**[`INV-TRUST-1-6TYWDH`](trust-model.md#inv-trust-1-6tywdh).** Every safety-relevant disagreement MUST be resolvable by the chain from objective
+**<a id="inv-trust-1-6tywdh"></a>`INV-TRUST-1-6TYWDH`.** Every safety-relevant disagreement MUST be resolvable by the chain from objective
 inputs alone, without trusting any participant's testimony.
 
 ## 3. Objective vs. subjective violations
@@ -65,7 +65,7 @@ The protocol distinguishes two categories of misbehavior:
   not provable and MUST NOT be slashable evidence, dispute input, or a substitute for protocol
   correctness.
 
-**[`REQ-TRUST-1-K5PS99`](trust-model.md#req-trust-1-k5ps99).** Version one uses only objective, deterministic, mathematically verifiable
+**<a id="req-trust-1-k5ps99"></a>`REQ-TRUST-1-K5PS99`.** Version one uses only objective, deterministic, mathematically verifiable
 on-chain claims for enforcement — fraud proofs and every slashable behavior. Subjective reputation
 MUST NEVER contribute to slashing or adjudication. (Non-authoritative reputation for choosing
 counterparties is Future Work and must not change enforcement; see §9.)
@@ -87,7 +87,7 @@ voids the guarantees that depend on it.
 | A8  | **Watchtower for offline participants.**                                                                                  | An honest participant that may go offline has a continuously available delegate that can monitor and contest on its behalf (§7).                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | A9  | **No on-path adversary during authentication** _(temporary — [`REQ-TRUST-6-Z586T0`](trust-model.md#req-trust-6-z586t0))._ | Until peer authentication binds both identities and the transport session, its guarantees assume no active on-path adversary between two honest peers. A relayed identity proof must not establish identity in a different session ([`OQ-35-E5RRDF`](../../implementation/open-questions.md#oq-35-e5rrdf)). Every peer-authentication and blacklist-attribution guarantee depends on A9.                                                                                                                                                             |
 
-**[`REQ-TRUST-6-Z586T0`](trust-model.md#req-trust-6-z586t0)** _(temporary assumption A9)._ Until the handshake binds both peer identities and
+**<a id="req-trust-6-z586t0"></a>`REQ-TRUST-6-Z586T0`** _(temporary assumption A9)._ Until the handshake binds both peer identities and
 the transport/session, the specification MUST state that peer authentication holds only against an
 adversary with no on-path position between two honest peers. No guarantee that depends on peer
 identity — blacklist attribution, per-peer penalties, spectate mutual-cooperation rules — may be
@@ -101,7 +101,7 @@ The off-chain runtime client observes the chain only through an RPC endpoint: it
 contract state, and submits transactions through it. This is a real trust dependency, not an
 implementation detail.
 
-**[`REQ-TRUST-2-X8GCZ7`](trust-model.md#req-trust-2-x8gcz7).** A client MUST have at least one available, honest RPC connection through which it
+**<a id="req-trust-2-x8gcz7"></a>`REQ-TRUST-2-X8GCZ7`.** A client MUST have at least one available, honest RPC connection through which it
 can observe chain state and events. Redundancy across independent RPC providers reduces ordinary
 availability failures, but it does NOT remove the assumption: correct operation is not guaranteed
 if every available endpoint is unavailable, dishonest, or malicious. A dishonest endpoint can feed
@@ -114,7 +114,7 @@ documented as not removing the honesty assumption.
 
 ## 6. Honest-peer assumption
 
-**[`REQ-TRUST-3-3YWEZR`](trust-model.md#req-trust-3-3ywezr).** The protocol assumes at least one non-Byzantine participant in each relevant
+**<a id="req-trust-3-3ywezr"></a>`REQ-TRUST-3-3YWEZR`.** The protocol assumes at least one non-Byzantine participant in each relevant
 partition. **If every participant in a partition is Byzantine, the trust assumption provides no
 safety for that partition.** Colluding participants who control the complete signature set can
 finalize any state their signatures can produce; the chain cannot distinguish unanimous fraud from
@@ -137,7 +137,7 @@ calldata posts, snapshot updates) and contest invalid ones within the protocol w
 participant that is offline through a contest window cannot do this, and the protocol does not
 pause for it.
 
-**[`REQ-TRUST-4-KW24NF`](trust-model.md#req-trust-4-kw24nf).** Version one REQUIRES a watchtower or equivalent continuously available delegate
+**<a id="req-trust-4-kw24nf"></a>`REQ-TRUST-4-KW24NF`.** Version one REQUIRES a watchtower or equivalent continuously available delegate
 for any honest participant that may go offline during a contest window. The delegate MUST be able
 to monitor the channel, detect an invalid on-chain action, contest it within the required window,
 and invoke the available enforcement or slashing mechanism.
@@ -164,7 +164,7 @@ collusion tests (remaining participants collude against the offline participant)
 
 ## 8. Topology limits
 
-**[`REQ-TRUST-5-NDVRW8`](trust-model.md#req-trust-5-ndvrw8).** The design targets many SMALL channel partitions, not large channels. For the
+**<a id="req-trust-5-ndvrw8"></a>`REQ-TRUST-5-NDVRW8`.** The design targets many SMALL channel partitions, not large channels. For the
 intended poker use case a partition of up to roughly ten participants — commonly six — is an
 acceptable fit for the full mesh. The protocol MUST NOT be presented as suitable for very large
 participant sets under this full-mesh topology.
@@ -206,18 +206,6 @@ keys, invalid integrator logic, resource exhaustion, and chain failure. For each
 must identify prevention, detection, recovery, and residual exposure; an unowned threat is an audit gap.
 
 ## Requirements and invariants
-
-This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
-
-| Requirement / invariant                             | Statement                                                                                                                                                                  |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-trust-1-6tywdh"></a>`INV-TRUST-1-6TYWDH` | Safety-relevant disagreements resolvable on-chain from objective inputs alone.                                                                                             |
-| <a id="req-trust-1-k5ps99"></a>`REQ-TRUST-1-K5PS99` | Enforcement uses only objective on-chain claims; subjective input never slashable.                                                                                         |
-| <a id="req-trust-2-x8gcz7"></a>`REQ-TRUST-2-X8GCZ7` | At least one available, honest RPC connection required; redundancy helps availability but does not remove the assumption.                                                  |
-| <a id="req-trust-3-3ywezr"></a>`REQ-TRUST-3-3YWEZR` | At least one non-Byzantine participant per partition; all-Byzantine partitions have no safety.                                                                             |
-| <a id="req-trust-4-kw24nf"></a>`REQ-TRUST-4-KW24NF` | Watchtower/delegate required for offline honest participants, with stated data, privacy, availability, authorization, timeout, and failure assumptions.                    |
-| <a id="req-trust-5-ndvrw8"></a>`REQ-TRUST-5-NDVRW8` | Full-mesh topology; target is many small partitions (≤ ~10, commonly 6).                                                                                                   |
-| <a id="req-trust-6-z586t0"></a>`REQ-TRUST-6-Z586T0` | Temporary assumption A9: peer authentication assumes no on-path adversary; identity-dependent guarantees are conditional until the handshake binds identities and session. |
 
 ## Verification and test plan
 

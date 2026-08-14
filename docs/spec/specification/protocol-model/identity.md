@@ -93,34 +93,24 @@ protocol purpose, an act of that participant. No protocol rule may distinguish "
 from "whoever controls the key"; consequently key compromise is participant compromise, with no
 in-protocol recovery in this version.
 
-**[`REQ-ID-1-3Q2KB9`](identity.md#req-id-1-3q2kb9) — Recoverable signatures over canonical targets.** Protocol signatures MUST support
+**<a id="req-id-1-3q2kb9"></a>`REQ-ID-1-3Q2KB9` — Recoverable signatures over canonical targets.** Protocol signatures MUST support
 public-key recovery, and MUST be made over the 32-byte hash of the object's canonical encoding
 under the chain account model's standard signing envelope. On-chain and off-chain verification of
 the same (message, signature) pair MUST recover the same address.
 
-**[`REQ-ID-2-F3Y8J4`](identity.md#req-id-2-f3y8j4) — Normalized identity comparison.** Every identity comparison and identity-keyed
+**<a id="req-id-2-f3y8j4"></a>`REQ-ID-2-F3Y8J4` — Normalized identity comparison.** Every identity comparison and identity-keyed
 structure MUST use the normalized address form; case or checksum variance MUST NOT create distinct
 identities or miss a match.
 
-**[`REQ-ID-3-KR0BE3`](identity.md#req-id-3-kr0be3) — Confined signing authority.** One trusted runtime component holds the key and signs;
+**<a id="req-id-3-kr0be3"></a>`REQ-ID-3-KR0BE3` — Confined signing authority.** One trusted runtime component holds the key and signs;
 signing capability never crosses to less-trusted execution contexts or peer-reachable surfaces,
 and every remotely triggered signature is produced only by an endpoint whose contract specifies
 validation-before-signing.
 
-**[`REQ-ID-4-BNEKCM`](identity.md#req-id-4-bnekcm) — Domain-separated signing forms.** Session-authentication signatures MUST be
+**<a id="req-id-4-bnekcm"></a>`REQ-ID-4-BNEKCM` — Domain-separated signing forms.** Session-authentication signatures MUST be
 domain-tagged such that they cannot verify as any protocol-object signature, and vice versa,
 regardless of adversarially chosen content. (Extending domain separation across protocol objects,
 chains, and deployments is [`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf).)
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                          | Statement                                                                     |
-| ------------------------------------------------ | ----------------------------------------------------------------------------- |
-| [`INV-ID-1-B4FXJ4`](identity.md#inv-id-1-b4fxj4) | A recovering signature is the participant; compromise is total.               |
-| <a id="req-id-1-3q2kb9"></a>`REQ-ID-1-3Q2KB9`    | Recoverable signatures over the canonical 32-byte hash target.                |
-| <a id="req-id-2-f3y8j4"></a>`REQ-ID-2-F3Y8J4`    | Normalized address comparison everywhere.                                     |
-| <a id="req-id-3-kr0be3"></a>`REQ-ID-3-KR0BE3`    | Signing authority confined; validate before any remotely triggered signature. |
-| <a id="req-id-4-bnekcm"></a>`REQ-ID-4-BNEKCM`    | Session and protocol-object signing forms cannot cross-verify.                |
 
 ## Assumptions and constraints
 

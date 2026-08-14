@@ -69,29 +69,20 @@ before carrying protocol traffic.
 
 ## Requirements and invariants
 
-**[`INV-UPG-1-KW2A02`](transport-upgrade.md#inv-upg-1-kw2a02) — Best-effort with no protocol effect.** No signaling outcome — success, failure,
+**<a id="inv-upg-1-kw2a02"></a>`INV-UPG-1-KW2A02` — Best-effort with no protocol effect.** No signaling outcome — success, failure,
 garbage — changes protocol state, session authentication, or peer standing; only a fully
 authenticated new transport changes anything, and then only which pipe carries the session.
 
-**[`REQ-UPG-1-MFBTZ1`](transport-upgrade.md#req-upg-1-mfbtz1) — Identity-bound signaling.** All signaling state binds to the authenticated sender
+**<a id="req-upg-1-mfbtz1"></a>`REQ-UPG-1-MFBTZ1` — Identity-bound signaling.** All signaling state binds to the authenticated sender
 identity from the session, never to payload-claimed identities; at most one pending upgrade exists
 per peer, newer attempts replacing older ones with the replaced attempt closed.
 
-**[`REQ-UPG-2-WH7BC7`](transport-upgrade.md#req-upg-2-wh7bc7) — Re-authentication before cutover.** The upgraded transport MUST complete the full
+**<a id="req-upg-2-wh7bc7"></a>`REQ-UPG-2-WH7BC7` — Re-authentication before cutover.** The upgraded transport MUST complete the full
 identity handshake before any protocol traffic, and cutover MUST preserve the peer's identity
 records and settle or migrate pending requests per the correlation rules.
 
-**[`REQ-UPG-3-T1SRMS`](transport-upgrade.md#req-upg-3-t1srms) — Single deterministic initiator.** The upgrade initiator is selected by a
+**<a id="req-upg-3-t1srms"></a>`REQ-UPG-3-T1SRMS` — Single deterministic initiator.** The upgrade initiator is selected by a
 deterministic identity-order rule; both-sides initiation must not produce two competing upgrades.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                         | Statement                                                    |
-| ----------------------------------------------- | ------------------------------------------------------------ |
-| <a id="inv-upg-1-kw2a02"></a>`INV-UPG-1-KW2A02` | Signaling is best-effort and protocol-inert.                 |
-| <a id="req-upg-1-mfbtz1"></a>`REQ-UPG-1-MFBTZ1` | Identity-bound, one-pending-per-peer signaling state.        |
-| <a id="req-upg-2-wh7bc7"></a>`REQ-UPG-2-WH7BC7` | Full re-authentication before cutover; continuity preserved. |
-| <a id="req-upg-3-t1srms"></a>`REQ-UPG-3-T1SRMS` | Deterministic single initiator.                              |
 
 ## Assumptions and constraints
 

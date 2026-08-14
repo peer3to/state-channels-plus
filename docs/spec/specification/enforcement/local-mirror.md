@@ -81,34 +81,25 @@ result that will be _acted on_ with on-chain consequences — needs chain confir
 
 ## Requirements and invariants
 
-**[`INV-MIRROR-1-VAF778`](local-mirror.md#inv-mirror-1-vaf778) — Single implementation.** Every protocol predicate evaluated locally MUST be the
+**<a id="inv-mirror-1-vaf778"></a>`INV-MIRROR-1-VAF778` — Single implementation.** Every protocol predicate evaluated locally MUST be the
 same contract logic that enforces it on-chain. Client-side reimplementation of an on-chain
 predicate is prohibited; a client needing a predicate the contracts do not expose must add it to
 the contracts, not beside them.
 
-**[`REQ-MIRROR-1-XCY9CB`](local-mirror.md#req-mirror-1-xcy9cb) — Constrained equivalence.** Under the [equivalence constraints](#equivalence-constraints)
+**<a id="req-mirror-1-xcy9cb"></a>`REQ-MIRROR-1-XCY9CB` — Constrained equivalence.** Under the [equivalence constraints](#equivalence-constraints)
 (same logic, same replicated state, controlled context, read-only/pinned evaluation), a local
 evaluation and an on-chain evaluation of the same predicate on the same inputs MUST agree. Any
 predicate evaluated outside those constraints MUST NOT be treated as an on-chain-equivalent
 result.
 
-**[`REQ-MIRROR-2-E9F3TM`](local-mirror.md#req-mirror-2-e9f3tm) — Unconditional replication.** The mirror advances only by replicating observed
+**<a id="req-mirror-2-e9f3tm"></a>`REQ-MIRROR-2-E9F3TM` — Unconditional replication.** The mirror advances only by replicating observed
 on-chain events and state. Local protocol work MUST NOT write hypothetical state into the mirror,
 and replication MUST be idempotent under duplicate observation (re-processing an event converges).
 
-**[`REQ-MIRROR-3-THD7K8`](local-mirror.md#req-mirror-3-thd7k8) — Cache, never authority.** A local read is an optimization. Absence in the mirror
+**<a id="req-mirror-3-thd7k8"></a>`REQ-MIRROR-3-THD7K8` — Cache, never authority.** A local read is an optimization. Absence in the mirror
 means "not observed", never "absent on chain"; any decision with on-chain consequences MUST be
 anchored against the RPC view before it is acted on, and timing-sensitive predicates MUST account
 for observation lag within the trust model's bounds.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                               | Statement                                                                       |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
-| <a id="inv-mirror-1-vaf778"></a>`INV-MIRROR-1-VAF778` | One implementation: local predicates are the on-chain contract logic.           |
-| <a id="req-mirror-1-xcy9cb"></a>`REQ-MIRROR-1-XCY9CB` | Local = on-chain under the stated equivalence constraints only.                 |
-| <a id="req-mirror-2-e9f3tm"></a>`REQ-MIRROR-2-E9F3TM` | Mirror advances only by idempotent replication of observed chain state.         |
-| <a id="req-mirror-3-thd7k8"></a>`REQ-MIRROR-3-THD7K8` | Mirror absence ≠ chain absence; consequential decisions anchor on the RPC view. |
 
 ## Assumptions and constraints
 

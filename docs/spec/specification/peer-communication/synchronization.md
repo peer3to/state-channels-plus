@@ -131,42 +131,30 @@ retaining its own state. In both cases no funds, obligations, or partial local c
 
 ## Requirements and invariants
 
-**[`INV-SYNC-1-XCQZ28`](synchronization.md#inv-sync-1-xcqz28) — Nothing trusted on receipt.** Every element of a sync payload MUST be re-verified
+**<a id="inv-sync-1-xcqz28"></a>`INV-SYNC-1-XCQZ28` — Nothing trusted on receipt.** Every element of a sync payload MUST be re-verified
 against the requester's own chain reads and verification logic before any state effect; the
 responder's assertions carry no weight.
 
-**[`INV-SYNC-2-AT3RXE`](synchronization.md#inv-sync-2-at3rxe) — Requester-anchored validation.** A payload is verified against the requester's own
+**<a id="inv-sync-2-at3rxe"></a>`INV-SYNC-2-AT3RXE` — Requester-anchored validation.** A payload is verified against the requester's own
 request (channel, pinned fork/height) and the requester's own on-chain anchor, never against values
 echoed by the responder.
 
-**[`INV-SYNC-3-A7A2ED`](synchronization.md#inv-sync-3-a7a2ed) — Fail-closed with no residue.** Any failure at any step aborts with no partial local
+**<a id="inv-sync-3-a7a2ed"></a>`INV-SYNC-3-A7A2ED` — Fail-closed with no residue.** Any failure at any step aborts with no partial local
 or on-chain commitment; a fresh spectator's abort is a full stop, a recovering participant's abort
 cuts only the offending peer.
 
-**[`INV-SYNC-4-Z6HER7`](synchronization.md#inv-sync-4-z6her7) — Read-only trust establishment.** No step of a sync sends an on-chain transaction;
+**<a id="inv-sync-4-z6her7"></a>`INV-SYNC-4-Z6HER7` — Read-only trust establishment.** No step of a sync sends an on-chain transaction;
 all contract verification is performed read-only or by simulation.
 
-**[`REQ-SYNC-1-T2589H`](synchronization.md#req-sync-1-t2589h) — Exact-target proving.** A responder MUST prove exactly the requested target or
+**<a id="req-sync-1-t2589h"></a>`REQ-SYNC-1-T2589H` — Exact-target proving.** A responder MUST prove exactly the requested target or
 refuse; substituting a different fork or height is prohibited.
 
-**[`REQ-SYNC-2-TNT4F4`](synchronization.md#req-sync-2-tnt4f4) — Economic soundness before adoption.** The adopted latest finalized snapshot MUST
+**<a id="req-sync-2-tnt4f4"></a>`REQ-SYNC-2-TNT4F4` — Economic soundness before adoption.** The adopted latest finalized snapshot MUST
 satisfy the channel-balance invariant checked against chain-anchored deposits and withdrawals.
 
-**[`REQ-SYNC-3-1P5ZHT`](synchronization.md#req-sync-3-1p5zht) — Suffix through the standard pipeline.** Unfinalized blocks arriving via sync MUST
+**<a id="req-sync-3-1p5zht"></a>`REQ-SYNC-3-1P5ZHT` — Suffix through the standard pipeline.** Unfinalized blocks arriving via sync MUST
 replay through the same validation pipeline as live blocks, under the spectating context's
 consequence rules.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                           | Statement                                                          |
-| ------------------------------------------------- | ------------------------------------------------------------------ |
-| <a id="inv-sync-1-xcqz28"></a>`INV-SYNC-1-XCQZ28` | Nothing in a payload is trusted on receipt.                        |
-| <a id="inv-sync-2-at3rxe"></a>`INV-SYNC-2-AT3RXE` | Validation anchored to the requester's own request and chain view. |
-| <a id="inv-sync-3-a7a2ed"></a>`INV-SYNC-3-A7A2ED` | Fail-closed abort with no partial commitment.                      |
-| <a id="inv-sync-4-z6her7"></a>`INV-SYNC-4-Z6HER7` | Trust establishment is read-only; no transactions.                 |
-| <a id="req-sync-1-t2589h"></a>`REQ-SYNC-1-T2589H` | Prove the exact target or refuse; no substitution.                 |
-| <a id="req-sync-2-tnt4f4"></a>`REQ-SYNC-2-TNT4F4` | Balance invariant checked before adoption.                         |
-| <a id="req-sync-3-1p5zht"></a>`REQ-SYNC-3-1P5ZHT` | Suffix replays through the standard pipeline.                      |
 
 ## Assumptions and constraints
 

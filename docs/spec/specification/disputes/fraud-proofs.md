@@ -223,19 +223,23 @@ penalty is decided ([`REQ-FP-6-TS1QAV`](fraud-proofs.md#req-fp-6-ts1qav)), with 
 
 ## Requirements and invariants
 
-This table is the normative requirement index. Detailed rules and rationale are defined in the sections above.
+**<a id="req-fp-1-9pd823"></a>`REQ-FP-1-9PD823`.** Fraud-proof enforcement is separate from the dispute game: an observed objective violation can be proven immediately, with a binary prove-and-slash / no-slash outcome; disputes consume recorded slashes instead of re-executing proofs.
 
-| Requirement / invariant                       | Statement                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-fp-1-9pd823"></a>`REQ-FP-1-9PD823` | Fraud-proof enforcement is separate from the dispute game: an observed objective violation can be proven immediately, with a binary prove-and-slash / no-slash outcome; disputes consume recorded slashes instead of re-executing proofs.                                                                         |
-| <a id="req-fp-2-ch4da1"></a>`REQ-FP-2-CH4DA1` | Every block fraud-proof handler is sound: a passing proof implies a real violation by the returned address (types: `BlockDoubleSign`, `BlockInvalidStateTransition`, `WrongGenesis`, `InvalidTimestamp`, `ForgedInboundMessageBlock`).                                                                            |
-| <a id="req-fp-3-2ajaz7"></a>`REQ-FP-3-2AJAZ7` | Slashes are recorded only via `addOnChainSlashedParticipant`: per-channel, append-only, deduplicated, timestamped, evented.                                                                                                                                                                                       |
-| <a id="req-fp-4-whkbxp"></a>`REQ-FP-4-WHKBXP` | A recorded slash disqualifies the participant from dispute participation and from the on-chain threshold set.                                                                                                                                                                                                     |
-| <a id="req-fp-5-zxw0j5"></a>`REQ-FP-5-ZXW0J5` | A dispute may list any subset of recorded slashes; listing an unrecorded slash is disprovable (`DisputeOnChainSlashesNotSubset`), and the reduction independently consumes all slashes recorded up to window expiry.                                                                                              |
-| <a id="req-fp-6-ts1qav"></a>`REQ-FP-6-TS1QAV` | An invalid fraud-proof submission slashes its submitter when the submitter is dispute-eligible — a current or pending, not-already-slashed participant; non-participant submitters are not penalized (engineer decision, 2026-08-13; threshold effects per [`REQ-FP-4-WHKBXP`](fraud-proofs.md#req-fp-4-whkbxp)). |
-| <a id="req-fp-7-4dd0d7"></a>`REQ-FP-7-4DD0D7` | A valid dispute fraud proof applied within the kill period kills the committed dispute and slashes its disputer; uncommitted targets are no-ops; expired kill periods revert.                                                                                                                                     |
-| <a id="inv-fp-8-bfnrsy"></a>`INV-FP-8-BFNRSY` | Proof application is idempotent per offender: proofs targeting an already-slashed participant are skipped, and duplicate slashes are never recorded.                                                                                                                                                              |
-| <a id="req-fp-9-qg4pw5"></a>`REQ-FP-9-QG4PW5` | The fraud-proof taxonomy MUST NOT be treated as complete; completeness is gated on the dedicated security review.                                                                                                                                                                                                 |
+**<a id="req-fp-2-ch4da1"></a>`REQ-FP-2-CH4DA1`.** Every block fraud-proof handler is sound: a passing proof implies a real violation by the returned address (types: `BlockDoubleSign`, `BlockInvalidStateTransition`, `WrongGenesis`, `InvalidTimestamp`, `ForgedInboundMessageBlock`).
+
+**<a id="req-fp-3-2ajaz7"></a>`REQ-FP-3-2AJAZ7`.** Slashes are recorded only via `addOnChainSlashedParticipant`: per-channel, append-only, deduplicated, timestamped, evented.
+
+**<a id="req-fp-4-whkbxp"></a>`REQ-FP-4-WHKBXP`.** A recorded slash disqualifies the participant from dispute participation and from the on-chain threshold set.
+
+**<a id="req-fp-5-zxw0j5"></a>`REQ-FP-5-ZXW0J5`.** A dispute may list any subset of recorded slashes; listing an unrecorded slash is disprovable (`DisputeOnChainSlashesNotSubset`), and the reduction independently consumes all slashes recorded up to window expiry.
+
+**<a id="req-fp-6-ts1qav"></a>`REQ-FP-6-TS1QAV`.** An invalid fraud-proof submission slashes its submitter when the submitter is dispute-eligible — a current or pending, not-already-slashed participant; non-participant submitters are not penalized (engineer decision, 2026-08-13; threshold effects per [`REQ-FP-4-WHKBXP`](fraud-proofs.md#req-fp-4-whkbxp)).
+
+**<a id="req-fp-7-4dd0d7"></a>`REQ-FP-7-4DD0D7`.** A valid dispute fraud proof applied within the kill period kills the committed dispute and slashes its disputer; uncommitted targets are no-ops; expired kill periods revert.
+
+**<a id="inv-fp-8-bfnrsy"></a>`INV-FP-8-BFNRSY`.** Proof application is idempotent per offender: proofs targeting an already-slashed participant are skipped, and duplicate slashes are never recorded.
+
+**<a id="req-fp-9-qg4pw5"></a>`REQ-FP-9-QG4PW5`.** The fraud-proof taxonomy MUST NOT be treated as complete; completeness is gated on the dedicated security review.
 
 ## Verification and test plan
 

@@ -66,27 +66,19 @@ application operations surfaced through the manager. The protocol constrains it 
 
 ## Requirements and invariants
 
-**[`INV-ENFSM-1-762ACD`](execution-and-consumer.md#inv-enfsm-1-762acd) — Replay from supplied state only.** Contract-side execution restores the complete
+**<a id="inv-enfsm-1-762acd"></a>`INV-ENFSM-1-762ACD` — Replay from supplied state only.** Contract-side execution restores the complete
 supplied pre-state before executing and derives nothing from residual machine storage; two replays
 of the same (pre-state, transition) MUST yield identical post-state and messages regardless of what
 executed before.
 
-**[`REQ-ENFSM-1-DKJCY2`](execution-and-consumer.md#req-enfsm-1-dkjcy2) — Injected context, bounded gas.** Execution supplies the protocol's execution
+**<a id="req-enfsm-1-dkjcy2"></a>`REQ-ENFSM-1-DKJCY2` — Injected context, bounded gas.** Execution supplies the protocol's execution
 context and enforces the configured gas limit; a transition exceeding it fails as an invalid
 transition, identically in fraud-proof replay and local-mirror evaluation
 ([`REQ-MIRROR-1-XCY9CB`](local-mirror.md#req-mirror-1-xcy9cb)).
 
-**[`REQ-ENFSM-2-G4HBKG`](execution-and-consumer.md#req-enfsm-2-g4hbkg) — Adapter confinement.** The consumer adapter is reachable only through the
+**<a id="req-enfsm-2-g4hbkg"></a>`REQ-ENFSM-2-G4HBKG` — Adapter confinement.** The consumer adapter is reachable only through the
 manager's specified delegation points; its failures propagate exactly as the enclosing operation's
 atomicity rules state, and it cannot reach protocol storage outside its call's scope.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                             | Statement                                                         |
-| --------------------------------------------------- | ----------------------------------------------------------------- |
-| <a id="inv-enfsm-1-762acd"></a>`INV-ENFSM-1-762ACD` | Replay is a pure function of supplied pre-state + transition.     |
-| <a id="req-enfsm-1-dkjcy2"></a>`REQ-ENFSM-1-DKJCY2` | Injected context and gas bound, identical across replay sites.    |
-| <a id="req-enfsm-2-g4hbkg"></a>`REQ-ENFSM-2-G4HBKG` | Adapter reachable only via specified delegation; scoped failures. |
 
 ## Assumptions and constraints
 

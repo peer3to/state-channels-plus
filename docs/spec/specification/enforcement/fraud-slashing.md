@@ -33,28 +33,20 @@ input 2) and dispute eligibility checks read. This module is the slash set's onl
 
 ## Requirements and invariants
 
-**[`INV-ENFFP-1-BGVZN4`](fraud-slashing.md#inv-enffp-1-bgvzn4) — Slash set integrity.** Only successful proofs append to the slash set; entries
+**<a id="inv-enffp-1-bgvzn4"></a>`INV-ENFFP-1-BGVZN4` — Slash set integrity.** Only successful proofs append to the slash set; entries
 carry the chain time of the slash; an already-slashed participant is not re-proven (later proofs
 against them are skipped, not replayed); and no entry is ever removed — the set is append-only
 objective history.
 
-**[`REQ-ENFFP-1-BREACW`](fraud-slashing.md#req-enffp-1-breacw) — Symmetric stake on submission.** Submitting a proof stakes the submitter: a proof
+**<a id="req-enffp-1-breacw"></a>`REQ-ENFFP-1-BREACW` — Symmetric stake on submission.** Submitting a proof stakes the submitter: a proof
 that fails, or whose proven offender differs from its declared target, slashes the eligible
 submitter. Honest submitters protect themselves by preflighting proofs through the same predicates
 locally ([local-mirror.md](./local-mirror.md)).
 
-**[`REQ-ENFFP-2-JXMYNB`](fraud-slashing.md#req-enffp-2-jxmynb) — Proof-type completeness at the boundary.** Every proof type the owner defines is
+**<a id="req-enffp-2-jxmynb"></a>`REQ-ENFFP-2-JXMYNB` — Proof-type completeness at the boundary.** Every proof type the owner defines is
 dispatchable through this module, and an undefined type MUST reject without slashing anyone; the
 completeness of the type set itself is the owner's standing security review
 ([`REQ-SEC-1-SNS1GA`](../../audit/security-assessment.md#req-sec-1-sns1ga)).
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                             | Statement                                                              |
-| --------------------------------------------------- | ---------------------------------------------------------------------- |
-| <a id="inv-enffp-1-bgvzn4"></a>`INV-ENFFP-1-BGVZN4` | Append-only, timestamped, deduplicated slash set; sole writer here.    |
-| <a id="req-enffp-1-breacw"></a>`REQ-ENFFP-1-BREACW` | Failed/mismatched proofs slash the eligible submitter.                 |
-| <a id="req-enffp-2-jxmynb"></a>`REQ-ENFFP-2-JXMYNB` | Exactly the defined proof types dispatch; unknown types reject safely. |
 
 ## Assumptions and constraints
 

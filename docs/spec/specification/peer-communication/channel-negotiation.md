@@ -77,29 +77,20 @@ is confirmed only by observing the channel open on-chain.
 
 ## Requirements and invariants
 
-**[`INV-NEG-1-6FW90P`](channel-negotiation.md#inv-neg-1-6fw90p) — Negotiated-terms-only signing.** A node signs an opening struct only when it equals,
+**<a id="inv-neg-1-6fw90p"></a>`INV-NEG-1-6FW90P` — Negotiated-terms-only signing.** A node signs an opening struct only when it equals,
 field-exactly, the struct rebuilt from its own negotiation state, with its own deposit amount taken
 from local state and the counterparty bound to the authenticated session.
 
-**[`REQ-NEG-1-RTKPT1`](channel-negotiation.md#req-neg-1-rtkpt1) — Deterministic single proposer.** Exactly one side builds and first-signs the
+**<a id="req-neg-1-rtkpt1"></a>`REQ-NEG-1-RTKPT1` — Deterministic single proposer.** Exactly one side builds and first-signs the
 canonical struct, selected by a deterministic identity-order rule; a proposal from the wrong side
 is misbehavior.
 
-**[`REQ-NEG-2-ED48TZ`](channel-negotiation.md#req-neg-2-ed48tz) — Chain-observed completion.** Negotiation success is established only by observing
+**<a id="req-neg-2-ed48tz"></a>`REQ-NEG-2-ED48TZ` — Chain-observed completion.** Negotiation success is established only by observing
 the channel open on-chain; no peer message confirms an opening, and lost races defer to the chain.
 
-**[`REQ-NEG-3-Q5WFAA`](channel-negotiation.md#req-neg-3-q5wfaa) — Single-slot serialization.** A node negotiates with one counterparty at a time;
+**<a id="req-neg-3-q5wfaa"></a>`REQ-NEG-3-Q5WFAA` — Single-slot serialization.** A node negotiates with one counterparty at a time;
 competing initiations receive an explicit busy signal and only the recorded counterparty's
 messages affect the negotiation.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                         | Statement                                                    |
-| ----------------------------------------------- | ------------------------------------------------------------ |
-| <a id="inv-neg-1-6fw90p"></a>`INV-NEG-1-6FW90P` | Sign only self-rebuilt, field-exact, locally amounted terms. |
-| <a id="req-neg-1-rtkpt1"></a>`REQ-NEG-1-RTKPT1` | One deterministic proposer per pair.                         |
-| <a id="req-neg-2-ed48tz"></a>`REQ-NEG-2-ED48TZ` | Completion only by chain observation.                        |
-| <a id="req-neg-3-q5wfaa"></a>`REQ-NEG-3-Q5WFAA` | One negotiation slot; busy is explicit and penalty-free.     |
 
 ## Assumptions and constraints
 

@@ -21,22 +21,22 @@ serialization semantics as direct execution.
 
 ## Requirements and invariants
 
-**[`INV-RUNTIME-1-AKRHAK`](execution.md#inv-runtime-1-akrhak) — Execution equivalence.** Inline and isolated execution given the same inputs and state
+**<a id="inv-runtime-1-akrhak"></a>`INV-RUNTIME-1-AKRHAK` — Execution equivalence.** Inline and isolated execution given the same inputs and state
 MUST produce the same result, committed effects, events, and failure classification.
 
-**[`REQ-RUNTIME-1-RSM6MZ`](execution.md#req-runtime-1-rsm6mz) — Transfer-safe boundary.** Every cross-context value MUST have an explicit canonical
+**<a id="req-runtime-1-rsm6mz"></a>`REQ-RUNTIME-1-RSM6MZ` — Transfer-safe boundary.** Every cross-context value MUST have an explicit canonical
 encoding that preserves large integers, binary data, optional branches, errors, and correlation identity.
 
-**[`REQ-RUNTIME-2-KBXKTG`](execution.md#req-runtime-2-kbxktg) — Ownership and ordering.** Mutable resources have one context owner; requests affecting the
+**<a id="req-runtime-2-kbxktg"></a>`REQ-RUNTIME-2-KBXKTG` — Ownership and ordering.** Mutable resources have one context owner; requests affecting the
 same ordered domain MUST execute in causal order without late or duplicate completion.
 
-**[`REQ-RUNTIME-3-VQXW59`](execution.md#req-runtime-3-vqxw59) — Lifecycle convergence.** Startup, readiness, failure, cancellation, disposal, and restart
+**<a id="req-runtime-3-vqxw59"></a>`REQ-RUNTIME-3-VQXW59` — Lifecycle convergence.** Startup, readiness, failure, cancellation, disposal, and restart
 MUST settle every request and release every owned resource exactly once.
 
-**[`REQ-RUNTIME-4-B0N70Y`](execution.md#req-runtime-4-b0n70y) — Platform equivalence.** Platform-specific transports and worker mechanisms MAY differ,
+**<a id="req-runtime-4-b0n70y"></a>`REQ-RUNTIME-4-B0N70Y` — Platform equivalence.** Platform-specific transports and worker mechanisms MAY differ,
 but must expose the same protocol behavior and explicitly reject unsupported capabilities.
 
-**[`REQ-RUNTIME-5-WJ1XKK`](execution.md#req-runtime-5-wj1xkk) — Required host environments: browser and Node.js.** The supported-host set is a
+**<a id="req-runtime-5-wj1xkk"></a>`REQ-RUNTIME-5-WJ1XKK` — Required host environments: browser and Node.js.** The supported-host set is a
 system-wide commitment, not an implementation convenience. For this protocol version a conforming
 client MUST run in both **browser** and **Node.js** host environments, and every protocol
 capability — authentication, block progression, synchronization, dispute participation, local-mirror
@@ -46,17 +46,6 @@ media) are permitted only beneath the equivalence boundary of [`REQ-RUNTIME-4-B0
 protocol capability that exists on only one host is a conformance defect, not a platform
 limitation. Where one host lacks an isolation or performance facility (e.g. no worker support),
 the inline path MUST provide the full capability at reduced performance, never reduced behavior.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                 | Statement                                                                                |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| <a id="inv-runtime-1-akrhak"></a>`INV-RUNTIME-1-AKRHAK` | Execution equivalence. Inline and isolated execution given the same inputs and state     |
-| <a id="req-runtime-1-rsm6mz"></a>`REQ-RUNTIME-1-RSM6MZ` | Transfer-safe boundary. Every cross-context value MUST have an explicit canonical        |
-| <a id="req-runtime-2-kbxktg"></a>`REQ-RUNTIME-2-KBXKTG` | Ownership and ordering. Mutable resources have one context owner; requests affecting the |
-| <a id="req-runtime-3-vqxw59"></a>`REQ-RUNTIME-3-VQXW59` | Lifecycle convergence. Startup, readiness, failure, cancellation, disposal, and restart  |
-| <a id="req-runtime-4-b0n70y"></a>`REQ-RUNTIME-4-B0N70Y` | Platform equivalence. Platform-specific transports and worker mechanisms MAY differ,     |
-| <a id="req-runtime-5-wj1xkk"></a>`REQ-RUNTIME-5-WJ1XKK` | Required host environments: browser and Node.js, with identical protocol capability.     |
 
 ## Assumptions and constraints
 

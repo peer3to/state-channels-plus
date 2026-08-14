@@ -159,12 +159,12 @@ Path equality is never evidence. A test counts only when its exact declaration i
 | [`REQ-IX-1-WTJ0D1`](../specification/interactions.md#req-ix-1-wtj0d1) | [specification/interactions.md](../specification/interactions.md#req-ix-1-wtj0d1) | [StateTransitionRpcMethods.ts](../implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md) | none — gap |
 | [`REQ-IX-2-2PY2EF`](../specification/interactions.md#req-ix-2-2py2ef) | [specification/interactions.md](../specification/interactions.md#req-ix-2-2py2ef) | none — gap | none — gap |
 | [`REQ-IX-3-H8WCVY`](../specification/interactions.md#req-ix-3-h8wcvy) | [specification/interactions.md](../specification/interactions.md#req-ix-3-h8wcvy) | none — gap | none — gap |
-| [`REQ-IX-4-BB35GC`](../specification/disputes/README.md#req-ix-4-bb35gc) | [specification/interactions.md](../specification/disputes/README.md#req-ix-4-bb35gc) | none — gap | none — gap |
+| [`REQ-IX-4-BB35GC`](../specification/disputes/README.md#req-ix-4-bb35gc) | [specification/disputes/README.md](../specification/disputes/README.md#req-ix-4-bb35gc) | none — gap | none — gap |
 | [`REQ-IX-5-6XHJJB`](../specification/interactions.md#req-ix-5-6xhjjb) | [specification/interactions.md](../specification/interactions.md#req-ix-5-6xhjjb) | none — gap | none — gap |
-| [`REQ-IX-6-A4Y7KB`](../specification/settlement/README.md#req-ix-6-a4y7kb) | [specification/interactions.md](../specification/settlement/README.md#req-ix-6-a4y7kb) | none — gap | none — gap |
-| [`REQ-IX-7-A004VZ`](../specification/runtime/README.md#req-ix-7-a004vz) | [specification/interactions.md](../specification/runtime/README.md#req-ix-7-a004vz) | none — gap | none — gap |
+| [`REQ-IX-6-A4Y7KB`](../specification/settlement/README.md#req-ix-6-a4y7kb) | [specification/settlement/README.md](../specification/settlement/README.md#req-ix-6-a4y7kb) | none — gap | none — gap |
+| [`REQ-IX-7-A004VZ`](../specification/runtime/README.md#req-ix-7-a004vz) | [specification/runtime/README.md](../specification/runtime/README.md#req-ix-7-a004vz) | none — gap | none — gap |
 | [`REQ-IX-8-FY54AV`](../specification/interactions.md#req-ix-8-fy54av) | [specification/interactions.md](../specification/interactions.md#req-ix-8-fy54av) | none — gap | none — gap |
-| [`REQ-IX-9-AV56NR`](../specification/storage/README.md#req-ix-9-av56nr) | [specification/interactions.md](../specification/storage/README.md#req-ix-9-av56nr) | [Storage.ts](../implementation/source/src/storage/Storage.ts.md) | none — gap |
+| [`REQ-IX-9-AV56NR`](../specification/storage/README.md#req-ix-9-av56nr) | [specification/storage/README.md](../specification/storage/README.md#req-ix-9-av56nr) | [Storage.ts](../implementation/source/src/storage/Storage.ts.md) | none — gap |
 | [`REQ-JOINSIG-1-8X1A4V`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v) | [specification/peer-communication/join-authorization.md](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v) | [JoinChannelService.ts](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) | none — gap |
 | [`REQ-JOINSIG-2-RR2G4Q`](../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q) | [specification/peer-communication/join-authorization.md](../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q) | [JoinChannelService.ts](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) | [JoinChannelSignatureRequest.test.ts#L10](../../../test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts#L10) |
 | [`REQ-JOINSIG-3-VAGFVD`](../specification/peer-communication/join-authorization.md#req-joinsig-3-vagfvd) | [specification/peer-communication/join-authorization.md](../specification/peer-communication/join-authorization.md#req-joinsig-3-vagfvd) | [JoinChannelRpcMethods.ts](../implementation/source/src/rpc/services/joinChannel/JoinChannelRpcMethods.ts.md), [JoinChannelService.ts](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) | [JoinChannelSignatureRequest.test.ts#L10](../../../test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts#L10) |
@@ -194,7 +194,7 @@ Path equality is never evidence. A test counts only when its exact declaration i
 | [`REQ-NEG-2-ED48TZ`](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz) | [specification/peer-communication/channel-negotiation.md](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz) | [OpenChannelNegotiationService.ts](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md) | none — gap |
 | [`REQ-NEG-3-Q5WFAA`](../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) | [specification/peer-communication/channel-negotiation.md](../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) | [OpenChannelNegotiationRpcMethods.ts](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts.md), [OpenChannelNegotiationService.ts](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md) | none — gap |
 | [`REQ-PSCSTORE-1-7BDTEV`](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev) | [specification/storage/participant-changes.md](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev) | [ParticipantSetChangeStorage.ts](../implementation/source/src/storage/ParticipantSetChangeStorage.ts.md) | [ParticipantSetChangeStorage.test.ts#L27](../../../test/storage/ParticipantSetChangeStorage.test.ts#L27), [ParticipantSetChangeStorage.test.ts#L40](../../../test/storage/ParticipantSetChangeStorage.test.ts#L40), [ParticipantSetChangeStorage.test.ts#L93](../../../test/storage/ParticipantSetChangeStorage.test.ts#L93), [ParticipantSetChangeStorage.test.ts#L105](../../../test/storage/ParticipantSetChangeStorage.test.ts#L105) … (+3) |
-| [`REQ-QSTORE-1-PS769J`](../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j) | [specification/storage/queue.md](../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j) | [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) | [QueueStorage.test.ts#L93](../../../test/storage/QueueStorage.test.ts#L93), [QueueStorage.test.ts#L358](../../../test/storage/QueueStorage.test.ts#L358) |
+| [`REQ-QSTORE-1-PS769J`](../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j) | [specification/peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j) | [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) | [QueueStorage.test.ts#L93](../../../test/storage/QueueStorage.test.ts#L93), [QueueStorage.test.ts#L358](../../../test/storage/QueueStorage.test.ts#L358) |
 | [`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-2-vywjaq) | [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) | [QueueStorage.test.ts#L151](../../../test/storage/QueueStorage.test.ts#L151), [QueueStorage.test.ts#L178](../../../test/storage/QueueStorage.test.ts#L178) |
 | [`REQ-QSTORE-3-DEKYG6`](../specification/storage/queue.md#req-qstore-3-dekyg6) | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-3-dekyg6) | [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) | [QueueStorage.test.ts#L252](../../../test/storage/QueueStorage.test.ts#L252), [QueueStorage.test.ts#L396](../../../test/storage/QueueStorage.test.ts#L396) |
 | [`REQ-RMSTORE-1-BWKVBG`](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | [specification/storage/progress-markers.md](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | [EventSyncStorage.ts](../implementation/source/src/storage/EventSyncStorage.ts.md) | [EventSyncStorage.test.ts#L8](../../../test/storage/EventSyncStorage.test.ts#L8) |
@@ -802,12 +802,12 @@ Only declarations mapped to at least one permutation appear here; the full inven
 | System | Requirements | With linked production files | With mapped tests |
 | --- | --- | --- | --- |
 | block-progression | 9 | 9 | 5 |
-| disputes | 33 | 33 | 13 |
+| disputes | 34 | 33 | 13 |
 | enforcement | 31 | 26 | 13 |
-| interactions.md | 9 | 2 | 0 |
-| peer-communication | 40 | 37 | 15 |
+| interactions.md | 5 | 1 | 0 |
+| peer-communication | 41 | 38 | 16 |
 | protocol-model | 40 | 37 | 4 |
-| runtime | 15 | 11 | 3 |
+| runtime | 16 | 11 | 3 |
 | security | 12 | 12 | 0 |
-| settlement | 24 | 24 | 7 |
-| storage | 25 | 21 | 16 |
+| settlement | 25 | 24 | 7 |
+| storage | 25 | 21 | 15 |

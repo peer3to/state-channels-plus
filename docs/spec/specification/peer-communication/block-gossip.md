@@ -67,25 +67,17 @@ gossip redundancy plus the recovery paths of [`REQ-BLOCK-PIPE-4-CF52J6`](../bloc
 
 ## Requirements and invariants
 
-**[`REQ-GOSSIP-1-HTK3NX`](block-gossip.md#req-gossip-1-htk3nx) — Thin attributed ingress.** The gossip service MUST attach the authenticated
+**<a id="req-gossip-1-htk3nx"></a>`REQ-GOSSIP-1-HTK3NX` — Thin attributed ingress.** The gossip service MUST attach the authenticated
 sender identity to every received confirmation and hand it to pipeline intake unmodified; it MUST
 NOT validate, filter, reorder, or merge protocol content itself.
 
-**[`REQ-GOSSIP-2-9PMMNH`](block-gossip.md#req-gossip-2-9pmmnh) — Verdict-mapped consequences.** Communication-layer penalties for gossiped content
+**<a id="req-gossip-2-9pmmnh"></a>`REQ-GOSSIP-2-9PMMNH` — Verdict-mapped consequences.** Communication-layer penalties for gossiped content
 MUST follow the pipeline's verdict classification; the gossip layer never penalizes content the
 pipeline classifies as acceptable knowledge, and never forgives what the pipeline attributes as the
 sender's own violation.
 
-**[`REQ-GOSSIP-3-HQZNQX`](block-gossip.md#req-gossip-3-hqznqx) — Re-broadcast on growth.** A node MUST re-broadcast a confirmation when its local
+**<a id="req-gossip-3-hqznqx"></a>`REQ-GOSSIP-3-HQZNQX` — Re-broadcast on growth.** A node MUST re-broadcast a confirmation when its local
 signature set grows, so signature knowledge converges across honest peers without a request cycle.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                               | Statement                                                        |
-| ----------------------------------------------------- | ---------------------------------------------------------------- |
-| <a id="req-gossip-1-htk3nx"></a>`REQ-GOSSIP-1-HTK3NX` | Attach identity, hand off unmodified; no protocol judgment here. |
-| <a id="req-gossip-2-9pmmnh"></a>`REQ-GOSSIP-2-9PMMNH` | Consequences follow pipeline verdicts exactly.                   |
-| <a id="req-gossip-3-hqznqx"></a>`REQ-GOSSIP-3-HQZNQX` | Signature-set growth triggers re-broadcast.                      |
 
 ## Assumptions and constraints
 

@@ -33,26 +33,18 @@ Two content-addressed stores and the joins over them:
 
 ## Requirements and invariants
 
-**[`INV-SNAPSTORE-1-DPHPJE`](snapshots-and-states.md#inv-snapstore-1-dphpje) — Content addressing.** A snapshot or encoded state is stored and retrieved only
+**<a id="inv-snapstore-1-dphpje"></a>`INV-SNAPSTORE-1-DPHPJE` — Content addressing.** A snapshot or encoded state is stored and retrieved only
 under its commitment hash; the store never recomputes, reinterprets, or substitutes content. A
 caller-supplied key is trusted to equal the content hash only to the extent the producer's pipeline
 guarantees it — the store's contract is exact-key fidelity.
 
-**[`REQ-SNAPSTORE-1-AJW0HJ`](snapshots-and-states.md#req-snapstore-1-ajw0hj) — Genesis index consistency.** The genesis index maps a fork id to exactly the
+**<a id="req-snapstore-1-ajw0hj"></a>`REQ-SNAPSTORE-1-AJW0HJ` — Genesis index consistency.** The genesis index maps a fork id to exactly the
 genesis snapshot whose data hashes to that fork id; registering a fork's genesis is idempotent and a
 conflicting registration for an existing fork id MUST be refused.
 
-**[`REQ-SNAPSTORE-2-Q7E6TQ`](snapshots-and-states.md#req-snapstore-2-q7e6tq) — Derived reads fail explicitly.** Coordinate-based reads return nothing when any
+**<a id="req-snapstore-2-q7e6tq"></a>`REQ-SNAPSTORE-2-Q7E6TQ` — Derived reads fail explicitly.** Coordinate-based reads return nothing when any
 link of the join is absent (no block, no committed snapshot, no stored state). Negative heights
 resolve to fork genesis; the store never fabricates intermediate results to satisfy a join.
-
-This table is the normative requirement index. Detailed rules and rationale are defined above.
-
-| Requirement / invariant                                     | Statement                                                                  |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
-| <a id="inv-snapstore-1-dphpje"></a>`INV-SNAPSTORE-1-DPHPJE` | Exact content addressing for snapshots and encoded states.                 |
-| <a id="req-snapstore-1-ajw0hj"></a>`REQ-SNAPSTORE-1-AJW0HJ` | Genesis index: fork id ↔ genesis snapshot, idempotent, conflicts refused. |
-| <a id="req-snapstore-2-q7e6tq"></a>`REQ-SNAPSTORE-2-Q7E6TQ` | Derived coordinate reads join explicitly and return nothing on a gap.      |
 
 ## Assumptions and constraints
 
