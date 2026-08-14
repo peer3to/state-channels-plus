@@ -4,22 +4,19 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **1/515** (0%)
-- Pending (never reviewed): **513**
-- Stale (edited since review): **1**
+- Verified (current): **3/515** (1%)
+- Pending (never reviewed): **512**
+- Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
 
-### specification (1)
-
-- [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
+None.
 
 ## Pending — never reviewed
 
-### specification (53)
+### specification (52)
 
 - [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
-- [specification/disputes/disputes.md](../specification/disputes/disputes.md)
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
 - [specification/disputes/README.md](../specification/disputes/README.md)
 - [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md)
@@ -540,6 +537,8 @@
 
 ## Verified — current
 
-### specification (1)
+### specification (3)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-14
+- [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
+- [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
