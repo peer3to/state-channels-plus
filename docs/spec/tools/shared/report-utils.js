@@ -2,7 +2,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { formatMarkdown } = require("./documentation-graph");
 const { buildIdRegistry, linkIdReferences } = require("./id-registry");
 const { anchorForId } = require("./id-utils");
 
@@ -27,9 +26,11 @@ function parseReportArgs(argv = process.argv.slice(2)) {
 }
 
 async function writeOrCheckReport(target, markdown, options) {
-    const report = await formatMarkdown(
-        linkIdReferences(markdown, target, idRegistry())
-    );
+    // Deliberately unformatted: prettier pads table columns to the widest
+    // cell, so a one-cell edit rewrites every row of the table. Generated
+    // reports stay compact (docs/spec/generated is in .prettierignore).
+    const report =
+        linkIdReferences(markdown, target, idRegistry()).trimEnd() + "\n";
     const current = fs.existsSync(target)
         ? fs.readFileSync(target, "utf8")
         : null;

@@ -178,11 +178,19 @@ fork_, how block heights are compared across different proven histories, when su
 becomes available to the timeout target, and how a fraud proof revealed by that evidence changes
 an already proposed timeout.
 
-Code-derived edges: whether "any non-timeout dispute cancels the proposed timeout" is intended
-(see [`OQ-14-5C8KV7`](../implementation/open-questions.md#oq-14-5c8kv7) for the suppression fold); the exact inclusive/exclusive boundary comparisons of the
+Code-derived edges: the empty-timeout cancellation of the `reduce()` fold
+(see [`OQ-14-5C8KV7`](../implementation/open-questions.md#oq-14-5c8kv7) for the fold mechanics); the exact inclusive/exclusive boundary comparisons of the
 `Timeout*` dispute-fraud-proof rules; and unquantified underlying-chain timestamp-manipulation
 bounds relative to the protocol windows. See [protocol/disputes.md](./disputes/disputes.md) §6 and
 [protocol/time.md](./protocol-model/time.md) §5.3.
+
+**Partially resolved (2026-08-14, engineer decision):** a slash cancels a proposed timeout — a
+reduction that slashes someone applies no timeout (normatively
+[`INV-DIS-7-9GGZSD`](disputes/disputes.md#inv-dis-7-9ggzsd)), so a slash-carrying dispute
+suppressing the timeout candidate is intended. **Still open:** whether a dispute with no slashes
+and no timeout claim (self-removal-only, or the accused's own counter-dispute) also cancels the
+proposed timeout; [protocol/disputes.md](./disputes/disputes.md) §5 and §6.1 record the decision
+and this residual.
 
 <a id="oq-10-04ync4"></a>
 

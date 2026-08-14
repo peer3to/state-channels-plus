@@ -11,7 +11,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | ID                                               | Question                                                                                                                          | Source | Affected documents                                                                                                                                                                                    | Status             |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
 | [`OQ-13-FE5CT4`](open-questions.md#oq-13-fe5ct4) | State proofs reject the intended mixed shape (milestones + non-final suffix)                                                      | Code   | [protocol/state-proofs.md](../specification/disputes/state-proofs.md), [protocol/finality.md](../specification/protocol-model/finality.md)                                                            | Open               |
-| [`OQ-14-5C8KV7`](open-questions.md#oq-14-5c8kv7) | `reduce()` timeout fold: a dispute without a timeout can suppress a real timeout                                                  | Code   | [protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                                         | Open               |
+| [`OQ-14-5C8KV7`](open-questions.md#oq-14-5c8kv7) | `reduce()` timeout fold: a dispute without a timeout can suppress a real timeout                                                  | Code   | [protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                                         | Partially resolved |
 | [`OQ-15-2J4Y1Z`](open-questions.md#oq-15-2j4y1z) | Back-dated reduced-result timestamp makes `challengeDisputeReduction` unreachable                                                 | Code   | [protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                                         | Open               |
 | [`OQ-17-6Z5Q0J`](open-questions.md#oq-17-6z5q0j) | Proxy fallback exposes the consumer facet's `deposit`/`withdraw` externally                                                       | Code   | [contracts/state-machine-base.md](./views/architecture/contracts/state-machine-base.md)                                                                                                               | Open               |
 | [`OQ-19-Y8FDQX`](open-questions.md#oq-19-y8fdqx) | Channel-balance invariant not enforced on snapshot update or join                                                                 | Code   | [protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)                                                                                                               | Open               |
@@ -48,6 +48,15 @@ checking `participant != address(0)`, so any committed dispute _without_ a timeo
 wipes a real timeout claim. This conflicts with the lowest-real-height rule tracked by [`OQ-9-XR1MFS`](../specification/open-questions.md#oq-9-xr1mfs).
 Decide whether this is a bug (likely) or intended "any non-timeout dispute cancels the timeout"
 semantics, then fix and test accordingly. See [protocol/disputes.md](../specification/disputes/disputes.md) §6.
+
+**Partially resolved (2026-08-14, engineer decision):** a slash cancels a proposed timeout — a
+reduction containing slashes intentionally applies no timeout
+([`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)), so a
+slash-carrying dispute suppressing the timeout candidate is intended and the fold's reset is
+immaterial to the applied removals. The residual — whether a dispute with no slashes and no
+timeout claim also cancels a real timeout — is a specification decision, tracked at the
+specification layer in [`OQ-9-XR1MFS`](../specification/open-questions.md#oq-9-xr1mfs); whether
+the fold must skip empty timeout structs follows that decision.
 
 <a id="oq-15-2j4y1z"></a>
 

@@ -227,7 +227,7 @@ and `DisputeUtils.areDisputesCommitted`
 matches the reducer's input array positionally against that post-kill order. Order-sensitive
 consumers exist: slash entries are appended and applied to the state machine in array order
 (`_applySlashesToStateMachine`), so application order can change the serialized output state and
-therefore the successor `forkId`; and the timeout fold's empty-timeout divergence (below) makes
+therefore the successor `forkId`; and the timeout fold's empty-timeout cancellation (below) makes
 the _last_ alternation win. So the ordering freedom is not limited to which disputes are
 committed before the window closes — kills perturb the canonical order itself. Candidate
 directions: canonicalize (sort) the survivor set before reduction, or prove and permutation-test
@@ -237,15 +237,21 @@ Neither a proof nor permutation tests exist. Verification: required downstream c
 adversarial-interleaving with kills, and on-chain integration tests required before this
 invariant can be marked verified). Tracked as [`OQ-4-JGDCNX`](../../verification/open-questions.md#oq-4-jgdcnx).
 
-**Observed divergence (inferred concern).** In `reduce`, the timeout fold replaces the current
+**Observed divergence (partially resolved).** In `reduce`, the timeout fold replaces the current
 candidate whenever `dispute.input.timeout.blockHeight < reducedOutput.timeout.blockHeight`
 without checking that the candidate's `participant` is set. An empty timeout has
 `blockHeight = 0`, so any committed dispute _without_ a timeout resets the fold's timeout to
 empty, suppressing a real timeout carried by another dispute (except at genesis height 0).
-**Open question:** whether "any non-timeout dispute cancels the proposed timeout" is intended
-(e.g. as a conservative rule: the timed-out participant's own counter-dispute proves liveness) or
-a bug; the lowest-real-height rule of §6.1 says a real timeout at the lowest height should
-survive. Engineer decision required; do not rely on either behavior.
+**Resolved (2026-08-14, engineer decision):** a slash cancels a proposed timeout — a reduction
+that slashes someone applies no timeout. For a slash-carrying dispute the suppression is
+therefore intended, and the fold's reset is immaterial to the applied removals because slash
+precedence ([`INV-DIS-7-9GGZSD`](disputes.md#inv-dis-7-9ggzsd), §6.1) already withholds the
+timeout removal at output. **Open question:** whether a dispute with _no_ slashes and no timeout
+claim (a self-removal-only dispute, or the timed-out participant's own counter-dispute proving
+liveness) also cancels the proposed timeout — the lowest-real-height rule of §6.1 says a real
+timeout at the lowest height should survive, and today the fold cancels it order-dependently.
+Tracked as [`OQ-9-XR1MFS`](../open-questions.md#oq-9-xr1mfs); do not rely on either behavior in
+the slash-free case.
 
 ## 6. Timeout precedence, ordering, and information disclosure
 
@@ -264,7 +270,9 @@ there), `minTimeStamp`, `isForced`, and optional previous-block-producer context
   totally ordered: a later author may be unable to act only because an earlier author never
   produced its block, so a timeout may not skip ahead and penalize the later participant. Multiple
   apparent missed slots reduce to the earliest one. `For this protocol version:` implemented as the min-`blockHeight`
-  fold of §5, subject to the empty-timeout divergence flagged there.
+  fold of §5. A slash-carrying dispute cancelling the proposed timeout is intended slash
+  precedence (resolved 2026-08-14, §5); whether a slash-free dispute without a timeout claim also
+  cancels it remains open ([`OQ-9-XR1MFS`](../open-questions.md#oq-9-xr1mfs)).
 - Self-removals always apply; they are independent of timeout precedence.
 
 ### 6.2 Information-disclosure safety

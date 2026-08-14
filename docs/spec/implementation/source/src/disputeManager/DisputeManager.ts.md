@@ -139,9 +139,11 @@ state proof and its per-milestone snapshots into auditing data.
 ## Specification contradictions
 
 None demonstrated in this file. (The empty-timeout sentinel it submits — zero height, zero
-participant — is the input shape implicated in the open empty-timeout reduction divergence of
-[disputes.md §5](../../../../specification/disputes/disputes.md); this file follows the current
-struct contract, and the divergence is owned by the reduction fold, not construction.)
+participant — is the input shape behind the empty-timeout reduction cancellation of
+[disputes.md §5](../../../../specification/disputes/disputes.md): intended slash precedence for
+slash-carrying disputes, still open for the slash-free case per
+[`OQ-9-XR1MFS`](../../../../specification/open-questions.md#oq-9-xr1mfs); this file follows the
+current struct contract, and the behavior is owned by the reduction fold, not construction.)
 
 ## Missing behavior
 
