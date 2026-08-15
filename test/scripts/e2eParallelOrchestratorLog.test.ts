@@ -19,7 +19,8 @@ const {
 const {
     getAttemptLogPath,
     getErrorLogPath,
-    getLogPath
+    getLogPath,
+    getStarvationLogPath
 } = require("../../scripts/e2e-parallel/shared/logging.js");
 const {
     WORKER_COLORS,
@@ -29,6 +30,7 @@ const {
     createHeartbeatMonitor,
     formatWorkerSummary,
     promoteAttemptLog,
+    promoteStarvationAttemptLog,
     recordWorkerFailure,
     validateWorkerStats,
     workerFaultStatus
@@ -67,9 +69,15 @@ describe("distributed orchestrator logs", function () {
         );
     });
 
-    it("transfers attempt logs only for failures", function () {
+    it("transfers attempt logs for failures and starvation", function () {
         expect(shouldTransferAttemptLog({ code: 0 })).to.equal(false);
         expect(shouldTransferAttemptLog({ code: 1 })).to.equal(true);
+        expect(
+            shouldTransferAttemptLog({
+                code: 0,
+                reduced: { starveCount: 1 }
+            })
+        ).to.equal(true);
         expect(
             shouldTransferAttemptLog({
                 code: 0,
@@ -125,6 +133,20 @@ describe("distributed orchestrator logs", function () {
         }
     });
 
+    it("parses runtime readiness separately from event-loop delay", function () {
+        const reduced = reduceAttemptOutput(
+            [
+                '##E2E_TIMING## {"runtimeReadyMs":40}',
+                '##E2E_TIMING## {"maxEventLoopDelayMs":300,"elThread":"sdk"}'
+            ].join("\n"),
+            ""
+        );
+        expect(reduced.starveCount).to.equal(0);
+        expect(reduced.timing.runtimeReadyMs).to.equal(40);
+        expect(reduced.timing.el.sdk).to.equal(300);
+        expect(reduced.timing.maxEventLoopDelayMs).to.equal(300);
+    });
+
     it("promotes a provisional failure after its worker disconnects", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "orchestrator-result-")
@@ -149,6 +171,34 @@ describe("distributed orchestrator logs", function () {
                     "utf8"
                 )
             ).to.equal("failed output");
+            expect(fs.existsSync(attemptPath)).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("retains a starved attempt before scheduling its clean retry", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-starvation-")
+        );
+        const assignment = {
+            attemptId: "8",
+            task: { logName: "starved attempt" }
+        };
+        try {
+            const attemptPath = getAttemptLogPath(
+                root,
+                assignment.task.logName,
+                assignment.attemptId
+            );
+            fs.writeFileSync(attemptPath, "starved output");
+            promoteStarvationAttemptLog(root, assignment, undefined);
+            expect(
+                fs.readFileSync(
+                    getStarvationLogPath(root, assignment.task.logName),
+                    "utf8"
+                )
+            ).to.equal("starved output");
             expect(fs.existsSync(attemptPath)).to.equal(false);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -266,6 +316,7 @@ describe("distributed orchestrator logs", function () {
             const paths = [
                 getLogPath(root, logName),
                 getErrorLogPath(root, logName),
+                getStarvationLogPath(root, logName),
                 getAttemptLogPath(root, logName, "693")
             ];
             for (const filePath of paths) {
@@ -275,7 +326,8 @@ describe("distributed orchestrator logs", function () {
                 fs.closeSync(fs.openSync(filePath, "wx"));
             }
             expect(path.basename(paths[1])).to.match(/^error_/);
-            expect(path.basename(paths[2])).to.match(/\.attempt-693\.ansi$/);
+            expect(path.basename(paths[2])).to.match(/^error_starvation_/);
+            expect(path.basename(paths[3])).to.match(/\.attempt-693\.ansi$/);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

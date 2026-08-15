@@ -14,6 +14,7 @@ function validateReducedAttempt(reduced) {
         "startupMs",
         "deployMs",
         "workerBootMs",
+        "runtimeReadyMs",
         "maxEventLoopDelayMs"
     ];
     const roles = ["main", "sdk", "vm", "watchdog"];
@@ -52,6 +53,7 @@ function reduceAttempt(task, attempt) {
     task.startupMs = (task.startupMs || 0) + timing.startupMs;
     task.deployMs = (task.deployMs || 0) + timing.deployMs;
     task.workerBootMs = (task.workerBootMs || 0) + timing.workerBootMs;
+    task.runtimeReadyMs = (task.runtimeReadyMs || 0) + timing.runtimeReadyMs;
     task.maxEventLoopDelayMs = Math.max(
         task.maxEventLoopDelayMs || 0,
         timing.maxEventLoopDelayMs

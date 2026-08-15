@@ -38,6 +38,9 @@ class MainRpcService {
         return this.self;
     }
 
+    /** Runtime-startup hook for custom RPC roots. The base is ready immediately. */
+    ready(): Promise<void> | void {}
+
     /**
      * Runtime-shutdown hook for custom RPC roots. `StateManager.dispose()`
      * awaits it before tearing down the p2p manager, timeout manager, and EVM,

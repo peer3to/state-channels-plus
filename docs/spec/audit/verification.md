@@ -1,6 +1,6 @@
 # Verification Assessment
 
-> **Agent assessment:** Current as of 2026-08-13, after permutation atomization and the full assignment pass.
+> **Agent assessment:** Current as of 2026-08-15, after the runtime-readiness mappings and specification refresh.
 > **Engineer disposition:** Pending.
 
 Existing tests are not treated as evidence by filename. Each declaration remains a visible queue item until
@@ -17,11 +17,13 @@ scores are what they are** and which lever moves each one.
 
 ## Current state
 
-- Test IDs (planned permutations) evidenced: 457/4218 (11%).
-- Specification IDs with at least one evidenced permutation: 76/238 (32%).
-- Test declarations covering at least one ID: 286/810 (35%); 13 files under `test/scripts/` are
+Runtime transport tests now cover delayed and rejected custom-root readiness in inline and worker modes. Worker-executor coverage includes delayed precompile readiness before worker return and concurrent success/error response correlation.
+
+- Test IDs (planned permutations) evidenced: 521/4262 (12%).
+- Specification IDs with at least one evidenced permutation: 82/241 (34%).
+- Test declarations covering at least one ID: 310/814 (38%); 13 files under `test/scripts/` are
   excluded as out-of-scope developer tooling via `@spec-test-coverage-ignore`.
-- One test may cover several IDs: 101 of the 286 assigned declarations carry two or more (up to 12).
+- One test may cover several IDs: 125 of the 310 assigned declarations carry two or more (up to 12).
   Each ID belongs to exactly one test; compliance is 100%.
 
 ## Why coverage is low
@@ -31,9 +33,9 @@ exercises the whole defined scenario, including its oracle. Under that rule the 
 distinct causes, and they need different fixes.
 
 **1. Most planned IDs simply have no test yet (the dominant cause on the ID side).**
-Atomization expanded template test plans into 4218 concrete scenarios — per fault class, per
+Atomization expanded template test plans into 4262 concrete scenarios — per fault class, per
 signature violation, per boundary side, per proof type, per host. The suites were never written
-against plans of that grain. Roughly 3760 permutations await a test; the
+against plans of that grain. 3741 permutations await a test; the
 "Test IDs not tested" queue is now a literal to-write list, one test per row.
 
 **2. Tests over surfaces that define no IDs at all (the dominant cause on the test side).**

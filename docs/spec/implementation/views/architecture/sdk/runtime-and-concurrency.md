@@ -235,12 +235,24 @@ deliberately does not.
 
 ### 3.3 Lifecycle
 
+The lifecycle coverage uses [ReadyLifecycleRpcManifest.ts](../../../../../../test/fixtures/customRpc/ReadyLifecycleRpcManifest.ts), [PeerTestHarness.ts](../../../../../../test/fixtures/PeerTestHarness.ts), [workerAnswerPrecompile.ts](../../../../../../test/fixtures/workerAnswerPrecompile.ts), and [harness core types](../../../../../../test/harness/core/types.ts). These are test-only inputs for delayed application readiness, delayed precompile initialization, and bounded peer setup; they do not define production protocol behavior.
+
+The production lifecycle crosses [EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts), [P2pRuntimeHost.ts](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts), [MainRpcService.ts](../../../../../../src/rpc/MainRpcService.ts), and the contract executor's [worker host](../../../../../../src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts).
+
 Startup is a fixed handshake, summarized in [architecture.md](./architecture.md)
 §2.1: config → resolve signer → start host (inline or worker) → client connects
 → `deployStateMachine` runs **twice** through the deployment-bridge signer →
-`deployComplete` triggers `buildRuntime` → host posts `ready` → `P2pInstance`
-returned. The client's `ready` promise is the single readiness signal; a host
-construction failure settles it rejected (§3.4). In worker mode a single
+`deployComplete` triggers `buildRuntime` → the host awaits the custom root's
+`ready()` hook → host posts `ready` → `P2pInstance` returned. The base root
+hook resolves immediately. Application roots use it to prewarm owned workers
+and precompiles before admission. A hook rejection disposes the partial graph
+and preserves the hook error. The client's `ready` promise is the single
+readiness signal; a host construction or hook failure settles it rejected
+(§3.4). Each isolated context starts its own event-loop monitor after its local
+ready work completes and uses the configured fatal-delay guard. The test harness starts its main-thread monitor after all
+initial peer setup calls finish. A peer added later starts independently and
+does not change existing peers' monitors.
+In worker mode a single
 `WorkerBootstrapMessage {type:"connect", payload, port}` transfers the port into
 the worker before the request protocol begins
 ([`onWorkerBootstrap`](../../../../../../src/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime.ts#L69)).

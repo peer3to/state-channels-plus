@@ -82,6 +82,7 @@ function parseTimings(text) {
     let startupMs = 0;
     let deployMs = 0;
     let workerBootMs = 0;
+    let runtimeReadyMs = 0;
     // Peak event-loop delay per thread role (main + the peers' sdk/vm workers).
     const el = { main: 0, sdk: 0, vm: 0, watchdog: 0 };
     let found = false;
@@ -94,6 +95,8 @@ function parseTimings(text) {
                 if (Number.isFinite(o.deployMs)) deployMs += o.deployMs;
                 if (Number.isFinite(o.workerBootMs))
                     workerBootMs += o.workerBootMs;
+                if (Number.isFinite(o.runtimeReadyMs))
+                    runtimeReadyMs += o.runtimeReadyMs;
                 // Event-loop delay is a peak; keep the max per thread role.
                 if (Number.isFinite(o.maxEventLoopDelayMs)) {
                     const role = o.elThread || "main";
@@ -101,7 +104,11 @@ function parseTimings(text) {
                         el[role] = Math.max(el[role], o.maxEventLoopDelayMs);
                 }
                 // worker/eventloop-only markers don't count as the setup timing.
-                if (Number.isFinite(o.startupMs) || Number.isFinite(o.deployMs))
+                if (
+                    Number.isFinite(o.startupMs) ||
+                    Number.isFinite(o.deployMs) ||
+                    Number.isFinite(o.runtimeReadyMs)
+                )
                     found = true;
             } catch {
                 // Malformed marker — ignore.
@@ -117,6 +124,7 @@ function parseTimings(text) {
         startupMs,
         deployMs,
         workerBootMs,
+        runtimeReadyMs,
         el,
         maxEventLoopDelayMs,
         found
@@ -597,6 +605,10 @@ function getErrorLogPath(logDir, logName) {
     return getDecoratedLogPath(logDir, logName, "error_");
 }
 
+function getStarvationLogPath(logDir, logName) {
+    return getDecoratedLogPath(logDir, logName, "error_starvation_");
+}
+
 function markLogAsError(logDir, logName) {
     const src = getLogPath(logDir, logName);
     const dst = getErrorLogPath(logDir, logName);
@@ -624,6 +636,7 @@ module.exports = {
     getLogPath,
     getAttemptLogPath,
     getErrorLogPath,
+    getStarvationLogPath,
     markLogAsError,
     runHeader,
     dryRun,

@@ -13,5 +13,55 @@
         "hash": "875484483426f6fb",
         "reviewer": "Luka",
         "date": "2026-08-14"
+    },
+    "specification/runtime/execution.md": {
+        "hash": "9a161eb16a81bc33",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "implementation/source/src/evm/EvmDiamondStateMachine.ts.md": {
+        "hash": "7ad78d7b8d10884f",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md": {
+        "hash": "31ef37621a129ccf",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md": {
+        "hash": "faaa0edfd669c47f",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "implementation/source/src/evm/contractExecutor/worker/protocol.ts.md": {
+        "hash": "d94422644e30d589",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md": {
+        "hash": "f80e1066630a01af",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "implementation/source/src/rpc/MainRpcService.ts.md": {
+        "hash": "cce0dd0bd9915f5d",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "implementation/views/architecture/sdk/runtime-and-concurrency.md": {
+        "hash": "0323c0dfc28ba320",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md": {
+        "hash": "ec09fd7e4c180b63",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
+    },
+    "verification/tests/test/evm/WorkerContractExecutor.test.ts.md": {
+        "hash": "57c9a8c9f029fdd1",
+        "reviewer": "Luka",
+        "date": "2026-08-15"
     }
 }

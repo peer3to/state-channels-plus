@@ -572,13 +572,18 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             await deployStateMachine(deployBridgeSigner);
         const diamondStateMachineAddress =
             await deployStateMachine(deployBridgeSigner);
-        await client.request<void>({
-            type: "deployComplete",
-            localStateMachineAddress: localStateMachineAddress.toString(),
-            diamondStateMachineAddress: diamondStateMachineAddress.toString()
-        });
-
-        await client.ready;
+        try {
+            await client.request<void>({
+                type: "deployComplete",
+                localStateMachineAddress: localStateMachineAddress.toString(),
+                diamondStateMachineAddress:
+                    diamondStateMachineAddress.toString()
+            });
+            await client.ready;
+        } catch (error) {
+            await client.dispose();
+            throw error;
+        }
 
         const p2pInstance = new P2pInstance<T, TCustomRpc>(client, logger);
         // On the main thread the surfaced WebRTC bridge port has no further

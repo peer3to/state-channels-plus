@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **3/516** (1%)
-- Pending (never reviewed): **513**
+- Verified (current): **13/515** (3%)
+- Pending (never reviewed): **502**
 - Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
@@ -14,7 +14,7 @@ None.
 
 ## Pending — never reviewed
 
-### specification (52)
+### specification (51)
 
 - [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
@@ -49,7 +49,6 @@ None.
 - [specification/protocol-model/time.md](../specification/protocol-model/time.md)
 - [specification/README.md](../specification/README.md)
 - [specification/runtime/configuration.md](../specification/runtime/configuration.md)
-- [specification/runtime/execution.md](../specification/runtime/execution.md)
 - [specification/runtime/README.md](../specification/runtime/README.md)
 - [specification/runtime/sdk.md](../specification/runtime/sdk.md)
 - [specification/security/data-availability.md](../specification/security/data-availability.md)
@@ -69,7 +68,7 @@ None.
 - [specification/storage/README.md](../specification/storage/README.md)
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md)
 
-### implementation (337)
+### implementation (330)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -145,11 +144,7 @@ None.
 - [implementation/source/src/evm/contractExecutor/NoOpLogger.ts.md](../implementation/source/src/evm/contractExecutor/NoOpLogger.ts.md)
 - [implementation/source/src/evm/contractExecutor/README.md](../implementation/source/src/evm/contractExecutor/README.md)
 - [implementation/source/src/evm/contractExecutor/types.ts.md](../implementation/source/src/evm/contractExecutor/types.ts.md)
-- [implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md)
-- [implementation/source/src/evm/contractExecutor/worker/protocol.ts.md](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md)
 - [implementation/source/src/evm/contractExecutor/worker/README.md](../implementation/source/src/evm/contractExecutor/worker/README.md)
-- [implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md)
-- [implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md)
 - [implementation/source/src/evm/EvmFactory.ts.md](../implementation/source/src/evm/EvmFactory.ts.md)
 - [implementation/source/src/evm/index.ts.md](../implementation/source/src/evm/index.ts.md)
 - [implementation/source/src/evm/node/evmJumpdestCache.ts.md](../implementation/source/src/evm/node/evmJumpdestCache.ts.md)
@@ -171,7 +166,6 @@ None.
 - [implementation/source/src/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime.ts.md](../implementation/source/src/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime.ts.md)
 - [implementation/source/src/evm/p2pRuntime/node/README.md](../implementation/source/src/evm/p2pRuntime/node/README.md)
 - [implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md)
-- [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md)
 - [implementation/source/src/evm/p2pRuntime/README.md](../implementation/source/src/evm/p2pRuntime/README.md)
 - [implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md](../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)
 - [implementation/source/src/evm/p2pRuntime/types.ts.md](../implementation/source/src/evm/p2pRuntime/types.ts.md)
@@ -211,7 +205,6 @@ None.
 - [implementation/source/src/rpc/guards/README.md](../implementation/source/src/rpc/guards/README.md)
 - [implementation/source/src/rpc/guards/runGuards.ts.md](../implementation/source/src/rpc/guards/runGuards.ts.md)
 - [implementation/source/src/rpc/index.ts.md](../implementation/source/src/rpc/index.ts.md)
-- [implementation/source/src/rpc/MainRpcService.ts.md](../implementation/source/src/rpc/MainRpcService.ts.md)
 - [implementation/source/src/rpc/README.md](../implementation/source/src/rpc/README.md)
 - [implementation/source/src/rpc/registry.ts.md](../implementation/source/src/rpc/registry.ts.md)
 - [implementation/source/src/rpc/RemoteRpcProxy.ts.md](../implementation/source/src/rpc/RemoteRpcProxy.ts.md)
@@ -390,7 +383,6 @@ None.
 - [implementation/views/architecture/sdk/rpc/spectate.md](../implementation/views/architecture/sdk/rpc/spectate.md)
 - [implementation/views/architecture/sdk/rpc/state-transition.md](../implementation/views/architecture/sdk/rpc/state-transition.md)
 - [implementation/views/architecture/sdk/rpc/webrtc-setup.md](../implementation/views/architecture/sdk/rpc/webrtc-setup.md)
-- [implementation/views/architecture/sdk/runtime-and-concurrency.md](../implementation/views/architecture/sdk/runtime-and-concurrency.md)
 - [implementation/views/concepts/history-and-commitments.md](../implementation/views/concepts/history-and-commitments.md)
 - [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md)
 - [implementation/views/examples.md](../implementation/views/examples.md)
@@ -409,13 +401,12 @@ None.
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (124)
+### verification (121)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
 - [verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md](../verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md)
 - [verification/tests/test/browser/run-worker-contract-executor.mjs.md](../verification/tests/test/browser/run-worker-contract-executor.mjs.md)
-- [verification/tests/test/cache/SignerRecoveryCache.test.ts.md](../verification/tests/test/cache/SignerRecoveryCache.test.ts.md)
 - [verification/tests/test/Clock.test.ts.md](../verification/tests/test/Clock.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md](../verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts.md](../verification/tests/test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts.md)
@@ -461,7 +452,6 @@ None.
 - [verification/tests/test/e2e/E2E-PingService.test.ts.md](../verification/tests/test/e2e/E2E-PingService.test.ts.md)
 - [verification/tests/test/e2e/E2E-ReductionManager.test.ts.md](../verification/tests/test/e2e/E2E-ReductionManager.test.ts.md)
 - [verification/tests/test/e2e/E2E-RuntimeContractEvents.test.ts.md](../verification/tests/test/e2e/E2E-RuntimeContractEvents.test.ts.md)
-- [verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md](../verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md)
 - [verification/tests/test/e2e/E2E-Spectate.test.ts.md](../verification/tests/test/e2e/E2E-Spectate.test.ts.md)
 - [verification/tests/test/e2e/E2E-SpectateStaleProofGuard.test.ts.md](../verification/tests/test/e2e/E2E-SpectateStaleProofGuard.test.ts.md)
 - [verification/tests/test/e2e/E2E-SpectatingAbortDoS.test.ts.md](../verification/tests/test/e2e/E2E-SpectatingAbortDoS.test.ts.md)
@@ -479,7 +469,6 @@ None.
 - [verification/tests/test/evm/HostNonceManager.test.ts.md](../verification/tests/test/evm/HostNonceManager.test.ts.md)
 - [verification/tests/test/evm/nodeGlobalsShim.test.ts.md](../verification/tests/test/evm/nodeGlobalsShim.test.ts.md)
 - [verification/tests/test/evm/RuntimeChainContext.test.ts.md](../verification/tests/test/evm/RuntimeChainContext.test.ts.md)
-- [verification/tests/test/evm/WorkerContractExecutor.test.ts.md](../verification/tests/test/evm/WorkerContractExecutor.test.ts.md)
 - [verification/tests/test/evm/workerShutdown.test.ts.md](../verification/tests/test/evm/workerShutdown.test.ts.md)
 - [verification/tests/test/harness/testTimeConfig.test.ts.md](../verification/tests/test/harness/testTimeConfig.test.ts.md)
 - [verification/tests/test/models/Block.test.ts.md](../verification/tests/test/models/Block.test.ts.md)
@@ -538,8 +527,24 @@ None.
 
 ## Verified — current
 
-### specification (3)
+### specification (4)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-14
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
+- [specification/runtime/execution.md](../specification/runtime/execution.md) — Luka, 2026-08-15
+
+### implementation (7)
+
+- [implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/evm/contractExecutor/worker/protocol.ts.md](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/rpc/MainRpcService.ts.md](../implementation/source/src/rpc/MainRpcService.ts.md) — Luka, 2026-08-15
+- [implementation/views/architecture/sdk/runtime-and-concurrency.md](../implementation/views/architecture/sdk/runtime-and-concurrency.md) — Luka, 2026-08-15
+
+### verification (2)
+
+- [verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md](../verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md) — Luka, 2026-08-15
+- [verification/tests/test/evm/WorkerContractExecutor.test.ts.md](../verification/tests/test/evm/WorkerContractExecutor.test.ts.md) — Luka, 2026-08-15

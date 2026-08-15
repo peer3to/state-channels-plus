@@ -7,10 +7,10 @@ A permutation counts as tested only when an exact repository test declaration is
 ## Score
 
 - Specification IDs with test evidence: **82/241** (34%)
-- Test IDs (planned permutations) evidenced: **498/4241** (12%)
-- Test files with verification reports: **122/122** (100%)
-- Test declarations covering at least one test ID: **301/810** (37%)
-- Assigned test IDs with exactly one owning test: **498/498** (100%)
+- Test IDs (planned permutations) evidenced: **533/4274** (12%)
+- Test files with verification reports: **121/122** (99%)
+- Test declarations covering at least one test ID: **315/819** (38%)
+- Assigned test IDs with exactly one owning test: **533/533** (100%)
 - Test files excluded as out of scope (`@spec-test-coverage-ignore`): 13
 
 ## Contents
@@ -2737,7 +2737,6 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-RUNTIME-3-VQXW59.T1.P2`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p2) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p2) |
 | [`REQ-RUNTIME-3-VQXW59.T1.P3`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p3) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p3) |
 | [`REQ-RUNTIME-3-VQXW59.T1.P4`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p4) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p4) |
-| [`REQ-RUNTIME-3-VQXW59.T1.P5`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p5) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p5) |
 | [`REQ-RUNTIME-3-VQXW59.T1.P6`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p6) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p6) |
 | [`REQ-RUNTIME-4-B0N70Y.T1.P1`](../specification/runtime/execution.md#req-runtime-4-b0n70y.t1.p1) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-4-b0n70y.t1.p1) |
 | [`REQ-RUNTIME-4-B0N70Y.T1.P2`](../specification/runtime/execution.md#req-runtime-4-b0n70y.t1.p2) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-4-b0n70y.t1.p2) |
@@ -2760,7 +2759,6 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-RUNTIME-5-WJ1XKK.T1.P7`](../specification/runtime/execution.md#req-runtime-5-wj1xkk.t1.p7) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-5-wj1xkk.t1.p7) |
 | [`REQ-RUNTIME-5-WJ1XKK.T1.P8`](../specification/runtime/execution.md#req-runtime-5-wj1xkk.t1.p8) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-5-wj1xkk.t1.p8) |
 | [`REQ-RUNTIME-5-WJ1XKK.T1.P9`](../specification/runtime/execution.md#req-runtime-5-wj1xkk.t1.p9) | Specification | [specification/runtime/execution.md](../specification/runtime/execution.md#req-runtime-5-wj1xkk.t1.p9) |
-| [`REQ-SDK-1-JKC9W7.T1.P1`](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7.t1.p1) | Implementation | [implementation/views/architecture/sdk/architecture.md](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7.t1.p1) |
 | [`REQ-SDK-1-JKC9W7.T1.P10`](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7.t1.p10) | Implementation | [implementation/views/architecture/sdk/architecture.md](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7.t1.p10) |
 | [`REQ-SDK-1-JKC9W7.T1.P11`](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7.t1.p11) | Implementation | [implementation/views/architecture/sdk/architecture.md](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7.t1.p11) |
 | [`REQ-SDK-1-JKC9W7.T1.P12`](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7.t1.p12) | Implementation | [implementation/views/architecture/sdk/architecture.md](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7.t1.p12) |
@@ -3941,7 +3939,9 @@ Every planned test permutation — specification black-box plans and implementat
 
 Repository test files containing executable declarations that have no maintained report at `verification/tests/<path>.md`. Fixtures, harness code, and configuration need no reports.
 
-None.
+| Test file |
+| --- |
+| [test/cache/SignerRecoveryCache.test.ts](../../../test/cache/SignerRecoveryCache.test.ts) |
 
 ## Tests not referenced in verification reports
 
@@ -4016,7 +4016,6 @@ Repository test declarations that no verification document maps to any planned p
 | `E2E: Join channel race conditions > Dispute vs join race > pending joiner participates after dispute reduction` | [test/e2e/E2E-JoinChannelRaceConditions.test.ts#L269](../../../test/e2e/E2E-JoinChannelRaceConditions.test.ts#L269) |
 | `E2E: Join channel race conditions > Dispute vs join race > rethrows a stale top-up guard without aborting participation` | [test/e2e/E2E-JoinChannelRaceConditions.test.ts#L477](../../../test/e2e/E2E-JoinChannelRaceConditions.test.ts#L477) |
 | `E2E: Participant Lifecycle > Exit path > should demote exiting participant to SYNCED when state snapshot is updated on-chain` | [test/e2e/E2E-ParticipantLifecycle.test.ts#L26](../../../test/e2e/E2E-ParticipantLifecycle.test.ts#L26) |
-| `E2E: p2pSetup runtime modes > generates a host-owned signer when no secret is supplied` | [test/e2e/E2E-RuntimeTransportModes.test.ts#L291](../../../test/e2e/E2E-RuntimeTransportModes.test.ts#L291) |
 | `E2E: Spectate Service > Fork Traversal Spectating > should spectate successfully even when it must traverse forks (dispute -> reduced fork)` | [test/e2e/E2E-Spectate.test.ts#L538](../../../test/e2e/E2E-Spectate.test.ts#L538) |
 | `E2E: Spectate Service > Spectators before and after dispute > pre-dispute spectator disconnects from participants after resolve; post-dispute joiner syncs` | [test/e2e/E2E-Spectate.test.ts#L606](../../../test/e2e/E2E-Spectate.test.ts#L606) |
 | `E2E: Spectate Service > Spectator promoted to participant > via forceInboundJoin` | [test/e2e/E2E-Spectate.test.ts#L664](../../../test/e2e/E2E-Spectate.test.ts#L664) |
@@ -4074,10 +4073,6 @@ Repository test declarations that no verification document maps to any planned p
 | `RuntimeChainContext > rejects non-WebSocket-compatible provider URLs` | [test/evm/RuntimeChainContext.test.ts#L34](../../../test/evm/RuntimeChainContext.test.ts#L34) |
 | `RuntimeChainContext > lets the host own the quiesce timeout` | [test/evm/RuntimeChainContext.test.ts#L107](../../../test/evm/RuntimeChainContext.test.ts#L107) |
 | `RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout` | [test/evm/RuntimeChainContext.test.ts#L168](../../../test/evm/RuntimeChainContext.test.ts#L168) |
-| `WorkerContractExecutor > should execute custom precompiles in worker mode` | [test/evm/WorkerContractExecutor.test.ts#L19](../../../test/evm/WorkerContractExecutor.test.ts#L19) |
-| `WorkerContractExecutor > should return RPC-style logs from the worker` | [test/evm/WorkerContractExecutor.test.ts#L61](../../../test/evm/WorkerContractExecutor.test.ts#L61) |
-| `WorkerContractExecutor > should dispose idempotently` | [test/evm/WorkerContractExecutor.test.ts#L97](../../../test/evm/WorkerContractExecutor.test.ts#L97) |
-| `WorkerContractExecutor > should reject calls immediately after disposal` | [test/evm/WorkerContractExecutor.test.ts#L106](../../../test/evm/WorkerContractExecutor.test.ts#L106) |
 | `workerShutdown > resolves once the worker drains its loop and exits` | [test/evm/workerShutdown.test.ts#L18](../../../test/evm/workerShutdown.test.ts#L18) |
 | `workerShutdown > resolves immediately for an already-exited worker` | [test/evm/workerShutdown.test.ts#L28](../../../test/evm/workerShutdown.test.ts#L28) |
 | `workerShutdown > waits for a slow drain instead of abandoning the worker` | [test/evm/workerShutdown.test.ts#L41](../../../test/evm/workerShutdown.test.ts#L41) |

@@ -201,6 +201,7 @@ export async function startP2pRuntimeHost<
     TCustomRpc extends MainRpcService = MainRpcService,
     TCustomRpcOptions = unknown
 >(port: RuntimePort, payload: SetupPayload, ctx: HostContext): Promise<void> {
+    const runtimeStartedAt = Date.now();
     const { threadLabel, handlerExecutionContext } = ctx;
     let chainContext: RuntimeChainContext;
     try {
@@ -263,17 +264,6 @@ export async function startP2pRuntimeHost<
             { component: "P2pRuntimeHost" },
             { attachErrorListener: false }
         );
-
-        // When this host runs in its own worker thread (sdk-in-thread), monitor that
-        // thread's event loop with the standard logger monitor — same
-        // EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS guard (throws past it) as every
-        // other thread. threadLabel tags its ##E2E_TIMING## delay-peak reports.
-        if (
-            config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0 &&
-            threadLabel
-        ) {
-            logger.startPerformanceMonitoring({ threadLabel });
-        }
 
         // Own this account's nonce so the peer's concurrent async flows can't collide
         // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
@@ -395,6 +385,7 @@ export async function startP2pRuntimeHost<
             }
 
             runtimeHandle = { stateManager, evmDiamondStateMachine };
+            await stateManager.p2pManager.localRpc.ready();
             // A bridge-setup failure must not deadlock `ready`; WebRTC is optional.
             try {
                 bridgeWorkerPort = await bubbleWebRTCBridgePortIfNeeded(port);
@@ -404,6 +395,27 @@ export async function startP2pRuntimeHost<
                     {
                         error
                     }
+                );
+            }
+            // When this host runs in its own worker thread (sdk-in-thread), monitor that
+            // thread's event loop with the standard logger monitor — same
+            // EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS guard (throws past it) as every
+            // other thread. threadLabel tags its ##E2E_TIMING## delay-peak reports.
+            if (
+                config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0 &&
+                threadLabel
+            ) {
+                logger!.startPerformanceMonitoring({ threadLabel });
+            }
+            if (
+                typeof process !== "undefined" &&
+                typeof process.stdout?.write === "function"
+            ) {
+                process.stdout.write(
+                    `##E2E_TIMING## ${JSON.stringify({
+                        runtimeReadyMs: Date.now() - runtimeStartedAt,
+                        ...(threadLabel ? { runtimeThread: threadLabel } : {})
+                    })}\n`
                 );
             }
             port.post({ type: "ready" });
@@ -620,6 +632,15 @@ export async function startP2pRuntimeHost<
                     result
                 });
             } catch (error) {
+                if (request.type === "deployComplete") {
+                    try {
+                        await disposeRuntime();
+                    } catch (cleanupError) {
+                        logger?.error("Runtime readiness cleanup failed", {
+                            cleanupError
+                        });
+                    }
+                }
                 port.post({
                     type: "response",
                     requestId: request.requestId,
