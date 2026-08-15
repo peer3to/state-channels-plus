@@ -1,0 +1,17 @@
+{
+    "specification/block-progression/README.md": {
+        "hash": "68c4ad7a057e8e5d",
+        "reviewer": "Luka",
+        "date": "2026-08-14"
+    },
+    "specification/block-progression/block-processing.md": {
+        "hash": "58245911e5de50c5",
+        "reviewer": "Luka",
+        "date": "2026-08-14"
+    },
+    "specification/disputes/disputes.md": {
+        "hash": "875484483426f6fb",
+        "reviewer": "Luka",
+        "date": "2026-08-14"
+    }
+}

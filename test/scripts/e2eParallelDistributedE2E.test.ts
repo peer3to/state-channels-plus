@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
 import crypto from "crypto";
 import fs from "fs";

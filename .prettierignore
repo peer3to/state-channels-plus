@@ -15,3 +15,5 @@ README.md
 cache
 artifacts
 typechain-types
+#Generated spec reports stay compact — prettier column padding turns one-cell edits into whole-table diffs
+docs/spec/generated
