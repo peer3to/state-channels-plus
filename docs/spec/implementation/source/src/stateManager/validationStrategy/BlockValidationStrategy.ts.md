@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-The live-participant context: objective faults build fraud evidence and escalate; unattributable junk disconnects/excludes suppliers; not-ready situations restore to the queue; re-broadcast on good new signatures; dead-fork blocks from recorded acknowledgers lose straggler tolerance.
+The live-participant context: objective faults build fraud evidence and escalate, and exclusion covers the full attribution set — the suppliers and the block's declared author, resolved through the queue's shared `sourcePeersAndAuthor` owner; unattributable junk disconnects/excludes suppliers; not-ready situations restore to the queue; re-broadcast on good new signatures; dead-fork blocks from recorded acknowledgers lose straggler tolerance.
 
 ## Key design decisions
 

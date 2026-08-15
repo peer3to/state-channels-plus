@@ -23,7 +23,7 @@ The spectator/pending-joiner context: same verdicts, but provable participant fr
 
 ## Key design decisions
 
-1. **The abort/drop split is the fail-closed rule:** provable fraud → stop following; unattributable junk → keep spectating ([`INV-SYNC-3-A7A2ED`](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed) consumer side).
+1. **The abort/drop split is the fail-closed rule:** provable fraud → stop following; an attributable bad supply cuts the suppliers and the declared author (the queue's shared `sourcePeersAndAuthor` owner) while the spectator keeps spectating; unattributable junk → keep spectating ([`INV-SYNC-3-A7A2ED`](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed) consumer side).
 
 ## Inputs, outputs, state, and side effects
 

@@ -23,11 +23,11 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 - Current engineer-approved paths: **0/241** (0%)
 - Current security-accepted paths: **0/241** (0%)
 - Final ready paths: **0/241** (0%)
-- Source files assigned to implementation subjects: **243/243** (100%)
+- Source files assigned to implementation subjects: **242/242** (100%)
 - Test declarations mapped or explicitly ignored: **413/922** (45%)
 - Open questions: 36
 - Active findings: 14
-- Strict blocking items: 4970
+- Strict blocking items: 4971
 
 ## Requirement paths
 

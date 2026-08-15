@@ -28,7 +28,7 @@ eligible height on the current fork, one coordinate at a time).
 ## Key design decisions
 
 1. **Fixed entry lifetime from first sight** — duplicates and restores never extend it, so junk cannot live forever by re-delivery ([`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
-2. **The lifetime expiry is the only sync-probe site** — arrival-time probing punished honest peers before the convergence window; known-stale forks drop silently for the same reason.
+2. **The lifetime expiry is the only sync-probe site**, and the probe asks everyone the entry is attributed to — resolved through the queue's shared `sourcePeersAndAuthor` owner (suppliers and the declared author), not just the delivering sender — arrival-time probing punished honest peers before the convergence window; known-stale forks drop silently for the same reason.
 3. **Fork recovery is coalesced and detached** (memoized kill-period gate, O(1) chain reads per window; detached because ingest can already hold the mutex via dispute re-ingest).
 4. **Authenticity via the canonical predicate** so off-chain and on-chain agree on 'authentic' ([`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
 

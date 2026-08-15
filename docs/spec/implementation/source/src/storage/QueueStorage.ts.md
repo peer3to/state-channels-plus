@@ -25,10 +25,14 @@ attribution, with a (fork, height) coordinate index for eligibility queries.
 
 ## Key design decisions
 
-1. **Copy-scoped attribution.** A sender is credited only with the signatures _its own copy_
+1. **One owner for the culprit set.** The exported `sourcePeersAndAuthor(entry)` is the single
+   owner of "everyone this entry is attributed to" — the suppliers plus the block's declared
+   author. Every consumer that punishes, excludes, or asks-to-sync resolves the set through it;
+   no caller derives its own.
+2. **Copy-scoped attribution.** A sender is credited only with the signatures _its own copy_
    carried ([#L59](../../../../../../src/storage/QueueStorage.ts#L59)) — attribution is evidence, and pooling it would
    launder blame across suppliers.
-2. **Caps are markers, never gates.** The 128-source structural cap sets `overflowedSources`
+3. **Caps are markers, never gates.** The 128-source structural cap sets `overflowedSources`
    and stops retention growth; it never evicts tracked sources or rejects a later copy
    ([#L586](../../../../../../src/storage/QueueStorage.ts#L586)).
 3. **Storage never schedules.** `restoreEntry` only mutates data — the queue manager reads the
