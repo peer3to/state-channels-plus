@@ -29,7 +29,7 @@ function initializeRepository(root: string): void {
 }
 
 describe("distributed source workspace", function () {
-    it("preserves linked repository layout and excludes gitignored files", async function () {
+    it("preserves linked repository layout and excludes non-runtime files", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "source-workspace-")
         );
@@ -75,6 +75,24 @@ describe("distributed source workspace", function () {
                 path.join(linked, "index.js"),
                 "module.exports = 2;\n"
             );
+            const excludedSourceRoots = [
+                ".github",
+                ".husky",
+                "artifacts",
+                "diagrams",
+                "docs",
+                "internal_docs"
+            ];
+            for (const repository of [project, linked]) {
+                for (const directory of excludedSourceRoots) {
+                    const excluded = path.join(repository, directory);
+                    fs.mkdirSync(excluded, { recursive: true });
+                    fs.writeFileSync(
+                        path.join(excluded, "not-runtime.txt"),
+                        "not uploaded"
+                    );
+                }
+            }
             const runner = path.join(
                 linked,
                 "scripts",
@@ -104,6 +122,13 @@ describe("distributed source workspace", function () {
                     (entry: { name: string }) => entry.name === "project"
                 ).hasYarnLock
             ).to.equal(true);
+            for (const directory of excludedSourceRoots) {
+                expect(
+                    manifest.files.some((entry: { path: string }) =>
+                        entry.path.includes(`/${directory}/`)
+                    )
+                ).to.equal(false);
+            }
 
             await extractRuntimeBundle(
                 transfer,
@@ -130,6 +155,15 @@ describe("distributed source workspace", function () {
             expect(
                 fs.existsSync(path.join(extracted, "project", "node_modules"))
             ).to.equal(false);
+            for (const repository of ["project", "linked"]) {
+                for (const directory of excludedSourceRoots) {
+                    expect(
+                        fs.existsSync(
+                            path.join(extracted, repository, directory)
+                        )
+                    ).to.equal(false);
+                }
+            }
 
             const delta = path.join(root, "transfer", "delta.tgz");
             const deltaManifest = await buildDeltaBundle(
