@@ -68,5 +68,15 @@
   "hash": "b68eac24d7dbd70c",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/README.md": {
+  "hash": "1330d75737c681db",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
+ },
+ "specification/security/README.md": {
+  "hash": "5d11550285b48ea6",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
