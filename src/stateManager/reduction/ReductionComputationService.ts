@@ -26,7 +26,7 @@ export default class ReductionComputationService {
     public async compute(
         forkId: ForkId,
         disputes: DisputeStruct[]
-    ): Promise<ReductionComputation> {
+    ): Promise<ReductionComputation | undefined> {
         const reducedOutput =
             await this.stateManager.stateChannelManagerContract.reduce.staticCall(
                 disputes
@@ -37,7 +37,7 @@ export default class ReductionComputationService {
     public async computeLocally(
         forkId: ForkId,
         disputes: DisputeStruct[]
-    ): Promise<ReductionComputation> {
+    ): Promise<ReductionComputation | undefined> {
         const reducedOutput =
             await this.stateManager.diamondStateMachine.localDiamondContract.reduce.staticCall(
                 disputes
@@ -67,13 +67,15 @@ export default class ReductionComputationService {
     private async computeFromOutput(
         forkId: ForkId,
         reducedOutput: ReduceData["reducedOutput"]
-    ): Promise<ReductionComputation> {
+    ): Promise<ReductionComputation | undefined> {
         // Use getReduceData to properly handle genesis case (when latestBlock is undefined)
         const reduceData =
             await this.stateManager.agreementManager.getReduceData(
                 forkId,
                 reducedOutput
             );
+        // our inbound view cannot back the chain's reduced head yet
+        if (!reduceData) return undefined;
         const [
             reducedSnapshotData,
             reducedEncodedStateMachineState,

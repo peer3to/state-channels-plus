@@ -329,9 +329,8 @@ export default class DisputeValidationService {
     ): Promise<boolean> {
         const isValid = true;
 
-        //TODO - quick hack, but the stuff we need SHOULD actually be available
-        const { auditingData: disputeAuditingData } =
-            this.disputeManager.getAuditingData(
+        const { isPartial, auditingData: disputeAuditingData } =
+            await this.disputeManager.getAuditingData(
                 dispute.input.forkId,
                 dispute.input.stateProof,
                 {
@@ -339,6 +338,21 @@ export default class DisputeValidationService {
                         dispute.input.latestInboundMessageBlockHash
                 }
             );
+        if (isPartial) {
+            // we could not rebuild the data this dispute needs - our own missing
+            // history, not the disputer's fraud. abstain: other auditors still
+            // challenge, and a proof built on substituted data would slash an
+            // honest peer
+            this.logger.warn(
+                "Skipping dispute audit: auditing data could not be rebuilt locally",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute),
+                    auditingData:
+                        LoggerUtils.getAuditingMetadata(disputeAuditingData)
+                }
+            );
+            return true;
+        }
         // TODO move this check above and into its own fraud proof
         if (!dispute.postedAuditingData) {
             const isCorrectLatestState =

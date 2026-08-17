@@ -86,6 +86,82 @@ describe("Unit: BlockProductionService", function () {
         });
     });
 
+    describe("getPendingInboundMessageBlocks over a gap", function () {
+        it("own head above a missing inbound log → the block is produced with no inbound carry", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+
+            // the next writer is the peer that will produce over the gap
+            const writer = await h.query.getNextPeerToWrite();
+            const other = h.peers.find((p) => p.index !== writer.index)!;
+            const observers = h.peers
+                .map((peer) => peer.index)
+                .filter((index) => index !== writer.index);
+
+            // exactly one inbound log is lost, so the next one still lands and
+            // MessageBlockStorage.store moves the head above the hole
+            const dropped = await h.rpcStub.dropInboundMessageLogs(
+                writer.index,
+                { dropCount: 1 }
+            );
+            for (const participantIndex of observers) {
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(participantIndex).address,
+                    observePeerIndices: observers
+                });
+            }
+            await dropped.waitUntilDropped();
+
+            const heightBefore = await h
+                .control(writer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            // the writer's head sits above a hole -> it can carry nothing, while
+            // a peer that holds the whole chain still has messages pending
+            expect(
+                await h
+                    .control(writer)
+                    .query.getPendingInboundMessageBlockCount(forkId)
+                    .request()
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(other)
+                    .query.getPendingInboundMessageBlockCount(forkId)
+                    .request()
+            ).to.be.greaterThan(0);
+
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: observers
+            });
+
+            const bundle = await h
+                .control(writer)
+                .query.getBlockByHeight(forkId, heightBefore)
+                .request();
+            const produced = Block.fromSignedBlock(
+                Codec.decode(bundle!.encodedSignedBlock, Type.SignedBlock)
+            );
+            expect(String(produced.author)).to.equal(writer.address);
+            // an empty carry is legal - detectForgedInboundMessageBlock returns
+            // early for it - so the other peers accept the block
+            expect(produced.blockStruct.messageBlocks).to.deep.equal([]);
+            for (const peerIndex of observers) {
+                expect(
+                    await h
+                        .control(h.getPeer(peerIndex))
+                        .query.getBlockHashAt(forkId, heightBefore)
+                        .request(),
+                    `peer ${peerIndex} must have accepted the block`
+                ).to.equal(bundle!.hash);
+            }
+
+            await dropped.release();
+        });
+    });
+
     describe("playTransaction → guards", function () {
         it("not my turn → throws instead of authoring", async function () {
             const h = TestSession.getHarness();

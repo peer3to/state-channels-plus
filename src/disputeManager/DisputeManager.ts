@@ -33,7 +33,11 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { BytesLike } from "ethers";
 import { config } from "@/utils/config";
-import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    MessageBlockStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 
 export type ConstructDisputeResult = {
     dispute: DisputeStruct;
@@ -41,6 +45,10 @@ export type ConstructDisputeResult = {
     auditingData: DisputeAuditingDataStruct;
     fraudProofsToApply: FraudProofStruct[];
 };
+
+// our own auditing data could not be rebuilt whole - our missing history, not
+// anyone's fraud. named so callers can tell it from a real construction failure
+export class PartialAuditingDataError extends Error {}
 
 // Right-sized from 5M: the dispute upload measures ~0.5M in e2e; 2.5M keeps
 // generous headroom for larger disputes while freeing block gas under concurrency.
@@ -56,6 +64,7 @@ class DisputeManager {
     storage: Storage;
     diamondStateMachine: ADiamondStateMachine;
     mutex: Mutex;
+    private eventSyncService: EventSyncService;
     private logger: Logger;
 
     constructor(
@@ -67,6 +76,7 @@ class DisputeManager {
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
         diamondStateMachine: ADiamondStateMachine,
+        eventSyncService: EventSyncService,
         logger: Logger
     ) {
         this.channelId = channelId;
@@ -77,6 +87,7 @@ class DisputeManager {
         this.p2pEventHooks = p2pEventHooks;
         this.storage = storage;
         this.diamondStateMachine = diamondStateMachine;
+        this.eventSyncService = eventSyncService;
         this.logger = logger.child({ component: "DisputeManager" });
         this.mutex = new Mutex(
             this.logger.child({ component: "DisputeManager:Mutex" })
@@ -394,13 +405,15 @@ class DisputeManager {
         );
 
         // the bound every auditor recomputes with
-        const { isPartial, auditingData } = this.getAuditingData(
+        const { isPartial, auditingData } = await this.getAuditingData(
             forkId,
             stateProof,
             { disputeLatestInboundMessageBlockHash: inboundHead.hash }
         );
         if (isPartial)
-            throw new Error("createDispute - isPartial auditingData");
+            throw new PartialAuditingDataError(
+                "createDispute - isPartial auditingData"
+            );
 
         const disputeAuditingDataHash = hash(
             Codec.encode(auditingData, Type.DisputeAuditingData)
@@ -498,13 +511,16 @@ class DisputeManager {
         };
     }
 
-    public getAuditingData(
+    public async getAuditingData(
         forkId: ForkId,
         stateProof: StateProofStruct,
         options?: {
             disputeLatestInboundMessageBlockHash?: Hash;
         }
-    ): { isPartial: boolean; auditingData: DisputeAuditingDataStruct } {
+    ): Promise<{
+        isPartial: boolean;
+        auditingData: DisputeAuditingDataStruct;
+    }> {
         let isPartial = false;
         // genesisStateSnapshot
         const genesisStateSnapshot =
@@ -555,14 +571,26 @@ class DisputeManager {
             latestFinalizedStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
         }
 
-        // inbound message blocks
-        const inboundMessageBlocks =
-            this.storage.inboundMessages.getMessageBlocksInRange({
-                upperBlockHash: options?.disputeLatestInboundMessageBlockHash,
-                lowerBlockHash:
-                    latestStateSnapshot.snapshotData
-                        .latestInboundMessageBlockHash
-            });
+        // the run the dispute names, recovering a log that never reached us. an
+        // auditor cannot rebuild what it never received -> partial, not a throw
+        const upperBlockHash =
+            options?.disputeLatestInboundMessageBlockHash ??
+            this.storage.inboundMessages.getLatestBlockHash();
+        let inboundMessageBlocks: MessageBlockStruct[] = [];
+        // an already-partial rebuild substituted the genesis snapshot above, so
+        // the bounds below are wrong and every consumer discards the result ->
+        // don't spend the widest possible getLogs on it
+        if (upperBlockHash && !isPartial) {
+            const run = await this.eventSyncService.loadSynchronizedInboundRun(
+                upperBlockHash,
+                latestStateSnapshot.snapshotData
+                    .latestInboundMessageBlockHash as Hash,
+                latestStateSnapshot.timestamp,
+                this.channelId
+            );
+            if (run) inboundMessageBlocks = run;
+            else isPartial = true;
+        }
 
         // outbound message blocks
         const outboundMessageBlocks =
@@ -584,7 +612,7 @@ class DisputeManager {
                 milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
                     snapshot.toStruct()
                 ),
-                inboundMessageBlocks: inboundMessageBlocks ?? [],
+                inboundMessageBlocks,
                 outboundMessageBlocks: outboundMessageBlocks
             }
         };

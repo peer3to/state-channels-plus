@@ -155,14 +155,14 @@ export default class ReductionManager {
     public computeReduction(
         forkId: ForkId,
         disputes: DisputeStruct[]
-    ): Promise<ReductionComputation> {
+    ): Promise<ReductionComputation | undefined> {
         return this.reductionComputationService.compute(forkId, disputes);
     }
 
     public computeReductionLocally(
         forkId: ForkId,
         disputes: DisputeStruct[]
-    ): Promise<ReductionComputation> {
+    ): Promise<ReductionComputation | undefined> {
         return this.reductionComputationService.computeLocally(
             forkId,
             disputes
@@ -254,7 +254,9 @@ export default class ReductionManager {
         return this.completions.has(forkId);
     }
 
-    public getSyncedForkDisputes(forkId: ForkId): Promise<DisputeStruct[]> {
+    public getSyncedForkDisputes(
+        forkId: ForkId
+    ): Promise<DisputeStruct[] | undefined> {
         return this.reductionExecutor.getSyncedForkDisputes(forkId);
     }
 

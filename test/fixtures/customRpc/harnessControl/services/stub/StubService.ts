@@ -34,6 +34,7 @@ import { recordValidationBoundary } from "./RecordingValidationStrategy";
 
 type DisputeCommittedEventKey = string;
 type CalldataPostedEventKey = string;
+type InboundMessageLogKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
@@ -72,7 +73,11 @@ export type StubKey =
     | "scheduledTasks"
     | "ingestConfirmations"
     | "onChainSlashesQuery"
-    | "localDiamondInboundMessages";
+    | "localDiamondInboundMessages"
+    | "inboundMessageLogs"
+    | "chainLogQueries"
+    | "disputeWindowTimestamp"
+    | "disputeCommittedHandler";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -181,6 +186,51 @@ export type ConcurrentCalldataRecoveryProbe = {
     firstFound: boolean;
     secondFound: boolean;
     retryFound: boolean;
+};
+
+export type ReductionChallengeProbe = {
+    /** Recorded challenge sends - a real one would derail the session. */
+    challengeCalls: number;
+    /** The verdict: true = do not challenge. Null when the call threw. */
+    isValid: boolean | null;
+    threw: string | null;
+};
+
+export type InboundRunRecoveryProbe = {
+    /** Provider getLogs calls the recovery made (0 when storage sufficed). */
+    queryCount: number;
+    /** Each attempt's `fromBlock`, in attempt order. */
+    queriedFromBlocks: (number | null)[];
+    /** The event-sync watermark when the call started. */
+    cursorAtCall: number | null;
+    /** The `toBlock` every attempt queried up to. */
+    toBlock: number | null;
+    /** InboundMessagesProcessed logs the recovery dispatched. */
+    scheduledLogCount: number;
+    /** Blocks returned, or null when the gap survived recovery. */
+    blockCount: number | null;
+    /** Whether the peer held the requested head before the call. */
+    heldBefore: boolean;
+    heldAfter: boolean;
+    /** Set only if the recovery threw - its contract says it never does. */
+    threw: string | null;
+};
+
+/** The block range one recorded `provider.getLogs` call asked for. */
+export type ChainLogQuerySpan = {
+    fromBlock: number | null;
+    toBlock: number | null;
+};
+
+export type BlockCalldataRecoveryProbe = {
+    /** Whether the recovery ended with the calldata in local storage. */
+    recoveredCalldata: boolean;
+    /** Whether the recovery dispatched a calldata log for validation. */
+    validationScheduled: boolean;
+    /** Provider getLogs calls the recovery made. */
+    queryCount: number;
+    /** Set only if the recovery threw - its contract says it never does. */
+    threw: string | null;
 };
 
 export type DisputeStrategyResultMatrix = Record<string, string>;
@@ -315,8 +365,16 @@ export class StubService extends ARpcService<
     readonly heldInboundMessageArgs: unknown[][] = [];
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
+    /** Subscribed inbound logs the drop stub has already lost once. */
+    readonly droppedInboundMessageLogKeys = new Set<InboundMessageLogKey>();
+    /** How many distinct inbound logs may be dropped (undefined = all). */
+    inboundMessageLogDropLimit?: number;
     /** Subscribed calldata logs the hold stub has already lost once. */
     readonly heldCalldataPostedEventKeys = new Set<CalldataPostedEventKey>();
+    /** getLogs spans recorded by the current chain-log-query patch. */
+    private chainLogQuerySpans: ChainLogQuerySpan[] = [];
+    /** Dispatches that reached the failing onDisputeCommitted stub. */
+    private failedDisputeCommittedCalls = 0;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Whether the dispute-event hold stub should pass its first new log. */
@@ -432,6 +490,50 @@ export class StubService extends ARpcService<
         return new Promise((resolve) =>
             this.heldCalldataPostedWaiters.push(() => resolve(true))
         );
+    }
+
+    /** Hold subscribed calldata logs before the scheduler records their key. */
+    public holdCalldataPostedEvents(): void {
+        const eventSyncService = this.sm.eventSyncService;
+        if (!this.stubOriginals.has("calldataPostedEvents")) {
+            this.stubOriginals.set(
+                "calldataPostedEvents",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "calldataPostedEvents"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (parsed?.name === "BlockCalldataPosted") {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                if (!this.heldCalldataPostedEventKeys.has(eventKey)) {
+                    // Lose the subscribed delivery once. A later explicit
+                    // query of the same log must reach the real scheduler so
+                    // this stub accurately models missed subscription data.
+                    this.heldCalldataPostedEventKeys.add(eventKey);
+                    this.notifyCalldataPostedEventHeld();
+                    return;
+                }
+            }
+            return original(...args);
+        };
+    }
+
+    public restoreCalldataPostedEvents(): boolean {
+        const eventSyncService = this.sm.eventSyncService;
+        const original = this.stubOriginals.get("calldataPostedEvents");
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.stubOriginals.delete("calldataPostedEvents");
+        this.heldCalldataPostedEventKeys.clear();
+        return true;
     }
 
     /**
@@ -603,8 +705,15 @@ export class StubService extends ARpcService<
         };
     }
 
-    /** Exercise rejected-log retention through the real EventSyncService. */
-    public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
+    /**
+     * Exercise failed-log retry through the real EventSyncService. With
+     * `recoverOnRetry` the handler starts succeeding after the first failure;
+     * otherwise it keeps failing. Either way the log is rescheduled twice.
+     */
+    public async probeRejectedEventSyncLog(options?: {
+        recoverOnRetry?: boolean;
+    }): Promise<EventSyncFailureProbe> {
+        const recoverOnRetry = options?.recoverOnRetry ?? true;
         const sm = this.sm;
         const contract = sm.stateChannelManagerContract;
         const provider = contract.runner?.provider;
@@ -667,20 +776,25 @@ export class StubService extends ARpcService<
                     : String(rejected.reason)
                 : null;
 
-            // A failed log is fatal - rescheduling it returns the cached
-            // rejection and never re-enters the handler, even once the handler
-            // would succeed.
-            eventHandler.onStateSnapshotUpdated = async () => {
-                handlerCallCount += 1;
-            };
-            const rescheduled = sm.eventSyncService.scheduleLog(
-                log,
-                sm.channelId
-            );
-            const rescheduledError = await rescheduled.then(
+            // A failed log is retryable - rescheduling re-enters the handler.
+            // Once it succeeds the resolved promise is cached, so the second
+            // reschedule is a no-op; while it keeps failing every reschedule
+            // dispatches again.
+            if (recoverOnRetry) {
+                eventHandler.onStateSnapshotUpdated = async () => {
+                    handlerCallCount += 1;
+                };
+            }
+            const rescheduledError = await sm.eventSyncService
+                .scheduleLog(log, sm.channelId)
+                .then(
+                    () => null,
+                    (error: unknown) =>
+                        error instanceof Error ? error.message : String(error)
+                );
+            await sm.eventSyncService.scheduleLog(log, sm.channelId).then(
                 () => null,
-                (error: unknown) =>
-                    error instanceof Error ? error.message : String(error)
+                () => null
             );
 
             return {
@@ -698,6 +812,310 @@ export class StubService extends ARpcService<
             };
         } finally {
             eventHandler.onStateSnapshotUpdated = original;
+        }
+    }
+
+    get chainProvider() {
+        const provider = this.sm.stateChannelManagerContract.runner?.provider;
+        if (!provider) throw new Error("Expected a chain provider");
+        return provider;
+    }
+
+    /** Spans of the getLogs calls seen since the current patch went in. */
+    get chainLogQueries(): readonly ChainLogQuerySpan[] {
+        return this.chainLogQuerySpans;
+    }
+
+    /** Make every provider getLogs throw -> no recovery query can succeed. */
+    failChainLogQueries(): void {
+        this.patchChainLogQueries(true);
+    }
+
+    /** Record every provider getLogs span and forward it. */
+    countChainLogQueries(): void {
+        this.patchChainLogQueries(false);
+    }
+
+    restoreChainLogQueries(): boolean {
+        const original = this.stubOriginals.get("chainLogQueries");
+        if (original === undefined) return false;
+        this.chainProvider.getLogs =
+            original as typeof this.chainProvider.getLogs;
+        this.stubOriginals.delete("chainLogQueries");
+        return true;
+    }
+
+    /**
+     * Record every provider getLogs span; with `fail` each call throws too.
+     * One such patch is active at a time - installing a second one resets the
+     * recorded spans.
+     */
+    private patchChainLogQueries(fail: boolean): void {
+        const provider = this.chainProvider;
+        if (!this.stubOriginals.has("chainLogQueries")) {
+            this.stubOriginals.set(
+                "chainLogQueries",
+                provider.getLogs.bind(provider)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "chainLogQueries"
+        ) as typeof provider.getLogs;
+        this.chainLogQuerySpans = [];
+        provider.getLogs = (async (filter) => {
+            this.chainLogQuerySpans.push({
+                fromBlock:
+                    "fromBlock" in filter ? Number(filter.fromBlock) : null,
+                toBlock: "toBlock" in filter ? Number(filter.toBlock) : null
+            });
+            if (fail) throw new Error("stubbed getLogs failure");
+            return original(filter);
+        }) as typeof provider.getLogs;
+    }
+
+    /**
+     * Run the real `loadSynchronizedInboundRun` for `upperBlockHash`, bounded
+     * below by this peer's fork-genesis inbound head, recording the chain
+     * queries it makes (count and each query's span) and how many logs it
+     * dispatched.
+     */
+    public async probeInboundRunRecovery(
+        upperBlockHash: Hash,
+        options?: { failChainQueries?: boolean }
+    ): Promise<InboundRunRecoveryProbe> {
+        const sm = this.sm;
+        const genesis = sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+            sm.forkId
+        );
+        if (!genesis) throw new Error("Expected a genesis snapshot");
+        const held = () =>
+            Boolean(sm.storage.inboundMessages.getMessageBlock(upperBlockHash));
+        const heldBefore = held();
+        const cursorAtCall =
+            sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ?? null;
+
+        if (options?.failChainQueries) this.failChainLogQueries();
+        else this.countChainLogQueries();
+        // count-and-forward: the driver's dispatch count is what proves an
+        // already-applied log is not re-dispatched
+        const eventSyncService = sm.eventSyncService;
+        const originalScheduleLog =
+            eventSyncService.scheduleLog.bind(eventSyncService);
+        let scheduledLogCount = 0;
+        eventSyncService.scheduleLog = ((log, scheduledChannelId) => {
+            const parsed = sm.stateChannelManagerContract.interface.parseLog({
+                topics: log.topics,
+                data: log.data
+            });
+            if (parsed?.name === "InboundMessagesProcessed") {
+                scheduledLogCount += 1;
+            }
+            return originalScheduleLog(log, scheduledChannelId);
+        }) as typeof eventSyncService.scheduleLog;
+
+        try {
+            const run = await sm.eventSyncService.loadSynchronizedInboundRun(
+                upperBlockHash,
+                genesis.latestInboundMessageBlockHash,
+                genesis.timestamp
+            );
+            return {
+                ...this.describeChainLogQueries(),
+                cursorAtCall,
+                scheduledLogCount,
+                blockCount: run ? run.length : null,
+                heldBefore,
+                heldAfter: held(),
+                threw: null
+            };
+        } catch (error) {
+            return {
+                ...this.describeChainLogQueries(),
+                cursorAtCall,
+                scheduledLogCount,
+                blockCount: null,
+                heldBefore,
+                heldAfter: held(),
+                threw: error instanceof Error ? error.message : String(error)
+            };
+        } finally {
+            eventSyncService.scheduleLog = originalScheduleLog;
+            this.restoreChainLogQueries();
+        }
+    }
+
+    /** The recorded getLogs spans as a probe reports them. */
+    private describeChainLogQueries() {
+        const spans = this.chainLogQueries;
+        return {
+            queryCount: spans.length,
+            queriedFromBlocks: spans.map((span) => span.fromBlock),
+            toBlock: spans.length ? spans[spans.length - 1].toBlock : null
+        };
+    }
+
+    /**
+     * Lose a subscribed `BlockCalldataPosted` delivery for one of this peer's
+     * own blocks, then run the real calldata recovery for that block. With
+     * `failChainQueries` the recovery query is blinded, so the contained
+     * failure path runs instead.
+     */
+    public async probeBlockCalldataRecovery(options?: {
+        failChainQueries?: boolean;
+    }): Promise<BlockCalldataRecoveryProbe> {
+        const sm = this.sm;
+        const forkId = sm.forkId;
+        const block = await this.findOwnBlockWithoutPostedCalldata(forkId);
+
+        this.holdCalldataPostedEvents();
+        if (options?.failChainQueries) this.failChainLogQueries();
+        else this.countChainLogQueries();
+
+        try {
+            await this.postBlockCalldataOnChain(
+                Codec.encode(block.signedBlock, Type.SignedBlock) as string
+            );
+            // premise - the subscribed delivery really was lost
+            await this.waitForHeldCalldataPostedEvent();
+            const recovery =
+                await sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                    forkId,
+                    block.height,
+                    block.author
+                );
+            return {
+                recoveredCalldata: recovery.blockCalldata !== undefined,
+                validationScheduled: recovery.validationScheduled,
+                queryCount: this.chainLogQueries.length,
+                threw: null
+            };
+        } catch (error) {
+            return {
+                recoveredCalldata: false,
+                validationScheduled: false,
+                queryCount: this.chainLogQueries.length,
+                threw: error instanceof Error ? error.message : String(error)
+            };
+        } finally {
+            this.restoreChainLogQueries();
+            this.restoreCalldataPostedEvents();
+        }
+    }
+
+    /**
+     * The newest block this peer authored whose on-chain calldata slot is
+     * still free - only its author may post it, and only once.
+     */
+    private async findOwnBlockWithoutPostedCalldata(forkId: ForkId) {
+        const latest = this.sm.storage.blocks.getLatestBlock(forkId);
+        if (!latest) throw new Error("Expected a block on the current fork");
+        for (let height = Number(latest.height); height >= 0; height--) {
+            const block = this.sm.storage.blocks.getBlock(forkId, height);
+            if (!block || block.author !== this.sm.signerAddress) continue;
+            const commitment =
+                await this.sm.stateChannelManagerContract.getBlockCallDataCommitment(
+                    this.sm.channelId,
+                    forkId,
+                    height,
+                    block.author
+                );
+            if (!commitment.found) return block;
+        }
+        throw new Error("Expected an own block with a free calldata slot");
+    }
+
+    get failedDisputeCommittedHandlerCalls(): number {
+        return this.failedDisputeCommittedCalls;
+    }
+
+    /**
+     * Make `onDisputeCommitted` throw, counting the dispatches that reached
+     * it - a re-dispatched dispute log that fails again.
+     */
+    failDisputeCommittedHandler(): void {
+        const eventHandler = this.sm.eventHandler;
+        if (!this.stubOriginals.has("disputeCommittedHandler")) {
+            this.stubOriginals.set(
+                "disputeCommittedHandler",
+                eventHandler.onDisputeCommitted.bind(eventHandler)
+            );
+        }
+        this.failedDisputeCommittedCalls = 0;
+        eventHandler.onDisputeCommitted = async () => {
+            this.failedDisputeCommittedCalls += 1;
+            throw new Error("stubbed onDisputeCommitted failure");
+        };
+    }
+
+    restoreDisputeCommittedHandler(): boolean {
+        const original = this.stubOriginals.get("disputeCommittedHandler");
+        if (original === undefined) return false;
+        this.sm.eventHandler.onDisputeCommitted =
+            original as typeof this.sm.eventHandler.onDisputeCommitted;
+        this.stubOriginals.delete("disputeCommittedHandler");
+        return true;
+    }
+
+    /** Make the dispute-window creation timestamp read throw. */
+    failDisputeWindowTimestampRead(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("disputeWindowTimestamp")) {
+            this.stubOriginals.set(
+                "disputeWindowTimestamp",
+                contract.getDisputeWindowCreationTimestamp
+            );
+        }
+        contract.getDisputeWindowCreationTimestamp =
+            this.asRecordingContractMethod(
+                contract.getDisputeWindowCreationTimestamp,
+                async () => {
+                    throw new Error(
+                        "stubbed getDisputeWindowCreationTimestamp failure"
+                    );
+                }
+            );
+    }
+
+    restoreDisputeWindowTimestampRead(): boolean {
+        const original = this.stubOriginals.get("disputeWindowTimestamp");
+        if (original === undefined) return false;
+        this.sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp =
+            original as StateChannelManagerProxy["getDisputeWindowCreationTimestamp"];
+        this.stubOriginals.delete("disputeWindowTimestamp");
+        return true;
+    }
+
+    /**
+     * Run the real `validateDisputeReductionAndChallenge` against a claimed
+     * `reducedForkId`, recording the challenge send instead of making it - a
+     * real challenge transaction would derail the session.
+     */
+    public async probeDisputeReductionChallenge(
+        reducedForkId: ForkId
+    ): Promise<ReductionChallengeProbe> {
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract.challengeDisputeReduction;
+        let challengeCalls = 0;
+        contract.challengeDisputeReduction = this.asRecordingContractMethod(
+            original,
+            async () => {
+                challengeCalls += 1;
+                return { wait: async () => null };
+            }
+        );
+        try {
+            const isValid = await this.sm.eventHandler[
+                "validateDisputeReductionAndChallenge"
+            ](this.sm.forkId, reducedForkId);
+            return { challengeCalls, isValid, threw: null };
+        } catch (error) {
+            return {
+                challengeCalls,
+                isValid: null,
+                threw: error instanceof Error ? error.message : String(error)
+            };
+        } finally {
+            contract.challengeDisputeReduction = original;
         }
     }
 

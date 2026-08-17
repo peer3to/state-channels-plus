@@ -119,6 +119,26 @@ export class DisputeTampering {
         dispute.input.timeout.participant = ZeroAddress;
         dispute.input.onChainSlashes = [];
     }
+
+    /**
+     * Upload posted auditing data with no inbound run. verifyStateProof never
+     * binds inboundMessageBlocks to the dispute's stated head, so re-pinning
+     * the auditing-data hash keeps the upload accepted while the auditor is
+     * handed nothing.
+     */
+    static emptyPostedInboundRun(
+        dispute: DisputeStruct,
+        _disputeConfirmation: DisputeConfirmationStruct,
+        auditingData?: DisputeAuditingDataStruct
+    ): void {
+        if (!auditingData) {
+            throw new Error("emptyPostedInboundRun needs posted auditing data");
+        }
+        auditingData.inboundMessageBlocks = [];
+        dispute.input.disputeAuditingDataHash = hash(
+            Codec.encode(auditingData, Type.DisputeAuditingData)
+        );
+    }
 }
 
 // Reused tamper statics are forwarded to the host as named strategies (they use

@@ -506,6 +506,16 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     channelId,
                     currentForkId
                 );
+            if (!currentWindowCommitments) {
+                // the window's disputes are on-chain but not locally readable
+                // yet, so we cannot prove the tip -> refuse to serve rather
+                // than serve a proof we could not build
+                this.logger.warn(
+                    "generateSyncPayload - dispute window unavailable",
+                    { channelId, forkId: currentForkId }
+                );
+                return undefined;
+            }
             const currentWindowDisputeConfirmations =
                 agreementManager.getForkDisputeConfirmations(
                     currentWindowCommitments
@@ -522,6 +532,16 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     currentForkId,
                     currentWindowDisputes
                 );
+            if (!computation) {
+                // we cannot rebuild the run this window's reduce consumed, so we
+                // cannot prove the tip -> refuse to serve rather than serve a
+                // proof we could not build
+                this.logger.warn(
+                    "generateSyncPayload - reduce data unavailable for a disputed window",
+                    { channelId, forkId: currentForkId }
+                );
+                return undefined;
+            }
             const { reduceData, reducedForkId } = computation;
 
             // Move to the next fork using local EVM

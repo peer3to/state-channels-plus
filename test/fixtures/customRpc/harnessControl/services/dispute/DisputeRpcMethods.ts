@@ -56,7 +56,7 @@ export class DisputeRpcMethods extends ARpcMethods {
     }
 
     /** Recover missed committed-dispute logs through the production query path. */
-    public recoverCommittedDisputes(forkId: ForkId): Promise<number> {
+    public recoverCommittedDisputes(forkId: ForkId): Promise<number | null> {
         return this.service.recoverCommittedDisputes(forkId);
     }
 
@@ -135,13 +135,13 @@ export class DisputeRpcMethods extends ARpcMethods {
      * `disputeLatestInboundMessageBlockHash` is the anchor an auditor bounds
      * the inbound range with (`DisputeValidationService.continueOtherChecks`).
      */
-    public getAuditingData(
+    public async getAuditingData(
         forkId: ForkId,
         encodedStateProof: string,
         options?: { disputeLatestInboundMessageBlockHash?: Hash }
-    ): { isPartial: boolean; encodedAuditingData: string } {
+    ): Promise<{ isPartial: boolean; encodedAuditingData: string }> {
         const { isPartial, auditingData } =
-            this.service.disputeManager.getAuditingData(
+            await this.service.disputeManager.getAuditingData(
                 forkId,
                 Codec.decode(encodedStateProof, Type.StateProof),
                 options

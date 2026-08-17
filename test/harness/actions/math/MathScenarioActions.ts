@@ -239,7 +239,13 @@ export class MathScenarioActions extends ScenarioActions {
             chainFallbackTime?: number;
             evidenceTime?: number;
         };
-    }) {
+        /**
+         * Hold this peer's InboundMessagesProcessed handler across the join, so
+         * it never stores the inbound head the disputes will name and the other
+         * peers alone wait on the join.
+         */
+        laggingInboundPeerIndex?: number;
+    }): Promise<{ releaseLaggingInbound?: () => Promise<void> }> {
         const timeConfig = {
             evidenceTime: 12,
             ...options?.timeConfig
@@ -250,12 +256,31 @@ export class MathScenarioActions extends ScenarioActions {
             transitionCount: 0,
             timeConfig
         });
+        const laggingIndex = options?.laggingInboundPeerIndex;
+        const held =
+            laggingIndex === undefined
+                ? undefined
+                : await this.harness.rpcStub.holdInboundMessageEvents(
+                      laggingIndex
+                  );
         const forceJoin = await this.harness.join.prepareForceInboundJoinWait();
         await this.harness.transition.advanceState({ count: 2 });
-        await this.harness.join.submitPreparedForceInboundJoinWait(forceJoin);
+        await this.harness.join.submitPreparedForceInboundJoinWait(forceJoin, {
+            observePeerIndices:
+                laggingIndex === undefined
+                    ? undefined
+                    : this.harness.peers
+                          .map((peer) => peer.index)
+                          .filter((index) => index !== laggingIndex)
+        });
 
         this.harness.contextApi.captureOriginalFork();
         this.harness.event.resetEventSpies();
+        return {
+            releaseLaggingInbound: held
+                ? () => held.release({ replay: true })
+                : undefined
+        };
     }
 
     async setupTwoLeaversAcrossMilestones(options?: {
@@ -610,6 +635,58 @@ export class MathScenarioActions extends ScenarioActions {
             .request();
 
         return { observer, author, previous, forkId, parentPostTimestamp };
+    }
+
+    /**
+     * A committed dispute the observer never learned of: its reduction entry
+     * points are held so nothing auto-reduces, and its incoming
+     * dispute-committed events are suppressed, so the on-chain window is
+     * genuinely unreadable from its local storage. `passFirst` lets the first
+     * arriving dispute event through, which flips its local `isForkDisputed`.
+     */
+    async disputeWithSuppressedCommitEvents(options: {
+        observerIndex: number;
+        maliciousPeerIndex: number;
+        peerCount?: number;
+        initialBlocks?: number;
+        passFirst?: boolean;
+    }) {
+        const {
+            observerIndex,
+            maliciousPeerIndex,
+            peerCount = 4,
+            initialBlocks = 2,
+            passFirst = false
+        } = options;
+        const h = this.harness;
+        await h.lifecycle.start(peerCount, initialBlocks);
+        const forkId = h.activeForkId!;
+
+        const race = await h.rpcStub.holdReductionRace(observerIndex);
+        // drop the observer's incoming dispute-committed events before any
+        // dispute happens: the other honest peers' commitments are then
+        // genuinely never delivered here (not merely cleared from storage,
+        // which the event-dedup cache would treat as already processed and
+        // refuse to redeliver)
+        const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+            observerIndex,
+            { passFirst }
+        );
+
+        // real invalid transition -> honest peers dispute + commit on-chain
+        await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
+        await h.assert.dispute.initiatedWait();
+        // exclude the observer - its own onDisputeCommitted delivery is held
+        await h.assert.dispute.committedWait({
+            peersIndices: h.peers
+                .map((peer) => peer.index)
+                .filter(
+                    (index) =>
+                        index !== observerIndex && index !== maliciousPeerIndex
+                )
+        });
+
+        return { forkId, race, restoreEvents };
     }
 
     async activeChannelWithDispute(options: {

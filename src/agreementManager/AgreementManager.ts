@@ -15,6 +15,7 @@ import { Codec, difference, Logger, Type } from "@/utils";
 import { ZeroHash } from "ethers";
 import { ReduceData } from "@/types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 
 /**
  * AgreementManager acts as a higher logic layer over storage
@@ -23,6 +24,7 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 class AgreementManager {
     constructor(
         private storage: Storage,
+        private eventSyncService: EventSyncService,
         private logger: Logger
     ) {
         this.logger = logger.child({ component: "AgreementManager" });
@@ -364,7 +366,7 @@ class AgreementManager {
     public async getReduceData(
         forkId: ForkId,
         reducedOutput: ReduceOutputStruct
-    ): Promise<ReduceData> {
+    ): Promise<ReduceData | undefined> {
         // reducedOutput latestStateSnapshot
         this.logger.debug(
             "ReduceOutput",
@@ -405,12 +407,25 @@ class AgreementManager {
                 "Missing latestEncodedState for reducedOutput in storage for syncing"
             );
 
+        // the run the chain applied in its reduce. we cannot invent blocks whose
+        // log never reached us -> no reduce data yet, and the caller retries
         const inboundMessageBlocksAppliedInReduce =
-            this.storage.inboundMessages.getMessageBlocksInRange({
-                upperBlockHash: reducedOutput.latestInboundMessageBlockHash,
-                lowerBlockHash:
+            await this.eventSyncService.loadSynchronizedInboundRun(
+                reducedOutput.latestInboundMessageBlockHash as Hash,
+                reducedLatestStateSnapshot.latestInboundMessageBlockHash,
+                reducedLatestStateSnapshot.timestamp
+            );
+        if (!inboundMessageBlocksAppliedInReduce) {
+            this.logger.warn("No reduce data: inbound run unavailable", {
+                forkId,
+                reducedOutput:
+                    LoggerUtils.getReducedOutputMetadata(reducedOutput),
+                snapshotInboundHash: String(
                     reducedLatestStateSnapshot.latestInboundMessageBlockHash
+                )
             });
+            return undefined;
+        }
         return {
             forkId: forkId,
             reducedOutput: reducedOutput,

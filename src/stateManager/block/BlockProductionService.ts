@@ -156,12 +156,31 @@ export default class BlockProductionService {
             return [];
         }
 
-        return this.stateManager.storage.inboundMessages.getMessageBlocksInRange(
-            {
-                upperBlockHash: head.hash,
-                lowerBlockHash: previousHash ?? ethers.ZeroHash
-            }
-        );
+        const run =
+            this.stateManager.storage.inboundMessages.tryGetMessageBlocksInRange(
+                {
+                    upperBlockHash: head.hash,
+                    lowerBlockHash: previousHash ?? ethers.ZeroHash
+                }
+            );
+        if (run.missingBlockHash) {
+            // our head sits above an inbound log we never received. a truncated
+            // run is not anchored to the snapshot -> carry none, the next block
+            // picks them up once the log lands
+            this.logger.warn(
+                "Inbound run incomplete; producing without pending inbound messages",
+                {
+                    inboundRun: LoggerUtils.getInboundRunMetadata({
+                        upperBlockHash: head.hash,
+                        lowerBlockHash: previousHash ?? ethers.ZeroHash,
+                        blocks: run.blocks,
+                        missingBlockHash: run.missingBlockHash
+                    })
+                }
+            );
+            return [];
+        }
+        return run.blocks;
     }
 
     private async logPlayTransaction(tx: TransactionStruct): Promise<string> {

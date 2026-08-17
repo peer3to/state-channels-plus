@@ -489,7 +489,7 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
             if (!hasBlock || h <= targetHeight) break;
         }
 
-        const { auditingData } = this.disputeManager.getAuditingData(
+        const { auditingData } = await this.disputeManager.getAuditingData(
             dispute.input.forkId as ForkId,
             stateProof
         );
@@ -796,13 +796,14 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         };
     }
 
-    async recoverCommittedDisputes(forkId: ForkId): Promise<number> {
+    /** `null` = the window could not be made locally readable. */
+    async recoverCommittedDisputes(forkId: ForkId): Promise<number | null> {
         const commitments =
             await this.sm.eventSyncService.loadSynchronizedWindowCommitments(
                 this.sm.channelId,
                 forkId
             );
-        return commitments.length;
+        return commitments ? commitments.length : null;
     }
 
     public createRPCMethods(transport: ATransport): DisputeRpcMethods {

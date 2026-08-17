@@ -15,6 +15,7 @@ import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
 } from "@test/harness";
+import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
 
 // the auditor's contract: verdict + the exact stored fraud proof. the
 // kill/counter-dispute/slash cascades stay owned by test/e2e/disputeValidation.
@@ -641,6 +642,122 @@ describe("Unit: DisputeValidationService", function () {
         // still syncs it, pinned by the test above. only a peer that left the
         // channel is outside the expected set, and it no longer audits.
         it.skip("milestones[-1].blockConfirmations[0] missing from the auditor's block storage -> audit skipped", function () {});
+
+        // the auditor rebuilds the inbound run the dispute names from its own
+        // store, on both the settled and the posted path
+        describe("inbound run the auditor does not hold", function () {
+            /** A settled-path dispute naming an inbound head peer 2 misses. */
+            const stageLaggingAuditor = async (
+                h: ReturnType<typeof TestSession.getHarness>,
+                laggingIndex: number
+            ) => {
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(0).address,
+                    observePeerIndices: h.peers
+                        .map((peer) => peer.index)
+                        .filter((index) => index !== laggingIndex)
+                });
+                await h
+                    .control(h.getPeer(0))
+                    .dispute.setForceExit(true)
+                    .request();
+                const { dispute } = await h.dispute.fetchConstructedDispute(0);
+                expect(dispute.postedAuditingData).to.equal(false);
+                const statedHead = dispute.input
+                    .latestInboundMessageBlockHash as Hash;
+                expect(
+                    await h
+                        .control(h.getPeer(laggingIndex))
+                        .query.getInboundMessageBlock(statedHead)
+                        .request(),
+                    "auditor must not hold the stated inbound head"
+                ).to.equal(null);
+                return { dispute, statedHead };
+            };
+
+            it("settled path, unrecoverable gap -> audit abstains: true, zero proofs", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+                const { dispute } = await stageLaggingAuditor(h, lagging);
+
+                const run = await h.dispute.auditDispute(lagging, dispute);
+
+                // it used to be outcome "threw" (Block hash ... not found)
+                expect(run).to.include({ outcome: "returned", isValid: true });
+                // our own missing history is nobody's fraud
+                expect(run.disputeFraudProofCount).to.equal(0);
+                await held.release({ replay: false });
+            });
+
+            it("settled path, recoverable gap -> full audit, zero proofs, the run is now held", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
+                const { dispute, statedHead } = await stageLaggingAuditor(
+                    h,
+                    lagging
+                );
+                await dropped.waitUntilDropped();
+
+                const run = await h.dispute.auditDispute(lagging, dispute);
+
+                expect(run).to.include({ outcome: "returned", isValid: true });
+                expect(run.disputeFraudProofCount).to.equal(0);
+                // it audited for real instead of abstaining
+                expect(
+                    await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(statedHead)
+                        .request(),
+                    "the audit must have recovered the stated inbound head"
+                ).to.not.equal(null);
+                await dropped.release();
+            });
+
+            it("posted path with an emptied posted run + gap -> same abstain, zero proofs", async function () {
+                const h = TestSession.getHarness();
+                const lagging = 1;
+                const { releaseLaggingInbound } =
+                    await h.scenario.preDisputeSetupCalldataPath({
+                        laggingInboundPeerIndex: lagging
+                    });
+                const { dispute, disputeConfirmation, auditingData } =
+                    await h.dispute.fetchConstructedDispute(0);
+                expect(dispute.postedAuditingData).to.equal(true);
+                expect(
+                    await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(
+                            dispute.input.latestInboundMessageBlockHash
+                        )
+                        .request(),
+                    "auditor must not hold the stated inbound head"
+                ).to.equal(null);
+
+                // the attacker hands the auditor nothing: verifyStateProof never
+                // binds the posted run to the dispute's stated head
+                DisputeTampering.emptyPostedInboundRun(
+                    dispute,
+                    disputeConfirmation,
+                    auditingData
+                );
+
+                const run = await h.dispute.auditDispute(
+                    lagging,
+                    dispute,
+                    auditingData
+                );
+
+                expect(run).to.include({ outcome: "returned", isValid: true });
+                expect(run.disputeFraudProofCount).to.equal(0);
+                await releaseLaggingInbound?.();
+            });
+        });
 
         it("stateProof.milestones = [] AND signedBlocks = [] -> stored genesis snapshot + forkId == snapshotDataHash, true", async function () {
             const h = TestSession.getHarness();
