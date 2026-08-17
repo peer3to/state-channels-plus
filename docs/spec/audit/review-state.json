@@ -53,5 +53,10 @@
   "hash": "1cae28b591ef9b61",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/calldata-and-timeouts.md": {
+  "hash": "230b2105f64b4c93",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
