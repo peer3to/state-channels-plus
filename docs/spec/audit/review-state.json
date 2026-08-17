@@ -28,5 +28,10 @@
   "hash": "e1fc68eb715acfde",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/durability.md": {
+  "hash": "13de868cb7943190",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
