@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **7/515** (1%)
-- Pending (never reviewed): **508**
+- Verified (current): **10/515** (2%)
+- Pending (never reviewed): **505**
 - Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
@@ -14,7 +14,7 @@ None.
 
 ## Pending — never reviewed
 
-### specification (48)
+### specification (45)
 
 - [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
@@ -58,12 +58,9 @@ None.
 - [specification/settlement/README.md](../specification/settlement/README.md)
 - [specification/storage/blocks.md](../specification/storage/blocks.md)
 - [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md)
-- [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md)
 - [specification/storage/participant-changes.md](../specification/storage/participant-changes.md)
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md)
-- [specification/storage/queue.md](../specification/storage/queue.md)
 - [specification/storage/README.md](../specification/storage/README.md)
-- [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md)
 
 ### implementation (337)
 
@@ -533,12 +530,15 @@ None.
 
 ## Verified — current
 
-### specification (7)
+### specification (10)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-14
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
 - [specification/security/data-availability.md](../specification/security/data-availability.md) — Luke Fishman, 2026-08-17
 - [specification/security/trust-model.md](../specification/security/trust-model.md) — Luke Fishman, 2026-08-17
+- [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md) — Luke Fishman, 2026-08-17
 - [specification/storage/durability.md](../specification/storage/durability.md) — Luke Fishman, 2026-08-17
 - [specification/storage/message-blocks.md](../specification/storage/message-blocks.md) — Luke Fishman, 2026-08-17
+- [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
+- [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17

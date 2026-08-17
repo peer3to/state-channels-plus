@@ -7,7 +7,7 @@ A permutation counts as tested only when an exact repository test declaration is
 ## Score
 
 - Specification IDs with test evidence: **82/241** (34%)
-- Test IDs (planned permutations) evidenced: **498/4245** (12%)
+- Test IDs (planned permutations) evidenced: **498/4246** (12%)
 - Test files with verification reports: **121/122** (99%)
 - Test declarations covering at least one test ID: **301/810** (37%)
 - Assigned test IDs with exactly one owning test: **498/498** (100%)
@@ -1777,6 +1777,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-DSTORE-2-H1DAGX.T1.P2`](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx.t1.p2) | Specification | [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx.t1.p2) |
 | [`REQ-DSTORE-2-H1DAGX.T1.P3`](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx.t1.p3) | Specification | [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx.t1.p3) |
 | [`REQ-DSTORE-2-H1DAGX.T1.P4`](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx.t1.p4) | Specification | [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx.t1.p4) |
+| [`REQ-DSTORE-2-H1DAGX.T1.P5`](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx.t1.p5) | Specification | [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx.t1.p5) |
 | [`REQ-DSTORE-3-ZNXSTM.T1.P1`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p1) | Specification | [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p1) |
 | [`REQ-DSTORE-3-ZNXSTM.T1.P2`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p2) | Specification | [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p2) |
 | [`REQ-DSTORE-3-ZNXSTM.T1.P3`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p3) | Specification | [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm.t1.p3) |
