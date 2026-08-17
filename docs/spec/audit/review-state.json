@@ -43,5 +43,10 @@
   "hash": "a389f9a98e1a6be2",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/snapshots-and-states.md": {
+  "hash": "323d01c512eb86a5",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
