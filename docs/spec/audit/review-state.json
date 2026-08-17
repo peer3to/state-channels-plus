@@ -48,5 +48,10 @@
   "hash": "323d01c512eb86a5",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/blocks.md": {
+  "hash": "1cae28b591ef9b61",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
