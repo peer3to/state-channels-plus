@@ -131,7 +131,13 @@ completeness review ([`OQ-5-4Q38M5`](../audit/open-questions.md#oq-5-4q38m5)). S
 ## OQ-23-SDBGYB — SDK restart and recovery semantics
 
 All SDK storage domains are in-memory; a restarted participant has no persisted history and the
-recovery procedure (resync from peers, from chain calldata, or via dispute) is unspecified. This
+recovery procedure (resync from peers, from chain calldata, or via dispute) is unspecified.
+
+Two implementation attempts exist and are stalled in review: PR #388 (async persistence port
+behind `BlockStorage`) and PR #392 (`resumeFromBackground`), both changes-requested with no
+activity since early August; separately, the unmerged `persistence` branch prototypes
+LevelDB/IndexedDB write-behind commits with no PR. The blocking decision is the storage approach
+as much as the recovery semantics. This
 also bounds unbounded-memory growth over channel lifetime. See
 [sdk/components.md](./views/architecture/sdk/components.md) (storage) and the watchtower assumption in
 [security/trust-model.md](../specification/security/trust-model.md).

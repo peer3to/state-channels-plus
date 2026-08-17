@@ -1,6 +1,6 @@
 # Durable Storage and Recovery
 
-> **Agent status:** Maintained reverse-engineered draft.
+> **Agent status:** Maintained design draft.
 > **Engineer verification:** Pending.
 > **Status:** Draft.
 > **Scope:** What a participant node must keep durably, when durable state commits, how a restarted
