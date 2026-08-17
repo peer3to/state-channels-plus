@@ -42,6 +42,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-38-EY27T5`](open-questions.md#oq-38-ey27t5) | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation | Code and specification | sdk/runtime-and-concurrency.md §6, §11.5                                                                                                   | Open                              |
 | [`OQ-39-C3EAMN`](open-questions.md#oq-39-c3eamn) | Reduce: stateful (reads on-chain slashes / inbound tip) vs stateless fold over the committed dispute inputs          | Engineer question      | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
 | [`OQ-40-M12S72`](open-questions.md#oq-40-m12s72) | `challengeDisputeReduction`: dormant scaffolding for optimistic reduction, or dead code to remove                    | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
+| [`OQ-43-HWRTNF`](open-questions.md#oq-43-hwrtnf) | Delegated contest authorization: no keyless watchtower can exist today - contests require the participant's own key  | Engineer question      | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
 
 ## Register assumptions and constraints
 
@@ -512,3 +513,19 @@ enforced in `challengeDisputeReduction` but disabled in `reduceAndFinalize`). If
 remove the function and the challenge-period machinery it implies. If scaffolding: keep it
 non-normative until the optimistic design is specified, and state explicitly that no current
 commit path can be challenged.
+
+## <a id="oq-43-hwrtnf"></a>OQ-43-HWRTNF — Delegated contest authorization
+
+Version one has no watchtower mechanism, and none can be built without protocol changes: opening a
+dispute and contesting a timeout require `msg.sender == disputer` plus dispute eligibility, i.e.
+the participant's own funds-controlling key. A keyless third party is limited to submitting
+dispute fraud proofs (`applyDisputeFraudProofs` accepts valid proofs from any sender). The offline
+participant's only full protection today is a continuously running replica of its own node
+([`REQ-TRUST-4-KW24NF`](security/trust-model.md#req-trust-4-kw24nf)).
+
+Alternatives: (a) contest-only delegate keys registered on-chain per participant, allowed to
+submit disputes/contests but not withdrawals; (b) make additional contest paths permissionless
+where safe, shrinking what a delegate needs authority for; (c) accept the replica-node requirement
+and document it as the operating model. Blocking effect: the watchtower future-work item and any
+offline-participant product claim stay conditional until decided. Requested decision: which
+direction, and whether it lands before or after version one.
