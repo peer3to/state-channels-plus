@@ -234,7 +234,9 @@ export default class ParticipantTimeoutService {
                 blockHeight,
                 participantAddress
             );
-        if (recovery.validationScheduled) {
+        // calldata in hand without a query means the pipeline is already in
+        // flight -> re-check, never time out a participant who did post
+        if (recovery.validationScheduled || recovery.blockCalldata) {
             this.logger.info(
                 "tryTimeoutParticipant - waiting for current on-chain block validation",
                 {
