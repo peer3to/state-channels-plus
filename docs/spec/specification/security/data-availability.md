@@ -182,7 +182,7 @@ _Non-normative._
 
 - **Better DA approaches** that reduce calldata cost and recovery latency. Candidates: the
   web-of-trust model planned for a later version; alternative DA layers; running channels on
-  smaller/cheaper L2 or L3 partitions so posting is cheap. Each proposal MUST state its new trust,
+  smaller/cheaper L2 or L3 chains so posting is cheap. Each proposal MUST state its new trust,
   security, availability, privacy, and fee assumptions explicitly and preserve a clear safety and
   recovery model ([`REQ-DA-4-1B0MF4`](data-availability.md#req-da-4-1b0mf4)).
 - **Optimistic reduction / commitment-only paths** that keep full data off-chain unless a
