@@ -7,7 +7,7 @@ A permutation counts as tested only when an exact repository test declaration is
 ## Score
 
 - Specification IDs with test evidence: **82/241** (34%)
-- Test IDs (planned permutations) evidenced: **498/4246** (12%)
+- Test IDs (planned permutations) evidenced: **498/4248** (12%)
 - Test files with verification reports: **121/122** (99%)
 - Test declarations covering at least one test ID: **301/810** (37%)
 - Assigned test IDs with exactly one owning test: **498/498** (100%)
@@ -1324,6 +1324,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-BLOCK-PIPE-9-QA66GT.T1.P6`](../specification/block-progression/block-processing.md#req-block-pipe-9-qa66gt.t1.p6) | Specification | [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md#req-block-pipe-9-qa66gt.t1.p6) |
 | [`REQ-CDSTORE-1-ECWBNY.T1.P1`](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny.t1.p1) | Specification | [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny.t1.p1) |
 | [`REQ-CDSTORE-1-ECWBNY.T1.P4`](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny.t1.p4) | Specification | [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny.t1.p4) |
+| [`REQ-CDSTORE-1-ECWBNY.T1.P5`](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny.t1.p5) | Specification | [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny.t1.p5) |
 | [`REQ-CFG-1-W7C6C6.T1.P1`](../implementation/views/operations/configuration.md#req-cfg-1-w7c6c6.t1.p1) | Implementation | [implementation/views/operations/configuration.md](../implementation/views/operations/configuration.md#req-cfg-1-w7c6c6.t1.p1) |
 | [`REQ-CFG-1-W7C6C6.T1.P5`](../implementation/views/operations/configuration.md#req-cfg-1-w7c6c6.t1.p5) | Implementation | [implementation/views/operations/configuration.md](../implementation/views/operations/configuration.md#req-cfg-1-w7c6c6.t1.p5) |
 | [`REQ-CFG-2-FCY3ZR.T1.P1`](../implementation/views/operations/configuration.md#req-cfg-2-fcy3zr.t1.p1) | Implementation | [implementation/views/operations/configuration.md](../implementation/views/operations/configuration.md#req-cfg-2-fcy3zr.t1.p1) |
@@ -3131,6 +3132,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-TOSTORE-1-JQPXBC.T1.P2`](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc.t1.p2) | Specification | [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc.t1.p2) |
 | [`REQ-TOSTORE-1-JQPXBC.T1.P3`](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc.t1.p3) | Specification | [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc.t1.p3) |
 | [`REQ-TOSTORE-1-JQPXBC.T1.P4`](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc.t1.p4) | Specification | [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc.t1.p4) |
+| [`REQ-TOSTORE-1-JQPXBC.T1.P5`](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc.t1.p5) | Specification | [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc.t1.p5) |
 | [`REQ-TRUST-1-K5PS99.T1.P1`](../specification/security/trust-model.md#req-trust-1-k5ps99.t1.p1) | Specification | [specification/security/trust-model.md](../specification/security/trust-model.md#req-trust-1-k5ps99.t1.p1) |
 | [`REQ-TRUST-1-K5PS99.T1.P2`](../specification/security/trust-model.md#req-trust-1-k5ps99.t1.p2) | Specification | [specification/security/trust-model.md](../specification/security/trust-model.md#req-trust-1-k5ps99.t1.p2) |
 | [`REQ-TRUST-1-K5PS99.T1.P3`](../specification/security/trust-model.md#req-trust-1-k5ps99.t1.p3) | Specification | [specification/security/trust-model.md](../specification/security/trust-model.md#req-trust-1-k5ps99.t1.p3) |
