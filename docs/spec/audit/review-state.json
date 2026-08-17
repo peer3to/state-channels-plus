@@ -38,5 +38,10 @@
   "hash": "2f27b3ac15c1e6be",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/dispute-evidence.md": {
+  "hash": "a389f9a98e1a6be2",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
