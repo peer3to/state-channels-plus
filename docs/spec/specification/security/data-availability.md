@@ -68,8 +68,11 @@ Where the extra time is granted:
   `previousTimestamp + [evidenceTime if first block] + p2pTime + agreementTime + chainFallbackTime`
   The author therefore always has the on-chain fallback window before silence becomes a timeout.
 - **Block timestamps.** The `InvalidTimestamp` fraud proof measures a block's timestamp against
-  `p2pTime` from its parent — but if the parent was posted as block calldata, the **on-chain
-  posting timestamp replaces the parent's claimed timestamp** as the reference point
+  `p2pTime` from its parent; a first block (transaction count zero) is measured against its
+  snapshot with the same first-block grace — valid up to
+  `snapshotTimestamp + evidenceTime + p2pTime`, and never before the snapshot. If the parent was
+  posted as block calldata, the **on-chain posting timestamp replaces the parent's claimed
+  timestamp** as the reference point
   Posting on-chain thus objectively re-anchors "when the data became available" and grants the
   next author fresh time from that anchor. A participant who already signed the parent forfeits
   this extra time (the forfeit-of-extra-time rule: its signature proves earlier possession).
