@@ -40,7 +40,7 @@ algorithms.
 
 | Document | Defines |
 | --- | --- |
-| [trust-model.md](./trust-model.md) | System-wide trust assumptions, honest-peer and watchtower requirements, RPC observation, topology limits, reputation non-goals. |
+| [trust-model.md](./trust-model.md) | System-wide trust assumptions, honest-peer and continuous-availability requirements, RPC observation, topology limits, reputation non-goals. |
 | [data-availability.md](./data-availability.md) | Chain-backed data availability, calldata publication costs, and the version-one griefing exposure. |
 
 ## Interaction contracts
