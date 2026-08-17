@@ -23,5 +23,10 @@
   "hash": "acc09b2ccc137f2f",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/message-blocks.md": {
+  "hash": "e1fc68eb715acfde",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
