@@ -7,8 +7,8 @@ A permutation counts as tested only when an exact repository test declaration is
 ## Score
 
 - Specification IDs with test evidence: **82/241** (34%)
-- Test IDs (planned permutations) evidenced: **498/4241** (12%)
-- Test files with verification reports: **122/122** (100%)
+- Test IDs (planned permutations) evidenced: **498/4245** (12%)
+- Test files with verification reports: **121/122** (99%)
 - Test declarations covering at least one test ID: **301/810** (37%)
 - Assigned test IDs with exactly one owning test: **498/498** (100%)
 - Test files excluded as out of scope (`@spec-test-coverage-ignore`): 13
@@ -2496,9 +2496,12 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-MSGSTORE-1-6ME9D7.T1.P3`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p3) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p3) |
 | [`REQ-MSGSTORE-1-6ME9D7.T1.P4`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p4) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p4) |
 | [`REQ-MSGSTORE-1-6ME9D7.T1.P5`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p5) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p5) |
+| [`REQ-MSGSTORE-1-6ME9D7.T1.P6`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p6) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p6) |
+| [`REQ-MSGSTORE-1-6ME9D7.T1.P7`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p7) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7.t1.p7) |
 | [`REQ-MSGSTORE-2-8RDXPZ.T1.P2`](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz.t1.p2) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz.t1.p2) |
 | [`REQ-MSGSTORE-2-8RDXPZ.T1.P4`](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz.t1.p4) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz.t1.p4) |
 | [`REQ-MSGSTORE-2-8RDXPZ.T1.P6`](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz.t1.p6) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz.t1.p6) |
+| [`REQ-MSGSTORE-2-8RDXPZ.T1.P7`](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz.t1.p7) | Specification | [specification/storage/message-blocks.md](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz.t1.p7) |
 | [`REQ-NEG-1-RTKPT1.T1.P1`](../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p1) | Specification | [specification/peer-communication/channel-negotiation.md](../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p1) |
 | [`REQ-NEG-1-RTKPT1.T1.P2`](../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p2) | Specification | [specification/peer-communication/channel-negotiation.md](../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p2) |
 | [`REQ-NEG-1-RTKPT1.T1.P3`](../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p3) | Specification | [specification/peer-communication/channel-negotiation.md](../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p3) |
@@ -2541,6 +2544,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-OCN-3-RGP58T.T1.P9`](../implementation/views/architecture/sdk/rpc/open-channel-negotiation.md#req-ocn-3-rgp58t.t1.p9) | Implementation | [implementation/views/architecture/sdk/rpc/open-channel-negotiation.md](../implementation/views/architecture/sdk/rpc/open-channel-negotiation.md#req-ocn-3-rgp58t.t1.p9) |
 | [`REQ-QSTORE-1-PS769J.T1.P2`](../specification/storage/queue.md#req-qstore-1-ps769j.t1.p2) | Specification | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-1-ps769j.t1.p2) |
 | [`REQ-QSTORE-1-PS769J.T1.P5`](../specification/storage/queue.md#req-qstore-1-ps769j.t1.p5) | Specification | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-1-ps769j.t1.p5) |
+| [`REQ-QSTORE-1-PS769J.T1.P6`](../specification/storage/queue.md#req-qstore-1-ps769j.t1.p6) | Specification | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-1-ps769j.t1.p6) |
 | [`REQ-QSTORE-3-DEKYG6.T1.P2`](../specification/storage/queue.md#req-qstore-3-dekyg6.t1.p2) | Specification | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-3-dekyg6.t1.p2) |
 | [`REQ-QSTORE-3-DEKYG6.T1.P3`](../specification/storage/queue.md#req-qstore-3-dekyg6.t1.p3) | Specification | [specification/storage/queue.md](../specification/storage/queue.md#req-qstore-3-dekyg6.t1.p3) |
 | [`REQ-RMSTORE-1-BWKVBG.T1.P1`](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg.t1.p1) | Specification | [specification/storage/progress-markers.md](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg.t1.p1) |
@@ -3941,7 +3945,9 @@ Every planned test permutation — specification black-box plans and implementat
 
 Repository test files containing executable declarations that have no maintained report at `verification/tests/<path>.md`. Fixtures, harness code, and configuration need no reports.
 
-None.
+| Test file |
+| --- |
+| [test/cache/SignerRecoveryCache.test.ts](../../../test/cache/SignerRecoveryCache.test.ts) |
 
 ## Tests not referenced in verification reports
 

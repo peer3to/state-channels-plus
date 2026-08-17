@@ -24,10 +24,10 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 - Current security-accepted paths: **0/241** (0%)
 - Final ready paths: **0/241** (0%)
 - Source files assigned to implementation subjects: **243/243** (100%)
-- Test declarations mapped or explicitly ignored: **413/922** (45%)
-- Open questions: 36
+- Test declarations mapped or explicitly ignored: **433/942** (46%)
+- Open questions: 37
 - Active findings: 14
-- Strict blocking items: 4970
+- Strict blocking items: 4976
 
 ## Requirement paths
 
@@ -207,13 +207,13 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-MSG-7-Q40Q3R`](../specification/settlement/cross-layer-messages.md#req-msg-7-q40q3r) | [REQ-MSG-7-Q40Q3R · 1 plan](../specification/settlement/cross-layer-messages.md#req-msg-7-q40q3r) | [Covered](../implementation/views/protocol/cross-layer-messages.md#conformance-traceability) | 0/8 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-MSG-8-N1ECJ5`](../specification/settlement/cross-layer-messages.md#req-msg-8-n1ecj5) | [REQ-MSG-8-N1ECJ5 · 1 plan](../specification/settlement/cross-layer-messages.md#req-msg-8-n1ecj5) | [Covered](../implementation/views/protocol/cross-layer-messages.md#conformance-traceability) | 0/13 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-MSG-9-BFN9P5`](../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5) | [REQ-MSG-9-BFN9P5 · 1 plan](../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5) | [Covered](../implementation/views/protocol/cross-layer-messages.md#conformance-traceability) | 4/6 permutations evidenced | 4 | None linked | Gap | Approval pending | Assessment pending | Not ready |
-| [`REQ-MSGSTORE-1-6ME9D7`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | [REQ-MSGSTORE-1-6ME9D7 · 1 plan](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | [Contradicts](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) | 2/5 permutations evidenced | 1 | [`FIND-STORAGE-2-NK2XBF`](../audit/open-findings.md#find-storage-2-nk2xbf) | Gap | Approval pending | Blocked | Not ready |
-| [`REQ-MSGSTORE-2-8RDXPZ`](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) | [REQ-MSGSTORE-2-8RDXPZ · 1 plan](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) | [Contradicts](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) | 3/6 permutations evidenced | 1 | [`FIND-STORAGE-2-NK2XBF`](../audit/open-findings.md#find-storage-2-nk2xbf) | Gap | Approval pending | Blocked | Not ready |
+| [`REQ-MSGSTORE-1-6ME9D7`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | [REQ-MSGSTORE-1-6ME9D7 · 1 plan](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | [Contradicts](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) | 2/7 permutations evidenced | 1 | [`FIND-STORAGE-2-NK2XBF`](../audit/open-findings.md#find-storage-2-nk2xbf) | Gap | Approval pending | Blocked | Not ready |
+| [`REQ-MSGSTORE-2-8RDXPZ`](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) | [REQ-MSGSTORE-2-8RDXPZ · 1 plan](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) | [Contradicts](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) | 3/7 permutations evidenced | 1 | [`FIND-STORAGE-2-NK2XBF`](../audit/open-findings.md#find-storage-2-nk2xbf) | Gap | Approval pending | Blocked | Not ready |
 | [`REQ-NEG-1-RTKPT1`](../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1) | [REQ-NEG-1-RTKPT1 · 1 plan](../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1) | [Covered](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md#conformance-traceability) | 0/4 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-NEG-2-ED48TZ`](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz) | [REQ-NEG-2-ED48TZ · 1 plan](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz) | [Covered](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md#conformance-traceability) | 0/4 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-NEG-3-Q5WFAA`](../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) | [REQ-NEG-3-Q5WFAA · 1 plan](../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) | [Partial](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md#conformance-traceability) | 0/4 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-PSCSTORE-1-7BDTEV`](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev) | [REQ-PSCSTORE-1-7BDTEV · 1 plan](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev) | [Covered](../implementation/source/src/storage/ParticipantSetChangeStorage.ts.md#conformance-traceability) | 7/7 permutations evidenced | 7 | None linked | Complete | Approval pending | Assessment pending | Not ready |
-| [`REQ-QSTORE-1-PS769J`](../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j) | [REQ-QSTORE-1-PS769J · 1 plan](../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j) | [Covered](../implementation/source/src/storage/QueueStorage.ts.md#conformance-traceability) | 3/5 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-QSTORE-1-PS769J`](../specification/storage/queue.md#req-qstore-1-ps769j) | [REQ-QSTORE-1-PS769J · 1 plan](../specification/storage/queue.md#req-qstore-1-ps769j) | [Covered](../implementation/source/src/storage/QueueStorage.ts.md#conformance-traceability) | 3/6 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) | [REQ-QSTORE-2-VYWJAQ · 1 plan](../specification/storage/queue.md#req-qstore-2-vywjaq) | [Covered](../implementation/source/src/storage/QueueStorage.ts.md#conformance-traceability) | 3/3 permutations evidenced | 2 | None linked | Complete | Approval pending | Assessment pending | Not ready |
 | [`REQ-QSTORE-3-DEKYG6`](../specification/storage/queue.md#req-qstore-3-dekyg6) | [REQ-QSTORE-3-DEKYG6 · 1 plan](../specification/storage/queue.md#req-qstore-3-dekyg6) | [Covered](../implementation/source/src/storage/QueueStorage.ts.md#conformance-traceability) | 2/4 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-RMSTORE-1-BWKVBG`](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | [REQ-RMSTORE-1-BWKVBG · 1 plan](../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | [Covered](../implementation/source/src/storage/EventSyncStorage.ts.md#conformance-traceability) | 2/3 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -278,7 +278,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 ## Global gaps
 
 - 509 test declaration(s) are unaccounted.
-- 36 open question(s) require decisions.
+- 37 open question(s) require decisions.
 - 14 active finding(s) remain.
 - 241 requirement path(s) lack current engineer approval.
 - 241 requirement path(s) lack current security-risk acceptance.
