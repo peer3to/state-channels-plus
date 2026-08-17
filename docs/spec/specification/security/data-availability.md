@@ -29,7 +29,8 @@ This avoids adding a separate data-availability trust assumption: the only DA de
 same live, honest, final chain the protocol already assumes (A1 in
 [trust-model.md](./trust-model.md)). The observable contract is:
 
-- Any participant can commit a signed block on-chain via calldata posting (§2).
+- A block's author can commit its own signed block on-chain via calldata posting (§2); publication
+  is author-only, since a posted commitment also excuses the author from timeout.
 - Any participant can, when required, obtain the data behind any commitment relevant to a dispute,
   because posting the commitment publishes the full signed block as calldata in the posting
   transaction.
