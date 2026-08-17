@@ -29,12 +29,19 @@
 **<a id="req-cdstore-1-ecwbny"></a>`REQ-CDSTORE-1-ECWBNY` — Coordinate-keyed calldata with exact matching.** A calldata record is stored and
 retrieved by (fork, height, author). A match query for a specific block succeeds only when the
 stored record's block hash equals the queried block's hash — same coordinates with different content
-is not a match, it is evidence of a divergence for the consumer to judge.
+is not a match, it is evidence of a divergence for the consumer to judge. A store at coordinates
+already held adopts the incoming record; no preference rule is needed, because conflicting records
+cannot legitimately coexist — the on-chain commitment at those coordinates is author-bound,
+first-post-wins, and non-overwritable ([data-availability.md](../security/data-availability.md)),
+and records are populated only from chain observation.
 
 **<a id="req-tostore-1-jqpxbc"></a>`REQ-TOSTORE-1-JQPXBC` — Lowest-height timeout candidate.** The store keeps at most one candidate per
 fork and ignores a stored update whose height is above the retained candidate's — mirroring the
 protocol's lowest-timed-out-height precedence ([`INV-DIS-8-1GY6Q5`](../disputes/disputes.md#inv-dis-8-1gy6q5)) so the node never escalates a
-later slot while an earlier one is missed.
+later slot while an earlier one is missed. An equal-height store refreshes the retained candidate:
+the accountable participant at a height is deterministic, so this is the same slot re-observed, and
+the detection inputs only accrue (on-chain commitments are non-overwritable; signature knowledge is
+monotone) — a refresh never weakens the retained dispute evidence.
 
 ## Assumptions and constraints
 
@@ -56,8 +63,8 @@ precedence even when observations arrive out of order.
 
 | Plan item                                                     | Requirements / invariants                                               | Setup and stimulus                                                                                | Expected result                                                                   | Required permutations                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-cdstore-1-ecwbny.t1"></a>`REQ-CDSTORE-1-ECWBNY.T1` | [`REQ-CDSTORE-1-ECWBNY`](calldata-and-timeouts.md#req-cdstore-1-ecwbny) | Store calldata records; query by coordinates and by matching block with equal and unequal hashes. | Coordinate reads return the record; match succeeds only on hash equality.         | <a id="req-cdstore-1-ecwbny.t1.p1"></a>`REQ-CDSTORE-1-ECWBNY.T1.P1` — store/read by coordinates; <a id="req-cdstore-1-ecwbny.t1.p2"></a>`REQ-CDSTORE-1-ECWBNY.T1.P2` — match equal hash; <a id="req-cdstore-1-ecwbny.t1.p3"></a>`REQ-CDSTORE-1-ECWBNY.T1.P3` — same coordinates, different hash → no match; <a id="req-cdstore-1-ecwbny.t1.p4"></a>`REQ-CDSTORE-1-ECWBNY.T1.P4` — absent coordinates. |
-| <a id="req-tostore-1-jqpxbc.t1"></a>`REQ-TOSTORE-1-JQPXBC.T1` | [`REQ-TOSTORE-1-JQPXBC`](calldata-and-timeouts.md#req-tostore-1-jqpxbc) | Store timeout candidates at varied heights per fork in varied orders.                             | The lowest height is retained regardless of arrival order; forks are independent. | <a id="req-tostore-1-jqpxbc.t1.p1"></a>`REQ-TOSTORE-1-JQPXBC.T1.P1` — lower replaces higher; <a id="req-tostore-1-jqpxbc.t1.p2"></a>`REQ-TOSTORE-1-JQPXBC.T1.P2` — higher ignored; <a id="req-tostore-1-jqpxbc.t1.p3"></a>`REQ-TOSTORE-1-JQPXBC.T1.P3` — order permutations converge; <a id="req-tostore-1-jqpxbc.t1.p4"></a>`REQ-TOSTORE-1-JQPXBC.T1.P4` — per-fork isolation.                       |
+| <a id="req-cdstore-1-ecwbny.t1"></a>`REQ-CDSTORE-1-ECWBNY.T1` | [`REQ-CDSTORE-1-ECWBNY`](calldata-and-timeouts.md#req-cdstore-1-ecwbny) | Store calldata records; query by coordinates and by matching block with equal and unequal hashes. | Coordinate reads return the record; match succeeds only on hash equality.         | <a id="req-cdstore-1-ecwbny.t1.p1"></a>`REQ-CDSTORE-1-ECWBNY.T1.P1` — store/read by coordinates; <a id="req-cdstore-1-ecwbny.t1.p2"></a>`REQ-CDSTORE-1-ECWBNY.T1.P2` — match equal hash; <a id="req-cdstore-1-ecwbny.t1.p3"></a>`REQ-CDSTORE-1-ECWBNY.T1.P3` — same coordinates, different hash → no match; <a id="req-cdstore-1-ecwbny.t1.p4"></a>`REQ-CDSTORE-1-ECWBNY.T1.P4` — absent coordinates; <a id="req-cdstore-1-ecwbny.t1.p5"></a>`REQ-CDSTORE-1-ECWBNY.T1.P5` — re-store at held coordinates adopts the incoming record. |
+| <a id="req-tostore-1-jqpxbc.t1"></a>`REQ-TOSTORE-1-JQPXBC.T1` | [`REQ-TOSTORE-1-JQPXBC`](calldata-and-timeouts.md#req-tostore-1-jqpxbc) | Store timeout candidates at varied heights per fork in varied orders.                             | The lowest height is retained regardless of arrival order; forks are independent. | <a id="req-tostore-1-jqpxbc.t1.p1"></a>`REQ-TOSTORE-1-JQPXBC.T1.P1` — lower replaces higher; <a id="req-tostore-1-jqpxbc.t1.p2"></a>`REQ-TOSTORE-1-JQPXBC.T1.P2` — higher ignored; <a id="req-tostore-1-jqpxbc.t1.p3"></a>`REQ-TOSTORE-1-JQPXBC.T1.P3` — order permutations converge; <a id="req-tostore-1-jqpxbc.t1.p4"></a>`REQ-TOSTORE-1-JQPXBC.T1.P4` — per-fork isolation; <a id="req-tostore-1-jqpxbc.t1.p5"></a>`REQ-TOSTORE-1-JQPXBC.T1.P5` — equal-height store refreshes the retained candidate.                       |
 
 ## Future Work
 
