@@ -18,5 +18,10 @@
   "hash": "4d48a347a86689fd",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/security/data-availability.md": {
+  "hash": "acc09b2ccc137f2f",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
