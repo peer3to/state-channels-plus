@@ -33,5 +33,10 @@
   "hash": "13de868cb7943190",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/queue.md": {
+  "hash": "2f27b3ac15c1e6be",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
