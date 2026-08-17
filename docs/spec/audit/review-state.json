@@ -58,5 +58,10 @@
   "hash": "230b2105f64b4c93",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/participant-changes.md": {
+  "hash": "f54bdd545a361b81",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
