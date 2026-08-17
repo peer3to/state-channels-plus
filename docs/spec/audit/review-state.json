@@ -63,5 +63,10 @@
   "hash": "f54bdd545a361b81",
   "reviewer": "Luke Fishman",
   "date": "2026-08-17"
+ },
+ "specification/storage/progress-markers.md": {
+  "hash": "b68eac24d7dbd70c",
+  "reviewer": "Luke Fishman",
+  "date": "2026-08-17"
  }
 }
