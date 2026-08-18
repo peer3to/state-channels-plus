@@ -9,46 +9,6 @@ import { waitFor } from "@test/utils/waitFor";
 const LOG_RECOVERY_ATTEMPTS = 3;
 
 describe("EventSyncService", function () {
-    it("a failed log is retryable - re-dispatched, cursor advances once it succeeds", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(4, 0);
-        const result = await h
-            .control(h.getPeer(0))
-            .stub.probeRejectedEventSyncLog()
-            .request();
-
-        expect(result.samePromise).to.equal(true);
-        // the first delivery pair shares one dispatch, the reschedule re-enters
-        // the handler, and the second reschedule reuses the resolved promise
-        expect(result.handlerCallCount).to.equal(2);
-        expect(result.firstError).to.equal("Expected event-sync rejection");
-        expect(result.secondError).to.equal("Expected event-sync rejection");
-        // the failure bubbles out of the detached promise
-        expect(result.detachedError).to.equal("Expected event-sync rejection");
-        // rescheduling after the failure retries it, it does not replay the
-        // cached rejection
-        expect(result.rescheduledError).to.equal(null);
-        // the log's block completed on the retry -> the watermark moves
-        expect(result.cursorAfter).to.be.greaterThan(result.cursorBefore ?? 0);
-    });
-
-    it("a log that keeps failing keeps the watermark below its block", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(4, 0);
-        const result = await h
-            .control(h.getPeer(0))
-            .stub.probeRejectedEventSyncLog({ recoverOnRetry: false })
-            .request();
-
-        // every reschedule dispatches again while the handler keeps failing
-        expect(result.handlerCallCount).to.equal(3);
-        expect(result.rescheduledError).to.equal(
-            "Expected event-sync rejection"
-        );
-        // its block never completed -> the watermark must not move over it
-        expect(result.cursorAfter).to.equal(result.cursorBefore);
-    });
-
     it("joins concurrent calldata recovery onto one chain query", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);

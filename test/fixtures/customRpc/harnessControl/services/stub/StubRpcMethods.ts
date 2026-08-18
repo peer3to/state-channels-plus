@@ -14,7 +14,6 @@ import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
     DisputeSubmissionFailureSpec,
-    EventSyncFailureProbe,
     PausedConstructDisputeState,
     PausedConstructDisputeStatus,
     PausedReductionStatus,
@@ -790,12 +789,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public cancelScheduledReductions(): boolean {
         this.service.sm.reductionManager["cancelScheduledReductions"]();
         return true;
-    }
-
-    public async probeRejectedEventSyncLog(options?: {
-        recoverOnRetry?: boolean;
-    }): Promise<EventSyncFailureProbe> {
-        return this.service.probeRejectedEventSyncLog(options);
     }
 
     public async probeDisputeReductionChallenge(

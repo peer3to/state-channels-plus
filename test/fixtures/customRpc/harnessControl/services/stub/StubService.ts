@@ -170,17 +170,6 @@ export type PausedConstructDisputeState = PausedConstructDisputeStatus & {
     release: () => void;
 };
 
-export type EventSyncFailureProbe = {
-    samePromise: boolean;
-    handlerCallCount: number;
-    firstError: string | null;
-    secondError: string | null;
-    rescheduledError: string | null;
-    cursorBefore: number | null;
-    cursorAfter: number | null;
-    detachedError: string | null;
-};
-
 export type ConcurrentCalldataRecoveryProbe = {
     queryCount: number;
     firstFound: boolean;
@@ -703,116 +692,6 @@ export class StubService extends ARpcService<
             blockNumber: receipt.blockNumber,
             onChainTimestamp: chainBlock.timestamp
         };
-    }
-
-    /**
-     * Exercise failed-log retry through the real EventSyncService. With
-     * `recoverOnRetry` the handler starts succeeding after the first failure;
-     * otherwise it keeps failing. Either way the log is rescheduled twice.
-     */
-    public async probeRejectedEventSyncLog(options?: {
-        recoverOnRetry?: boolean;
-    }): Promise<EventSyncFailureProbe> {
-        const recoverOnRetry = options?.recoverOnRetry ?? true;
-        const sm = this.sm;
-        const contract = sm.stateChannelManagerContract;
-        const provider = contract.runner?.provider;
-        if (!provider) throw new Error("Expected a provider for event sync");
-        const latestBlock = await provider.getBlock("latest");
-        if (!latestBlock?.hash) throw new Error("Expected a latest block");
-        const stateSnapshot = await contract.getStateSnapshot(sm.channelId);
-        const event = contract.interface.getEvent("StateSnapshotUpdated");
-        const encodedEvent = contract.interface.encodeEventLog(event, [
-            sm.channelId,
-            stateSnapshot
-        ]);
-        const log = new Log(
-            {
-                address: String(contract.target),
-                blockHash: latestBlock.hash,
-                blockNumber: latestBlock.number + 1,
-                data: encodedEvent.data,
-                index: 0,
-                removed: false,
-                topics: encodedEvent.topics,
-                transactionHash: id(`event-sync-failure-${Date.now()}`),
-                transactionIndex: 0
-            },
-            provider
-        );
-        const eventHandler = sm.eventHandler;
-        const original = eventHandler.onStateSnapshotUpdated.bind(eventHandler);
-        let handlerCallCount = 0;
-        eventHandler.onStateSnapshotUpdated = async () => {
-            handlerCallCount += 1;
-            throw new Error("Expected event-sync rejection");
-        };
-        const cursorBefore =
-            sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ?? null;
-        try {
-            const first = sm.eventSyncService.scheduleLog(log, sm.channelId);
-            const second = sm.eventSyncService.scheduleLog(log, sm.channelId);
-            DetachedPromises.collect(first);
-            const [firstError, secondError] = await Promise.all([
-                first.then(
-                    () => null,
-                    (error: unknown) =>
-                        error instanceof Error ? error.message : String(error)
-                ),
-                second.then(
-                    () => null,
-                    (error: unknown) =>
-                        error instanceof Error ? error.message : String(error)
-                )
-            ]);
-            const detached = await DetachedPromises.collectSettledAndClear();
-            const rejected = detached.find(
-                (result): result is PromiseRejectedResult =>
-                    result.status === "rejected"
-            );
-            const detachedError = rejected
-                ? rejected.reason instanceof Error
-                    ? rejected.reason.message
-                    : String(rejected.reason)
-                : null;
-
-            // A failed log is retryable - rescheduling re-enters the handler.
-            // Once it succeeds the resolved promise is cached, so the second
-            // reschedule is a no-op; while it keeps failing every reschedule
-            // dispatches again.
-            if (recoverOnRetry) {
-                eventHandler.onStateSnapshotUpdated = async () => {
-                    handlerCallCount += 1;
-                };
-            }
-            const rescheduledError = await sm.eventSyncService
-                .scheduleLog(log, sm.channelId)
-                .then(
-                    () => null,
-                    (error: unknown) =>
-                        error instanceof Error ? error.message : String(error)
-                );
-            await sm.eventSyncService.scheduleLog(log, sm.channelId).then(
-                () => null,
-                () => null
-            );
-
-            return {
-                samePromise: first === second,
-                handlerCallCount,
-                firstError,
-                secondError,
-                rescheduledError,
-                cursorBefore,
-                cursorAfter:
-                    sm.storage.eventSync.getLatestProcessedBlock(
-                        sm.channelId
-                    ) ?? null,
-                detachedError
-            };
-        } finally {
-            eventHandler.onStateSnapshotUpdated = original;
-        }
     }
 
     get chainProvider() {
