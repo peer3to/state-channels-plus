@@ -15,9 +15,9 @@
   "date": "2026-08-14"
  },
  "specification/security/trust-model.md": {
-  "hash": "4d48a347a86689fd",
+  "hash": "8f388037ccb62930",
   "reviewer": "Luke Fishman",
-  "date": "2026-08-17"
+  "date": "2026-08-18"
  },
  "specification/security/data-availability.md": {
   "hash": "acc09b2ccc137f2f",
@@ -75,8 +75,8 @@
   "date": "2026-08-17"
  },
  "specification/security/README.md": {
-  "hash": "5d11550285b48ea6",
+  "hash": "31e49a70f87524ae",
   "reviewer": "Luke Fishman",
-  "date": "2026-08-17"
+  "date": "2026-08-18"
  }
 }
