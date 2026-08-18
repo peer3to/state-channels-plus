@@ -6,9 +6,9 @@ A permutation counts as tested only when an exact repository test declaration is
 
 ## Score
 
-- Specification IDs with test evidence: **82/241** (34%)
-- Test IDs (planned permutations) evidenced: **498/4241** (12%)
-- Test files with verification reports: **122/122** (100%)
+- Specification IDs with test evidence: **82/242** (34%)
+- Test IDs (planned permutations) evidenced: **498/4247** (12%)
+- Test files with verification reports: **121/122** (99%)
 - Test declarations covering at least one test ID: **301/810** (37%)
 - Assigned test IDs with exactly one owning test: **498/498** (100%)
 - Test files excluded as out of scope (`@spec-test-coverage-ignore`): 13
@@ -126,6 +126,7 @@ Requirements/invariants with no mapped test evidence on any of their planned per
 | [`REQ-LIF-3-PDRTPY`](../specification/settlement/lifecycle.md#req-lif-3-pdrtpy) | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-3-pdrtpy) |
 | [`REQ-LIF-4-SW8GVY`](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy) | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy) |
 | [`REQ-LIF-6-VG861M`](../specification/settlement/lifecycle.md#req-lif-6-vg861m) | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-6-vg861m) |
+| [`REQ-LIF-7-0XZBDM`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) |
 | [`REQ-MIRROR-1-XCY9CB`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) |
 | [`REQ-MIRROR-3-THD7K8`](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) |
 | [`REQ-MSG-1-AY3A77`](../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77) | [specification/settlement/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77) |
@@ -2346,6 +2347,12 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-LIF-6-VG861M.T1.P4`](../specification/settlement/lifecycle.md#req-lif-6-vg861m.t1.p4) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-6-vg861m.t1.p4) |
 | [`REQ-LIF-6-VG861M.T1.P5`](../specification/settlement/lifecycle.md#req-lif-6-vg861m.t1.p5) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-6-vg861m.t1.p5) |
 | [`REQ-LIF-6-VG861M.T1.P6`](../specification/settlement/lifecycle.md#req-lif-6-vg861m.t1.p6) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-6-vg861m.t1.p6) |
+| [`REQ-LIF-7-0XZBDM.T1.P1`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p1) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p1) |
+| [`REQ-LIF-7-0XZBDM.T1.P2`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p2) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p2) |
+| [`REQ-LIF-7-0XZBDM.T1.P3`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p3) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p3) |
+| [`REQ-LIF-7-0XZBDM.T1.P4`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p4) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p4) |
+| [`REQ-LIF-7-0XZBDM.T1.P5`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p5) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p5) |
+| [`REQ-LIF-7-0XZBDM.T1.P6`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p6) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p6) |
 | [`REQ-MIRROR-1-XCY9CB.T1.P1`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p1) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p1) |
 | [`REQ-MIRROR-1-XCY9CB.T1.P2`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p2) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p2) |
 | [`REQ-MIRROR-1-XCY9CB.T1.P3`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p3) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p3) |
@@ -3941,7 +3948,9 @@ Every planned test permutation — specification black-box plans and implementat
 
 Repository test files containing executable declarations that have no maintained report at `verification/tests/<path>.md`. Fixtures, harness code, and configuration need no reports.
 
-None.
+| Test file |
+| --- |
+| [test/cache/SignerRecoveryCache.test.ts](../../../test/cache/SignerRecoveryCache.test.ts) |
 
 ## Tests not referenced in verification reports
 
