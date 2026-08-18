@@ -124,7 +124,10 @@ withdrawals:
    ([disputes.md](../disputes/disputes.md)); after the reduce challenge period (`evidenceTime`) expires,
    `updateStateSnapshotFork` adopts the successor fork's genesis snapshot. the adjudicator walks the
    `reducedResult` chain from the current on-chain fork, so several dispute generations can be
-   adopted in one call.
+   adopted in one call. **For this protocol version:** when the reduction is computed and finalized
+   on-chain, its result is recorded with the challenge period already elapsed, so adoption is not
+   delayed — the deployment pays in gas instead of time. A challenge period that has still to run
+   is the cost of the alternative, gas-saving path of committing to a reduction outcome.
 
 Both paths converge on `_updateStateSnapshot`, which processes the outbound stream (below).
 
@@ -155,10 +158,15 @@ received blocks on the fork are rejected instead of validated. Execution resumes
 canonical successor fork ([`REQ-LIF-4-SW8GVY`](lifecycle.md#req-lif-4-sw8gvy)), with valid
 non-final work carried forward — the pause costs time, not progress. A dispute against a fork
 that is not the participant's current fork MUST NOT suspend execution on the current fork.
-**For this protocol version:** the expected pause spans the three consecutive on-chain dispute
-periods — evidence, kill, and reduce challenge — i.e. approximately `3 × evidenceTime` (§8), and
-the runtime surfaces the pause and this expected duration to the integrating application when the
-first dispute against the fork is observed.
+**For this protocol version:** the pause is bounded by the evidence and kill periods, i.e.
+approximately `2 × evidenceTime` (§8) in the worst case where evidence arrives at the end of the
+evidence period. The reduce challenge period does **not** extend it: the reduction is computed
+on-chain from the complete committed dispute set, so every participant can derive the same
+winning successor fork as soon as reduction is finalized and resume building on it immediately.
+A pending reduce challenge period delays only on-chain snapshot adoption — that is, an immediate
+withdrawal — never the resumption of off-chain execution. The runtime surfaces the pause and its
+expected duration to the integrating application when the first dispute against the fork is
+observed.
 
 ## 7. Phase 4 — Settlement (on-chain, tx 2)
 
@@ -232,11 +240,12 @@ partial opening, concurrent execution and joins, stale snapshot attempts, unavai
 failed settlement, retry/recovery, and all terminal states. The diagram is not sufficient evidence: every edge
 and prohibited edge needs an observable oracle and must preserve value and canonical-history invariants.
 
-The execution pause of [`REQ-LIF-7-0XZBDM`](lifecycle.md#req-lif-7-0xzbdm) is itself a griefing surface: any
-dispute-eligible participant can suspend the fork's off-chain execution for roughly `3 × evidenceTime` by
-committing a dispute, valid or not. The cost of doing so (dispute fees, kill-period slashing of invalid
-claims) and the per-disputer throttle (§8) bound the abuse; sizing `evidenceTime` therefore trades this pause
-length directly against the response budget of the dispute challenge periods.
+The execution pause of [`REQ-LIF-7-0XZBDM`](lifecycle.md#req-lif-7-0xzbdm) is a bounded griefing surface: a
+dispute-eligible participant can suspend the fork's off-chain execution for up to `2 × evidenceTime` by
+committing a dispute. The bound on abuse is accountability rather than rate: a dispute must carry a valid
+reason, and one that does not is killed during the kill period with its opener slashed — so an unfounded
+suspension can be inflicted at most once per participant, at the cost of their stake. Sizing `evidenceTime`
+therefore trades this pause length against the evidence and kill periods' own response budgets.
 
 ## Requirements and invariants
 
